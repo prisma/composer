@@ -1,2 +1,17 @@
 /wip/
 .DS_Store
+node_modules
+dist
+dist-*
+coverage
+.prisma
+*.log
+.DS_Store
+.env
+.env.local
+.env.*.local
+.turbo
+*.tsbuildinfo
+packages/e2e-tests/.tmp-output
+/wip
+.pnpm-store
