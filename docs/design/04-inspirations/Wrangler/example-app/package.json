@@ -1,0 +1,52 @@
+{
+  "name": "wrangler-example-app",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:staging": "wrangler dev --env staging",
+    "dev:production": "wrangler dev --env production",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "preview": "wrangler versions upload",
+    "preview:staging": "wrangler versions upload --env staging",
+    "dry-run": "wrangler deploy --dry-run --outdir dist",
+    "dry-run:staging": "wrangler deploy --dry-run --outdir dist --env staging",
+    "dry-run:production": "wrangler deploy --dry-run --outdir dist --env production",
+    "tail": "wrangler tail",
+    "tail:staging": "wrangler tail --env staging",
+    "tail:production": "wrangler tail --env production",
+    "check": "wrangler check"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+{
+  "name": "wrangler-example-app",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "dev:staging": "wrangler dev --env staging",
+    "dev:production": "wrangler dev --env production",
+    "deploy": "wrangler deploy",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "preview": "wrangler versions upload",
+    "preview:staging": "wrangler versions upload --env staging",
+    "dry-run": "wrangler deploy --dry-run --outdir dist",
+    "dry-run:staging": "wrangler deploy --dry-run --outdir dist --env staging",
+    "dry-run:production": "wrangler deploy --dry-run --outdir dist --env production",
+    "tail": "wrangler tail",
+    "tail:staging": "wrangler tail --env staging",
+    "tail:production": "wrangler tail --env production",
+    "check": "wrangler check"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0",
+    "typescript": "^5.0.0"
+  }
+}

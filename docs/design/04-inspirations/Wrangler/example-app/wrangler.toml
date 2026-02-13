@@ -1,0 +1,72 @@
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# INHERITABLE: route - staging/prod override with different routes
+route = "dev.example.com/*"
+
+# NON-INHERITABLE: vars - must be redeclared per env (top-level = default env only)
+[vars]
+ENVIRONMENT = "dev"
+API_HOST = "dev.example.com"
+
+# Staging environment
+[env.staging]
+# INHERITABLE: override route
+route = "staging.example.com/*"
+
+# NON-INHERITABLE: must specify vars per env
+[env.staging.vars]
+ENVIRONMENT = "staging"
+API_HOST = "staging.example.com"
+
+# Production environment
+[env.production]
+# INHERITABLE: override route
+route = "example.com/*"
+
+# NON-INHERITABLE: must specify vars per env
+[env.production.vars]
+ENVIRONMENT = "production"
+API_HOST = "api.example.com"
+# Example: Wrangler config demonstrating inheritable vs non-inheritable keys
+# See README for artifact boundary and workflow walkthrough.
+#
+# INHERITABLE (from top-level; override per env):
+#   main, compatibility_date, compatibility_flags, route/routes, workers_dev,
+#   build, minify, node_compat, etc.
+#
+# NON-INHERITABLE (must be specified per env; top-level is default env only):
+#   vars, kv_namespaces, r2_buckets, d1_databases, services, and other bindings.
+
+name = "example-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# INHERITABLE: route - staging/prod override with different routes
+route = "dev.example.com/*"
+
+# NON-INHERITABLE: vars - must be redeclared per env (top-level = default env only)
+[vars]
+ENVIRONMENT = "dev"
+API_HOST = "dev.example.com"
+
+# Staging environment
+[env.staging]
+# INHERITABLE: override route
+route = "staging.example.com/*"
+
+# NON-INHERITABLE: must specify vars per env
+[env.staging.vars]
+ENVIRONMENT = "staging"
+API_HOST = "staging.example.com"
+
+# Production environment
+[env.production]
+# INHERITABLE: override route
+route = "example.com/*"
+
+# NON-INHERITABLE: must specify vars per env
+[env.production.vars]
+ENVIRONMENT = "production"
+API_HOST = "api.example.com"

@@ -1,0 +1,30 @@
+{
+  "name": "env-bindings-example",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "kv:list": "wrangler kv key list --binding=EXAMPLE_KV",
+    "d1:query": "wrangler d1 execute example-db --command"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  }
+}
+{
+  "name": "env-bindings-example",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "kv:list": "wrangler kv key list --binding=EXAMPLE_KV",
+    "d1:query": "wrangler d1 execute example-db --command"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  }
+}
