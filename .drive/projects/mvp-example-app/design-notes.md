@@ -103,16 +103,39 @@ Three things this surfaced, now fixed in the provider / app:
   (`export default { port, fetch }`) does not reliably auto-start from a *bundled*
   entrypoint run as `bun index.js`; call `Bun.serve()` directly (matches ignite-bot).
 
+## Compute skill findings (Slice 3 prep)
+
+Prisma ships its Compute deploy knowledge as the `prisma-compute` agent skill
+(`npx @prisma/cli agent install`, installed globally for this agent). What it
+changes for us:
+
+- **Don't reinvent the Next.js build.** `@prisma/cli app build --build-type nextjs`
+  produces a deployable artifact, and `@prisma/compute-sdk` exposes a `NextjsBuild`
+  strategy (requires `output: "standalone"`, entrypoint `server.js`) plus
+  `PreBuilt({ appPath, entrypoint })`. Slice 3 produces the Storefront artifact via
+  Prisma's Next build, then deploys it through our Alchemy provider — which consumes
+  a prebuilt artifact, exactly the seam we designed.
+- **`verify-public-url` is the PRO-200 gotcha, upstream.** The skill's own rule says
+  to fetch the real public deployment URL after deploy rather than trust a
+  readiness/create-time value — the same trap we hit and filed.
+- **Runtime rules match what we did:** bind `0.0.0.0` (Bun.serve default), listen on
+  `process.env.PORT` (deploy default port 3000 / `--http-port`).
+- **Env vars resolve from the app's attached Branch**, not the deploy payload
+  (confirms the Slice 1 finding); the auto-injected `DATABASE_URL` we saw is the
+  default branch/database attachment.
+- **Route naming:** the blessed low-level routes are `/v1/apps` + `/v1/deployments`;
+  our provider uses the `/v1/compute-services/*` compatibility aliases. They work
+  (proven end-to-end), but a future cleanup could move to the App/Deployment routes.
+
 ## Open questions
 
 - Direct vs pooled connection string from the Connection resource (currently using
   the connection's top-level `url`).
-- Next.js standalone → Compute assembly (Slice 3). The `bundleComputeArtifact`
-  `Bun.build` pipeline does **not** cover Next: the Storefront uses `next build`
-  standalone output with the manifest pointing at `.next/standalone/server.js`. Slice
-  3 needs a *variant* that packages a pre-built directory + manifest (reusing the
-  manifest-write + tar-at-root + sha256 pieces, not the `Bun.build` step). Confirm the
-  exact standalone assembly against the operator's prior art.
+- Next.js → Compute artifact (Slice 3). **Resolved approach:** use Prisma's own Next
+  build (`app build --build-type nextjs`, or the SDK `NextjsBuild`) to produce the
+  standalone artifact (entrypoint `server.js`); deploy it via our provider. Remaining
+  unknown: the exact shape `app build` emits (tar.gz vs staged dir) and how it maps to
+  our `Deployment` `artifactPath` — settle empirically against the real Storefront.
 
 ## Slice 4 wiring notes
 
