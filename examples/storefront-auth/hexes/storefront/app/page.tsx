@@ -1,6 +1,11 @@
 // The Storefront calls the Auth service while serving the request — the
 // ingress -> Auth path the MVP exercises. AUTH_URL is injected per environment
 // (wired to the Auth hex in alchemy.run.ts); if unset the page says so.
+
+// Render on every request so the runtime-injected AUTH_URL is used — otherwise
+// Next prerenders this page at build time, when AUTH_URL is unset.
+export const dynamic = "force-dynamic";
+
 async function getAuthStatus(): Promise<string> {
   const base = process.env.AUTH_URL;
   if (!base) return "AUTH_URL not set";

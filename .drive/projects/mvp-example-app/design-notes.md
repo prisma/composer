@@ -134,6 +134,27 @@ changes for us:
   our provider uses the `/v1/compute-services/*` compatibility aliases. They work
   (proven end-to-end), but a future cleanup could move to the App/Deployment routes.
 
+## Validated end-to-end (two-hex MVP)
+
+The full MVP is **live on real Prisma Cloud** via `examples/storefront-auth`: two
+hexes, each its own Prisma **project** (a Service + the project's default Postgres,
+auto-injected as `DATABASE_URL`), wired by an `AUTH_URL` `EnvironmentVariable` so
+the Storefront calls Auth while rendering.
+
+- `alchemy deploy` provisions 2×(Project → ComputeService → Deployment) + the
+  `AUTH_URL` env var; re-deploy is **all noop** (idempotent); `alchemy destroy`
+  tears both hexes down.
+- Proof: `curl <auth>/verify` → `200 {"ok":true}` (Auth + its Postgres); the
+  Storefront page renders `Auth /verify says: 200 {"ok":true}` — the Storefront→Auth
+  ingress round-trip.
+- **One project per hex** is the clean mapping: each hex gets its own Postgres for
+  free (the project's default DB), and only the cross-hex `AUTH_URL` needs an explicit
+  env var. Two hexes in one project would fight the per-project default-DB injection.
+- **Next server components must be forced dynamic.** `export const dynamic =
+  "force-dynamic"` — otherwise Next prerenders the page at build time (when `AUTH_URL`
+  is unset) and serves that static HTML forever, so the runtime env is never read. A
+  `cache: "no-store"` fetch alone does **not** force the route dynamic in Next 15.
+
 ## Open questions
 
 - Direct vs pooled connection string from the Connection resource (currently using
