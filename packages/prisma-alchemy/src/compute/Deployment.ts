@@ -17,6 +17,11 @@ export interface DeploymentProps {
    * `artifactPath` alone would diff as a no-op.
    */
   artifactHash: string;
+  /**
+   * HTTP port the app listens on. Compute routes external HTTP to it
+   * (`portMapping.http`); without it the endpoint has no route and 404s.
+   */
+  port?: number;
 }
 
 export interface DeploymentAttributes {
@@ -74,7 +79,7 @@ export const DeploymentProvider = () =>
           const created = yield* call(() =>
             client.POST("/v1/compute-services/{computeServiceId}/versions", {
               params: { path: { computeServiceId: news.computeServiceId } },
-              body: {},
+              body: news.port !== undefined ? { portMapping: { http: news.port } } : {},
             }),
           );
           const versionId = created.data.id;
@@ -114,14 +119,23 @@ export const DeploymentProvider = () =>
 
           yield* waitForRunning(versionId);
 
-          const promoted = yield* call(() =>
+          yield* call(() =>
             client.POST("/v1/compute-services/{computeServiceId}/promote", {
               params: { path: { computeServiceId: news.computeServiceId } },
               body: { versionId },
             }),
           );
 
-          return { versionId, deployedUrl: promoted.data.serviceEndpointDomain };
+          // The serving domain only resolves to the running version's region
+          // once promoted; the service's create-time `serviceEndpointDomain` is
+          // a placeholder. Re-read the service for the live URL.
+          const service = yield* call(() =>
+            client.GET("/v1/compute-services/{computeServiceId}", {
+              params: { path: { computeServiceId: news.computeServiceId } },
+            }),
+          );
+
+          return { versionId, deployedUrl: service.data.serviceEndpointDomain };
         }),
         delete: Effect.fn(function* () {
           // A promoted version is retained as the service's deploy history;

@@ -1,5 +1,8 @@
 import * as Alchemy from "alchemy";
 import { localState } from "alchemy/State/LocalState";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import * as Effect from "effect/Effect";
 import * as Prisma from "@makerkit/prisma-alchemy";
 
@@ -40,10 +43,32 @@ export default Alchemy.Stack(
       name: "app",
     });
 
+    // Compute: deploy a trivial hello service (pre-built into ./dist/hello.tar.gz).
+    const artifactPath = fileURLToPath(new URL("./dist/hello.tar.gz", import.meta.url));
+    const artifactHash = createHash("sha256")
+      .update(readFileSync(artifactPath))
+      .digest("hex");
+
+    const service = yield* Prisma.ComputeService("smoke-svc", {
+      projectId: project.id,
+      name: "smoke-svc",
+      region: "us-east-1",
+    });
+
+    const deployment = yield* Prisma.Deployment("smoke-deploy", {
+      computeServiceId: service.id,
+      artifactPath,
+      artifactHash,
+      port: 3000,
+    });
+
     return {
       projectId: project.id,
       databaseId: database.id,
       connectionId: connection.id,
+      computeServiceId: service.id,
+      endpointDomain: deployment.deployedUrl,
+      versionId: deployment.versionId,
     };
   }),
 );

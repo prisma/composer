@@ -81,6 +81,28 @@ Auth = a workspace **service token** (Console → Settings → Service Tokens) i
 gitignored `.env`, sourced into the process env before the CLI — `--env-file`
 doesn't populate `process.env`, which the stack reads directly.
 
+## Validated end-to-end (Compute)
+
+The Compute provider is **proven against real Prisma Cloud** via the same
+`examples/smoke` stack. `alchemy deploy` runs the full sequence — create version →
+PUT the tar.gz → start → poll until `running` → promote — and the deployed app
+then serves live HTTP: `curl <endpoint>` returns `hello from prisma compute` (200).
+`alchemy destroy` tears down service + version with the project.
+
+Three things this surfaced, now fixed in the provider / app:
+
+- **The serving domain resolves late.** A ComputeService's create-time
+  `serviceEndpointDomain` is a placeholder region (we saw `.cdg.`); the live URL
+  (`.ewr.`, us-east-1) only resolves once a version is promoted and running. The
+  `Deployment` re-reads the service *after* promote and returns that as
+  `deployedUrl`; the stack surfaces this, not the ComputeService attribute.
+- **Port must be wired end to end.** `Deployment` takes a `port` prop that sets the
+  version's `portMapping.http`; the app binds the same port (`PORT` env, default
+  3000). Without `portMapping.http` the endpoint has no route and 404s.
+- **Use an explicit `Bun.serve()`.** A default-export server
+  (`export default { port, fetch }`) does not reliably auto-start from a *bundled*
+  entrypoint run as `bun index.js`; call `Bun.serve()` directly (matches ignite-bot).
+
 ## Open questions
 
 - Direct vs pooled connection string from the Connection resource (currently using
@@ -97,11 +119,15 @@ doesn't populate `process.env`, which the stack reads directly.
 - **A project auto-provisions a default database.** Creating a `Database` with
   `isDefault: true` fails with "Default database already exists" — connect to the
   project's default DB, or create a non-default named one (the smoke does the latter).
-- **Env injection.** `DATABASE_URL` is a separate branch-scoped env-var resource
-  (`/v1/environment-variables`), not a deploy prop. Slice 4 must set it before the
-  `Deployment`; the Auth service fails fast if it's unset.
-- **Port coordination.** The app's listen `PORT` and the Compute create-version
-  `portMapping.http` must line up — wire both from one source in Slice 4.
+- **Env injection — partly automatic.** Compute auto-injects `DATABASE_URL` and
+  `DATABASE_URL_POOLED` for the project's **default** database (observed on the
+  running version's `envVars`). A service that uses the default DB needs no manual
+  wiring; a second/non-default DB still needs a branch-scoped env-var resource
+  (`/v1/environment-variables`) set before the `Deployment`. Confirm the exact
+  behaviour per-Hex in Slice 4; the Auth service fails fast if its URL is unset.
+- **Port coordination — resolved.** `Deployment` takes a `port` prop that sets the
+  version's `portMapping.http`; the app binds the same port (`PORT` env, default
+  3000). Wire both from one source per Hex in Slice 4.
 
 ## References
 
