@@ -1,5 +1,5 @@
 {
-  "name": "@makerkit/example-storefront-auth-web",
+  "name": "@makerkit/example-storefront-auth-storefront",
   "version": "0.0.0",
   "private": true,
   "scripts": {

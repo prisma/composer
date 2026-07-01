@@ -39,7 +39,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  examples/storefront-auth/apps/auth:
+  examples/storefront-auth/hexes/auth:
     dependencies:
       hono:
         specifier: ^4.11.4
@@ -52,7 +52,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  examples/storefront-auth/apps/web:
+  examples/storefront-auth/hexes/storefront:
     dependencies:
       next:
         specifier: ^15.5.4
