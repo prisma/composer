@@ -42,5 +42,5 @@ During design discussions:
 
 ## Document templates
 
-Use the templates in `docs/design/99-process/templates/` when adding new docs or ADRs.
+Use the ADR template in `docs/design/99-process/templates/` when recording a decision.
 

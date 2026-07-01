@@ -19,4 +19,5 @@ Each document should answer:
 - `Wrangler/` (research library + MakerKit takeaways)
 - `Cloudflare/` (research library + MakerKit takeaways)
 - `Convex/` (research library + MakerKit takeaways)
+- `Alchemy/` (v2 docs mirror + **viability study**: adopt instead of building MakerKit?)
 

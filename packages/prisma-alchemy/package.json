@@ -1,0 +1,22 @@
+{
+  "name": "@makerkit/prisma-alchemy",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgres": "./src/postgres/index.ts",
+    "./compute": "./src/compute/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/management-api-sdk": "^1.47.0",
+    "alchemy": "2.0.0-beta.59",
+    "effect": "4.0.0-beta.92"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

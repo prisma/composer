@@ -1,38 +1,41 @@
 # Architectural Principles
 
-These are structural constraints that shape MakerKit’s architecture and package boundaries.
+Structural rules that shape MakerKit's architecture and package boundaries.
 
-## No globals in user applications (DI-only)
+## No globals — all dependencies are injected
 
-User application code must not depend on ambient globals for platform configuration or platform services. It should only ever depend on **injected dependencies**.
+Application code never reads global configuration or looks up a service by name —
+no `process.env`, no discovery, no magic. Every resource a Hex uses is handed to it
+as a typed dependency.
 
-Implications:
+## Code over configuration
 
-- **No environment variables for provisioned services**: user code must not read `process.env`, `Bun.env`, `Deno.env`, `import.meta.env`, etc. to find database URLs, bucket names, stream ids, ports, etc.
-- **No implicit platform APIs**: user code should not “discover” ingress, ports, bindings, or services by reaching into global state or “magic” configuration.
-- **Everything important is a parameter**: resources like Postgres, Storage, Streams, Scheduler, and platform config are passed to entrypoints explicitly (directly or via a typed context object).
+Your topology is *inferred* from your application code — type-checked, and living in
+your TypeScript, not a separate manifest you maintain by hand. The structure you
+write is the structure that deploys; the two can't silently drift.
 
-## Code-first topology (generated manifest)
+## Tree-shakeable by default
 
-The application’s topology is defined in TypeScript (descriptors) and MakerKit generates the deployment metadata (e.g. `makerkit.map.json`) from that code.
+Control-plane code (inferring, emitting, provisioning) and execution-plane code
+(running your app) live behind separate imports, so build-time machinery never
+lands in your application bundle. You ship only what runs.
 
-Wrangler is an inspiration for end-to-end developer experience, but MakerKit avoids a hand-authored manifest as the source of truth to prevent drift.
+## The framework has no knowledge of specific deployment targets
 
-## Two-plane architecture: control plane vs execution plane
+The core deals only in the abstract model — Hexes, inputs, outputs, resources — and
+never branches on where you're deploying. Everything a given target needs (Prisma
+Cloud's resource types, or another's) arrives as an extension pack.
 
-MakerKit must operate in two modes:
+## Data contracts are the interface for data resources
 
-- **Control plane**: import descriptors, validate/normalize, build topology graph, emit metadata/artifacts, provide handles for provisioning/inspection.
-- **Execution plane**: instantiate implementations, satisfy the graph, perform DI, run entrypoints.
+A data contract names exactly what a Hex may read and write; a resource plugs in
+only if it satisfies that contract. It's the data-world version of an Alchemy
+Layer: the consumer depends on a typed interface (`Context.Service`), and any
+implementation that satisfies it can be swapped in.
 
-To prevent drift, keep separate import surfaces (e.g. `@prisma/makerkit/control` vs `@prisma/makerkit/runtime`) and avoid cross-plane coupling.
+## Realtime/streaming-first
 
-## Platform-agnostic core (ports/adapters)
-
-MakerKit’s core packages should not be coupled to any specific deployment platform (including Prisma).
-
-Implications:
-
-- **Define ports in the core**: core packages define the interfaces for storage, streams, scheduling, ingress, and bindings resolution.
-- **Implement adapters outside the core**: Prisma Platform integrations live in adapters/providers that implement those interfaces.
-- **Keep dependency direction clean**: the core never imports Prisma-specific clients/SDKs; adapters depend on the core, not the other way around.
+Streaming and subscription are first-class in the runtime from day one, not bolted
+onto a request/response model after the fact. We build for the hard case — async,
+durable, ordered delivery — so the synchronous case falls out for free, not the
+reverse.
