@@ -8,12 +8,42 @@ serve one purpose.
 Here's the whole thing in one breath:
 
 > You build a **Prisma App** by snapping together **Hexes** — reusable building
-> blocks you install from a public registry, the **Prisma Hexicon**. You wire them
-> together with **Prisma Compose**. You deploy it to **Prisma Cloud**, where it runs
-> on **Prisma Compute**, its data modeled by **Prisma Data** and persisted to **Prisma
-> Postgres**, while its Hexes communicate over **Durable Streams** or HTTP
-> **Connections**. **Prisma Console** lets you browse your deployed resources,
-> and **Prisma Dev** runs the whole app on your laptop while you build.
+> blocks you install from a public registry. You wire them together with **Prisma
+> Compose**. You deploy it to **Prisma Cloud**, where it runs on **Prisma Compute**,
+> its data modeled by **Prisma Data** and persisted to **Prisma Postgres**.
+
+## The family, named by role
+
+The components you compose into a Prisma App:
+
+| Component | Role | What it does for you |
+|---|---|---|
+| Prisma Compute | execute | my code runs |
+| Prisma Postgres | persist | my data has a home |
+| Prisma Streams | stream | my events flow and survive |
+| Prisma Data | data | I model, query, and manage my data |
+| Prisma Compose | compose | my app comes together from parts |
+
+And the platform around them:
+
+- **Prisma Cloud** — where your app is deployed and runs.
+- **Prisma Hexicon** — the registry you install Hexes from.
+- **Prisma Console** — the view across all your deployments.
+- **Prisma Dev** — your whole app, running locally.
+
+## Two renames worth flagging
+
+- **MakerKit → Prisma Compose.** "MakerKit" sounds like a standalone starter kit and
+  doesn't sit in the family. What it actually does is *compose* the other pieces into
+  an app — so the name should just say that. Prisma Compose belongs.
+- **Prisma Next → Prisma Data.** This one's a bigger call, so it has [its own
+  write-up](prisma-data-rename.md). Short version: Prisma Next was going to become
+  "Prisma 8", but it isn't really the next ORM — it's a different product with a
+  different mental model, and a version number would promise a smooth upgrade we can't
+  honor (and cap us at "still an ORM"). "Data" names what people actually care about,
+  reads clearly to the non-technical, agent-assisted builders we're going after, and
+  is broad enough to be more than an ORM. Prisma ORM doesn't go anywhere — existing
+  users keep it; new work starts on Prisma Data.
 
 ## One product, many components
 
@@ -61,34 +91,6 @@ increasingly their agents — to assemble apps *fast*:
 Names have to serve that story: clear, predictable, boring in the best way. An agent
 composing an app shouldn't have to decode cute product names, and neither should a
 new developer.
-
-## The family, named by role
-
-The components you compose into a Prisma App:
-
-| Component | Role | What it does for you |
-|---|---|---|
-| Prisma Compute | execute | my code runs |
-| Prisma Postgres | persist | my data has a home |
-| Prisma Data | data | I model, query, and manage my data |
-| Prisma Compose | compose | my app comes together from parts |
-| Durable Streams | stream | my events flow and survive |
-| Connection | connect | my services reach each other |
-
-And the platform around them:
-
-- **Prisma Cloud** — where your app is deployed and runs.
-- **Prisma Hexicon** — the registry you install Hexes from.
-- **Prisma Console** — the view across all your deployments.
-- **Prisma Dev** — your whole app, running locally.
-
-## Two renames worth flagging
-
-- **MakerKit → Prisma Compose.** "MakerKit" sounds like a standalone starter kit and
-  doesn't sit in the family. What it actually does is *compose* the other pieces into
-  an app — so the name should just say that. Prisma Compose belongs.
-- **Prisma Next → Prisma Data.** "Next" is a version number, not a value (and it
-  collides with Next.js). "Data" is what people actually care about.
 
 ## Hexicon: a home for Hexes (like skills.sh)
 
