@@ -154,6 +154,15 @@ the Storefront calls Auth while rendering.
   "force-dynamic"` — otherwise Next prerenders the page at build time (when `AUTH_URL`
   is unset) and serves that static HTML forever, so the runtime env is never read. A
   `cache: "no-store"` fetch alone does **not** force the route dynamic in Next 15.
+- **Auth's DB access must be crash-resilient.** Prisma Postgres closes idle direct
+  connections (and the service scales to zero); Bun.SQL surfaces that as an async
+  `ERR_POSTGRES_CONNECTION_CLOSED` with no awaiter, which crashed the process into a
+  502 restart loop (symptom: the Storefront rendered "Auth /verify says: 500/502").
+  Fix in `hexes/auth`: `process.on("uncaughtException"/"unhandledRejection")` guards +
+  a short `idleTimeout` (close client-side before the server does) + `max: 1`, and
+  handlers that catch the query error (503, not crash). Verified across idle/reconnect
+  cycles. Keep the **direct** connection (`DATABASE_URL`) — pooled/accelerate are
+  legacy per the prisma-postgres skill.
 
 ## Open questions
 
