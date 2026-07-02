@@ -1,0 +1,23 @@
+{
+  "name": "@makerkit/example-storefront-auth-storefront",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "build:compute": "next build && bun run ../../scripts/bundle-next.ts . dist/storefront.tar.gz"
+  },
+  "dependencies": {
+    "next": "^15.5.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^6.0.3"
+  }
+}

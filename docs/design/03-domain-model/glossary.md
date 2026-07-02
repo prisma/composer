@@ -4,6 +4,12 @@ The shared terms used across MakerKit's design docs. This is the **authoring
 plane** vocabulary — what a developer writes and thinks in. For how these lower
 to the provisioning and hosting planes, see `layering.md`.
 
+The **compile target** — the Alchemy/Effect terms these authoring nouns lower
+*down to* — is catalogued in "[Provisioning plane — the compile
+target](#provisioning-plane--the-compile-target-alchemy--effect)" below. That
+section is the substrate the next layer of abstraction is built on; the broader
+Alchemy research write-up lives in `../04-inspirations/Alchemy/glossary.md`.
+
 ## Core nouns
 
 Every element MakerKit provisions carries a **managed lifecycle** — it can be
@@ -195,6 +201,169 @@ tree-shaking).
 An addressable unit the platform can execute (by id/kind), defined by an artifact
 reference plus its declared required Inputs. The execution-plane handle for a
 Service.
+
+## Authoring surface — the next layer
+
+How a developer actually writes the [Core nouns](#core-nouns): the API that sits
+directly above the model and lowers onto the [compile
+target](#provisioning-plane--the-compile-target-alchemy--effect). These terms are
+described in full in [authoring-surface.md](authoring-surface.md).
+
+### defineService
+
+The library function that defines a **Service**. Takes a map of dependency ports
+and a wiring body: `defineService({ db: Postgres(contract) }, ({ db }) => ({ api:
+… }))`. Its default export is both an inspectable descriptor (the control plane
+reads its ports) and a runnable handle (the runtime invokes it) — importing it runs
+nothing. The Service body is opaque to MakerKit (a **black box**); MakerKit sees
+only its ports.
+
+### hex
+
+The library function that defines a **Hex** — the same wiring surface as
+`defineService`, but transparent (MakerKit sees the internal topology) and with
+`provision` in scope. Its body wires the nodes it owns; it runs no code of its own.
+
+### Port — Input / Output by position
+
+The single wiring mechanic. Every node declares typed **Input** and **Output**
+ports (see [Connections](#connections)); direction is inferred from **position** —
+a [connection type](#connection-type) named as a dependency is an **Input** (arrives
+hydrated as an argument), one that is returned is an **Output** (the body
+implements it). No explicit direction markers. `Input → arguments, Output → return`
+holds for both Services and Hexes.
+
+### Connection type
+
+A neutral, direction-agnostic value describing one end of a connection — its kind
+(`http`, `data`, `stream`) and its named interface — e.g. `Auth =
+http(AuthInterface)`. Not a raw TypeScript interface. Because either side may author
+it, the interface can be declared on the **consumer** side and the provider made to
+conform (dependency inversion).
+
+### provision
+
+The Hex-scoped operator that turns a dependency descriptor into an **owned
+Resource** (`provision(Postgres(contract))`) or instantiates and wires an owned node
+(`provision(service, { db })`). Ownership and provisioning are a Hex concern; a
+Service only *requires*. Forwarding is just passing a Hex's Inputs down and
+returning owned nodes' Outputs up.
+
+### Host shim
+
+The MakerKit-generated boot [entrypoint](#entrypoint) the platform runs. It hydrates
+the declared Inputs into typed clients and calls the user handler. A framework
+server (Next.js) is wired in as the implementation of an HTTP Output, not a special
+entrypoint kind; framework code reaches its dependencies through a DI accessor
+(`use(…)`), never the environment. Config still travels into the VM as environment
+variables, but they **terminate at the shim** — user code is dependency-injection
+only.
+
+### Load / Hydrate
+
+The two-phase lifecycle. Running a `define` **Loads** an in-memory graph (a graph of
+streams, request/response being the bounded case) and MakerKit validates its
+integrity — every Input satisfied, interfaces compatible, nothing dangling — with
+nothing executed. **Hydrate** attaches adapters and pushes data through the Inputs
+and out of the Outputs. One graph serves both a test harness (a fake Output
+substituted at any Input) and a real deployment.
+
+## Provisioning plane — the compile target (Alchemy / Effect)
+
+The exact substrate the authoring nouns lower **down to**, grounded in what our
+providers already use (`packages/prisma-alchemy`, `alchemy@2.0.0-beta.59`,
+`effect@4-beta`). Building the next layer of abstraction means defining each
+authoring noun as *the compile-target terms it emits*. Two families: Alchemy's
+IaC definition language, and the Effect primitives Alchemy is itself built on.
+
+For each term: what it is, and — where it applies — `→` the MakerKit authoring
+noun that lowers onto it. The reverse table (authoring → provisioning → hosting)
+is in `layering.md`; this is the term-by-term catalogue.
+
+### Alchemy — definition language
+
+- **Stack** — the root of an Alchemy program; a set of Resources deployed as a
+  unit. `Alchemy.Stack(name, { providers, state }, Effect.gen(…))`. Our whole
+  example emits one Stack (`examples/storefront-auth/alchemy.run.ts`).
+  `→` **Topology / implicit root Hex** (today hand-written; MakerKit will
+  generate it).
+- **Resource\<Type, Props, Attributes>** — a managed entity with a string type
+  tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
+  `yield*`-ed. Ours: `Prisma.Project`, `Database`, `Connection`,
+  `ComputeService`, `Deployment`, `EnvironmentVariable`.
+  `→` a **Service** lowers to `ComputeService` + `Deployment` (+
+  `EnvironmentVariable`); a first-class **Resource** (Postgres) lowers to
+  `Project` + `Database` + `Connection`.
+- **Props** — the desired configuration passed at declare time; diffed against
+  the last deploy to detect change. (We put the artifact's `artifactHash` in
+  Props so a rebuild registers as a change.) `→` a node's **Inputs** +
+  **Configuration**.
+- **Attributes / Output\<T>** — values the cloud returns (`deployedUrl`,
+  `versionId`, ids); lazy references that flow into other Resources' Props.
+  Resource-to-resource wiring is Output → Props. `→` a node's **Outputs**; a
+  **connection** (Output→Input) lowers to Output→Props, plus an
+  `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
+  does today).
+- **Provider** — implements a Resource type's lifecycle; an Effect `Layer`. We
+  author one per Prisma resource with `Provider.effect(Resource, reconcile)`,
+  bundled via `Provider.collection([…])` into a `Provider.ProviderCollection`
+  (`Prisma.providers()`). MakerKit reuses these unchanged — the next layer sits
+  *above* providers, not inside them.
+- **Stage** — an isolated instance of a Stack (`dev`, `staging`, `prod`,
+  `pr-42`) with its own state and physical names. `→` **Environment**.
+- **State store** — persists each Resource's state per stack+stage so the engine
+  can diff the next deploy. `localState()` today; `layering.md` Step 1 is a
+  Prisma-hosted, workspace-scoped store. Control-plane infra, never a topology
+  node.
+
+### Alchemy — engine verbs (provider lifecycle)
+
+- **reconcile / delete / diff / read** — the convergent lifecycle the engine
+  drives in dependency order (`read`+`diff` to plan, `reconcile`/`delete` to
+  apply). We implement them inside `Provider.effect` (observe → ensure →
+  return). Author-facing only for provider authors; the next layer never calls
+  them directly.
+
+### Deliberately **not** our compile target
+
+These two Alchemy concepts exist but our stack does not use them — and that gap
+is where MakerKit's own binding layer gets built.
+
+- **Platform** — Alchemy's Resource-that-carries-runtime-code (Cloudflare
+  Worker, AWS Lambda, Container). We model Prisma Compute as **ordinary
+  Resources** (`ComputeService` + `Deployment` + artifact) instead, because
+  Compute isn't an Alchemy-native platform.
+- **Binding** (`bind()`) — Alchemy's "the binding *is* the client" for a
+  Platform: one call emits permissions + env and hands back a typed SDK client.
+  We do **not** use it. MakerKit's binding/DI (capability `Tag` + `Layer` +
+  execution-plane host shim) is **our own** layer precisely because our compute
+  is plain Resources, not a Platform. `→` this is the seam for **binding
+  injection** and the **execution-plane host**.
+
+### Effect substrate (what Alchemy is built on)
+
+- **Effect\<A, E, R>** — the effect type; `Effect.gen`, `fail`/`die`/`flatMap`.
+  Every term above is expressed as Effects.
+- **Layer\<ROut, E, RIn>** — builds services; both Providers and capabilities are
+  Layers (`Layer.effect`, `mergeAll`, `provide`, `provideMerge`, `orDie`).
+  `→` a **capability provider** (a Resource's Output) is a Layer.
+- **Context.Tag** — the typed service key that names a capability. `→` a
+  **capability** (`Database`, `AuthApi`); a Service's **Input** is a Tag in its
+  `R` channel; a **connection** type-checks as "provided Layer satisfies required
+  Tag".
+- **Config** (`effect/Config`) — reads env/secret values at the boundary. `→`
+  **Configuration**; the host shim builds each binding's Layer from Config.
+- **Redacted** (`effect/Redacted`) — wraps a secret so it doesn't print. `→`
+  secret **Configuration** (e.g. `DATABASE_URL`).
+- **Schedule** (`effect/Schedule`) — retry/poll policy (we poll a compute
+  version until `running` before promoting).
+- **Data.TaggedError** (`effect/Data`) — typed, tagged errors (our
+  `PrismaApiError`). `→` the error channel of a provider/binding.
+- **Scope** — resource lifetime for a Layer (`Layer.scoped` + finalizers). `→`
+  where a binding owns its connection pool and teardown (the idle-connection fix,
+  FT-5219, belongs here — written once).
+- **ManagedRuntime** — builds a runtime from a composed Layer once, so clients
+  are memoized. `→` the **execution-plane host** runs each request handler on it.
 
 ## Deferred / open
 

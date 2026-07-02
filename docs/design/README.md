@@ -44,6 +44,7 @@ Rule of thumb during design discussions:
 5. `docs/design/02-example-app/README.md`
 6. `docs/design/03-domain-model/domain-map.md`
 7. `docs/design/03-domain-model/glossary.md`
-8. `docs/design/04-inspirations/` (systems we’re learning from)
-9. `docs/design/10-domains/` (deep dives)
-10. `docs/design/90-decisions/` (ADRs)
+8. `docs/design/03-domain-model/authoring-surface.md`
+9. `docs/design/04-inspirations/` (systems we’re learning from)
+10. `docs/design/10-domains/` (deep dives)
+11. `docs/design/90-decisions/` (ADRs)

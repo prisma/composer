@@ -19,6 +19,10 @@ Typechecks, smoke-covered, folded into `Prisma.providers()`.
 
 - **builds on:** the committed Postgres provider.
 - **hands to:** a `Prisma.providers()` bundle that provisions Compute *and* Postgres.
+- **status:** ✅ delivered + **proven end-to-end** against real Prisma Cloud via
+  `examples/smoke` — deploy runs create → upload → start → poll → promote and the
+  deployed app serves `200`; `destroy` cleans up. Postgres path proven the same
+  way. See design-notes "Validated end-to-end (Compute)".
 
 ### Slice 2 — Example workspace + Auth service + build-to-artifact pipeline
 
@@ -28,6 +32,7 @@ as the first app proving that pipeline reads/writes its own Postgres.
 
 - **builds on:** — (independent).
 - **hands to:** a `build → artifact` step downstream apps reuse, and the Auth artifact.
+- **status:** ✅ delivered — implemented (Sonnet) + reviewed (Opus: SHIP + one hardening fix); `tsc` clean, artifact verified against the ADR format.
 
 ### Slice 3 — Storefront (Next.js) on the pipeline
 
@@ -36,6 +41,10 @@ Auth while serving a request, building to a Compute artifact via slice 2's pipel
 
 - **builds on:** slice 2 (the build pipeline).
 - **hands to:** the Storefront artifact + the ingress→Auth call path.
+- **status:** ✅ delivered + **live on real Prisma Cloud** — `next build` standalone
+  packaged by `bundle-next.ts`, deployed via our provider; serves `200`. Needed
+  `node-linker=hoisted` (pnpm isolates Next's peers like styled-jsx). The Auth call is
+  wired in Slice 4 (AUTH_URL currently unset → the page renders that).
 
 ### Slice 4 — Wire, deploy, verify
 
@@ -46,6 +55,11 @@ idempotency, and `destroy`. Meets project DoD.
 
 - **builds on:** slices 1, 2, 3 (+ operator credentials).
 - **hands to:** — (project close).
+- **status:** ✅ delivered + **live on real Prisma Cloud**. Realized as one project
+  per hex (each hex's default Postgres auto-injects `DATABASE_URL` — no explicit
+  Connection→env wiring needed); `AUTH_URL` wired via a new `EnvironmentVariable`
+  resource. `curl <auth>/verify` → `200 {"ok":true}`; the Storefront renders the
+  round-trip. Re-deploy noop; destroy tears down. DoD met.
 
 ## Sequencing
 

@@ -6,13 +6,32 @@ Structural rules that shape MakerKit's architecture and package boundaries.
 
 Application code never reads global configuration or looks up a service by name —
 no `process.env`, no discovery, no magic. Every resource a Hex uses is handed to it
-as a typed dependency.
+as a typed dependency. Configuration still reaches a compute unit as environment
+variables, but that channel **terminates at the MakerKit host shim**, which hydrates
+it and injects typed clients; user code — including framework-hosted code, which
+reaches its dependencies through a `use(…)` accessor — never touches the
+environment. MakerKit propagates data to user code only through dependency
+injection. See
+[the authoring surface](../03-domain-model/authoring-surface.md).
+
+## Wiring precedes execution — Load, then Hydrate
+
+A Service or Hex is *wired* and then *run*; it never runs itself. Executing its
+`define` Loads an in-memory graph that MakerKit validates for integrity before
+anything executes; only then is the graph Hydrated — adapters attached, data pushed
+through. This holds symmetrically for Services and Hexes, so an integrity error
+surfaces at Load, a test can trust nothing ran until the graph was whole, and the
+topology can be inspected without a deploy. See
+[the authoring surface](../03-domain-model/authoring-surface.md).
 
 ## Code over configuration
 
 Your topology is *inferred* from your application code — type-checked, and living in
 your TypeScript, not a separate manifest you maintain by hand. The structure you
-write is the structure that deploys; the two can't silently drift.
+write is the structure that deploys; the two can't silently drift. The
+`defineService`/`hex` declaration *is* the manifest: one live value read by the
+control plane at deploy and by the runtime host at boot, so there is nothing to keep
+in sync.
 
 ## Tree-shakeable by default
 
