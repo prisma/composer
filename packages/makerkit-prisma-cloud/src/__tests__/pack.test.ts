@@ -87,6 +87,28 @@ describe("runtime()", () => {
     expect(rt.context({ PORT: "not-a-number" })).toEqual({ port: 3000 });
   });
 
+  test("a dep-less service runs with bare runtime() — no phantom factory", () => {
+    let ran = false;
+    const app = compute({}, () => {
+      ran = true;
+      return "booted";
+    });
+
+    const result = runHost(app, runtime(), {});
+
+    expect(result).toBe("booted");
+    expect(ran).toBe(true);
+  });
+
+  test("a declared postgres input with no factory fails with a clear HydrateError", () => {
+    const app = compute({ db: postgres() }, () => null);
+
+    expect(() => runHost(app, runtime(), { DATABASE_URL: "postgres://x" })).toThrow(HydrateError);
+    expect(() => runHost(app, runtime(), { DATABASE_URL: "postgres://x" })).toThrow(
+      /input "db" requires a postgres client factory — pass runtime\(\{ clients: \{ postgres \} \}\)/,
+    );
+  });
+
   test("end to end: runHost hydrates the client and passes the context", () => {
     let received: unknown;
     let ctx: unknown;

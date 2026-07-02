@@ -46,7 +46,10 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
           artifactHash: opts.artifact.sha256,
           port: 3000,
         });
-        return { outputs: { url: deploy.deployedUrl } };
+        // outputs are the inter-node config-wiring hook: expose what hand-wired
+        // neighbors in a mixed stack need (the URL for consumers; the project id
+        // for e.g. an EnvironmentVariable scoped to this service's project).
+        return { outputs: { url: deploy.deployedUrl, projectId: project.id } };
       }),
   },
 });

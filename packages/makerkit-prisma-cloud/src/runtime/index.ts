@@ -10,10 +10,13 @@ export interface PostgresConfig {
   readonly url: string;
 }
 
+// Client factories are per-key OPTIONAL: a service with no postgres input
+// needs no factory (no phantom capabilities); a declared input with a missing
+// factory is a clear HydrateError at boot, before any traffic.
 export interface RuntimeOptions {
-  readonly clients: {
+  readonly clients?: {
     /** The app's driver choice — e.g. `({ url }) => new SQL({ url })`. */
-    readonly postgres: (config: PostgresConfig) => unknown;
+    readonly postgres?: (config: PostgresConfig) => unknown;
   };
 }
 
@@ -22,13 +25,19 @@ function intOr(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export const runtime = (o: RuntimeOptions): TargetRuntime => ({
+export const runtime = (o: RuntimeOptions = {}): TargetRuntime => ({
   context: (env) => ({ port: intOr(env.PORT, 3000) }),
   hydrate: {
     "prisma-cloud/postgres": ({ env, input }) => {
+      const factory = o.clients?.postgres;
+      if (!factory) {
+        throw new HydrateError(
+          `input "${input}" requires a postgres client factory — pass runtime({ clients: { postgres } })`,
+        );
+      }
       const url = env.DATABASE_URL;
       if (!url) throw new HydrateError(`input "${input}": DATABASE_URL is not set`);
-      return o.clients.postgres({ url });
+      return factory({ url });
     },
   },
 });
