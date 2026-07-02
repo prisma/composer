@@ -1,112 +1,115 @@
-# Summary
-
-Build and prove MakerKit's **authoring layer** as a **thin, target-agnostic core**
-plus a **Prisma Cloud target pack**. A developer imports a concrete vocabulary from
-the pack (`compute`, `postgres`) and wires it into a graph; `@makerkit/core` Loads
-that graph and **routes** each node to the Alchemy object its metadata references —
-without ever importing a deployment target. Validated end-to-end on Prisma Compute /
-Postgres.
-
-# Description
+# Authoring Layer — Project Spec
 
 ## Purpose
 
-A MakerKit developer should describe a service and its dependencies in TypeScript and
-deploy to a platform with those dependencies **injected as typed handles** — the
-topology inferred from the code, validated before it runs, and never coupled to a
-specific cloud. This project turns the recorded design
-([`authoring-surface.md`](../../../docs/design/03-domain-model/authoring-surface.md),
-[`core-and-targets.md`](../../../docs/design/03-domain-model/core-and-targets.md))
-into a working primitive, proven against a real deployment.
+Prove MakerKit's authoring model on real infrastructure: a developer describes a
+service and its dependencies in TypeScript — vocabulary imported from a target pack —
+and gets **typed, injected dependencies on a real deployment**, with the framework
+provably agnostic of both the deployment target and the JavaScript runtime. This is
+the foundation every later capability (connections, interfaces, hexes, contracts)
+builds on; if this layer is wrong, everything above it inherits the error.
 
 ## At a glance
 
-The developer writes:
+The developer writes (and this deploys, for real):
 
 ```ts
+// src/service.ts
 import { compute, postgres } from "@makerkit/prisma-cloud"
+import type { SQL } from "bun"                     // the APP's client choice
 
-export default compute({ db: postgres() }, ({ db }) => Bun.serve(/* uses db */))
+export default compute({ db: postgres<SQL>() }, ({ db }, { port }) =>
+  Bun.serve({ port, fetch: async () => Response.json(await db`select 1 as ok`) }))
+
+// src/main.ts — the app's bundle entry; the driver import lives here
+runHost(service, runtime({ clients: { postgres: ({ url }) => new SQL({ url }) } }))
+
+// alchemy.run.ts — deploy
+export default lower(service, prismaCloud({ workspaceId }), { name, artifact })
 ```
 
-`postgres()` and `compute()` are **data** from the target pack, each carrying the
-metadata that routes it to an Alchemy provider. `@makerkit/core` sees only "a Service,
-a Resource," Loads the graph, and instantiates the referenced Alchemy objects. Core
-imports no target and owns no bundler; the app bundles (hand-rolled, as today) and the
-target pack's runtime hydrators turn injected config into typed clients.
-
-# Requirements
-
-## Cross-cutting requirements (true at the system level)
-
-- **Core is target-agnostic.** `@makerkit/core` imports no deployment target and no
-  `prisma-alchemy`. The swap test: replace the target pack and nothing in core (model,
-  router, runtime loop) changes.
-- **Lowering is routing.** Core Loads the graph and instantiates the Alchemy object
-  each node's metadata references — no per-target branch, no provisioning logic in core.
-- **MakerKit does not bundle.** The app owns bundling (hand-rolled in the example);
-  core manages only the code *inside* the bundle. The platform artifact envelope is the
-  app's build script.
-- **No globals.** User code never reads `process.env`. Config reaches the VM as env
-  vars but terminates at the target's runtime hydrator, which injects typed clients.
-- **Load before Hydrate.** The graph is built and validated before anything executes.
-- **Proven on real Prisma Cloud.** Every slice deploys, is hit, and is observed on real
-  Compute/Postgres — not only unit tests.
-- **The example is the proof.** A minimal example authored via the target pack is
-  re-expressed on the primitive and remains deployable throughout.
+`@makerkit/core` Loads the graph and routes each node to the Alchemy object its
+metadata references; `@makerkit/prisma-cloud` supplies the vocabulary as data. The
+complete class/data-structure design is
+[`docs/design/10-domains/core-model.md`](../../../docs/design/10-domains/core-model.md)
+— this project builds exactly that.
 
 ## Non-goals
 
-- A bespoke provisioning orchestrator — the target pack uses Alchemy's engine + `prisma-alchemy`.
-- **MakerKit-owned bundling / packaging** — that is the app's.
-- Replacing or changing Prisma Compute / Postgres.
-- General framework completeness or production DX polish.
-- Runtime name-resolution / hex-to-hex addressing — start on URL baking.
-- Non-Postgres BYO resources early; data-migration semantics up front.
+- **Bundling or packaging** — the app owns its bundler and the platform artifact
+  envelope; MakerKit ships no build step.
+- **A bespoke provisioning orchestrator** — Alchemy's engine + the existing
+  `packages/prisma-alchemy` providers.
+- **Hexes, Connections/interfaces, data contracts, streams** — named extension points
+  in the design; later projects.
+- **Framework-hosted services (Next.js/`use()`), local emulation, runtime name
+  resolution** — later projects.
+- **Shipping a DB driver or fixing a JS runtime** — the client factory is app-supplied.
+- **Migrating `examples/storefront-auth`** — it stays on its hand-wired path.
+- Production DX polish (versioning, publishing, docs sites).
+
+## Place in the larger world
+
+First build phase of the authoring-layer initiative (the capability roadmap lives in
+`plan.md`). Sits on `packages/prisma-alchemy` (unchanged) and Alchemy's engine.
+Realizes the design recorded in `docs/design/` — `core-model.md` (types),
+`core-and-targets.md` (the split), `authoring-surface.md` (developer view), and the
+principles (no-globals, runtime-agnostic, no-target-knowledge, wiring-precedes-
+execution). Supersedes the earlier coupled implementation on this branch
+([PR #6](https://github.com/prisma/makerkit/pull/6)): that code lowered from core
+directly to prisma-alchemy and owned bundling; parts of it (graph/Load mechanics,
+test approach) survive restructuring, its architecture does not.
+
+## Cross-cutting requirements
+
+- **`core-model.md` is the contract.** The built surface matches the deep dive —
+  types, entry points, dependency weights. A deviation discovered during the build is
+  a design-doc amendment agreed with the operator *first*, then code.
+- **The five invariants are enforced by tests, not convention** (from
+  `core-model.md` § Invariants): core has no target dependency; authoring imports
+  bundle lean (no alchemy/effect/prisma/SQL tokens); importing runs nothing;
+  `process.env` appears exactly once (the `runHost` default); no Bun/Node coupling in
+  any shipped entry — even type-only.
+- **Proven on real Prisma Cloud.** The example deploys, serves a live DB query, and
+  tears down clean — not only unit tests.
+- **The example owns its build**: tsdown (or similar) bundles `main.ts`; the app's
+  script writes `compute.manifest.json` and tars.
 
 ## Transitional-shape constraints
 
-During the build, `examples/storefront-auth` stays deployable on its hand-wired
-Alchemy path; the new primitive is proven on a separate minimal example first.
+- `examples/storefront-auth` stays deployable on its hand-wired path throughout.
+- The rework happens on the existing branch; intermediate commits keep typecheck and
+  tests green (the old `makerkit-hello` may be broken mid-rework, but not at any
+  PR-ready point).
 
-# Acceptance Criteria (project DoD)
+## Project-DoD
 
-- [ ] A service authored via the target pack (`compute` + `postgres`) deploys to Prisma
-      Cloud and returns a live DB query; the handler has zero `process.env`.
-- [ ] `@makerkit/core` imports **no** deployment target — verifiable (no
-      `prisma-alchemy`/`alchemy` import in core; a check enforces it).
-- [ ] Bundling lives in the example's build script; `@makerkit/core` ships no build step.
-- [ ] Each shipped slice's capability is demonstrated on Compute.
-- [ ] End state: swapping the target pack would require no change to `@makerkit/core`.
+- [ ] The example above deploys via `lower(service, prismaCloud(...))`, returns a
+      live `select 1` over HTTP, and destroys clean — verified against real Prisma Cloud.
+- [ ] App code contains no `process.env` (service module and `main.ts`); the deploy
+      script reads only `PRISMA_WORKSPACE_ID` + artifact inputs.
+- [ ] All five invariant tests pass; `@makerkit/core`'s `package.json` names no
+      `prisma-*` package and no runtime API.
+- [ ] The six package entries exist with the specced exports and dependency weights.
+- [ ] `docs/design/10-domains/core-model.md` matches what shipped (amended through
+      the agreed process if the build forced changes).
+- [ ] PR open with CI green and the review loop complete.
 
-# References
+## Open questions
 
-- [`docs/design/10-domains/core-model.md`](../../../docs/design/10-domains/core-model.md) — the complete class/data-structure design (types, entries, target contract) the build implements
-- [`docs/design/03-domain-model/core-and-targets.md`](../../../docs/design/03-domain-model/core-and-targets.md) — the thin-core/target-pack split
-- [`docs/design/03-domain-model/authoring-surface.md`](../../../docs/design/03-domain-model/authoring-surface.md) — what the developer writes
-- [`docs/design/01-principles/guiding-principles.md`](../../../docs/design/01-principles/guiding-principles.md) — thin core, fat targets; compose, don't special-case
-- [`docs/design/01-principles/architectural-principles.md`](../../../docs/design/01-principles/architectural-principles.md) — no target knowledge in core; no-globals
-- `packages/prisma-alchemy` — the providers the target pack routes to
-- `examples/` — the proving ground (a fresh minimal example)
+- **PR mechanics** — rework in place on PR #6 (retitle when done) vs close and open
+  fresh. Default: rework in place; one PR delivers the corrected layer.
+- **Pack package naming** — `packages/prisma-cloud` vs `packages/makerkit-prisma-cloud`
+  (npm name is `@makerkit/prisma-cloud` either way). Default: mirror the core
+  package's directory convention.
+- **Example bundler** — default tsdown per operator preference; the app may use
+  anything (runtime-agnostic principle makes this app-local).
 
-# Open Questions
+## References
 
-- **Alchemy in core, or behind the target?** Shared engine in core (target supplies
-  providers + mapping) vs the target owning `apply` end-to-end (core agnostic of even
-  Alchemy). See `core-and-targets.md`.
-- **Where connection types route** — target vocabulary or core structure (no
-  connections in slice 1).
-- **Serializable neutral plan** vs walking the in-memory graph (feeds the
-  inspectable-topology goal).
-- **Hex-to-hex addressing** — URL baking (today) vs runtime name resolution.
-- **Migrations** — when/how under a data contract; **`use()` scoping** for framework-hosted.
-- **Sizing** — the full capability sequence exceeds one 1–4-slice Drive project; tracked
-  as one initiative, re-boundaried as we go (see `plan.md`).
-
-## Note on the prior build
-
-Slice 1 was first built ([PR #6](https://github.com/prisma/makerkit/pull/6)) with
-`lower()` importing `prisma-alchemy` and a `@makerkit/core/build` bundler — both
-violating the requirements above. That implementation is **superseded** by this spec;
-the rebuild targets the target-agnostic shape. The prior design docs and the authoring
-model (ports, direction, Load/Hydrate, DIP) carry forward unchanged.
+- [`docs/design/10-domains/core-model.md`](../../../docs/design/10-domains/core-model.md) — the complete type-level design (the build contract)
+- [`docs/design/03-domain-model/core-and-targets.md`](../../../docs/design/03-domain-model/core-and-targets.md) — the architectural split
+- [`docs/design/03-domain-model/authoring-surface.md`](../../../docs/design/03-domain-model/authoring-surface.md) — the developer-facing narrative
+- [`docs/design/01-principles/architectural-principles.md`](../../../docs/design/01-principles/architectural-principles.md) — no-globals, runtime-agnostic, no-target-knowledge, wiring-precedes-execution
+- `packages/prisma-alchemy` — the providers the pack routes to (unchanged)
+- [PR #6](https://github.com/prisma/makerkit/pull/6) — the superseded first build (history + review findings)

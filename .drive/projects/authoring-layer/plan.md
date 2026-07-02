@@ -1,5 +1,11 @@
 # Authoring Layer — Plan
 
+> **⚠ Pending re-plan.** The spec was re-specified against the corrected design
+> (target-agnostic core + prisma-cloud pack + runtime-agnostic —
+> `docs/design/10-domains/core-model.md`). Slice 1 below was delivered on the
+> superseded architecture (PR #6) and must be rebuilt; the capability roadmap
+> (slices 2+) remains the through-line. Re-plan happens next with the operator.
+
 ## Summary
 
 The build is a sequence of **thin, capability-shaped vertical slices**. Each is
@@ -21,7 +27,7 @@ will be re-boundaried into their own projects as we reach them.
 ## Current position
 
 **Slice 1 ✅ complete.** `@makerkit/core`
-(defineService/postgres/Load/lower/host-shim/build) + `examples/makerkit-hello`;
+(service/postgres/Load/lower/host-shim/build) + `examples/makerkit-hello`;
 commits `ea5eee3`, `9047410`, `b470fd0`; 29 tests green; service module has zero
 `process.env`. Opus review accepted (5 fixes applied). **1c proof:** deployed to real
 Compute → `200 [{"ok":1}]` (live `select 1`) → destroyed clean (404 after, no dangling
@@ -37,12 +43,12 @@ resources). **PR open off `main`. Slice 2 is next.**
 
 ### [x] Slice 1 — Service + DB dependency (no contract)
 
-**Capability:** `defineService({ db: postgres() }, ({ db }) => …)` — MakerKit
+**Capability:** `service({ db: postgres() }, ({ db }) => …)` — MakerKit
 provisions Prisma Postgres + Compute and injects a typed `db` handle; the handler has
 zero `process.env`.
 **Proof on Compute:** the service deploys, its endpoint returns a live DB query,
 redeploy + destroy are clean.
-**Scope:** scaffold `@makerkit/core` (`defineService`, the `postgres()` descriptor,
+**Scope:** scaffold `@makerkit/core` (`service`, the `postgres()` descriptor,
 **Load**, the **lower** step to `prisma-alchemy`, the **host shim** that hydrates
 `DATABASE_URL` → `db`). Lean on Compute's auto-injected `DATABASE_URL`. No Hex, no
 ownership model, no Output/serving model (handler owns `Bun.serve`).

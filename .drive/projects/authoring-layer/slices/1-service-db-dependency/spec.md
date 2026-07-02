@@ -7,7 +7,7 @@ provisions Prisma Postgres + Compute and injects a typed `db` handle — the han
 never reads `process.env`:
 
 ```ts
-export default defineService(
+export default service(
   { db: postgres() },
   ({ db }) => Bun.serve({ port: PORT, fetch: async () =>
     Response.json(await db`select 1 as ok`) })
@@ -16,7 +16,7 @@ export default defineService(
 
 ## Chosen design
 
-`@makerkit/core` provides `defineService`, the `postgres()` descriptor, **Load**
+`@makerkit/core` provides `service`, the `postgres()` descriptor, **Load**
 (build + validate the in-memory graph), the **lower** step (graph → existing
 `packages/prisma-alchemy` resources), and the **host shim** (hydrate `DATABASE_URL`
 → a `Bun.SQL` client → inject as `db`). We lean on what the MVP proved: Compute
@@ -34,7 +34,7 @@ Slice 1 changes *who authors the stack* (the primitive, not hand-written
 
 ## Scope
 
-**In:** `@makerkit/core` (`defineService`, `postgres()`, Load, lower→prisma-alchemy,
+**In:** `@makerkit/core` (`service`, `postgres()`, Load, lower→prisma-alchemy,
 host shim); one ported single-service example; deploy + verify.
 **Out (deliberately):** `hex`, `provision`, ownership model, a second service,
 typed interfaces / connection types, the Output/serving model, streams, data
@@ -42,7 +42,7 @@ contracts, non-default-DB config.
 
 ## Plan (inline — dispatch breakdown)
 
-- **1a — pure core.** `defineService`, `postgres()` descriptor, Load (build + validate
+- **1a — pure core.** `service`, `postgres()` descriptor, Load (build + validate
   graph), unit tests. No lowering, no deploy. Control-plane vs execution-plane behind
   separate import surfaces from the start.
 - **1b — lower + shim + port.** Map the loaded graph → `prisma-alchemy`

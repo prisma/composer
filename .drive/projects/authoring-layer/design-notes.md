@@ -1,44 +1,40 @@
 # Authoring Layer — Design Notes
 
-The **design is already settled and recorded** in the canonical docs — this file does
-not restate it, it points to it and captures only build-specific shape decisions.
+The design is settled and recorded in the canonical docs — this file does not restate
+it, it points to it and records the build-decision history.
 
 ## Canonical design (source of truth)
 
-- [`docs/design/03-domain-model/authoring-surface.md`](../../../docs/design/03-domain-model/authoring-surface.md)
-  — one port mechanic; direction inferred from position; neutral connection types +
-  dependency inversion; black-box Service vs transparent Hex; `Input→args / Output→return`
-  + `provision()`; the `define` call as the manifest; host-shim entrypoint with
-  frameworks as Output adapters; the **Load → Hydrate** lifecycle.
-- [`glossary.md`](../../../docs/design/03-domain-model/glossary.md) — authoring terms + the Alchemy/Effect compile target.
-- [`layering.md`](../../../docs/design/03-domain-model/layering.md) — authoring → provisioning → hosting.
-- [`architectural-principles.md`](../../../docs/design/01-principles/architectural-principles.md) — no-globals, wiring-precedes-execution, code-over-configuration.
+- [`docs/design/10-domains/core-model.md`](../../../docs/design/10-domains/core-model.md)
+  — **the build contract**: all types, the six package entries with dependency
+  weights, the target-pack contract, the worked prisma-cloud pack, the five enforced
+  invariants, extension points.
+- [`core-and-targets.md`](../../../docs/design/03-domain-model/core-and-targets.md) —
+  thin core / target-pack split; lowering is routing; runtime is a dumb loop.
+- [`authoring-surface.md`](../../../docs/design/03-domain-model/authoring-surface.md)
+  — the developer-facing narrative (ports, direction-from-position, Load/Hydrate).
+- [`architectural-principles.md`](../../../docs/design/01-principles/architectural-principles.md)
+  — no-globals, **runtime-agnostic**, no-target-knowledge, wiring-precedes-execution.
 
-## Build-specific shape (decisions the design doc leaves to implementation)
+## Decision history (chronological)
 
-- **`@makerkit/core` package.** New workspace package holding the authoring functions
-  (`defineService`, `hex`, `provision`, connection-type constructors) and the runtime
-  host shim. Control-plane (Load/lower) and execution-plane (shim/hydrate) behind
-  **separate import surfaces** (per the tree-shaking principle) — exact split TBD in
-  slice 1.
-- **Lowering target.** The Load step emits onto the existing `packages/prisma-alchemy`
-  providers; it does not reimplement provisioning. Slice 1 maps one service →
-  Project + ComputeService + Deployment.
-- **Descriptor duality.** `postgres()` / connection types are one value read twice —
-  by the control plane at deploy (provision + wire config) and by the shim at runtime
-  (hydrate a typed client). Env-var names by convention (services are isolated).
-  **Confirmed in slice 1a:** descriptors are **pure tagged data** (`{ kind: "postgres" }`);
-  the control plane exposes a factory (`postgres()`) and the execution plane a
-  `kind`-keyed hydrator (`hydratePostgres(descriptor, env)`) — *not* a `hydrate()`
-  method on the object, which would pull `Bun.SQL`/runtime code into the control-plane
-  import graph and break the tree-shaking split. Cost: each new descriptor kind adds a
-  control-plane factory + a runtime hydrator branch — the same shape as `prisma-alchemy`
-  (data resources + separately-registered providers). Generalizes to a
-  `kind → hydrator` registry if/when descriptors need to be extensible.
-- **Start on URL baking.** Hex-to-hex addressing uses deploy-time URL baking (as the
-  MVP does) until a slice proves it painful enough to justify runtime name resolution.
+1. **Descriptors are pure tagged data; hydration is keyed separately** (first build).
+   Survives, refined: nodes carry a `type` routing key; the pack's runtime resolves it.
+2. **MakerKit does not bundle** (operator correction). Core's `/build` entry was a
+   principle violation; the app owns bundling and the artifact envelope.
+3. **Core is target-agnostic; lowering is routing** (operator correction). Core's
+   `lower()` importing prisma-alchemy was a principle violation; the vocabulary
+   (`compute`, `postgres`) moved to a target pack that carries routing metadata.
+   KISS shape set by the operator: the pack provides `postgres()` and `compute()`.
+4. **Alchemy stays in core** (`@makerkit/core/lower` imports it): it is the
+   target-neutral provisioning engine per layering.md claim 3, not a deployment target.
+5. **Runtime-agnostic** (operator principle): no Bun/Node coupling in any shipped
+   entry, even type-only. The DB client factory is app-supplied
+   (`runtime({ clients })`); `postgres<C>()` lets the app declare its client type.
 
-## Open questions
+## Superseded
 
-Tracked in `spec.md` (§ Open Questions) and surfaced per-slice in `plan.md`:
-addressing, migrations, `use()` scoping, cross-repo contracts, package/import split.
+The first slice-1 build (PR #6 code: core-owned `lower()` → prisma-alchemy, `/build`
+bundler, pack-fixed `Bun.SQL` client) — superseded by decisions 2, 3, 5. Its
+graph/Load mechanics, no-globals shim boundary, and test discipline (import-split
+guard, side-effect-free-import test) carry forward into the rebuild.
