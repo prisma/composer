@@ -20,6 +20,8 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [compute-services create returns a placeholder-region serviceEndpointDomain that 404s until a version is promoted](#compute-services-create-returns-a-placeholder-region-serviceendpointdomain-that-404s-until-a-version-is-promoted)
 - [app build --build-type nextjs yields a boot-crashing standalone for pnpm projects](#app-build---build-type-nextjs-yields-a-boot-crashing-standalone-for-pnpm-projects)
 - [Idle direct-connection close crashes a persistent Bun.SQL client into a 502 loop on scale-to-zero Compute](#idle-direct-connection-close-crashes-a-persistent-bunsql-client-into-a-502-loop-on-scale-to-zero-compute)
+- [Creating a database with isDefault:true fails — a project already auto-provisions a default database](#creating-a-database-with-isdefaulttrue-fails--a-project-already-auto-provisions-a-default-database)
+- [Next.js on Compute ignores runtime env vars unless the route is force-dynamic](#nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force-dynamic)
 
 ---
 
@@ -118,3 +120,57 @@ process.on("unhandledRejection", (e) => console.error(e));
 - Upstream: [FT-5219](https://linear.app/prisma-company/issue/FT-5219/idle-direct-connection-close-crashes-a-persistent-bunsql-client-into-a)
 - Workaround source: [`examples/storefront-auth/hexes/auth/src/index.ts`](examples/storefront-auth/hexes/auth/src/index.ts)
 - Related: PRO-200, PRO-201 (Compute Gotchas); [`dogfood-report.md`](dogfood-report.md)
+
+---
+
+## Creating a database with isDefault:true fails — a project already auto-provisions a default database
+
+**Filed upstream:** [FT-5220](https://linear.app/prisma-company/issue/FT-5220/creating-a-database-with-isdefaulttrue-fails-a-project-already-auto) — _"Creating a database with isDefault:true fails — a project already auto-provisions a default database"_
+**Product:** Prisma Postgres
+**Version:** `@prisma/management-api-sdk@1.47.0`
+**First hit:** `examples/smoke` — provisioning a Postgres via the Alchemy provider
+**Cost:** a failed deploy + a confused look at the error
+
+**Symptom.** `POST /v1/projects/{id}/databases` with `isDefault: true` under a fresh project → `PrismaApiError: Default database already exists`.
+
+**Cause.** Creating a project auto-provisions a default database; there can be only one default, so "create my DB as the default" 409s.
+
+**Workaround.** Use the project's existing default database (auto-injected as `DATABASE_URL` on Compute), or create a non-default named database (`isDefault: false`).
+
+**Reproduction.**
+
+1. Create a project.
+2. Create a database with `isDefault: true` → `Default database already exists`.
+
+**References.**
+
+- Upstream: [FT-5220](https://linear.app/prisma-company/issue/FT-5220/creating-a-database-with-isdefaulttrue-fails-a-project-already-auto)
+- Related: [`examples/smoke/alchemy.run.ts`](examples/smoke/alchemy.run.ts) (creates a non-default DB); [`dogfood-report.md`](dogfood-report.md)
+
+---
+
+## Next.js on Compute ignores runtime env vars unless the route is force-dynamic
+
+**Filed upstream:** [PRO-202](https://linear.app/prisma-company/issue/PRO-202/nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force) — _"Next.js on Compute ignores runtime env vars unless the route is force-dynamic"_
+**Product:** Prisma Compute (Next.js interaction)
+**Version:** Next 15.5.19 on Prisma Compute
+**First hit:** `examples/storefront-auth/hexes/storefront` — wiring `AUTH_URL` into the Storefront
+**Cost:** ~30 min ("Storefront renders AUTH_URL not set" despite the env being set)
+
+**Symptom.** A Next.js app on Compute reads `process.env` at build time and serves that value forever; Compute's runtime-injected env (`DATABASE_URL`, `AUTH_URL`, …) is never read. Headers: `cache-control: s-maxage=31536000`, `x-nextjs-prerender: 1`.
+
+**Cause.** Next 15 prerenders routes as static by default and evaluates server components (and their `process.env` reads) at build time. A `fetch(..., { cache: "no-store" })` alone does **not** force the route dynamic. Compute injects env at runtime, so a static page bakes in the empty build-time env.
+
+**Workaround.** `export const dynamic = "force-dynamic"` on any route that reads runtime env / calls another service.
+
+**Reproduction.**
+
+1. Next server component reading `process.env.X` (or fetching a URL from env), `output: "standalone"`.
+2. Build with X unset; deploy to Compute; set X as a Compute env var.
+3. Request the page → build-time (empty) value, `x-nextjs-prerender: 1`. Add `force-dynamic`, rebuild → runtime value read.
+
+**References.**
+
+- Upstream: [PRO-202](https://linear.app/prisma-company/issue/PRO-202/nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force)
+- Workaround source: [`examples/storefront-auth/hexes/storefront/app/page.tsx`](examples/storefront-auth/hexes/storefront/app/page.tsx)
+- Related: [`dogfood-report.md`](dogfood-report.md)

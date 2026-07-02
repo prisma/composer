@@ -80,7 +80,7 @@ unfiled — flagged inline.
 
 - **A project auto-provisions a default database.** Creating a `Database` with
   `isDefault: true` then fails with `"Default database already exists"`. Not obvious the
-  project already has one. **Minor.**
+  project already has one. **Minor — filed [FT-5220].**
 
 - **`DATABASE_URL` (+ `DATABASE_URL_POOLED`) is auto-injected from the project's default
   DB.** Compute services get these env vars automatically from the project's default
@@ -182,7 +182,7 @@ These are upstream, but they surface specifically because of how Compute/PPg are
 - **Next 15: `cache: "no-store"` does not force the route dynamic.** The page was still
   prerendered as static at build time (when the runtime env was unset) and served forever
   — the runtime-injected `AUTH_URL` was never read. Need `export const dynamic =
-  "force-dynamic"`. This directly defeats runtime env wiring on Compute. **Major.**
+  "force-dynamic"`. This directly defeats runtime env wiring on Compute. **Major — filed [PRO-202].**
 
 - **Next standalone omits static assets + `public/`.** Must copy `.next/static` and
   `public` into the standalone tree yourself (`app build` does this; `next build` alone
@@ -214,7 +214,11 @@ These are upstream, but they surface specifically because of how Compute/PPg are
 - [PRO-200] — `compute-services` create returns a placeholder-region `serviceEndpointDomain` that 404s until a version is promoted.
 - [PRO-201] — `app build --build-type nextjs` yields a boot-crashing standalone for pnpm projects.
 - [FT-5219] — idle direct-connection close crashes a persistent Bun.SQL client into a 502 loop on scale-to-zero Compute (PPg gotchas).
+- [PRO-202] — Next.js on Compute ignores runtime env vars unless the route is force-dynamic (Compute gotchas).
+- [FT-5220] — creating a database with `isDefault: true` fails because a project auto-provisions a default database (PPg gotchas).
 
 [PRO-200]: https://linear.app/prisma-company/issue/PRO-200/compute-services-create-returns-a-placeholder-region
 [PRO-201]: https://linear.app/prisma-company/issue/PRO-201/app-build-build-type-nextjs-yields-a-boot-crashing-standalone-for-pnpm
 [FT-5219]: https://linear.app/prisma-company/issue/FT-5219/idle-direct-connection-close-crashes-a-persistent-bunsql-client-into-a
+[PRO-202]: https://linear.app/prisma-company/issue/PRO-202/nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force
+[FT-5220]: https://linear.app/prisma-company/issue/FT-5220/creating-a-database-with-isdefaulttrue-fails-a-project-already-auto
