@@ -184,6 +184,8 @@ interface LowerOptions {
   readonly name: string                                  // stack + root node id
   readonly artifact: { readonly path: string; readonly sha256: string }  // app-built bundle
   readonly stage?: string
+  readonly state?: AlchemyStateLayer                     // default: localState(); the
+                                                         // hosted-state store slots in here
 }
 
 // Load → route each node through target.lower[node.type] → an Alchemy Stack
@@ -201,7 +203,12 @@ function lowering(root: ServiceNode, target: Target, opts: LowerOptions):
 ```
 
 `lower()` is nothing but the whole-stack wrapper:
-`Alchemy.Stack(opts.name, { providers: target.providers() }, lowering(root, target, opts))`.
+`Alchemy.Stack(opts.name, { providers: target.providers(), state: opts.state ?? localState() }, lowering(root, target, opts))`
+— Alchemy requires a state layer; local state is the default and a hosted store is
+config, not a code change. Two type-level notes the wrapper carries (both commented
+at the single site): a `LowerError` is fatal at deploy (`Effect.orDie`), and the
+effect's requirements channel is narrowed to what `Alchemy.Stack` accepts —
+`lowering()` itself stays `unknown`-requirements for composability.
 In the mixed case the hand-written stack supplies providers itself (including the
 target's, via `target.providers()`), yields a `lowering(…)` per MakerKit-authored
 service, and wires its own resources around the returned `outputs`.
@@ -270,7 +277,10 @@ import * as Effect from "effect/Effect"
 import * as Prisma from "@makerkit/prisma-alchemy"
 import type { Target } from "@makerkit/core/lower"
 
-export interface PrismaCloudOptions { workspaceId: string; region?: string }
+export interface PrismaCloudOptions {
+  workspaceId: string
+  region?: Prisma.ComputeRegion   // the pack imports prisma-alchemy freely — use its union
+}
 
 export const prismaCloud = (o: PrismaCloudOptions): Target => ({
   name: "prisma-cloud",
