@@ -12,11 +12,9 @@ roadmap (typed interfaces, hexes, contracts, …) follows as later projects.
 
 ## Current position
 
-Design docs settled and approved (core-and-targets, core-model deep dive,
-runtime-agnostic principle; `lowering()` composable form settled at re-plan).
-The first build (PR #6 code) is superseded — its architecture violated the
-target-agnostic and no-bundling principles; its graph/Load mechanics and test
-discipline carry into the rebuild. **Slice R1 is in progress.**
+**R1 complete** (see below) — the target-agnostic core + pack are real and proven
+on real Compute; PR #6 carries them. **R2 in progress** (unattended): storefront-auth
+migration per its slice spec; decisions D2–D4 in `wip/unattended-decisions.md`.
 
 ## Legend
 
@@ -26,7 +24,13 @@ discipline carry into the rebuild. **Slice R1 is in progress.**
 
 ## Build slices (this project)
 
-### [~] Slice R1 — core + pack rebuild, proven on the minimal example
+### [x] Slice R1 — core + pack rebuild, proven on the minimal example
+
+> **Done.** Commits `eaf7251` + `1bcd818`; 42 tests incl. the five invariant guards;
+> two Opus review rounds, all findings fixed with negative-probe verification.
+> Proof: deployed via `lower(service, prismaCloud(...))` → live `select 1`
+> (`200 [{"ok":1}]`, first attempt) → **idempotent redeploy (`Plan: 3 to noop`)** →
+> destroy clean (404 after). PR #6 retitled.
 
 **Outcome:** `@makerkit/core` and `@makerkit/prisma-cloud` exist per
 `core-model.md`; `examples/makerkit-hello` is authored via the pack, bundles
