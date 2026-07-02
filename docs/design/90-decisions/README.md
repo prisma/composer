@@ -16,5 +16,7 @@ Keep ADRs short:
 
 ## Index
 
-_No active ADRs yet — earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settled. The next ADR will be ADR-0003._
+- [ADR-0003](ADR-0003-hex-hexicon-naming-and-distribution.md) — Distribute apps as composable Hexes through a first-party registry, Hexicon; name the unit **Hex**, the registry **Hexicon**, the tools **Prisma Compose** / **Prisma Model**, and keep **app** as the hero noun.
+
+_Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settled._
 
