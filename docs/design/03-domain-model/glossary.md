@@ -204,19 +204,34 @@ Service.
 
 ## Authoring surface — the next layer
 
-How a developer actually writes the [Core nouns](#core-nouns): the API that sits
-directly above the model and lowers onto the [compile
-target](#provisioning-plane--the-compile-target-alchemy--effect). These terms are
-described in full in [authoring-surface.md](authoring-surface.md).
+How a developer actually writes the [Core nouns](#core-nouns). The concrete
+vocabulary — `compute` (a Service), `postgres` (a Resource), connection types like
+`http` — comes from a **target pack**; `@makerkit/core` is a target-agnostic router
+beneath it. See [`core-and-targets.md`](core-and-targets.md) for that split and
+[`authoring-surface.md`](authoring-surface.md) for the full narrative.
+
+### Target pack
+
+A pack (e.g. `@makerkit/prisma-cloud`) that supplies the concrete vocabulary for one
+deployment platform as **data**: `compute` (a Service), `postgres` (a Resource),
+`http` (a Connection). Each is an ergonomic constructor returning a plain object whose
+metadata routes it to an Alchemy Stack/Provider (and, for a Resource, a runtime
+hydrator). Core imports no target; swap the pack and core is untouched.
+
+### Lowering — routing
+
+Core's whole job at deploy: **Load** the graph, then for each node instantiate the
+Alchemy object its metadata references (a Service → its `host` provider, a Resource →
+its `provider`). No per-target branch, no provisioning logic in core — it follows
+references the target handed it. See [`core-and-targets.md`](core-and-targets.md).
 
 ### service
 
-The library function that defines a **Service**. Takes a map of dependency ports
-and a wiring body: `service({ db: Postgres(contract) }, ({ db }) => ({ api:
-… }))`. Its default export is both an inspectable descriptor (the control plane
-reads its ports) and a runnable handle (the runtime invokes it) — importing it runs
-nothing. The Service body is opaque to MakerKit (a **black box**); MakerKit sees
-only its ports.
+The abstract **Service** kind. The concrete constructor is target-provided —
+`compute(deps, handler)` on Prisma Cloud — and returns a plain data object (the
+manifest): inspectable (the control plane reads its ports) and runnable (the runtime
+invokes it), but importing runs nothing. The Service body is opaque to MakerKit (a
+**black box**); MakerKit sees only its ports.
 
 ### hex
 
@@ -244,20 +259,21 @@ conform (dependency inversion).
 ### provision
 
 The Hex-scoped operator that turns a dependency descriptor into an **owned
-Resource** (`provision(Postgres(contract))`) or instantiates and wires an owned node
-(`provision(service, { db })`). Ownership and provisioning are a Hex concern; a
+Resource** (`provision(postgres())`) or instantiates and wires an owned node
+(`provision(svc, { db })`). Ownership and provisioning are a Hex concern; a
 Service only *requires*. Forwarding is just passing a Hex's Inputs down and
 returning owned nodes' Outputs up.
 
-### Host shim
+### Runtime loop (host)
 
-The MakerKit-generated boot [entrypoint](#entrypoint) the platform runs. It hydrates
-the declared Inputs into typed clients and calls the user handler. A framework
-server (Next.js) is wired in as the implementation of an HTTP Output, not a special
-entrypoint kind; framework code reaches its dependencies through a DI accessor
-(`use(…)`), never the environment. Config still travels into the VM as environment
-variables, but they **terminate at the shim** — user code is dependency-injection
-only.
+The boot [entrypoint](#entrypoint) the platform runs, over the code the app bundled
+(MakerKit does not bundle). It walks the service's declared Inputs and, for each,
+calls the **hydrator the target attached** — turning injected config into a typed
+client — then hands the results to the handler. Core never knows `DATABASE_URL` →
+`Bun.SQL`; the target's `postgres` hydrator does. A framework server (Next.js) is
+wired in as an HTTP Output, its deps reached via a DI accessor (`use(…)`), never the
+environment. Env vars carry config into the VM but **terminate at hydration** — user
+code is dependency-injection only.
 
 ### Load / Hydrate
 
