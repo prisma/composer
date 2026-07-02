@@ -1,10 +1,40 @@
+// App-owned build: bundle the runtime entry, wrap it in Compute's artifact
+// envelope (compute.manifest.json + tar.gz). MakerKit ships no build step.
+import { $ } from "bun";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildServiceArtifact } from "@makerkit/core/build";
+import { build } from "tsdown";
 
-/** Bundles the shim-wrapped service into the deployable artifact. */
-const service = fileURLToPath(new URL("../src/index.ts", import.meta.url));
-const outFile = fileURLToPath(new URL("../dist/hello.tar.gz", import.meta.url));
+const rootDir = fileURLToPath(new URL("..", import.meta.url));
+const bundleDir = path.join(rootDir, "dist", "bundle");
+const outFile = path.join(rootDir, "dist", "hello.tar.gz");
 
-const result = await buildServiceArtifact({ service, outFile });
-console.log(`Built ${result.outFile}`);
-console.log(`sha256: ${result.sha256}`);
+await build({
+  entry: [path.join(rootDir, "src", "main.ts")],
+  outDir: bundleDir,
+  format: "esm",
+  platform: "node",
+  // "bun" is a runtime built-in on Compute — unresolvable at bundle time.
+  external: ["bun"],
+  // Workspace packages must be inlined: node_modules is not shipped.
+  noExternal: [/^@makerkit\//],
+  dts: false,
+  sourcemap: false,
+  clean: true,
+});
+
+const entrypoint = fs.readdirSync(bundleDir).find((f) => /^main\.m?js$/.test(f));
+if (!entrypoint) throw new Error(`tsdown produced no main.js in ${bundleDir}`);
+
+fs.writeFileSync(
+  path.join(bundleDir, "compute.manifest.json"),
+  JSON.stringify({ manifestVersion: "1", entrypoint }, null, 2),
+);
+
+await $`tar -czf ${outFile} -C ${bundleDir} .`;
+
+const hasher = new Bun.CryptoHasher("sha256");
+hasher.update(await Bun.file(outFile).arrayBuffer());
+console.log(`Built ${outFile}`);
+console.log(`sha256: ${hasher.digest("hex")}`);

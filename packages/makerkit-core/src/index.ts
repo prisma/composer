@@ -1,20 +1,20 @@
 /**
- * The control-plane surface: define services, declare dependencies, and
- * Load the graph they describe. Importing this module never hydrates a
- * dependency or runs a handler — see `@makerkit/core/runtime` for that.
+ * The authoring entry: node factories, Load, and the model types. Imports
+ * nothing — bundling a module that uses this entry ships only this code.
  */
-export { service, isServiceHandle } from "./service.ts";
+export { resource, service, isNode } from "./node.ts";
 export type {
-  ServiceHandle,
-  ServiceHandler,
+  JsonValue,
+  JsonObject,
+  NodeBase,
+  ResourceNode,
+  ServiceNode,
+  Deps,
+  Hydrated,
   HydratedDeps,
   RuntimeContext,
-} from "./service.ts";
+  ServiceHandler,
+} from "./node.ts";
 
-export { postgres } from "./postgres.ts";
-
-export { Load, LoadError } from "./load.ts";
-export type { ServiceGraph, InputNode } from "./load.ts";
-
-export { isDescriptor } from "./descriptors.ts";
-export type { Descriptor, Dependencies, PostgresDescriptor } from "./descriptors.ts";
+export { Load, LoadError } from "./graph.ts";
+export type { NodeId, GraphNode, Edge, Graph } from "./graph.ts";

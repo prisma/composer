@@ -1,11 +1,11 @@
 {
-  "name": "@makerkit/core",
+  "name": "@makerkit/prisma-cloud",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./lower": "./src/lower/index.ts",
+    "./target": "./src/target/index.ts",
     "./runtime": "./src/runtime/index.ts"
   },
   "scripts": {
@@ -13,6 +13,8 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@makerkit/core": "workspace:*",
+    "@makerkit/prisma-alchemy": "workspace:*",
     "alchemy": "2.0.0-beta.59",
     "effect": "4.0.0-beta.92"
   },

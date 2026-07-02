@@ -16,5 +16,4 @@ packages/e2e-tests/.tmp-output
 /wip
 .pnpm-store
 .alchemy/
-.makerkit-host-entry.*.ts
 .drive/projects/*/reviews/
