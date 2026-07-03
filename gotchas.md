@@ -174,3 +174,31 @@ process.on("unhandledRejection", (e) => console.error(e));
 - Upstream: [PRO-202](https://linear.app/prisma-company/issue/PRO-202/nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force)
 - Workaround source: [`examples/storefront-auth/hexes/storefront/app/page.tsx`](examples/storefront-auth/hexes/storefront/app/page.tsx)
 - Related: [`dogfood-report.md`](dogfood-report.md)
+
+---
+
+## Fresh deploys race env-var creation against the first version start
+
+**Filed upstream:** [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version) — _"Compute: fresh deploys race env-var creation against first version start (no ordering primitive, no restart on config change)"_
+**Product:** Prisma Compute (deploy orchestration / environment variables)
+**Version:** Management API v1, `alchemy@2.0.0-beta.59` client
+**First hit:** `examples/storefront-auth` R2 migration — fresh deploy of the two-service system
+**Cost:** ~20 min (plus a review round establishing the old stack never had the ordering either)
+
+**Symptom.** Deploying producer service + consumer service + an env var derived from the producer's URL in one apply: on a fresh deploy the consumer's first VM boots before the env var lands and serves "AUTH_URL not set". Minutes later it silently heals — a scale-to-zero recycle boots a replacement VM that reads the variable.
+
+**Cause.** Two orchestration gaps (env-at-boot-only itself is normal): (1) no way to order "config exists" before a version's first start within a deploy — the env-var POST and the version start are independent and race; (2) changing a production env var does not restart/roll the running version, so a write that misses the boot stays invisible until an unrelated recycle or redeploy.
+
+**Workaround.** After a fresh multi-service deploy, verify consumers; if a config-derived read is missing, wait out a scale-to-zero recycle or ship a redeploy (new artifact hash → fresh version boots with the variable). Structurally, an ordering edge into the version start is exactly what MakerKit's Connection primitive will express.
+
+**Reproduction.**
+
+1. One stack: service A; env var on service B's project whose value is A's deployed URL; service B.
+2. Fresh deploy (no prior state). Curl B immediately → config-missing behavior.
+3. Wait for scale-to-zero recycle (or redeploy B) → healed, no code change.
+
+**References.**
+
+- Upstream: [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version)
+- Race + edge analysis: [`examples/storefront-auth/alchemy.run.ts`](examples/storefront-auth/alchemy.run.ts) (the corrected ordering comment)
+- Related: [`dogfood-report.md`](dogfood-report.md)
