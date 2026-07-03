@@ -12,9 +12,11 @@ roadmap (typed interfaces, hexes, contracts, …) follows as later projects.
 
 ## Current position
 
-**R1 complete** (see below) — the target-agnostic core + pack are real and proven
-on real Compute; PR #6 carries them. **R2 in progress** (unattended): storefront-auth
-migration per its slice spec; decisions D2–D4 in `wip/unattended-decisions.md`.
+**Both build slices complete** (unattended run; decisions D1–D12 in
+`wip/unattended-decisions.md`). R1 → [PR #6](https://github.com/prisma/makerkit/pull/6);
+R2 → [PR #7](https://github.com/prisma/makerkit/pull/7) (stacked). The storefront-auth
+demo is live on the authoring layer. Next: merge #6, retarget + merge #7, then the
+Connection-primitive project (first capability-roadmap entry).
 
 ## Legend
 
@@ -46,7 +48,16 @@ client factory. Reworks PR #6 in place; retitle at DoD.
 **Dispatches:** (1) core+pack+example rework with gates green; (2) Opus review +
 fix round; (3) deploy/verify/destroy + PR retitle.
 
-### [ ] Slice R2 — storefront-auth partial migration (own PR)
+### [x] Slice R2 — storefront-auth partial migration (own PR)
+
+> **Done.** [PR #7](https://github.com/prisma/makerkit/pull/7) (stacked on #6;
+> retarget to `main` after #6 merges). Commits `0a23f2c`/`908ce89`/`aec91cc`/`46af1f6`
+> + doc amendment `5753e1a`. Old deployment destroyed 7/7; migrated system deployed
+> fresh and LEFT LIVE; round trip verified (storefront renders `Auth /verify says:
+> 200 {"ok":true}`); redeploy `Plan: 7 to noop`. Pack gained `projectId` output +
+> per-key-optional client factories (D7/D8). Race observation recorded: Compute
+> applies production env vars at VM boot, not to running versions — candidate
+> gotcha; the ordering edge is the Connection primitive's job.
 
 **Outcome:** both storefront-auth services authored via the pack — auth as a
 plain handler, storefront as a framework-boot handler over the Next standalone
