@@ -34,9 +34,12 @@ const paramPath = (entry: ConfigManifestEntry): string =>
 
 /**
  * Load → configOf → adapter.get(requests) → per-param: override ?? raw ??
- * default → validate + coerce against the declared type ("" is UNRESOLVED,
- * not a value; a failed number parse with no default is an error) — ALL
- * problems reported in one ConfigError, before any hydrate — then per input:
+ * default → validate + coerce against the declared type. Validation rules:
+ * "" is UNRESOLVED, not a value — it falls to the default or, if required,
+ * joins the missing set; a NON-EMPTY value that fails its declared type is
+ * an ERROR regardless of any default — a default substitutes for absence,
+ * never for garbage; unknown override keys are errors. ALL problems reported
+ * in one ConfigError, before any hydrate — then per input:
  * await connection.hydrate(typedValues), and finally
  * root.run(deps, serviceParamValues).
  */
@@ -102,15 +105,22 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
       const parsed = typeof value === "number" ? value : Number(value);
       if (Number.isFinite(parsed)) {
         resolved.set(path, parsed);
-      } else if (entry.default !== undefined) {
-        // A failed parse with no default is an error; with one, the
-        // declaration's default stands in.
-        resolved.set(path, entry.default);
       } else {
+        // A non-empty value that fails its declared type is an error
+        // regardless of any default — a default substitutes for absence,
+        // never for garbage.
         problems.push(`invalid number for param "${path}": got ${JSON.stringify(value)}`);
       }
     } else {
       resolved.set(path, String(value));
+    }
+  }
+
+  // A typoed override must not silently fall through to the platform value.
+  const knownPaths = new Set(manifest.map(paramPath));
+  for (const key of Object.keys(opts?.config ?? {})) {
+    if (!knownPaths.has(key)) {
+      problems.push(`unknown override key "${key}"`);
     }
   }
 

@@ -184,6 +184,39 @@ describe("runHost", () => {
     expect(runHost(root)).rejects.toThrow(/port/);
   });
 
+  test("R5-F1: garbage never defaults — non-numeric WITH a default is still a ConfigError", async () => {
+    const root = service({
+      type: "fake/app",
+      inputs: {},
+      params: portParams, // default 3000
+      adapter: memoryAdapter({ port: "80O0" }),
+      handler: () => null,
+    });
+
+    expect(runHost(root)).rejects.toThrow(ConfigError);
+    expect(runHost(root)).rejects.toThrow(/port/);
+  });
+
+  test("R5: an unknown override key is an error in the same ConfigError — no silent fall-through", async () => {
+    let handlerCalls = 0;
+    const root = service({
+      type: "fake/app",
+      inputs: { db: dbNode() },
+      params: {},
+      adapter: memoryAdapter({ "db.url": "postgres://from-adapter" }),
+      handler: () => {
+        handlerCalls += 1;
+        return null;
+      },
+    });
+
+    // Typoed key: "db.ur1" instead of "db.url".
+    expect(runHost(root, { config: { "db.ur1": "postgres://typo" } })).rejects.toThrow(ConfigError);
+    expect(runHost(root, { config: { "db.ur1": "postgres://typo" } })).rejects.toThrow(/db\.ur1/);
+    await runHost(root, { config: { "db.ur1": "postgres://typo" } }).catch(() => {});
+    expect(handlerCalls).toBe(0);
+  });
+
   test('"" is unresolved for a required string param too — loud boot error', async () => {
     const root = service({
       type: "fake/app",
