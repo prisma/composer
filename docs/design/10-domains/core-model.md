@@ -79,10 +79,6 @@ function slots. A node's `type` is its routing key at deploy; core never
 interprets it beyond lookup.
 
 ```ts
-// JSON-safe config values
-type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue }
-type JsonObject = { [k: string]: JsonValue }
-
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
 const NODE: unique symbol = Symbol.for("makerkit:node") as never
@@ -91,7 +87,6 @@ interface NodeBase {
   readonly [NODE]: true
   readonly kind: "service" | "resource"        // "hex" later — see § Extension points
   readonly type: string                        // routing key, e.g. "prisma-cloud/postgres"
-  readonly config?: JsonObject                 // constructor opts, opaque to core
 }
 
 // ——— Configuration model (core-owned pipeline; see § Runtime) ———
@@ -161,13 +156,13 @@ interface ResourceNode<C = unknown> extends NodeBase {
 
 // A Service: inputs + its own declared params + the platform's ConfigAdapter +
 // the opaque handler. This IS the user's default export — inspectable
-// (inputs/type/params/config) and runnable (run), inert until invoked. There is
-// no separate handle type: the node is the handle.
+// (inputs/type/params) and runnable (run), inert until invoked. There is no
+// separate handle type: the node is the handle.
 interface ServiceNode<D extends Deps = Deps, P extends Params = Params> extends NodeBase {
   readonly kind: "service"
   readonly inputs: D
   readonly params: P                           // service-level config (e.g. port) — no special "context" concept
-  readonly adapter: ConfigAdapter
+  readonly config: ConfigAdapter               // how this service GETS its config on this platform
   run(deps: HydratedDeps<D>, ctx: Values<P>): unknown
 }
 
@@ -195,16 +190,14 @@ validate, and freeze. This is the whole "framework provides / pack wraps" contra
 function resource<P extends Params, C>(def: {
   type: string
   connection: Connection<P, C>
-  config?: JsonObject
 }): ResourceNode<C>
 
 function service<D extends Deps, P extends Params>(def: {
   type: string
   inputs: D
   params: P
-  adapter: ConfigAdapter
+  config: ConfigAdapter
   handler: ServiceHandler<D, P>
-  config?: JsonObject
 }): ServiceNode<D, P>
 ```
 
@@ -357,8 +350,8 @@ function configOf(root: ServiceNode): readonly ConfigManifestEntry[]   // in @ma
 // (Load-before-Hydrate applied to config) → per input:
 // await connection.hydrate(typedValues) → root.run(deps, serviceParamValues).
 function runHost(root: ServiceNode, opts?: {
-  adapter?: ConfigAdapter                      // swap the platform: in-memory tests, inspection harnesses
-  config?: Record<string, string | number>     // per-param overrides, applied before the adapter is
+  config?: ConfigAdapter                       // swap the platform adapter: in-memory tests, inspection harnesses
+  overrides?: Record<string, string | number>  // per-param overrides, applied before the adapter is
                                                // consulted; keyed "input.param" (dotted) for input params,
                                                // bare "param" for service-level params
 }): Promise<unknown>
@@ -425,7 +418,7 @@ export const compute = <D extends Deps>(
     type: "prisma-cloud/compute",
     inputs: deps,
     params: computeParams,
-    adapter: computeAdapter,
+    config: computeAdapter,
     handler,
   })
 
@@ -546,8 +539,8 @@ SQL` in `connections.ts`) — the app's choice, since it deploys to a platform w
 runtime is Bun. Switching the client to node-postgres, or the app to a Node
 platform, changes these app lines and nothing in MakerKit.
 
-And note what a test needs: `runHost(service, { config: { "db.url": testUrl } })`
-— a field-level override through core's resolver, no environment faked, no cloud.
+And note what a test needs: `runHost(service, { overrides: { "db.url": testUrl } })`
+— a per-param override through core's resolver, no environment faked, no cloud.
 Or skip `runHost` entirely and call `service.run(fakes, { port: 0 })` with fakes at
 the inputs — the same dependency inversion the model promises.
 

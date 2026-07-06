@@ -94,8 +94,8 @@ only). No pack entry imports a runtime API or driver.
 
 MakerKit does not bundle. Turning the service module into a runnable bundle is the
 app's job, with the app's tool (tsdown, esbuild, whatever). MakerKit's responsibility
-ends at the code *inside* the bundle: the service data and the entry that boots the
-runtime loop over it. The platform's artifact envelope — for Compute, a tar with
+ends at the code *inside* the bundle: the service data and the entry that calls
+`runHost` over it. The platform's artifact envelope — for Compute, a tar with
 `compute.manifest.json` — is likewise assembled by the app's build script. Core ships
 no build step.
 
@@ -103,7 +103,7 @@ no build step.
 
 The test of the split is a one-line swap: change `@makerkit/prisma-cloud` to another
 target pack and nothing in `@makerkit/core` changes — not the abstract model, not the
-router, not the runtime loop. Everything a platform is idiosyncratic about — its
+router, not the boot pipeline. Everything a platform is idiosyncratic about — its
 compute unit, its managed Postgres, how it injects config, its artifact format —
 lives in the pack, as data the core routes rather than code the core contains. A
 core that imported prisma-alchemy, or owned bundling, would fail that test; both are

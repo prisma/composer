@@ -271,7 +271,7 @@ Resource** (`provision(postgres())`) or instantiates and wires an owned node
 Service only *requires*. Forwarding is just passing a Hex's Inputs down and
 returning owned nodes' Outputs up.
 
-### Runtime loop (host) — the config pipeline
+### runHost — the boot entrypoint
 
 The boot [entrypoint](#entrypoint) the platform runs, over the code the app bundled
 (MakerKit does not bundle). **Core owns config management**: it enumerates the
