@@ -74,7 +74,7 @@ jobs:
             echo "No stack output file found under .alchemy/state — deploy did not persist state."
             exit 1
           fi
-          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$output_file', 'utf8')).url ?? '')")"
+          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$output_file', 'utf8')).outputs?.url ?? '')")"
           if [ -z "$url" ]; then
             echo "Stack output has no 'url' field: $(cat "$output_file")"
             exit 1
