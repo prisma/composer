@@ -1,0 +1,138 @@
+name: E2E deploy
+
+# Deploys examples/makerkit-hello to real Prisma Cloud, verifies it serves,
+# then destroys it. Requires repo secrets PRISMA_SERVICE_TOKEN (a Prisma
+# Console service token) and PRISMA_WORKSPACE_ID (the target workspace id).
+# A human must create both in the repo's Actions secrets before this runs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Fixed group (not per-ref): only one real-cloud deploy runs at a time.
+# cancel-in-progress is false because killing a run mid-deploy or mid-destroy
+# would orphan cloud resources with nothing left to clean them up.
+concurrency:
+  group: e2e-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy, verify, destroy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Secrets aren't available to forked-PR workflow runs; skip rather than
+    # fail loudly on a run that could never have them.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+      PRISMA_WORKSPACE_ID: ${{ secrets.PRISMA_WORKSPACE_ID }}
+      # Cloud resource ids are derived from the lowercased stack name,
+      # so a fixed name would collide across concurrent runs in the workspace.
+      HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate ALCHEMY_PASSWORD
+        # Fresh CI state every run — nothing to decrypt, so a random password
+        # is fine. Mask it before it ever reaches $GITHUB_ENV / logs.
+        run: |
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          echo "ALCHEMY_PASSWORD=$password" >> "$GITHUB_ENV"
+
+      - name: Build
+        working-directory: examples/makerkit-hello
+        run: pnpm build
+
+      - name: Deploy
+        # Never `pnpm exec alchemy` or plain `bunx alchemy` — the CLI must run
+        # under bun (`--bun`) or it fails with "Cannot find package 'bun'".
+        # Do not use the package's `deploy` script: it sources ../../.env,
+        # which doesn't exist in CI; env vars are already set on this job.
+        working-directory: examples/makerkit-hello
+        run: bunx --bun alchemy deploy --yes
+
+      - name: Extract deployed URL
+        id: url
+        working-directory: examples/makerkit-hello
+        run: |
+          set -euo pipefail
+          output_file="$(find .alchemy/state -name __stack_output__.json | head -1)"
+          if [ -z "$output_file" ]; then
+            echo "No stack output file found under .alchemy/state — deploy did not persist state."
+            exit 1
+          fi
+          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$output_file', 'utf8')).url ?? '')")"
+          if [ -z "$url" ]; then
+            echo "Stack output has no 'url' field: $(cat "$output_file")"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed URL: $url"
+
+      - name: Verify service responds
+        # PRO-200: Compute scale-to-zero means the first hit after deploy can
+        # 502 for up to ~15s while a version boots. Retry with backoff up to
+        # ~90s total before giving up.
+        env:
+          URL: ${{ steps.url.outputs.url }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 90))
+          body=""
+          status=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            response="$(curl -sS -o /tmp/body.json -w '%{http_code}' "$URL" || echo "000")"
+            status="$response"
+            if [ "$status" = "200" ]; then
+              body="$(cat /tmp/body.json)"
+              break
+            fi
+            sleep 5
+          done
+          if [ "$status" != "200" ]; then
+            echo "Service never returned 200 within 90s (last status: $status)."
+            exit 1
+          fi
+          echo "Response body: $body"
+          echo "$body" | grep -q '"ok":1' || {
+            echo "Response body did not contain \"ok\":1"
+            exit 1
+          }
+
+      - name: Verify idempotent redeploy is a no-op
+        working-directory: examples/makerkit-hello
+        run: |
+          set -euo pipefail
+          output="$(bunx --bun alchemy deploy --yes)"
+          echo "$output"
+          echo "$output" | grep -q "to noop" || {
+            echo "Second deploy did not report a no-op plan."
+            exit 1
+          }
+
+      - name: Destroy
+        # Always runs, even on failure above: alchemy state is local to this
+        # runner and dies with it, so a failed run without destroy leaves
+        # orphaned cloud resources nobody else can clean up.
+        if: always()
+        working-directory: examples/makerkit-hello
+        run: |
+          set -euo pipefail
+          if [ ! -d .alchemy ]; then
+            echo "No .alchemy state dir — deploy never started, nothing to destroy."
+            exit 0
+          fi
+          bunx --bun alchemy destroy --yes

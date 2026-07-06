@@ -1,0 +1,54 @@
+name: DCO
+
+# No probot DCO app here (unlike prisma-next) — this workflow enforces
+# sign-off itself by checking every commit in the range for a
+# "Signed-off-by:" trailer.
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: DCO
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check sign-off (merge queue)
+        if: github.event_name == 'merge_group'
+        # Sign-off was already enforced by this workflow on the pull request
+        # before it entered the queue.
+        run: echo "Sign-off already enforced on the pull request."
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check sign-off (pull request)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASE_SHA" 2>/dev/null || git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git cat-file -e "$HEAD_SHA" 2>/dev/null || git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+
+          missing=0
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            if ! git log -1 --format=%B "$sha" | grep -qi '^Signed-off-by: '; then
+              echo "Missing Signed-off-by: $sha $(git log -1 --format=%s "$sha")"
+              missing=1
+            fi
+          done < <(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA")
+
+          if [ "$missing" -ne 0 ]; then
+            echo "One or more commits are missing a Signed-off-by trailer (DCO)."
+            exit 1
+          fi

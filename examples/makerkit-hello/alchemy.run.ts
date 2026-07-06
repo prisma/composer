@@ -28,6 +28,8 @@ const sha256 = existsSync(artifact)
   : 'absent';
 
 export default lower(service, prismaCloud({ workspaceId }), {
-  name: 'makerkit-hello',
+  // Overridable so CI can give each run a unique stack name — cloud resource
+  // ids are derived from it, and a fixed name collides across concurrent runs.
+  name: process.env['HELLO_STACK_NAME'] ?? 'makerkit-hello',
   artifact: { path: artifact, sha256 },
 });
