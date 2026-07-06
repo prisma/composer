@@ -264,14 +264,15 @@ Resource** (`provision(postgres())`) or instantiates and wires an owned node
 Service only *requires*. Forwarding is just passing a Hex's Inputs down and
 returning owned nodes' Outputs up.
 
-### Runtime loop (host)
+### Runtime loop (host) — the config pipeline
 
 The boot [entrypoint](#entrypoint) the platform runs, over the code the app bundled
-(MakerKit does not bundle). It walks the service's declared Inputs and, for each,
-calls the **hydrator the target attached** — turning injected config into a typed
-client — then hands the results to the handler. Core never knows what `DATABASE_URL`
-becomes: the target's hydrator resolves the config, and an app-supplied client
-factory wraps it in the app's chosen driver. A framework server (Next.js) is
+(MakerKit does not bundle). **Core owns config management**: it enumerates the
+config fields the service's Inputs declare, resolves them via the service type's
+addressing data (e.g. env key names — the pack declares *where*, core does the
+reading), validates before hydrating, applies overrides (the interception point for
+tests and introspection), then lets each connection hydrate its client from the
+resolved values — with the app-supplied driver factory. A framework server (Next.js) is
 wired in as an HTTP Output, its deps reached via a DI accessor (`use(…)`), never the
 environment. Env vars carry config into the VM but **terminate at hydration** — user
 code is dependency-injection only.

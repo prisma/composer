@@ -108,12 +108,15 @@ the VM, but they **terminate at hydration** — user code never reads them.
 
 ## The runtime is a dumb loop; a framework is an Output adapter
 
-At boot, MakerKit's runtime loop walks the service's declared Inputs and, for each,
-calls the **hydrator the target attached** — handing the results to the handler. Core
-does not know what `db` becomes: the target's `postgres` hydrator resolves
-`DATABASE_URL` into connection config, and an app-supplied client factory wraps it in
-the app's chosen driver — MakerKit ships none (the [runtime-agnostic
-principle](../01-principles/architectural-principles.md)). When the "handler" is a framework that owns
+At boot, core runs the **config pipeline**: it enumerates every config field the
+service's Inputs declare, resolves each against the platform's addressing rule (the
+service type's data — e.g. Compute delivers the database URL at `DATABASE_URL`),
+validates the lot before anything hydrates, then hands each connection its resolved
+values so it can build its client — with the driver factory the app supplied at
+authoring time, since MakerKit ships none (the [runtime-agnostic
+principle](../01-principles/architectural-principles.md)). Config is thereby
+enumerable without booting, overridable field-by-field in tests, and reportable
+(secrets redacted) in production. When the "handler" is a framework that owns
 its own server — Next.js — MakerKit does not wrap the handler signature; it wires the
 framework in as the implementation of an HTTP Output, and framework code reaches its
 dependencies through a DI accessor (`use(…)`), never through the environment. This is

@@ -36,11 +36,11 @@ underneath.
 
 ```ts
 // inside @makerkit/prisma-cloud — illustrative shape
-export const postgres = () => ({
+export const postgres = ({ client }) => ({
   kind: "resource",
-  provider: /* the prisma-alchemy Prisma Postgres provider */,
-  hydrate: /* runtime: DATABASE_URL → connection config → the app-supplied client
-              factory — behind the pack's /runtime entry */,
+  provider: /* the prisma-alchemy Prisma Postgres provider (deploy entry) */,
+  connection: /* what it needs ({ url }, secret) + hydrate: resolved config →
+                 client(...) — the app passed the driver factory in */,
 })
 
 export const compute = (deps, handler) => ({
@@ -67,21 +67,28 @@ That is the whole of lowering. There is no per-target branch and no provisioning
 logic in core; the router only ever follows references it was handed. Swap
 `@makerkit/prisma-cloud` for another target pack and the router is unchanged.
 
-## Runtime is a dumb loop
+## Runtime: core owns the config pipeline
 
-Inside the deployed bundle, core boots a loop that, for each declared Input, calls
-the hydrator the target attached and passes the result to the handler. Core does not
-know what `db` becomes: the target's `postgres` hydrator resolves `DATABASE_URL` into
-connection config, and an **app-supplied client factory** wraps it in the app's
-chosen driver — MakerKit ships none. Config still arrives as environment variables,
-but they terminate at that hydrator; user code is dependency-injected and never reads
-the environment.
+Inside the deployed bundle, boot is a config pipeline that **core owns end to end**.
+The pieces divide by knowledge, not by plumbing: the *service type* declares where
+this platform delivers config (env vars, and which key holds what) — as **data**,
+never as a function that reads the environment; each *connection* declares what it
+needs and hydrates a client from resolved values (the app passed the driver factory
+into the connection when authoring it); *core* enumerates the declared config
+surface from the graph, resolves it against the environment, validates it before
+anything hydrates, applies any test/production overrides, hands each connection its
+slice, and calls the handler.
 
-Because provisioning is heavy (Alchemy) and hydration is not, a target pack splits
-along the same control/execution line the core does: `@makerkit/prisma-cloud`
-(provisioning — imported only at deploy) and `@makerkit/prisma-cloud/runtime`
-(hydration — the only target code that lands in the deployed bundle). The authoring
-import stays lean, and no pack entry imports a runtime API or driver.
+Owning the pipeline is what makes config **visible and interceptable**: the full
+config surface of a service is enumerable without booting it (keys, secret-ness,
+defaults — the introspection artifact), tests override individual fields through
+core instead of faking environments, and a running host can report its resolved
+config with secrets redacted by construction. Environment variables still carry the
+values in, but exactly one line of core reads them; user code and packs never do.
+
+Because everything a node needs at boot rides on the node itself, a target pack has
+no runtime entry at all — just authoring (lean) and provisioning (heavy, deploy
+only). No pack entry imports a runtime API or driver.
 
 ## Bundling is the app's
 

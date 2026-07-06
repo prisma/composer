@@ -14,28 +14,32 @@ Six entry points, split by dependency weight. The split is enforced, not aspirat
 
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
-| `@makerkit/core` | node factories (`service`, `resource`), `Load`, model types | nothing |
+| `@makerkit/core` | node factories (`service`, `resource`), `Load`, `configOf`, model types | nothing |
 | `@makerkit/core/lower` | `lower()`, `Target` types | `alchemy`, `effect` |
-| `@makerkit/core/runtime` | `runHost()`, `TargetRuntime` types | nothing |
-| `@makerkit/prisma-cloud` | `compute()`, `postgres()` | `@makerkit/core` only |
+| `@makerkit/core/runtime` | `runHost()` | nothing |
+| `@makerkit/prisma-cloud` | `compute()`, `postgres({ client })` | `@makerkit/core` only |
 | `@makerkit/prisma-cloud/target` | `prismaCloud()` | `@makerkit/prisma-alchemy`, `alchemy`, `effect` |
-| `@makerkit/prisma-cloud/runtime` | `runtime()` | nothing — the DB client factory is app-supplied |
 
 Per the [runtime-agnostic
 principle](../01-principles/architectural-principles.md), no entry imports Bun or
 Node APIs — not even type-only. Runtime-specific code (the DB driver, the server
-API) appears only in **app files**.
+API) appears only in **app files**. The pack has no runtime entry at all: everything
+a node needs at boot rides on the node itself (see § Runtime), so the pack splits
+into just authoring (lean) and target (heavy, deploy-only).
 
 Who imports what, end to end:
 
-- the **user's service module** imports only `@makerkit/prisma-cloud` (lean);
+- the **user's service module** imports `@makerkit/prisma-cloud` plus the app's own
+  connection definitions (which hold the driver import);
 - the **deploy script** (`alchemy.run.ts`) imports the service module +
   `@makerkit/core/lower` + `@makerkit/prisma-cloud/target` (heavy — deploy-time only);
 - the **runtime bundle entry** (`main.ts`, app-owned) imports the service module +
-  `@makerkit/core/runtime` + `@makerkit/prisma-cloud/runtime`, plus the app's own
-  driver import (the client factory it hands to `runtime()`).
+  `@makerkit/core/runtime` — nothing else.
 
-The deploy path never loads the DB driver; the runtime bundle never contains Alchemy.
+The runtime bundle never contains Alchemy. One accepted consequence: because
+connections close over the app's client factory, the deploy script *loads* (never
+uses) the driver when it imports the service module — fine under Bun, and mitigable
+with a lazy import inside the factory if it ever matters.
 
 ## Decision taken: Alchemy is core's provisioning substrate
 
@@ -49,9 +53,12 @@ holds: replacing `@makerkit/prisma-cloud` with another pack changes nothing in c
 
 ## Core model types (`@makerkit/core`)
 
-All nodes are **plain, frozen, serializable data** — with one exception: a Service
-node carries the user's handler, the single function reference in the model. A
-node's `type` is its routing key; core never interprets it beyond lookup.
+All nodes are **plain, frozen, serializable data** — with exactly **three
+sanctioned behavior slots** hanging off the graph: the Service node's handler
+(`run`), a Connection's `hydrate` (config → client), and nothing else that
+executes; the Service type's config knowledge is *data* (an addressing rule), not
+a provider function. The topology view simply drops the function slots. A node's
+`type` is its routing key at deploy; core never interprets it beyond lookup.
 
 ```ts
 // JSON-safe config values
@@ -69,31 +76,65 @@ interface NodeBase {
   readonly config?: JsonObject                 // constructor opts, opaque to core
 }
 
-// A Resource a service depends on. H is the phantom hydrated-client type:
-// declared type-only, never set at runtime, erased at compile — it is what
-// makes `({ db }) => db`select 1`` typecheck without runtime code in the node.
-interface ResourceNode<H = unknown> extends NodeBase {
-  readonly kind: "resource"
-  readonly __hydrated?: H                      // phantom only
+// ——— Configuration model (core-owned; see § Runtime for the pipeline) ———
+
+// A config field a connection needs at boot — declared shape, pure data.
+interface ConfigField {
+  readonly name: string                        // e.g. "url"
+  readonly secret?: boolean                    // redacted in any introspection output
+  readonly optional?: boolean
 }
 
-// A Service: inputs + the opaque handler. This IS the user's default export —
-// inspectable (inputs/type/config) and runnable (run), inert until invoked.
-// There is no separate handle type: the node is the handle.
+// The connection face of a dependency: what it needs (data) and how the needed
+// values become a client (the hydrate behavior slot). C is INFERRED from the
+// app's factory — no phantom types, no declared-vs-actual trust boundary.
+interface Connection<C = unknown> {
+  readonly config: readonly ConfigField[]
+  hydrate(config: Record<string, string>): C
+}
+
+// How a Service KIND's platform delivers config — pack-declared DATA plus a pure
+// addressing rule core drives. Core does all reading/resolving; the pack never
+// touches an environment.
+interface HostConvention {
+  readonly channel: "env"                            // the only channel today
+  key(input: string, field: string): string          // e.g. (_, "url") => "DATABASE_URL"
+  readonly context: readonly ContextField[]          // e.g. [{ name: "port", key: "PORT", default: 3000 }]
+}
+interface ContextField {
+  readonly name: keyof RuntimeContext
+  readonly key: string
+  readonly default?: string | number
+}
+
+// ——— Nodes ———
+
+// A Resource a service depends on, carrying its connection face. C flows from
+// the connection's hydrate return type into the handler's parameter.
+interface ResourceNode<C = unknown> extends NodeBase {
+  readonly kind: "resource"
+  readonly connection: Connection<C>
+}
+
+// A Service: inputs + host convention + the opaque handler. This IS the user's
+// default export — inspectable (inputs/type/host/config) and runnable (run),
+// inert until invoked. There is no separate handle type: the node is the handle.
 interface ServiceNode<D extends Deps = Deps> extends NodeBase {
   readonly kind: "service"
   readonly inputs: D
-  run(deps: HydratedDeps<D>, ctx: RuntimeContext): unknown   // the one non-data member
+  readonly host: HostConvention
+  run(deps: HydratedDeps<D>, ctx: RuntimeContext): unknown
 }
 
-// Dependency map: name → ResourceNode. Widens to connection ends when Connections arrive.
-type Deps = Record<string, ResourceNode<any>>   // `any`, not `unknown` — keeps phantom inference
+// Dependency map: name → ResourceNode. Widens to full connection ends when
+// Connections become first-class (service-to-service).
+type Deps = Record<string, ResourceNode<any>>   // `any`, not `unknown` — keeps inference
 
-type Hydrated<N> = N extends ResourceNode<infer H> ? H : never
+type Hydrated<N> = N extends ResourceNode<infer C> ? C : never
 type HydratedDeps<D extends Deps> = { readonly [K in keyof D]: Hydrated<D[K]> }
 
 // What the host provides a running service besides its deps. Core defines the
-// shape; the target's runtime supplies the values (see TargetRuntime.context).
+// shape; values resolve through the service's HostConvention.
 interface RuntimeContext { readonly port: number }
 
 type ServiceHandler<D extends Deps> = (deps: HydratedDeps<D>, ctx: RuntimeContext) => unknown
@@ -106,18 +147,24 @@ validate, and freeze. This is the whole "framework provides / pack wraps" contra
 
 ```ts
 // @makerkit/core
-function resource<H>(def: { type: string; config?: JsonObject }): ResourceNode<H>
+function resource<C>(def: {
+  type: string
+  connection: Connection<C>
+  config?: JsonObject
+}): ResourceNode<C>
 
 function service<D extends Deps>(def: {
   type: string
   inputs: D
+  host: HostConvention
   handler: ServiceHandler<D>
   config?: JsonObject
 }): ServiceNode<D>
 ```
 
-`service()` stores `handler` as the node's `run` and freezes `inputs`. Both throw on
-an empty `type`. Nothing executes: constructing nodes is pure.
+`service()` stores `handler` as the node's `run` and freezes `inputs`; `resource()`
+freezes the connection's declared fields. Both throw on an empty `type`. Nothing
+executes: constructing nodes is pure.
 
 ## Graph and Load (`@makerkit/core`)
 
@@ -225,52 +272,101 @@ Notes:
   whatever) and passes path + sha256. Core has no build step; the hash in the
   options is what makes a rebuild register as a change.
 
-## Runtime (`@makerkit/core/runtime`)
+## Runtime: the config pipeline (`@makerkit/core/runtime` + `configOf` in core)
 
-The dumb loop. Symmetric to lowering: look up each input's `type` in the target's
-hydrator table.
+At boot, three things have to happen: know where this platform puts config (env
+vars, for Compute), turn config values into clients, and call the handler. The
+responsibilities are split so that **core owns config management end to end**:
+
+- the **Service type** (pack) declares *where config arrives* — the
+  `HostConvention`: channel + addressing rule + context fields. Data, not a
+  provider function.
+- each **Connection** declares *what it needs* (`ConfigField[]`) and hydrates a
+  client from resolved values.
+- **core** does everything in between: enumerate, resolve, validate, intercept,
+  distribute, call.
 
 ```ts
 type Env = Record<string, string | undefined>
 
-interface TargetRuntime {
-  readonly hydrate: Record<string, Hydrator>            // type id → hydrator
-  context(env: Env): RuntimeContext                     // e.g. PORT → { port } — platform convention lives in the pack
+// The enumerable config surface of a service — derivable from the graph alone,
+// nothing booted. This is the introspection artifact (secrets marked, values absent).
+interface ConfigManifestEntry {
+  readonly input?: string            // absent for context fields
+  readonly field: string             // "url" · "port"
+  readonly channel: "env"
+  readonly key: string               // "DATABASE_URL" · "PORT"
+  readonly secret: boolean
+  readonly default?: string | number
+  readonly optional: boolean
 }
+function configOf(root: ServiceNode): readonly ConfigManifestEntry[]   // in @makerkit/core (pure)
 
-type Hydrator = (ctx: HydrateContext) => unknown
-
-interface HydrateContext {
-  readonly id: NodeId
-  readonly input: string                                 // the input name, e.g. "db"
-  readonly node: ResourceNode
-  readonly env: Env
-}
-
-// Load(root) → hydrate each input via runtime.hydrate[node.type] →
-// root.run(hydratedDeps, runtime.context(env)). Unknown type → HydrateError.
-function runHost(root: ServiceNode, runtime: TargetRuntime, env?: Env): unknown  // env defaults to process.env
-class HydrateError extends Error {}
+// Boot: Load → configOf → resolve each entry (override ?? env[key] ?? default) →
+// validate (ALL missing required fields reported in one ConfigError, before any
+// hydrate — Load-before-Hydrate applied to config) → per input:
+// connection.hydrate(resolvedSlice) → root.run(deps, contextFromResolvedFields).
+function runHost(root: ServiceNode, opts?: {
+  env?: Env                                    // source override (tests) — default process.env
+  config?: Record<string, string>              // field-level overrides, keyed "input.field" / "context.field"
+}): unknown
+class ConfigError extends Error {}             // names every missing key at once
 ```
 
-`runHost` is the **only** place `process.env` enters the system (as the default
-`env`), and it hands it straight to the target's hydrators/context. Load runs before
-any hydration — the wiring-precedes-execution principle, mechanically.
+`runHost`'s default `env` is the **only** place `process.env` enters the system —
+the pack declares addressing but never reads an environment. Because core is the
+single resolver, there is one choke point for interception: tests override at the
+field level without faking an environment; a production host can report its
+resolved config with secrets redacted by construction (`secret` is declared on the
+shape).
+
+**Motivation (why this shape, recorded).** An earlier iteration had the pack export
+a `runtime()` value carrying a type-id–keyed hydrator table plus app-supplied
+client factories. It was discarded because: (1) an opaque `env → config` provider
+loses the config surface — no enumeration, no interception point, no introspection
+of a running service; (2) it made the pack a second environment reader, weakening
+the env-exactly-once invariant; (3) composition across packs required merging
+registries, where the node-carried design composes structurally — a service mixing
+two packs' inputs just works; (4) the app-declared phantom client type
+(`postgres<SQL>()`) created a declared-vs-actual trust boundary that factory
+inference eliminates; and (5) it contradicted the settled decision that *MakerKit
+manages the config-to-input mapping*. The replacement assigns: config *source
+conventions* to the Service type (as data), *client construction* to the
+Connection, and the *pipeline* to core.
 
 ## The Prisma Cloud pack (`@makerkit/prisma-cloud`) — worked instance
 
-Authoring entry — data only:
+Authoring entry — nodes carrying their connection/host knowledge; the driver is a
+**parameter**, so the pack ships none and the client type is inferred:
 
 ```ts
-import { resource, service, type Deps, type ServiceHandler, type ServiceNode } from "@makerkit/core"
+import { resource, service, type Connection, type Deps, type ServiceHandler, type ServiceNode } from "@makerkit/core"
 
-// C is the app-declared client type — whatever the app's client factory (see
-// runtime()) produces. The pack fixes neither the driver nor the JS runtime.
-export const postgres = <C = unknown>(): ResourceNode<C> =>
-  resource<C>({ type: "prisma-cloud/postgres" })
+export interface PostgresConfig { readonly url: string }
+
+// The app supplies the client factory; C is inferred from its return type.
+export const postgres = <C>(opts: { client: (config: PostgresConfig) => C }): ResourceNode<C> =>
+  resource<C>({
+    type: "prisma-cloud/postgres",
+    connection: {
+      config: [{ name: "url", secret: true }],
+      hydrate: (cfg) => opts.client({ url: cfg.url }),
+    },
+  })
 
 export const compute = <D extends Deps>(deps: D, handler: ServiceHandler<D>): ServiceNode<D> =>
-  service({ type: "prisma-cloud/compute", inputs: deps, handler })
+  service({
+    type: "prisma-cloud/compute",
+    inputs: deps,
+    handler,
+    host: {
+      channel: "env",
+      // Compute's convention: the project default DB arrives as DATABASE_URL
+      // (per-input naming arrives with multiple databases).
+      key: (_input, field) => (field === "url" ? "DATABASE_URL" : field.toUpperCase()),
+      context: [{ name: "port", key: "PORT", default: 3000 }],
+    },
+  })
 ```
 
 Target entry — the lowering table (the only place `prisma-alchemy` is imported):
@@ -322,60 +418,36 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
 })
 ```
 
-Runtime entry — the hydrator table. The pack owns the **platform convention**
-(Compute injects `DATABASE_URL`); the **client** that wraps the connection is
-app-supplied — MakerKit ships no driver:
-
-```ts
-import type { TargetRuntime } from "@makerkit/core/runtime"
-
-export interface PostgresConfig { readonly url: string }
-
-// Client factories are per-key OPTIONAL: a service with no postgres input needs no
-// factory (no phantom capabilities); a declared input with a missing factory is a
-// clear HydrateError at boot, before any traffic.
-export interface RuntimeOptions {
-  readonly clients?: {
-    readonly postgres?: (config: PostgresConfig) => unknown   // the app's driver choice
-  }
-}
-
-export const runtime = (o: RuntimeOptions = {}): TargetRuntime => ({
-  context: (env) => ({ port: intOr(env.PORT, 3000) }),
-  hydrate: {
-    "prisma-cloud/postgres": ({ env, input }) => {
-      const factory = o.clients?.postgres
-      if (!factory)
-        throw new HydrateError(
-          `input "${input}" requires a postgres client factory — pass runtime({ clients: { postgres } })`)
-      const url = env.DATABASE_URL
-      if (!url) throw new HydrateError(`input "${input}": DATABASE_URL is not set`)
-      return factory({ url })
-    },
-  },
-})
-```
+There is **no runtime entry**: the connection and host knowledge above already
+rides on the nodes, so `runHost(service)` needs nothing else. (A missing client
+factory is now impossible by construction — `postgres({ client })` requires it at
+authoring, at compile time.)
 
 ## The app, end to end
 
 Three app-owned files; bundling stays hand-rolled in the app:
 
 ```ts
-// src/service.ts — the authored service (lean imports; the app declares its client type)
-import { compute, postgres } from "@makerkit/prisma-cloud"
-import type { SQL } from "bun"        // the APP's choice of client — type-only here
+// src/connections.ts — app-owned connection definitions; the driver import lives HERE
+import { postgres } from "@makerkit/prisma-cloud"
+import { SQL } from "bun"                       // the APP's choice of client
 
-export default compute({ db: postgres<SQL>() }, ({ db }, { port }) =>
+export const db = postgres({ client: ({ url }) => new SQL({ url }) })
+// typeof hydrated db = SQL — inferred from the factory, no phantom declaration
+
+// src/service.ts — the authored service
+import { compute } from "@makerkit/prisma-cloud"
+import { db } from "./connections"
+
+export default compute({ db }, ({ db }, { port }) =>
   Bun.serve({ port, hostname: "0.0.0.0",
     fetch: async () => Response.json(await db`select 1 as ok`) }))
 
-// src/main.ts — runtime bundle entry (app-owned); the driver import lives HERE
+// src/main.ts — runtime bundle entry (app-owned); the whole thing
 import service from "./service"
 import { runHost } from "@makerkit/core/runtime"
-import { runtime } from "@makerkit/prisma-cloud/runtime"
-import { SQL } from "bun"
 
-runHost(service, runtime({ clients: { postgres: ({ url }) => new SQL({ url }) } }))
+runHost(service)
 
 // alchemy.run.ts — deploy (heavy imports; never bundled)
 import service from "./src/service"
@@ -391,9 +463,14 @@ The app's build script bundles `src/main.ts`, writes `compute.manifest.json`
 pointing at the bundle, and tars — ~10 lines the app owns, not MakerKit.
 
 Note where Bun appears: only in these app files (`Bun.serve` in the handler, `new
-SQL` in `main.ts`) — the app's choice, since it deploys to a platform whose runtime
-is Bun. Switching the client to node-postgres, or the app to a Node platform, changes
-these app lines and nothing in MakerKit.
+SQL` in `connections.ts`) — the app's choice, since it deploys to a platform whose
+runtime is Bun. Switching the client to node-postgres, or the app to a Node
+platform, changes these app lines and nothing in MakerKit.
+
+And note what a test needs: `runHost(service, { config: { "db.url": testUrl } })`
+— a field-level override through core's resolver, no environment faked, no cloud.
+Or skip `runHost` entirely and call `service.run(fakes, { port: 0 })` with fakes at
+the inputs — the same dependency inversion the model promises.
 
 ## Invariants (enforced, not aspirational)
 
@@ -406,8 +483,9 @@ these app lines and nothing in MakerKit.
 3. **Importing runs nothing**: constructing nodes is pure; only `runHost`/the alchemy
    CLI execute anything.
 4. **`process.env` appears exactly once** in the system — `runHost`'s default `env`
-   parameter. User code and core contain no other reads; hydrators receive `env`
-   explicitly.
+   parameter. User code, packs, and the rest of core contain no reads at all: packs
+   declare addressing (`HostConvention`), core resolves, connections receive
+   already-resolved values.
 5. **No runtime coupling**: neither core nor a target pack imports Bun or Node APIs
    — even type-only — in its shipped surface (the [runtime-agnostic
    principle](../01-principles/architectural-principles.md)). Drivers and server APIs
@@ -422,13 +500,17 @@ these app lines and nothing in MakerKit.
 - **Connections/interfaces** — `Deps` values widen from `ResourceNode` to connection
   ends; Load gains interface-compatibility validation; `LoweredNode.outputs` is how a
   provider's deployed address reaches a consumer's config wiring.
-- **Registry exhaustiveness** — `Target.lower` / `TargetRuntime.hydrate` are
-  string-keyed records; a pack can tighten them to its own type-id union for
-  compile-time exhaustiveness. Core stays stringly-typed by design (it routes).
-- **Client-factory typing** — `postgres<C>()` declares the hydrated type; the factory
-  the app passes to `runtime()` is what actually produces it. Today that agreement is
-  a documented trust boundary; tying the factory's return type to the declared
-  phantom (so a mismatch fails at compile) is additive.
+- **Registry exhaustiveness** — `Target.lower` is a string-keyed record; a pack can
+  tighten it to its own type-id union for compile-time exhaustiveness. Core stays
+  stringly-typed by design at deploy (it routes); the runtime side has no registry
+  at all — behavior rides the nodes.
+- **Per-input config naming** — Compute's default DB fixes `DATABASE_URL` today;
+  when multiple databases (or service-to-service Connections) arrive, the
+  `HostConvention.key` rule becomes a real per-input naming scheme, and the deploy
+  side sets values against the same rule (the two readers, applied to config).
+- **Config channels beyond env** — `HostConvention.channel` is `"env"` only; a
+  platform delivering config another way (files, metadata endpoints) adds a channel
+  without touching connections or core's pipeline shape.
 - **Serialized topology** — the topology view of Graph is already JSON-safe; an emit
   step for external tooling is additive.
 
