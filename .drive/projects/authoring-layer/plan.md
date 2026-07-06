@@ -115,6 +115,20 @@ decided at slice spec time.
 ### [ ] Framework-hosted DI (`use()` accessor; removes Next-internal env reads)
 ### [ ] Local emulation / test (Load + Hydrate with fakes)
 ### [ ] Streams (async connection style)
+### [ ] Prisma-hosted Alchemy state store (platform target)
+
+Implements Alchemy's `StateService` on the platform side: workspace-scoped,
+backed by Prisma Postgres, encrypted, authorized by workspace RBAC — the
+design already recorded in `docs/design/03-domain-model/layering.md` (Step 1
+of the provisioning-state spectrum). **Why it moved up the list:** CI
+ownership of the standing demo exposed the gap concretely — Alchemy state is
+local files, so any deployer without the live state creates duplicates and
+orphans the running system; the CI setup's committed-state-branch mechanism
+is the stopgap that deletes wholesale when this lands. Also unlocks: multiple
+operators/machines deploying the same stack, and the platform answering
+"what's provisioned in this project" (the inspectable-topology goal's
+platform half). Not a MakerKit-core capability — a target/platform
+deliverable (prisma-cloud pack + Management API surface).
 
 ## Parked / cross-cutting
 
