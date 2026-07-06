@@ -10,8 +10,8 @@ import { localState } from "alchemy/State/LocalState";
 import type { State } from "alchemy/State/State";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
-import { Load, type Graph, type NodeId } from "../graph.ts";
-import type { ResourceNode, ServiceNode } from "../node.ts";
+import { Load, type Graph, type NodeId } from "./graph.ts";
+import type { ResourceNode, ServiceNode } from "./node.ts";
 
 /** What a target pack's /target entry produces — data + per-type functions. */
 export interface Target {

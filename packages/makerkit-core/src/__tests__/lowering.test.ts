@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as Effect from "effect/Effect";
-import { lowering, LowerError, type LowerOptions, type Target } from "../deploy/index.ts";
-import type { LoweredNode } from "../deploy/index.ts";
+import { lowering, LowerError, type LowerOptions, type Target } from "../deploy.ts";
+import type { LoweredNode } from "../deploy.ts";
 import { resource, service } from "../node.ts";
 import { conn, memoryAdapter } from "./helpers.ts";
 
@@ -16,7 +16,7 @@ const app = (
   type: string,
   inputs: Record<string, ReturnType<typeof db>>,
   handler = () => null as unknown,
-) => service({ type, inputs, params: {}, adapter, handler });
+) => service({ type, inputs, params: {}, config: adapter, handler });
 
 // The fake lowerings are pure, so the composable form runs synchronously.
 const run = (eff: ReturnType<typeof lowering>): LoweredNode =>

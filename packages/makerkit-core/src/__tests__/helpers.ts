@@ -1,4 +1,4 @@
-import type { ConfigAdapter, Connection, Params, Values } from "../node.ts";
+import type { ConfigAdapter, Connection, Params, Values } from "../config.ts";
 
 /** A test connection: declared params + a recording/simple hydrate. */
 export const conn = <P extends Params, C>(

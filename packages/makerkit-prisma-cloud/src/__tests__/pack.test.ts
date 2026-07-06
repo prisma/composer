@@ -51,8 +51,8 @@ describe("compute()", () => {
     expect(node.kind).toBe("service");
     expect(node.type).toBe("prisma-cloud/compute");
     expect(node.params).toEqual({ port: { type: "number", default: 3000 } });
-    expect(typeof node.adapter.get).toBe("function");
-    expect(typeof node.adapter.describe).toBe("function");
+    expect(typeof node.config.get).toBe("function");
+    expect(typeof node.config.describe).toBe("function");
   });
 
   test("is inert until run", () => {
@@ -83,7 +83,7 @@ describe("the platform adapter (private mapping)", () => {
     process.env.DATABASE_URL = "postgres://from-env";
     process.env.PORT = "7777";
     try {
-      const values = await node.adapter.get([
+      const values = await node.config.get([
         requestFor({ input: "db" }, "url"),
         requestFor("service", "port"),
       ]);
@@ -99,10 +99,10 @@ describe("the platform adapter (private mapping)", () => {
   test("describe names the physical location without exposing it to core's manifest", async () => {
     const node = compute({}, () => null);
 
-    expect(await node.adapter.describe?.(requestFor({ input: "db" }, "url"))).toEqual({
+    expect(await node.config.describe?.(requestFor({ input: "db" }, "url"))).toEqual({
       location: "env:DATABASE_URL",
     });
-    expect(await node.adapter.describe?.(requestFor("service", "port"))).toEqual({
+    expect(await node.config.describe?.(requestFor("service", "port"))).toEqual({
       location: "env:PORT",
     });
   });
@@ -143,7 +143,7 @@ describe("the config pipeline over pack nodes", () => {
     );
 
     const result = await runHost(app, {
-      adapter: memoryAdapter({ "db.url": "postgres://x", port: "4001" }),
+      config: memoryAdapter({ "db.url": "postgres://x", port: "4001" }),
     });
 
     expect(result).toBe("served");
@@ -161,7 +161,7 @@ describe("the config pipeline over pack nodes", () => {
       },
     );
 
-    await runHost(app, { adapter: memoryAdapter({}), config: { "db.url": "postgres://test" } });
+    await runHost(app, { config: memoryAdapter({}), overrides: { "db.url": "postgres://test" } });
 
     expect(received).toEqual({ db: { url: "postgres://test" } });
   });
@@ -180,9 +180,9 @@ describe("the config pipeline over pack nodes", () => {
       () => null,
     );
 
-    expect(runHost(app, { adapter: memoryAdapter({}) })).rejects.toThrow(ConfigError);
-    expect(runHost(app, { adapter: memoryAdapter({}) })).rejects.toThrow(/db\.url/);
-    await runHost(app, { adapter: memoryAdapter({}) }).catch(() => {});
+    expect(runHost(app, { config: memoryAdapter({}) })).rejects.toThrow(ConfigError);
+    expect(runHost(app, { config: memoryAdapter({}) })).rejects.toThrow(/db\.url/);
+    await runHost(app, { config: memoryAdapter({}) }).catch(() => {});
     expect(factoryCalls).toBe(0);
   });
 
@@ -193,7 +193,7 @@ describe("the config pipeline over pack nodes", () => {
       return "booted";
     });
 
-    expect(await runHost(app, { adapter: memoryAdapter({}) })).toBe("booted");
+    expect(await runHost(app, { config: memoryAdapter({}) })).toBe("booted");
     expect(ctx).toEqual({ port: 3000 });
   });
 });

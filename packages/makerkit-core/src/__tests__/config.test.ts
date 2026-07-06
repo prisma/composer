@@ -19,7 +19,7 @@ describe("configOf", () => {
         }),
       },
       params: { port: { type: "number", default: 3000 } },
-      adapter,
+      config: adapter,
       handler: () => null,
     });
 
@@ -40,7 +40,7 @@ describe("configOf", () => {
         }),
       },
       params: { port: { type: "number", default: 3000 } },
-      adapter,
+      config: adapter,
       handler: () => null,
     });
 
@@ -56,7 +56,7 @@ describe("configOf", () => {
       type: "fake/app",
       inputs: {},
       params: { port: { type: "number", default: 3000 } },
-      adapter,
+      config: adapter,
       handler: () => null,
     });
 
@@ -80,7 +80,7 @@ describe("configOf", () => {
         }),
       },
       params: {},
-      adapter,
+      config: adapter,
       handler: () => {
         handlerCalls += 1;
         return null;

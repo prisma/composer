@@ -65,7 +65,7 @@ describe("invariant 4: exactly one environment read — inside the ConfigAdapter
       return count > 0 ? [{ file, count }] : [];
     });
 
-    expect(hits).toEqual([{ file: "index.ts", count: 1 }]);
+    expect(hits).toEqual([{ file: "compute.ts", count: 1 }]);
   });
 });
 

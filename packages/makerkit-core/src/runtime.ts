@@ -6,18 +6,18 @@
  * service's own param values. Imports nothing; reads no environment — the
  * platform adapter is the single sanctioned reader for its platform.
  */
-import { configOf, type ConfigManifestEntry } from "../config.ts";
-import { Load } from "../graph.ts";
-import type { ConfigAdapter, ConfigRequest, ResourceNode, ServiceNode } from "../node.ts";
+import { configOf, type ConfigAdapter, type ConfigManifestEntry, type ConfigRequest } from "./config.ts";
+import { Load } from "./graph.ts";
+import type { ResourceNode, ServiceNode } from "./node.ts";
 
 export interface RunHostOptions {
-  /** Swap the platform: in-memory tests, inspection harnesses. */
-  readonly adapter?: ConfigAdapter;
+  /** Swap the platform adapter: in-memory tests, inspection harnesses. */
+  readonly config?: ConfigAdapter;
   /** Per-param overrides, applied before the adapter is consulted. */
-  readonly config?: Record<string, string | number>;
+  readonly overrides?: Record<string, string | number>;
 }
 
-/** Names every missing/invalid param at once — before any hydrate. */
+/** Names every missing/invalid/unknown param at once — before any hydrate. */
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -46,12 +46,12 @@ const paramPath = (entry: ConfigManifestEntry): string =>
 export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise<unknown> {
   const graph = Load(root);
   const manifest = configOf(root);
-  const adapter = opts?.adapter ?? root.adapter;
+  const adapter = opts?.config ?? root.config;
 
   // Overrides are applied first; only unsatisfied params are requested.
   const overrides = new Map<string, string | number>();
   for (const entry of manifest) {
-    const value = opts?.config?.[paramPath(entry)];
+    const value = opts?.overrides?.[paramPath(entry)];
     if (value !== undefined) overrides.set(paramPath(entry), value);
   }
 
@@ -118,7 +118,7 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
 
   // A typoed override must not silently fall through to the platform value.
   const knownPaths = new Set(manifest.map(paramPath));
-  for (const key of Object.keys(opts?.config ?? {})) {
+  for (const key of Object.keys(opts?.overrides ?? {})) {
     if (!knownPaths.has(key)) {
       problems.push(`unknown override key "${key}"`);
     }

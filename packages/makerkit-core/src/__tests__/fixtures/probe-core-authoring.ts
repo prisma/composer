@@ -14,7 +14,7 @@ const app = service({
   type: "probe/app",
   inputs: { db },
   params: { port: { type: "number", default: 3000 } },
-  adapter: { get: async () => ({}) },
+  config: { get: async () => ({}) },
   handler: ({ db: client }) => client,
 });
 

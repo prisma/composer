@@ -36,17 +36,6 @@ describe("resource()", () => {
     expect(calls).toBe(1);
   });
 
-  test("carries config as data and freezes it", () => {
-    const node = resource({
-      type: "fake/db",
-      connection: conn({}, () => ({})),
-      config: { size: 3 },
-    });
-
-    expect(node.config).toEqual({ size: 3 });
-    expect(Object.isFrozen(node.config)).toBe(true);
-  });
-
   test("throws on an empty type", () => {
     expect(() => resource({ type: "", connection: conn({}, () => ({})) })).toThrow(
       /non-empty node type/,
@@ -61,7 +50,7 @@ describe("service()", () => {
       type: "fake/app",
       inputs: { db },
       params: { port: { type: "number", default: 3000 } },
-      adapter,
+      config: adapter,
       handler: () => null,
     });
 
@@ -70,7 +59,7 @@ describe("service()", () => {
     expect(node.type).toBe("fake/app");
     expect(node.inputs.db).toBe(db);
     expect(node.params).toEqual({ port: { type: "number", default: 3000 } });
-    expect(node.adapter).toBe(adapter);
+    expect(node.config).toBe(adapter);
     expect(Object.isFrozen(node)).toBe(true);
     expect(Object.isFrozen(node.inputs)).toBe(true);
     expect(Object.isFrozen(node.params)).toBe(true);
@@ -83,7 +72,7 @@ describe("service()", () => {
       type: "fake/app",
       inputs: { db: resource({ type: "fake/db", connection: conn({}, () => ({})) }) },
       params: { port: { type: "number", default: 3000 } },
-      adapter,
+      config: adapter,
       handler: (deps, ctx) => {
         calls += 1;
         return { deps, ctx };
@@ -100,7 +89,7 @@ describe("service()", () => {
 
   test("throws on an empty type", () => {
     expect(() =>
-      service({ type: "", inputs: {}, params: {}, adapter, handler: () => null }),
+      service({ type: "", inputs: {}, params: {}, config: adapter, handler: () => null }),
     ).toThrow(/non-empty node type/);
   });
 });

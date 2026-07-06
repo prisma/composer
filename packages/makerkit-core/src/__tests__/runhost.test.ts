@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { LoadError } from "../graph.ts";
 import { resource, service } from "../node.ts";
-import { ConfigError, runHost } from "../runtime/index.ts";
+import { ConfigError, runHost } from "../runtime.ts";
 import { conn, memoryAdapter, untouchableAdapter } from "./helpers.ts";
 
 const dbNode = (record?: (values: { url: string }) => void) =>
@@ -23,7 +23,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: portParams,
-      adapter: memoryAdapter({ "db.url": "postgres://x", port: "8080" }),
+      config: memoryAdapter({ "db.url": "postgres://x", port: "8080" }),
       handler: (deps, c) => {
         received = deps;
         ctx = c;
@@ -44,14 +44,14 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: portParams,
-      adapter: untouchableAdapter, // the "platform" — must not be consulted
+      config: untouchableAdapter, // the "platform" — must not be consulted
       handler: (_deps, c) => {
         ctx = c;
         return null;
       },
     });
 
-    await runHost(root, { adapter: memoryAdapter({ "db.url": "postgres://swap", port: "4001" }) });
+    await runHost(root, { config: memoryAdapter({ "db.url": "postgres://swap", port: "4001" }) });
 
     expect(ctx).toEqual({ port: 4001 });
   });
@@ -64,7 +64,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: portParams,
-      adapter,
+      config: adapter,
       handler: (deps, c) => {
         received = deps;
         ctx = c;
@@ -72,7 +72,7 @@ describe("runHost", () => {
       },
     });
 
-    await runHost(root, { config: { "db.url": "postgres://override", port: 2222 } });
+    await runHost(root, { overrides: { "db.url": "postgres://override", port: 2222 } });
 
     expect(received).toEqual({ db: { client: "postgres://override" } });
     expect(ctx).toEqual({ port: 2222 });
@@ -86,7 +86,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: {},
       params: portParams,
-      adapter: memoryAdapter({ port: "9000" }),
+      config: memoryAdapter({ port: "9000" }),
       handler: (_deps, c) => {
         ctx = c;
         return null;
@@ -104,14 +104,14 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: {},
-      adapter: untouchableAdapter,
+      config: untouchableAdapter,
       handler: (deps) => {
         received = deps;
         return null;
       },
     });
 
-    await runHost(root, { config: { "db.url": "postgres://test" } });
+    await runHost(root, { overrides: { "db.url": "postgres://test" } });
 
     expect(received).toEqual({ db: { client: "postgres://test" } });
   });
@@ -137,7 +137,7 @@ describe("runHost", () => {
         }),
       },
       params: { replicas: { type: "number" } },
-      adapter: memoryAdapter({ replicas: "not-a-number" }),
+      config: memoryAdapter({ replicas: "not-a-number" }),
       handler: () => null,
     });
 
@@ -159,7 +159,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: {},
       params: portParams,
-      adapter: memoryAdapter({ port: "" }),
+      config: memoryAdapter({ port: "" }),
       handler: (_deps, c) => {
         ctx = c;
         return null;
@@ -176,7 +176,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: {},
       params: { port: { type: "number" } },
-      adapter: memoryAdapter({ port: "not-a-number" }),
+      config: memoryAdapter({ port: "not-a-number" }),
       handler: () => null,
     });
 
@@ -189,7 +189,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: {},
       params: portParams, // default 3000
-      adapter: memoryAdapter({ port: "80O0" }),
+      config: memoryAdapter({ port: "80O0" }),
       handler: () => null,
     });
 
@@ -203,7 +203,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: {},
-      adapter: memoryAdapter({ "db.url": "postgres://from-adapter" }),
+      config: memoryAdapter({ "db.url": "postgres://from-adapter" }),
       handler: () => {
         handlerCalls += 1;
         return null;
@@ -211,9 +211,9 @@ describe("runHost", () => {
     });
 
     // Typoed key: "db.ur1" instead of "db.url".
-    expect(runHost(root, { config: { "db.ur1": "postgres://typo" } })).rejects.toThrow(ConfigError);
-    expect(runHost(root, { config: { "db.ur1": "postgres://typo" } })).rejects.toThrow(/db\.ur1/);
-    await runHost(root, { config: { "db.ur1": "postgres://typo" } }).catch(() => {});
+    expect(runHost(root, { overrides: { "db.ur1": "postgres://typo" } })).rejects.toThrow(ConfigError);
+    expect(runHost(root, { overrides: { "db.ur1": "postgres://typo" } })).rejects.toThrow(/db\.ur1/);
+    await runHost(root, { overrides: { "db.ur1": "postgres://typo" } }).catch(() => {});
     expect(handlerCalls).toBe(0);
   });
 
@@ -222,7 +222,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: {},
-      adapter: memoryAdapter({ "db.url": "" }),
+      config: memoryAdapter({ "db.url": "" }),
       handler: () => null,
     });
 
@@ -247,7 +247,7 @@ describe("runHost", () => {
         }),
       },
       params: {},
-      adapter: memoryAdapter({ "db.url": "postgres://x" }),
+      config: memoryAdapter({ "db.url": "postgres://x" }),
       handler: () => null,
     });
 
@@ -270,7 +270,7 @@ describe("runHost", () => {
         }),
       },
       params: {},
-      adapter: memoryAdapter({ "db.url": "postgres://x" }),
+      config: memoryAdapter({ "db.url": "postgres://x" }),
       handler: (deps) => {
         received = deps;
         return null;
@@ -288,7 +288,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: {},
       params: portParams,
-      adapter: memoryAdapter({}),
+      config: memoryAdapter({}),
       handler: (_deps, c) => {
         ctx = c;
         return "booted";
@@ -304,11 +304,11 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: { not: "a node" } as never },
       params: {},
-      adapter: untouchableAdapter,
+      config: untouchableAdapter,
       handler: () => null,
     });
 
-    expect(runHost(root, { config: { "db.url": "postgres://x" } })).rejects.toThrow(LoadError);
+    expect(runHost(root, { overrides: { "db.url": "postgres://x" } })).rejects.toThrow(LoadError);
   });
 
   test("does not call the handler when config validation fails", async () => {
@@ -317,7 +317,7 @@ describe("runHost", () => {
       type: "fake/app",
       inputs: { db: dbNode() },
       params: {},
-      adapter: memoryAdapter({}),
+      config: memoryAdapter({}),
       handler: () => {
         handlerCalls += 1;
         return null;

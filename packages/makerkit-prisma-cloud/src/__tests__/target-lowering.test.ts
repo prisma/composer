@@ -26,7 +26,7 @@ mock.module("@makerkit/prisma-alchemy", () => ({
   },
 }));
 
-const { prismaCloud } = await import("../target/index.ts");
+const { prismaCloud } = await import("../target.ts");
 
 const opts: LowerOptions = {
   name: "auth",

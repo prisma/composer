@@ -1,14 +1,14 @@
 import { compute } from "@makerkit/prisma-cloud";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { db } from "./connections.ts";
+import { database } from "./connections.ts";
 
 /**
  * The auth service: a Compute service with a Postgres dependency. The handler
  * reads nothing from the environment — core's pipeline hydrates `db` (through
  * the connection defined in connections.ts) and resolves `port`.
  */
-export default compute({ db }, ({ db }, { port }) => {
+export default compute({ db: database }, ({ db }, { port }) => {
   const app = new Hono();
 
   // Prove the DB is reachable; map a failed query to 503 so the platform sees
