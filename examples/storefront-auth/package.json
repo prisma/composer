@@ -6,12 +6,11 @@
   "scripts": {
     "build": "pnpm --filter @makerkit/example-storefront-auth-auth build && pnpm --filter @makerkit/example-storefront-auth-storefront build:compute",
     "typecheck": "tsc --noEmit",
-    "deploy": "pnpm build && ( set -a; . ../../.env; set +a; pnpm exec alchemy deploy --yes )",
-    "destroy": "( set -a; . ../../.env; set +a; pnpm exec alchemy destroy --yes )"
+    "deploy": "pnpm build && ( set -a; . ../../.env; set +a; bunx --bun alchemy deploy --yes )",
+    "destroy": "( set -a; . ../../.env; set +a; bunx --bun alchemy destroy --yes )"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.0-beta.92",
-    "@effect/platform-node-shared": "4.0.0-beta.92",
+    "@effect/platform-bun": "4.0.0-beta.92",
     "@makerkit/core": "workspace:*",
     "@makerkit/prisma-alchemy": "workspace:*",
     "@makerkit/prisma-cloud": "workspace:*",
