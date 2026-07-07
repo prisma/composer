@@ -1,10 +1,11 @@
-import * as fs from 'node:fs';
-import { Resource } from 'alchemy';
-import * as Provider from 'alchemy/Provider';
-import * as Effect from 'effect/Effect';
-import * as Schedule from 'effect/Schedule';
-import { ManagementClient } from '../client.ts';
-import { call, callOptional, PrismaApiError } from '../http.ts';
+import { Resource } from "alchemy";
+import * as Provider from "alchemy/Provider";
+import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
+import * as fs from "node:fs";
+import { ManagementClient } from "../client.ts";
+import { PrismaApiError, call, callOptional } from "../http.ts";
+import type { EnvironmentVariable } from "./EnvironmentVariable.ts";
 
 export interface DeploymentProps {
   /** The compute service this deployment targets. */
@@ -22,6 +23,15 @@ export interface DeploymentProps {
    * (`portMapping.http`); without it the endpoint has no route and 404s.
    */
   port?: number;
+  /**
+   * The env-var records this version boots with. The provider never reads
+   * this — PDP materializes the branch's ConfigVariables into the version
+   * itself at version-create. Its only job is the Alchemy dependency edge:
+   * order this Deployment after those writes, and force a new version when
+   * any upstream value changes (the environment edge that kills PRO-211 —
+   * see docs/design/05-prisma-cloud/alchemy-lowering.md).
+   */
+  environment?: readonly EnvironmentVariable[];
 }
 
 export interface DeploymentAttributes {
