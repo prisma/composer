@@ -479,10 +479,15 @@ because the `Deployment` resource declares the environment records it boots
 with as a prop, which is PDP's own dataflow restored (the version-create call
 literally contains the materialized env map). See the lowering graphs in
 [`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md).
-The same edge also propagates change: a producer's new URL diffs the consumer's
-`Deployment` props → new version → new snapshot, the only propagation mechanism
-PDP's snapshot-per-version semantics permit. This is what makes the fresh-deploy
-config race (PRO-211) structurally impossible on every target.
+This is what makes the fresh-deploy config race (PRO-211) structurally impossible
+on every target — the edge's **ordering** job. Its second job, **propagating** a
+wire whose value genuinely changes, is not yet wired: the env-var resource exposes
+only `{ id, key }`, so a changed value doesn't diff the consumer's `Deployment`.
+The fix is provenance-based (the consumer depends on the *source node's* version,
+never on the value or a hash of it) and is a deferred follow-up — narrow in
+practice, since promoted service endpoints are stable across producer redeploys.
+Secrets are platform-sourced and rotate through the platform, not this edge (see
+the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
 **Deployment identity — address, bootstrap, and why.** A node's identity is its
 **address**: the path of provision ids from the app root, assigned by Load from

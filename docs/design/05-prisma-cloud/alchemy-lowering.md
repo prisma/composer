@@ -114,22 +114,26 @@ How the pieces map:
   into a named `EnvironmentVariable`, and that variable's **record reference
   flows into the consumer's `Deployment`** via its `environment` prop.
 - Every `EnvironmentVariable` a Deployment boots with appears in its
-  `environment` prop — database URLs and connection URLs alike — so ordering
-  and change propagation hold uniformly.
+  `environment` prop — database URLs and connection URLs alike — so the version
+  depends on its config being written first.
 
 The `environment` prop is essential and mirrors PDP's own dataflow — the
 version-create call literally contains the materialized env map, so the
 environment is genuinely an input to a version (see the
 [config lifecycle](pdp-data-model.md#the-config-lifecycle--what-is-resolved-when)).
-The edge does two jobs by ordinary dependency-graph mechanics:
+The edge's job today is **ordering**: the variable write completes before
+version-create, so the first version boots with a complete environment. Without
+it the two race — the failure documented as PRO-211 in `gotchas.md`.
 
-1. **Ordering.** The variable write completes before version-create. Without
-   this edge the two race — that failure mode is documented as PRO-211 in
-   `gotchas.md`.
-2. **Propagation.** When the producer redeploys and its URL changes, the
-   variable's record changes → the consumer `Deployment`'s props diff → a new
-   consumer version snapshots the new value. Under snapshot-per-version
-   semantics this is the *only* correct propagation mechanism.
+**Change propagation is a deferred follow-up, not yet wired.** The env-var
+resource exposes only `{ id, key }`, so a *value* change (a rotated URL) does not
+diff the consumer `Deployment`, and no new version is created. The intended fix is
+provenance-based — the consumer depends on the **source node's** version, never on
+the value or a hash of it (a hash of a secret is itself a leak, and persisting the
+value would put a credential in Alchemy state). It is narrow in practice: promoted
+service endpoints are stable across producer redeploys, so a wire's value rarely
+moves, and true secrets are platform-sourced and rotate through the platform, not
+this edge (see the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
 MakerKit's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack

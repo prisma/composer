@@ -114,3 +114,32 @@ guard, side-effect-free-import test) carry forward into the rebuild.
      postgres({client})` in a separate file whose only claimed job — isolating the
      driver import — is void (the service module imports it anyway). The connection
      definition lives inline in `service.ts`. R4 examples fold it in.
+
+10. **Config vs secrets; MakerKit wires secrets, never sources or persists them**
+    (operator discussion, R4 propagation/Finding-2 thread). The realizations that
+    resolved Finding 2:
+    - **Most "env vars" are graph-materialized wires, not user config.** What
+      `serialize` writes is mostly connection/resource addresses MakerKit computes
+      from the topology. A wire's change is a graph event, detected by the source
+      node's **provenance** (its identity/version) — never by fingerprinting the
+      value. So nothing value-derived (not the value, not a hash) is ever persisted:
+      a hash of a secret is itself a leak, and storing the value would put a
+      credential in Alchemy's unencrypted state.
+    - **Secrets are platform-sourced, always.** A true secret never enters MakerKit's
+      graph or deployment state. The user — or a third-party manager (e.g. Doppler)
+      integrated at the platform — puts it in the platform's secret store; MakerKit
+      only **wires the platform secret to the consumer's DI** (no-globals holds: user
+      code never reads env; MakerKit injects). MakerKit sources it, never.
+    - **Provisioned credentials become platform secrets.** The intended handling for
+      a MakerKit-provisioned credential (a database URL): write it to the platform
+      secret store transiently during provisioning, then wire it by reference like
+      any platform secret — a transient deploy-time value, never persisted in Alchemy
+      state. (Deployment is expected to run in CD or a PDP-side orchestration system.)
+      Hardening follow-up, not R4.
+    - **Finding 2 resolution:** the environment edge guarantees **ordering** (the
+      fresh-deploy race — R4's headline, unaffected). Propagating a wire whose value
+      genuinely changes is via source-version provenance — a **deferred follow-up**,
+      narrow because promoted endpoints are stable; secrets rotate through the
+      platform. No prisma-alchemy change in R4; the overclaim was scoped down in
+      core-model.md + alchemy-lowering.md, and the config/secret split recorded in the
+      glossary.
