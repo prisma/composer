@@ -1,9 +1,9 @@
-import { createManagementApiClient } from "@prisma/management-api-sdk";
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
-import { PrismaCredentials } from "./credentials.ts";
+import { createManagementApiClient } from '@prisma/management-api-sdk';
+import * as Context from 'effect/Context';
+import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
+import * as Redacted from 'effect/Redacted';
+import { PrismaCredentials } from './credentials.ts';
 
 export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
 
@@ -12,10 +12,9 @@ export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
  * credentials. Providers yield this in their outer Effect and call it inside
  * `reconcile` / `delete`.
  */
-export class ManagementClient extends Context.Service<
-  ManagementClient,
-  ManagementApiClient
->()("PrismaManagementClient") {}
+export class ManagementClient extends Context.Service<ManagementClient, ManagementApiClient>()(
+  'PrismaManagementClient',
+) {}
 
 export const layer = (): Layer.Layer<ManagementClient, never, PrismaCredentials> =>
   Layer.effect(

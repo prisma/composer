@@ -1,10 +1,10 @@
-import { Resource } from "alchemy";
-import * as Provider from "alchemy/Provider";
-import * as Effect from "effect/Effect";
-import { ManagementClient } from "../client.ts";
-import { call, callOptional, callVoid } from "../http.ts";
+import { Resource } from 'alchemy';
+import * as Provider from 'alchemy/Provider';
+import * as Effect from 'effect/Effect';
+import { ManagementClient } from '../client.ts';
+import { call, callOptional, callVoid } from '../http.ts';
 
-export type EnvironmentClass = "production" | "preview";
+export type EnvironmentClass = 'production' | 'preview';
 
 export interface EnvironmentVariableProps {
   /** The project this variable belongs to. */
@@ -25,7 +25,7 @@ export interface EnvironmentVariableAttributes {
 }
 
 export type EnvironmentVariable = Resource<
-  "Prisma.EnvironmentVariable",
+  'Prisma.EnvironmentVariable',
   EnvironmentVariableProps,
   EnvironmentVariableAttributes
 >;
@@ -35,7 +35,7 @@ export type EnvironmentVariable = Resource<
  * project's services from their attached branch (e.g. wiring one hex's URL into
  * another).
  */
-export const EnvironmentVariable = Resource<EnvironmentVariable>("Prisma.EnvironmentVariable");
+export const EnvironmentVariable = Resource<EnvironmentVariable>('Prisma.EnvironmentVariable');
 
 export const EnvironmentVariableProvider = () =>
   Provider.effect(
@@ -44,7 +44,7 @@ export const EnvironmentVariableProvider = () =>
       const client = yield* ManagementClient;
 
       return {
-        stables: ["id"],
+        stables: ['id'],
         list: () => Effect.succeed([] as EnvironmentVariableAttributes[]),
         reconcile: Effect.fn(function* ({ news, output }) {
           // The value is write-only (stored encrypted), so it can't be diffed.
@@ -52,13 +52,13 @@ export const EnvironmentVariableProvider = () =>
           // otherwise create it.
           if (output?.id) {
             const existing = yield* callOptional(() =>
-              client.GET("/v1/environment-variables/{envVarId}", {
+              client.GET('/v1/environment-variables/{envVarId}', {
                 params: { path: { envVarId: output.id } },
               }),
             );
             if (existing) {
               yield* call(() =>
-                client.PATCH("/v1/environment-variables/{envVarId}", {
+                client.PATCH('/v1/environment-variables/{envVarId}', {
                   params: { path: { envVarId: output.id } },
                   body: { value: news.value },
                 }),
@@ -68,10 +68,10 @@ export const EnvironmentVariableProvider = () =>
           }
 
           const created = yield* call(() =>
-            client.POST("/v1/environment-variables", {
+            client.POST('/v1/environment-variables', {
               body: {
                 projectId: news.projectId,
-                class: news.class ?? "production",
+                class: news.class ?? 'production',
                 key: news.key,
                 value: news.value,
                 ...(news.branchId ? { branchId: news.branchId } : {}),
@@ -82,7 +82,7 @@ export const EnvironmentVariableProvider = () =>
         }),
         delete: Effect.fn(function* ({ output }) {
           yield* callVoid(() =>
-            client.DELETE("/v1/environment-variables/{envVarId}", {
+            client.DELETE('/v1/environment-variables/{envVarId}', {
               params: { path: { envVarId: output.id } },
             }),
           );
@@ -90,7 +90,7 @@ export const EnvironmentVariableProvider = () =>
         read: Effect.fn(function* ({ output }) {
           if (!output?.id) return undefined;
           const v = yield* callOptional(() =>
-            client.GET("/v1/environment-variables/{envVarId}", {
+            client.GET('/v1/environment-variables/{envVarId}', {
               params: { path: { envVarId: output.id } },
             }),
           );

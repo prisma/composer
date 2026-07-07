@@ -1,7 +1,7 @@
-import { service } from "@makerkit/core";
-import type { ConfigAdapter, Deps, ServiceHandler, ServiceNode } from "@makerkit/core";
+import type { ConfigAdapter, Deps, ServiceHandler, ServiceNode } from '@makerkit/core';
+import { service } from '@makerkit/core';
 
-const computeParams = { port: { type: "number", default: 3000 } } as const;
+const computeParams = { port: { type: 'number', default: 3000 } } as const;
 
 /**
  * A Prisma Compute service: inputs + handler, inert until run by the host.
@@ -12,7 +12,7 @@ export const compute = <D extends Deps>(
   handler: ServiceHandler<D, typeof computeParams>,
 ): ServiceNode<D, typeof computeParams> =>
   service({
-    type: "prisma-cloud/compute",
+    type: 'prisma-cloud/compute',
     inputs: deps,
     params: computeParams,
     config: computeAdapter,
@@ -22,7 +22,8 @@ export const compute = <D extends Deps>(
 // The platform adapter — the pack's single environment reader. The semantic↔
 // physical mapping (url ↔ DATABASE_URL, port ↔ PORT; per-input naming when
 // multiple databases arrive) lives HERE, private to the pack.
-const physicalKey = (name: string): string => (name === "url" ? "DATABASE_URL" : name.toUpperCase());
+const physicalKey = (name: string): string =>
+  name === 'url' ? 'DATABASE_URL' : name.toUpperCase();
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
 // structurally so this entry imports no runtime's types.

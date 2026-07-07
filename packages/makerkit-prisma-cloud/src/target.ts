@@ -2,10 +2,11 @@
  * The lowering table — the only place @makerkit/prisma-alchemy is imported.
  * Deploy-time only; never lands in a runtime bundle.
  */
-import * as Effect from "effect/Effect";
-import type * as Layer from "effect/Layer";
-import * as Prisma from "@makerkit/prisma-alchemy";
-import type { Target } from "@makerkit/core/deploy";
+
+import type { Target } from '@makerkit/core/deploy';
+import * as Prisma from '@makerkit/prisma-alchemy';
+import * as Effect from 'effect/Effect';
+import type * as Layer from 'effect/Layer';
 
 export interface PrismaCloudOptions {
   workspaceId: string;
@@ -13,7 +14,7 @@ export interface PrismaCloudOptions {
 }
 
 export const prismaCloud = (o: PrismaCloudOptions): Target => ({
-  name: "prisma-cloud",
+  name: 'prisma-cloud',
 
   // Alchemy's Stack types its providers Layer against the per-resource
   // requirements inferred from the stack effect, which the ProviderCollection
@@ -26,10 +27,10 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
     // For now the postgres input is served by the project's default database
     // (Compute auto-injects DATABASE_URL), so it provisions nothing itself.
     // It becomes a real Database resource when contracts/multiple DBs arrive.
-    "prisma-cloud/postgres": () => Effect.succeed({ outputs: {} }),
+    'prisma-cloud/postgres': () => Effect.succeed({ outputs: {} }),
 
     // The service is the deployment unit: Project + ComputeService + Deployment.
-    "prisma-cloud/compute": ({ id, opts }) =>
+    'prisma-cloud/compute': ({ id, opts }) =>
       Effect.gen(function* () {
         const project = yield* Prisma.Project(`${id}-project`, {
           workspaceId: o.workspaceId,
@@ -38,7 +39,7 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
         const svc = yield* Prisma.ComputeService(`${id}-svc`, {
           projectId: project.id,
           name: id,
-          region: o.region ?? "us-east-1",
+          region: o.region ?? 'us-east-1',
         });
         const deploy = yield* Prisma.Deployment(`${id}-deploy`, {
           computeServiceId: svc.id,

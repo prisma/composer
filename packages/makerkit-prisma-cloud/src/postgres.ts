@@ -1,5 +1,5 @@
-import { resource } from "@makerkit/core";
-import type { ResourceNode } from "@makerkit/core";
+import type { ResourceNode } from '@makerkit/core';
+import { resource } from '@makerkit/core';
 
 export interface PostgresConfig {
   readonly url: string;
@@ -13,9 +13,9 @@ export const postgres = <C>(opts: {
   client: (config: PostgresConfig) => C | Promise<C>;
 }): ResourceNode<C> =>
   resource({
-    type: "prisma-cloud/postgres",
+    type: 'prisma-cloud/postgres',
     connection: {
-      params: { url: { type: "string", secret: true } },
+      params: { url: { type: 'string', secret: true } },
       // v: { url: string } — enforced by the declaration.
       hydrate: (v) => opts.client({ url: v.url }),
     },

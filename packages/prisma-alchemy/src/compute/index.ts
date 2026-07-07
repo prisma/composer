@@ -1,3 +1,3 @@
-export * from "./ComputeService.ts";
-export * from "./Deployment.ts";
-export * from "./EnvironmentVariable.ts";
+export * from './ComputeService.ts';
+export * from './Deployment.ts';
+export * from './EnvironmentVariable.ts';

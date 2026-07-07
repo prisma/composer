@@ -7,7 +7,7 @@ const port = Number(process.env.PORT ?? 3000);
 Bun.serve({
   port,
   fetch(): Response {
-    return new Response("hello from prisma compute\n");
+    return new Response('hello from prisma compute\n');
   },
 });
 

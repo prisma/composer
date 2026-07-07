@@ -4,29 +4,28 @@
  * ships only this code. (/control carves out of here when the control
  * surface grows.) Pure barrel — no implementations live here.
  */
-export { resource, service, isNode } from "./node.ts";
+
 export type {
-  NodeBase,
-  ResourceNode,
-  ServiceNode,
+  ConfigAdapter,
+  ConfigDeclaration,
+  ConfigParam,
+  ConfigRequest,
+  Connection,
+  Params,
+  ParamType,
+  TypeOf,
+  Values,
+} from './config.ts';
+export { configOf } from './config.ts';
+export type { Edge, Graph, GraphNode, NodeId } from './graph.ts';
+export { Load, LoadError } from './graph.ts';
+export type {
   Deps,
   Hydrated,
   HydratedDeps,
+  NodeBase,
+  ResourceNode,
   ServiceHandler,
-} from "./node.ts";
-
-export { Load, LoadError } from "./graph.ts";
-export type { NodeId, GraphNode, Edge, Graph } from "./graph.ts";
-
-export { configOf } from "./config.ts";
-export type {
-  ParamType,
-  TypeOf,
-  ConfigParam,
-  Params,
-  Values,
-  Connection,
-  ConfigAdapter,
-  ConfigRequest,
-  ConfigDeclaration,
-} from "./config.ts";
+  ServiceNode,
+} from './node.ts';
+export { isNode, resource, service } from './node.ts';

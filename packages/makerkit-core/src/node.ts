@@ -7,16 +7,16 @@
  * data; only the adapter touches a real environment. A node's `type` is its
  * routing key at deploy; core never interprets it beyond lookup.
  */
-import type { ConfigAdapter, ConfigParam, Connection, Params, Values } from "./config.ts";
+import type { ConfigAdapter, ConfigParam, Connection, Params, Values } from './config.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
-const NODE: unique symbol = Symbol.for("makerkit:node") as never;
+const NODE: unique symbol = Symbol.for('makerkit:node') as never;
 
 export interface NodeBase {
   readonly [NODE]: true;
   /** "hex" later — an extension point, not built yet. */
-  readonly kind: "service" | "resource";
+  readonly kind: 'service' | 'resource';
   /** Routing key, e.g. "prisma-cloud/postgres". */
   readonly type: string;
 }
@@ -26,7 +26,7 @@ export interface NodeBase {
  * the connection's hydrate return type into the handler's parameter.
  */
 export interface ResourceNode<C = unknown> extends NodeBase {
-  readonly kind: "resource";
+  readonly kind: 'resource';
   readonly connection: Connection<Params, C>;
 }
 
@@ -37,7 +37,7 @@ export interface ResourceNode<C = unknown> extends NodeBase {
  * separate handle type: the node is the handle.
  */
 export interface ServiceNode<D extends Deps = Deps, P extends Params = Params> extends NodeBase {
-  readonly kind: "service";
+  readonly kind: 'service';
   readonly inputs: D;
   /** Service-level config declarations (e.g. port). */
   readonly params: P;
@@ -47,6 +47,7 @@ export interface ServiceNode<D extends Deps = Deps, P extends Params = Params> e
 }
 
 /** Dependency map: name → ResourceNode. `any`, not `unknown` — keeps inference. */
+// biome-ignore lint/suspicious/noExplicitAny: `any` here is deliberate — `unknown` would break dependency inference.
 export type Deps = Record<string, ResourceNode<any>>;
 
 export type Hydrated<N> = N extends ResourceNode<infer C> ? C : never;
@@ -62,7 +63,7 @@ export type ServiceHandler<D extends Deps, P extends Params> = (
 ) => unknown;
 
 function requireType(type: string, factory: string): void {
-  if (typeof type !== "string" || type.length === 0) {
+  if (typeof type !== 'string' || type.length === 0) {
     throw new Error(`${factory}() requires a non-empty node type.`);
   }
 }
@@ -80,14 +81,14 @@ export function resource<P extends Params, C>(def: {
   type: string;
   connection: Connection<P, C>;
 }): ResourceNode<C> {
-  requireType(def.type, "resource");
+  requireType(def.type, 'resource');
   const connection: Connection<P, C> = Object.freeze({
     params: freezeParams(def.connection.params),
     hydrate: def.connection.hydrate,
   });
   const node: ResourceNode<C> = {
     [NODE]: true,
-    kind: "resource",
+    kind: 'resource',
     type: def.type,
     connection: connection as Connection<Params, C>,
   };
@@ -105,10 +106,10 @@ export function service<D extends Deps, P extends Params>(def: {
   config: ConfigAdapter;
   handler: ServiceHandler<D, P>;
 }): ServiceNode<D, P> {
-  requireType(def.type, "service");
+  requireType(def.type, 'service');
   const node: ServiceNode<D, P> = {
     [NODE]: true,
-    kind: "service",
+    kind: 'service',
     type: def.type,
     inputs: Object.freeze({ ...def.inputs }) as D,
     params: freezeParams(def.params),
@@ -123,7 +124,7 @@ export function service<D extends Deps, P extends Params>(def: {
 /** True if `value` is a node constructed by the service()/resource() factories. */
 export function isNode(value: unknown): value is NodeBase {
   return (
-    typeof value === "object" &&
+    typeof value === 'object' &&
     value !== null &&
     (value as Record<PropertyKey, unknown>)[NODE] === true
   );

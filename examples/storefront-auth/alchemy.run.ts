@@ -1,15 +1,15 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import * as Alchemy from "alchemy";
-import * as Output from "alchemy/Output";
-import { localState } from "alchemy/State/LocalState";
-import * as Effect from "effect/Effect";
-import * as Prisma from "@makerkit/prisma-alchemy";
-import { lowering } from "@makerkit/core/deploy";
-import { prismaCloud } from "@makerkit/prisma-cloud/target";
-import authService from "./hexes/auth/src/service.ts";
-import storefrontService from "./hexes/storefront/src/service.ts";
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { lowering } from '@makerkit/core/deploy';
+import * as Prisma from '@makerkit/prisma-alchemy';
+import { prismaCloud } from '@makerkit/prisma-cloud/target';
+import * as Alchemy from 'alchemy';
+import * as Output from 'alchemy/Output';
+import { localState } from 'alchemy/State/LocalState';
+import * as Effect from 'effect/Effect';
+import authService from './hexes/auth/src/service.ts';
+import storefrontService from './hexes/storefront/src/service.ts';
 
 /**
  * The storefront-auth MIXED stack: both services are MakerKit-authored nodes
@@ -27,10 +27,10 @@ const artifact = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 // `alchemy destroy` never uploads artifacts, so it must not require a prior
 // build; deploy always builds first (see the `deploy` script).
 const sha256 = (path: string) =>
-  existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : "absent";
+  existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : 'absent';
 
-const workspaceId = process.env.PRISMA_WORKSPACE_ID;
-if (!workspaceId) throw new Error("PRISMA_WORKSPACE_ID is required");
+const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
+if (!workspaceId) throw new Error('PRISMA_WORKSPACE_ID is required');
 
 const target = prismaCloud({ workspaceId });
 
@@ -42,7 +42,7 @@ function requireStringOutput(value: unknown, what: string): Output.Output<string
     throw new Error(`${what} is not an Output — the lowering did not produce it`);
   }
   return Output.map(value, (resolved): string => {
-    if (typeof resolved !== "string" || resolved.length === 0) {
+    if (typeof resolved !== 'string' || resolved.length === 0) {
       throw new Error(`${what} resolved to no value — cannot wire AUTH_URL`);
     }
     return resolved;
@@ -50,19 +50,19 @@ function requireStringOutput(value: unknown, what: string): Output.Output<string
 }
 
 const stack = Effect.gen(function* () {
-  const authArtifact = artifact("./hexes/auth/dist/auth.tar.gz");
+  const authArtifact = artifact('./hexes/auth/dist/auth.tar.gz');
   const auth = yield* lowering(authService, target, {
-    name: "makerkit-auth",
+    name: 'makerkit-auth',
     artifact: { path: authArtifact, sha256: sha256(authArtifact) },
   });
-  const authUrl = requireStringOutput(auth.outputs.url, "auth deployed URL");
+  const authUrl = requireStringOutput(auth.outputs['url'], 'auth deployed URL');
 
-  const storefrontArtifact = artifact("./hexes/storefront/dist/storefront.tar.gz");
+  const storefrontArtifact = artifact('./hexes/storefront/dist/storefront.tar.gz');
   const store = yield* lowering(storefrontService, target, {
-    name: "makerkit-storefront",
+    name: 'makerkit-storefront',
     artifact: { path: storefrontArtifact, sha256: sha256(storefrontArtifact) },
   });
-  const storeProjectId = requireStringOutput(store.outputs.projectId, "storefront project id");
+  const storeProjectId = requireStringOutput(store.outputs['projectId'], 'storefront project id');
 
   // The hand-wired Connection gap: AUTH_URL in the storefront project's
   // production env. Upstream edges: {storefront project (projectId), auth
@@ -73,14 +73,14 @@ const stack = Effect.gen(function* () {
   // minutes-long deployment — identical to the old stack, whose textual
   // ordering was registration-order luck at unbounded apply concurrency). An
   // enforced ordering edge is the Connection primitive's job (later project).
-  yield* Prisma.EnvironmentVariable("storefront-auth-url", {
+  yield* Prisma.EnvironmentVariable('storefront-auth-url', {
     projectId: storeProjectId,
-    key: "AUTH_URL",
+    key: 'AUTH_URL',
     value: authUrl,
-    class: "production",
+    class: 'production',
   });
 
-  return { authUrl, storefrontUrl: store.outputs.url };
+  return { authUrl, storefrontUrl: store.outputs['url'] };
 });
 
 // A LowerError at deploy is fatal (orDie); the requirements channel is
@@ -91,7 +91,7 @@ type StackOutputs = { authUrl: Output.Output<string>; storefrontUrl: unknown };
 const stackEffect = Effect.orDie(stack) as Effect.Effect<StackOutputs, never>;
 
 export default Alchemy.Stack(
-  "StorefrontAuth",
+  'StorefrontAuth',
   { providers: target.providers(), state: localState() },
   stackEffect,
 );

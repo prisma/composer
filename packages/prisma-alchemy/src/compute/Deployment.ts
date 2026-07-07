@@ -1,10 +1,10 @@
-import { Resource } from "alchemy";
-import * as Provider from "alchemy/Provider";
-import * as Effect from "effect/Effect";
-import * as Schedule from "effect/Schedule";
-import * as fs from "node:fs";
-import { ManagementClient } from "../client.ts";
-import { PrismaApiError, call, callOptional } from "../http.ts";
+import * as fs from 'node:fs';
+import { Resource } from 'alchemy';
+import * as Provider from 'alchemy/Provider';
+import * as Effect from 'effect/Effect';
+import * as Schedule from 'effect/Schedule';
+import { ManagementClient } from '../client.ts';
+import { call, callOptional, PrismaApiError } from '../http.ts';
 
 export interface DeploymentProps {
   /** The compute service this deployment targets. */
@@ -29,14 +29,14 @@ export interface DeploymentAttributes {
   deployedUrl?: string;
 }
 
-export type Deployment = Resource<"Prisma.Deployment", DeploymentProps, DeploymentAttributes>;
+export type Deployment = Resource<'Prisma.Deployment', DeploymentProps, DeploymentAttributes>;
 
 /**
  * A **deployment** of a Prisma Compute service — creates a version, uploads
  * its artifact, starts the VM, waits for it to run, then promotes it to the
  * service's stable endpoint.
  */
-export const Deployment = Resource<Deployment>("Prisma.Deployment");
+export const Deployment = Resource<Deployment>('Prisma.Deployment');
 
 export const DeploymentProvider = () =>
   Provider.effect(
@@ -49,12 +49,12 @@ export const DeploymentProvider = () =>
       // promote call fails with 409 "not running".
       const waitForRunning = (versionId: string) =>
         call(() =>
-          client.GET("/v1/compute-services/versions/{versionId}", {
+          client.GET('/v1/compute-services/versions/{versionId}', {
             params: { path: { versionId } },
           }),
         ).pipe(
           Effect.flatMap((v) =>
-            v.data.status === "running"
+            v.data.status === 'running'
               ? Effect.void
               : Effect.fail(
                   new PrismaApiError({
@@ -63,9 +63,7 @@ export const DeploymentProvider = () =>
                   }),
                 ),
           ),
-          Effect.retry(
-            Schedule.both(Schedule.spaced("2 seconds"), Schedule.during("2 minutes")),
-          ),
+          Effect.retry(Schedule.both(Schedule.spaced('2 seconds'), Schedule.during('2 minutes'))),
         );
 
       return {
@@ -77,7 +75,7 @@ export const DeploymentProvider = () =>
           // a props change (a new artifactHash) is what brought us here, so
           // returning the previous version would strand the new build.
           const created = yield* call(() =>
-            client.POST("/v1/compute-services/{computeServiceId}/versions", {
+            client.POST('/v1/compute-services/{computeServiceId}/versions', {
               params: { path: { computeServiceId: news.computeServiceId } },
               body: news.port !== undefined ? { portMapping: { http: news.port } } : {},
             }),
@@ -96,7 +94,7 @@ export const DeploymentProvider = () =>
             });
             yield* Effect.tryPromise({
               try: async () => {
-                const res = await fetch(uploadUrl, { method: "PUT", body: artifact });
+                const res = await fetch(uploadUrl, { method: 'PUT', body: artifact });
                 if (!res.ok) {
                   throw new PrismaApiError({
                     status: res.status,
@@ -112,7 +110,7 @@ export const DeploymentProvider = () =>
           }
 
           yield* call(() =>
-            client.POST("/v1/compute-services/versions/{versionId}/start", {
+            client.POST('/v1/compute-services/versions/{versionId}/start', {
               params: { path: { versionId } },
             }),
           );
@@ -120,7 +118,7 @@ export const DeploymentProvider = () =>
           yield* waitForRunning(versionId);
 
           yield* call(() =>
-            client.POST("/v1/compute-services/{computeServiceId}/promote", {
+            client.POST('/v1/compute-services/{computeServiceId}/promote', {
               params: { path: { computeServiceId: news.computeServiceId } },
               body: { versionId },
             }),
@@ -130,12 +128,13 @@ export const DeploymentProvider = () =>
           // once promoted; the service's create-time `serviceEndpointDomain` is
           // a placeholder. Re-read the service for the live URL.
           const service = yield* call(() =>
-            client.GET("/v1/compute-services/{computeServiceId}", {
+            client.GET('/v1/compute-services/{computeServiceId}', {
               params: { path: { computeServiceId: news.computeServiceId } },
             }),
           );
 
-          return { versionId, deployedUrl: service.data.serviceEndpointDomain };
+          const deployedUrl = service.data.serviceEndpointDomain;
+          return { versionId, ...(deployedUrl !== undefined && { deployedUrl }) };
         }),
         delete: Effect.fn(function* () {
           // A promoted version is retained as the service's deploy history;
@@ -144,12 +143,15 @@ export const DeploymentProvider = () =>
         read: Effect.fn(function* ({ output }) {
           if (!output?.versionId) return undefined;
           const v = yield* callOptional(() =>
-            client.GET("/v1/compute-services/versions/{versionId}", {
+            client.GET('/v1/compute-services/versions/{versionId}', {
               params: { path: { versionId: output.versionId } },
             }),
           );
           return v
-            ? { versionId: v.data.id, deployedUrl: v.data.previewDomain ?? undefined }
+            ? {
+                versionId: v.data.id,
+                ...(v.data.previewDomain && { deployedUrl: v.data.previewDomain }),
+              }
             : undefined;
         }),
       };

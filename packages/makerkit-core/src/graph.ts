@@ -1,4 +1,4 @@
-import { isNode, type ResourceNode, type ServiceNode } from "./node.ts";
+import { isNode, type ResourceNode, type ServiceNode } from './node.ts';
 
 /** Path-derived: root "hello", its input "hello.db". */
 export type NodeId = string;
@@ -26,7 +26,7 @@ export interface Graph {
 export class LoadError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "LoadError";
+    this.name = 'LoadError';
   }
 }
 
@@ -37,21 +37,23 @@ export class LoadError extends Error {
  * or hand to lower/runHost.
  */
 export function Load(root: ServiceNode, opts?: { id?: NodeId }): Graph {
-  if (!isNode(root) || root.kind !== "service") {
-    throw new LoadError("Load expects a branded service node (construct it with the service() factory).");
+  if (!isNode(root) || root.kind !== 'service') {
+    throw new LoadError(
+      'Load expects a branded service node (construct it with the service() factory).',
+    );
   }
-  if (typeof root.inputs !== "object" || root.inputs === null) {
-    throw new LoadError("Service node has no inputs map.");
+  if (typeof root.inputs !== 'object' || root.inputs === null) {
+    throw new LoadError('Service node has no inputs map.');
   }
 
-  const rootId = opts?.id ?? "root";
+  const rootId = opts?.id ?? 'root';
   const rootGraphNode: GraphNode = { id: rootId, node: root };
 
   const inputNodes: GraphNode[] = [];
   const edges: Edge[] = [];
 
   for (const [input, value] of Object.entries(root.inputs)) {
-    if (!isNode(value) || value.kind !== "resource") {
+    if (!isNode(value) || value.kind !== 'resource') {
       throw new LoadError(
         `Input "${input}" is not a branded resource node (construct it with the resource() factory).`,
       );

@@ -1,7 +1,7 @@
-import { compute } from "@makerkit/prisma-cloud";
-import { Hono } from "hono";
-import type { Context } from "hono";
-import { database } from "./connections.ts";
+import { compute } from '@makerkit/prisma-cloud';
+import type { Context } from 'hono';
+import { Hono } from 'hono';
+import { database } from './connections.ts';
 
 /**
  * The auth service: a Compute service with a Postgres dependency. The handler
@@ -18,18 +18,15 @@ export default compute({ db: database }, ({ db }, { port }) => {
       await db`SELECT 1`;
       return c.json({ ok: true });
     } catch (err) {
-      console.error("db query failed", err);
-      return c.json(
-        { ok: false, error: err instanceof Error ? err.message : String(err) },
-        503,
-      );
+      console.error('db query failed', err);
+      return c.json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 503);
     }
   };
 
-  app.get("/health", ping);
-  app.get("/verify", ping);
+  app.get('/health', ping);
+  app.get('/verify', ping);
 
   // Bind all interfaces — Compute routes external HTTP to the VM, so a
   // loopback-only listener would be unreachable.
-  return Bun.serve({ port, hostname: "0.0.0.0", fetch: app.fetch });
+  return Bun.serve({ port, hostname: '0.0.0.0', fetch: app.fetch });
 });

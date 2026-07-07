@@ -6,9 +6,14 @@
  * service's own param values. Imports nothing; reads no environment — the
  * platform adapter is the single sanctioned reader for its platform.
  */
-import { configOf, type ConfigAdapter, type ConfigDeclaration, type ConfigRequest } from "./config.ts";
-import { Load } from "./graph.ts";
-import type { ResourceNode, ServiceNode } from "./node.ts";
+import {
+  type ConfigAdapter,
+  type ConfigDeclaration,
+  type ConfigRequest,
+  configOf,
+} from './config.ts';
+import { Load } from './graph.ts';
+import type { ResourceNode, ServiceNode } from './node.ts';
 
 export interface RunHostOptions {
   /** Swap the platform adapter: in-memory tests, inspection harnesses. */
@@ -21,7 +26,7 @@ export interface RunHostOptions {
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "ConfigError";
+    this.name = 'ConfigError';
   }
 }
 
@@ -30,7 +35,7 @@ export class ConfigError extends Error {
 // discriminate structurally, so the two forms cannot collide (input paths
 // always carry a dot).
 const paramPath = (entry: ConfigDeclaration): string =>
-  entry.owner === "service" ? entry.name : `${entry.owner.input}.${entry.name}`;
+  entry.owner === 'service' ? entry.name : `${entry.owner.input}.${entry.name}`;
 
 /**
  * Load → configOf → adapter.get(requests) → per-param: override ?? raw ??
@@ -74,7 +79,7 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
     const value = raw[request.id];
     if (value !== undefined) {
       rawByPath.set(
-        request.owner === "service" ? request.name : `${request.owner.input}.${request.name}`,
+        request.owner === 'service' ? request.name : `${request.owner.input}.${request.name}`,
         value,
       );
     }
@@ -88,7 +93,7 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
     const path = paramPath(entry);
     // "" is UNRESOLVED, not a value — uniformly, overrides included.
     let value: string | number | undefined = overrides.get(path) ?? rawByPath.get(path);
-    if (value === "") value = undefined;
+    if (value === '') value = undefined;
 
     if (value === undefined) {
       if (entry.default !== undefined) {
@@ -101,8 +106,8 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
       continue;
     }
 
-    if (entry.type === "number") {
-      const parsed = typeof value === "number" ? value : Number(value);
+    if (entry.type === 'number') {
+      const parsed = typeof value === 'number' ? value : Number(value);
       if (Number.isFinite(parsed)) {
         resolved.set(path, parsed);
       } else {
@@ -125,7 +130,7 @@ export async function runHost(root: ServiceNode, opts?: RunHostOptions): Promise
   }
 
   if (problems.length > 0) {
-    throw new ConfigError(`Config validation failed: ${problems.join("; ")}.`);
+    throw new ConfigError(`Config validation failed: ${problems.join('; ')}.`);
   }
 
   // Hydrate each input with its typed value slice.

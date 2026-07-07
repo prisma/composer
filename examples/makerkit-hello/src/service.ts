@@ -1,5 +1,5 @@
-import { compute } from "@makerkit/prisma-cloud";
-import { database } from "./connections.ts";
+import { compute } from '@makerkit/prisma-cloud';
+import { database } from './connections.ts';
 
 /**
  * The authored service: a Compute service with a Postgres dependency. The
@@ -9,7 +9,7 @@ import { database } from "./connections.ts";
 export default compute({ db: database }, ({ db }, { port }) =>
   Bun.serve({
     port,
-    hostname: "0.0.0.0",
+    hostname: '0.0.0.0',
     fetch: async () => Response.json(await db`select 1 as ok`),
   }),
 );

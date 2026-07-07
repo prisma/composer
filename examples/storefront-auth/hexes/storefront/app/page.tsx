@@ -4,13 +4,13 @@
 
 // Render on every request so the runtime-injected AUTH_URL is used — otherwise
 // Next prerenders this page at build time, when AUTH_URL is unset.
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 async function getAuthStatus(): Promise<string> {
   const base = process.env.AUTH_URL;
-  if (!base) return "AUTH_URL not set";
+  if (!base) return 'AUTH_URL not set';
   try {
-    const res = await fetch(new URL("/verify", base), { cache: "no-store" });
+    const res = await fetch(new URL('/verify', base), { cache: 'no-store' });
     return `${res.status} ${(await res.text()).trim()}`;
   } catch (err) {
     return `auth call failed: ${err instanceof Error ? err.message : String(err)}`;

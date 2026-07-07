@@ -1,8 +1,8 @@
-import { Resource } from "alchemy";
-import * as Provider from "alchemy/Provider";
-import * as Effect from "effect/Effect";
-import { ManagementClient } from "../client.ts";
-import { call, callOptional, callVoid } from "../http.ts";
+import { Resource } from 'alchemy';
+import * as Provider from 'alchemy/Provider';
+import * as Effect from 'effect/Effect';
+import { ManagementClient } from '../client.ts';
+import { call, callOptional, callVoid } from '../http.ts';
 
 export interface ProjectProps {
   /** The workspace that will own this project. */
@@ -16,10 +16,10 @@ export interface ProjectAttributes {
   name: string;
 }
 
-export type Project = Resource<"Prisma.Project", ProjectProps, ProjectAttributes>;
+export type Project = Resource<'Prisma.Project', ProjectProps, ProjectAttributes>;
 
 /** A Prisma Developer Platform **Project** — the container for databases and compute services. */
-export const Project = Resource<Project>("Prisma.Project");
+export const Project = Resource<Project>('Prisma.Project');
 
 export const ProjectProvider = () =>
   Provider.effect(
@@ -28,13 +28,13 @@ export const ProjectProvider = () =>
       const client = yield* ManagementClient;
 
       return {
-        stables: ["id"],
+        stables: ['id'],
         list: () => Effect.succeed([] as ProjectAttributes[]),
         reconcile: Effect.fn(function* ({ news, output }) {
           // Observe — a project is only findable by its saved id.
           const observed = output?.id
             ? yield* callOptional(() =>
-                client.GET("/v1/projects/{id}", {
+                client.GET('/v1/projects/{id}', {
                   params: { path: { id: output.id } },
                 }),
               )
@@ -43,7 +43,7 @@ export const ProjectProvider = () =>
 
           // Ensure — create it in the target workspace.
           const created = yield* call(() =>
-            client.POST("/v1/projects", {
+            client.POST('/v1/projects', {
               body: { name: news.name, workspaceId: news.workspaceId },
             }),
           );
@@ -51,7 +51,7 @@ export const ProjectProvider = () =>
         }),
         delete: Effect.fn(function* ({ output }) {
           yield* callVoid(() =>
-            client.DELETE("/v1/projects/{id}", {
+            client.DELETE('/v1/projects/{id}', {
               params: { path: { id: output.id } },
             }),
           );
@@ -59,7 +59,7 @@ export const ProjectProvider = () =>
         read: Effect.fn(function* ({ output }) {
           if (!output?.id) return undefined;
           const p = yield* callOptional(() =>
-            client.GET("/v1/projects/{id}", {
+            client.GET('/v1/projects/{id}', {
               params: { path: { id: output.id } },
             }),
           );

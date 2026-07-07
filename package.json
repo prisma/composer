@@ -7,13 +7,21 @@
     "setup:env": "bun scripts/setup-env.ts",
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
-    "lint": "turbo run lint",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "lint:fix:unsafe": "biome check --write --unsafe .",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.15",
     "@clack/prompts": "^1.6.0",
-    "turbo": "^2.6.1"
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "turbo": "^2.6.1",
+    "typescript": "^6.0.3"
   }
 }

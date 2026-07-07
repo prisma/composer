@@ -1,4 +1,4 @@
-import { compute } from "@makerkit/prisma-cloud";
+import { compute } from '@makerkit/prisma-cloud';
 
 // The framework-as-Output-adapter shape: this service's handler boots Next's
 // standalone server, which owns its own listener (Next reads PORT itself, and
@@ -9,6 +9,6 @@ import { compute } from "@makerkit/prisma-cloud";
 // Kept non-literal so neither tsc nor the bundler resolves it at build time;
 // the artifact places the bundled main entry next to Next's server.js (see
 // scripts/bundle-next.ts), so the relative specifier resolves inside the tar.
-const serverModule = "./server.js";
+const serverModule = './server.js';
 
 export default compute({}, () => import(serverModule));

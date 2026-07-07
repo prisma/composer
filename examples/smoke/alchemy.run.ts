@@ -1,10 +1,10 @@
-import * as Alchemy from "alchemy";
-import { localState } from "alchemy/State/LocalState";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import * as Effect from "effect/Effect";
-import * as Prisma from "@makerkit/prisma-alchemy";
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import * as Prisma from '@makerkit/prisma-alchemy';
+import * as Alchemy from 'alchemy';
+import { localState } from 'alchemy/State/LocalState';
+import * as Effect from 'effect/Effect';
 
 /**
  * Smoke test: provision a single Prisma Postgres database through our v2
@@ -17,45 +17,43 @@ import * as Prisma from "@makerkit/prisma-alchemy";
  * Requires env: PRISMA_SERVICE_TOKEN, PRISMA_WORKSPACE_ID, ALCHEMY_PASSWORD.
  */
 export default Alchemy.Stack(
-  "PrismaSmoke",
+  'PrismaSmoke',
   { providers: Prisma.providers(), state: localState() },
   Effect.gen(function* () {
     const workspaceId = process.env.PRISMA_WORKSPACE_ID;
     if (!workspaceId) {
-      return yield* Effect.die(new Error("PRISMA_WORKSPACE_ID is required"));
+      return yield* Effect.die(new Error('PRISMA_WORKSPACE_ID is required'));
     }
 
-    const project = yield* Prisma.Project("smoke-project", {
+    const project = yield* Prisma.Project('smoke-project', {
       workspaceId,
-      name: "makerkit-smoke",
+      name: 'makerkit-smoke',
     });
 
     // A project auto-provisions its default database, so create a non-default one.
-    const database = yield* Prisma.Database("smoke-db", {
+    const database = yield* Prisma.Database('smoke-db', {
       projectId: project.id,
-      name: "smoke",
-      region: "us-east-1",
+      name: 'smoke',
+      region: 'us-east-1',
       isDefault: false,
     });
 
-    const connection = yield* Prisma.Connection("smoke-conn", {
+    const connection = yield* Prisma.Connection('smoke-conn', {
       databaseId: database.id,
-      name: "app",
+      name: 'app',
     });
 
     // Compute: deploy a trivial hello service (pre-built into ./dist/hello.tar.gz).
-    const artifactPath = fileURLToPath(new URL("./dist/hello.tar.gz", import.meta.url));
-    const artifactHash = createHash("sha256")
-      .update(readFileSync(artifactPath))
-      .digest("hex");
+    const artifactPath = fileURLToPath(new URL('./dist/hello.tar.gz', import.meta.url));
+    const artifactHash = createHash('sha256').update(readFileSync(artifactPath)).digest('hex');
 
-    const service = yield* Prisma.ComputeService("smoke-svc", {
+    const service = yield* Prisma.ComputeService('smoke-svc', {
       projectId: project.id,
-      name: "smoke-svc",
-      region: "us-east-1",
+      name: 'smoke-svc',
+      region: 'us-east-1',
     });
 
-    const deployment = yield* Prisma.Deployment("smoke-deploy", {
+    const deployment = yield* Prisma.Deployment('smoke-deploy', {
       computeServiceId: service.id,
       artifactPath,
       artifactHash,

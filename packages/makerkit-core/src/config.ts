@@ -5,12 +5,12 @@
  * ConfigAdapter answers GET/SET for its platform (the semantic↔physical
  * mapping is its private business); core does everything in between.
  */
-import { Load } from "./graph.ts";
-import type { ResourceNode, ServiceNode } from "./node.ts";
+import { Load } from './graph.ts';
+import type { ResourceNode, ServiceNode } from './node.ts';
 
 /** Runtime-validatable param types. Curated; extended consciously. */
-export type ParamType = "string" | "number";
-export type TypeOf<T extends ParamType> = T extends "string" ? string : number;
+export type ParamType = 'string' | 'number';
+export type TypeOf<T extends ParamType> = T extends 'string' ? string : number;
 
 /**
  * A declared config param — pure data. The declaration does double duty: core
@@ -30,11 +30,11 @@ export type Params = Record<string, ConfigParam>;
 
 /** What implementations receive — undefined only for optional params with no default. */
 export type Values<P extends Params> = {
-  readonly [K in keyof P]: P[K]["optional"] extends true
-    ? undefined extends P[K]["default"]
-      ? TypeOf<P[K]["type"]> | undefined
-      : TypeOf<P[K]["type"]>
-    : TypeOf<P[K]["type"]>;
+  readonly [K in keyof P]: P[K]['optional'] extends true
+    ? undefined extends P[K]['default']
+      ? TypeOf<P[K]['type']> | undefined
+      : TypeOf<P[K]['type']>
+    : TypeOf<P[K]['type']>;
 };
 
 /**
@@ -67,7 +67,7 @@ export interface ConfigAdapter {
 export interface ConfigRequest {
   /** Core-assigned; keys the returned value map. */
   readonly id: string;
-  readonly owner: "service" | { readonly input: string };
+  readonly owner: 'service' | { readonly input: string };
   readonly name: string;
   readonly param: ConfigParam;
 }
@@ -79,7 +79,7 @@ export interface ConfigRequest {
  * business (describe()).
  */
 export interface ConfigDeclaration {
-  readonly owner: "service" | { readonly input: string };
+  readonly owner: 'service' | { readonly input: string };
   readonly name: string;
   readonly type: ParamType;
   readonly secret: boolean;
@@ -98,7 +98,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
   for (const edge of graph.edges) {
     const entry = graph.nodes.find((n) => n.id === edge.from);
-    if (entry === undefined || entry.node.kind !== "resource") continue;
+    if (entry === undefined || entry.node.kind !== 'resource') continue;
     const node = entry.node as ResourceNode;
     for (const [name, param] of Object.entries(node.connection.params)) {
       entries.push({
@@ -114,7 +114,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
   for (const [name, param] of Object.entries(root.params)) {
     entries.push({
-      owner: "service",
+      owner: 'service',
       name,
       type: param.type,
       secret: param.secret === true,

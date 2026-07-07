@@ -4,14 +4,15 @@
  * dependents. Imports the provisioning substrate (alchemy/effect) — never a
  * deployment target.
  */
-import * as Alchemy from "alchemy";
-import type { StackServices } from "alchemy";
-import { localState } from "alchemy/State/LocalState";
-import type { State } from "alchemy/State/State";
-import * as Effect from "effect/Effect";
-import type * as Layer from "effect/Layer";
-import { Load, type Graph, type NodeId } from "./graph.ts";
-import type { ResourceNode, ServiceNode } from "./node.ts";
+
+import type { StackServices } from 'alchemy';
+import * as Alchemy from 'alchemy';
+import { localState } from 'alchemy/State/LocalState';
+import type { State } from 'alchemy/State/State';
+import * as Effect from 'effect/Effect';
+import type * as Layer from 'effect/Layer';
+import { type Graph, Load, type NodeId } from './graph.ts';
+import type { ResourceNode, ServiceNode } from './node.ts';
 
 /** What a target pack's /target entry produces — data + per-type functions. */
 export interface Target {
@@ -58,7 +59,7 @@ export interface LowerOptions {
 export class LowerError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "LowerError";
+    this.name = 'LowerError';
   }
 }
 
@@ -83,7 +84,7 @@ export function lowering(
         return yield* Effect.fail(
           new LowerError(
             `Target "${target.name}" has no lowering for node type "${node.type}" ` +
-              `(known types: ${Object.keys(target.lower).join(", ")}).`,
+              `(known types: ${Object.keys(target.lower).join(', ')}).`,
           ),
         );
       }
@@ -106,7 +107,10 @@ export function lower(root: ServiceNode, target: Target, opts: LowerOptions) {
   // channel is `unknown` by design (the pack's lowerings carry their own
   // provider requirements, satisfied by target.providers()); the assertion
   // narrows it for Stack's inference.
-  const stackEffect = Effect.orDie(lowering(root, target, opts)) as Effect.Effect<LoweredNode, never>;
+  const stackEffect = Effect.orDie(lowering(root, target, opts)) as Effect.Effect<
+    LoweredNode,
+    never
+  >;
 
   return Alchemy.Stack(
     opts.name,

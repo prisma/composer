@@ -17,3 +17,6 @@ packages/e2e-tests/.tmp-output
 .pnpm-store
 .alchemy/
 .drive/projects/*/reviews/
+
+# Local clone of prisma-next used as a scaffolding reference; not part of this repo.
+/prisma-next/
