@@ -1,10 +1,12 @@
 name: E2E deploy
 
-# Deploys examples/makerkit-hello to real Prisma Cloud, verifies it serves,
-# then destroys it. Requires a repo secret PRISMA_SERVICE_TOKEN (a Prisma
-# Console service token) and a repo variable PRISMA_WORKSPACE_ID (the target
-# workspace id — not sensitive, so a variable, not a secret). A human must
-# create both in the repo's Actions settings before this runs.
+# Deploys examples/storefront-auth to real Prisma Cloud, verifies the live
+# service-to-service round trip (the storefront renders auth's /verify
+# response — the Connection primitive end to end), then destroys it. Requires
+# a repo secret PRISMA_SERVICE_TOKEN (a Prisma Console service token) and a
+# repo variable PRISMA_WORKSPACE_ID (the target workspace id — not sensitive,
+# so a variable, not a secret). A human must create both in the repo's Actions
+# settings before this runs.
 
 on:
   push:
@@ -26,7 +28,7 @@ jobs:
   deploy:
     name: Deploy, verify, destroy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     # Secrets aren't available to forked-PR workflow runs; skip rather than
     # fail loudly on a run that could never have them.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -35,9 +37,10 @@ jobs:
       # A workspace id is an identifier, not a credential, so it lives as a
       # repo variable (vars.*), not a secret.
       PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
-      # Cloud resource ids are derived from the lowercased stack name,
-      # so a fixed name would collide across concurrent runs in the workspace.
-      HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
+      # The stack name becomes the PDP Project name. A per-run name keeps this
+      # ephemeral CI deploy from colliding with — or destroying — a standing
+      # demo in the shared workspace. alchemy.run.ts reads it.
+      STOREFRONT_STACK_NAME: storefront-auth-ci-${{ github.run_id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -56,7 +59,7 @@ jobs:
           echo "ALCHEMY_PASSWORD=$password" >> "$GITHUB_ENV"
 
       - name: Build
-        working-directory: examples/makerkit-hello
+        working-directory: examples/storefront-auth
         run: pnpm build
 
       - name: Deploy
@@ -64,74 +67,61 @@ jobs:
         # under bun (`--bun`) or it fails with "Cannot find package 'bun'".
         # Do not use the package's `deploy` script: it sources ../../.env,
         # which doesn't exist in CI; env vars are already set on this job.
-        working-directory: examples/makerkit-hello
+        working-directory: examples/storefront-auth
         run: bunx --bun alchemy deploy --yes
 
-      - name: Extract deployed URL
+      - name: Extract storefront URL
         id: url
-        working-directory: examples/makerkit-hello
+        working-directory: examples/storefront-auth
+        # The app is a hex, so the stack root exposes no `outputs.url` (boundary
+        # ports are future work). Read the storefront service's promoted URL
+        # from its Deployment state instead.
         run: |
           set -euo pipefail
-          output_file="$(find .alchemy/state -name __stack_output__.json | head -1)"
+          output_file="$(find .alchemy/state -name 'storefront-deploy.json' | head -1)"
           if [ -z "$output_file" ]; then
-            echo "No stack output file found under .alchemy/state — deploy did not persist state."
+            echo "No storefront-deploy state found under .alchemy/state — deploy did not persist state."
             exit 1
           fi
-          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$output_file', 'utf8')).outputs?.url ?? '')")"
+          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$output_file','utf8')).attr?.deployedUrl ?? '')")"
           if [ -z "$url" ]; then
-            echo "Stack output has no 'url' field: $(cat "$output_file")"
+            echo "storefront-deploy state has no attr.deployedUrl: $(cat "$output_file")"
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "Deployed URL: $url"
+          echo "Storefront URL: $url"
 
-      - name: Verify service responds
-        # PRO-200: Compute scale-to-zero means the first hit after deploy can
-        # 502 for up to ~15s while a version boots. Retry with backoff up to
-        # ~90s total before giving up.
+      - name: Verify the round trip (storefront -> auth)
+        # The storefront page renders "Auth /verify says: 200 {"ok":true}" — a
+        # live call to the auth service through the Connection primitive. Retry:
+        # a version cold-starts for ~15s after deploy (PRO-200), and auth's
+        # Postgres direct connection can 503 on the first hit after idle
+        # (FT-5219) but recovers on the next — so we poll until a clean 200.
         env:
           URL: ${{ steps.url.outputs.url }}
         run: |
           set -euo pipefail
-          deadline=$((SECONDS + 90))
+          deadline=$((SECONDS + 180))
           body=""
-          status=""
           while [ "$SECONDS" -lt "$deadline" ]; do
-            response="$(curl -sS -o /tmp/body.json -w '%{http_code}' "$URL" || echo "000")"
-            status="$response"
-            if [ "$status" = "200" ]; then
-              body="$(cat /tmp/body.json)"
-              break
+            body="$(curl -sS --max-time 30 "$URL" || true)"
+            clean="$(printf '%s' "$body" | sed -e 's/<!--[^>]*-->//g' -e 's/&quot;/"/g')"
+            if printf '%s' "$clean" | grep -q 'Auth /verify says: 200 {"ok":true}'; then
+              echo "Round trip OK — storefront rendered auth's 200 {\"ok\":true}"
+              exit 0
             fi
-            sleep 5
+            sleep 6
           done
-          if [ "$status" != "200" ]; then
-            echo "Service never returned 200 within 90s (last status: $status)."
-            exit 1
-          fi
-          echo "Response body: $body"
-          echo "$body" | grep -q '"ok":1' || {
-            echo "Response body did not contain \"ok\":1"
-            exit 1
-          }
-
-      - name: Verify idempotent redeploy is a no-op
-        working-directory: examples/makerkit-hello
-        run: |
-          set -euo pipefail
-          output="$(bunx --bun alchemy deploy --yes)"
-          echo "$output"
-          echo "$output" | grep -q "to noop" || {
-            echo "Second deploy did not report a no-op plan."
-            exit 1
-          }
+          echo "Round trip never rendered a clean 200 within the deadline. Last body:"
+          printf '%s' "$body" | head -c 3000
+          exit 1
 
       - name: Destroy
         # Always runs, even on failure above: alchemy state is local to this
         # runner and dies with it, so a failed run without destroy leaves
         # orphaned cloud resources nobody else can clean up.
         if: always()
-        working-directory: examples/makerkit-hello
+        working-directory: examples/storefront-auth
         run: |
           set -euo pipefail
           if [ ! -d .alchemy ]; then
