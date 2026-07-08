@@ -76,11 +76,10 @@ export const deserialize = (shape: readonly ConfigDeclaration[], address: string
 };
 
 /**
- * run()'s controller step: re-emit the resolved Config under ADDRESS-FREE keys
- * (`configKey("", d)`) — the process-local stash `load()` reads with no address.
- * Env is the medium because a framework worker/child fork inherits it; a global
- * would not. Writes only the MakerKit surface; the runtime's own keys are
- * untouched.
+ * run()'s setup step: write the resolved config to the environment under
+ * address-free keys (configKey("", d)), which load() reads back with no address.
+ * Uses env, not a module variable, because a framework may fork worker processes
+ * that inherit env but not memory. Writes only these keys; nothing else is touched.
  */
 export const stash = (shape: readonly ConfigDeclaration[], config: Config): void => {
   for (const d of shape) {

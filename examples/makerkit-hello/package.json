@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "bun run scripts/build.ts",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm build && ( set -a; . ../../.env; set +a; bunx --bun alchemy deploy --yes )",
     "destroy": "( set -a; . ../../.env; set +a; bunx --bun alchemy destroy --yes )"

@@ -226,21 +226,14 @@ export function hex(name: string, body: (h: HexBuilder) => void): HexNode {
   return Object.freeze(node);
 }
 
-/** True if `value` is a node constructed by this module's factories. */
-export function isNode(value: unknown): value is NodeBase {
+/**
+ * True if `value` was constructed by this module's factories. Includes hexes:
+ * a HexNode carries the same brand even though it is not a routable NodeBase.
+ */
+export function isNode(value: unknown): value is NodeBase | HexNode {
   return (
     typeof value === 'object' &&
     value !== null &&
     (value as Record<PropertyKey, unknown>)[NODE] === true
-  );
-}
-
-/** True if `value` is a hex constructed by the hex() factory. */
-export function isHexNode(value: unknown): value is HexNode {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as Record<PropertyKey, unknown>)[NODE] === true &&
-    (value as { kind?: unknown }).kind === 'hex'
   );
 }

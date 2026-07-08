@@ -213,6 +213,11 @@ deliverable (prisma-cloud pack + Management API surface).
 - **`port` param ↔ listen port decoupling** — `Deployment` hardcodes `port: 3000`; `computeParams.port` defaults `3000`; `run()` stashes the param into `PORT` which the app entry binds. They agree only because all three are `3000` — set the param to anything else and the app binds a port the platform doesn't route to, silently unreachable. Pre-existing from R4, more visible now that `server.ts` reads `port` from `load()`. Fix: thread the resolved `port` into the `Deployment`.
 - **Graph is not topologically sorted** (pre-existing, R4) — `graph.ts`'s hex load preserves provision order and only validates acyclicity; a valid DAG authored consumer-before-producer would feed `undefined` into the consumer's `buildConfig`, contradicting the doc's "topo-ordered (deps first)". Not exercised (the example provisions `auth` first). Fix: real topological sort at Load, or correct the doc's claim.
 
+## PR-review follow-ups (operator review of PR #10)
+
+- **Dev-mode e2e for storefront-auth** (operator ask) — the primitives are runnable in dev today (`load()` reads the address-free `DB_URL`/`PORT` straight from the local env; `run()` is only for translating production's address-prefixed keys — verified by booting both examples). Needs a CI test that boots the services in dev against a local Postgres and asserts the round trip. Approach: a script that starts auth's dev server against a test Postgres, reads its URL, sets `STOREFRONT_AUTH_URL`, starts storefront's dev server, curls the page. Needs a Postgres service in the workflow. Operator noted this becomes a core framework concern later.
+- **`bundle-next.ts` belongs in `@makerkit/nextjs/assemble`** (operator ask #11) — `next.config.ts` already owns what it can (standalone output, tracing excludes); the residue (copy `.next/static`+`public`, bundle the wrapper, `bunfig`) can't move to `next.config` (Next omits those by design) but should not be an app-owned script. It moves into the adapter's assembler — folded into the `makerkit deploy` CLI brief.
+
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in `spec.md`

@@ -2,7 +2,6 @@ import {
   type ConnectionEnd,
   type HexBuilder,
   type HexNode,
-  isHexNode,
   isNode,
   type ProvisionedRef,
   type ResourceNode,
@@ -61,15 +60,16 @@ export class LoadError extends Error {
  * Executes nothing of the user's.
  */
 export function Load(root: ServiceNode | HexNode, opts?: { id?: NodeId }): Graph {
-  if (isHexNode(root)) {
-    return loadHex(root, opts);
-  }
-  if (!isNode(root) || root.kind !== 'service') {
+  // Brand-check the untrusted root once (a user default-export could be junk
+  // TypeScript believes is a node), then route by its discriminant.
+  if (!isNode(root)) {
     throw new LoadError(
       'Load expects a branded service or hex node (construct it with the service()/hex() factories).',
     );
   }
-  return loadService(root, opts?.id ?? 'root');
+  if (root.kind === 'hex') return loadHex(root, opts);
+  if (root.kind === 'service') return loadService(root, opts?.id ?? 'root');
+  throw new LoadError('Load expects a service or hex root (received another node kind).');
 }
 
 function serviceInputs(

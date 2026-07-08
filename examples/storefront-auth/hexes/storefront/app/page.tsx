@@ -1,13 +1,7 @@
-// The Storefront calls the Auth service while serving the request — the
-// ingress -> Auth path the MVP exercises. `auth` is the http() connection-end
-// service.ts declares; service.load() hydrates it against STOREFRONT_AUTH_URL
-// (address "storefront" ▸ owner (input) "auth" ▸ name "url" — see
-// @makerkit/prisma-cloud's configKey), so the page pulls a real typed client
-// rather than reading the physical env key itself.
 import service from '../src/service.ts';
 
-// Render on every request so the runtime-injected value is used — otherwise
-// Next prerenders this page at build time, before it exists.
+// service.load() needs the runtime environment, which doesn't exist at build
+// time — so render per request instead of prerendering.
 export const dynamic = 'force-dynamic';
 
 async function getAuthStatus(): Promise<string> {
