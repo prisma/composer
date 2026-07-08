@@ -4,22 +4,14 @@ import service from '../src/service.ts';
 // time — so render per request instead of prerendering.
 export const dynamic = 'force-dynamic';
 
-async function getAuthStatus(): Promise<string> {
-  const { auth } = service.load();
-  try {
-    const res = await auth.fetch('/verify');
-    return `${res.status} ${(await res.text()).trim()}`;
-  } catch (err) {
-    return `auth call failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
-}
-
 export default async function Home() {
-  const auth = await getAuthStatus();
+  const { auth } = service.load();
+  const { ok } = await auth.verify({ token: 'demo-token' });
+
   return (
     <main>
       <h1>Storefront</h1>
-      <p>Auth /verify says: {auth}</p>
+      <p>Auth /verify says: {String(ok)}</p>
     </main>
   );
 }

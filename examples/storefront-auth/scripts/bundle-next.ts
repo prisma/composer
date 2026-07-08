@@ -82,9 +82,12 @@ export async function bundleNextComputeArtifact(appDir: string): Promise<BundleN
       format: 'esm',
       platform: 'node',
       external: ['bun'],
-      // Workspace packages must be inlined; everything Next needs is already
-      // in the standalone tree and is NOT imported by the entry.
-      noExternal: [/^@makerkit\//],
+      // Workspace packages must be inlined (this is .ts source, not requireable
+      // JS). arktype must be too: service.ts's `rpc(authContract)` dep evaluates
+      // the shared auth.contract.ts at import time, which calls arktype's
+      // `type()` — this build is separate from Next's own, so it can't rely on
+      // Next's standalone node_modules trace to have arktype in place.
+      noExternal: [/^@makerkit\//, /^arktype/],
       dts: false,
       sourcemap: false,
       clean: false,

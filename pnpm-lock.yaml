@@ -87,9 +87,15 @@ importers:
       '@makerkit/prisma-cloud':
         specifier: workspace:*
         version: link:../../packages/makerkit-prisma-cloud
+      '@makerkit/rpc':
+        specifier: workspace:*
+        version: link:../../packages/makerkit-rpc
       alchemy:
         specifier: 2.0.0-beta.59
         version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
       effect:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92
@@ -115,9 +121,12 @@ importers:
       '@makerkit/prisma-cloud':
         specifier: workspace:*
         version: link:../../../../packages/makerkit-prisma-cloud
-      hono:
-        specifier: ^4.11.4
-        version: 4.12.27
+      '@makerkit/rpc':
+        specifier: workspace:*
+        version: link:../../../../packages/makerkit-rpc
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
     devDependencies:
       '@types/bun':
         specifier: ^1.3.13
@@ -140,6 +149,12 @@ importers:
       '@makerkit/prisma-cloud':
         specifier: workspace:*
         version: link:../../../../packages/makerkit-prisma-cloud
+      '@makerkit/rpc':
+        specifier: workspace:*
+        version: link:../../../../packages/makerkit-rpc
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
       next:
         specifier: ^15.5.4
         version: 15.5.19(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -1829,10 +1844,6 @@ packages:
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
-
-  hono@4.12.27:
-    resolution: {integrity: sha512-1yrb/+w6HWQJrUCLkJ2IF5jNIPvvFkblV5RNOYl6bV+OA6p9GLcMpHFFGTosSvHvcAUibuUukRqhlYI4z32C7Q==}
-    engines: {node: '>=16.9.0'}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -4119,8 +4130,6 @@ snapshots:
   glob-parent@5.1.2:
     dependencies:
       is-glob: 4.0.3
-
-  hono@4.12.27: {}
 
   hookable@5.5.3: {}
 

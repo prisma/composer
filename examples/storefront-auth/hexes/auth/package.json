@@ -12,7 +12,8 @@
     "@makerkit/core": "workspace:*",
     "@makerkit/node": "workspace:*",
     "@makerkit/prisma-cloud": "workspace:*",
-    "hono": "^4.11.4"
+    "@makerkit/rpc": "workspace:*",
+    "arktype": "^2.2.3"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",

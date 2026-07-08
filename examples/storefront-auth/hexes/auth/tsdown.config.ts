@@ -5,14 +5,15 @@ import { defineConfig } from 'tsdown';
 // module instance. run() (main.js) and load() (server.js) must be independent
 // instances that hand off through process.env, so each is its own self-contained
 // build. `server.js` is the app's runnable (the build adapter's `entry`);
-// `main.js` is the MakerKit wrapper the bootstrap imports. hono and @makerkit/*
-// are inlined (node_modules isn't shipped); `bun` is a Compute runtime built-in.
+// `main.js` is the MakerKit wrapper the bootstrap imports. @makerkit/* and
+// arktype are inlined (node_modules isn't shipped); `bun` is a Compute runtime
+// built-in.
 const shared = {
   outDir: 'dist/bundle',
   format: 'esm',
   platform: 'node',
   external: ['bun'],
-  noExternal: [/^hono/, /^@makerkit\//],
+  noExternal: [/^@makerkit\//, /^arktype/],
   dts: false,
   sourcemap: false,
 } as const;
