@@ -1,7 +1,10 @@
 {
-  "name": "@makerkit/example-storefront-auth-storefront",
+  "name": "@storefront-auth/storefront",
   "version": "0.0.0",
   "private": true,
+  "exports": {
+    ".": "./src/service.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -14,6 +17,7 @@
     "@makerkit/nextjs": "workspace:*",
     "@makerkit/prisma-cloud": "workspace:*",
     "@makerkit/rpc": "workspace:*",
+    "@storefront-auth/auth": "workspace:*",
     "arktype": "^2.2.3",
     "next": "^15.5.4",
     "react": "19.2.0",

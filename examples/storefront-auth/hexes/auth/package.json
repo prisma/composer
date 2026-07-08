@@ -1,8 +1,12 @@
 {
-  "name": "@makerkit/example-storefront-auth-auth",
+  "name": "@storefront-auth/auth",
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/service.ts",
+    "./contract": "./src/contract.ts"
+  },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "build": "tsdown",

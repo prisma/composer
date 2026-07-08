@@ -1,7 +1,7 @@
 /**
- * Ports contract-satisfaction.poc.ts's and typed-hex-wiring.poc.ts's
- * accept/reject matrix onto the real hex: `HexBuilder.provision` wiring a
- * ref-port into a consumer's `rpc(contract)` slot, using this package's real
+ * The accept/reject matrix for contract compatibility, checked on the real
+ * hex: `HexBuilder.provision` wiring a ref-port into a consumer's
+ * `rpc(contract)` slot, using this package's real
  * `contract()`/`rpc()`. Typechecked only (the package's `typecheck` script) —
  * never executed: the reject cases are structurally valid providers that
  * simply fail Load's nominal `satisfies()` check (see rpc-connection.test.ts
