@@ -207,6 +207,12 @@ deliverable (prisma-cloud pack + Management API surface).
   update the example/CI). Validated by deploying makerkit-hello (also the
   idempotence check).
 
+## R5 review follow-ups (Opus review of `e65bbfb` — verdict: ship; these are latent/pre-existing, none block)
+
+- **Config-key separator ambiguity** — `configKey` joins `address ▸ owner ▸ name` with `_` and uppercases, so `db_url` (a service param) and `db`.`url` (an input's param) both yield `AUTH_DB_URL`. Not triggered today (only param is `port`; inputs are `db`/`auth`). Fix: forbid `_` in param/input names at construction, or a collision-proof delimiter.
+- **`port` param ↔ listen port decoupling** — `Deployment` hardcodes `port: 3000`; `computeParams.port` defaults `3000`; `run()` stashes the param into `PORT` which the app entry binds. They agree only because all three are `3000` — set the param to anything else and the app binds a port the platform doesn't route to, silently unreachable. Pre-existing from R4, more visible now that `server.ts` reads `port` from `load()`. Fix: thread the resolved `port` into the `Deployment`.
+- **Graph is not topologically sorted** (pre-existing, R4) — `graph.ts`'s hex load preserves provision order and only validates acyclicity; a valid DAG authored consumer-before-producer would feed `undefined` into the consumer's `buildConfig`, contradicting the doc's "topo-ordered (deps first)". Not exercised (the example provisions `auth` first). Fix: real topological sort at Load, or correct the doc's claim.
+
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in `spec.md`

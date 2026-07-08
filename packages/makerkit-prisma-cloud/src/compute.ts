@@ -19,6 +19,16 @@ export const compute = <D extends Deps>(def: {
   deps: D;
   build: BuildAdapter;
 }): RunnableServiceNode<D, typeof computeParams> => {
+  // load() merges deps and service params into one object; a dep whose name
+  // collides with a service param would be silently clobbered. Fail at
+  // authoring instead.
+  for (const reserved of Object.keys(computeParams)) {
+    if (reserved in def.deps) {
+      throw new Error(
+        `compute(): dependency "${reserved}" collides with the reserved service param of the same name — rename the dependency.`,
+      );
+    }
+  }
   const node = service({
     type: 'prisma-cloud/compute',
     inputs: def.deps,

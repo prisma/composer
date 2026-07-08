@@ -16,10 +16,9 @@ export type TypeOf<T extends ParamType> = T extends 'string' ? string : number;
 
 /**
  * A declared config param — pure data. The declaration does double duty:
- * TypeScript derives the hydrate/handler input types from it (the
- * definition object ENFORCES the final param input types), and the target
- * pack validates raw values against `type` when it reverses its own
- * serialization at boot.
+ * TypeScript derives the hydrate/load input types from it (the definition
+ * object ENFORCES the final param input types), and the target pack validates
+ * raw values against `type` when it reverses its own serialization at boot.
  */
 export interface ConfigParam<T extends ParamType = ParamType> {
   readonly type: T;
@@ -44,7 +43,7 @@ export type Values<P extends Params> = {
  * The connection face of a dependency: declared params (data) and how
  * validated values become a client (the hydrate behavior slot). Both P and C
  * are INFERRED — the declaration types hydrate's input; the factory types the
- * handler's dep.
+ * loaded dep.
  */
 export interface Connection<P extends Params = Params, C = unknown> {
   readonly params: P;

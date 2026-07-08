@@ -118,7 +118,7 @@ export interface HexBuilder {
 export type ProvisionedRef = { readonly id: string };
 
 /** Dependency map: name → what the service consumes. `any`, not `unknown` — keeps inference. */
-// biome-ignore lint/suspicious/noExplicitAny: `any` (not `unknown`) preserves handler-dep inference from each entry's hydrate return.
+// biome-ignore lint/suspicious/noExplicitAny: `any` (not `unknown`) preserves loaded-dep inference from each entry's hydrate return.
 export type Deps = Record<string, ResourceNode<any> | ConnectionEnd<any>>;
 
 export type Hydrated<N> =

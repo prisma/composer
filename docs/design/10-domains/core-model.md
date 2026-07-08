@@ -867,9 +867,9 @@ MakerKit wrapper, and reports the runtime entry path.
 // @makerkit/node — the authoring descriptor (lean; rides in service.ts)
 export default (opts: { entry: string }): BuildAdapter => ({ kind: "node", entry: opts.entry })
 
-// @makerkit/nextjs — same shape; entry defaults to the standalone server output
-export default (opts?: { entry?: string }): BuildAdapter =>
-  ({ kind: "nextjs", entry: opts?.entry ?? ".next/standalone/server.js" })
+// @makerkit/nextjs — same shape; the app passes the built standalone server's
+// path (relative to the assembled bundle dir)
+export default (opts: { entry: string }): BuildAdapter => ({ kind: "nextjs", entry: opts.entry })
 
 // @makerkit/<adapter>/assemble — the deploy-side assembler (heavy; deploy machine)
 // Produces the normalized bundle dir + the runtime entry path for the bootstrap.

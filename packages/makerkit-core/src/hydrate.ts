@@ -3,8 +3,8 @@
  * booting a service). Core's job at boot is structural only: turn a
  * concrete, typed Config into hydrated deps by calling each input's
  * connection.hydrate with its value slice. No environment read, no
- * validation, no strings — the pack's `run()` already reversed its own
- * serialization into a typed Config before calling this.
+ * validation, no strings — the pack's `load()` already read the process-local
+ * stash into a typed Config before calling this.
  */
 import type { Config } from './config.ts';
 import type { Deps, HydratedDeps, ServiceNode } from './node.ts';
@@ -12,9 +12,9 @@ import type { Deps, HydratedDeps, ServiceNode } from './node.ts';
 /**
  * Given a service and a concrete typed Config, hydrate every input
  * (connection.hydrate with its typed value slice). A resource dep and a
- * connection dep hydrate through identical machinery — the handler cannot
- * tell them apart. Does not call the handler; the pack's `run()` does that
- * separately with `config.service` as ctx.
+ * connection dep hydrate through identical machinery — the loaded client is
+ * indistinguishable. The service's own params ride alongside in
+ * `config.service`; the node's `load()` merges the two.
  */
 export async function hydrate(root: ServiceNode, config: Config): Promise<HydratedDeps<Deps>> {
   const deps: Record<string, unknown> = {};
