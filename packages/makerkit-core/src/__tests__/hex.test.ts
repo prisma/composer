@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { Contract } from '../contract.ts';
 import { Load, LoadError } from '../graph.ts';
 import type { ProvisionedRef } from '../node.ts';
 import { connectionEnd, hex, resource, service } from '../node.ts';
@@ -195,5 +196,64 @@ describe('importing a hex module', () => {
 
     Load(fixture.default);
     expect(fixture.bodyCallCount).toBe(1);
+  });
+});
+
+describe('Load of a hex root — typed ConnectionEnd wiring (the satisfies() backstop)', () => {
+  // A minimal Contract, nominal like @makerkit/rpc's own: satisfies() is
+  // identity, so a ref-port only satisfies the contract it was actually built
+  // from — mirrors what a cast-bypassed wrong wiring would look like at
+  // runtime (TypeScript already rejects this at the call site — see
+  // @makerkit/rpc's contract-satisfaction.test-d.ts).
+  const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => {
+    const value: Contract<'rpc', Cmp> = {
+      kind: 'rpc',
+      __cmp: cmp,
+      satisfies: (required) => value === required,
+    };
+    return value;
+  };
+
+  const authContract = fakeContract({ verify: async () => ({ ok: true }) });
+  const wrongContract = fakeContract({ charge: async () => ({ id: '1' }) });
+
+  const typedAuthEnd = () =>
+    connectionEnd({
+      type: 'fake/rpc',
+      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      required: authContract,
+    });
+
+  const makeContractProvider = <C extends Contract<'rpc', unknown>>(exposed: C) =>
+    service({ type: 'fake/compute', inputs: {}, params: {}, build, expose: { rpc: exposed } });
+
+  const makeTypedStorefrontService = () =>
+    service({
+      type: 'fake/compute',
+      inputs: { auth: typedAuthEnd() },
+      params: {},
+      build,
+    });
+
+  test('a ref-port whose contract satisfies the required one loads without error', () => {
+    const root = hex('shop', (h) => {
+      const authRef = h.provision('auth', makeContractProvider(authContract));
+      h.provision('storefront', makeTypedStorefrontService(), { auth: authRef.rpc });
+    });
+
+    expect(() => Load(root)).not.toThrow();
+  });
+
+  test('a ref-port whose contract does not satisfy the required one is a LoadError', () => {
+    const root = hex('shop', (h) => {
+      const wrongRef = h.provision('payments', makeContractProvider(wrongContract));
+      // TypeScript already rejects this wiring at the call site — this
+      // exercises the runtime backstop directly, as if that check were
+      // bypassed by a cast.
+      h.provision('storefront', makeTypedStorefrontService(), { auth: wrongRef.rpc as never });
+    });
+
+    expect(() => Load(root)).toThrow(LoadError);
+    expect(() => Load(root)).toThrow(/"storefront.auth" does not satisfy its required contract/);
   });
 });
