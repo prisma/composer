@@ -15,13 +15,21 @@ import {
   type Target,
 } from '../deploy.ts';
 import { Load } from '../graph.ts';
-import { type BuildAdapter, connectionEnd, hex, resource, service } from '../node.ts';
+import {
+  type BuildAdapter,
+  connectionEnd,
+  type Deps,
+  hex,
+  resource,
+  resourceEnd,
+  service,
+} from '../node.ts';
 import { conn } from './helpers.ts';
 
-const db = () =>
-  resource({
-    name: 'test-resource',
-    pack: 'test/pack',
+const dbResource = () => resource({ name: 'db', pack: 'test/pack', type: 'fake/db' });
+const dbEnd = () =>
+  resourceEnd({
+    name: 'db',
     type: 'fake/db',
     connection: conn({ url: { type: 'string' } }, () => ({})),
   });
@@ -35,9 +43,9 @@ const defaultBuild: BuildAdapter = {
   entry: 'server.js',
 };
 
-const app = (
+const app = <D extends Deps>(
   type: string,
-  inputs: Record<string, ReturnType<typeof db> | ReturnType<typeof httpEnd>>,
+  inputs: D,
   params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
   build: BuildAdapter = defaultBuild,
 ) =>
@@ -162,24 +170,30 @@ const runError = (eff: ReturnType<typeof lowering>): LowerError =>
   Effect.runSync(Effect.flip(eff as Effect.Effect<LoweredNode, LowerError>));
 
 describe('buildConfig', () => {
-  test("matches each input's params by name to its lowered outputs, plus service-param defaults", () => {
-    const root = app('fake/compute', { db: db() }, { port: { type: 'number', default: 3000 } });
-    const graph = Load(root, { id: 'hello' });
-    const lowered = new Map<string, LoweredNode>([
-      ['hello.db', { outputs: { url: 'db://hello.db' } }],
-    ]);
+  test("matches a ResourceEnd input's params by name to the wired resource's lowered outputs, via the resource edge", () => {
+    const auth = app('fake/compute', { db: dbEnd() }, { port: { type: 'number', default: 3000 } });
+    const root = hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
+      h.provision('auth', auth, { db });
+    });
+    const graph = Load(root);
+    const lowered = new Map<string, LoweredNode>([['db', { outputs: { url: 'db://db' } }]]);
 
-    expect(buildConfig(root, 'hello', graph, lowered)).toEqual({
+    expect(buildConfig(auth, 'auth', graph, lowered)).toEqual({
       service: { port: 3000 },
-      inputs: { db: { url: 'db://hello.db' } },
+      inputs: { db: { url: 'db://db' } },
     });
   });
 
   test('a param the graph declares but the lowered outputs never produced resolves to undefined', () => {
-    const root = app('fake/compute', { db: db() });
-    const graph = Load(root, { id: 'hello' });
+    const auth = app('fake/compute', { db: dbEnd() });
+    const root = hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
+      h.provision('auth', auth, { db });
+    });
+    const graph = Load(root);
 
-    expect(buildConfig(root, 'hello', graph, new Map())).toEqual({
+    expect(buildConfig(auth, 'auth', graph, new Map())).toEqual({
       service: {},
       inputs: { db: { url: undefined } },
     });
@@ -188,30 +202,35 @@ describe('buildConfig', () => {
 
 const singleServiceHex = (
   type: string,
-  inputs: Record<string, ReturnType<typeof db> | ReturnType<typeof httpEnd>>,
   params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
   build: BuildAdapter = defaultBuild,
 ) =>
   hex('hello', (h) => {
-    h.provision('svc', app(type, inputs, params, build));
+    h.provision('svc', app(type, {}, params, build));
   });
 
-describe('lowering a hex root — a single service', () => {
-  test('sequences application once, then resources → provision → serialize → package → deploy', () => {
-    const { target, calls } = fakeTarget();
-    const root = singleServiceHex('fake/compute', { db: db() });
+// A single service whose one dependency is a hex-provisioned db resource â
+// the resource model's minimal shape: a service never embeds a resource; the
+// hex provisions it and wires the slot.
+const singleServiceWithDbHex = (
+  params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
+) =>
+  hex('hello', (h) => {
+    const db = h.provision('db', dbResource());
+    h.provision('svc', app('fake/compute', { db: dbEnd() }, params), { db });
+  });
 
-    const result = run(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
+const svcBundles = { bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } };
+
+describe('lowering a hex root â a single service', () => {
+  test('a dependency-less service sequences application → provision → serialize → package → deploy; nothing is auto-provisioned', () => {
+    const { target, calls } = fakeTarget();
+    const root = singleServiceHex('fake/compute');
+
+    const result = run(lowering(root, target, opts(svcBundles)));
 
     expect(calls.map((c) => c.phase)).toEqual([
       'application',
-      'resource',
       'provision',
       'serialize',
       'package',
@@ -222,31 +241,37 @@ describe('lowering a hex root — a single service', () => {
     expect(result).toEqual({ outputs: {} });
   });
 
+  test('a hex-provisioned resource lowers before the service that consumes it', () => {
+    const { target, calls } = fakeTarget();
+    const root = singleServiceWithDbHex();
+
+    run(lowering(root, target, opts(svcBundles)));
+
+    expect(calls.map((c) => c.phase)).toEqual([
+      'application',
+      'resource',
+      'provision',
+      'serialize',
+      'package',
+      'deploy',
+    ]);
+  });
+
   test("buildConfig is fed to serialize with the resource's real lowered output", () => {
     const { target, calls } = fakeTarget();
-    const root = singleServiceHex(
-      'fake/compute',
-      { db: db() },
-      { port: { type: 'number', default: 3000 } },
-    );
+    const root = singleServiceWithDbHex({ port: { type: 'number', default: 3000 } });
 
-    run(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
+    run(lowering(root, target, opts(svcBundles)));
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({
-      config: { service: { port: 3000 }, inputs: { db: { url: 'db://svc.db' } } },
+      config: { service: { port: 3000 }, inputs: { db: { url: 'db://db' } } },
     });
   });
 
   test('package receives the build adapter output dir/entry and the same address serialize used', () => {
     const { target, calls } = fakeTarget();
-    const root = singleServiceHex('fake/compute', {});
+    const root = singleServiceHex('fake/compute');
     const bundle: Bundle = { dir: 'dist/bundle', entry: 'main.mjs' };
 
     run(lowering(root, target, opts({ bundles: { svc: bundle } })));
@@ -257,15 +282,9 @@ describe('lowering a hex root — a single service', () => {
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {
     const { target, calls } = fakeTarget();
-    const root = singleServiceHex('fake/compute', { db: db() });
+    const root = singleServiceWithDbHex();
 
-    run(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
+    run(lowering(root, target, opts(svcBundles)));
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     const deploy = calls.find((c) => c.phase === 'deploy');
@@ -273,7 +292,7 @@ describe('lowering a hex root — a single service', () => {
     expect(deploy).toBeDefined();
     if (serialize?.phase !== 'serialize' || deploy?.phase !== 'deploy')
       throw new Error('unreachable');
-    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://svc.db' }]);
+    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://db' }]);
     // Same records the serialize call's own return produced (identity, not
     // a coincidental re-derivation) — the fake target only ever returns them
     // once, from serialize, and threads them through to deploy's argument.
@@ -281,32 +300,21 @@ describe('lowering a hex root — a single service', () => {
 
   test('the build descriptor is inert to lowering — any kind/entry lowers identically', () => {
     const { target } = fakeTarget();
-    const root = singleServiceHex(
-      'fake/compute',
-      { db: db() },
-      {},
-      {
-        kind: 'nonsense',
-        pack: '@fake/adapter',
-        module: 'file:///test/service.ts',
-        entry: 'whatever.js',
-      },
-    );
+    const root = singleServiceHex('fake/compute', {}, {
+      kind: 'nonsense',
+      pack: '@fake/adapter',
+      module: 'file:///test/service.ts',
+      entry: 'whatever.js',
+    });
 
-    const result = run(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
+    const result = run(lowering(root, target, opts(svcBundles)));
 
     expect(result).toEqual({ outputs: {} });
   });
 
   test('missing a bundle for a single-service hex is a LowerError naming it', () => {
     const { target } = fakeTarget();
-    const root = singleServiceHex('fake/compute', {});
+    const root = singleServiceHex('fake/compute');
 
     const error = runError(lowering(root, target, opts()));
 
@@ -314,41 +322,11 @@ describe('lowering a hex root — a single service', () => {
     expect(error.message).toContain('opts.bundles["svc"]');
   });
 
-  test('fails with LowerError naming the type and the known types on an unknown resource type', () => {
-    const { target } = fakeTarget();
-    const root = singleServiceHex('fake/compute', {
-      cache: resource({
-        name: 'test-resource',
-        pack: 'test/pack',
-        type: 'fake/unknown',
-        connection: conn({}, () => ({})),
-      }),
-    });
-
-    const error = runError(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
-
-    expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('fake/unknown');
-    expect(error.message).toContain('fake/db');
-  });
-
   test('fails with LowerError naming the type and the known types on an unknown service type', () => {
     const { target } = fakeTarget();
-    const root = singleServiceHex('fake/other-compute', {});
+    const root = singleServiceHex('fake/other-compute');
 
-    const error = runError(
-      lowering(
-        root,
-        target,
-        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
-      ),
-    );
+    const error = runError(lowering(root, target, opts(svcBundles)));
 
     expect(error).toBeInstanceOf(LowerError);
     expect(error.message).toContain('fake/other-compute');
@@ -356,17 +334,18 @@ describe('lowering a hex root — a single service', () => {
   });
 });
 
-describe('lowering a hex root — two connected services', () => {
-  const authService = () => app('fake/compute', { db: db() });
+describe('lowering a hex root — a provisioned resource and two connected services', () => {
+  const authService = () => app('fake/compute', { db: dbEnd() });
   const storefrontService = () => app('fake/compute', { auth: httpEnd() });
 
   const twoServiceHex = () =>
     hex('shop', (h) => {
-      const authRef = h.provision('auth', authService());
+      const db = h.provision('db', dbResource());
+      const authRef = h.provision('auth', authService(), { db });
       h.provision('storefront', storefrontService(), { auth: authRef });
     });
 
-  test("application provisions once; auth is FULLY deployed before storefront's serialize", () => {
+  test("application provisions once; the resource and auth are FULLY deployed before storefront's serialize", () => {
     const { target, calls } = fakeTarget();
 
     run(
@@ -384,7 +363,7 @@ describe('lowering a hex root — two connected services', () => {
     const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
     expect(order).toEqual([
       'application',
-      'resource:auth.db',
+      'resource:db',
       'provision:auth',
       'serialize:auth',
       'package:auth',
@@ -415,6 +394,25 @@ describe('lowering a hex root — two connected services', () => {
     expect(storefrontProvision).toMatchObject({ address: 'storefront' });
   });
 
+  test("auth's Config.inputs.db carries the hex-provisioned resource's lowered url", () => {
+    const { target, calls } = fakeTarget();
+
+    run(
+      lowering(twoServiceHex(), target, {
+        name: 'shop',
+        bundles: {
+          auth: { dir: 'hexes/auth/dist/bundle', entry: 'server.js' },
+          storefront: { dir: 'hexes/storefront/dist/bundle', entry: 'server.js' },
+        },
+      }),
+    );
+
+    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
+    expect(authSerialize).toMatchObject({
+      config: { inputs: { db: { url: 'db://db' } } },
+    });
+  });
+
   test("storefront's Config.inputs.auth carries auth's REAL deploy-phase URL, not a placeholder", () => {
     const { target, calls } = fakeTarget();
 
@@ -434,7 +432,7 @@ describe('lowering a hex root — two connected services', () => {
     });
   });
 
-  test("the environment edge holds for the hex too: storefront's deploy environment IS its serialize records", () => {
+  test("the environment edge: auth's deploy environment IS its serialize records, resource url included", () => {
     const { target, calls } = fakeTarget();
 
     run(
@@ -447,10 +445,13 @@ describe('lowering a hex root — two connected services', () => {
       }),
     );
 
-    const storefrontDeploy = calls.find((c) => c.phase === 'deploy' && c.id === 'storefront');
-    expect(storefrontDeploy).toMatchObject({
-      environment: [{ input: 'auth', name: 'url', value: 'https://auth.example' }],
+    const authDeploy = calls.find((c) => c.phase === 'deploy' && c.id === 'auth');
+    expect(authDeploy).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://db' }],
     });
+    // Same records the serialize call's own return produced (identity, not
+    // a coincidental re-derivation) — the fake target only ever returns them
+    // once, from serialize, and threads them through to deploy's argument.
   });
 
   test('topo sort: a hex authored consumer-before-producer (forged ref) still resolves real producer outputs at deploy', () => {
@@ -460,10 +461,11 @@ describe('lowering a hex root — two connected services', () => {
     // outputs. With the sort, the producer is fully deployed first.
     const { target, calls } = fakeTarget();
     const root = hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
       h.provision('storefront', storefrontService(), {
         auth: { id: 'auth' } as never,
       });
-      h.provision('auth', authService());
+      h.provision('auth', authService(), { db });
     });
 
     run(
@@ -517,6 +519,61 @@ describe('lowering a hex root — two connected services', () => {
     );
 
     expect(result).toEqual({ outputs: {} });
+  });
+
+  test('fails with LowerError naming the type and the known types on an unknown resource type', () => {
+    const { target } = fakeTarget();
+    const root = hex('shop', (h) => {
+      h.provision('cache', resource({ name: 'cache', pack: 'test/pack', type: 'fake/unknown' }));
+    });
+
+    const error = runError(lowering(root, target, { name: 'shop', bundles: {} }));
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('fake/unknown');
+    expect(error.message).toContain('fake/db');
+  });
+});
+
+describe('lowering a hex root — one resource shared by two consumers', () => {
+  const sharedHex = () =>
+    hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
+      h.provision('auth', app('fake/compute', { authDb: dbEnd() }), { authDb: db });
+      h.provision('billing', app('fake/compute', { billingDb: dbEnd() }), { billingDb: db });
+    });
+
+  const sharedOpts = {
+    name: 'shop',
+    bundles: {
+      auth: { dir: 'hexes/auth/dist/bundle', entry: 'server.js' },
+      billing: { dir: 'hexes/billing/dist/bundle', entry: 'server.js' },
+    },
+  };
+
+  test('the resource is lowered exactly once, regardless of consumer count', () => {
+    const { target, calls } = fakeTarget();
+
+    run(lowering(sharedHex(), target, sharedOpts));
+
+    expect(calls.filter((c) => c.phase === 'resource')).toEqual([
+      { phase: 'resource', id: 'db', type: 'fake/db' },
+    ]);
+  });
+
+  test("both consumers' Configs receive the ONE resource's outputs, each under its own dep key", () => {
+    const { target, calls } = fakeTarget();
+
+    run(lowering(sharedHex(), target, sharedOpts));
+
+    const authSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
+    const billingSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'billing');
+    expect(authSerialize).toMatchObject({
+      config: { inputs: { authDb: { url: 'db://db' } } },
+    });
+    expect(billingSerialize).toMatchObject({
+      config: { inputs: { billingDb: { url: 'db://db' } } },
+    });
   });
 });
 

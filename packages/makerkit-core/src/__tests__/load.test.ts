@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Load, LoadError } from '../graph.ts';
-import { connectionEnd, resource, service } from '../node.ts';
+import { connectionEnd, hex, resource, resourceEnd, service } from '../node.ts';
 import { conn } from './helpers.ts';
 
 const build = {
@@ -10,14 +10,14 @@ const build = {
   entry: 'server.js',
 };
 
-const db = () =>
-  resource({
-    name: 'test-resource',
-    pack: 'test/pack',
+const dbEnd = () =>
+  resourceEnd({
+    name: 'db',
     type: 'fake/db',
     connection: conn({}, () => ({})),
   });
-const app = (inputs: Record<string, ReturnType<typeof db>>) =>
+const dbResource = () => resource({ name: 'db', pack: 'test/pack', type: 'fake/db' });
+const app = (inputs: Record<string, ReturnType<typeof dbEnd>>) =>
   service({
     name: 'test-service',
     pack: 'test/pack',
@@ -28,44 +28,31 @@ const app = (inputs: Record<string, ReturnType<typeof db>>) =>
   });
 
 describe('Load', () => {
-  test('builds path-derived ids, edges, and topo-ordered nodes (deps first)', () => {
-    const input = db();
-    const root = app({ db: input });
+  test('a dep-less service root loads to a one-node graph with no edges', () => {
+    const root = app({});
 
     const graph = Load(root, { id: 'hello' });
 
     expect(graph.root).toEqual({ id: 'hello', node: root });
-    expect(graph.nodes.map((n) => n.id)).toEqual(['hello.db', 'hello']);
-    expect(graph.edges).toEqual([{ from: 'hello.db', to: 'hello', input: 'db', kind: 'input' }]);
+    expect(graph.nodes.map((n) => n.id)).toEqual(['hello']);
+    expect(graph.edges).toEqual([]);
   });
 
   test('defaults the root id to "root"', () => {
-    const graph = Load(app({ db: db() }));
+    const graph = Load(app({}));
 
     expect(graph.root.id).toBe('root');
-    expect(graph.nodes.map((n) => n.id)).toEqual(['root.db', 'root']);
-  });
-
-  test('one graph node per input, root last', () => {
-    const graph = Load(app({ a: db(), b: db() }), { id: 'svc' });
-
-    expect(graph.nodes.map((n) => n.id)).toEqual(['svc.a', 'svc.b', 'svc']);
-    expect(graph.edges).toEqual([
-      { from: 'svc.a', to: 'svc', input: 'a', kind: 'input' },
-      { from: 'svc.b', to: 'svc', input: 'b', kind: 'input' },
-    ]);
   });
 
   test('executes nothing — Load never calls a connection hydrate', () => {
     let calls = 0;
-    const root = service({
+    const svc = service({
       name: 'test-service',
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resource({
-          name: 'test-resource',
-          pack: 'test/pack',
+        db: resourceEnd({
+          name: 'db',
           type: 'fake/db',
           connection: conn({}, () => {
             calls += 1;
@@ -76,19 +63,23 @@ describe('Load', () => {
       params: {},
       build,
     });
+    const root = hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
+      h.provision('app', svc, { db });
+    });
 
     Load(root);
 
     expect(calls).toBe(0);
   });
 
-  test('rejects a root that is not a branded service node', () => {
+  test('rejects a root that is not a branded service or hex node', () => {
     expect(() => Load({} as never)).toThrow(LoadError);
-    expect(() => Load(db() as never)).toThrow(LoadError);
+    expect(() => Load(dbResource() as never)).toThrow(LoadError);
   });
 
-  test('rejects an input that is not a branded resource node', () => {
-    const root = app({ db: { kind: 'resource', type: 'fake/db' } as never });
+  test('rejects an input that is not a branded resource end or connection end', () => {
+    const root = app({ db: { kind: 'resource-end', type: 'fake/db' } as never });
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(/db/);
@@ -96,8 +87,11 @@ describe('Load', () => {
 
   test('rejects a forged input with an empty type', () => {
     // Spread copies the brand symbol but lets the type be emptied — Load must catch it.
-    const forged = { ...db(), type: '' };
-    const root = app({ db: forged as never });
+    const forged = { ...dbEnd(), type: '' };
+    const root = hex('shop', (h) => {
+      const db = h.provision('db', dbResource());
+      h.provision('app', app({ db: forged as never }), { db });
+    });
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(/empty node type/);
@@ -121,6 +115,24 @@ describe('Load', () => {
     expect(() => Load(root, { id: 'storefront' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'storefront' })).toThrow(
       /Service "storefront" has an unwired connection input "auth" — this service is composed by a hex; deploy the hex instead of loading "storefront" directly\./,
+    );
+  });
+
+  test('rejects a root service with an unwired ResourceEnd input, pointing at a composing hex', () => {
+    const root = app({ db: dbEnd() });
+
+    expect(() => Load(root, { id: 'hello' })).toThrow(LoadError);
+    expect(() => Load(root, { id: 'hello' })).toThrow(
+      /Service "hello" has an unwired resource input "db" — a resource is provisioned by a composing hex, never implicitly; deploy a hex that provisions the resource and wires it to "hello"\./,
+    );
+  });
+
+  test('rejects a concrete ResourceNode found in deps — a resource is provisioned by the composing hex, never by mention', () => {
+    const root = app({ db: dbResource() as never });
+
+    expect(() => Load(root, { id: 'hello' })).toThrow(LoadError);
+    expect(() => Load(root, { id: 'hello' })).toThrow(
+      /Input "db" of "hello" is a resource node — a resource is provisioned by the composing hex, never created for a service that mentions it\./,
     );
   });
 });

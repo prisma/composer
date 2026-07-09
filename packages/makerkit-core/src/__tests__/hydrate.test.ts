@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { hydrate, hydrateSync } from '../hydrate.ts';
-import { connectionEnd, resource, service } from '../node.ts';
+import { connectionEnd, resourceEnd, service } from '../node.ts';
 import { conn } from './helpers.ts';
 
 const build = {
@@ -10,10 +10,9 @@ const build = {
   entry: 'server.js',
 };
 
-const dbNode = (record?: (values: { url: string }) => void) =>
-  resource({
-    name: 'test-resource',
-    pack: 'test/pack',
+const dbEnd = (record?: (values: { url: string }) => void) =>
+  resourceEnd({
+    name: 'db',
     type: 'fake/db',
     connection: conn({ url: { type: 'string', secret: true } }, (v) => {
       record?.(v);
@@ -30,7 +29,7 @@ describe('hydrate', () => {
       name: 'test-service',
       pack: 'test/pack',
       type: 'fake/app',
-      inputs: { db: dbNode((v) => made.push(v)) },
+      inputs: { db: dbEnd((v) => made.push(v)) },
       params: portParams,
       build,
     });
@@ -73,9 +72,8 @@ describe('hydrate', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resource({
-          name: 'test-resource',
-          pack: 'test/pack',
+        db: resourceEnd({
+          name: 'db',
           type: 'fake/db',
           connection: conn({ url: { type: 'string' } }, async (v) => {
             await Promise.resolve();
@@ -113,7 +111,7 @@ describe('hydrateSync', () => {
       name: 'test-service',
       pack: 'test/pack',
       type: 'fake/app',
-      inputs: { db: dbNode((v) => made.push(v)) },
+      inputs: { db: dbEnd((v) => made.push(v)) },
       params: portParams,
       build,
     });
@@ -133,9 +131,8 @@ describe('hydrateSync', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resource({
-          name: 'test-resource',
-          pack: 'test/pack',
+        db: resourceEnd({
+          name: 'db',
           type: 'fake/db',
           connection: conn({ url: { type: 'string' } }, async (v) => ({ asyncClient: v.url })),
         }),

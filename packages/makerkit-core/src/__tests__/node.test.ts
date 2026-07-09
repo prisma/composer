@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Contract } from '../contract.ts';
-import { connectionEnd, hex, isNode, resource, service } from '../node.ts';
+import { connectionEnd, hex, isNode, resource, resourceEnd, service } from '../node.ts';
 import { conn } from './helpers.ts';
 
 const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => ({
@@ -10,12 +10,11 @@ const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => ({
 });
 
 describe('resource()', () => {
-  test('returns a branded, frozen resource node carrying its name, pack, and connection', () => {
+  test('returns a branded, frozen resource identity carrying its name, pack, and type — no connection face', () => {
     const node = resource({
       name: 'db',
       pack: '@makerkit/prisma-cloud',
       type: 'fake/db',
-      connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
     });
 
     expect(isNode(node)).toBe(true);
@@ -23,18 +22,58 @@ describe('resource()', () => {
     expect(node.name).toBe('db');
     expect(node.pack).toBe('@makerkit/prisma-cloud');
     expect(node.type).toBe('fake/db');
-    expect(node.connection.params).toEqual({ url: { type: 'string', secret: true } });
+    expect('connection' in node).toBe(false);
     expect(Object.isFrozen(node)).toBe(true);
-    expect(Object.isFrozen(node.connection)).toBe(true);
-    expect(Object.isFrozen(node.connection.params)).toBe(true);
-    expect(Object.isFrozen(node.connection.params['url'])).toBe(true);
+  });
+
+  test('throws on an empty type', () => {
+    expect(() => resource({ name: 'db', pack: 'test/pack', type: '' })).toThrow(
+      /non-empty node type/,
+    );
+  });
+
+  test('throws on an empty name', () => {
+    expect(() => resource({ name: '', pack: 'test/pack', type: 'fake/db' })).toThrow(
+      /non-empty name/,
+    );
+  });
+
+  test('throws on an empty pack', () => {
+    expect(() => resource({ name: 'db', pack: '', type: 'fake/db' })).toThrow(/non-empty pack/);
+  });
+});
+
+describe('resourceEnd()', () => {
+  test('returns a branded, frozen resource end carrying its given name, type, and connection', () => {
+    const end = resourceEnd({
+      name: 'db',
+      type: 'fake/db',
+      connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+    });
+
+    expect(isNode(end)).toBe(true);
+    expect(end.kind).toBe('resource-end');
+    expect(end.name).toBe('db');
+    expect(end.type).toBe('fake/db');
+    expect(end.connection.params).toEqual({ url: { type: 'string', secret: true } });
+    expect(Object.isFrozen(end)).toBe(true);
+    expect(Object.isFrozen(end.connection)).toBe(true);
+    expect(Object.isFrozen(end.connection.params)).toBe(true);
+    expect(Object.isFrozen(end.connection.params['url'])).toBe(true);
+  });
+
+  test('name is optional — an unnamed end falls back to its type', () => {
+    const end = resourceEnd({
+      type: 'fake/db',
+      connection: conn({}, () => ({})),
+    });
+
+    expect(end.name).toBe('fake/db');
   });
 
   test("hydrate is the app's factory — called only when invoked", () => {
     let calls = 0;
-    const node = resource({
-      name: 'db',
-      pack: 'test/pack',
+    const end = resourceEnd({
       type: 'fake/db',
       connection: conn({ url: { type: 'string' } }, (v) => {
         calls += 1;
@@ -43,33 +82,20 @@ describe('resource()', () => {
     });
 
     expect(calls).toBe(0);
-    expect(node.connection.hydrate({ url: 'postgres://x' })).toEqual({ url: 'postgres://x' });
+    expect(end.connection.hydrate({ url: 'postgres://x' })).toEqual({ url: 'postgres://x' });
     expect(calls).toBe(1);
   });
 
   test('throws on an empty type', () => {
-    expect(() =>
-      resource({ name: 'db', pack: 'test/pack', type: '', connection: conn({}, () => ({})) }),
-    ).toThrow(/non-empty node type/);
-  });
-
-  test('throws on an empty name', () => {
-    expect(() =>
-      resource({ name: '', pack: 'test/pack', type: 'fake/db', connection: conn({}, () => ({})) }),
-    ).toThrow(/non-empty name/);
-  });
-
-  test('throws on an empty pack', () => {
-    expect(() =>
-      resource({ name: 'db', pack: '', type: 'fake/db', connection: conn({}, () => ({})) }),
-    ).toThrow(/non-empty pack/);
+    expect(() => resourceEnd({ type: '', connection: conn({}, () => ({})) })).toThrow(
+      /non-empty node type/,
+    );
   });
 
   test('rejects an underscore in a param name (would collide with the config-key separator)', () => {
     expect(() =>
-      resource({
+      resourceEnd({
         name: 'db',
-        pack: 'test/pack',
         type: 'fake/db',
         connection: conn({ db_url: { type: 'string' } }, () => ({})),
       }),
@@ -86,9 +112,8 @@ describe('service()', () => {
   };
 
   test('returns a branded, frozen service node with frozen name, pack, inputs, params, and build', () => {
-    const db = resource({
+    const db = resourceEnd({
       name: 'db',
-      pack: 'test/pack',
       type: 'fake/db',
       connection: conn({}, () => ({})),
     });
@@ -127,9 +152,8 @@ describe('service()', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resource({
+        db: resourceEnd({
           name: 'db',
-          pack: 'test/pack',
           type: 'fake/db',
           connection: conn({}, () => ({})),
         }),
@@ -169,9 +193,8 @@ describe('service()', () => {
   });
 
   test('rejects an underscore in an input name', () => {
-    const db = resource({
+    const db = resourceEnd({
       name: 'db',
-      pack: 'test/pack',
       type: 'fake/db',
       connection: conn({}, () => ({})),
     });
