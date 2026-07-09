@@ -7,17 +7,26 @@ Accepted
 ## Decision
 
 The hosted state store's data access is hand-written SQL over a plain Postgres
-driver — not Prisma Next. Adopting Prisma Next for the store is deferred, with
-the pick-up triggers recorded below, not rejected.
+driver (postgres.js) — not Prisma Next. Adopting Prisma Next for the store is
+deferred, with the pick-up triggers recorded below, not rejected.
 
 ## Reasoning
 
-The store's entire data surface is two tables — resource state keyed by
-(stack, stage, fqn) and stack outputs keyed by (stack, stage) — accessed
-through roughly a dozen key-value operations: get, upsert, delete, list.
-Every operation is already typed at the boundary, because the store implements
-the engine's `StateService` interface; no caller ever sees a row shape. That
-is the context in which an ORM's value proposition has to argue.
+Here is a representative query from the store — the write path, more or less
+in full:
+
+```sql
+insert into alchemy_resource_state (stack, stage, fqn, value)
+values ($1, $2, $3, $4)
+on conflict (stack, stage, fqn) do update set value = excluded.value
+```
+
+The store's entire data surface is like that: two tables — one row per
+provisioned resource, one row per stack's outputs — accessed through roughly a
+dozen key-value operations: get, upsert, delete, list. Every operation is
+already typed at the boundary, because the store implements the engine's
+`StateService` interface; no caller ever sees a row shape. That is the context
+in which an ORM's value proposition has to argue.
 
 Feasibility is not the question — Prisma Next fits this shape today. Its
 control API applies a contract's schema programmatically (`dbUpdate` with
@@ -29,19 +38,19 @@ development time and committable, so a library can ship them.
 
 The argument is cost against gain, and it concentrates in the store's most
 safety-critical code. The advisory-lock machinery
-([ADR-0010](ADR-0010-deploys-hold-a-session-advisory-lock.md)) is built on the
-current driver's reserved-connection primitive, and its correctness properties
-— crash-release, the never-touch-the-dead-connection liveness check — were
-established against that driver's specific failure behavior, probed directly.
-Prisma Next rides a different Postgres driver, so adoption means porting the
-lock to a different connection-pinning mechanism and re-running the entire
+([ADR-0010](ADR-0010-deploys-hold-a-session-advisory-lock.md)) is built on
+postgres.js's reserved-connection primitive, and its correctness properties —
+crash-release, the never-touch-the-dead-connection liveness check — hold
+against that driver's specific failure behavior, verified empirically. Prisma
+Next rides a different driver (node-postgres), so adoption means porting the
+lock to a different connection-pinning mechanism and re-running its entire
 proof suite (contention, crash-release, server-side kills), plus re-proving
 that the engine's state-encoding envelopes round-trip byte-identically through
-a different jsonb path, plus a live re-proof of a store that already has one.
-What that buys is a typed lane for a dozen trivial queries that are already
-typed one layer up. For this code, today, the exchange is a poor one — and the
-platform's intended state API may eventually absorb the store entirely, making
-investment in its internals moot.
+a different jsonb path, plus re-establishing the store's live deploy proofs on
+the new stack. What that buys is a typed lane for a dozen trivial queries that
+are already typed one layer up. For this code, today, the exchange is a poor
+one — and the platform's intended state API may eventually absorb the store
+entirely, making investment in its internals moot.
 
 Deferred is not rejected. The store keeps plain SQL while it stays small; the
 decision flips when the balance does.

@@ -6,13 +6,13 @@ Accepted
 
 ## Decision
 
-Alchemy deploy state — the record of what is provisioned — lives in a Prisma
-Postgres database inside a reserved, framework-owned project (`makerkit-state`)
-in the deployer's workspace. Every deploy bootstraps it automatically:
-find-or-create the project, verify ownership, mint a fresh database connection
-for the run. Possession of the workspace's service token is the only
-credential; no state file, password, or connection string is ever shared
-between machines.
+Deploy state — the provisioning engine's record of what exists in the cloud —
+lives in a Prisma Postgres database inside a reserved, framework-owned project
+(`makerkit-state`) in the deployer's workspace, not in files on the machine
+that deployed. Every deploy bootstraps it automatically: find-or-create the
+project, verify ownership, mint a fresh database connection for the run.
+Possession of the workspace's service token is the only credential; no state
+file, password, or connection string is ever shared between machines.
 
 ## Reasoning
 
@@ -25,11 +25,14 @@ of services. The first deployment is now orphaned, still running, still billing,
 and no machine holds the state needed to destroy it. Nothing failed loudly; the
 second deploy was a clean success.
 
-The state store is the engine's source of truth for "what's provisioned", so
-whoever can read it can deploy incrementally and whoever cannot will duplicate.
-Keeping it in files makes it single-machine by construction. The fix is the one
-hosted-state products (Terraform Cloud, Pulumi) converged on: state lives with
-the platform, scoped to the team's namespace — here, the Prisma workspace.
+MakerKit provisions through Alchemy, an engine that (like Terraform) works by
+diffing the desired graph against a **state store** — its record of what it
+provisioned last time. That store is the source of truth for "what exists":
+whoever can read it deploys incrementally, and whoever cannot will duplicate.
+Keeping it in files makes it single-machine by construction. The fix is the
+one hosted-state products (Terraform Cloud, Pulumi) converged on: state lives
+with the platform, scoped to the team's namespace — here, the Prisma
+workspace.
 
 Where inside the workspace can it live? Prisma's hierarchy is Workspace →
 Project → Database: there is no workspace-level database, so the store must sit
@@ -50,9 +53,11 @@ is adopted and marked; an empty database (a freshly created project) is
 initialized; a database holding foreign tables is refused loudly, naming the
 project so an operator can act. With several candidates, they are tried
 oldest-first, so every machine converges on the same store deterministically.
-(Workspace ids also circulate in two shapes — API responses prefix them,
-tokens often don't — so discovery compares them normalized; a raw comparison
-silently never matches and re-provisions a store per run.)
+Discovery also filters candidates by workspace, and workspace ids circulate in
+two shapes — API responses return them prefixed (`wksp_…`), tokens and config
+usually carry them bare — so the comparison normalizes both sides; compared
+raw, the shapes never match and every deploy would quietly build itself a
+fresh store.
 
 Credentials are the part that makes this zero-setup. The platform returns a
 database connection string only at connection-creation time — it is write-only
@@ -62,10 +67,11 @@ at the next bootstrap). The result: a machine needs exactly what it already
 needed to deploy at all — the service token and workspace id — and the DSN
 never lands in a file anywhere.
 
-The store itself is two tables — resource state keyed by (stack, stage, fqn)
-and stack outputs keyed by (stack, stage) — with values passing through
-Alchemy's own state encoding, so the wire shape is identical to every other
-Alchemy store and the engine cannot tell the difference.
+The store itself is two tables — one row per provisioned resource, keyed by
+stack, stage, and the engine's fully-qualified resource name, plus one row per
+stack's outputs — with values passing through Alchemy's own state encoding, so
+the wire shape is identical to every other Alchemy store and the engine cannot
+tell the difference.
 
 ## Consequences
 

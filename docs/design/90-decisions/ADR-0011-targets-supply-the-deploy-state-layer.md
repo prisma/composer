@@ -14,24 +14,34 @@ work) through `opts.state`, which always wins.
 
 ## Reasoning
 
-Consider the opt-in version of hosted state: the store exists, and every
-deploy entrypoint is supposed to pass `state: prismaState({ workspaceId })`.
-The app that forgets gets no error — it gets Alchemy's local-file default,
-deploys successfully, and has silently re-created the exact failure hosted
-state exists to kill: the next machine to deploy that stack duplicates it
-([ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md)). A safety
-mechanism you must remember to switch on protects only the people who least
-need it.
+Consider the opt-in version of hosted state
+([ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md)): the store
+exists, and every deploy entrypoint is supposed to remember one line —
+
+```ts
+lower(app, prismaCloud({ workspaceId }), {
+  name: "shop",
+  state: prismaState({ workspaceId }),   // ← forget this line
+});
+```
+
+The entrypoint that forgets it gets no error. It gets Alchemy's local-file
+default, deploys successfully, and has silently re-created the exact failure
+hosted state exists to kill: the next machine to deploy that stack duplicates
+it. A safety mechanism you must remember to switch on protects only the
+people who least need it.
 
 So the default must flow from somewhere the user doesn't write. The natural
-owner is the target. "Where does deploy state live?" is a property of the
-platform being deployed to — the Prisma Cloud target knows its platform can
-host state and how to reach it, exactly the way it already knows its
-provisioning providers. The `Target` SPI even has the precedent on it:
-`providers()` is a layer the target contributes to every stack it lowers.
-`state()` is the second such layer. Core stays target-neutral throughout — the
-field's type is generic Alchemy vocabulary, and core never learns what is
-behind the layer it is handed.
+owner is the **Target** — the object a pack constructs carrying everything
+core needs to deploy to one platform (its lowering tables, its provisioning
+providers). "Where does deploy state live?" is a property of the platform
+being deployed to: the Prisma Cloud target knows its platform can host state
+and how to reach it, exactly the way it already knows its providers. The
+`Target` SPI even has the precedent on it: `providers()` is a layer the
+target contributes to every stack it lowers. `state()` is the second such
+layer. Core stays target-neutral throughout — the field's type is generic
+Alchemy vocabulary, and core never learns what is behind the layer it is
+handed.
 
 Making the field *required* rather than defaulted is the sharper half of the
 decision. An optional field with a core-owned local-state fallback recreates
@@ -54,17 +64,19 @@ fallback.
   duplicate-stack footgun requires an explicit opt-out to reproduce.
 - Every target author must decide their state story at construction time; the
   compiler enforces the decision exists.
-- Core imports no state backend and carries no default — replacing the target
-  pack swaps the state story with it, which is the swap test behaving
-  correctly (state hosting *is* a target capability).
+- Core imports no state backend and carries no default. Replacing the target
+  pack therefore swaps where state lives along with everything else — which is
+  correct, not a leak: state hosting is a capability of the platform, so it
+  belongs to whatever represents the platform.
 - `opts.state` is the sanctioned escape hatch, and its presence in a diff is a
   visible signal that a stack deliberately diverges from its target's default.
 
 ## Alternatives considered
 
-- **Optional `Target.state` with a core-owned local fallback** — the shape
-  this replaced. Rejected because the silent fallback is itself the failure
-  mode: forgetting becomes indistinguishable from choosing.
+- **Optional `Target.state` with a core-owned local fallback** — rejected
+  because a silent fallback is itself the failure mode: a target author who
+  omits the field ships the forgot-to-opt-in footgun to every app on that
+  target, and forgetting becomes indistinguishable from choosing.
 - **Per-call opt-in only** (`opts.state` with no target involvement) —
   rejected: every entrypoint must remember, and the one that forgets fails
   silently and destructively.

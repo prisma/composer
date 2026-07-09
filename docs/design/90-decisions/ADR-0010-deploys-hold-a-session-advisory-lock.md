@@ -6,24 +6,33 @@ Accepted
 
 ## Decision
 
-A deploy acquires a Postgres session advisory lock, keyed by the stack and
-stage, on a dedicated connection to the state database, and holds it for the
-whole run. A second deploy of the same stack/stage fails immediately with an
-error naming both; it never queues. If the deploying process dies, the
-connection drops and Postgres releases the lock — crash recovery needs no
-bookkeeping. During the run, every state operation re-verifies the lease from
-a *separate* connection (amortized over a short window), and fails loudly if
-the lease is gone.
+A deploy acquires a Postgres session advisory lock on the hosted state
+database ([ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md)),
+keyed by the application being deployed (its stack name and stage), and holds
+it on a dedicated connection for the whole run. A second deploy of the same
+application fails immediately with an error naming what is locked; it never
+queues. If the deploying process dies, the connection drops and Postgres
+releases the lock — crash recovery needs no bookkeeping. During the run, every
+state operation re-verifies the lease from a *separate* connection (amortized
+over a short window), and fails loudly if the lease is gone.
 
 ## Reasoning
 
-Hosted state ([ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md))
-makes concurrent deploys of one stack possible for the first time: two
-machines share the store, so two `deploy` commands can interleave their reads
-and writes of the same rows and their mutations of the same cloud resources.
-The engine offers no protection — its state-store interface has no locking
-concept at all, in the interface or in any built-in store. Whatever
-concurrency control exists is ours to build into the store itself.
+Start with the collision this prevents. Two engineers run `makerkit deploy`
+for the same application within seconds of each other — a human and a CI job,
+say, after a merge. Each deploy is a long sequence of steps: read the state
+rows, diff, create or update cloud resources, write the results back.
+Un-serialized, the two runs interleave — each reads state the other is halfway
+through rewriting, each mutates the same cloud resources on a stale picture —
+and the end state is a stack that matches neither run's plan, described by
+state rows that match neither reality. Nothing reports an error; the damage
+surfaces on the *next* deploy.
+
+Sharing state is what makes this collision possible at all — hosted state
+gives every credentialed machine the same store — and the engine offers no
+protection: locking appears nowhere in its state-store interface and in none
+of its built-in stores. Whatever concurrency control exists is ours to build
+into the store itself.
 
 What the situation needs is a lease: held for the entire run, released the
 instant the holder dies, with no cleanup job or expiry bookkeeping. A Postgres
@@ -87,9 +96,9 @@ operation's latency.
 - **Blocking on contention** (`pg_advisory_lock` rather than the try-variant)
   — rejected as the default: an indefinitely hanging deploy is worse than a
   clear refusal; explicit waiting can be added later.
-- **Checking liveness on the reserved connection itself** — rejected after the
-  driver's behavior was probed directly: a server-killed reserved connection
-  crashes the process instead of failing the query, turning a lost lease into
+- **Checking liveness on the reserved connection itself** — rejected: a
+  server-killed reserved connection crashes the process instead of failing the
+  query (the driver's behavior, verified directly), turning a lost lease into
   a lost deploy.
 
 ## Related
