@@ -52,12 +52,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate ALCHEMY_PASSWORD
-        # Fresh CI state every run — nothing to decrypt, so a random password
-        # is fine. Mask it before it ever reaches $GITHUB_ENV / logs.
-        run: |
-          password="$(openssl rand -hex 24)"
-          echo "::add-mask::$password"
-          echo "ALCHEMY_PASSWORD=$password" >> "$GITHUB_ENV"
+        run: bash examples/scripts/generate-alchemy-password.sh
 
       # storefront-auth's own `build` script is a no-op — turbo's ^build
       # (from the workspace deps in its package.json) builds the two hexes.
@@ -87,13 +82,7 @@ jobs:
         # orphaned cloud resources nobody else can clean up.
         if: always()
         working-directory: examples/storefront-auth
-        run: |
-          set -euo pipefail
-          if [ ! -d .alchemy ]; then
-            echo "No .alchemy state dir — deploy never started, nothing to destroy."
-            exit 0
-          fi
-          bun node_modules/.bin/makerkit destroy hex.ts --name "$STOREFRONT_STACK_NAME"
+        run: bash ../scripts/destroy-guard.sh "" hex.ts "$STOREFRONT_STACK_NAME"
 
       # ---- makerkit-hello: the SERVICE-root path + the idempotent-redeploy
       # proof. storefront-auth above covers the hex root; hello covers a bare
@@ -105,44 +94,17 @@ jobs:
         working-directory: examples/makerkit-hello
         env:
           HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          pnpm build
-          bun node_modules/.bin/makerkit deploy src/service.ts --name "$HELLO_STACK_NAME"
-          state="$(find .alchemy/state -name '*-deploy.json' | head -1)"
-          [ -n "$state" ] || { echo "no deploy state found"; exit 1; }
-          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$state','utf8')).attr?.deployedUrl ?? '')")"
-          echo "Hello URL: $url"
-          deadline=$((SECONDS + 180))
-          while [ "$SECONDS" -lt "$deadline" ]; do
-            body="$(curl -sS --max-time 30 "$url" || true)"
-            if printf '%s' "$body" | grep -q '"ok"'; then echo "Hello serves: $body"; exit 0; fi
-            sleep 6
-          done
-          echo "hello never served; last body: $body"; exit 1
+        run: bash scripts/e2e-deploy-verify.sh
 
       - name: Redeploy hello — must be a no-op
         working-directory: examples/makerkit-hello
         env:
           HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          out="$(bun node_modules/.bin/makerkit deploy src/service.ts --name "$HELLO_STACK_NAME" 2>&1)"
-          printf '%s\n' "$out"
-          # An unchanged node-kind build must produce no resource changes.
-          if printf '%s' "$out" | grep -qE '\b(created|updated|replaced)\b'; then
-            echo "Redeploy was not a no-op."; exit 1
-          fi
+        run: bash scripts/e2e-redeploy-noop.sh
 
       - name: Destroy hello
         if: always()
         working-directory: examples/makerkit-hello
         env:
           HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          if [ ! -d .alchemy ]; then
-            echo "No .alchemy state dir — hello deploy never started, nothing to destroy."
-            exit 0
-          fi
-          bun node_modules/.bin/makerkit destroy src/service.ts --name "$HELLO_STACK_NAME"
+        run: bash ../scripts/destroy-guard.sh "hello " src/service.ts "$HELLO_STACK_NAME"
