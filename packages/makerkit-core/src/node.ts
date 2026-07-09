@@ -47,7 +47,11 @@ export interface ResourceNode<C = unknown> extends NodeBase {
 export interface BuildAdapter {
   /** Assembler routing key, e.g. "node" · "nextjs". */
   readonly kind: string;
-  /** Built runnable, service-dir-relative (e.g. "dist/server.js"). */
+  /**
+   * The app's built runnable; the kind's assembler interprets it. "node":
+   * a service-dir-relative path (e.g. "dist/server.js"). "nextjs": a bare
+   * filename inside the standalone output dir (e.g. "server.js").
+   */
   readonly entry: string;
 }
 

@@ -42,6 +42,19 @@ describe('assemble()', () => {
     ).rejects.toThrow(/no built entry at .*dist\/server\.js/);
   });
 
+  test('rejects an app entry named main.js — reserved for the wrapper', async () => {
+    const serviceDir = makeServiceDir();
+    fs.mkdirSync(path.join(serviceDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, 'dist', 'main.js'), 'export {};\n');
+    await expect(
+      assemble({
+        serviceDir,
+        serviceModule: path.join(serviceDir, 'src', 'service.ts'),
+        build: { kind: 'node', entry: 'dist/main.js' },
+      }),
+    ).rejects.toThrow(/reserved for the MakerKit wrapper/);
+  });
+
   test('produces a bundle dir containing the wrapper and a copy of the built entry', async () => {
     const serviceDir = makeServiceDir();
     fs.mkdirSync(path.join(serviceDir, 'dist'), { recursive: true });
