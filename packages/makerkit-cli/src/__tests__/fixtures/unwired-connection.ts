@@ -4,7 +4,6 @@ export default service({
   name: 'fixture-service-with-unwired-input',
   pack: 'test/pack',
   type: 'fixture/service',
-  url: import.meta.url,
   inputs: {
     auth: connectionEnd({
       type: 'fixture/connection',
@@ -12,5 +11,5 @@ export default service({
     }),
   },
   params: {},
-  build: { kind: 'node', entry: 'server.js' },
+  build: { kind: 'node', module: import.meta.url, entry: 'server.js' },
 });

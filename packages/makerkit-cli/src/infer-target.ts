@@ -54,10 +54,10 @@ export interface InferredTarget {
   readonly target: Target;
 }
 
-/** `entryPkgDir` anchors resolution of the pack's `/target` entry (see resolve-from-entry.ts). */
-export async function inferTarget(graph: Graph, entryPkgDir: string): Promise<InferredTarget> {
+/** `entryPath` anchors resolution of the pack's `/target` entry (see resolve-from-entry.ts). */
+export async function inferTarget(graph: Graph, entryPath: string): Promise<InferredTarget> {
   const pack = resolveSinglePack(collectPacks(graph));
-  const mod = await importFromEntry(entryPkgDir, pack, 'target');
+  const mod = await importFromEntry(entryPath, pack, 'target');
   const fromEnv = extractFromEnv(pack, `${pack}/target`, mod);
   return { pack, target: fromEnv() };
 }

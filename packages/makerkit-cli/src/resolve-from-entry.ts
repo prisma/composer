@@ -1,14 +1,17 @@
 /**
  * Resolves a pack's subpath entry (e.g. a target's `/target` or an adapter's
- * `/assemble`) anchored at the app's entry package, not at the CLI's own
- * location (ADR-0004's package-anchor idea, applied to module resolution).
- * This is what lets the CLI ship with no dependency on any specific pack: the
- * pack only needs to appear in the APP's own dependency tree.
+ * `/assemble`) anchored at the app's entry module, not at the CLI's own
+ * location. This is what lets the CLI ship with no dependency on any specific
+ * pack: the pack only needs to appear in the APP's own dependency tree.
  *
- * Anchoring uses `createRequire(entryPkgDir/package.json).resolve(...)`.
- * Node's CJS resolver still honors a package's `exports` map for require()
- * (not just import()), and bun's `createRequire` follows the same contract —
- * both verified against fixture packages under both runtimes. `import.meta.resolve()`
+ * Anchoring uses `createRequire(entryPath).resolve(...)`, seeded with the
+ * entry module's own FILE path — no package.json discovery (ADR-0004's
+ * rewrite: paths are relative to the file that writes them). Node's resolver
+ * already walks node_modules upward from `dirname(entryPath)` on its own;
+ * that walk is the platform's, not the CLI's to reimplement. Node's CJS
+ * resolver still honors a package's `exports` map for require() (not just
+ * import()), and bun's `createRequire` follows the same contract — both
+ * verified against fixture packages under both runtimes. `import.meta.resolve()`
  * was ruled out: node's version resolves only relative to the calling module
  * with no parent argument, so it can't be anchored at an arbitrary directory.
  */
@@ -37,14 +40,15 @@ function resolutionFailureCode(error: unknown): string | undefined {
   return RESOLUTION_FAILURE_CODES.has(code) ? code : undefined;
 }
 
-/** The specifier `${pack}/${subpath}`, resolved from `entryPkgDir` and imported. */
+/** The specifier `${pack}/${subpath}`, resolved from the entry module's own file path and imported. */
 export async function importFromEntry(
-  entryPkgDir: string,
+  entryPath: string,
   pack: string,
   subpath: string,
 ): Promise<unknown> {
   const specifier = `${pack}/${subpath}`;
-  const require = createRequire(path.join(entryPkgDir, 'package.json'));
+  const require = createRequire(entryPath);
+  const entryDir = path.dirname(entryPath);
 
   let resolved: string;
   try {
@@ -54,13 +58,13 @@ export async function importFromEntry(
     if (code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') {
       throw new CliError(
         `"${pack}" is installed but does not export "./${subpath}" ` +
-          `(resolved from ${entryPkgDir}) — the installed version may be too old or not a ` +
+          `(resolved from ${entryDir}) — the installed version may be too old or not a ` +
           'MakerKit pack.',
       );
     }
     if (code !== undefined) {
       throw new CliError(
-        `Cannot resolve "${specifier}" from ${entryPkgDir} — the app's package (the one ` +
+        `Cannot resolve "${specifier}" from ${entryDir} — the app's package (the one ` +
           `containing the entry module) must depend on "${pack}".`,
       );
     }

@@ -3,7 +3,7 @@ import type { Graph } from '@makerkit/core';
 import { resource, service } from '@makerkit/core';
 import { collectPacks, extractFromEnv, resolveSinglePack } from '../infer-target.ts';
 
-const build = { kind: 'node', entry: 'server.js' } as const;
+const build = { kind: 'node', module: 'file:///test/service.ts', entry: 'server.js' } as const;
 
 function graphWithPacks(packs: readonly string[]): Graph {
   const nodes = packs.map((pack, i) => ({
@@ -12,7 +12,6 @@ function graphWithPacks(packs: readonly string[]): Graph {
       name: `svc-${i}`,
       pack,
       type: 'fixture/service',
-      url: 'file:///test/service.ts',
       inputs: {},
       params: {},
       build,
@@ -35,7 +34,6 @@ describe('collectPacks() + resolveSinglePack() (ADR-0003)', () => {
       name: 'svc',
       pack: '@makerkit/prisma-cloud',
       type: 'fixture/service',
-      url: 'file:///test/service.ts',
       inputs: {},
       params: {},
       build,

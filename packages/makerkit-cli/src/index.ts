@@ -7,5 +7,4 @@ export { renderStackFile, writeStackFile } from './generate-stack.ts';
 export { inferTarget } from './infer-target.ts';
 export { loadEntry } from './load-entry.ts';
 export { parseArgs, run, USAGE, UsageError } from './main.ts';
-export { findPackageDir } from './package-anchor.ts';
 export { resolveAlchemyBin, runAlchemy } from './run-alchemy.ts';

@@ -7,21 +7,21 @@ import { importFromEntry } from '../resolve-from-entry.ts';
 
 const tmpDirs: string[] = [];
 
-/** A throwaway app package dir with one fixture dependency under node_modules — no real pack needed. */
-function makeEntryPkgDir(): string {
+/** A throwaway app package dir with an entry FILE (need not exist on disk — createRequire only needs its dirname). */
+function makeEntryPath(): string {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'makerkit-cli-resolve-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
-  return dir;
+  return path.join(dir, 'service.ts');
 }
 
 function writeFixturePack(
-  entryPkgDir: string,
+  entryDir: string,
   pack: string,
   subpath: string,
   moduleSource: string,
 ): void {
-  const packDir = path.join(entryPkgDir, 'node_modules', pack);
+  const packDir = path.join(entryDir, 'node_modules', pack);
   fs.mkdirSync(packDir, { recursive: true });
   fs.writeFileSync(
     path.join(packDir, 'package.json'),
@@ -43,15 +43,15 @@ afterEach(() => {
 
 describe('importFromEntry() — entry-anchored resolution', () => {
   test('resolves and imports a fixture pack’s subpath entry declared via package.json exports', async () => {
-    const entryPkgDir = makeEntryPkgDir();
+    const entryPath = makeEntryPath();
     writeFixturePack(
-      entryPkgDir,
+      path.dirname(entryPath),
       'fixture-pack',
       'target',
       "export function fromEnv() { return 'ok'; }\n",
     );
 
-    const mod = await importFromEntry(entryPkgDir, 'fixture-pack', 'target');
+    const mod = await importFromEntry(entryPath, 'fixture-pack', 'target');
 
     expect(
       typeof mod === 'object' &&
@@ -64,18 +64,20 @@ describe('importFromEntry() — entry-anchored resolution', () => {
   });
 
   test('walks up to a parent directory’s node_modules, like Node/bun module resolution', async () => {
-    const entryPkgDir = makeEntryPkgDir();
+    const entryPath = makeEntryPath();
+    const entryDir = path.dirname(entryPath);
     writeFixturePack(
-      entryPkgDir,
+      entryDir,
       'fixture-pack',
       'assemble',
       "export function assemble() { return 'assembled'; }\n",
     );
-    const nestedDir = path.join(entryPkgDir, 'nested', 'deeper');
+    const nestedDir = path.join(entryDir, 'nested', 'deeper');
     fs.mkdirSync(nestedDir, { recursive: true });
     fs.writeFileSync(path.join(nestedDir, 'package.json'), JSON.stringify({ name: 'nested-app' }));
+    const nestedEntryPath = path.join(nestedDir, 'service.ts');
 
-    const mod = await importFromEntry(nestedDir, 'fixture-pack', 'assemble');
+    const mod = await importFromEntry(nestedEntryPath, 'fixture-pack', 'assemble');
 
     expect(
       typeof mod === 'object' &&
@@ -88,16 +90,15 @@ describe('importFromEntry() — entry-anchored resolution', () => {
   });
 
   test('a missing pack throws a CliError naming the pack, the entry dir, and the fix', async () => {
-    const entryPkgDir = makeEntryPkgDir();
+    const entryPath = makeEntryPath();
+    const entryDir = path.dirname(entryPath);
 
-    await expect(
-      importFromEntry(entryPkgDir, '@makerkit/does-not-exist', 'target'),
-    ).rejects.toThrow(CliError);
-    await expect(
-      importFromEntry(entryPkgDir, '@makerkit/does-not-exist', 'target'),
-    ).rejects.toThrow(
+    await expect(importFromEntry(entryPath, '@makerkit/does-not-exist', 'target')).rejects.toThrow(
+      CliError,
+    );
+    await expect(importFromEntry(entryPath, '@makerkit/does-not-exist', 'target')).rejects.toThrow(
       new RegExp(
-        `Cannot resolve "@makerkit/does-not-exist/target" from ${entryPkgDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — the app's package \\(the one containing the entry module\\) must depend on "@makerkit/does-not-exist"`,
+        `Cannot resolve "@makerkit/does-not-exist/target" from ${entryDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} — the app's package \\(the one containing the entry module\\) must depend on "@makerkit/does-not-exist"`,
       ),
     );
   });
@@ -106,8 +107,8 @@ describe('importFromEntry() — entry-anchored resolution', () => {
   // bun: MODULE_NOT_FOUND), so the assertion is runtime-agnostic: a CliError
   // naming the pack, whichever branch produced it.
   test('a pack present but missing the requested subpath export throws a CliError naming the pack', async () => {
-    const entryPkgDir = makeEntryPkgDir();
-    const packDir = path.join(entryPkgDir, 'node_modules', 'fixture-pack');
+    const entryPath = makeEntryPath();
+    const packDir = path.join(path.dirname(entryPath), 'node_modules', 'fixture-pack');
     fs.mkdirSync(packDir, { recursive: true });
     fs.writeFileSync(
       path.join(packDir, 'package.json'),
@@ -115,8 +116,8 @@ describe('importFromEntry() — entry-anchored resolution', () => {
     );
     fs.writeFileSync(path.join(packDir, 'index.ts'), 'export {};\n');
 
-    await expect(importFromEntry(entryPkgDir, 'fixture-pack', 'target')).rejects.toThrow(CliError);
-    await expect(importFromEntry(entryPkgDir, 'fixture-pack', 'target')).rejects.toThrow(
+    await expect(importFromEntry(entryPath, 'fixture-pack', 'target')).rejects.toThrow(CliError);
+    await expect(importFromEntry(entryPath, 'fixture-pack', 'target')).rejects.toThrow(
       /"?fixture-pack"?/,
     );
   });

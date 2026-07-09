@@ -7,7 +7,6 @@ import { CliError } from './cli-error.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
 import { inferTarget } from './infer-target.ts';
 import { loadEntry } from './load-entry.ts';
-import { findPackageDir } from './package-anchor.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
 
 export const USAGE = `Usage: makerkit <deploy|destroy> <entry> [--name <name>] [--stage <stage>]
@@ -73,14 +72,15 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
 
   // 1. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(args.entry, cwd);
-  const entryPkgDir = findPackageDir(entryModule.path, 'the entry module');
 
   // 2. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root);
   const isHexRoot = graph.root.node.kind === 'hex';
 
-  // 3. Infer the target — validates the pack's env NOW, before any assembly work.
-  const { pack } = await inferTarget(graph, entryPkgDir);
+  // 3. Infer the target — anchored at the entry module itself (node's resolver
+  // walks node_modules upward from there natively); validates the pack's env
+  // NOW, before any assembly work.
+  const { pack } = await inferTarget(graph, entryModule.path);
 
   // 4. Resolve the name.
   const name = args.name ?? entryModule.root.name;
@@ -93,7 +93,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   // built output blocks destroy too — say so instead of just "run your build".
   let assembled: Awaited<ReturnType<typeof assembleServices>>;
   try {
-    assembled = await assembleServices(graph, isHexRoot, entryPkgDir, deps.runAssembler);
+    assembled = await assembleServices(graph, isHexRoot, entryModule.path, deps.runAssembler);
   } catch (error) {
     if (args.command === 'destroy' && error instanceof Error) {
       throw new CliError(
@@ -104,10 +104,11 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     throw error;
   }
 
-  // 6. Generate .makerkit/alchemy.run.ts inside the entry module's package dir.
+  // 6. Generate .makerkit/alchemy.run.ts inside the process's own cwd — tool
+  // state lives where you run the tool (ADR-0004's rewrite).
   const stackPath = writeStackFile({
     entryPath: entryModule.path,
-    entryPkgDir,
+    cwd,
     pack,
     name,
     assembled,
@@ -118,14 +119,14 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     const status = (deps.alchemy ?? runAlchemy)({
       command: args.command,
       stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-      cwd: entryPkgDir,
+      cwd,
       stage: args.stage,
     });
     if (status !== 0) {
       console.error(`\nGenerated stack file: ${stackPath}`);
       console.error(
         `Run \`alchemy ${args.command} ${GENERATED_STACK_RELATIVE_PATH} --yes\` from ` +
-          `${entryPkgDir} to reproduce this directly.`,
+          `${cwd} to reproduce this directly.`,
       );
     }
     return status;

@@ -1,15 +1,15 @@
 /**
  * Pipeline step 5 (deploy-cli.md § The pipeline, ADR-0004/0005): for every
- * service node in the loaded graph, anchor its directory from `url`, route
- * its build adapter's `kind` to the matching `/assemble` entry, and run it.
- * A service root produces one bundle; a hex root produces one bundle per
- * provision id (graph.nodes' own ids for provisioned services — the same
- * correlation the interim `alchemy.run.ts`/`hex.ts` hand-wrote).
+ * service node in the loaded graph, route its build adapter's `kind` to the
+ * matching `/assemble` entry and run it. A service root produces one bundle;
+ * a hex root produces one bundle per provision id (graph.nodes' own ids for
+ * provisioned services — the same correlation the interim
+ * `alchemy.run.ts`/`hex.ts` hand-wrote). Each build adapter carries its own
+ * authoring module (`build.module`) and resolves its paths (`build.entry`,
+ * etc.) relative to it — the CLI does no path resolution of its own here.
  */
-import { fileURLToPath } from 'node:url';
 import type { BuildAdapter, Graph, GraphNode, ServiceNode } from '@makerkit/core';
 import { CliError } from './cli-error.ts';
-import { findPackageDir } from './package-anchor.ts';
 import { importFromEntry } from './resolve-from-entry.ts';
 import { INLINE_EVERYTHING_EXCEPT_RUNTIME_BUILTINS } from './wrapper-inline.ts';
 
@@ -32,8 +32,6 @@ export interface AssembledServices {
 }
 
 export interface AssemblerInput {
-  readonly serviceDir: string;
-  readonly serviceModule: string;
   readonly build: BuildAdapter;
   readonly wrapperNoExternal: readonly RegExp[];
 }
@@ -55,14 +53,14 @@ function extractAssemble(pack: string, specifier: string, mod: unknown): Functio
 /** Runs the pack's `/assemble` export against `input` — the seam tests substitute to avoid a real build. */
 export type RunAssembler = (pack: string, input: AssemblerInput) => Promise<Bundle>;
 
-/** `entryPkgDir` anchors resolution of each pack's `/assemble` entry (see resolve-from-entry.ts). */
+/** `entryPath` anchors resolution of each pack's `/assemble` entry (see resolve-from-entry.ts). */
 async function runAssemblerFromEntry(
-  entryPkgDir: string,
+  entryPath: string,
   pack: string,
   input: AssemblerInput,
 ): Promise<Bundle> {
   const specifier = `${pack}/assemble`;
-  const mod = await importFromEntry(entryPkgDir, pack, 'assemble');
+  const mod = await importFromEntry(entryPath, pack, 'assemble');
   const assemble = extractAssemble(pack, specifier, mod);
   return assemble(input);
 }
@@ -79,13 +77,9 @@ function assemblerPackFor(node: ServiceNode): string {
 }
 
 async function assembleOne(node: ServiceNode, run: RunAssembler): Promise<Bundle> {
-  const serviceModule = fileURLToPath(node.url);
-  const serviceDir = findPackageDir(serviceModule, `service "${node.name}"`);
   const pack = assemblerPackFor(node);
 
   return run(pack, {
-    serviceDir,
-    serviceModule,
     build: node.build,
     wrapperNoExternal: INLINE_EVERYTHING_EXCEPT_RUNTIME_BUILTINS,
   });
@@ -94,8 +88,8 @@ async function assembleOne(node: ServiceNode, run: RunAssembler): Promise<Bundle
 export async function assembleServices(
   graph: Graph,
   isHexRoot: boolean,
-  entryPkgDir: string,
-  run: RunAssembler = (pack, input) => runAssemblerFromEntry(entryPkgDir, pack, input),
+  entryPath: string,
+  run: RunAssembler = (pack, input) => runAssemblerFromEntry(entryPath, pack, input),
 ): Promise<AssembledServices> {
   const serviceNodes = graph.nodes.filter(
     (n): n is GraphNode & { node: ServiceNode } => n.node.kind === 'service',

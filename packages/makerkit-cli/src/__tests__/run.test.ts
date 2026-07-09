@@ -1,8 +1,13 @@
 /**
  * Drives main.ts's run() end to end with fakes at the module seams the CLI
  * already exposes (RunDeps): a fake assembler (no real wrapper build) and a
- * fake alchemy runner (no real process). The entry module, the package
- * anchor, and the generated stack file are all real — written to a temp dir.
+ * fake alchemy runner (no real process). The entry module and the generated
+ * stack file are real — written to a temp dir.
+ *
+ * `.makerkit/` lands in the process's own cwd (ADR-0004's rewrite — tool
+ * state lives where you run the tool), so each test chdir's into the fixture
+ * app dir for the duration of run(), the same way a real invocation's cwd is
+ * wherever the app's package script runs from.
  *
  * inferTarget() is NOT faked — it does a real entry-anchored resolution (see
  * resolve-from-entry.ts) of the graph's pack. So the fixture app carries its
@@ -14,6 +19,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CliError } from '../cli-error.ts';
 import { run } from '../main.ts';
 import type { RunAlchemyInput } from '../run-alchemy.ts';
@@ -29,6 +35,7 @@ const coreIndex = path.resolve(
 );
 
 const tmpDirs: string[] = [];
+const originalCwd = process.cwd();
 
 /** A fixture pack under `dir/node_modules` — resolvable via createRequire, no real MakerKit pack involved. */
 function writeFixtureTargetPack(dir: string): void {
@@ -73,10 +80,9 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
       `  name: ${JSON.stringify(name)},`,
       "  pack: 'fixture-target-pack',",
       "  type: 'fixture/compute',",
-      '  url: import.meta.url,',
       '  inputs: {},',
       '  params: {},',
-      "  build: { kind: 'node', entry: 'dist/server.js' },",
+      "  build: { kind: 'node', module: import.meta.url, entry: 'dist/server.js' },",
       '});',
       '',
     ].join('\n'),
@@ -84,12 +90,13 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   return { dir, entryPath };
 }
 
-const fakeAssembler = async (_pack: string, input: { serviceDir: string }) => ({
-  dir: path.join(input.serviceDir, 'dist', 'bundle'),
+const fakeAssembler = async (_pack: string, input: { build: { module: string } }) => ({
+  dir: path.join(path.dirname(fileURLToPath(input.build.module)), 'dist', 'bundle'),
   entry: 'server.js',
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   while (tmpDirs.length > 0) {
     const dir = tmpDirs.pop();
     if (dir !== undefined) fs.rmSync(dir, { recursive: true, force: true });
@@ -99,6 +106,7 @@ afterEach(() => {
 describe('run() — the full pipeline over fakes', () => {
   test('a successful deploy generates the stack file and invokes alchemy against it', async () => {
     const app = makeAppDir('hello-run');
+    process.chdir(app.dir);
     const calls: RunAlchemyInput[] = [];
 
     const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
@@ -130,6 +138,7 @@ describe('run() — the full pipeline over fakes', () => {
 
   test('--name with an empty value is a CliError naming the fix', async () => {
     const app = makeAppDir();
+    process.chdir(app.dir);
 
     await expect(
       run(['deploy', app.entryPath, '--name', ''], {
@@ -147,6 +156,7 @@ describe('run() — the full pipeline over fakes', () => {
 
   test('an alchemy failure propagates the nonzero exit and prints the generated file path', async () => {
     const app = makeAppDir();
+    process.chdir(app.dir);
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
     try {
       const status = await run(['deploy', app.entryPath], {
@@ -165,6 +175,7 @@ describe('run() — the full pipeline over fakes', () => {
 
   test('a destroy blocked by missing built output explains that destroy needs the build too', async () => {
     const app = makeAppDir();
+    process.chdir(app.dir);
     const failingAssembler = async () => {
       throw new Error('no built entry at /some/dist/server.js — run this app’s own build first');
     };
@@ -183,6 +194,7 @@ describe('run() — the full pipeline over fakes', () => {
 
   test('the same assembly failure on deploy keeps its original message, without the destroy note', async () => {
     const app = makeAppDir();
+    process.chdir(app.dir);
     const failingAssembler = async () => {
       throw new Error('no built entry at /some/dist/server.js');
     };

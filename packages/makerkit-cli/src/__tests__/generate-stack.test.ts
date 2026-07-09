@@ -4,13 +4,12 @@ import { Load } from '@makerkit/core';
 import { renderStackFile } from '../generate-stack.ts';
 import { collectPacks, resolveSinglePack } from '../infer-target.ts';
 import { loadEntry } from '../load-entry.ts';
-import { findPackageDir } from '../package-anchor.ts';
 
 describe('renderStackFile() — a service root', () => {
   test('renders imports, the name literal, and the bundle dir/entry literals', () => {
     const content = renderStackFile({
       entryPath: '/repo/examples/makerkit-hello/src/service.ts',
-      entryPkgDir: '/repo/examples/makerkit-hello',
+      cwd: '/repo/examples/makerkit-hello',
       pack: '@makerkit/prisma-cloud',
       name: 'hello',
       assembled: {
@@ -34,7 +33,7 @@ describe('renderStackFile() — a service root', () => {
   test('renders `bundles` (keyed by provision id) for a hex root, not `bundle`', () => {
     const content = renderStackFile({
       entryPath: '/repo/app/hex.ts',
-      entryPkgDir: '/repo/app',
+      cwd: '/repo/app',
       pack: '@makerkit/prisma-cloud',
       name: 'app',
       assembled: {
@@ -76,12 +75,11 @@ describe('the generated stack file for examples/makerkit-hello (no alchemy run)'
     const pack = resolveSinglePack(collectPacks(graph));
     expect(pack).toBe('@makerkit/prisma-cloud');
 
-    const entryPkgDir = findPackageDir(entry.path, 'the entry module');
-    expect(entryPkgDir).toBe(helloDir);
-
+    // A real `makerkit deploy` run has cwd == the package dir (the example's
+    // own "deploy" script runs from here) — no anchor discovery involved.
     const content = renderStackFile({
       entryPath: entry.path,
-      entryPkgDir,
+      cwd: helloDir,
       pack,
       name: entry.root.name,
       assembled: { bundle: { dir: path.join(helloDir, 'dist', 'bundle'), entry: 'server.js' } },
