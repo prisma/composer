@@ -13,6 +13,7 @@
     "@effect/platform-bun": "4.0.0-beta.92",
     "@makerkit/core": "workspace:*",
     "@makerkit/nextjs": "workspace:*",
+    "@makerkit/node": "workspace:*",
     "@makerkit/prisma-alchemy": "workspace:*",
     "@makerkit/prisma-cloud": "workspace:*",
     "@makerkit/rpc": "workspace:*",
