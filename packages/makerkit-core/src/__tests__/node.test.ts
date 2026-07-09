@@ -64,6 +64,17 @@ describe('resource()', () => {
       resource({ name: 'db', pack: '', type: 'fake/db', connection: conn({}, () => ({})) }),
     ).toThrow(/non-empty pack/);
   });
+
+  test('rejects an underscore in a param name (would collide with the config-key separator)', () => {
+    expect(() =>
+      resource({
+        name: 'db',
+        pack: 'test/pack',
+        type: 'fake/db',
+        connection: conn({ db_url: { type: 'string' } }, () => ({})),
+      }),
+    ).toThrow(/param name "db_url" may not contain "_"/);
+  });
 });
 
 describe('service()', () => {
@@ -157,6 +168,38 @@ describe('service()', () => {
     ).toThrow(/non-empty name/);
   });
 
+  test('rejects an underscore in an input name', () => {
+    const db = resource({
+      name: 'db',
+      pack: 'test/pack',
+      type: 'fake/db',
+      connection: conn({}, () => ({})),
+    });
+    expect(() =>
+      service({
+        name: 'hello',
+        pack: 'test/pack',
+        type: 'fake/app',
+        inputs: { my_db: db },
+        params: {},
+        build,
+      }),
+    ).toThrow(/input name "my_db" may not contain "_"/);
+  });
+
+  test('rejects an underscore in a service param name', () => {
+    expect(() =>
+      service({
+        name: 'hello',
+        pack: 'test/pack',
+        type: 'fake/app',
+        inputs: {},
+        params: { max_conns: { type: 'number', default: 1 } },
+        build,
+      }),
+    ).toThrow(/param name "max_conns" may not contain "_"/);
+  });
+
   test('expose is absent by default', () => {
     const node = service({
       name: 'hello',
@@ -234,6 +277,15 @@ describe('connectionEnd()', () => {
     expect(() => connectionEnd({ type: '', connection: conn({}, () => ({})) })).toThrow(
       /non-empty node type/,
     );
+  });
+
+  test('rejects an underscore in a param name', () => {
+    expect(() =>
+      connectionEnd({
+        type: 'fake/http',
+        connection: conn({ base_url: { type: 'string' } }, () => ({})),
+      }),
+    ).toThrow(/param name "base_url" may not contain "_"/);
   });
 });
 

@@ -277,6 +277,32 @@ function requirePack(pack: string, factory: string): void {
   }
 }
 
+/**
+ * `configKey` (the pack's semantic↔physical config mapping) joins address
+ * segments, an input's name, and a param's name with "_" and uppercases the
+ * result — so an underscore INSIDE a name is indistinguishable from that
+ * separator. Without this check, service param "db_url" and input "db"'s
+ * param "url" would both serialize to the env key "DB_URL" and silently
+ * collide. Rejected at construction, naming the offender.
+ */
+function requireNoUnderscoreName(name: string, kind: 'input' | 'param', factory: string): void {
+  if (name.includes('_')) {
+    throw new Error(
+      `${factory}() ${kind} name "${name}" may not contain "_" — config keys join names with ` +
+        '"_" as the separator (e.g. an input "db"\'s param "url" becomes env key "DB_URL"), so ' +
+        'an underscore inside a name would collide with that separator.',
+    );
+  }
+}
+
+function requireNoUnderscoreNames(
+  names: Iterable<string>,
+  kind: 'input' | 'param',
+  factory: string,
+): void {
+  for (const name of names) requireNoUnderscoreName(name, kind, factory);
+}
+
 function freezeParams<P extends Params>(params: P): P {
   const frozen: Record<string, ConfigParam> = {};
   for (const [name, param] of Object.entries(params)) {
@@ -303,6 +329,7 @@ export function resource<P extends Params, C>(def: {
   requireName(def.name, 'resource');
   requirePack(def.pack, 'resource');
   requireType(def.type, 'resource');
+  requireNoUnderscoreNames(Object.keys(def.connection.params), 'param', 'resource');
   const connection: Connection<P, C> = Object.freeze({
     params: freezeParams(def.connection.params),
     hydrate: def.connection.hydrate,
@@ -338,6 +365,8 @@ export function service<
   requireName(def.name, 'service');
   requirePack(def.pack, 'service');
   requireType(def.type, 'service');
+  requireNoUnderscoreNames(Object.keys(def.inputs), 'input', 'service');
+  requireNoUnderscoreNames(Object.keys(def.params), 'param', 'service');
   const node: ServiceNode<D, P, E> = {
     [NODE]: true,
     kind: 'service',
@@ -368,6 +397,7 @@ export function connectionEnd<P extends Params, C, Req = unknown>(def: {
   required?: Req;
 }): ConnectionEnd<C, Req> {
   requireType(def.type, 'connectionEnd');
+  requireNoUnderscoreNames(Object.keys(def.connection.params), 'param', 'connectionEnd');
   const connection: Connection<P, C> = Object.freeze({
     params: freezeParams(def.connection.params),
     hydrate: def.connection.hydrate,
