@@ -146,10 +146,29 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   files.push({ relPath: 'compute.manifest.json', content: Buffer.from(manifest, 'utf8') });
 
   const gz = createDeterministicTarGz(files);
-  const outDir = path.join(os.tmpdir(), 'makerkit-compute');
+  const sha256 = crypto.createHash('sha256').update(gz).digest('hex');
+
+  // The output path must be content-addressed AND per-user. Content-addressed
+  // because `artifactPath` is a Deployment prop: a path that varies per call
+  // (e.g. mkdtemp) makes every redeploy diff as an update even when the bytes
+  // are identical, breaking the redeploy-noop guarantee. Per-user because a
+  // fixed shared dir under os.tmpdir() is owned by whichever OS user creates
+  // it first — everyone else's writes fail EACCES. Same content → same path
+  // (noop); new build → new hash → new path (update, as designed). uid is -1
+  // on Windows — still a valid, deterministic directory name.
+  const outDir = path.join(
+    os.tmpdir(),
+    `makerkit-compute-${String(os.userInfo().uid)}`,
+    sha256.slice(0, 16),
+  );
   fs.mkdirSync(outDir, { recursive: true });
   const outPath = path.join(outDir, `${opts.id}.tar.gz`);
-  fs.writeFileSync(outPath, gz);
+  // Write-then-rename so concurrent same-content runs race benignly: each
+  // writes identical bytes to its own temp file and the rename atomically
+  // replaces, never exposing a half-written artifact.
+  const tmpPath = path.join(outDir, `.${opts.id}.${crypto.randomUUID()}.tmp`);
+  fs.writeFileSync(tmpPath, gz);
+  fs.renameSync(tmpPath, outPath);
 
-  return { path: outPath, sha256: crypto.createHash('sha256').update(gz).digest('hex') };
+  return { path: outPath, sha256 };
 }
