@@ -179,36 +179,83 @@ export const makePrismaStateService = (sql: postgres.Sql): StateService => ({
 });
 
 /**
+ * How long a passing lease check is trusted before the next storage
+ * operation re-verifies it. A deploy issues many state ops in quick
+ * succession, and each raw `checkLive` is a `pg_locks` round-trip; without
+ * amortization the guard roughly doubles the store's traffic. The cost of the
+ * window is bounded: a lease lost mid-window is detected within this many ms,
+ * not instantly — an accepted tradeoff on top of the already-accepted
+ * non-atomic (TOCTOU) gap between the check and the operation.
+ */
+const LEASE_CHECK_TTL_MS = 5_000;
+
+/**
+ * Amortizes a lease check over a short TTL: a *passing* check is trusted for
+ * `ttlMs`, so a burst of operations inside the window does one round-trip, not
+ * one per op. A *failing* check is never cached — it propagates immediately
+ * and leaves the last-good timestamp untouched, so the very next op re-checks.
+ * The `lastOkAt` state is captured per call, so each store (each layer) gets
+ * its own window — two stores in one process never share a cached success.
+ */
+const amortizeCheck = (
+  checkLive: Effect.Effect<void, StateStoreError, never>,
+  ttlMs: number,
+  now: () => number,
+): Effect.Effect<void, StateStoreError, never> => {
+  let lastOkAt: number | undefined;
+  return Effect.suspend(() => {
+    if (lastOkAt !== undefined && now() - lastOkAt < ttlMs) return Effect.void;
+    return checkLive.pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          lastOkAt = now();
+        }),
+      ),
+    );
+  });
+};
+
+/**
  * Wraps a {@link StateService} so every method that touches storage first
  * re-verifies the state lock's lease via `checkLive`. Used to enforce "a
- * dropped lock connection fails loudly" — see {@link ../lock.ts}.
+ * dropped lock connection fails loudly" — see {@link ../lock.ts}. The check is
+ * amortized over a short TTL (see {@link amortizeCheck}), so a run of
+ * back-to-back operations does not fire one `pg_locks` round-trip per call.
  *
  * Reads are gated too, not just writes: a lost lease means a concurrent
  * deploy may already be mutating this stack's rows, so a read could return
  * stale or conflicting data — untrustworthy either way, not just the writes.
  * The check is best-effort and not atomic with the operation it guards (the
- * lease could theoretically be lost in the gap between `checkLive` passing
- * and the wrapped call executing); that residual race is accepted.
+ * lease could be lost in the gap between `checkLive` passing and the wrapped
+ * call executing, or within the TTL window); that residual race is accepted.
  *
  * `getVersion` is excluded: it returns a compile-time constant
  * (`STATE_STORE_VERSION`), so guarding it would only add a pointless
  * reserved-connection round-trip.
+ *
+ * `now` is injectable so tests can advance the clock deterministically; it
+ * defaults to `Date.now` (fine in library runtime code — only Workflow
+ * scripts forbid it).
  */
 export const guardStateService = (
   service: StateService,
   checkLive: Effect.Effect<void, StateStoreError, never>,
-): StateService => ({
-  id: service.id,
-  getVersion: () => service.getVersion(),
-  listStacks: () => checkLive.pipe(Effect.andThen(service.listStacks())),
-  listStages: (stack) => checkLive.pipe(Effect.andThen(service.listStages(stack))),
-  get: (request) => checkLive.pipe(Effect.andThen(service.get(request))),
-  getReplacedResources: (request) =>
-    checkLive.pipe(Effect.andThen(service.getReplacedResources(request))),
-  set: (request) => checkLive.pipe(Effect.andThen(service.set(request))),
-  delete: (request) => checkLive.pipe(Effect.andThen(service.delete(request))),
-  deleteStack: (request) => checkLive.pipe(Effect.andThen(service.deleteStack(request))),
-  list: (request) => checkLive.pipe(Effect.andThen(service.list(request))),
-  getOutput: (request) => checkLive.pipe(Effect.andThen(service.getOutput(request))),
-  setOutput: (request) => checkLive.pipe(Effect.andThen(service.setOutput(request))),
-});
+  now: () => number = Date.now,
+): StateService => {
+  const guard = amortizeCheck(checkLive, LEASE_CHECK_TTL_MS, now);
+  return {
+    id: service.id,
+    getVersion: () => service.getVersion(),
+    listStacks: () => guard.pipe(Effect.andThen(service.listStacks())),
+    listStages: (stack) => guard.pipe(Effect.andThen(service.listStages(stack))),
+    get: (request) => guard.pipe(Effect.andThen(service.get(request))),
+    getReplacedResources: (request) =>
+      guard.pipe(Effect.andThen(service.getReplacedResources(request))),
+    set: (request) => guard.pipe(Effect.andThen(service.set(request))),
+    delete: (request) => guard.pipe(Effect.andThen(service.delete(request))),
+    deleteStack: (request) => guard.pipe(Effect.andThen(service.deleteStack(request))),
+    list: (request) => guard.pipe(Effect.andThen(service.list(request))),
+    getOutput: (request) => guard.pipe(Effect.andThen(service.getOutput(request))),
+    setOutput: (request) => guard.pipe(Effect.andThen(service.setOutput(request))),
+  };
+};
