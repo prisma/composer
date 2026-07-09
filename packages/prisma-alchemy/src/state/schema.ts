@@ -1,7 +1,17 @@
+// TODO: replace with Prisma Next (deferred — see .drive/projects/authoring-layer/slices/r8-hosted-state-store/pn-adoption-design-note.md)
+
 import type { StateStoreError } from 'alchemy/State';
 import * as Effect from 'effect/Effect';
 import type postgres from 'postgres';
 import { toStateStoreError } from './errors.ts';
+
+/**
+ * The well-known marker row written into every database this store owns.
+ * Its presence proves the database is genuinely MakerKit's state store, not
+ * a same-named project squatting on the discovery query (see `bootstrap.ts`
+ * `verifyOwnership` — PDP allows duplicate project names).
+ */
+export const STATE_META_MARKER = 'makerkit-state-v1';
 
 /**
  * Idempotent schema migration for the Prisma-hosted state store — safe to run
@@ -32,6 +42,16 @@ export const migratePrismaState = (
           updated_at timestamptz not null default now(),
           primary key (stack, stage)
         )
+      `;
+      await sql`
+        create table if not exists makerkit_state_meta (
+          marker text primary key,
+          created_at timestamptz not null default now()
+        )
+      `;
+      await sql`
+        insert into makerkit_state_meta (marker) values (${STATE_META_MARKER})
+        on conflict (marker) do nothing
       `;
     },
     catch: toStateStoreError,
