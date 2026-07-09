@@ -29,6 +29,13 @@ export interface AssembleInput {
   /** The service module (e.g. src/service.ts) — what the wrapper bundles. */
   readonly serviceModule: string;
   readonly build: BuildAdapter;
+  /**
+   * Extra patterns to inline into the wrapper besides `@makerkit/*` — the
+   * service module's own imports that are neither in the assembled artifact's
+   * node_modules nor runtime built-ins (e.g. the app's workspace packages and
+   * the libraries its contracts evaluate at import time).
+   */
+  readonly wrapperNoExternal?: readonly RegExp[];
 }
 
 export interface AssembledBundle {
@@ -98,9 +105,12 @@ export async function assemble(input: AssembleInput): Promise<AssembledBundle> {
       format: 'esm',
       platform: 'node',
       external: ['bun'],
-      // Workspace packages must be inlined; everything Next needs is already
-      // in the standalone tree and is NOT imported by the entry.
-      noExternal: [/^@makerkit\//],
+      // Workspace packages must be inlined (this is .ts source, not requireable
+      // JS); everything Next needs is already in the standalone tree and is NOT
+      // imported by the entry. The caller adds the app's own import-time deps
+      // via wrapperNoExternal — this build is separate from Next's, so it can't
+      // rely on the standalone node_modules trace to cover them.
+      noExternal: [/^@makerkit\//, ...(input.wrapperNoExternal ?? [])],
       dts: false,
       sourcemap: false,
       clean: false,

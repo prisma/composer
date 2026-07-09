@@ -81,6 +81,9 @@ importers:
       '@makerkit/core':
         specifier: workspace:*
         version: link:../../packages/makerkit-core
+      '@makerkit/nextjs':
+        specifier: workspace:*
+        version: link:../../packages/makerkit-nextjs
       '@makerkit/prisma-alchemy':
         specifier: workspace:*
         version: link:../../packages/prisma-alchemy

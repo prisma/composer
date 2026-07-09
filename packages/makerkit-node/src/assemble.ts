@@ -23,6 +23,12 @@ export interface AssembleInput {
   /** The service module (e.g. src/service.ts) — what the wrapper bundles. */
   readonly serviceModule: string;
   readonly build: BuildAdapter;
+  /**
+   * Extra patterns to inline into the wrapper besides `@makerkit/*` — the
+   * service module's own imports that are neither shipped in the bundle dir
+   * nor runtime built-ins (e.g. the app's workspace packages).
+   */
+  readonly wrapperNoExternal?: readonly RegExp[];
 }
 
 export interface AssembledBundle {
@@ -44,6 +50,14 @@ export async function assemble(input: AssembleInput): Promise<AssembledBundle> {
         `entry, "${input.build.entry}", is resolved against the service dir).`,
     );
   }
+  // "main" is the wrapper's name inside the bundle; an app entry with the same
+  // basename would silently overwrite it and run() would never execute.
+  if (/^main\.m?js$/.test(path.basename(entryPath))) {
+    throw new Error(
+      `the build adapter's entry ("${input.build.entry}") may not be named main.js/main.mjs — ` +
+        'that name is reserved for the MakerKit wrapper in the assembled bundle.',
+    );
+  }
 
   const bundleDir = path.join(input.serviceDir, 'dist', 'bundle');
   await fs.promises.rm(bundleDir, { recursive: true, force: true });
@@ -55,7 +69,7 @@ export async function assemble(input: AssembleInput): Promise<AssembledBundle> {
     format: 'esm',
     platform: 'node',
     external: ['bun'],
-    noExternal: [/^@makerkit\//],
+    noExternal: [/^@makerkit\//, ...(input.wrapperNoExternal ?? [])],
     dts: false,
     sourcemap: false,
     clean: false,

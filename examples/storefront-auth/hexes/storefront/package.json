@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "build:compute": "next build && bun run ../../scripts/bundle-next.ts ."
+    "build:compute": "next build && bun run ../../scripts/assemble-storefront.ts ."
   },
   "dependencies": {
     "@makerkit/core": "workspace:*",

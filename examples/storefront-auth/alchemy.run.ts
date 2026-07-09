@@ -1,8 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { lower } from '@makerkit/core/deploy';
+import { nextStandaloneDir } from '@makerkit/nextjs/assemble';
 import { prismaCloud } from '@makerkit/prisma-cloud/target';
 import app from './hex.ts';
-import { nextStandaloneDir } from './scripts/bundle-next.ts';
 
 /**
  * Interim deploy adapter — lowers the hex (hex.ts) onto Prisma Cloud. This is
