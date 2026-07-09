@@ -198,7 +198,13 @@ The storefront artifact bundles the standalone `node_modules` (self-contained fi
 ### [x] Framework-hosted DI — **closed by R5**: `service.load()` is the one typed pull mechanism for both a Hono entry and a Next page; the Next-internal `process.env` read is gone. No separate `use()` accessor needed.
 ### [ ] Local emulation / test (Load + Hydrate with fakes)
 ### [ ] Streams (async connection style)
-### [ ] Prisma-hosted Alchemy state store (platform target)
+### [~] Prisma-hosted Alchemy state store (platform target) → **slice R8, in build** (`slices/r8-hosted-state-store/`)
+
+> D1–D3 landed (store over postgres.js; automatic Management-API bootstrap +
+> session advisory lock → `prismaState({workspaceId})`; `Target.state` seam,
+> hosted-by-default via `prismaCloud()`). Remaining: D4 live proof (blocked on
+> operator credentials — no root `.env` on this machine) + D5 Opus review/PR.
+> The Management API ask is drafted (`slices/r8-hosted-state-store/platform-ask.md`).
 
 Implements Alchemy's `StateService` on the platform side: workspace-scoped,
 backed by Prisma Postgres, encrypted, authorized by workspace RBAC — the

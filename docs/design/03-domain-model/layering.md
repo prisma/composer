@@ -120,15 +120,21 @@ Provisioning runs through **Alchemy's engine**, invoked from the client or a
 privileged CD environment (see claim 3). The engine keeps a **state store** — the
 source of truth for what's provisioned. The intended path is a spectrum:
 
-- **Step 0 (today):** Alchemy's local or Cloudflare-backed state. Fine for a solo
+- **Step 0:** Alchemy's local or Cloudflare-backed state. Fine for a solo
   developer.
-- **Step 1 (intended):** a **Prisma-hosted, workspace-scoped state store** —
-  Pulumi/Terraform-Cloud-style hosted state, but native to the Workspace →
-  Project → Environment hierarchy. It implements Alchemy's `StateService`, is
-  backed by Prisma Postgres, encrypted, and authorized by existing workspace RBAC.
-  This removes the BYO-state bootstrap; and because the platform now holds the
-  state, it can answer "what's provisioned in this project" — the platform side of
-  the inspectable-topology goal.
+- **Step 1 (shipped, client-side interim):** a **Prisma-hosted, workspace-scoped
+  state store** — Pulumi/Terraform-Cloud-style hosted state, but native to the
+  Workspace → Project → Environment hierarchy. It implements Alchemy's
+  `StateService`, is backed by Prisma Postgres, and removes the BYO-state
+  bootstrap. Shipped as `@makerkit/prisma-alchemy/state`: a client-side store
+  speaking Postgres to a reserved `makerkit-state` project's default database,
+  bootstrapped automatically through the Management API (service token is the
+  only credential), with session-advisory-lock concurrency per `(stack, stage)`;
+  `prismaCloud()` supplies it as the default deploy state. The final form is
+  platform-side — the Management API implements Alchemy's HTTP `StateApi`
+  (bearer → workspace RBAC), the visible project disappears, and the platform
+  can answer "what's provisioned in this project" (the platform side of the
+  inspectable-topology goal). That surface is a filed platform ask.
 - **Step 2 (deferred):** **server-side runs** — the platform executes the apply
   loop itself (git-push-style deploys). Not needed now; once state is hosted
   (Step 1), moving the engine server-side is incremental — the same evolution
