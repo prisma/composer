@@ -5,8 +5,8 @@
  * `typecheck` script), never executed — see contract-satisfaction.test-d.ts
  * for the convention.
  */
-import type { ResourceNode, RunnableServiceNode } from '@makerkit/core';
-import { resource, service } from '@makerkit/core';
+import type { ResourceEnd, RunnableServiceNode } from '@makerkit/core';
+import { resourceEnd, service } from '@makerkit/core';
 import { type } from 'arktype';
 import { contract } from '../contract.ts';
 import { rpc } from '../rpc.ts';
@@ -20,9 +20,8 @@ interface FakeDb {
   readonly validTokens: readonly string[];
 }
 
-const db: ResourceNode<FakeDb> = resource({
-  name: 'test-resource',
-  pack: 'test/pack',
+const db: ResourceEnd<FakeDb> = resourceEnd({
+  name: 'db',
   type: 'fake/db',
   connection: { params: {}, hydrate: () => ({ validTokens: [] }) },
 });

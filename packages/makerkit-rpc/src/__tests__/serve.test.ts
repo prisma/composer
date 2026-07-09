@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { ResourceNode, RunnableServiceNode } from '@makerkit/core';
-import { resource, service } from '@makerkit/core';
+import type { ResourceEnd, RunnableServiceNode } from '@makerkit/core';
+import { resourceEnd, service } from '@makerkit/core';
 import { type } from 'arktype';
 import { makeClient } from '../client.ts';
 import { contract } from '../contract.ts';
@@ -17,13 +17,12 @@ interface FakeDb {
 
 /**
  * A fake RunnableServiceNode exposing authContract — stands in for compute()'s
- * node. `db` hydrates through a real ResourceNode (not an override cast), so
+ * node. `db` hydrates through a real ResourceEnd (not an override cast), so
  * `load()`'s return is a genuine `Loaded<D, P>`, matching production shape.
  */
 function fakeAuthService(load: () => FakeDb) {
-  const db: ResourceNode<FakeDb> = resource({
-    name: 'test-resource',
-    pack: 'test/pack',
+  const db: ResourceEnd<FakeDb> = resourceEnd({
+    name: 'db',
     type: 'fake/db',
     connection: { params: {}, hydrate: load },
   });
