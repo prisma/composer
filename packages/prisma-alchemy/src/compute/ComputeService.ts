@@ -1,8 +1,30 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
+import * as Schedule from 'effect/Schedule';
 import { ManagementClient } from '../client.ts';
-import { call, callOptional, callVoid } from '../http.ts';
+import { call, callOptional, callVoid, type PrismaApiError } from '../http.ts';
+
+/**
+ * Stopping a deployment before the compute service that owns it can be
+ * deleted is asynchronous on the platform's side: DELETE can 409 with this
+ * message while the deployment is still winding down. Retrying blindly on
+ * every API error would mask real failures (bad auth, a genuinely conflicting
+ * state, etc.), so this only matches the platform's specific "not delete-safe
+ * yet" wording — everything else fails immediately, as before.
+ */
+export const isDeleteNotSafeYet = (error: PrismaApiError): boolean =>
+  error.message.includes('did not reach a delete-safe state');
+
+/**
+ * Backs off exponentially from 2s, capped at 5 minutes total — long enough
+ * for the platform to finish stopping the deployment, short enough to still
+ * fail loudly (rather than hang forever) if it never does.
+ */
+export const deleteSafeRetrySchedule = Schedule.both(
+  Schedule.exponential('2 seconds', 2),
+  Schedule.during('5 minutes'),
+);
 
 /** Every region Prisma Compute serves — the runtime source of truth; `ComputeRegion` is derived from it so the two can never drift. */
 export const COMPUTE_REGIONS = [
@@ -82,7 +104,7 @@ export const ComputeServiceProvider = () =>
             client.DELETE('/v1/compute-services/{computeServiceId}', {
               params: { path: { computeServiceId: output.id } },
             }),
-          );
+          ).pipe(Effect.retry({ schedule: deleteSafeRetrySchedule, while: isDeleteNotSafeYet }));
         }),
         read: Effect.fn(function* ({ output }) {
           if (!output?.id) return undefined;

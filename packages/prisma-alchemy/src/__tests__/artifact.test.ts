@@ -88,7 +88,7 @@ describe('packageComputeArtifact', () => {
     expect(read('bootstrap.js')).toContain('import main from "./main.mjs";');
   });
 
-  test('packaging twice with identical inputs yields an identical sha256 (deterministic bytes)', () => {
+  test('packaging twice with identical inputs yields an identical sha256 AND an identical path (redeploy noops)', () => {
     const bundleDir = makeBundle({
       'main.js': 'export default { run: async () => {} };',
       'nested/asset.txt': 'hello',
@@ -108,7 +108,45 @@ describe('packageComputeArtifact', () => {
     });
 
     expect(first.sha256).toBe(second.sha256);
+    // The path is a Deployment prop: it must be stable for identical content,
+    // or every redeploy registers as an update instead of a noop.
+    expect(first.path).toBe(second.path);
     expect(fs.readFileSync(first.path).equals(fs.readFileSync(second.path))).toBe(true);
+  });
+
+  test('different content yields a different path (a new build must register as an update)', () => {
+    const a = packageComputeArtifact({
+      id: 'auth',
+      bundleDir: makeBundle({ 'main.js': 'export default {}; // v1' }),
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const b = packageComputeArtifact({
+      id: 'auth',
+      bundleDir: makeBundle({ 'main.js': 'export default {}; // v2' }),
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+
+    expect(a.sha256).not.toBe(b.sha256);
+    expect(a.path).not.toBe(b.path);
+  });
+
+  test('the output path is namespaced per OS user, never the bare shared makerkit-compute dir', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+
+    // A fixed os.tmpdir()/makerkit-compute dir is owned by whichever OS user
+    // creates it first; every other user's writes then fail EACCES.
+    const sharedDir = path.join(os.tmpdir(), 'makerkit-compute');
+    expect(artifact.path.startsWith(`${sharedDir}${path.sep}`)).toBe(false);
+    expect(artifact.path).toContain(`makerkit-compute-${String(os.userInfo().uid)}`);
   });
 
   test('a different address changes the hash (the bootstrap is address-specific)', () => {
