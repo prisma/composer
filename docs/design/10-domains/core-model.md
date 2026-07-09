@@ -56,16 +56,20 @@ The boundary is decided; only the carve is deferred.
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
 | `@makerkit/core` | node factories (`service`, `resource`, `connectionEnd`, `hex`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
-| `@makerkit/core/deploy` | `lower()`, `lowering()`, `Target` types | `alchemy`, `effect` |
+| `@makerkit/core/deploy` | `lower()`, `lowering()`, `Target` types, `Bundle`/`AssembleInput` (the assembler seam's contract, defined once here) | `alchemy`, `effect` |
 | `@makerkit/prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `postgres({ client })`, `http()` | `@makerkit/core` only |
 | `@makerkit/prisma-cloud/target` | `prismaCloud()` | `@makerkit/prisma-alchemy`, `alchemy`, `effect` |
-| `@makerkit/node` · `@makerkit/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`) | `@makerkit/core` only |
+| `@makerkit/node` · `@makerkit/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `pack` | `@makerkit/core` only |
 | `@makerkit/node/assemble` · `@makerkit/nextjs/assemble` | the deploy-side assembler (called by `package`) | `node:fs`/framework tooling — deploy machine only |
+| `@makerkit/assemble` | `assembleServices()` — routes each service to its adapter's `/assemble` via `${build.pack}/assemble` (entry-anchored), the wrapper-inlining policy, `AssembleError` | `node:fs`/`node:module` — deploy machine only; consumed by `@makerkit/cli` and the future programmatic deploy API |
 
 A build adapter splits exactly like a target pack: a **lean authoring descriptor**
-that the service module carries (pure data — `{ kind, module, entry }`), and a **heavy
-deploy-side assembler** invoked once at deploy on the build machine. The descriptor
-rides into every bundle that imports `service.ts`; the assembler never does.
+that the service module carries (pure data — `{ kind, pack, module, entry }`,
+`pack` being the adapter's own package name, baked in by its factory), and a
+**heavy deploy-side assembler** invoked once at deploy on the build machine,
+resolved from `pack` (`${build.pack}/assemble`) the same entry-anchored way a
+target pack's `/target` is. The descriptor rides into every bundle that
+imports `service.ts`; the assembler never does.
 
 Per the [runtime-agnostic
 principle](../01-principles/architectural-principles.md), no execution-plane entry
@@ -236,10 +240,11 @@ interface Config {
 // absolute or machine path. `module` is the one sanctioned exception: deploy-time
 // metadata only, and bundlers preserve it as an expression, so it re-evaluates
 // inside the deploy artifact instead of baking in a dev-machine path. The heavy
-// ASSEMBLER (fs, framework tooling) is looked up by `kind` at deploy and never
-// ships in a bundle (§ Lowering, § Extension).
+// ASSEMBLER (fs, framework tooling) is resolved from `pack` (`${pack}/assemble`,
+// entry-anchored) at deploy and never ships in a bundle (§ Lowering, § Extension).
 interface BuildAdapter {
-  readonly kind: string                        // "node" · "nextjs" — the assembler routing key
+  readonly kind: string                        // "node" · "nextjs" — the resolved module's own discriminant
+  readonly pack: string                        // the adapter's package name, e.g. "@makerkit/node" — baked in by node()/nextjs(); resolves `${pack}/assemble`
   readonly module: string                      // the authoring module's import.meta.url — the anchor every other path resolves against
   readonly entry: string                       // built runnable, resolved relative to dirname(module) (e.g. "../dist/server.js")
 }
@@ -887,22 +892,25 @@ MakerKit wrapper, and reports the runtime entry path.
 ```ts
 // @makerkit/node — the authoring descriptor (lean; rides in service.ts). `entry`
 // resolves relative to dirname(module) — exactly like an import specifier.
+// `pack` is baked in by this factory, not passed by the caller — the same
+// uniform rule a node's own `pack` follows (ADR-0003).
 export default (opts: { module: string; entry: string }): BuildAdapter =>
-  ({ kind: "node", module: opts.module, entry: opts.entry })
+  ({ kind: "node", pack: "@makerkit/node", module: opts.module, entry: opts.entry })
 
 // @makerkit/nextjs — carries an extra `appDir` (the Next app's root, the
 // standalone layout root), also resolved relative to dirname(module). `entry`
 // is a bare filename inside the standalone output dir.
 export default (opts: { module: string; appDir: string; entry: string }): NextjsBuildAdapter =>
-  ({ kind: "nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
+  ({ kind: "nextjs", pack: "@makerkit/nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
 
+// @makerkit/assemble — routes each service to its adapter's `/assemble` via
+// `${build.pack}/assemble` (entry-anchored, same resolver the pack CLI seam
+// uses for `${pack}/target`) — never a hardcoded kind→package map.
 // @makerkit/<adapter>/assemble — the deploy-side assembler (heavy; deploy machine)
 // Produces the normalized bundle dir + the runtime entry path for the bootstrap.
 // No serviceDir/serviceModule input: the descriptor's own `module` is the anchor.
 interface Assembler {
-  assemble(input: {
-    build: BuildAdapter         // the descriptor (module, entry, kind, + kind-specific fields)
-  }): Promise<AssembledBundle>  // { dir, entry }
+  assemble(input: AssembleInput): Promise<Bundle>  // { build } → { dir, entry } — @makerkit/core/deploy's shared seam contract
 }
 ```
 
@@ -1054,8 +1062,11 @@ entry hydrates `db`. Neither entry can tell a connection from a resource.
 
 - **Build-adapter ecosystem** — `node` and `nextjs` are the first two; the
   descriptor/assembler split is the seam for community adapters (Nuxt, TanStack
-  Start, a cron access-pattern, a static site). Each is a package; nothing in core
-  or the target pack changes to add one.
+  Start, a cron access-pattern, a static site). Each is a package; nothing in
+  core, the target pack, `@makerkit/assemble`, or the CLI changes to add one —
+  the assembler seam resolves `${build.pack}/assemble` from the descriptor
+  itself (deploy-cli.md § Contracts), the same way the pack CLI seam resolves
+  `${pack}/target`.
 - **Framework-hosted DI is `load()`** — the Next page pulls its typed deps via
   `service.load()`, the same mechanism the Hono entry uses. No separate `use()`
   accessor is needed; the earlier framework-DI gap is closed by `load()`.

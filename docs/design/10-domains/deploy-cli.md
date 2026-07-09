@@ -88,17 +88,36 @@ model.
 
 ## Contracts this introduces
 
-Two new seams, both small:
+Two new seams, both symmetric — both resolve a heavy, deploy-only module from
+a package name the node/descriptor carries, entry-anchored, with zero CLI
+changes for a new pack or adapter:
 
 - **Pack CLI seam.** Every node carries its pack's package name, and the
   pack's `/target` entry exports `fromEnv(): Target`. This is how a community
   pack becomes deployable with zero CLI changes.
-- **Assembly per adapter kind.** The build adapter *descriptor* stays pure
-  data on the node (`{ kind, module, entry }` — where the user's build puts
-  its output, never how to produce it; `entry` and any kind-specific path
-  resolve relative to `dirname(module)`). The heavy per-kind assembly module
-  is resolved by `kind` at deploy and never ships in a bundle. Its contract is
-  roughly `assemble({ build: descriptor }) → { dir, entry }`.
+- **Assembler seam.** The build adapter *descriptor* stays pure data on the
+  node (`{ kind, pack, module, entry }` — where the user's build puts its
+  output, never how to produce it; `entry` and any kind-specific path resolve
+  relative to `dirname(module)`). `pack` is the adapter's own package name,
+  baked in by its factory (`node()` → `"@makerkit/node"`, `nextjs()` →
+  `"@makerkit/nextjs"`) — the same uniform rule as a node's own `pack`
+  (ADR-0003): a thing's `pack` names the package that gives it meaning.
+  `@makerkit/assemble` resolves `${build.pack}/assemble` through the same
+  entry-anchored resolver the pack seam uses (no hardcoded kind→package map),
+  so a community build adapter works with zero changes anywhere. `kind` stays
+  the descriptor's own discriminant; the resolved `/assemble` module validates
+  it matches. The heavy assembly module never ships in a bundle. Its contract
+  is `assemble({ build: descriptor }) → { dir, entry }`
+  (`@makerkit/core/deploy`'s `AssembleInput`/`Bundle` — defined once there,
+  imported by every adapter and by `@makerkit/assemble` itself).
+- **`@makerkit/assemble`** owns the orchestration this seam drives: routing
+  every service node in the loaded graph to its adapter's `/assemble` entry
+  (one bundle for a service root, one per provision id for a hex root) and the
+  wrapper-inlining policy. The CLI is its first consumer; the future
+  programmatic deploy API is its second — so its public surface carries no CLI
+  concepts (no `CliError`, no argv/usage anything). It throws its own
+  `AssembleError`; the CLI's `main.ts` maps it (the existing destroy-path
+  wrapping already does, since `AssembleError extends Error`).
 
 ## Error surface
 
@@ -111,7 +130,7 @@ The CLI's quality lives in its errors; each failure names its fix:
 | Mixed packs in one graph | the packs found; one target per application |
 | Missing target env | the exact variable(s) `fromEnv()` needed |
 | Built output missing | the expected path, and "run your build" |
-| Unknown adapter kind | the kind, and the kinds with assemblies available |
+| Unresolvable pack/adapter subpath | the pack, the subpath, and to add/check the dependency (same resolver, pack or assembler seam) |
 
 ## Deferred (designed around, not built)
 
@@ -143,6 +162,22 @@ The CLI's quality lives in its errors; each failure names its fix:
 - **No default `entry`.** The path is required; bare invocation errors with
   usage. A discovery convention (e.g. a `package.json` field) can be added
   later without breaking anyone.
+- **Argument parsing: clipanion.** Replaces a handrolled `parseArgs` — the
+  same CLI framework prisma-next's own tooling CLI uses (see
+  `migration-cli.ts`). `deploy`/`destroy` are clipanion `Command` classes with
+  a required `<entry>` positional and `--name`/`--stage` options; clipanion's
+  own arity checking rejects a trailing `--name`/`--stage` with no value and
+  unknown flags as usage errors (closing a bug where the handrolled parser
+  silently accepted them). `run()` still drives the pipeline itself against
+  the parsed args — rather than clipanion's own `cli.run()` — so thrown errors
+  reach `bin.ts` (and the `RunDeps` test seams) unchanged.
+- **`destroy` warns on no local deploy state.** If `<cwd>/.alchemy` is missing
+  or empty, `destroy` prints a warning before assembling or invoking alchemy —
+  it does not fail, since the likely causes (wrong directory, nothing ever
+  deployed) both mean "there is nothing to do here," not an error. CI's
+  destroy-guard script already skips the CLI entirely when `.alchemy` is
+  absent; this covers direct invocation and the "exists but empty" case the
+  script doesn't check.
 - **Wrapper inlining: everything except runtime built-ins.** The CLI has no
   config file, so per-app bundling knobs can't exist. The wrapper build
   inlines every import of the service module except `bun`, `bun:*`, and
