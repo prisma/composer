@@ -191,6 +191,34 @@ describe("prismaCloud().services['compute']", () => {
       { id: 'AUTH_DB_URL-var#cloud-id', key: 'AUTH_DB_URL' },
       { id: 'AUTH_PORT-var#cloud-id', key: 'AUTH_PORT' },
     ]);
+    // serialize also surfaces the resolved listen port for deploy() — the
+    // Deployment must route to whatever the app binds, not a constant.
+    expect(result.outputs['port']).toBe(3000);
+  });
+
+  test('serialize surfaces a non-default port so deploy routes to it', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const node = compute({
+      name: 'test-service',
+      deps: {},
+      build: {
+        kind: 'node',
+        pack: '@makerkit/node',
+        module: 'file:///test/service.ts',
+        entry: 'server.js',
+      },
+    });
+    const ctx = { address: 'auth', node } as unknown as LowerContext;
+    const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
+    // A port other than the pack default: serialize must carry 8080 through,
+    // not silently normalize it back to 3000.
+    const config = { service: { port: 8080 }, inputs: {} };
+
+    const result = run<LoweredNode>(
+      target.services['compute']!.serialize(ctx, provisioned, config),
+    );
+
+    expect(result.outputs['port']).toBe(8080);
   });
 
   test("package delegates to prisma-alchemy's deterministic artifact packager", () => {
@@ -225,7 +253,11 @@ describe("prismaCloud().services['compute']", () => {
     };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized: LoweredNode = {
-      outputs: { environment: [{ id: 'AUTH_DB_URL-var#cloud-id', key: 'AUTH_DB_URL' }] },
+      outputs: {
+        environment: [{ id: 'AUTH_DB_URL-var#cloud-id', key: 'AUTH_DB_URL' }],
+        // A non-default port from serialize must reach the Deployment verbatim.
+        port: 8080,
+      },
     };
 
     const result = run<LoweredNode>(
@@ -240,7 +272,7 @@ describe("prismaCloud().services['compute']", () => {
           artifactPath: '/tmp/auth.tar.gz',
           artifactHash: 'sha-auth',
           environment: serialized.outputs['environment'],
-          port: 3000,
+          port: 8080,
         },
       ],
     ]);

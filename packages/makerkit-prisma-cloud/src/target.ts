@@ -152,7 +152,15 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
               }),
             );
           }
-          return { outputs: { environment: records } };
+          // The listen port the app binds is the service's own `port` param
+          // (encoded above as the PORT env var run() stashes). The Deployment
+          // must route to that same port, so carry the resolved value to
+          // deploy() through serialize's outputs — the phase that already
+          // holds the typed Config. deploy() receives no Config of its own;
+          // its SPI seam is serialize's LoweredNode, exactly like the
+          // environment edge. Falls back to the pack default if unset.
+          const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
+          return { outputs: { environment: records, port } };
         }),
 
       // Print the bootstrap (address + boot import baked in) and assemble the
@@ -183,7 +191,10 @@ export const prismaCloud = (o: PrismaCloudOptions): Target => ({
             artifactPath: artifact.path,
             artifactHash: artifact.sha256,
             environment: serialized.outputs['environment'] as readonly Prisma.EnvironmentVariable[],
-            port: 3000,
+            // Route to the port the app actually binds (the service's `port`
+            // param, resolved by serialize) — not a hardcoded constant.
+            port:
+              typeof serialized.outputs['port'] === 'number' ? serialized.outputs['port'] : 3000,
           });
           return {
             outputs: { url: deployment.deployedUrl, projectId: provisioned.outputs['projectId'] },
