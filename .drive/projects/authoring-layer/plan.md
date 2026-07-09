@@ -198,13 +198,19 @@ The storefront artifact bundles the standalone `node_modules` (self-contained fi
 ### [x] Framework-hosted DI — **closed by R5**: `service.load()` is the one typed pull mechanism for both a Hono entry and a Next page; the Next-internal `process.env` read is gone. No separate `use()` accessor needed.
 ### [ ] Local emulation / test (Load + Hydrate with fakes)
 ### [ ] Streams (async connection style)
-### [~] Prisma-hosted Alchemy state store (platform target) → **slice R8, in build** (`slices/r8-hosted-state-store/`)
+### [x] Prisma-hosted Alchemy state store (platform target) → **slice R8, merged** ([PR #17](https://github.com/prisma/makerkit/pull/17) → `main` `b86f093`)
 
-> D1–D3 landed (store over postgres.js; automatic Management-API bootstrap +
-> session advisory lock → `prismaState({workspaceId})`; `Target.state` seam,
-> hosted-by-default via `prismaCloud()`). Remaining: D4 live proof (blocked on
-> operator credentials — no root `.env` on this machine) + D5 Opus review/PR.
-> The Management API ask is drafted (`slices/r8-hosted-state-store/platform-ask.md`).
+> Shipped the client-side interim: `@makerkit/prisma-alchemy/state` — a
+> `StateService` over postgres.js, automatic Management-API bootstrap (find-or-
+> create the `makerkit-state` project, ownership-marker verified against PDP's
+> duplicate-name behaviour), session advisory lock with a pid+`pg_locks`
+> liveness check, `Target.state` (required) with `prismaCloud()` supplying it
+> by default. Proven live (fresh-workdir no-op redeploy, lock contention,
+> crash-release, destroy leaves the store standing); two review passes + an
+> operator review round. The platform-side final form (Management API
+> implementing alchemy's `StateApi` v5) is a filed ask
+> (`slices/r8-hosted-state-store/platform-ask.md`); PN adoption for the store's
+> data access is captured and deferred (`pn-adoption-design-note.md`).
 
 Implements Alchemy's `StateService` on the platform side: workspace-scoped,
 backed by Prisma Postgres, encrypted, authorized by workspace RBAC — the
@@ -261,9 +267,9 @@ the store is 12 trivial CRUD queries. Facts, costs, and pick-up triggers:
 
 ## R5 review follow-ups (Opus review of `e65bbfb` — verdict: ship; these are latent/pre-existing, none block)
 
-- **Config-key separator ambiguity** — `configKey` joins `address ▸ owner ▸ name` with `_` and uppercases, so `db_url` (a service param) and `db`.`url` (an input's param) both yield `AUTH_DB_URL`. Not triggered today (only param is `port`; inputs are `db`/`auth`). Fix: forbid `_` in param/input names at construction, or a collision-proof delimiter.
-- **`port` param ↔ listen port decoupling** — `Deployment` hardcodes `port: 3000`; `computeParams.port` defaults `3000`; `run()` stashes the param into `PORT` which the app entry binds. They agree only because all three are `3000` — set the param to anything else and the app binds a port the platform doesn't route to, silently unreachable. Pre-existing from R4, more visible now that `server.ts` reads `port` from `load()`. Fix: thread the resolved `port` into the `Deployment`.
-- **Graph is not topologically sorted** (pre-existing, R4) — `graph.ts`'s hex load preserves provision order and only validates acyclicity; a valid DAG authored consumer-before-producer would feed `undefined` into the consumer's `buildConfig`, contradicting the doc's "topo-ordered (deps first)". Not exercised (the example provisions `auth` first). Fix: real topological sort at Load, or correct the doc's claim.
+- **[closed by R9]** **Config-key separator ambiguity** — `configKey` joins `address ▸ owner ▸ name` with `_` and uppercases, so `db_url` (a service param) and `db`.`url` (an input's param) both yield `AUTH_DB_URL`. Fixed by rejecting `_` in param and input names at construction (the three core factories).
+- **[closed by R9]** **`port` param ↔ listen port decoupling** — `Deployment` hardcoded `port: 3000` while the app binds the service's `port` param. Fixed by threading the resolved port from `serialize` into the `Deployment` through its outputs, so the platform routes to whatever the app binds.
+- **[closed by R9]** **Graph is not topologically sorted** — `graph.ts`'s hex load preserved provision order and only validated acyclicity; a consumer-before-producer DAG fed `undefined` into `buildConfig`. Fixed with a stable topological sort at Load (Kahn, smallest-original-index tie-break), so the doc's "topo-ordered (deps first)" claim is now true by construction and an already-producer-first graph is byte-identical.
 - **`@makerkit/node` name is a misnomer** (noted in R6 review) — the adapter's `kind: 'node'` means "plain long-running server process" (as opposed to `nextjs`), but the example's server runtime is **Bun** (`Bun.serve` in `server.ts`, `Bun.SQL`, `@effect/platform-bun`, `bunx --bun alchemy deploy`). The name reads as "Node.js runtime" and caused reviewer confusion. Consider renaming the descriptor kind (e.g. `server`) or documenting the distinction where it's defined (`packages/makerkit-node/src/index.ts`).
 
 ## PR-review follow-ups (operator review of PR #10)
