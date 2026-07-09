@@ -91,3 +91,55 @@ jobs:
             exit 0
           fi
           bun node_modules/.bin/makerkit destroy hex.ts --name "$STOREFRONT_STACK_NAME"
+
+      # ---- makerkit-hello: the SERVICE-root path + the idempotent-redeploy
+      # proof. storefront-auth above covers the hex root; hello covers a bare
+      # service deployed as the application (LowerOptions.bundle, not bundles)
+      # and the node-kind determinism claim: a second deploy of an unchanged
+      # build must be a no-op (the Next path is knowingly non-deterministic —
+      # see deploy-cli.md — so the noop assertion lives here, not above).
+      - name: Deploy hello (service root)
+        working-directory: examples/makerkit-hello
+        env:
+          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          pnpm build
+          bun node_modules/.bin/makerkit deploy src/service.ts --name "$HELLO_STACK_NAME"
+          state="$(find .alchemy/state -name '*-deploy.json' | head -1)"
+          [ -n "$state" ] || { echo "no deploy state found"; exit 1; }
+          url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$state','utf8')).attr?.deployedUrl ?? '')")"
+          echo "Hello URL: $url"
+          deadline=$((SECONDS + 180))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            body="$(curl -sS --max-time 30 "$url" || true)"
+            if printf '%s' "$body" | grep -q '"ok"'; then echo "Hello serves: $body"; exit 0; fi
+            sleep 6
+          done
+          echo "hello never served; last body: $body"; exit 1
+
+      - name: Redeploy hello — must be a no-op
+        working-directory: examples/makerkit-hello
+        env:
+          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          out="$(bun node_modules/.bin/makerkit deploy src/service.ts --name "$HELLO_STACK_NAME" 2>&1)"
+          printf '%s\n' "$out"
+          # An unchanged node-kind build must produce no resource changes.
+          if printf '%s' "$out" | grep -qE '\b(created|updated|replaced)\b'; then
+            echo "Redeploy was not a no-op."; exit 1
+          fi
+
+      - name: Destroy hello
+        if: always()
+        working-directory: examples/makerkit-hello
+        env:
+          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ ! -d .alchemy ]; then
+            echo "No .alchemy state dir — hello deploy never started, nothing to destroy."
+            exit 0
+          fi
+          bun node_modules/.bin/makerkit destroy src/service.ts --name "$HELLO_STACK_NAME"
