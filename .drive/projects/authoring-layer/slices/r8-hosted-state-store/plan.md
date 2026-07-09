@@ -75,6 +75,58 @@ in the dispatch return, not screenshots.
 **Completed when:** every proof item observed and recorded; e2e workflow
 green or its state pinning committed.
 
+**Status: complete (2026-07-09).** Ran against the real workspace, which held
+zero projects at the start (the standing demo was already gone). Proof
+results:
+
+- **Deploy A** (`pnpm build` then `bunx --bun alchemy deploy --yes`, hosted
+  state, no code changes needed): `Plan: 13 to create` → `Done: 26 succeeded`.
+  Bootstrap created `makerkit-state` (`proj_cmrddknia06h6ynf44njheoou`) and the
+  stack created `storefront-auth` (`proj_cmrddkvdq06i0ynf4xu9osuvu`) —
+  confirmed via `GET /v1/projects`.
+- **Round trip:** the storefront's post-promote URL
+  (`https://w5nxxidc5rfe4evnyk3ls49v.ewr.prisma.build/`) rendered `Auth
+  /verify says: true` on the first curl (PRO-200 handled — the deploy output
+  already returns the post-promote domain).
+- **Headline (zero-duplicate redeploy):** deleted
+  `examples/storefront-auth/.alchemy` (the only local `.alchemy/` anywhere in
+  the repo tree; it held only an empty CLI log, no state — confirming hosted
+  state is genuinely the default with nothing local backing it), then ran
+  `pnpm run deploy` unchanged. Result: `Plan: 1 to update, 12 to noop` — every
+  provisioned resource noop'd; only `storefront-deploy` updated (the known
+  Next `BUILD_ID` non-determinism from rebuilding). `GET /v1/projects`
+  afterward showed the same two project ids — zero duplicates.
+- **Lock contention:** a scratchpad script (bootstrap + `acquireStateLock`,
+  same code path as the Layer) held the `storefront-auth/dev_will` lock; a
+  concurrent `alchemy deploy` failed immediately with
+  `StateLockContentionError: another deploy holds the state lock for
+  storefront-auth/dev_will`.
+- **Crash-release:** `kill -9` on the lock holder, then redeploy — acquired
+  the lock and completed (`Plan: 13 to noop`), proving the session-scoped
+  advisory lock releases on connection drop with no bookkeeping.
+- **Destroy:** `bunx --bun alchemy destroy --yes` → `Plan: 13 to delete` →
+  `Done: 13 succeeded`. `GET /v1/projects` afterward: `storefront-auth` gone,
+  `makerkit-state` survives.
+- **State-row sanity:** post-destroy, `alchemy_resource_state` for
+  `storefront-auth/dev_will` is empty (0 rows). One
+  `alchemy_stack_output` row for `storefront-auth/dev_will` remains —
+  traced to alchemy's own `Apply.ts`: `deleteStack` is only invoked by the
+  `alchemy state delete` CLI command, never by `alchemy destroy` (whose plan
+  has no `output`, so `setOutput`/`deleteStack` are never called in that
+  path). This is stock alchemy behavior, reproducible with any state backend
+  (including alchemy's own local file store) — not a defect in this store.
+  The row is inert (no live resources reference it) and gets overwritten
+  cleanly (`on conflict (stack, stage) do update`) on the next deploy of the
+  same stack/stage.
+- **CI pinning decision:** kept hosted state as the default for
+  `.github/workflows/e2e-deploy.yml` — no file change. CI already sets
+  `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` (needed for `prismaCloud()`
+  regardless), which is everything the hosted-state bootstrap needs; CI's
+  per-run unique `STOREFRONT_STACK_NAME` means concurrent/ephemeral runs never
+  collide on the advisory lock or duplicate a project. No code fixes were
+  required in `packages/prisma-alchemy/src/state/**` — D1–D3 held up against
+  the real platform as designed.
+
 ## Dispatch 5 — Opus review + fix round
 
 **Outcome:** Opus (mid) reviews the full slice diff against spec + design
