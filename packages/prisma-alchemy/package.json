@@ -6,16 +6,19 @@
   "exports": {
     ".": "./src/index.ts",
     "./postgres": "./src/postgres/index.ts",
-    "./compute": "./src/compute/index.ts"
+    "./compute": "./src/compute/index.ts",
+    "./state": "./src/state/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
+    "@makerkit/core": "workspace:*",
     "@prisma/management-api-sdk": "^1.47.0",
     "alchemy": "2.0.0-beta.59",
-    "effect": "4.0.0-beta.92"
+    "effect": "4.0.0-beta.92",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",
