@@ -179,16 +179,20 @@ export const makePrismaStateService = (sql: postgres.Sql): StateService => ({
 });
 
 /**
- * Wraps a {@link StateService} so every method first re-verifies the state
- * lock's lease via `checkLive` before touching storage. Used to enforce
- * "a dropped lock connection fails loudly" — see {@link ../lock.ts}.
+ * Wraps a {@link StateService} so every method that touches storage first
+ * re-verifies the state lock's lease via `checkLive`. Used to enforce "a
+ * dropped lock connection fails loudly" — see {@link ../lock.ts}.
+ *
+ * `getVersion` is excluded: it returns a compile-time constant
+ * (`STATE_STORE_VERSION`), so guarding it would only add a pointless
+ * reserved-connection round-trip.
  */
 export const guardStateService = (
   service: StateService,
   checkLive: Effect.Effect<void, StateStoreError, never>,
 ): StateService => ({
   id: service.id,
-  getVersion: () => checkLive.pipe(Effect.andThen(service.getVersion())),
+  getVersion: () => service.getVersion(),
   listStacks: () => checkLive.pipe(Effect.andThen(service.listStacks())),
   listStages: (stack) => checkLive.pipe(Effect.andThen(service.listStages(stack))),
   get: (request) => checkLive.pipe(Effect.andThen(service.get(request))),
