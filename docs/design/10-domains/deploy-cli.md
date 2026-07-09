@@ -44,7 +44,9 @@ loading the graph imports that module — the app's choice, not a CLI limit.
    *is* the application, and the graph reachable from it is what deploys.
 2. **Load.** Core's `Load` walks the graph. A service with an unwired
    connection input (one normally wired by an enclosing hex) fails here, with
-   an error naming the input and pointing at the composing hex.
+   an error naming the input and pointing at the composing hex. The deploy
+   root must be a hex — a bare service is not independently deployable; the
+   CLI errors naming the fix (wrap it: `hex('name', (h) => h.provision(...))`).
 3. **Infer the target.** Collect the pack package name each node carries.
    Exactly one pack must appear (mixed packs → error). Dynamically import that
    package's `/target` entry — resolved from the entry module's own file path,
@@ -118,7 +120,7 @@ changes for a new pack or adapter:
   imported by every adapter and by `@makerkit/assemble` itself).
 - **`@makerkit/assemble`** owns the orchestration this seam drives: routing
   every service node in the loaded graph to its adapter's `/assemble` entry
-  (one bundle for a service root, one per provision id for a hex root) and the
+  (one bundle per provision id — the root is always a hex) and the
   wrapper-inlining policy. The CLI is its first consumer; the future
   programmatic deploy API is its second — so its public surface carries no CLI
   concepts (no `CliError`, no argv/usage anything). It throws its own
@@ -132,6 +134,7 @@ The CLI's quality lives in its errors; each failure names its fix:
 | Failure | Error tells the user |
 | --- | --- |
 | Default export isn't a node | what the entry module must export |
+| Deploy root isn't a hex | to wrap the service in a hex |
 | Unwired connection input | which input, and to deploy the composing hex |
 | Mixed packs in one graph | the packs found; one target per application |
 | Missing target env | the exact variable(s) `fromEnv()` needed |
