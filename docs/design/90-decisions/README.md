@@ -28,4 +28,5 @@ _Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settl
 - [ADR-0010](ADR-0010-deploys-hold-a-session-advisory-lock.md) — Deploys hold a session advisory lock per stack and stage.
 - [ADR-0011](ADR-0011-targets-supply-the-deploy-state-layer.md) — Targets supply the deploy state layer; core owns no default.
 - [ADR-0012](ADR-0012-the-state-store-speaks-sql-directly.md) — The state store speaks SQL directly; Prisma Next adoption is deferred.
+- [ADR-0009](ADR-0009-resources-are-provisioned-by-hexes-deps-are-declarations.md) — Resources are provisioned by hexes; a service's deps are declarations.
 
