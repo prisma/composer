@@ -112,6 +112,9 @@ importers:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92
     devDependencies:
+      '@makerkit/cli':
+        specifier: workspace:*
+        version: link:../../packages/makerkit-cli
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14

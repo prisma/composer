@@ -86,9 +86,9 @@ Who imports what, end to end:
   the nodes, and constructs the target from the environment via the pack's
   `/target` `fromEnv()` — the only place the heavy target import happens — then
   calls `@makerkit/core/deploy`'s `lower()` internally. The app author writes no
-  stack file and no config file (until the CLI lands, examples use an interim
-  `alchemy.run.ts` calling `lower()` directly; see
-  [`deploy-cli.md`](deploy-cli.md)).
+  stack file and no config file — `makerkit deploy` generates one at
+  `.makerkit/alchemy.run.ts` per run and drives it; see
+  [`deploy-cli.md`](deploy-cli.md).
 
 At deploy, the build adapter's assembler produces a **normalized bundle dir**: the
 app's built entry, plus a MakerKit **wrapper** (the service module bundled with
@@ -455,18 +455,18 @@ interface LoweredNode { readonly outputs: Readonly<Record<string, unknown>> }
 
 interface LowerOptions {
   readonly name: string                                  // stack name (+ root id for a service root)
-  // A service's build adapter knows how to produce its artifact, so the standard
-  // deploy path (makerkit deploy) needs no per-service bundle map — it runs each
-  // adapter's assembler. Until that CLI lands, the interim wiring supplies the
-  // already-built bundle dirs here, keyed by provision id (service root: `bundle`;
-  // hex root: `bundles`). See § Extension points.
+  // `makerkit deploy` runs each service's build-adapter assembler and writes
+  // the resulting bundle dirs here, into the generated stack file it hands to
+  // `lower()` — keyed by provision id (service root: `bundle`; hex root:
+  // `bundles`). A hand-composed / mixed-stack caller (the escape hatch — see
+  // § Lowering) supplies these itself.
   readonly bundle?: Bundle
   readonly bundles?: Record<string, Bundle>
   readonly stage?: string
   readonly state?: AlchemyStateLayer                     // default: localState(); the
                                                          // hosted-state store slots in here
 }
-interface Bundle { readonly dir: string }                            // interim: an assembled bundle dir
+interface Bundle { readonly dir: string }                            // an assembled bundle dir
 interface AssembledBundle { readonly dir: string; readonly entry: string }  // adapter product: dir + runtime entry
 interface Artifact { readonly path: string; readonly sha256: string }       // package()'s product
 
@@ -1026,18 +1026,6 @@ entry hydrates `db`. Neither entry can tell a connection from a resource.
 
 ## Extension points (designed for, not yet built)
 
-- **MakerKit-owned deploy entrypoint** — the standard deploy path is `makerkit
-  deploy <entry>` over the app module itself; there is no config file (ADR-0003,
-  designed in [`deploy-cli.md`](deploy-cli.md)). One pass: Load the root node's
-  graph, infer the target pack from the nodes (`fromEnv()` constructs it from
-  the environment), run each service's assembly from its `url` anchor
-  (ADR-0004; the user's build ran first — ADR-0005), then `lower()`. That
-  single pass is what lets the per-service bundle map drop from the wiring (it
-  correlates each service value to its assembled output).
-  `lower()`/`lowering()` stay in `/deploy` as the mechanism and the escape
-  hatch for hand-composed / mixed-stack topologies. Until the CLI lands,
-  examples invoke `lower()` from an interim `alchemy.run.ts` that still
-  carries the assembled bundle dirs.
 - **Build-adapter ecosystem** — `node` and `nextjs` are the first two; the
   descriptor/assembler split is the seam for community adapters (Nuxt, TanStack
   Start, a cron access-pattern, a static site). Each is a package; nothing in core

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["bun"]
   },
-  "include": ["scripts", "alchemy.run.ts"]
+  "include": ["hex.ts"]
 }

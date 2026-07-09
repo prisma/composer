@@ -85,7 +85,7 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 **References.**
 
 - Upstream: [PRO-201](https://linear.app/prisma-company/issue/PRO-201/app-build-build-type-nextjs-yields-a-boot-crashing-standalone-for-pnpm)
-- Workaround source: [`examples/storefront-auth/scripts/bundle-next.ts`](examples/storefront-auth/scripts/bundle-next.ts), [`.npmrc`](.npmrc)
+- Workaround source: [`packages/makerkit-nextjs/src/assemble.ts`](packages/makerkit-nextjs/src/assemble.ts), [`.npmrc`](.npmrc)
 - Related: [`.drive/projects/mvp-example-app/design-notes.md`](.drive/projects/mvp-example-app/design-notes.md) — "Compute skill findings"
 
 ---
@@ -202,7 +202,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version)
-- Race + edge analysis: [`examples/storefront-auth/alchemy.run.ts`](examples/storefront-auth/alchemy.run.ts) (the corrected ordering comment)
+- Race + edge analysis: [`packages/makerkit-prisma-cloud/src/target.ts`](packages/makerkit-prisma-cloud/src/target.ts) (the corrected ordering comment — the `deploy`/`serialize` edge)
 - Related: [`dogfood-report.md`](dogfood-report.md)
 
 ---
@@ -245,5 +245,5 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-213](https://linear.app/prisma-company/issue/PRO-213/compute-runs-bun-with-runtime-auto-install-on-masks-incomplete)
-- Fix: [`examples/storefront-auth/scripts/bundle-next.ts`](examples/storefront-auth/scripts/bundle-next.ts), [`examples/storefront-auth/hexes/storefront/next.config.ts`](examples/storefront-auth/hexes/storefront/next.config.ts)
+- Fix: [`packages/makerkit-nextjs/src/assemble.ts`](packages/makerkit-nextjs/src/assemble.ts), [`examples/storefront-auth/hexes/storefront/next.config.ts`](examples/storefront-auth/hexes/storefront/next.config.ts)
 - Related: PRO-201 (Next standalone packaging), FT-5219 (Bun.SQL scale-to-zero)

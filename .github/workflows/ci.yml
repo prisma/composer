@@ -88,8 +88,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       # typecheck/test don't depend on ^build, so nothing else exercises the
       # example artifact builds (esp. storefront's `next build`). This does.
-      # --concurrency=1: the storefront is built by two turbo tasks (its own
-      # `build` and the parent storefront-auth's `build:compute`) that race on
+      # --concurrency=1: the storefront is built by two turbo tasks — its own
+      # `build`, and again via the parent storefront-auth package's own `build`
+      # script (which re-invokes it through `pnpm --filter`) — that race on
       # the shared `.next` dir under parallelism; serialize until that's deduped.
       - name: Build
         run: pnpm turbo run build --concurrency=1

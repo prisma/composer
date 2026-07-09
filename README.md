@@ -129,8 +129,11 @@ development, with no change to your code.
 
 ## Status
 
-MakerKit is in the design phase — no implementation yet. `docs/design/` holds the
-full design; this page is the short version.
+The design lives in `docs/design/`; this page is the short version. Core,
+extension packs, and the `makerkit` deploy CLI are implemented under
+`packages/`, and the example apps under `examples/` deploy with
+`makerkit deploy` / `makerkit destroy` (see
+[`docs/design/10-domains/deploy-cli.md`](docs/design/10-domains/deploy-cli.md)).
 
 - **Purpose and goals** — [`docs/design/00-purpose/`](docs/design/00-purpose/)
 - **Principles** — [guiding](docs/design/01-principles/guiding-principles.md),

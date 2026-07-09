@@ -39,7 +39,8 @@ jobs:
       PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
       # The stack name becomes the PDP Project name. A per-run name keeps this
       # ephemeral CI deploy from colliding with — or destroying — a standing
-      # demo in the shared workspace. alchemy.run.ts reads it.
+      # demo in the shared workspace. Passed as `makerkit`'s `--name` override
+      # (deploy-cli.md) — hex.ts's own name is the local-dev default.
       STOREFRONT_STACK_NAME: storefront-auth-ci-${{ github.run_id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -63,12 +64,12 @@ jobs:
         run: pnpm build
 
       - name: Deploy
-        # Never `pnpm exec alchemy` or plain `bunx alchemy` — the CLI must run
-        # under bun (`--bun`) or it fails with "Cannot find package 'bun'".
         # Do not use the package's `deploy` script: it sources ../../.env,
         # which doesn't exist in CI; env vars are already set on this job.
+        # `makerkit` resolves and drives the workspace's own installed
+        # `alchemy` bin itself (run-alchemy.ts) — no `bunx --bun` needed here.
         working-directory: examples/storefront-auth
-        run: bunx --bun alchemy deploy --yes
+        run: pnpm exec makerkit deploy hex.ts --name "$STOREFRONT_STACK_NAME"
 
       - name: Verify the round trip (storefront -> auth)
         working-directory: examples/storefront-auth
@@ -86,4 +87,4 @@ jobs:
             echo "No .alchemy state dir — deploy never started, nothing to destroy."
             exit 0
           fi
-          bunx --bun alchemy destroy --yes
+          pnpm exec makerkit destroy hex.ts --name "$STOREFRONT_STACK_NAME"

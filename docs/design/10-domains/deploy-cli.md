@@ -25,9 +25,9 @@ Flags: `--name` (override the root's name — CI's per-run ephemeral deploys),
 `--stage`. Nothing else. `makerkit build`, `makerkit dev`, and topology
 emission are explicitly out of scope (see § Deferred).
 
-Acceptance for the MVP: both examples lose their `alchemy.run.ts` and
+Acceptance for the MVP (met): both examples lost their `alchemy.run.ts` and
 hand-rolled deploy scripts, replaced by `makerkit deploy` / `makerkit destroy`,
-with the CI e2e still green.
+with the CI e2e green.
 
 ## The pipeline
 
@@ -45,8 +45,9 @@ with the CI e2e still green.
    own environment variables and errors naming any missing one. Inference
    can't silently pick wrong: `lower()` routes every node type through the
    target's tables, and a mismatch is a `LowerError` naming the unknown type.
-4. **Resolve the name.** The root node's name, unless `--name` overrides it. A
-   root without either is an error.
+4. **Resolve the name.** The root node's name (every node is named — ADR-0006),
+   unless `--name` overrides it — CI's per-run ephemeral deploys use this so a
+   name never collides with a standing demo.
 5. **Assemble each service.** From the node's `url`, walk up to the nearest
    `package.json` — that directory anchors the adapter's `entry` paths. Route
    by the build adapter's `kind` to that kind's assembly (see below). Assembly
@@ -57,9 +58,9 @@ with the CI e2e still green.
    assembled bundles to `lower()`; execute the resulting Alchemy stack
    (deploy or destroy) with state and stage options.
 
-Step 5 is what deletes the interim `alchemy.run.ts`: the pass that ran
-assembly for a service is the same pass that lowers it, so the hand-maintained
-`bundle`/`bundles` correlation map has nothing left to say.
+Step 5 is what made the interim `alchemy.run.ts` unnecessary: the pass that
+runs assembly for a service is the same pass that lowers it, so the
+hand-maintained `bundle`/`bundles` correlation map has nothing left to say.
 
 ## Build ownership
 
@@ -102,7 +103,6 @@ The CLI's quality lives in its errors; each failure names its fix:
 | Unwired connection input | which input, and to deploy the composing hex |
 | Mixed packs in one graph | the packs found; one target per application |
 | Missing target env | the exact variable(s) `fromEnv()` needed |
-| No name at root | name the node or pass `--name` |
 | No `package.json` above `url` | the service needs a package anchor |
 | Built output missing | the expected path, and "run your build" |
 | Unknown adapter kind | the kind, and the kinds with assemblies available |

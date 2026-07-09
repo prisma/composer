@@ -9,8 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit",
-    "build:compute": "next build && bun run ../../scripts/assemble-storefront.ts ."
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@makerkit/core": "workspace:*",

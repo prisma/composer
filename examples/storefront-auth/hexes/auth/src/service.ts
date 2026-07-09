@@ -11,6 +11,6 @@ export default compute({
   deps: {
     db: postgres({ name: 'db', client: ({ url }) => new SQL({ url, max: 1, idleTimeout: 10 }) }),
   },
-  build: node({ entry: 'server.js' }),
+  build: node({ entry: 'dist/server.js' }),
   expose: { rpc: authContract },
 });
