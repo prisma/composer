@@ -1,0 +1,49 @@
+---
+description: Git commit best practices — stage explicitly, and sign off every commit (DCO)
+alwaysApply: true
+---
+
+# Git commit best practices
+
+## Sign off every commit (DCO)
+
+**CRITICAL**: this repo's CI enforces the Developer Certificate of Origin — every commit in a PR must carry a `Signed-off-by:` trailer (see `.github/workflows/dco.yml`). Pass `-s` (or `--signoff`) on every `git commit`.
+
+```bash
+git commit -s -m 'fix(core): handle undefined expose on a service node'
+```
+
+Common pitfalls:
+
+- `format.signoff=true` only affects `git format-patch`, not `git commit`. There is no `commit.signoff` option — the trailer must be added per commit.
+- On `git commit --amend`, pass `-s` again so the trailer survives the amend.
+- When rebasing to add sign-off across a range, only add it where missing — a blanket `git rebase --signoff` duplicates trailers on already-signed commits. Prefer an `--exec` that signs off only unsigned commits:
+
+  ```bash
+  git rebase <base> --exec \
+    'git log -1 --format=%B | grep -qi "^Signed-off-by: " || git commit --amend --no-edit -s'
+  ```
+
+Verify before pushing — the last commit must show a sign-off:
+
+```bash
+git log -1 --format='%(trailers:key=Signed-off-by)'
+```
+
+## Stage explicitly
+
+Prefer staging the specific files you changed over `git add -A` / `git add .`, which sweep in unrelated or untracked files (build artifacts, scratch files):
+
+```bash
+git add packages/makerkit-core/src/node.ts docs/design/10-domains/connection-contracts.md
+git add -u   # modified tracked files only — never untracked
+```
+
+## Shell-safe commit messages
+
+- Prefer **single quotes** around `-m` strings; avoid backticks (they can trigger command substitution). See [multiline-commit-messages](../../.claude/skills/multiline-commit-messages/SKILL.md) for multiline messages.
+
+## A good commit
+
+- One logical step — a coherent unit of change, reviewable on its own.
+- Explains intent ("why"), not just mechanics ("what").
