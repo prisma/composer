@@ -1,0 +1,62 @@
+import { Stack, type StackServices } from 'alchemy';
+import { State } from 'alchemy/State';
+import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
+import * as Redacted from 'effect/Redacted';
+import postgres from 'postgres';
+import * as client from '../client.ts';
+import * as credentials from '../credentials.ts';
+import { bootstrapStateConnection } from './bootstrap.ts';
+import { acquireStateLock } from './lock.ts';
+import { migratePrismaState } from './schema.ts';
+import { guardStateService, makePrismaStateService } from './service.ts';
+
+/**
+ * The hosted Alchemy state store. On layer init (scoped, once per stack
+ * run): find-or-create the workspace's `makerkit-state` project, mint a
+ * fresh connection to its default database, migrate the schema, and
+ * acquire the (stack, stage) advisory lock — see `bootstrap.ts` and
+ * `lock.ts`. The Management API plumbing (`ManagementClient`,
+ * `PrismaCredentials`) is provided internally, so the returned layer's
+ * only requirements are the ones alchemy itself already provides to every
+ * state store (`StackServices`).
+ *
+ * Any bootstrap/lock/migration failure dies the layer (loud, immediate,
+ * unrecoverable) rather than surfacing as a typed error — matching core's
+ * `LowerOptions.state: Layer.Layer<State, never, StackServices>` contract
+ * and alchemy's own convention (e.g. a missing state store is `Effect.die`
+ * in `Stack.make`).
+ */
+export const prismaState = (opts: {
+  workspaceId: string;
+}): Layer.Layer<State, never, StackServices> =>
+  Layer.effect(
+    State,
+    Effect.gen(function* () {
+      const stack = yield* Stack;
+
+      const { connectionString } = yield* bootstrapStateConnection(opts.workspaceId).pipe(
+        Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
+      );
+
+      // The pool reconnects on demand for ordinary (non-reserved) queries —
+      // postgres.js's default behaviour — which is what absorbs PPg closing
+      // idle direct connections (FT-5219 class) for the store's CRUD calls.
+      // The lock's reserved connection is deliberately exempt from this: see
+      // `lock.ts`'s `checkLive`.
+      const sql = postgres(Redacted.value(connectionString), {
+        max: 5,
+        onnotice: () => {},
+      });
+      yield* Effect.addFinalizer(() => Effect.promise(() => sql.end({ timeout: 5 })));
+
+      yield* migratePrismaState(sql);
+
+      const lock = yield* acquireStateLock(sql, stack.name, stack.stage);
+      yield* Effect.addFinalizer(() => Effect.promise(() => lock.release()));
+
+      const service = guardStateService(makePrismaStateService(sql), lock.checkLive);
+
+      return Effect.succeed(service);
+    }),
+  ).pipe(Layer.orDie);
