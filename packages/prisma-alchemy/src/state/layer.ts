@@ -3,6 +3,7 @@ import { State } from 'alchemy/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import * as Schedule from 'effect/Schedule';
 import postgres from 'postgres';
 import * as client from '../client.ts';
 import * as credentials from '../credentials.ts';
@@ -56,7 +57,14 @@ export const prismaState = (opts: {
       });
       yield* Effect.addFinalizer(() => Effect.promise(() => sql.end({ timeout: 5 })));
 
-      yield* migratePrismaState(sql).pipe(Effect.mapError(bootstrapError('schema migration')));
+      // The migration is the pool's first query, i.e. the first actual
+      // connect. A freshly provisioned database (first-ever bootstrap in a
+      // workspace) can refuse connections for a while after the Management
+      // API returns it, so retry the window out before failing.
+      yield* migratePrismaState(sql).pipe(
+        Effect.retry(Schedule.both(Schedule.spaced('5 seconds'), Schedule.during('2 minutes'))),
+        Effect.mapError(bootstrapError('schema migration')),
+      );
 
       const lock = yield* acquireStateLock(sql, stack.name, stack.stage).pipe(
         Effect.mapError(bootstrapError('lock acquisition')),

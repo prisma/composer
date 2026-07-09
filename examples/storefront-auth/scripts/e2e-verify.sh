@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
-# Reads the storefront service's deployed URL from Alchemy state, then polls it
-# until the page renders the live storefront->auth round trip. Retries because a
-# version cold-starts after deploy (PRO-200) and auth's DB ping can transiently
-# fail right after idle (FT-5219), recovering on the next hit. Run from
-# examples/storefront-auth.
+# Resolves the storefront service's deployed URL via the Management API (state
+# is hosted, not local files), then polls it until the page renders the live
+# storefront->auth round trip. Retries because a version cold-starts after
+# deploy (PRO-200) and auth's DB ping can transiently fail right after idle
+# (FT-5219), recovering on the next hit. Run from examples/storefront-auth.
+# Requires PRISMA_SERVICE_TOKEN; STOREFRONT_STACK_NAME optionally overrides the
+# project name (defaults to storefront-auth, matching alchemy.run.ts).
 set -euo pipefail
 
-state="$(find .alchemy/state -name 'storefront-deploy.json' | head -1)"
-[ -n "$state" ] || { echo "No storefront-deploy state under .alchemy/state."; exit 1; }
-url="$(node -e "console.log(JSON.parse(require('fs').readFileSync('$state','utf8')).attr?.deployedUrl ?? '')")"
-[ -n "$url" ] || { echo "storefront-deploy state has no attr.deployedUrl: $(cat "$state")"; exit 1; }
+stack="${STOREFRONT_STACK_NAME:-storefront-auth}"
+api="https://api.prisma.io/v1"
+auth_header="Authorization: Bearer ${PRISMA_SERVICE_TOKEN:?PRISMA_SERVICE_TOKEN is required}"
+
+project_id="$(curl -sS -H "$auth_header" "$api/projects?limit=100" \
+  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const p=(JSON.parse(d).data??[]).find((x)=>x.name===process.argv[1]);console.log(p?.id??'')})" "$stack")"
+[ -n "$project_id" ] || { echo "No project named '$stack' in the workspace."; exit 1; }
+
+# The post-promote endpoint domain is the servable one (the create-time domain
+# is a placeholder — PRO-200); by the time this script runs, deploy + promote
+# have completed, so the service read returns the real domain.
+domain="$(curl -sS -H "$auth_header" "$api/projects/$project_id/compute-services?limit=100" \
+  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.name==='storefront');console.log(s?.serviceEndpointDomain??'')})")"
+[ -n "$domain" ] || { echo "Project $project_id has no 'storefront' compute service with an endpoint domain."; exit 1; }
+url="https://$domain/"
 echo "Storefront URL: $url"
 
 deadline=$((SECONDS + 180))
