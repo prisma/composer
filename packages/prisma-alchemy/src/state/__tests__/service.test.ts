@@ -98,4 +98,59 @@ describe('guardStateService', () => {
 
     expect(guarded.id).toBe(service.id);
   });
+
+  // A checkLive that counts its runs and can be flipped to fail, plus a
+  // clock the test drives. Amortization is keyed on wall time, so a fixed
+  // clock means "within the TTL window".
+  const countingCheck = () => {
+    let count = 0;
+    let fail = false;
+    const checkLive = Effect.suspend(() => {
+      count += 1;
+      return fail ? Effect.fail(new StateStoreError({ message: 'lease lost' })) : Effect.void;
+    });
+    return {
+      checkLive,
+      runs: () => count,
+      startFailing: () => {
+        fail = true;
+      },
+    };
+  };
+
+  test('amortizes the lease check: a burst of operations inside the TTL window does one round-trip', async () => {
+    const { service } = makeStubService();
+    const check = countingCheck();
+    const guarded = guardStateService(service, check.checkLive, () => 1_000); // clock frozen inside the window
+
+    for (let i = 0; i < 5; i += 1) await Effect.runPromise(guarded.get(request));
+
+    expect(check.runs()).toBe(1);
+  });
+
+  test('re-checks after the TTL expires — a lease lost after the window is detected', async () => {
+    const { service } = makeStubService();
+    const check = countingCheck();
+    let clock = 1_000;
+    const guarded = guardStateService(service, check.checkLive, () => clock);
+
+    await Effect.runPromise(guarded.get(request)); // passes, caches
+    check.startFailing();
+    await Effect.runPromise(guarded.get(request)); // still inside TTL — trusted, succeeds
+    clock += 6_000; // advance past the 5s TTL
+    await expect(Effect.runPromise(guarded.get(request))).rejects.toThrow(); // re-checks, now fails
+    expect(check.runs()).toBe(2); // first success + the post-expiry failure
+  });
+
+  test('a failing check is never cached — the next op re-checks immediately', async () => {
+    const { service } = makeStubService();
+    const check = countingCheck();
+    check.startFailing();
+    const guarded = guardStateService(service, check.checkLive, () => 1_000); // frozen clock
+
+    await expect(Effect.runPromise(guarded.get(request))).rejects.toThrow();
+    await expect(Effect.runPromise(guarded.get(request))).rejects.toThrow();
+
+    expect(check.runs()).toBe(2); // no cached success to skip on
+  });
 });
