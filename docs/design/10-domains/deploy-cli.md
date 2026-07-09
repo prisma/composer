@@ -137,6 +137,31 @@ The CLI's quality lives in its errors; each failure names its fix:
 - **No default `entry`.** The path is required; bare invocation errors with
   usage. A discovery convention (e.g. a `package.json` field) can be added
   later without breaking anyone.
+- **Wrapper inlining: everything except runtime built-ins.** The CLI has no
+  config file, so per-app bundling knobs can't exist. The wrapper build
+  inlines every import of the service module except `bun`, `bun:*`, and
+  `node:*` (which the hosting runtime provides). Verified empirically: the
+  assembler's explicit `external` wins over the catch-all `noExternal`, so
+  runtime built-ins stay external even under the match-all rule; pure-JS deps
+  (workspace packages, contract libraries like arktype) inline cleanly.
+- **The `--stage` flag is alchemy's.** The generated stack file carries no
+  stage; the CLI passes `--stage` through to the `alchemy` invocation, which
+  owns stage semantics.
+
+## Known limitations (MVP)
+
+- **`destroy` requires built artifacts.** `makerkit destroy` evaluates the
+  same stack program as deploy, and the pack's `package()` reads the
+  assembled bundle — so the app must build before it can be torn down. The
+  destroy-path error says exactly that. Whether Alchemy's destroy can run
+  against placeholder bundles (skipping assembly) is an open follow-up; it
+  needs a live-credential experiment.
+- **Native addons don't survive wrapper inlining.** A service module
+  importing a package with native bindings (`.node` files — better-sqlite3,
+  sharp, …) gets its JS inlined but not the binary, failing at boot rather
+  than at assemble. Detecting addon-bearing deps and failing loudly at
+  assemble is a follow-up; until then, keep client factories to pure-JS
+  drivers (or bun built-ins, which stay external).
 
 ## Related
 
