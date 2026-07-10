@@ -1,6 +1,6 @@
 # Design process and documentation workflow
 
-This directory documents **how this documentation system works** and the **expected design process** for evolving MakerKit over time.
+This directory documents **how this documentation system works** and the **expected design process** for evolving the Prisma App Framework over time.
 
 ## The documentation system
 

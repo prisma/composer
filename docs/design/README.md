@@ -1,10 +1,10 @@
-# MakerKit Design Docs
+# Prisma App Framework Design Docs
 
-This directory is the **source of truth** for MakerKit’s architecture and design. It is intended to be consumed by:
+This directory is the **source of truth** for the Prisma App Framework’s architecture and design. It is intended to be consumed by:
 
 - Humans reading the repository
 - The Agent OS workflows in this repo (product planning stays in `agent-os/product/`, but design/architecture lives here)
-- Other teams integrating with MakerKit (platform/orchestration/tools)
+- Other teams integrating with the Prisma App Framework (platform/orchestration/tools)
 - Implementation contributors working in this codebase
 
 ## How this documentation system is organized (DDD/Clean-aligned)
@@ -37,7 +37,7 @@ Rule of thumb during design discussions:
 
 ## Reading order
 
-1. `docs/design/00-purpose/README.md` (what MakerKit is and why it matters)
+1. `docs/design/00-purpose/README.md` (what the Prisma App Framework is and why it matters)
 2. `docs/design/00-purpose/goals.md`
 3. `docs/design/01-principles/guiding-principles.md`
 4. `docs/design/01-principles/architectural-principles.md`
