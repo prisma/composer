@@ -1,23 +1,17 @@
 import { describe, expect, test } from 'bun:test';
-import * as path from 'node:path';
-import { pathToFileURL } from 'node:url';
-import type { Graph } from '@prisma/app';
+import type { ServiceNode } from '@prisma/app';
 import { hex, Load, service } from '@prisma/app';
 import { AssembleError } from '../assemble-error.ts';
 import { assembleServices } from '../assemble-services.ts';
 
-const moduleUrl = (dir: string) => pathToFileURL(path.join(dir, 'service.ts')).href;
-
-const fakeRun = async (_pack: string, input: { build: { module: string } }) => ({
-  dir: path.join(path.dirname(input.build.module.replace('file://', '')), 'dist', 'bundle'),
+const fakeRun = async (node: ServiceNode) => ({
+  dir: `/bundles/${node.name}`,
   entry: 'server.js',
 });
 
 describe('assembleServices()', () => {
-  test('a hex root produces `bundles` keyed by each service’s provision id', async () => {
-    const dirOne = '/fixtures/auth';
-    const dirTwo = '/fixtures/storefront';
-    const makeService = (name: string, dir: string) =>
+  test('a hex root produces `bundles` keyed by each service’s full hierarchical address', async () => {
+    const makeService = (name: string) =>
       service({
         name,
         pack: 'test/pack',
@@ -26,65 +20,64 @@ describe('assembleServices()', () => {
         params: {},
         build: {
           kind: 'node',
-          pack: '@fixture/node-adapter',
-          module: moduleUrl(dir),
+          assembler: '@fixture/node-adapter/assemble',
+          module: 'file:///fixtures/service.ts',
           entry: 'server.js',
         },
       });
     const root = hex('fixture-hex', {}, ({ provision }) => {
-      provision('auth', makeService('auth', dirOne));
-      provision('storefront', makeService('storefront', dirTwo));
+      provision('auth', makeService('auth'));
+      provision('storefront', makeService('storefront'));
       return {};
     });
-    const graph: Graph = Load(root);
+    const graph = Load(root);
 
-    const assembled = await assembleServices(graph, '/fixtures/entry.ts', fakeRun);
+    const assembled = await assembleServices(graph, fakeRun);
 
     expect(assembled.bundles).toEqual({
-      auth: { dir: path.join(dirOne, 'dist', 'bundle'), entry: 'server.js' },
-      storefront: { dir: path.join(dirTwo, 'dist', 'bundle'), entry: 'server.js' },
+      auth: { dir: '/bundles/auth', entry: 'server.js' },
+      storefront: { dir: '/bundles/storefront', entry: 'server.js' },
     });
   });
 
   test('a hex with no provisioned services throws AssembleError', async () => {
     const root = hex('empty-hex', {}, () => ({}));
-    const graph: Graph = Load(root);
+    const graph = Load(root);
 
-    await expect(assembleServices(graph, '/fixtures/entry.ts', fakeRun)).rejects.toThrow(
-      AssembleError,
-    );
+    await expect(assembleServices(graph, fakeRun)).rejects.toThrow(AssembleError);
   });
 
-  test('routes by the build adapter’s own `pack` field — not a hardcoded kind map (W05/A1)', async () => {
-    const dir = '/fixtures/svc';
-    const makeService = () =>
-      service({
-        name: 'svc',
-        pack: 'test/pack',
-        type: 'fixture/service',
-        inputs: {},
-        params: {},
-        // A made-up kind a community adapter could use — nothing in this
-        // package recognizes "cron" specially; the pack field alone routes it.
-        build: {
-          kind: 'cron',
-          pack: '@community/cron-adapter',
-          module: moduleUrl(dir),
-          entry: 'x',
-        },
-      });
+  test('the default RunAssembler calls each node’s own assemble() — no hardcoded kind/pack routing here', async () => {
+    // A made-up kind + assembler a community adapter could use — nothing in
+    // this package recognizes either specially; assembleServices() never
+    // constructs a specifier or reads `build.kind` itself, only the node's
+    // own assemble() (@prisma/app) does. The assembler isn't installed
+    // here, so the node's real assemble() rejects — but naming exactly this
+    // specifier proves assembleServices() reached the node's own method
+    // rather than some other resolution path.
     const root = hex('fixture-hex', {}, ({ provision }) => {
-      provision('svc', makeService());
+      provision(
+        'svc',
+        service({
+          name: 'svc',
+          pack: 'test/pack',
+          type: 'fixture/service',
+          inputs: {},
+          params: {},
+          build: {
+            kind: 'cron',
+            assembler: '@community/cron-adapter/assemble',
+            module: 'file:///fixtures/svc.ts',
+            entry: 'x',
+          },
+        }),
+      );
       return {};
     });
     const graph = Load(root);
-    const seenPacks: string[] = [];
 
-    await assembleServices(graph, '/fixtures/entry.ts', async (pack, input) => {
-      seenPacks.push(pack);
-      return fakeRun(pack, input);
-    });
-
-    expect(seenPacks).toEqual(['@community/cron-adapter']);
+    await expect(assembleServices(graph)).rejects.toThrow(
+      /Cannot resolve the build assembler "@community\/cron-adapter\/assemble"/,
+    );
   });
 });

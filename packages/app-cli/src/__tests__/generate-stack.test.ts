@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import { Load } from '@prisma/app';
+import { hex, Load, service } from '@prisma/app';
+import { assembleServices } from '@prisma/app-assemble';
 import { renderStackFile } from '../generate-stack.ts';
-import { collectPacks, resolveSinglePack } from '../infer-target.ts';
+import { collectTargetModules, resolveSingleTargetModule } from '../infer-target.ts';
 import { loadEntry } from '../load-entry.ts';
 
 describe('renderStackFile() — a hex root', () => {
@@ -10,7 +11,7 @@ describe('renderStackFile() — a hex root', () => {
     const content = renderStackFile({
       entryPath: '/repo/app/hex.ts',
       cwd: '/repo/app',
-      pack: '@prisma/app-cloud',
+      targetModule: '@prisma/app-cloud/target',
       name: 'app',
       assembled: {
         bundles: {
@@ -45,7 +46,7 @@ describe('renderStackFile() — a hex root', () => {
     const content = renderStackFile({
       entryPath: '/repo/examples/foo*/app/hex.ts',
       cwd,
-      pack: '@prisma/app-cloud',
+      targetModule: '@prisma/app-cloud/target',
       name: 'app',
       assembled: {
         bundles: { app: { dir: '/repo/examples/foo*/app/dist/bundle', entry: 'server.js' } },
@@ -71,13 +72,13 @@ describe('the generated stack file for a real hex entry (no alchemy run)', () =>
     expect(entry.root.name).toBe('fixture-hex');
 
     const graph = Load(entry.root);
-    const pack = resolveSinglePack(collectPacks(graph));
-    expect(pack).toBe('test/pack');
+    const targetModule = resolveSingleTargetModule(collectTargetModules(graph));
+    expect(targetModule).toBe('test/pack/target');
 
     const content = renderStackFile({
       entryPath: entry.path,
       cwd: fixtureDir,
-      pack,
+      targetModule,
       name: entry.root.name,
       assembled: {
         bundles: {
@@ -97,5 +98,55 @@ describe('the generated stack file for a real hex entry (no alchemy run)', () =>
       `"two": { dir: ${JSON.stringify(path.join(fixtureDir, 'two', 'dist', 'bundle'))}, entry: "server.js" }`,
     );
     expect(content).not.toContain('bundle:');
+  });
+});
+
+describe('nested-hex proof (H1: hex-composition) — dotted addresses survive assembleServices → renderStackFile', () => {
+  test('a service provisioned by a hex nested inside another hex renders with its dotted address as the bundle key', async () => {
+    const innerService = () =>
+      service({
+        name: 'auth-api',
+        pack: 'test/pack',
+        type: 'fixture/service',
+        inputs: {},
+        params: {},
+        build: {
+          kind: 'node',
+          assembler: '@prisma/app-node/assemble',
+          module: 'file:///fixtures/auth/service.ts',
+          entry: 'server.js',
+        },
+      });
+    const inner = hex('auth', {}, ({ provision }) => {
+      provision('api', innerService());
+      return {};
+    });
+    const root = hex('shop', {}, ({ provision }) => {
+      provision('auth', inner);
+      return {};
+    });
+    const graph = Load(root);
+
+    // The full hierarchical address (H1) — not the bare provision id "api".
+    expect(graph.nodes.some((n) => n.id === 'auth.api')).toBe(true);
+
+    const assembled = await assembleServices(graph, async (node) => ({
+      dir: `/bundles/${node.name}`,
+      entry: 'server.js',
+    }));
+    expect(Object.keys(assembled.bundles)).toContain('auth.api');
+    expect(assembled.bundles['auth.api']).toEqual({ dir: '/bundles/auth-api', entry: 'server.js' });
+
+    const content = renderStackFile({
+      entryPath: '/repo/app/hex.ts',
+      cwd: '/repo/app',
+      targetModule: '@prisma/app-cloud/target',
+      name: 'shop',
+      assembled,
+    });
+
+    // The dotted key survives intact into the generated stack source, quoted
+    // as a plain string literal — a bare property key can't spell a ".".
+    expect(content).toContain('"auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
   });
 });

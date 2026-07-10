@@ -17,8 +17,8 @@ export interface StackFileInput {
   readonly entryPath: string;
   /** The process's cwd — where `.makerkit/` is written. */
   readonly cwd: string;
-  /** The pack package name whose `/target` supplies `fromEnv()`. */
-  readonly pack: string;
+  /** The full target module specifier, e.g. "@prisma/app-cloud/target" — inferTarget()'s InferredTarget.targetModule. */
+  readonly targetModule: string;
   readonly name: string;
   // No `stage` field: core's lower() never reads LowerOptions.stage — the
   // effective stage is Alchemy's own, passed as `--stage` on the alchemy
@@ -77,7 +77,7 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 import { lower } from '@prisma/app/deploy';
-import { fromEnv } from ${quote(`${input.pack}/target`)};
+import { fromEnv } from ${quote(input.targetModule)};
 import app from ${quote(appImport)};
 
 export default lower(app, fromEnv(), {

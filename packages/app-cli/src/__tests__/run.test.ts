@@ -9,67 +9,49 @@
  * app dir for the duration of run(), the same way a real invocation's cwd is
  * wherever the app's package script runs from.
  *
- * inferTarget() is NOT faked — it does a real entry-anchored resolution (see
- * resolve-from-entry.ts) of the graph's pack. So the fixture app carries its
- * own throwaway "fixture-target-pack" under node_modules (not a real
- * MakerKit pack): this suite tests the CLI's own pipeline, which must not
- * depend on any specific target/adapter pack.
+ * inferTarget() is NOT faked — it calls the real `loadTarget()` on the
+ * fixture service's node (node-owned loading: @prisma/app's node.ts does
+ * the actual `import()`). The fixture's `targetModule` is a real `file://`
+ * URL to a throwaway module written to a temp dir — not a package specifier
+ * resolved through node_modules — so this suite proves the CLI's own
+ * pipeline without depending on any specific target/adapter pack, or on the
+ * workspace's real node_modules layout (that proof lives in
+ * test/integration, against the built CLI binary and real packs).
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import type { ServiceNode } from '@prisma/app';
 import { CliError } from '../cli-error.ts';
 import { run } from '../main.ts';
 import type { RunAlchemyInput } from '../run-alchemy.ts';
 
-const coreIndex = path.resolve(
-  import.meta.dir,
-  '..',
-  '..',
-  '..',
-  'app',
-  'src',
-  'index.ts',
-);
+const coreIndex = path.resolve(import.meta.dir, '..', '..', '..', 'app', 'src', 'index.ts');
 
 const tmpDirs: string[] = [];
 const originalCwd = process.cwd();
 
-/** A fixture pack under `dir/node_modules` — resolvable via createRequire, no real MakerKit pack involved. */
-function writeFixtureTargetPack(dir: string): void {
-  const packDir = path.join(dir, 'node_modules', 'fixture-target-pack');
-  fs.mkdirSync(packDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(packDir, 'package.json'),
-    JSON.stringify({
-      name: 'fixture-target-pack',
-      type: 'module',
-      exports: { './target': './target.ts' },
-    }),
-  );
-  fs.writeFileSync(
-    path.join(packDir, 'target.ts'),
-    "export function fromEnv() { return { name: 'fixture-target' }; }\n",
-  );
+/** A real, importable fixture target module — a file:// URL, not a package specifier. */
+function writeFixtureTargetModule(dir: string): string {
+  const file = path.join(dir, 'fixture-target.ts');
+  fs.writeFileSync(file, "export function fromEnv() { return { name: 'fixture-target' }; }\n");
+  return pathToFileURL(file).href;
 }
 
 /**
  * A real app package in a temp dir: package.json + an entry module whose
  * default export is a genuine service node (importing core by absolute path
- * — the temp dir has no other node_modules). The pack is a fixture pack
- * (see writeFixtureTargetPack) so inferTarget's real resolution succeeds
- * without any real MakerKit target/adapter pack.
+ * — the temp dir has no other node_modules). `targetModule` is a real
+ * file:// URL (see writeFixtureTargetModule) so inferTarget's real
+ * `loadTarget()` call succeeds without any real MakerKit target/adapter pack.
  */
 function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'makerkit-cli-run-')));
   tmpDirs.push(dir);
-  fs.writeFileSync(
-    path.join(dir, 'package.json'),
-    JSON.stringify({ dependencies: { 'fixture-target-pack': '1.0.0' } }),
-  );
-  writeFixtureTargetPack(dir);
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
+  const targetModule = writeFixtureTargetModule(dir);
   const entryPath = path.join(dir, 'service.ts');
   fs.writeFileSync(
     entryPath,
@@ -83,7 +65,8 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
       "    type: 'fixture/compute',",
       '    inputs: {},',
       '    params: {},',
-      "    build: { kind: 'node', pack: '@prisma/app-node', module: import.meta.url, entry: 'dist/server.js' },",
+      "    build: { kind: 'node', assembler: '@prisma/app-node/assemble', module: import.meta.url, entry: 'dist/server.js' },",
+      `    targetModule: ${JSON.stringify(targetModule)},`,
       '  }));',
       '  return {};',
       '});',
@@ -93,8 +76,8 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   return { dir, entryPath };
 }
 
-const fakeAssembler = async (_pack: string, input: { build: { module: string } }) => ({
-  dir: path.join(path.dirname(fileURLToPath(input.build.module)), 'dist', 'bundle'),
+const fakeAssembler = async (node: ServiceNode) => ({
+  dir: path.join(path.dirname(fileURLToPath(node.build.module)), 'dist', 'bundle'),
   entry: 'server.js',
 });
 

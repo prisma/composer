@@ -1,51 +1,54 @@
 import { describe, expect, test } from 'bun:test';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { Graph } from '@prisma/app';
 import { resource, service } from '@prisma/app';
-import { AssembleError } from '@prisma/app-assemble';
-import { collectPacks, extractFromEnv, inferTarget, resolveSinglePack } from '../infer-target.ts';
+import {
+  collectTargetModules,
+  extractFromEnv,
+  inferTarget,
+  resolveSingleTargetModule,
+} from '../infer-target.ts';
 
 const build = {
   kind: 'node',
-  pack: '@prisma/app-node',
+  assembler: '@prisma/app-node/assemble',
   module: 'file:///test/service.ts',
   entry: 'server.js',
 } as const;
 
-function graphWithPacks(packs: readonly string[]): Graph {
-  const nodes = packs.map((pack, i) => ({
+function graphWithTargetModules(targetModules: readonly string[]): Graph {
+  const nodes = targetModules.map((targetModule, i) => ({
     id: `svc-${i}`,
     node: service({
       name: `svc-${i}`,
-      pack,
+      pack: 'test/pack',
       type: 'fixture/service',
       inputs: {},
       params: {},
       build,
+      targetModule,
     }),
   }));
   const root = nodes[0];
-  if (root === undefined) throw new Error('graphWithPacks needs at least one pack');
+  if (root === undefined) throw new Error('graphWithTargetModules needs at least one targetModule');
   return { root, nodes, edges: [] };
 }
 
-describe('collectPacks() + resolveSinglePack() (ADR-0003)', () => {
-  test('collects the distinct pack across service and resource nodes', () => {
-    const graph = graphWithPacks(['@prisma/app-cloud', '@prisma/app-cloud']);
-    expect(collectPacks(graph)).toEqual(['@prisma/app-cloud']);
-    expect(resolveSinglePack(collectPacks(graph))).toBe('@prisma/app-cloud');
+describe('collectTargetModules() + resolveSingleTargetModule() (ADR-0003)', () => {
+  test('collects the distinct targetModule across service and resource nodes', () => {
+    const graph = graphWithTargetModules(['@prisma/app-cloud/target', '@prisma/app-cloud/target']);
+    expect(collectTargetModules(graph)).toEqual(['@prisma/app-cloud/target']);
+    expect(resolveSingleTargetModule(collectTargetModules(graph))).toBe('@prisma/app-cloud/target');
   });
 
-  test('includes resource-node packs too', () => {
+  test('includes resource-node targetModules too', () => {
     const svc = service({
       name: 'svc',
-      pack: '@prisma/app-cloud',
+      pack: 'test/pack',
       type: 'fixture/service',
       inputs: {},
       params: {},
       build,
+      targetModule: '@prisma/app-cloud/target',
     });
     const res = resource({
       name: 'res',
@@ -55,6 +58,7 @@ describe('collectPacks() + resolveSinglePack() (ADR-0003)', () => {
         __cmp: {},
         satisfies: () => true,
       },
+      targetModule: '@other/pack/target',
     });
     const graph: Graph = {
       root: { id: 'root', node: svc },
@@ -64,59 +68,62 @@ describe('collectPacks() + resolveSinglePack() (ADR-0003)', () => {
       ],
       edges: [],
     };
-    expect(collectPacks(graph)).toEqual(['@other/pack', '@prisma/app-cloud']);
+    expect(collectTargetModules(graph)).toEqual(['@other/pack/target', '@prisma/app-cloud/target']);
   });
 
-  test('throws listing every pack found when a graph mixes more than one', () => {
-    const graph = graphWithPacks(['@other/pack', '@prisma/app-cloud']);
-    expect(() => resolveSinglePack(collectPacks(graph))).toThrow(
-      /mixes more than one pack \(@other\/pack, @prisma\/app-cloud\)/,
+  test('a service or resource with no targetModule contributes nothing', () => {
+    const svc = service({
+      name: 'svc',
+      pack: 'test/pack',
+      type: 'fixture/service',
+      inputs: {},
+      params: {},
+      build,
+    });
+    const graph: Graph = {
+      root: { id: 'root', node: svc },
+      nodes: [{ id: 'root', node: svc }],
+      edges: [],
+    };
+    expect(collectTargetModules(graph)).toEqual([]);
+  });
+
+  test('throws listing every targetModule found when a graph mixes more than one', () => {
+    const graph = graphWithTargetModules(['@prisma/app-cloud/target', '@other/pack/target']);
+    expect(() => resolveSingleTargetModule(collectTargetModules(graph))).toThrow(
+      /mixes more than one deploy target \(@other\/pack\/target, @prisma\/app-cloud\/target\)/,
     );
   });
 
-  test('throws when the graph carries no pack at all', () => {
-    expect(() => resolveSinglePack([])).toThrow(/carries no pack/);
+  test('throws when the graph carries no targetModule at all', () => {
+    expect(() => resolveSingleTargetModule([])).toThrow(/carries no targetModule/);
   });
 });
 
-describe("extractFromEnv() — the pack's /target module must export fromEnv()", () => {
+describe('extractFromEnv() — the target module must export fromEnv()', () => {
   test('returns the export when present', () => {
     const fakeTarget = { name: 'fake-target' };
-    const fromEnv = extractFromEnv('@fake/pack', '@fake/pack/target', {
-      fromEnv: () => fakeTarget,
-    });
+    const fromEnv = extractFromEnv('@fake/pack/target', { fromEnv: () => fakeTarget });
     expect(fromEnv()).toBe(fakeTarget);
   });
 
-  test('throws naming the pack and the expected export when fromEnv is missing', () => {
-    expect(() => extractFromEnv('@fake/pack', '@fake/pack/target', {})).toThrow(
-      /Pack "@fake\/pack" has no fromEnv\(\) export at "@fake\/pack\/target"/,
+  test('throws naming the specifier and the expected export when fromEnv is missing', () => {
+    expect(() => extractFromEnv('@fake/pack/target', {})).toThrow(
+      /"@fake\/pack\/target" has no fromEnv\(\) export/,
     );
   });
 
   test('throws the same way when the module has no exports at all', () => {
-    expect(() => extractFromEnv('@fake/pack', '@fake/pack/target', null)).toThrow(
-      /has no fromEnv\(\) export/,
-    );
+    expect(() => extractFromEnv('@fake/pack/target', null)).toThrow(/has no fromEnv\(\) export/);
   });
 });
 
-describe('inferTarget() — an unresolvable pack (F03, verifying the S5 entry-anchored rewrite closed it)', () => {
-  test('a pack that is not installed surfaces an AssembleError naming the pack and the fix, not a raw module error', async () => {
-    const dir = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'makerkit-cli-infer-target-')),
-    );
-    try {
-      fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
-      const entryPath = path.join(dir, 'service.ts');
-      const graph = graphWithPacks(['@prisma/does-not-exist']);
+describe('inferTarget() — an unresolvable targetModule (node-owned loading)', () => {
+  test('surfaces an error naming the specifier and the fix, not a raw module error', async () => {
+    const graph = graphWithTargetModules(['@prisma/does-not-exist/target']);
 
-      await expect(inferTarget(graph, entryPath)).rejects.toThrow(AssembleError);
-      await expect(inferTarget(graph, entryPath)).rejects.toThrow(
-        /Cannot resolve "@prisma\/does-not-exist\/target".*must depend on "@prisma\/does-not-exist"/s,
-      );
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    await expect(inferTarget(graph)).rejects.toThrow(
+      /Cannot resolve the target module "@prisma\/does-not-exist\/target".*must depend on the package/s,
+    );
   });
 });

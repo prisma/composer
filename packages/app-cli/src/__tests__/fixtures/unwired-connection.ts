@@ -11,5 +11,10 @@ export default service({
     }),
   },
   params: {},
-  build: { kind: 'node', pack: '@prisma/app-node', module: import.meta.url, entry: 'server.js' },
+  build: {
+    kind: 'node',
+    assembler: '@prisma/app-node/assemble',
+    module: import.meta.url,
+    entry: 'server.js',
+  },
 });

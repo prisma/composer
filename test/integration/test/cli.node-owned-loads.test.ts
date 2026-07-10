@@ -1,10 +1,13 @@
 /**
- * Proves the CLI's entry-anchored module resolution (packages/app-cli/
- * src/resolve-from-entry.ts) against REAL target/adapter packs — not
- * fixtures. This cannot live in packages/app-cli's own suite: the CLI
- * itself must not depend on any specific pack (see test/README.md), but this
- * package genuinely does, so `makerkit deploy` here resolves
- * `@prisma/app-cloud/target` and `@prisma/app-node/assemble` for real.
+ * Proves node-owned loads (packages/app/src/node.ts's
+ * `loadTarget()`/`loadAssembler()`/`assemble()`) resolve REAL target/adapter
+ * packs — not fixtures. This cannot live in packages/app-cli's own
+ * suite: the CLI itself must not depend on any specific pack (see
+ * test/README.md), but this package genuinely does, so `makerkit deploy`
+ * here resolves `@prisma/app-cloud/target` and `@prisma/app-node/assemble`
+ * for real, from THIS app's own dependency tree (no anchor file, no
+ * framework-constructed specifier) — see this package's README.md for why
+ * that requires `dependenciesMeta.*.injected` in package.json.
  *
  * Drives the CLI as a binary (`node_modules/.bin/makerkit`), the same way
  * the example apps do, rather than importing the CLI's internals.
@@ -15,9 +18,15 @@ import * as path from 'node:path';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const makerkitBin = path.join(integrationDir, 'node_modules', '.bin', 'makerkit');
-const fixtureEntry = path.join(integrationDir, 'test', 'fixtures', 'entry-anchored', 'service.ts');
+const fixtureEntry = path.join(
+  integrationDir,
+  'test',
+  'fixtures',
+  'node-owned-loads',
+  'service.ts',
+);
 
-describe('makerkit deploy — real entry-anchored resolution of prisma-cloud + node', () => {
+describe('makerkit deploy — real node-owned loads of prisma-cloud + node', () => {
   test('resolves both packs for real and fails at the missing built entry, not at resolution', () => {
     const result = spawnSync('bun', [makerkitBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
