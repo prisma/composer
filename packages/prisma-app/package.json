@@ -1,0 +1,27 @@
+{
+  "name": "prisma-app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The prisma-app CLI launcher — run `bunx prisma-app` / `npx prisma-app`.",
+  "bin": {
+    "prisma-app": "./dist/bin.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/app-cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@prisma/app-tsdown": "workspace:*",
+    "@types/node": "^24.10.13",
+    "tsdown": "^0.15.9",
+    "typescript": "^6.0.3"
+  }
+}

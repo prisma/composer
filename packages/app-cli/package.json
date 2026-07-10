@@ -3,14 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The `prisma-app` deploy CLI. Runtime-agnostic (node >= 22.18 or bun); requires Node's default type stripping if run under node.",
+  "description": "The `prisma-app` deploy CLI.",
   "bin": {
-    "prisma-app": "./src/bin.ts"
+    "prisma-app": "./dist/bin.mjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
   },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -20,8 +30,10 @@
     "clipanion": "^3.2.1"
   },
   "devDependencies": {
+    "@prisma/app-tsdown": "workspace:*",
     "@types/bun": "^1.3.13",
     "@types/node": "^24.10.13",
+    "tsdown": "^0.15.9",
     "typescript": "^6.0.3"
   }
 }

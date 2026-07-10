@@ -240,12 +240,18 @@ importers:
         specifier: ^3.2.1
         version: 3.2.1(typanion@3.14.0)
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:*
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
       '@types/node':
         specifier: ^24.10.13
         version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -352,6 +358,25 @@ importers:
       vitest:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
+
+  packages/prisma-app:
+    dependencies:
+      '@prisma/app-cli':
+        specifier: workspace:*
+        version: link:../app-cli
+    devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:*
+        version: link:../tsdown-config
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
 
   packages/tsdown-config:
     devDependencies:
