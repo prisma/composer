@@ -1,5 +1,24 @@
 # Slice A — Build pipeline (tsdown → dist), exact prisma-next model
 
+> **STATUS: COMPLETE.** A1 `2f1e861`, A2 `16a02c0`, A3 `1971782`, A4 `7b0a572`.
+> All 9 publishable packages build to dist; `pnpm build/test/typecheck/lint` green
+> from a clean tree under the build-first loop; both CLI bins run. Packages remain
+> `private: true` (un-private + publishConfig is Slice B).
+>
+> **Findings worth carrying forward:**
+> - tsdown auto-preserves the source `#!/usr/bin/env node` shebang and sets the
+>   dist bin executable — no banner needed.
+> - The unscoped `prisma-app` launcher must set `external: ['@prisma/app-cli']`, or
+>   tsdown inlines the CLI (a stale snapshot) instead of depending on it. Fixed;
+>   launcher is a 147-byte shim.
+> - `test`/`typecheck` use turbo `dependsOn: ["^build", "build"]` — `^build` for
+>   sibling imports, `build` for self-name imports in fixtures.
+> - **Local gotcha (not CI):** after `git reset --hard` + repeated incremental
+>   installs, bun's resolution of a workspace package can wedge even with a valid
+>   symlink. A clean `node_modules` reinstall fixes it; fresh CI checkouts are
+>   unaffected.
+
+
 One PR. Introduces a build so every publishable package emits `dist/` via tsdown,
 with `exports`/`types` pointing at `dist` in every context (build-always), matching
 prisma-next's packaging exactly. No versioning, manifests-hygiene, or workflows —
