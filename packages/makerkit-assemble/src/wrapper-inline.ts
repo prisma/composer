@@ -13,7 +13,7 @@
  * `@makerkit/node/assemble` and `@makerkit/nextjs/assemble` set
  * `external: ['bun']` ahead of `noExternal` in their tsdown call, and tsdown/
  * rolldown's explicit `external` wins over a `noExternal` match — proven by
- * building examples/makerkit-hello's wrapper with this exact pattern: the
+ * building an app's wrapper with this exact pattern: the
  * `bun` import stays external while everything else, including the app's own
  * workspace deps, gets inlined) — see this slice's final report for the
  * storefront-auth wrapper proof (arktype + `@storefront-auth/auth/contract`

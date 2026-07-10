@@ -7,11 +7,17 @@ Accepted
 ## Decision
 
 The deploy entrypoint is `makerkit deploy <entry>`, where `entry` is a module
-whose default export is a node (a service or a hex). Everything else is
-derived: the application is the graph reachable from that node, the deployment
+whose default export is a **hex** — the application root. Everything else is
+derived: the application is the graph reachable from that hex, the deployment
 target is inferred from the nodes themselves and constructed from the
 environment, and the application's name comes from the root node (overridable
 with `--name`). There is no `makerkit.config.ts` and no stack file.
+
+> **Amended 2026-07:** the root must be a **hex**, not "a service or a hex".
+> A single service is deployed by wrapping it in a one-service hex; the former
+> service-rooted deploy path (and its separate singular-`bundle` shape) was
+> removed to keep one deploy pipeline. Everything else in this decision is
+> unchanged.
 
 ## Reasoning
 
@@ -33,10 +39,21 @@ export default compute({
 });
 ```
 
+The application root is a **hex** — the composition unit. A single service is
+deployed by wrapping it in a one-service hex:
+
+```ts
+// src/hex.ts
+import { hex } from "@makerkit/core";
+import service from "./service.ts";
+
+export default hex("hello", (h) => h.provision("hello", service));
+```
+
 Deploying it is one command:
 
 ```sh
-makerkit deploy src/service.ts
+makerkit deploy src/hex.ts
 ```
 
 For that command to work, something has to construct a **Target** — the object
@@ -75,22 +92,25 @@ tables, so a mismatch fails immediately with an error naming the target, the
 type, and the types the target knows.
 
 Deriving everything from the entry module also settles what "the root" means:
-**nothing marks a root in the model**. Whatever module you point the CLI at
-*is* the application, and the graph reachable from its default export is what
-deploys. Two cases fall out:
+**nothing marks a root in the model** beyond its kind — whatever hex you point
+the CLI at *is* the application, and the graph reachable from its default
+export is what deploys. The root must be a hex: pointing the CLI at a bare
+service is rejected with an error telling you to wrap it in a hex. This keeps
+one deploy shape rather than a second, service-rooted pipeline path. Two things
+follow:
 
-- A **self-contained service** (all inputs satisfied by its own resources)
-  deploys as a complete standalone application — its own project, its own
-  state. That is a feature: any slice of a larger system can be deployed in
-  isolation, and it cannot collide with the composed application because it
-  carries its own name and therefore its own project.
+- A **one-service hex** is the standalone-deploy story: it deploys as a
+  complete application with its own project and its own state. Any slice of a
+  larger system can be deployed in isolation, and it cannot collide with the
+  composed application because it carries its own name and therefore its own
+  project.
 - A service with **unwired connection inputs** (inputs an enclosing hex
   normally wires at `provision`) fails at Load, with an error naming the
   unwired input and pointing at deploying the composing hex instead.
 
 ## Consequences
 
-- The standard deploy is zero-config: `makerkit deploy src/service.ts` plus
+- The standard deploy is zero-config: `makerkit deploy src/hex.ts` plus
   environment variables.
 - Target packs have a small, fixed CLI-facing contract: nodes carry the pack's
   package name, and the `/target` entry exports `fromEnv()`. This is the seam

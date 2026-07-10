@@ -87,31 +87,3 @@ jobs:
         if: always() && steps.deploy.outcome != 'skipped'
         working-directory: examples/storefront-auth
         run: bash ../scripts/destroy-guard.sh "" hex.ts "$STOREFRONT_STACK_NAME"
-
-      # ---- makerkit-hello: the SERVICE-root path + the idempotent-redeploy
-      # proof. storefront-auth above covers the hex root; hello covers a bare
-      # service deployed as the application (LowerOptions.bundle, not bundles)
-      # and the node-kind determinism claim: a second deploy of an unchanged
-      # build must be a no-op (the Next path is knowingly non-deterministic —
-      # see deploy-cli.md — so the noop assertion lives here, not above).
-      - name: Deploy hello (service root)
-        id: deploy-hello
-        working-directory: examples/makerkit-hello
-        env:
-          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: bash scripts/e2e-deploy-verify.sh
-
-      - name: Redeploy hello — must be a no-op
-        working-directory: examples/makerkit-hello
-        env:
-          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: bash scripts/e2e-redeploy-noop.sh
-
-      - name: Destroy hello
-        # State is hosted (see the storefront Destroy comment) — gate on the
-        # deploy step's outcome, not local .alchemy presence.
-        if: always() && steps.deploy-hello.outcome != 'skipped'
-        working-directory: examples/makerkit-hello
-        env:
-          HELLO_STACK_NAME: hello-ci-${{ github.run_id }}
-        run: bash ../scripts/destroy-guard.sh "hello " src/service.ts "$HELLO_STACK_NAME"

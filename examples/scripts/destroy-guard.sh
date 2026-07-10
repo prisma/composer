@@ -5,10 +5,9 @@
 # runner, so `.alchemy/` presence says nothing about whether a deploy ran —
 # the workflow gates this step on the deploy step's own outcome instead, and
 # a destroy against a stack that never deployed is a cheap no-op plan.
-# Used by both the storefront-auth and hello destroy steps.
 #
 # Usage: destroy-guard.sh <label> <entry-file> <stack-name>
-# <label> prefixes log lines (e.g. "hello " for hello, "" for storefront-auth).
+# <label> prefixes log lines (e.g. "" for storefront-auth).
 set -euo pipefail
 
 label="$1"

@@ -47,15 +47,11 @@ function renderOptions(input: StackFileInput): string {
   const lines: string[] = [];
   lines.push(`  name: ${quote(input.name)},`);
 
-  if (input.assembled.bundle !== undefined) {
-    lines.push(`  bundle: ${renderBundle(input.assembled.bundle)},`);
-  } else if (input.assembled.bundles !== undefined) {
-    lines.push('  bundles: {');
-    for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
-      lines.push(`    ${quote(id)}: ${renderBundle(bundle)},`);
-    }
-    lines.push('  },');
+  lines.push('  bundles: {');
+  for (const [id, bundle] of Object.entries(input.assembled.bundles)) {
+    lines.push(`    ${quote(id)}: ${renderBundle(bundle)},`);
   }
+  lines.push('  },');
 
   return lines.join('\n');
 }

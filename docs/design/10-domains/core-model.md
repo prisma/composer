@@ -485,14 +485,13 @@ interface LowerContext {
 interface LoweredNode { readonly outputs: Readonly<Record<string, unknown>> }
 
 interface LowerOptions {
-  readonly name: string                                  // stack name (+ root id for a service root)
+  readonly name: string                                  // stack name (+ Load's root id override)
   // `makerkit deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
-  // `lower()` — keyed by provision id (service root: `bundle`; hex root:
-  // `bundles`). A hand-composed / mixed-stack caller (the escape hatch — see
+  // `lower()` — one bundle per provision id (the deploy root is always a
+  // hex). A hand-composed / mixed-stack caller (the escape hatch — see
   // § Lowering) supplies these itself.
-  readonly bundle?: Bundle
-  readonly bundles?: Record<string, Bundle>
+  readonly bundles: Record<string, Bundle>
   readonly stage?: string
   readonly state?: AlchemyStateLayer                     // explicit override — wins over the target's own
                                                          // default (Target.state)
@@ -502,8 +501,9 @@ interface Artifact { readonly path: string; readonly sha256: string }       // p
 
 // Load → route each node through target.lower[node.type] → an Alchemy Stack
 // (the default export the alchemy CLI consumes). Unknown type → LowerError
-// naming the type and the target's known types.
-function lower(root: ServiceNode, target: Target, opts: LowerOptions): AlchemyStack
+// naming the type and the target's known types. root must be a hex — a bare
+// service is not independently deployable.
+function lower(root: HexNode, target: Target, opts: LowerOptions): AlchemyStack
 class LowerError extends Error {}
 
 // Composable form — for MIXED topologies: MakerKit-authored nodes beside
@@ -513,7 +513,7 @@ class LowerError extends Error {}
 // Error channel: LowerError from routing, PLUS whatever a pack lowering fails
 // with (their error type is open) — a mixed-stack caller treats failures as
 // deploy-fatal or inspects; it must not assume LowerError is the only inhabitant.
-function lowering(root: ServiceNode, target: Target, opts: LowerOptions):
+function lowering(root: HexNode, target: Target, opts: LowerOptions):
   Effect.Effect<LoweredNode, LowerError, unknown>
 ```
 

@@ -1,10 +1,10 @@
 /**
  * Pipeline step 5 (deploy-cli.md § The pipeline, ADR-0004/0005): for every
  * service node in the loaded graph, route its build adapter's `pack` to the
- * matching `/assemble` entry and run it. A service root produces one bundle;
- * a hex root produces one bundle per provision id (graph.nodes' own ids for
- * provisioned services — the same correlation the interim
- * `alchemy.run.ts`/`hex.ts` hand-wrote). Each build adapter carries its own
+ * matching `/assemble` entry and run it. The root is always a hex, so this
+ * produces one bundle per provision id (graph.nodes' own ids for provisioned
+ * services — the same correlation the interim `hex.ts` hand-wrote). Each
+ * build adapter carries its own
  * authoring module (`build.module`) and resolves its paths (`build.entry`,
  * etc.) relative to it — this package does no path resolution of its own
  * here.
@@ -25,10 +25,8 @@ import { importFromEntry } from './resolve-from-entry.ts';
 import { INLINE_EVERYTHING_EXCEPT_RUNTIME_BUILTINS } from './wrapper-inline.ts';
 
 export interface AssembledServices {
-  /** Set when the root is a lone service. */
-  readonly bundle?: Bundle;
-  /** Set when the root is a hex — keyed by each service's provision id. */
-  readonly bundles?: Record<string, Bundle>;
+  /** One bundle per provisioned service, keyed by provision id. */
+  readonly bundles: Record<string, Bundle>;
 }
 
 /** Extracts and validates a pack's `/assemble` module's `assemble` export. */
@@ -75,20 +73,14 @@ async function assembleOne(node: ServiceNode, run: RunAssembler): Promise<Bundle
 
 export async function assembleServices(
   graph: Graph,
-  isHexRoot: boolean,
   entryPath: string,
   run: RunAssembler = (pack, input) => runAssemblerFromEntry(entryPath, pack, input),
 ): Promise<AssembledServices> {
   const serviceNodes = graph.nodes.filter(
     (n): n is GraphNode & { node: ServiceNode } => n.node.kind === 'service',
   );
-
-  if (!isHexRoot) {
-    const [only] = serviceNodes;
-    if (only === undefined) {
-      throw new AssembleError('The loaded graph has no service to assemble.');
-    }
-    return { bundle: await assembleOne(only.node, run) };
+  if (serviceNodes.length === 0) {
+    throw new AssembleError('The loaded graph has no service to assemble.');
   }
 
   const bundles: Record<string, Bundle> = {};

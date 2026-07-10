@@ -14,17 +14,18 @@ provisioning engine programmatically. `makerkit destroy` drives
 
 ## Reasoning
 
-Here is the file the CLI generates for a single-service app:
+Here is the file the CLI generates for a single-service app (the deploy root
+is always a hex — see ADR-0003):
 
 ```ts
 // .makerkit/alchemy.run.ts — generated; do not edit
 import { lower } from '@makerkit/core/deploy';
 import { fromEnv } from "@makerkit/prisma-cloud/target";
-import app from "../src/service.ts";
+import app from "../src/hex.ts";
 
 export default lower(app, fromEnv(), {
   name: "hello",
-  bundle: { dir: "/…/hello/dist/bundle", entry: "server.js" },
+  bundles: { hello: { dir: "/…/hello/dist/bundle", entry: "server.js" } },
 });
 ```
 

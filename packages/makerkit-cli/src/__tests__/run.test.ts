@@ -74,15 +74,17 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   fs.writeFileSync(
     entryPath,
     [
-      `import { service } from ${JSON.stringify(coreIndex)};`,
+      `import { hex, service } from ${JSON.stringify(coreIndex)};`,
       '',
-      'export default service({',
-      `  name: ${JSON.stringify(name)},`,
-      "  pack: 'fixture-target-pack',",
-      "  type: 'fixture/compute',",
-      '  inputs: {},',
-      '  params: {},',
-      "  build: { kind: 'node', pack: '@makerkit/node', module: import.meta.url, entry: 'dist/server.js' },",
+      `export default hex(${JSON.stringify(name)}, (h) => {`,
+      `  h.provision(${JSON.stringify(name)}, service({`,
+      `    name: ${JSON.stringify(name)},`,
+      "    pack: 'fixture-target-pack',",
+      "    type: 'fixture/compute',",
+      '    inputs: {},',
+      '    params: {},',
+      "    build: { kind: 'node', pack: '@makerkit/node', module: import.meta.url, entry: 'dist/server.js' },",
+      '  }));',
       '});',
       '',
     ].join('\n'),
@@ -132,7 +134,7 @@ describe('run() — the full pipeline over fakes', () => {
     expect(content).toContain('name: "hello-run"');
     expect(content).toContain('import app from "../service.ts";');
     expect(content).toContain(
-      `bundle: { dir: ${JSON.stringify(path.join(app.dir, 'dist', 'bundle'))}, entry: "server.js" }`,
+      `"hello-run": { dir: ${JSON.stringify(path.join(app.dir, 'dist', 'bundle'))}, entry: "server.js" }`,
     );
   });
 

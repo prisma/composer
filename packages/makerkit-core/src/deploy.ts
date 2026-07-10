@@ -1,5 +1,5 @@
 /**
- * The router. Core's only job at deploy: Load (a service or hex root), then
+ * The router. Core's only job at deploy: Load (a hex root), then
  * for each node walk the target's lowering tables and run what they find —
  * application once, then per service: resources → provision → build the
  * typed Config → serialize → package → deploy. Deps before dependents,
@@ -109,10 +109,8 @@ export type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredNode, unknown
 export interface LowerContext {
   readonly id: NodeId;
   /**
-   * The node's deployment address (graph position): the path of provision
-   * ids from the app root, excluding the root itself. Empty ("") for a lone
-   * service root — the config serializer's "unprefixed" case. The config-key
-   * namespace and the bootstrap parameter.
+   * The node's deployment address (graph position): its provision id in the
+   * hex root. The config-key namespace and the bootstrap parameter.
    */
   readonly address: string;
   readonly node: ServiceNode | ResourceNode;
@@ -136,10 +134,9 @@ export interface LowerOptions {
   /** Stack + root node id. */
   readonly name: string;
   // The interim carrier of assembled bundle dirs (deploy tooling runs each
-  // service's build-adapter assembler and drops this map). Service root:
-  // one bundle. Hex root: one per provisioned service, keyed by provision id.
-  readonly bundle?: Bundle;
-  readonly bundles?: Record<string, Bundle>;
+  // service's build-adapter assembler and drops this map): one bundle per
+  // provisioned service, keyed by provision id.
+  readonly bundles: Record<string, Bundle>;
   readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the target's own state layer. */
   readonly state?: AlchemyStateLayer;
@@ -147,7 +144,7 @@ export interface LowerOptions {
 
 /**
  * A build adapter's normalized product — and the interim assembled-bundle
- * carrier `LowerOptions.bundle`/`bundles` hands to `package()`: the dir the
+ * carrier `LowerOptions.bundles` hands to `package()`: the dir the
  * adapter's assembler produced (wrapper + app entry + fixups) plus the app's
  * runnable entry relative to it (for the bootstrap's boot import). One name,
  * one shape, defined once — every deploy-side package (the CLI, `@makerkit/
@@ -225,13 +222,10 @@ export function buildConfig(
   return { service, inputs };
 }
 
-function resolveBundle(opts: LowerOptions, id: NodeId, isHexRoot: boolean): Bundle | undefined {
-  return isHexRoot ? opts.bundles?.[id] : opts.bundle;
-}
-
-function missingBundleError(id: NodeId, isHexRoot: boolean): LowerError {
-  const where = isHexRoot ? `opts.bundles["${id}"]` : 'opts.bundle';
-  return new LowerError(`No bundle provided for service "${id}" (${where} is required).`);
+function missingBundleError(id: NodeId): LowerError {
+  return new LowerError(
+    `No bundle provided for service "${id}" (opts.bundles["${id}"] is required).`,
+  );
 }
 
 /**
@@ -258,25 +252,19 @@ export function resolveStateLayer(opts: LowerOptions, target: Target): AlchemySt
  * only inhabitant.
  */
 export function lowering(
-  root: ServiceNode | HexNode,
+  root: HexNode,
   target: Target,
   opts: LowerOptions,
 ): Effect.Effect<LoweredNode, LowerError, unknown> {
   return Effect.gen(function* () {
     const graph = Load(root, { id: opts.name });
-    const isHexRoot = graph.root.node.kind === 'hex';
     const lowered = new Map<NodeId, LoweredNode>();
 
     // Every hex-provisioned service's own graph id IS its address (single-
-    // level hex only — nesting is out of scope); a lone service root has no
-    // address of its own — "" is the config serializer's unprefixed case.
+    // level hex only — nesting is out of scope).
     const serviceAddress = new Map<NodeId, string>();
-    if (isHexRoot) {
-      for (const { id, node } of graph.nodes) {
-        if (node.kind === 'service') serviceAddress.set(id, id);
-      }
-    } else {
-      serviceAddress.set(graph.root.id, '');
+    for (const { id, node } of graph.nodes) {
+      if (node.kind === 'service') serviceAddress.set(id, id);
     }
 
     const appCtx: LowerContext = {
@@ -333,9 +321,9 @@ export function lowering(
       const provisioned = yield* serviceLowering.provision(ctx);
       const config = buildConfig(node as ServiceNode, id, graph, lowered);
       const serialized = yield* serviceLowering.serialize(ctx, provisioned, config);
-      const bundle = resolveBundle(opts, id, isHexRoot);
+      const bundle = opts.bundles[id];
       if (bundle === undefined) {
-        return yield* Effect.fail(missingBundleError(id, isHexRoot));
+        return yield* Effect.fail(missingBundleError(id));
       }
       const artifact = yield* serviceLowering.package(ctx, {
         assembled: { dir: bundle.dir, entry: bundle.entry },
@@ -344,7 +332,7 @@ export function lowering(
       lowered.set(id, yield* serviceLowering.deploy(ctx, provisioned, artifact, serialized));
     }
 
-    return isHexRoot ? { outputs: {} } : (lowered.get(graph.root.id) as LoweredNode);
+    return { outputs: {} };
   }) as Effect.Effect<LoweredNode, LowerError, unknown>;
 }
 
@@ -352,7 +340,7 @@ export function lowering(
  * The whole-stack wrapper: Load → route each node through the target's
  * tables → an Alchemy Stack (the default export the alchemy CLI consumes).
  */
-export function lower(root: ServiceNode | HexNode, target: Target, opts: LowerOptions) {
+export function lower(root: HexNode, target: Target, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel so
   // the stack effect matches what Alchemy.Stack accepts. The requirements
   // channel is `unknown` by design (the pack's lowerings carry their own

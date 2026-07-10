@@ -50,7 +50,11 @@ const app = (
     build,
   });
 
-const opts = (extra: Partial<LowerOptions> = {}): LowerOptions => ({ name: 'hello', ...extra });
+const opts = (extra: Partial<LowerOptions> = {}): LowerOptions => ({
+  name: 'hello',
+  bundles: {},
+  ...extra,
+});
 
 // ——— A fake target that records every call it receives, instead of driving
 // real Alchemy resources — the same recording strategy the old single-phase
@@ -182,13 +186,27 @@ describe('buildConfig', () => {
   });
 });
 
-describe('lowering a lone service root', () => {
+const singleServiceHex = (
+  type: string,
+  inputs: Record<string, ReturnType<typeof db> | ReturnType<typeof httpEnd>>,
+  params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
+  build: BuildAdapter = defaultBuild,
+) =>
+  hex('hello', (h) => {
+    h.provision('svc', app(type, inputs, params, build));
+  });
+
+describe('lowering a hex root — a single service', () => {
   test('sequences application once, then resources → provision → serialize → package → deploy', () => {
     const { target, calls } = fakeTarget();
-    const root = app('fake/compute', { db: db() });
+    const root = singleServiceHex('fake/compute', { db: db() });
 
     const result = run(
-      lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })),
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
     );
 
     expect(calls.map((c) => c.phase)).toEqual([
@@ -199,51 +217,55 @@ describe('lowering a lone service root', () => {
       'package',
       'deploy',
     ]);
-    expect(result).toEqual({
-      outputs: { url: 'https://hello.example', projectId: 'hello#project' },
-    });
-  });
-
-  test("a lone service's address is empty — the serializer's unprefixed case", () => {
-    const { target, calls } = fakeTarget();
-    const root = app('fake/compute', { db: db() });
-
-    run(lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })));
-
-    const provision = calls.find((c) => c.phase === 'provision');
-    const pkg = calls.find((c) => c.phase === 'package');
-    expect(provision).toMatchObject({ address: '' });
-    expect(pkg).toMatchObject({ address: '' });
+    // The root is always a hex — its own lowering has no outputs yet
+    // (boundary ports are future work); see the two-service suite below.
+    expect(result).toEqual({ outputs: {} });
   });
 
   test("buildConfig is fed to serialize with the resource's real lowered output", () => {
     const { target, calls } = fakeTarget();
-    const root = app('fake/compute', { db: db() }, { port: { type: 'number', default: 3000 } });
+    const root = singleServiceHex(
+      'fake/compute',
+      { db: db() },
+      { port: { type: 'number', default: 3000 } },
+    );
 
-    run(lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })));
+    run(
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
+    );
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     expect(serialize).toMatchObject({
-      config: { service: { port: 3000 }, inputs: { db: { url: 'db://hello.db' } } },
+      config: { service: { port: 3000 }, inputs: { db: { url: 'db://svc.db' } } },
     });
   });
 
   test('package receives the build adapter output dir/entry and the same address serialize used', () => {
     const { target, calls } = fakeTarget();
-    const root = app('fake/compute', {});
+    const root = singleServiceHex('fake/compute', {});
     const bundle: Bundle = { dir: 'dist/bundle', entry: 'main.mjs' };
 
-    run(lowering(root, target, opts({ bundle })));
+    run(lowering(root, target, opts({ bundles: { svc: bundle } })));
 
     const pkg = calls.find((c) => c.phase === 'package');
-    expect(pkg).toMatchObject({ assembled: bundle, address: '' });
+    expect(pkg).toMatchObject({ assembled: bundle, address: 'svc' });
   });
 
   test("the environment edge: deploy's `environment` IS serialize's returned records (by recording, not order)", () => {
     const { target, calls } = fakeTarget();
-    const root = app('fake/compute', { db: db() });
+    const root = singleServiceHex('fake/compute', { db: db() });
 
-    run(lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })));
+    run(
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
+    );
 
     const serialize = calls.find((c) => c.phase === 'serialize');
     const deploy = calls.find((c) => c.phase === 'deploy');
@@ -251,7 +273,7 @@ describe('lowering a lone service root', () => {
     expect(deploy).toBeDefined();
     if (serialize?.phase !== 'serialize' || deploy?.phase !== 'deploy')
       throw new Error('unreachable');
-    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://hello.db' }]);
+    expect(deploy.environment).toEqual([{ input: 'db', name: 'url', value: 'db://svc.db' }]);
     // Same records the serialize call's own return produced (identity, not
     // a coincidental re-derivation) — the fake target only ever returns them
     // once, from serialize, and threads them through to deploy's argument.
@@ -259,7 +281,7 @@ describe('lowering a lone service root', () => {
 
   test('the build descriptor is inert to lowering — any kind/entry lowers identically', () => {
     const { target } = fakeTarget();
-    const root = app(
+    const root = singleServiceHex(
       'fake/compute',
       { db: db() },
       {},
@@ -272,27 +294,29 @@ describe('lowering a lone service root', () => {
     );
 
     const result = run(
-      lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })),
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
     );
 
-    expect(result).toEqual({
-      outputs: { url: 'https://hello.example', projectId: 'hello#project' },
-    });
+    expect(result).toEqual({ outputs: {} });
   });
 
-  test('missing bundle for a lone service root is a LowerError', () => {
+  test('missing a bundle for a single-service hex is a LowerError naming it', () => {
     const { target } = fakeTarget();
-    const root = app('fake/compute', {});
+    const root = singleServiceHex('fake/compute', {});
 
     const error = runError(lowering(root, target, opts()));
 
     expect(error).toBeInstanceOf(LowerError);
-    expect(error.message).toContain('opts.bundle');
+    expect(error.message).toContain('opts.bundles["svc"]');
   });
 
   test('fails with LowerError naming the type and the known types on an unknown resource type', () => {
     const { target } = fakeTarget();
-    const root = app('fake/compute', {
+    const root = singleServiceHex('fake/compute', {
       cache: resource({
         name: 'test-resource',
         pack: 'test/pack',
@@ -302,7 +326,11 @@ describe('lowering a lone service root', () => {
     });
 
     const error = runError(
-      lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })),
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);
@@ -312,10 +340,14 @@ describe('lowering a lone service root', () => {
 
   test('fails with LowerError naming the type and the known types on an unknown service type', () => {
     const { target } = fakeTarget();
-    const root = app('fake/other-compute', {});
+    const root = singleServiceHex('fake/other-compute', {});
 
     const error = runError(
-      lowering(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } })),
+      lowering(
+        root,
+        target,
+        opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+      ),
     );
 
     expect(error).toBeInstanceOf(LowerError);
@@ -494,9 +526,13 @@ describe('lower()', () => {
     // hand it to Alchemy.Stack) — a different fake target than the
     // lowering()-only suite above, which asserts the opposite.
     const target: Target = { ...fakeTarget().target, providers: () => ({}) as never };
-    const root = app('fake/compute', {});
+    const root = singleServiceHex('fake/compute', {});
 
-    const stack = lower(root, target, opts({ bundle: { dir: 'dist/bundle', entry: 'server.js' } }));
+    const stack = lower(
+      root,
+      target,
+      opts({ bundles: { svc: { dir: 'dist/bundle', entry: 'server.js' } } }),
+    );
 
     expect(stack).toBeDefined();
   });

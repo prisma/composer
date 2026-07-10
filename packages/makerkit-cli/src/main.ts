@@ -183,7 +183,12 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
 
   // 2. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root);
-  const isHexRoot = graph.root.node.kind === 'hex';
+  if (graph.root.node.kind !== 'hex') {
+    throw new CliError(
+      'The deploy root must be a hex — wrap your service, e.g. ' +
+        "export default hex('name', (h) => h.provision('name', service)).",
+    );
+  }
 
   // 3. Infer the target — anchored at the entry module itself (node's resolver
   // walks node_modules upward from there natively); validates the pack's env
@@ -201,7 +206,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   // built output blocks destroy too — say so instead of just "run your build".
   let assembled: Awaited<ReturnType<typeof assembleServices>>;
   try {
-    assembled = await assembleServices(graph, isHexRoot, entryModule.path, deps.runAssembler);
+    assembled = await assembleServices(graph, entryModule.path, deps.runAssembler);
   } catch (error) {
     if (args.command === 'destroy' && error instanceof Error) {
       throw new CliError(
