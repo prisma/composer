@@ -18,6 +18,22 @@ coordinate — it collides with Slice A's export entries.
 **Slice A detail:** `.drive/projects/package-publishing/specs/slice-a-build-pipeline.md`
 (grounded inventory, build decisions, TS6×tsdown risk, task decomposition).
 
+## Progress
+
+- **Slice A — COMPLETE.** A1 `2f1e861`, A2 `16a02c0`, A3 `1971782`, A4 `7b0a572`.
+  All 9 packages build to dist under the build-first loop.
+- **OSS community files — COMPLETE** (`eed19ae`). LICENSE/CoC/CONTRIBUTING/SECURITY +
+  .github/ templates, adapted from prisma-next. Repo is now public (provenance unblocked).
+- **Slice B — COMPLETE.** B1 `18fa630` (version + publish-deps scripts, node --test,
+  set-based internal-pin check), B2 `0433b87` (un-private the 9, license/repository/
+  engines/publishConfig, lockstep at 0.1.0). Plus `2ffaaab` (lint:casts fix).
+  Deviation from prisma-next: **no `sideEffects: false`** — it tree-shakes real code
+  the packages' bundle-invariant tests assert on. `provenance` lives in the workflow
+  env, not the manifests, to keep local `pnpm publish` from failing outside OIDC.
+- **Slice C — NEXT.** publish + preview workflows.
+- **Slice D — after C.** npm enablement (trusted publishing for the 9 names + unscoped
+  `prisma-app`), first release, `docs/oss/versioning.md`.
+
 ## Slice sequencing
 
 ```
