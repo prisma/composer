@@ -9,9 +9,10 @@ of the dependency graph rather than luck.
 
 A PDP Project is a **shared config namespace** (every App on a branch snapshots
 the same variable set into its versions) and a **shared lifecycle** (deletion
-cascades). MakerKit's placement rule: **one Project per MakerKit application** —
-all of an application's services are Apps in that one Project, with the
-hex-provisioned Databases beside them. Consequences, stated plainly:
+cascades). The Prisma App Framework's placement rule: **one Project per
+Prisma App Framework application** — all of an application's services are
+Apps in that one Project, with the System-provisioned Databases beside them.
+Consequences, stated plainly:
 
 - Config keys are namespaced per service by the pack's mapping (e.g.
   `AUTH_DB_URL`, `STOREFRONT_AUTH_URL`) — collisions are a naming concern the
@@ -25,16 +26,18 @@ hex-provisioned Databases beside them. Consequences, stated plainly:
 
 The platform writes `DATABASE_URL` / `DATABASE_URL_POOLED` templates pointing at
 a project's default database — a convenience for hand-provisioned single
-services, and precisely the kind of **implicit ambient config MakerKit exists to
-eliminate**. MakerKit never reads it, never depends on it, and makes reliance on
-it impossible: when MakerKit provisions a Project, it **writes user-level
+services, and precisely the kind of **implicit ambient config the framework
+exists to eliminate**. The framework never reads it, never depends on it, and
+makes reliance on it impossible: when the framework provisions a Project, it
+**writes user-level
 `DATABASE_URL` and `DATABASE_URL_POOLED` variables with a poison value** (`"-"` —
 a garbage value any direct reader fails to connect with; the API rejects an empty
 string, `"String must contain at least 1 character"`, verified at the R4 deploy
 proof). User-set values
 permanently override the platform templates (`wireDefaultDatabaseUrl` leaves
-them untouched), so nothing deployed by MakerKit can ever quietly work off the
-default again. Every database URL a service consumes is an explicit, per-service
+them untouched), so nothing deployed by the framework can ever quietly work
+off the default again. Every database URL a service consumes is an explicit,
+per-service
 variable the pack's `serialize` writes under its own named key.
 
 ## The resource inventory
@@ -44,8 +47,8 @@ it manages whatever a provider package registers).
 
 | Our resource | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
-| `Project` | Project | workspaceId, name | id | **one per MakerKit application**; the poison `DATABASE_URL` variables are written at provision (see above) |
-| `Database` | Database | projectId, name | id, connection info | one per hex-provisioned postgres resource; never the project default |
+| `Project` | Project | workspaceId, name | id | **one per Prisma App Framework application**; the poison `DATABASE_URL` variables are written at provision (see above) |
+| `Database` | Database | projectId, name | id, connection info | one per System-provisioned postgres resource; never the project default |
 | `Connection` | database connection info | databaseId | url | direct/pooled endpoints; the url is written as the service's own named variable via the pack's `serialize` |
 | `ComputeService` | App | projectId, name, region | id | PDP attaches it to the production branch implicitly |
 | `EnvironmentVariable` | ConfigVariable | projectId, class, key, value, branchId? | id | we write production-class templates only |
@@ -71,13 +74,13 @@ Deployment provider auto-promotes; rollback is unexpressed), and non-default
 
 ## The lowering graphs
 
-Lowering turns MakerKit's semantic graph into an Alchemy resource graph. Arrows
-read "depends on / consumes a value from"; Alchemy executes in dependency order
-and **runs unordered resources concurrently — declaration order is never
-consulted** — so every ordering MakerKit's semantics require must exist as an
-edge.
+Lowering turns the Prisma App Framework's semantic graph into an Alchemy
+resource graph. Arrows read "depends on / consumes a value from"; Alchemy
+executes in dependency order and **runs unordered resources concurrently —
+declaration order is never consulted** — so every ordering the framework's
+semantics require must exist as an edge.
 
-**MakerKit's graph** (what the user means):
+**The Prisma App Framework's graph** (what the user means):
 
 ```mermaid
 flowchart LR
@@ -140,7 +143,7 @@ service endpoints are stable across producer redeploys, so a wire's value rarely
 moves, and true secrets are platform-sourced and rotate through the platform, not
 this edge (see the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
-MakerKit's core constructs these edges when lowering a connection (the
+The framework's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack
 author and no app author ever hand-wires them.
 

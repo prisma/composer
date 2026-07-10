@@ -1,10 +1,11 @@
-# PDP data model — as it pertains to MakerKit
+# PDP data model — as it pertains to the Prisma App Framework
 
 The Prisma Data Platform's actual entity model, read from `pdp-control-plane`
 source (schema: `prisma/schema.prisma`; behavior: `services/management-api/**`,
 `packages/interactors/**`). This is the ground truth the
-[Alchemy lowering](alchemy-lowering.md) maps onto. Scope: only what MakerKit
-touches — compute, config, databases; billing/auth/SCM omitted.
+[Alchemy lowering](alchemy-lowering.md) maps onto. Scope: only what the
+Prisma App Framework touches — compute, config, databases; billing/auth/SCM
+omitted.
 
 ## The entity graph
 
@@ -37,8 +38,8 @@ Edge semantics, with the properties that matter to us:
 
 - **Workspace → Project.** All API access is workspace-scoped (service token).
 - **Project → Branch.** Every project has branches; one carries the production
-  role (`PRODUCTION_BRANCH_ROLE`). MakerKit today only ever touches the
-  production branch, implicitly.
+  role (`PRODUCTION_BRANCH_ROLE`). The Prisma App Framework today only ever
+  touches the production branch, implicitly.
 - **Branch → App, Branch → Database.** Both are **branch-scoped** (composite FK
   `[branchId, projectId]`). An App **must be attached to a Branch to deploy** —
   version creation 422s otherwise (`resolveDeployEnvVars.ts`: "Attach the app to
@@ -60,7 +61,7 @@ Edge semantics, with the properties that matter to us:
 
 ## The config lifecycle — what is resolved when
 
-This is the timing model MakerKit's graph must respect:
+This is the timing model the Prisma App Framework's graph must respect:
 
 | Moment | What happens | Source |
 | --- | --- | --- |
@@ -70,7 +71,7 @@ This is the timing model MakerKit's graph must respect:
 | version start | boots the version; **no env re-resolution** | `routes/v1/version-handlers.ts` |
 | promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* time is a placeholder region — only the post-promote read is trustworthy (PRO-200) | `interactors/compute/service.ts` |
 
-Consequences MakerKit designs around:
+Consequences the Prisma App Framework designs around:
 
 1. **A version's environment is a snapshot taken at version creation.** A config
    value that must be visible to a service's code has to exist as a
@@ -84,17 +85,17 @@ Consequences MakerKit designs around:
    [alchemy-lowering.md](alchemy-lowering.md)).
 3. **`DATABASE_URL` is not a separate mechanism.** It is a system-written
    template flowing through the same materialization as user variables — a
-   convenience for hand-provisioned single services. MakerKit forbids its use
-   and poisons it at project provision (see
+   convenience for hand-provisioned single services. The Prisma App Framework
+   forbids its use and poisons it at project provision (see
    [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-actively-poisoned));
    every database URL a service consumes is an explicit, service-named variable.
 4. **Branch + class is the platform's environments model** (production
    templates vs preview templates + per-branch overrides) — the natural
-   substrate for MakerKit's future stages/environments story.
+   substrate for the Prisma App Framework's future stages/environments story.
 
 ## Related
 
 - [`alchemy-lowering.md`](alchemy-lowering.md) — the Alchemy resources we define
   over this model, and the lowering graphs.
 - [`../03-domain-model/layering.md`](../03-domain-model/layering.md) — where the
-  hosting plane sits in MakerKit's three-plane picture.
+  hosting plane sits in the Prisma App Framework's three-plane picture.
