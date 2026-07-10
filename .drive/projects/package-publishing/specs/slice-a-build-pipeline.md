@@ -99,16 +99,36 @@ Decision 2).
    (`allowImportingTsExtensions`). tsdown bundles these fine, but the prod tsconfig must
    not choke on them during dts. Covered by the spike.
 
+## A1 outcome (DONE — committed `2f1e861`)
+
+The core risk is retired and the approach is locked:
+
+- **tsdown 0.15.12 (already the workspace version, as a runtime dep) builds `@prisma/app`
+  under TypeScript 6 with `effect`/`alchemy`, emits `.mjs` + `.d.mts` cleanly, exit 0.**
+  No TS downgrade, no second tsdown version needed.
+- **`.mjs`/`.d.mts` output** via `outExtensions`; **tsdown generates the `exports`/`main`/
+  `types` map** pointing at `dist`, with keys derived from the **current `src/` layout** —
+  no `src/exports/` reorg required.
+- **No `tsconfig.prod.json` needed.** The package's default `tsconfig.json` (source-
+  consumption config) drives dts generation fine; skip the prod-tsconfig step prisma-next
+  uses. Revisit only if tests later pollute dts.
+- **Base config uses `exports: true`, not `{ enabled: 'local-only', exclude }`.** Those are
+  tsdown 0.22 features absent from 0.15.12's typed API. `exports: true` produces the same
+  generated map. Consequence: the `'local-only'` publish-drift guard and regex `exclude`
+  are unavailable until/unless build tsdown is bumped to 0.22 (which would mean two tsdown
+  versions). **Deferred decision for Slice B** — 0.15.12 + `exports: true` is the current
+  choice.
+- **Invariant tests evolve with the build.** `@prisma/app`'s `invariants.test.ts` needed
+  two intent-preserving updates: tolerate the `./package.json` manifest export, and allow
+  the build-only `@prisma/app-tsdown` devDep (not target/runtime coupling). **Expect
+  similar per-package invariant tests during A2** — handle each the same way.
+
 ## Task decomposition (dispatch units)
 
 - **A0 — Re-baseline (done).** Worktree reset to `origin/main`; stale `makerkit-*` dirs
   removed.
-- **A1 — Spike: one package end to end.** Add `@prisma/app-tsdown` base config + shared
-  `tsconfig.prod.json`; wire tsdown build for **`@prisma/app`** only (4 entries, pulls
-  `effect`). Confirm: `dist` `.mjs` + `.d.mts` emit, auto-`exports` matches the 4
-  subpaths, `bun test` green after build, TS 6 works. **Resolve the TS/tsdown version
-  question here before proceeding.** If it forces a TS downgrade, that becomes an
-  explicit sub-decision surfaced to the operator.
+- **A1 — Spike (done, committed).** `@prisma/app-tsdown` base config + `@prisma/app`
+  converted; verified build + dts + load + `bun test` (95 pass) + typecheck + lint.
 - **A2 — Fan out to the 6 remaining libraries.** app-cloud, alchemy, app-nextjs,
   app-node, app-rpc, app-assemble: per-package `tsdown.config.ts` + `build`/`clean`,
   flip `exports`→`dist`, `files: ["dist","src"]`. Verify each package's auto-exports.
