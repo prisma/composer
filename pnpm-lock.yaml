@@ -27,37 +27,6 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  examples/makerkit-hello:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 4.0.0-beta.92
-        version: 4.0.0-beta.92(effect@4.0.0-beta.92)
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../../packages/makerkit-core
-      '@makerkit/node':
-        specifier: workspace:*
-        version: link:../../packages/makerkit-node
-      '@makerkit/prisma-cloud':
-        specifier: workspace:*
-        version: link:../../packages/makerkit-prisma-cloud
-      alchemy:
-        specifier: 2.0.0-beta.59
-        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
-    devDependencies:
-      '@makerkit/cli':
-        specifier: workspace:*
-        version: link:../../packages/makerkit-cli
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      tsdown:
-        specifier: ^0.15.9
-        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
   examples/storefront-auth:
     dependencies:
       '@effect/platform-bun':
