@@ -6,22 +6,23 @@ Accepted
 
 ## Decision
 
-`makerkit deploy` materializes its work as a small, human-readable stack
-module at `.makerkit/alchemy.run.ts` — regenerated on every run, gitignored —
-and shells out to the `alchemy` CLI against it. It does not embed Alchemy's
-provisioning engine programmatically. `makerkit destroy` drives
+`prisma-app deploy` materializes its work as a small, human-readable stack
+module at `.prisma-app/alchemy.run.ts` — regenerated on every run,
+gitignored — and shells out to the `alchemy` CLI against it. It does not
+embed Alchemy's provisioning engine programmatically. `prisma-app destroy`
+drives
 `alchemy destroy` against the same generated file.
 
 ## Reasoning
 
 Here is the file the CLI generates for a single-service app (the deploy root
-is always a hex — see ADR-0003):
+is always a system — see ADR-0003):
 
 ```ts
-// .makerkit/alchemy.run.ts — generated; do not edit
-import { lower } from '@makerkit/core/deploy';
-import { fromEnv } from "@makerkit/prisma-cloud/target";
-import app from "../src/hex.ts";
+// .prisma-app/alchemy.run.ts — generated; do not edit
+import { lower } from '@prisma/app/deploy';
+import { fromEnv } from "@prisma/app-cloud/target";
+import app from "../src/system.ts";
 
 export default lower(app, fromEnv(), {
   name: "hello",
@@ -39,8 +40,8 @@ The answer is to write the pipeline's results down first. The file above *is*
 the CLI's work product: which module is the app, which pack's target, what
 the application is named, where each assembled bundle landed. Written as a
 runnable module, that product becomes inspectable — a failing deploy prints
-the file's path, and running `alchemy deploy .makerkit/alchemy.run.ts`
-directly bisects the failure into "MakerKit computed the wrong thing" versus
+the file's path, and running `alchemy deploy .prisma-app/alchemy.run.ts`
+directly bisects the failure into "the framework computed the wrong thing" versus
 "Alchemy/the platform rejected the right thing". No debugger, no verbose
 mode: the artifact between the two systems is a file you can read.
 
@@ -62,7 +63,7 @@ generated file carries no stage of its own.
 
 - Failures are bisectable by construction: the error output names the
   generated file, and the file is independently runnable.
-- MakerKit depends only on the alchemy CLI's command surface, not on its
+- The framework depends only on the alchemy CLI's command surface, not on its
   programmatic API.
 - `destroy` evaluates the same stack program as deploy, and evaluating it
   packages the assembled bundles — so an app must be built before it can be
@@ -74,7 +75,7 @@ generated file carries no stage of its own.
 ## Alternatives considered
 
 - **Embedding Alchemy's engine programmatically** — no intermediate artifact
-  to inspect when something goes wrong, and it couples MakerKit to the
+  to inspect when something goes wrong, and it couples the framework to the
   engine's programmatic API surface rather than its CLI contract. The
   bisectability argument alone decides this.
 - **Requiring users to write the stack file themselves** — that is precisely

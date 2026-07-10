@@ -19,7 +19,7 @@ vocabulary, a database client factory, and whatever its contracts need:
 
 ```ts
 // src/service.ts
-import { compute, postgres } from "@makerkit/prisma-cloud";
+import { compute, postgres } from "@prisma/app-cloud";
 import { SQL } from "bun";
 import { authContract } from "@storefront-auth/auth/contract"; // evaluates arktype at import
 ```
@@ -76,7 +76,7 @@ rather than assumed, since the whole boot path depends on it.
 
 ## Related
 
-- [`ADR-0005`](ADR-0005-users-build-makerkit-assembles.md) — the wrapper and
+- [`ADR-0005`](ADR-0005-users-build-the-framework-assembles.md) — the wrapper and
   the assembly boundary it lives behind.
 - [`ADR-0003`](ADR-0003-deploy-derives-everything-from-the-root-node.md) —
   why no per-app configuration surface exists.

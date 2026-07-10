@@ -18,7 +18,7 @@ over a short window), and fails loudly if the lease is gone.
 
 ## Reasoning
 
-Start with the collision this prevents. Two engineers run `makerkit deploy`
+Start with the collision this prevents. Two engineers run `prisma-app deploy`
 for the same application within seconds of each other — a human and a CI job,
 say, after a merge. Each deploy is a long sequence of steps: read the state
 rows, diff, create or update cloud resources, write the results back.
@@ -78,8 +78,8 @@ operation's latency.
   window (and the check-then-act gap) is accepted; the alternative is a
   round-trip per state operation.
 - The lock's implementation is private to the store. If the engine ever grows
-  a locking concept, the migration is internal; nothing else in MakerKit knows
-  the mechanism exists.
+  a locking concept, the migration is internal; nothing else in the framework
+  knows the mechanism exists.
 - There is no queueing affordance yet. If waiting turns out to be the common
   want, a `--wait` flag can layer over the same lock without changing its
   semantics.

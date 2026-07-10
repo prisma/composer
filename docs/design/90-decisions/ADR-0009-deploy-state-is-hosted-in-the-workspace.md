@@ -8,7 +8,7 @@ Accepted
 
 Deploy state — the provisioning engine's record of what exists in the cloud —
 lives in a Prisma Postgres database inside a reserved, framework-owned project
-(`makerkit-state`) in the deployer's workspace, not in files on the machine
+(`prisma-app-state`) in the deployer's workspace, not in files on the machine
 that deployed. Every deploy bootstraps it automatically: find-or-create the
 project, verify ownership, mint a fresh database connection for the run.
 Possession of the workspace's service token is the only credential; no state
@@ -25,7 +25,7 @@ of services. The first deployment is now orphaned, still running, still billing,
 and no machine holds the state needed to destroy it. Nothing failed loudly; the
 second deploy was a clean success.
 
-MakerKit provisions through Alchemy, an engine that (like Terraform) works by
+The framework provisions through Alchemy, an engine that (like Terraform) works by
 diffing the desired graph against a **state store** — its record of what it
 provisioned last time. That store is the source of truth for "what exists":
 whoever can read it deploys incrementally, and whoever cannot will duplicate.
@@ -42,8 +42,8 @@ apply, and destroying the stack would delete the record of the teardown
 mid-flight) — and per-app stores would fragment the workspace view (listing
 stacks, cross-stack references, and the fresh-machine bootstrap all need one
 place to look). So the store gets a dedicated project outside any user
-topology: framework-owned operational infrastructure, never declared by a hex,
-never destroyed by a stack.
+topology: framework-owned operational infrastructure, never declared by a
+system, never destroyed by a stack.
 
 That project is discovered by name — and the platform allows several projects
 to share a name, so a name match alone proves nothing. Bootstrap therefore
@@ -79,7 +79,7 @@ tell the difference.
   incrementally: a fresh clone redeploys as a no-op instead of duplicating.
 - Concurrent deploys of one stack become a real possibility, which is why they
   are serialized by a lock ([ADR-0010](ADR-0010-deploys-hold-a-session-advisory-lock.md)).
-- One `makerkit-state` project is visible in every workspace that has deployed.
+- One `prisma-app-state` project is visible in every workspace that has deployed.
   That visibility is the honest cost of building the store from public
   primitives; the intended end state is a platform-side state API behind the
   workspace's own auth, at which point the visible project disappears and this
@@ -91,7 +91,7 @@ tell the difference.
   Provisioned credentials passing through state is a standing concern tracked
   independently of where state lives.
 - The store accumulates one connection resource per deploy; bootstrap's sweep
-  bounds it. Name-squatting of `makerkit-state` is detected and refused, not
+  bounds it. Name-squatting of `prisma-app-state` is detected and refused, not
   prevented — reserving the name is a platform capability we do not have.
 
 ## Alternatives considered
