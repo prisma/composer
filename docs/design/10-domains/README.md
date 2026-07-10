@@ -4,7 +4,7 @@ Lower-level, per-domain deep dives live here. They are written in the
 architecture/design phase that comes *after* the high-level model is settled.
 
 - [`core-model.md`](core-model.md) — the complete class/data-structure design of
-  `@makerkit/core` and the target-pack contract, with `@makerkit/prisma-cloud` as
+  `@prisma/app` and the target-pack contract, with `@prisma/app-cloud` as
   the worked instance.
 - [`deploy-cli.md`](deploy-cli.md) — the MakerKit-owned deploy entrypoint
   (`makerkit deploy` / `makerkit destroy`): the pipeline, the pack CLI seam and

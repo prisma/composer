@@ -14,12 +14,12 @@ import { conn, providerContract } from './helpers.ts';
 
 const build = {
   kind: 'node',
-  pack: '@makerkit/node',
+  pack: '@prisma/app-node',
   module: 'file:///test/service.ts',
   entry: 'server.js',
 };
 
-// A minimal Contract, nominal like @makerkit/rpc's own: satisfies() is
+// A minimal Contract, nominal like @prisma/app-rpc's own: satisfies() is
 // identity, so a ref-port only satisfies the contract it was actually built
 // from — mirrors what a cast-bypassed wrong wiring would look like at
 // runtime (see hex.test.ts's own copy of this pattern).

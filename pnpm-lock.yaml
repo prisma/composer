@@ -32,24 +32,24 @@ importers:
       '@effect/platform-bun':
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)
-      '@makerkit/core':
+      '@prisma/alchemy':
         specifier: workspace:*
-        version: link:../../packages/makerkit-core
-      '@makerkit/nextjs':
+        version: link:../../packages/alchemy
+      '@prisma/app':
         specifier: workspace:*
-        version: link:../../packages/makerkit-nextjs
-      '@makerkit/node':
+        version: link:../../packages/app
+      '@prisma/app-cloud':
         specifier: workspace:*
-        version: link:../../packages/makerkit-node
-      '@makerkit/prisma-alchemy':
+        version: link:../../packages/app-cloud
+      '@prisma/app-nextjs':
         specifier: workspace:*
-        version: link:../../packages/prisma-alchemy
-      '@makerkit/prisma-cloud':
+        version: link:../../packages/app-nextjs
+      '@prisma/app-node':
         specifier: workspace:*
-        version: link:../../packages/makerkit-prisma-cloud
-      '@makerkit/rpc':
+        version: link:../../packages/app-node
+      '@prisma/app-rpc':
         specifier: workspace:*
-        version: link:../../packages/makerkit-rpc
+        version: link:../../packages/app-rpc
       '@storefront-auth/auth':
         specifier: workspace:*
         version: link:hexes/auth
@@ -66,9 +66,9 @@ importers:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92
     devDependencies:
-      '@makerkit/cli':
+      '@prisma/app-cli':
         specifier: workspace:*
-        version: link:../../packages/makerkit-cli
+        version: link:../../packages/app-cli
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
@@ -78,18 +78,18 @@ importers:
 
   examples/storefront-auth/hexes/auth:
     dependencies:
-      '@makerkit/core':
+      '@prisma/app':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-core
-      '@makerkit/node':
+        version: link:../../../../packages/app
+      '@prisma/app-cloud':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-node
-      '@makerkit/prisma-cloud':
+        version: link:../../../../packages/app-cloud
+      '@prisma/app-node':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-prisma-cloud
-      '@makerkit/rpc':
+        version: link:../../../../packages/app-node
+      '@prisma/app-rpc':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-rpc
+        version: link:../../../../packages/app-rpc
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -106,18 +106,18 @@ importers:
 
   examples/storefront-auth/hexes/storefront:
     dependencies:
-      '@makerkit/core':
+      '@prisma/app':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-core
-      '@makerkit/nextjs':
+        version: link:../../../../packages/app
+      '@prisma/app-cloud':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-nextjs
-      '@makerkit/prisma-cloud':
+        version: link:../../../../packages/app-cloud
+      '@prisma/app-nextjs':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-prisma-cloud
-      '@makerkit/rpc':
+        version: link:../../../../packages/app-nextjs
+      '@prisma/app-rpc':
         specifier: workspace:*
-        version: link:../../../../packages/makerkit-rpc
+        version: link:../../../../packages/app-rpc
       '@storefront-auth/auth':
         specifier: workspace:*
         version: link:../auth
@@ -147,153 +147,11 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/makerkit-assemble:
+  packages/alchemy:
     dependencies:
-      '@makerkit/core':
+      '@prisma/app':
         specifier: workspace:*
-        version: link:../makerkit-core
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      '@types/node':
-        specifier: ^24.10.13
-        version: 24.10.13
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/makerkit-cli:
-    dependencies:
-      '@makerkit/assemble':
-        specifier: workspace:*
-        version: link:../makerkit-assemble
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
-      clipanion:
-        specifier: ^3.2.1
-        version: 3.2.1(typanion@3.14.0)
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      '@types/node':
-        specifier: ^24.10.13
-        version: 24.10.13
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/makerkit-core:
-    dependencies:
-      alchemy:
-        specifier: 2.0.0-beta.59
-        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
-      effect:
-        specifier: 4.0.0-beta.92
-        version: 4.0.0-beta.92
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
-
-  packages/makerkit-nextjs:
-    dependencies:
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
-      tsdown:
-        specifier: ^0.15.9
-        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      '@types/node':
-        specifier: ^24.10.13
-        version: 24.10.13
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/makerkit-node:
-    dependencies:
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
-      tsdown:
-        specifier: ^0.15.9
-        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      '@types/node':
-        specifier: ^24.10.13
-        version: 24.10.13
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  packages/makerkit-prisma-cloud:
-    dependencies:
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
-      '@makerkit/prisma-alchemy':
-        specifier: workspace:*
-        version: link:../prisma-alchemy
-      alchemy:
-        specifier: 2.0.0-beta.59
-        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
-      effect:
-        specifier: 4.0.0-beta.92
-        version: 4.0.0-beta.92
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
-
-  packages/makerkit-rpc:
-    dependencies:
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
-      '@standard-schema/spec':
-        specifier: ^1.1.0
-        version: 1.1.0
-      arktype:
-        specifier: ^2.2.3
-        version: 2.2.3
-    devDependencies:
-      '@types/bun':
-        specifier: ^1.3.13
-        version: 1.3.14
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-      vitest:
-        specifier: ^4.1.9
-        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
-
-  packages/prisma-alchemy:
-    dependencies:
-      '@makerkit/core':
-        specifier: workspace:*
-        version: link:../makerkit-core
+        version: link:../app
       '@prisma/management-api-sdk':
         specifier: ^1.47.0
         version: 1.47.0
@@ -317,23 +175,165 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/app:
+    dependencies:
+      alchemy:
+        specifier: 2.0.0-beta.59
+        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
+      effect:
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
+
+  packages/app-assemble:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/app-cli:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+      '@prisma/app-assemble':
+        specifier: workspace:*
+        version: link:../app-assemble
+      clipanion:
+        specifier: ^3.2.1
+        version: 3.2.1(typanion@3.14.0)
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/app-cloud:
+    dependencies:
+      '@prisma/alchemy':
+        specifier: workspace:*
+        version: link:../alchemy
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+      alchemy:
+        specifier: 2.0.0-beta.59
+        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@24.10.13)(@types/react@19.2.14)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
+      effect:
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
+
+  packages/app-nextjs:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/app-node:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/app-rpc:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:*
+        version: link:../app
+      '@standard-schema/spec':
+        specifier: ^1.1.0
+        version: 1.1.0
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
+
   test/integration:
     devDependencies:
-      '@makerkit/cli':
+      '@prisma/app':
         specifier: workspace:*
-        version: link:../../packages/makerkit-cli
-      '@makerkit/core':
+        version: link:../../packages/app
+      '@prisma/app-cli':
         specifier: workspace:*
-        version: link:../../packages/makerkit-core
-      '@makerkit/nextjs':
+        version: link:../../packages/app-cli
+      '@prisma/app-cloud':
         specifier: workspace:*
-        version: link:../../packages/makerkit-nextjs
-      '@makerkit/node':
+        version: link:../../packages/app-cloud
+      '@prisma/app-nextjs':
         specifier: workspace:*
-        version: link:../../packages/makerkit-node
-      '@makerkit/prisma-cloud':
+        version: link:../../packages/app-nextjs
+      '@prisma/app-node':
         specifier: workspace:*
-        version: link:../../packages/makerkit-prisma-cloud
+        version: link:../../packages/app-node
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14

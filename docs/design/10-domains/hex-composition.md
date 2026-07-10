@@ -152,7 +152,7 @@ the path and build rules:
   loading mechanism is the deploy tooling's own decision, recorded separately;
   this design only pins the requirement.
 - **For prebuilt distribution, versioning is the package manager's job, used
-  as designed**: the hex declares `@makerkit/*` and its target pack as peer
+  as designed**: the hex declares `@prisma/app*` and its target pack as peer
   dependencies, and the declared range asserts that the reader code frozen
   into its published runnables understands what the consumer's deploy-time
   serializer writes. The serialized-config and stash encodings are public

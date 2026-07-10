@@ -13,7 +13,7 @@ The reusable component (new package `examples/auth-hex`):
 
 ```ts
 // examples/auth-hex/src/hex.ts — the package's main export
-import { hex } from "@makerkit/core";
+import { hex } from "@prisma/app";
 import { authContract } from "./contract";
 import authService from "./service";           // the existing auth service, moved here
 
@@ -29,7 +29,7 @@ export default hex("auth", { expose: { verify: authContract } }, ({ provision })
 The app consuming it (`examples/storefront-auth/hex.ts` rewritten):
 
 ```ts
-import authHex from "@makerkit-examples/auth-hex";   // installed, workspace:*
+import authHex from "@prisma-examples/auth-hex";   // installed, workspace:*
 import storefrontService from "./hexes/storefront/src/service";
 
 export default hex("storefront-auth", {}, ({ provision }) => {
@@ -55,7 +55,7 @@ hex.fake.ts` deploys (or Load-checks) the faked one. Design contract:
 
 ## What gets built, by file
 
-1. **Core** (`packages/makerkit-core/src/node.ts`, `graph.ts`):
+1. **Core** (`packages/app/src/node.ts`, `graph.ts`):
    - `hex(name, { deps?, expose? }, body)` replacing `hex(name, body)`;
      `HexContext` (`inputs` + `provision`), `HexOutputs`, `InputRef`;
      `HexNode<D, E>` carrying the boundary types.
@@ -64,17 +64,17 @@ hex.fake.ts` deploys (or Load-checks) the faked one. Design contract:
      validation errors (exact texts in hex-composition.md § Load), e.g.:
      `Hex "auth" declares input "db" but never forwards it into a provision.`
    - Type-level tests (R6 `test-d` pattern) incl. a 3-level nesting case.
-2. **Pipeline** (`packages/makerkit-assemble`, `packages/makerkit-cli`,
-   `packages/makerkit-core/src/deploy.ts`):
+2. **Pipeline** (`packages/app-assemble`, `packages/app-cli`,
+   `packages/app/src/deploy.ts`):
    - Bundle correlation keys become full addresses (`auth.api`, not `api`)
      through assembly → generated stack file → `lower()` lookup.
    - `${build.pack}/assemble` resolves from `build.module` instead of the
      deploy entry (ADR-0004 as amended) — an installed hex's adapter never
      becomes the app's dependency.
 3. **The example proof**:
-   - New workspace package `examples/auth-hex` (`@makerkit-examples/auth-hex`):
+   - New workspace package `examples/auth-hex` (`@prisma-examples/auth-hex`):
      the existing auth service + contract move in; own `build` script
-     producing `dist/server.js`; `@makerkit/*` + `@makerkit/prisma-cloud` as
+     producing `dist/server.js`; `@prisma/app*` + `@prisma/app-cloud` as
      peer dependencies (exactly as a published hex would declare them).
    - `examples/storefront-auth` rewired per the code above; its
      `hexes/auth/` directory dissolves into the package.

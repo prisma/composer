@@ -56,7 +56,7 @@ session (shared files — whoever lands second rebases).
 ### [ ] Slice H2 — pipeline follow-through
 
 **Outcome:** assembled-bundle correlation keys follow full hierarchical
-addresses through `@makerkit/assemble`, the generated stack file, and
+addresses through `@prisma/app-assemble`, the generated stack file, and
 `lower()`'s bundle lookup. Adapter resolution moves to the service's
 `build.module` anchor (`${build.pack}/assemble` seeded at the authoring file,
 per amended ADR-0004) — an installed hex's adapter choice stays internal.
@@ -71,7 +71,7 @@ correctly keyed bundles.
 
 **Outcome:** a workspace package (e.g. `examples/auth-hex`) exporting an Auth
 hex per ADR-0014's grounding example — built runnables shipped in-package,
-`@makerkit/*` as peer dependencies, expose = the auth contract; `db` as a
+`@prisma/app*` as peer dependencies, expose = the auth contract; `db` as a
 boundary input if resource slots have landed, internally owned otherwise.
 `examples/storefront-auth` provisions it (nested hex, forwarding both ways)
 and the storefront consumes only the contract port. A fake same-contract

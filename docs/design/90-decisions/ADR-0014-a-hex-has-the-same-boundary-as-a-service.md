@@ -74,7 +74,7 @@ would in the app's own tree, and "built output exists before deploy"
 (ADR-0005) is satisfied at publish time. The wrapper's catch-all inlining
 (ADR-0008) resolves the hex's imports from the hex package's own dependency
 tree. Version compatibility is the package manager's job, used as designed:
-the hex declares `@makerkit/*` as peer dependencies, and its range is the
+the hex declares `@prisma/app*` as peer dependencies, and its range is the
 author's assertion that the reader code frozen into its published runnables
 understands the config the app's deploy-time serializer writes. That
 assertion only means something if the serialized-config and stash encoding
@@ -83,7 +83,7 @@ major version of the pack.
 
 One requirement follows for the deploy tooling: a hex's internal choice of
 build adapter stays internal — the consuming app must not have to declare
-`@makerkit/nextjs` because some installed hex happens to use Next inside. How
+`@prisma/app-nextjs` because some installed hex happens to use Next inside. How
 deploy tooling loads adapter and target modules is its own decision, recorded
 separately; this ADR only pins the requirement. The target itself remains the
 application's own declaration — one target per application (ADR-0003).
@@ -103,7 +103,7 @@ application's own declaration — one target per application (ADR-0003).
   published against a pack freeze reader code at publish time, so format
   changes are semver-major for the pack.
 - Reusable hexes are pack-specific: a hex authored with
-  `@makerkit/prisma-cloud`'s vocabulary deploys only to that target. A
+  `@prisma/app-cloud`'s vocabulary deploys only to that target. A
   target-neutral authoring vocabulary would lift that, and is deliberately not
   part of this decision.
 - Nothing about a hex exists at runtime. Hexes are topology; Load flattens
