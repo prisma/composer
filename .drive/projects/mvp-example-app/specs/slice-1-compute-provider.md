@@ -19,7 +19,7 @@ folded into `providers()`:
 
 ## DoD
 
-- `pnpm --filter @makerkit/prisma-alchemy exec tsc --noEmit` passes.
+- `pnpm --filter @prisma/alchemy exec tsc --noEmit` passes.
 - Structure mirrors the Postgres provider (Context.Service tags, Provider.effect,
   the `call`/`callOptional`/`callVoid` helpers, Redacted secrets, 404-tolerant
   delete). v2/Effect only; no globals.

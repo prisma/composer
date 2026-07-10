@@ -12,7 +12,7 @@ the source of truth, everything reproducible in a fresh environment.
 
 ## The model this exercises
 
-Two **Hexes** (Storefront, Auth), each a **Service** (its code) plus a **Resource**
+Two **Systems** (Storefront, Auth), each a **Service** (its code) plus a **Resource**
 (its own Postgres). No shared data. See
 [`docs/design/03-domain-model/`](../../../docs/design/03-domain-model/) for
 Service/Resource/Configuration and the layering that this project instantiates
@@ -36,14 +36,14 @@ against real Prisma Cloud primitives.
   tar.gz + the `{ manifestVersion, entrypoint }` manifest as input. This decouples
   the provider's control flow from *how* the bundle is produced, so bundling can be
   solved separately at the app build-step slice.
-- **One Postgres per Hex.** Simplest correct thing; sidesteps aggregate contracts,
+- **One Postgres per System.** Simplest correct thing; sidesteps aggregate contracts,
   which are out of scope for the MVP.
 
 ## Alternatives considered
 
 - **Deploy Compute via the Prisma CLI (`prisma compute deploy`) and use Alchemy
   only for Postgres.** Faster to a first deploy, but leaves half the system outside
-  Alchemy and doesn't surface the seam MakerKit must close. Rejected in favour of
+  Alchemy and doesn't surface the seam the Prisma App Framework must close. Rejected in favour of
   an all-Alchemy path (operator's call).
 - **Use the v1 Postgres provider.** Rejected — see above.
 
@@ -134,22 +134,22 @@ changes for us:
   our provider uses the `/v1/compute-services/*` compatibility aliases. They work
   (proven end-to-end), but a future cleanup could move to the App/Deployment routes.
 
-## Validated end-to-end (two-hex MVP)
+## Validated end-to-end (two-system MVP)
 
 The full MVP is **live on real Prisma Cloud** via `examples/storefront-auth`: two
-hexes, each its own Prisma **project** (a Service + the project's default Postgres,
+Systems, each its own Prisma **project** (a Service + the project's default Postgres,
 auto-injected as `DATABASE_URL`), wired by an `AUTH_URL` `EnvironmentVariable` so
 the Storefront calls Auth while rendering.
 
 - `alchemy deploy` provisions 2×(Project → ComputeService → Deployment) + the
   `AUTH_URL` env var; re-deploy is **all noop** (idempotent); `alchemy destroy`
-  tears both hexes down.
+  tears both Systems down.
 - Proof: `curl <auth>/verify` → `200 {"ok":true}` (Auth + its Postgres); the
   Storefront page renders `Auth /verify says: 200 {"ok":true}` — the Storefront→Auth
   ingress round-trip.
-- **One project per hex** is the clean mapping: each hex gets its own Postgres for
-  free (the project's default DB), and only the cross-hex `AUTH_URL` needs an explicit
-  env var. Two hexes in one project would fight the per-project default-DB injection.
+- **One project per System** is the clean mapping: each System gets its own Postgres for
+  free (the project's default DB), and only the cross-system `AUTH_URL` needs an explicit
+  env var. Two Systems in one project would fight the per-project default-DB injection.
 - **Next server components must be forced dynamic.** `export const dynamic =
   "force-dynamic"` — otherwise Next prerenders the page at build time (when `AUTH_URL`
   is unset) and serves that static HTML forever, so the runtime env is never read. A
@@ -158,7 +158,7 @@ the Storefront calls Auth while rendering.
   connections (and the service scales to zero); Bun.SQL surfaces that as an async
   `ERR_POSTGRES_CONNECTION_CLOSED` with no awaiter, which crashed the process into a
   502 restart loop (symptom: the Storefront rendered "Auth /verify says: 500/502").
-  Fix in `hexes/auth`: `process.on("uncaughtException"/"unhandledRejection")` guards +
+  Fix in `systems/auth`: `process.on("uncaughtException"/"unhandledRejection")` guards +
   a short `idleTimeout` (close client-side before the server does) + `max: 1`, and
   handlers that catch the query error (503, not crash). Verified across idle/reconnect
   cycles. Keep the **direct** connection (`DATABASE_URL`) — pooled/accelerate are
@@ -182,10 +182,10 @@ the Storefront calls Auth while rendering.
   running version's `envVars`). A service that uses the default DB needs no manual
   wiring; a second/non-default DB still needs a branch-scoped env-var resource
   (`/v1/environment-variables`) set before the `Deployment`. Confirm the exact
-  behaviour per-Hex in Slice 4; the Auth service fails fast if its URL is unset.
+  behaviour per-System in Slice 4; the Auth service fails fast if its URL is unset.
 - **Port coordination — resolved.** `Deployment` takes a `port` prop that sets the
   version's `portMapping.http`; the app binds the same port (`PORT` env, default
-  3000). Wire both from one source per Hex in Slice 4.
+  3000). Wire both from one source per System in Slice 4.
 
 ## References
 

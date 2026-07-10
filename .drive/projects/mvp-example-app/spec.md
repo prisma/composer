@@ -1,15 +1,15 @@
 # Purpose
 
-Prove that MakerKit's model can be provisioned and deployed to Prisma Cloud
-**entirely through Alchemy** — by standing up the smallest real, connected,
-deployed application. The point is to ground the architecture in something that
-actually runs, so the lower-level MakerKit design is made against reality rather
-than speculation. The most valuable output is the friction we discover, not the
-app itself.
+Prove that the Prisma App Framework's model can be provisioned and deployed to
+Prisma Cloud **entirely through Alchemy** — by standing up the smallest real,
+connected, deployed application. The point is to ground the architecture in
+something that actually runs, so the lower-level framework design is made
+against reality rather than speculation. The most valuable output is the
+friction we discover, not the app itself.
 
 # At a glance
 
-Two connected components, each its own Hex:
+Two connected components, each its own System:
 
 - **Storefront** — a Next.js app with public HTTP ingress.
 - **Auth** — a service the Storefront calls on an incoming request.
@@ -22,10 +22,10 @@ round-trips to Auth, and each service talks to its own database.
 
 # Non-goals
 
-- **MakerKit primitives.** This project builds *directly* on Alchemy. The MakerKit
-  composition layer on top is the next phase, not this one.
+- **Prisma App Framework primitives.** This project builds *directly* on Alchemy.
+  The framework's composition layer on top is the next phase, not this one.
 - **Shared data.** No shared Postgres, data contracts, or aggregate contracts —
-  each Hex gets its own database.
+  each System gets its own database.
 - **Breadth.** No third component, no streams, no realtime.
 - **A production-grade Compute provider.** The MVP lifecycle (create → upload →
   start → promote) is enough; rollback, custom domains, and log streaming are out.
@@ -35,14 +35,14 @@ round-trips to Auth, and each service talks to its own database.
 
 # Place in the larger world
 
-Builds on the settled MakerKit design in [`docs/design/`](../../../docs/design/)
-and the already-committed Postgres provider in
-[`packages/prisma-alchemy`](../../../packages/prisma-alchemy) (commit `64e530f`).
-Depends on `alchemy@2.0.0-beta.59`, `effect@4.0.0-beta.92`,
+Builds on the settled Prisma App Framework design in
+[`docs/design/`](../../../docs/design/) and the already-committed Postgres
+provider in [`packages/prisma-alchemy`](../../../packages/prisma-alchemy)
+(commit `64e530f`). Depends on `alchemy@2.0.0-beta.59`, `effect@4.0.0-beta.92`,
 `@prisma/management-api-sdk`, Prisma Cloud (Compute + Prisma Postgres), and deploy
-credentials. It is the **first concrete artifact that feeds the MakerKit
-architecture phase** — especially the Alchemy↔Compute seam and what a MakerKit
-Service/Resource must lower to.
+credentials. It is the **first concrete artifact that feeds the Prisma App
+Framework architecture phase** — especially the Alchemy↔Compute seam and what a
+framework Service/Resource must lower to.
 
 # Cross-cutting requirements
 
@@ -90,7 +90,7 @@ Inherits the team DoD floor. Project-specific close conditions:
 
 # References
 
-- [`docs/design/`](../../../docs/design/) — the settled MakerKit model.
+- [`docs/design/`](../../../docs/design/) — the settled Prisma App Framework model.
 - [`packages/prisma-alchemy`](../../../packages/prisma-alchemy) — the Postgres
   provider (done); Compute provider to be added here.
 - `@prisma/management-api-sdk` — the Management API client the providers wrap.

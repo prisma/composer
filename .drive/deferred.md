@@ -11,11 +11,11 @@
 - **"Built output missing" error not covered by CLI-package tests — closed by
   S5.** `test/integration/test/cli.entry-anchored-resolution.test.ts` now
   drives the real CLI binary against a real, unbuilt fixture app and asserts
-  on the real "no built entry at" message from `@makerkit/node`'s assembler.
+  on the real "no built entry at" message from `@prisma/app-node`'s assembler.
   Origin: S3 review.
 - **CLI publishability — closed by S5.** The CLI no longer depends on any
   target/adapter pack; resolution is anchored at the app's entry package via
-  `createRequire` (see `packages/makerkit-cli/src/resolve-from-entry.ts`).
+  `createRequire` (see `packages/app-cli/src/resolve-from-entry.ts`).
   Origin: S3 review finding #8.
 
 # Authoring layer — deferred at project close (2026-07-09)
@@ -31,7 +31,7 @@
    encryption at rest.
 2. **Reserved/unique project names** — PDP allows duplicate project names
    (verified 2026-07-09), so name-based discovery of control-plane projects
-   (`makerkit-state`) is ambiguous and squattable; the client-side ownership
+   (`prisma-app-state`) is ambiguous and squattable; the client-side ownership
    marker (bootstrap.ts `verifyOwnership`) is a workaround. Ask: unique names
    per workspace, or atomic create-if-absent, or a system-project concept.
    Related: workspace ids circulate in two shapes (`wksp_`-prefixed in API
@@ -45,7 +45,7 @@
   decision lives in wiring).
 - **Dev-mode e2e** (operator ask, PR #10 review): CI boots both storefront-auth
   services locally against a Postgres, asserts the round trip.
-- **Hex composition / boundary ports / nesting**; **DIP swap** (replace a
+- **System composition / boundary ports / nesting**; **DIP swap** (replace a
   dependency by interface); **Data Contract** for data dependencies
   (migrations open); **streams**; **structural `satisfies`**; **gRPC/WS
   contract kinds**; **PDL authoring**; **contract errors**;
@@ -59,17 +59,17 @@
   the standing concern).
 - **Deterministic Next-standalone artifact** (BUILD_ID non-determinism →
   Next services re-version on unchanged redeploys).
-- **`@makerkit/node` rename** (descriptor kind means "plain server process",
+- **`@prisma/app-node` rename** (descriptor kind means "plain server process",
   not Node.js runtime — needs operator naming call).
 - **Interval-lease follow-ups from R8/R9 reviews**: `--wait` affordance on
   lock contention; connection-cap telemetry for the state store.
-- **CI workspace sweep** (operator/token): ~17 duplicate `makerkit-state`
+- **CI workspace sweep** (operator/token): ~17 duplicate `prisma-app-state`
   projects accumulated in the CI workspace during the id-shape bug; deploys
   are stable (deterministic oldest-first adoption) but they're quota noise.
 - **core-model.md R6 absorption**: the doc's type sketches (Nodes, factories,
-  Graph, HexBuilder) predate R6 — `expose`, `ConnectionEnd.required`,
+  Graph, SystemBuilder) predate R6 — `expose`, `ConnectionEnd.required`,
   ref-ports, the two-overload `provision()`, and required `name`/`pack` are
   shipped but absent from the sketches. The false "not yet built" claims and
-  the missing `@makerkit/rpc` entry-map row were fixed at close-out; absorbing
+  the missing `@prisma/app-rpc` entry-map row were fixed at close-out; absorbing
   the full mechanism into the sketches is a docs slice of its own
   (connection-contracts.md is the accurate record meanwhile).

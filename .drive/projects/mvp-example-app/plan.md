@@ -56,7 +56,7 @@ idempotency, and `destroy`. Meets project DoD.
 - **builds on:** slices 1, 2, 3 (+ operator credentials).
 - **hands to:** — (project close).
 - **status:** ✅ delivered + **live on real Prisma Cloud**. Realized as one project
-  per hex (each hex's default Postgres auto-injects `DATABASE_URL` — no explicit
+  per System (each System's default Postgres auto-injects `DATABASE_URL` — no explicit
   Connection→env wiring needed); `AUTH_URL` wired via a new `EnvironmentVariable`
   resource. `curl <auth>/verify` → `200 {"ok":true}`; the Storefront renders the
   round-trip. Re-deploy noop; destroy tears down. DoD met.
