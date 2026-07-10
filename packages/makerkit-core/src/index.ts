@@ -22,8 +22,7 @@ export { Load, LoadError } from './graph.ts';
 export { hydrate, hydrateSync } from './hydrate.ts';
 export type {
   BuildAdapter,
-  ConnectionEnd,
-  Dependable,
+  DependencyEnd,
   Deps,
   Expose,
   HexBuilder,
@@ -32,14 +31,11 @@ export type {
   HydratedDeps,
   Loaded,
   NodeBase,
-  NormalizedDeps,
   PackAuthoredNode,
   ProvisionedRef,
   RefPort,
-  ResourceEnd,
   ResourceNode,
-  ResourceRef,
   RunnableServiceNode,
   ServiceNode,
 } from './node.ts';
-export { connectionEnd, hex, isNode, resource, resourceEnd, service } from './node.ts';
+export { dependency, hex, isNode, resource, service } from './node.ts';

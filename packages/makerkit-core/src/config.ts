@@ -91,9 +91,8 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
   for (const [input, value] of Object.entries(root.inputs)) {
     if (typeof value !== 'object' || value === null) continue;
-    // Resource-end and connection-end inputs both declare `connection.params`
-    // in the identical shape (Connection<Params, C>), so the union needs no
-    // narrowing to read it.
+    // Every dependency input declares `connection.params` in the same shape
+    // (Connection<Params, C>) — nothing to narrow before reading it.
     for (const [name, param] of Object.entries(value.connection.params)) {
       entries.push({
         owner: { input },

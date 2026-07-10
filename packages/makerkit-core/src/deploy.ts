@@ -188,11 +188,10 @@ export class LowerError extends Error {
  * Deploy-side: assembles the typed Config for one service — each declared
  * input's params matched by name to its producer's lowered outputs, plus
  * service-param defaults. Leaf values are provisioning refs, not strings.
- * Both slot kinds resolve via their hex-wiring edge to the producer:
- * ResourceEnd inputs via the "resource" edge (the hex-provisioned resource's
- * lowered outputs — shared by every consumer wired to it), ConnectionEnd
- * inputs via the "connection" edge (the PRODUCER SERVICE's outputs — already
- * fully deployed in topo order, so its URL is real — PRO-200).
+ * Every slot resolves the same way, via its "dependency" edge to whatever
+ * the hex wired in: a resource's lowered outputs (shared by every consumer
+ * wired to it), or a producer service's deploy outputs (already fully
+ * deployed in topo order, so its URL is real — PRO-200).
  */
 export function buildConfig(
   node: ServiceNode,
@@ -203,9 +202,8 @@ export function buildConfig(
   const inputs: Record<string, Record<string, unknown>> = {};
 
   for (const [inputName, inputNode] of Object.entries(node.inputs)) {
-    const wantKind = inputNode.kind === 'connection' ? 'connection' : 'resource';
     const edge = graph.edges.find(
-      (e) => e.to === id && e.input === inputName && e.kind === wantKind,
+      (e) => e.to === id && e.input === inputName && e.kind === 'dependency',
     );
     const producedOutputs = edge !== undefined ? (lowered.get(edge.from)?.outputs ?? {}) : {};
     const values: Record<string, unknown> = {};
@@ -282,9 +280,9 @@ export function lowering(
 
     for (const { id, node } of graph.nodes) {
       if (node.kind === 'hex') continue; // the transparent root itself — nothing to lower
-      // Dependency slots (ConnectionEnd/ResourceEnd) are edges only, never
-      // lowered — only hex-provisioned resources and services are.
-      if (node.kind === 'connection' || node.kind === 'resource-end') continue;
+      // Dependency slots are edges only, never lowered — only hex-provisioned
+      // resources and services are.
+      if (node.kind === 'dependency') continue;
 
       const address = serviceAddress.get(id) ?? '';
       const ctx: LowerContext = {

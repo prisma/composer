@@ -1,13 +1,11 @@
 import { blindCast } from './casts.ts';
 import {
-  type ConnectionEnd,
+  type DependencyEnd,
   type HexBuilder,
   type HexNode,
   isNode,
   type ProvisionedRef,
-  type ResourceEnd,
   type ResourceNode,
-  type ResourceRef,
   type ServiceNode,
 } from './node.ts';
 
@@ -16,22 +14,21 @@ export type NodeId = string;
 
 export interface GraphNode {
   readonly id: NodeId;
-  readonly node: ServiceNode | ResourceNode | ResourceEnd | ConnectionEnd | HexNode;
+  readonly node: ServiceNode | ResourceNode | DependencyEnd | HexNode;
 }
 
 /**
- * `input`: a service consumes a declared dependency slot (resource end or
- * connection end) — from the slot node to the service. `connection`: a
- * service calls a service — from the producer service to the consumer,
- * labeled with the consumer's input name (from the hex wiring). `resource`: a
- * service consumes a hex-provisioned resource — from the resource to the
- * consumer, same labeling, also from the hex wiring.
+ * `input`: a service consumes its own declared dependency slot — from the
+ * slot node to the service. `dependency`: a service consumes a provisioned
+ * producer (a service or a resource — the one wiring mechanism) — from the
+ * producer to the consumer, labeled with the consumer's input name (from the
+ * hex wiring).
  */
 export interface Edge {
   readonly from: NodeId;
   readonly to: NodeId;
   readonly input: string;
-  readonly kind: 'input' | 'connection' | 'resource';
+  readonly kind: 'input' | 'dependency';
 }
 
 export interface Graph {
@@ -54,20 +51,18 @@ export class LoadError extends Error {
  * assigns ids, builds `input` edges. For a hex root it EXECUTES the body (the
  * body is wiring, not user code — running it at Load is the designed
  * exception to imports-run-nothing) with a collector HexBuilder, producing
- * the owned resources and services and one `connection`/`resource` edge per
- * wired dependency slot.
+ * the owned resources and services and one `dependency` edge per wired slot.
  *
  * Validation: every node branded with a non-empty type; every dependency slot
- * (ConnectionEnd or ResourceEnd) of a provisioned service wired to a
- * provisioned producer (dangling = LoadError); a wired ref-port whose
- * ConnectionEnd declares a required contract must satisfy() it, and a wired
- * resource must match its ResourceEnd's declared type (LoadError on mismatch —
- * TypeScript already rejects both at the wiring site, so reaching here means
- * a cast bypassed it); the connection edges form a DAG (a cycle is a
- * LoadError with the cycle named). A service Loaded directly as the root (not
- * via a hex) may not carry any dependency slot — nothing at the root wires or
- * provisions for it — so that is a LoadError naming the input and pointing at
- * the composing hex instead (ADR-0003). Executes nothing of the user's.
+ * of a provisioned service wired to a provisioned producer (dangling =
+ * LoadError); a wired ref whose slot declares a required contract must
+ * satisfy() it (LoadError on mismatch — TypeScript already rejects it at the
+ * wiring site, so reaching here means a cast bypassed it); the dependency
+ * edges form a DAG (a cycle is a LoadError with the cycle named). A service
+ * Loaded directly as the root (not via a hex) may not carry any dependency
+ * slot — nothing at the root wires or provisions for it — so that is a
+ * LoadError naming the input and pointing at the composing hex instead
+ * (ADR-0003). Executes nothing of the user's.
  */
 export function Load(root: ServiceNode | HexNode, opts?: { id?: NodeId }): Graph {
   // Brand-check the untrusted root once (a user default-export could be junk
@@ -99,14 +94,14 @@ function serviceInputs(
       throw new LoadError(
         `Input "${input}" of "${serviceId}" is a resource node — a resource is provisioned by ` +
           'the composing hex, never created for a service that mentions it. Declare the input ' +
-          "as a resource end (the pack's dependency factory) and wire the hex-provisioned " +
-          'resource into it.',
+          "as a dependency (the pack's dependency factory) and wire the hex-provisioned " +
+          "resource's ref into it.",
       );
     }
-    if (kind !== 'resource-end' && kind !== 'connection') {
+    if (kind !== 'dependency') {
       throw new LoadError(
-        `Input "${input}" of "${serviceId}" is not a branded resource end or connection end ` +
-          '(construct it with the resourceEnd()/connectionEnd() factories).',
+        `Input "${input}" of "${serviceId}" is not a branded dependency end ` +
+          '(construct it with the dependency() factory).',
       );
     }
     if (value.type.length === 0) {
@@ -121,17 +116,10 @@ function serviceInputs(
 
 function loadService(root: ServiceNode, rootId: NodeId): Graph {
   for (const [input, value] of Object.entries(root.inputs)) {
-    if (isNode(value) && value.kind === 'connection') {
+    if (isNode(value) && value.kind === 'dependency') {
       throw new LoadError(
-        `Service "${rootId}" has an unwired connection input "${input}" — this service is composed ` +
+        `Service "${rootId}" has an unwired dependency input "${input}" — this service is composed ` +
           `by a hex; deploy the hex instead of loading "${rootId}" directly.`,
-      );
-    }
-    if (isNode(value) && value.kind === 'resource-end') {
-      throw new LoadError(
-        `Service "${rootId}" has an unwired resource input "${input}" — a resource is provisioned ` +
-          'by a composing hex, never implicitly; deploy a hex that provisions the resource and ' +
-          `wires it to "${rootId}".`,
       );
     }
   }
@@ -154,8 +142,8 @@ function loadService(root: ServiceNode, rootId: NodeId): Graph {
  * that always picks the ready node with the smallest original index. Edges
  * whose endpoint falls outside `nodes` (e.g. a service-root's input edges
  * targeting the root, which is appended separately) are ignored. Cycles
- * cannot reach here: `assertConnectionDag` already rejects them for
- * connection edges, and input edges never cycle.
+ * cannot reach here: `assertDependencyDag` already rejects them for
+ * dependency edges, and input edges never cycle.
  */
 function topoSort(nodes: readonly GraphNode[], edges: readonly Edge[]): GraphNode[] {
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -195,7 +183,7 @@ function topoSort(nodes: readonly GraphNode[], edges: readonly Edge[]): GraphNod
   }
 
   // Kahn's leaves cyclic nodes unprocessed rather than looping. A cycle can't
-  // reach here (assertConnectionDag runs first; input edges never cycle), but
+  // reach here (assertDependencyDag runs first; input edges never cycle), but
   // if that guard were ever bypassed, dropping nodes silently would be far
   // worse than failing — so assert completeness.
   if (order.length !== nodes.length) {
@@ -231,6 +219,19 @@ function refFor(id: string, service: ServiceNode): ProvisionedRef {
   >({ id, ...ports });
 }
 
+/**
+ * The resource variant of refFor: a resource has exactly one port — the
+ * contract it provides — flattened onto the ref itself, tagged with the
+ * provider id. `id` is written last so a hostile contract value cannot
+ * clobber it.
+ */
+function refForResource(id: string, resource: ResourceNode): ProvisionedRef {
+  return blindCast<
+    ProvisionedRef,
+    'the ref is the provided contract value tagged with the provider id — the `{ id } & RefPort<C>` shape the resource provision() overload pins'
+  >({ ...resource.provides, __providerId: id, id });
+}
+
 /** A wired value's producer id: a ref-port's `__providerId`, or a bare ref's `id`. */
 function producerIdOf(ref: unknown): string | undefined {
   if (typeof ref !== 'object' || ref === null) return undefined;
@@ -248,7 +249,7 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
     id: string,
     node: ServiceNode | ResourceNode,
     wiring?: Record<string, unknown>,
-  ): ProvisionedRef | ResourceRef => {
+  ): ProvisionedRef => {
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (hex "${root.name}").`);
     }
@@ -266,7 +267,11 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
     if (byId.has(id)) {
       throw new LoadError(`Duplicate provision id "${id}" in hex "${root.name}".`);
     }
-    if (!isNode(node) || (node.kind !== 'service' && node.kind !== 'resource')) {
+    // Brand-check on a widened alias: predicate-narrowing the declared union
+    // drops the `any`-instantiated ResourceNode member (the same quirk
+    // serviceInputs sidesteps by widening `kind` to a plain string).
+    const untrusted: unknown = node;
+    if (!isNode(untrusted) || (untrusted.kind !== 'service' && untrusted.kind !== 'resource')) {
       throw new LoadError(
         `provision("${id}") expects a branded service or resource node (construct it with ` +
           "the service()/resource() factories or a pack's own).",
@@ -283,7 +288,7 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
       }
       byId.set(id, node);
       provisioned.push({ id, node, wiring: {} });
-      return Object.freeze({ id, type: node.type });
+      return refForResource(id, node);
     }
     byId.set(id, node);
     provisioned.push({ id, node, wiring: { ...(wiring ?? {}) } });
@@ -293,7 +298,7 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
   const builder: HexBuilder = {
     provision: blindCast<
       HexBuilder['provision'],
-      'single implementation behind the provision() overloads — returns a ResourceRef for a resource and a ProvisionedRef for a service, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
+      'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource and a ProvisionedRef for a service, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
     >(provision),
   };
 
@@ -313,20 +318,14 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
     edges.push(...inputs.edges);
 
     // Wiring: each entry names a dependency slot and points it at a
-    // provisioned producer — one connection/resource edge per wired input.
+    // provisioned producer — one dependency edge per wired input. No
+    // producer-kind branching: the contract determines validity, whether the
+    // producer is a service port or a resource.
     for (const [input, ref] of Object.entries(wiring)) {
-      // Annotated with the slots' DEFAULT type arguments: the `any`-
-      // instantiated union Deps carries trips a narrowing quirk (isNode's
-      // predicate drops ResourceEnd<any, any> from the union entirely).
-      const declared: ResourceEnd | ConnectionEnd | undefined = node.inputs[input];
-      if (
-        declared === undefined ||
-        !isNode(declared) ||
-        (declared.kind !== 'connection' && declared.kind !== 'resource-end')
-      ) {
+      const declared: DependencyEnd | undefined = node.inputs[input];
+      if (declared === undefined || !isNode(declared) || declared.kind !== 'dependency') {
         throw new LoadError(
-          `Wiring for "${id}" names "${input}", which is not a dependency slot (connection or ` +
-            'resource end) of that service.',
+          `Wiring for "${id}" names "${input}", which is not a dependency slot of that service.`,
         );
       }
       const producerId = producerIdOf(ref);
@@ -337,29 +336,6 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
         );
       }
 
-      if (declared.kind === 'resource-end') {
-        if (producer.kind !== 'resource') {
-          throw new LoadError(
-            `Wiring for "${id}.${input}" references "${producerId}", which is not a provisioned ` +
-              'resource — a resource input must be wired to a hex-provisioned resource.',
-          );
-        }
-        if (producer.type !== declared.type) {
-          throw new LoadError(
-            `Wiring for "${id}.${input}" requires a resource of type "${declared.type}", but ` +
-              `"${producerId}" is of type "${producer.type}".`,
-          );
-        }
-        edges.push({ from: producerId, to: id, input, kind: 'resource' });
-        continue;
-      }
-
-      if (producer.kind !== 'service') {
-        throw new LoadError(
-          `Wiring for "${id}.${input}" references "${producerId}", which is not a provisioned ` +
-            'service — a connection input must be wired to a service producer.',
-        );
-      }
       const required = declared.required;
       if (required !== undefined) {
         if (
@@ -375,7 +351,7 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
         }
       }
 
-      edges.push({ from: producerId, to: id, input, kind: 'connection' });
+      edges.push({ from: producerId, to: id, input, kind: 'dependency' });
     }
 
     // Dangling check: every dependency slot must be wired. The kind is read
@@ -383,17 +359,16 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
     for (const [input, value] of Object.entries(node.inputs)) {
       if (!isNode(value) || wiring[input] !== undefined) continue;
       const kind: string = value.kind;
-      if (kind === 'connection' || kind === 'resource-end') {
-        const slot = kind === 'connection' ? 'ConnectionEnd' : 'ResourceEnd';
+      if (kind === 'dependency') {
         throw new LoadError(
-          `${slot} input "${input}" of provisioned service "${id}" is not wired to a producer ` +
+          `Dependency input "${input}" of provisioned service "${id}" is not wired to a producer ` +
             `(hex "${root.name}").`,
         );
       }
     }
   }
 
-  assertConnectionDag(edges);
+  assertDependencyDag(edges);
 
   const rootGraphNode: GraphNode = { id: rootId, node: root };
   return {
@@ -403,11 +378,15 @@ function loadHex(root: HexNode, opts?: { id?: NodeId }): Graph {
   };
 }
 
-/** The connection edges must form a DAG — a cycle means neither service can deploy first. */
-function assertConnectionDag(edges: readonly Edge[]): void {
+/**
+ * The dependency edges must form a DAG — a cycle means neither producer can
+ * deploy first. Resources take no wiring, so only service-to-service edges
+ * can ever participate in a cycle; no special-casing needed.
+ */
+function assertDependencyDag(edges: readonly Edge[]): void {
   const adjacency = new Map<string, string[]>();
   for (const edge of edges) {
-    if (edge.kind !== 'connection') continue;
+    if (edge.kind !== 'dependency') continue;
     const targets = adjacency.get(edge.from) ?? [];
     targets.push(edge.to);
     adjacency.set(edge.from, targets);
@@ -421,7 +400,7 @@ function assertConnectionDag(edges: readonly Edge[]): void {
     if (done.has(id)) return;
     if (visiting.has(id)) {
       const cycle = [...stack.slice(stack.indexOf(id)), id];
-      throw new LoadError(`Connection cycle: ${cycle.join(' → ')} — no deploy order exists.`);
+      throw new LoadError(`Dependency cycle: ${cycle.join(' → ')} — no deploy order exists.`);
     }
     visiting.add(id);
     stack.push(id);
