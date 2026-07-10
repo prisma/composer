@@ -1,6 +1,6 @@
 {
   "name": "@prisma/integration-tests",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,11 +8,11 @@
     "test": "bun test"
   },
   "devDependencies": {
-    "@prisma/app-cli": "workspace:*",
-    "@prisma/app": "workspace:*",
-    "@prisma/app-nextjs": "workspace:*",
-    "@prisma/app-node": "workspace:*",
-    "@prisma/app-cloud": "workspace:*",
+    "@prisma/app-cli": "workspace:0.1.0",
+    "@prisma/app": "workspace:0.1.0",
+    "@prisma/app-nextjs": "workspace:0.1.0",
+    "@prisma/app-node": "workspace:0.1.0",
+    "@prisma/app-cloud": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^24.10.13",
     "typescript": "^6.0.3"

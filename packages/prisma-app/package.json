@@ -1,7 +1,6 @@
 {
   "name": "prisma-app",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "description": "The prisma-app CLI launcher — run `bunx prisma-app` / `npx prisma-app`.",
   "bin": {
@@ -16,12 +15,24 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/app-cli": "workspace:*"
+    "@prisma/app-cli": "workspace:0.1.0"
   },
   "devDependencies": {
-    "@prisma/app-tsdown": "workspace:*",
+    "@prisma/app-tsdown": "workspace:0.1.0",
     "@types/node": "^24.10.13",
     "tsdown": "^0.15.9",
     "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/makerkit.git",
+    "directory": "packages/prisma-app"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

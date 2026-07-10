@@ -1,7 +1,6 @@
 {
   "name": "@prisma/app-cloud",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
@@ -16,13 +15,13 @@
     "test:types": "vitest --typecheck --run"
   },
   "dependencies": {
-    "@prisma/app": "workspace:*",
-    "@prisma/alchemy": "workspace:*",
+    "@prisma/app": "workspace:0.1.0",
+    "@prisma/alchemy": "workspace:0.1.0",
     "alchemy": "2.0.0-beta.59",
     "effect": "4.0.0-beta.92"
   },
   "devDependencies": {
-    "@prisma/app-tsdown": "workspace:*",
+    "@prisma/app-tsdown": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
     "tsdown": "^0.15.9",
     "typescript": "^6.0.3",
@@ -34,5 +33,17 @@
   ],
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
-  "types": "./dist/index.d.mts"
+  "types": "./dist/index.d.mts",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/makerkit.git",
+    "directory": "packages/app-cloud"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }
