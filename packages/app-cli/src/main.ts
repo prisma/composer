@@ -14,7 +14,7 @@ import { inferTarget } from './infer-target.ts';
 import { loadEntry } from './load-entry.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
 
-const BINARY_NAME = 'makerkit';
+const BINARY_NAME = 'prisma-app';
 
 /**
  * The `<entry>`/`--name`/`--stage` surface shared by deploy and destroy
@@ -64,7 +64,7 @@ class DestroyCommand extends DeployCliCommand {
 function buildCli(): Cli {
   return Cli.from([DeployCommand, DestroyCommand], {
     binaryName: BINARY_NAME,
-    binaryLabel: 'The makerkit deploy CLI',
+    binaryLabel: 'The prisma-app deploy CLI',
   });
 }
 
@@ -217,7 +217,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     throw error;
   }
 
-  // 6. Generate .makerkit/alchemy.run.ts inside the process's own cwd — tool
+  // 6. Generate .prisma-app/alchemy.run.ts inside the process's own cwd — tool
   // state lives where you run the tool (ADR-0004's rewrite).
   const stackPath = writeStackFile({
     entryPath: entryModule.path,

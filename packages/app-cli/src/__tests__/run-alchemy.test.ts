@@ -65,7 +65,7 @@ describe('runAlchemy()', () => {
 
     const status = runAlchemy({
       command: 'deploy',
-      stackFileRelativePath: '.makerkit/alchemy.run.ts',
+      stackFileRelativePath: '.prisma-app/alchemy.run.ts',
       cwd: dir,
       stage: 'ci-42',
       env: { ...process.env, CAPTURE_FILE: captureFile },
@@ -75,7 +75,7 @@ describe('runAlchemy()', () => {
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
     expect(captured.argv).toEqual([
       'deploy',
-      '.makerkit/alchemy.run.ts',
+      '.prisma-app/alchemy.run.ts',
       '--yes',
       '--stage',
       'ci-42',
@@ -100,13 +100,13 @@ describe('runAlchemy()', () => {
 
     runAlchemy({
       command: 'destroy',
-      stackFileRelativePath: '.makerkit/alchemy.run.ts',
+      stackFileRelativePath: '.prisma-app/alchemy.run.ts',
       cwd: dir,
       stage: undefined,
       env: { ...process.env, CAPTURE_FILE: captureFile },
     });
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
-    expect(captured.argv).toEqual(['destroy', '.makerkit/alchemy.run.ts', '--yes']);
+    expect(captured.argv).toEqual(['destroy', '.prisma-app/alchemy.run.ts', '--yes']);
   });
 });

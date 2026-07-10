@@ -4,7 +4,7 @@
  * fake alchemy runner (no real process). The entry module and the generated
  * stack file are real — written to a temp dir.
  *
- * `.makerkit/` lands in the process's own cwd (ADR-0004's rewrite — tool
+ * `.prisma-app/` lands in the process's own cwd (ADR-0004's rewrite — tool
  * state lives where you run the tool), so each test chdir's into the fixture
  * app dir for the duration of run(), the same way a real invocation's cwd is
  * wherever the app's package script runs from.
@@ -123,13 +123,13 @@ describe('run() — the full pipeline over fakes', () => {
     expect(calls).toEqual([
       {
         command: 'deploy',
-        stackFileRelativePath: path.join('.makerkit', 'alchemy.run.ts'),
+        stackFileRelativePath: path.join('.prisma-app', 'alchemy.run.ts'),
         cwd: app.dir,
         stage: 'ci-7',
       },
     ]);
 
-    const stackPath = path.join(app.dir, '.makerkit', 'alchemy.run.ts');
+    const stackPath = path.join(app.dir, '.prisma-app', 'alchemy.run.ts');
     const content = fs.readFileSync(stackPath, 'utf8');
     expect(content).toContain('name: "hello-run"');
     expect(content).toContain('import app from "../service.ts";');
@@ -167,7 +167,7 @@ describe('run() — the full pipeline over fakes', () => {
       });
 
       expect(status).toBe(42);
-      const stackPath = path.join(app.dir, '.makerkit', 'alchemy.run.ts');
+      const stackPath = path.join(app.dir, '.prisma-app', 'alchemy.run.ts');
       const printed = errorSpy.mock.calls.map((args) => args.join(' ')).join('\n');
       expect(printed).toContain(stackPath);
     } finally {

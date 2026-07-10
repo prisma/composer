@@ -15,4 +15,4 @@ entry="$2"
 stack_name="$3"
 
 echo "Destroying ${label}stack $stack_name…"
-bun node_modules/.bin/makerkit destroy "$entry" --name "$stack_name"
+bun node_modules/.bin/prisma-app destroy "$entry" --name "$stack_name"

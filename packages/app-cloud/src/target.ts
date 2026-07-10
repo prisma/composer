@@ -30,7 +30,7 @@ function isComputeRegion(value: string): value is Prisma.ComputeRegion {
 
 /**
  * The pack's CLI seam (ADR-0003): builds a Target from the process
- * environment. `makerkit deploy` calls this once it has inferred this pack
+ * environment. `prisma-app deploy` calls this once it has inferred this pack
  * from the loaded graph — never reads `PRISMA_SERVICE_TOKEN` here; that is
  * consumed by @prisma/alchemy's providers at run time, not by target
  * construction.

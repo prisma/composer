@@ -3,9 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The `makerkit` deploy CLI. Runtime-agnostic (node >= 22.18 or bun); requires Node's default type stripping if run under node.",
+  "description": "The `prisma-app` deploy CLI. Runtime-agnostic (node >= 22.18 or bun); requires Node's default type stripping if run under node.",
   "bin": {
-    "makerkit": "./src/bin.ts"
+    "prisma-app": "./src/bin.ts"
   },
   "exports": {
     ".": "./src/index.ts"

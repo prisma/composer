@@ -3,10 +3,10 @@
  * src/resolve-from-entry.ts) against REAL target/adapter packs — not
  * fixtures. This cannot live in packages/app-cli's own suite: the CLI
  * itself must not depend on any specific pack (see test/README.md), but this
- * package genuinely does, so `makerkit deploy` here resolves
+ * package genuinely does, so `prisma-app deploy` here resolves
  * `@prisma/app-cloud/target` and `@prisma/app-node/assemble` for real.
  *
- * Drives the CLI as a binary (`node_modules/.bin/makerkit`), the same way
+ * Drives the CLI as a binary (`node_modules/.bin/prisma-app`), the same way
  * the example apps do, rather than importing the CLI's internals.
  */
 import { describe, expect, test } from 'bun:test';
@@ -14,12 +14,12 @@ import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
-const makerkitBin = path.join(integrationDir, 'node_modules', '.bin', 'makerkit');
+const prismaAppBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-app');
 const fixtureEntry = path.join(integrationDir, 'test', 'fixtures', 'entry-anchored', 'service.ts');
 
-describe('makerkit deploy — real entry-anchored resolution of prisma-cloud + node', () => {
+describe('prisma-app deploy — real entry-anchored resolution of prisma-cloud + node', () => {
   test('resolves both packs for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnSync('bun', [makerkitBin, 'deploy', fixtureEntry], {
+    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env: { ...process.env, PRISMA_WORKSPACE_ID: 'ws-integration-test' },
@@ -36,7 +36,7 @@ describe('makerkit deploy — real entry-anchored resolution of prisma-cloud + n
     const env = { ...process.env };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnSync('bun', [makerkitBin, 'deploy', fixtureEntry], {
+    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env,

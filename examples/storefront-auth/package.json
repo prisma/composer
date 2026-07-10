@@ -6,8 +6,8 @@
   "scripts": {
     "build": "echo 'nothing to build for this package itself — @storefront-auth/auth and @storefront-auth/storefront build via turbo ^build, from the workspace deps below'",
     "typecheck": "tsc --noEmit",
-    "deploy": "pnpm turbo run build --filter @prisma/example-storefront-auth... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/makerkit deploy system.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
-    "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/makerkit destroy system.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )"
+    "deploy": "pnpm turbo run build --filter @prisma/example-storefront-auth... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-app deploy system.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
+    "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-app destroy system.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.92",

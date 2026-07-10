@@ -15,8 +15,8 @@ describe('node compatibility smoke test', () => {
     const result = spawnSync('node', [binPath], { encoding: 'utf8' });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('makerkit deploy');
-    expect(result.stderr).toContain('makerkit destroy');
+    expect(result.stderr).toContain('prisma-app deploy');
+    expect(result.stderr).toContain('prisma-app destroy');
     expect(result.stderr).toContain('<entry>');
   });
 
@@ -24,7 +24,7 @@ describe('node compatibility smoke test', () => {
     const result = spawnSync('node', [binPath, 'build', 'src/service.ts'], { encoding: 'utf8' });
 
     expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('makerkit deploy');
-    expect(result.stderr).toContain('makerkit destroy');
+    expect(result.stderr).toContain('prisma-app deploy');
+    expect(result.stderr).toContain('prisma-app destroy');
   });
 });
