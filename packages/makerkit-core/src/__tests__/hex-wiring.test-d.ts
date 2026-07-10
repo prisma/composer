@@ -1,8 +1,8 @@
 /**
- * The accept/reject matrix for resource wiring, checked on the real hex:
- * `HexBuilder.provision` wiring a ResourceRef into a consumer's ResourceEnd
- * slot, and the Deps constraint that admits declarations (ends, Dependables)
- * while keeping bare ResourceNodes out of a service's inputs.
+ * The accept/reject matrix for dependency wiring, checked on the real hex:
+ * `HexBuilder.provision` wiring a provisioned ref into a consumer's slot —
+ * ONE mechanism, the contract determines validity — and the Deps constraint
+ * that keeps bare ResourceNodes out of a service's inputs.
  *
  * Type-only (vitest `--typecheck`, never executed at runtime): the reject
  * cases are exactly what Load's runtime backstop throws on (see hex.test.ts),
@@ -11,9 +11,10 @@
  * the offending line — the idiomatic form for "this must not compile".
  */
 import { expectTypeOf, test } from 'vitest';
-import type { BuildAdapter, HexBuilder, ResourceEnd, ResourceRef } from '../node.ts';
-import { resource, resourceEnd, service } from '../node.ts';
-import { conn } from './helpers.ts';
+import type { Contract } from '../contract.ts';
+import type { BuildAdapter, HexBuilder, RefPort } from '../node.ts';
+import { dependency, resource, service } from '../node.ts';
+import { conn, providerContract } from './helpers.ts';
 
 const build: BuildAdapter = {
   kind: 'node',
@@ -22,30 +23,38 @@ const build: BuildAdapter = {
   entry: 'server.js',
 };
 
-const pgNode = resource({ name: 'db', pack: 'test/pack', type: 'fake/postgres' });
-const cacheNode = resource({ name: 'cache', pack: 'test/pack', type: 'fake/cache' });
+const pgContract = providerContract('fake/postgres', { url: '' });
+const cacheContract = providerContract('fake/cache', {});
 
-const dualPg = Object.freeze({
-  ...pgNode,
-  toDependency: () =>
-    resourceEnd({
-      name: 'db',
-      type: 'fake/postgres',
-      connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
-    }),
-});
+const pgNode = resource({ name: 'db', pack: 'test/pack', provides: pgContract });
+const cacheNode = resource({ name: 'cache', pack: 'test/pack', provides: cacheContract });
 
-const pgEnd = resourceEnd({
+const pgDep = dependency({
   name: 'db',
   type: 'fake/postgres',
   connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+  required: pgContract,
+});
+
+const untypedDep = dependency({
+  type: 'fake/http',
+  connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
 });
 
 const consumer = service({
   name: 'test-service',
   pack: 'test/pack',
   type: 'fake/compute',
-  inputs: { db: pgEnd },
+  inputs: { db: pgDep },
+  params: {},
+  build,
+});
+
+const untypedConsumer = service({
+  name: 'test-service',
+  pack: 'test/pack',
+  type: 'fake/compute',
+  inputs: { anything: untypedDep },
   params: {},
   build,
 });
@@ -59,51 +68,34 @@ const producer = service({
   build,
 });
 
-const dualConsumer = service({
-  name: 'test-service',
-  pack: 'test/pack',
-  type: 'fake/compute',
-  // A dual value (identity + Dependable) is a valid deps entry.
-  inputs: { db: dualPg },
-  params: {},
-  build,
-});
-
 declare const h: HexBuilder;
 
 const pgRef = h.provision('pg', pgNode);
 const cacheRef = h.provision('cache', cacheNode);
 const producerRef = h.provision('producer', producer);
-// A dual value is provisionable — its identity half; the ref is typed.
-const dualRef = h.provision('dual-pg', dualPg);
 
-test('provision returns a ResourceRef carrying the resource type as a literal', () => {
-  expectTypeOf(pgRef).toEqualTypeOf<ResourceRef<'fake/postgres'>>();
-  expectTypeOf(dualRef).toEqualTypeOf<ResourceRef<'fake/postgres'>>();
+test('provisioning a resource returns its provided contract as the ref, tagged with the id', () => {
+  expectTypeOf(pgRef).toEqualTypeOf<{ readonly id: string } & RefPort<typeof pgContract>>();
+  expectTypeOf(pgRef).toExtend<Contract<'fake/postgres', { url: string }>>();
 });
 
-test('a dual value stored in deps normalizes to its converted ResourceEnd', () => {
-  expectTypeOf(dualConsumer.inputs.db).toEqualTypeOf<ResourceEnd<{ url: string }, 'fake/postgres'>>();
-});
-
-test('a matching ResourceRef fills the consumer slot', () => {
+test('a ref whose contract matches the slot requirement is accepted; the untyped slot accepts any ref', () => {
   expectTypeOf(h.provision).toBeCallableWith('c1', consumer, { db: pgRef });
-  // The dual's slot wires like the ResourceEnd it converts to — literal type kept.
-  expectTypeOf(h.provision).toBeCallableWith('c1b', dualConsumer, { db: dualRef });
-  expectTypeOf(h.provision).toBeCallableWith('c1c', dualConsumer, { db: pgRef });
+  // The untyped slot (Req = unknown) is the escape hatch — a resource ref or
+  // a bare service ref both pass, uniformly.
+  expectTypeOf(h.provision).toBeCallableWith('c2', untypedConsumer, { anything: pgRef });
+  expectTypeOf(h.provision).toBeCallableWith('c3', untypedConsumer, { anything: producerRef });
 });
 
-test('wrong-type / wrong-kind refs and a bare resource in deps are rejected', () => {
-  // @ts-expect-error a ResourceRef of another resource type cannot fill the slot
-  h.provision('c2', consumer, { db: cacheRef });
-  // @ts-expect-error a provisioned service's ref is not a ResourceRef
-  h.provision('c3', consumer, { db: producerRef });
-  // @ts-expect-error a wrong-type ResourceRef cannot fill the dual's slot either
-  h.provision('c3b', dualConsumer, { db: cacheRef });
+test('a wrong-contract ref, a bare service ref for a typed slot, and a ResourceNode in deps are rejected', () => {
+  // @ts-expect-error the cache contract's kind cannot satisfy the postgres-requiring slot
+  h.provision('c4', consumer, { db: cacheRef });
+  // @ts-expect-error a bare service ref carries no contract for a typed slot
+  h.provision('c5', consumer, { db: producerRef });
   // @ts-expect-error a dependency-only end (no identity) is not provisionable
-  h.provision('c3c', pgEnd);
+  h.provision('c6', pgDep);
 
-  // A concrete ResourceNode can never sit in deps — only declarations (ends).
+  // A concrete ResourceNode can never sit in deps — only declarations.
   service({
     name: 'test-service',
     pack: 'test/pack',

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Load, LoadError } from '../graph.ts';
-import { connectionEnd, hex, resource, resourceEnd, service } from '../node.ts';
-import { conn } from './helpers.ts';
+import { dependency, hex, resource, service } from '../node.ts';
+import { conn, providerContract } from './helpers.ts';
 
 const build = {
   kind: 'node',
@@ -10,14 +10,16 @@ const build = {
   entry: 'server.js',
 };
 
-const dbEnd = () =>
-  resourceEnd({
+const dbDep = () =>
+  dependency({
     name: 'db',
     type: 'fake/db',
     connection: conn({}, () => ({})),
+    required: providerContract('fake/db', { url: '' }),
   });
-const dbResource = () => resource({ name: 'db', pack: 'test/pack', type: 'fake/db' });
-const app = (inputs: Record<string, ReturnType<typeof dbEnd>>) =>
+const dbResource = () =>
+  resource({ name: 'db', pack: 'test/pack', provides: providerContract('fake/db', { url: '' }) });
+const app = (inputs: Record<string, ReturnType<typeof dbDep>>) =>
   service({
     name: 'test-service',
     pack: 'test/pack',
@@ -51,7 +53,7 @@ describe('Load', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resourceEnd({
+        db: dependency({
           name: 'db',
           type: 'fake/db',
           connection: conn({}, () => {
@@ -78,8 +80,8 @@ describe('Load', () => {
     expect(() => Load(dbResource() as never)).toThrow(LoadError);
   });
 
-  test('rejects an input that is not a branded resource end or connection end', () => {
-    const root = app({ db: { kind: 'resource-end', type: 'fake/db' } as never });
+  test('rejects an input that is not a branded dependency end', () => {
+    const root = app({ db: { kind: 'dependency', type: 'fake/db' } as never });
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(/db/);
@@ -87,7 +89,7 @@ describe('Load', () => {
 
   test('rejects a forged input with an empty type', () => {
     // Spread copies the brand symbol but lets the type be emptied — Load must catch it.
-    const forged = { ...dbEnd(), type: '' };
+    const forged = { ...dbDep(), type: '' };
     const root = hex('shop', (h) => {
       const db = h.provision('db', dbResource());
       h.provision('app', app({ db: forged as never }), { db });
@@ -97,8 +99,8 @@ describe('Load', () => {
     expect(() => Load(root)).toThrow(/empty node type/);
   });
 
-  test('rejects a root service with an unwired ConnectionEnd input, naming the input and pointing at the composing hex (ADR-0003)', () => {
-    const auth = connectionEnd({
+  test('rejects a root service with an unwired dependency input, naming the input and pointing at the composing hex (ADR-0003)', () => {
+    const auth = dependency({
       name: 'auth',
       type: 'fake/http',
       connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
@@ -114,16 +116,16 @@ describe('Load', () => {
 
     expect(() => Load(root, { id: 'storefront' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'storefront' })).toThrow(
-      /Service "storefront" has an unwired connection input "auth" — this service is composed by a hex; deploy the hex instead of loading "storefront" directly\./,
+      /Service "storefront" has an unwired dependency input "auth" — this service is composed by a hex; deploy the hex instead of loading "storefront" directly\./,
     );
   });
 
-  test('rejects a root service with an unwired ResourceEnd input, pointing at a composing hex', () => {
-    const root = app({ db: dbEnd() });
+  test('the lone-root rule is uniform — a resource-requiring dependency input reads the same way', () => {
+    const root = app({ db: dbDep() });
 
     expect(() => Load(root, { id: 'hello' })).toThrow(LoadError);
     expect(() => Load(root, { id: 'hello' })).toThrow(
-      /Service "hello" has an unwired resource input "db" — a resource is provisioned by a composing hex, never implicitly; deploy a hex that provisions the resource and wires it to "hello"\./,
+      /Service "hello" has an unwired dependency input "db" — this service is composed by a hex; deploy the hex instead of loading "hello" directly\./,
     );
   });
 

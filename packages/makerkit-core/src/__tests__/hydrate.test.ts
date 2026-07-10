@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { hydrate, hydrateSync } from '../hydrate.ts';
-import { connectionEnd, resourceEnd, service } from '../node.ts';
+import { dependency, service } from '../node.ts';
 import { conn } from './helpers.ts';
 
 const build = {
@@ -11,7 +11,7 @@ const build = {
 };
 
 const dbEnd = (record?: (values: { url: string }) => void) =>
-  resourceEnd({
+  dependency({
     name: 'db',
     type: 'fake/db',
     connection: conn({ url: { type: 'string', secret: true } }, (v) => {
@@ -43,13 +43,13 @@ describe('hydrate', () => {
     expect(deps).toEqual({ db: { client: 'postgres://x' } });
   });
 
-  test('a ConnectionEnd hydrates through identical machinery — the app cannot tell it apart', async () => {
+  test('every dependency hydrates through identical machinery — the app cannot tell producers apart', async () => {
     const root = service({
       name: 'test-service',
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        auth: connectionEnd({
+        auth: dependency({
           type: 'fake/http',
           connection: conn({ url: { type: 'string' } }, (v) => ({ fetchBase: v.url })),
         }),
@@ -72,7 +72,7 @@ describe('hydrate', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resourceEnd({
+        db: dependency({
           name: 'db',
           type: 'fake/db',
           connection: conn({ url: { type: 'string' } }, async (v) => {
@@ -131,7 +131,7 @@ describe('hydrateSync', () => {
       pack: 'test/pack',
       type: 'fake/app',
       inputs: {
-        db: resourceEnd({
+        db: dependency({
           name: 'db',
           type: 'fake/db',
           connection: conn({ url: { type: 'string' } }, async (v) => ({ asyncClient: v.url })),

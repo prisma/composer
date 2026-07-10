@@ -15,26 +15,20 @@ import {
   type Target,
 } from '../deploy.ts';
 import { Load } from '../graph.ts';
-import {
-  type BuildAdapter,
-  connectionEnd,
-  type Deps,
-  hex,
-  resource,
-  resourceEnd,
-  service,
-} from '../node.ts';
-import { conn } from './helpers.ts';
+import { type BuildAdapter, type Deps, dependency, hex, resource, service } from '../node.ts';
+import { conn, providerContract } from './helpers.ts';
 
-const dbResource = () => resource({ name: 'db', pack: 'test/pack', type: 'fake/db' });
+const dbResource = () =>
+  resource({ name: 'db', pack: 'test/pack', provides: providerContract('fake/db', { url: '' }) });
 const dbEnd = () =>
-  resourceEnd({
+  dependency({
     name: 'db',
     type: 'fake/db',
     connection: conn({ url: { type: 'string' } }, () => ({})),
+    required: providerContract('fake/db', { url: '' }),
   });
 const httpEnd = () =>
-  connectionEnd({ type: 'fake/http', connection: conn({ url: { type: 'string' } }, () => ({})) });
+  dependency({ type: 'fake/http', connection: conn({ url: { type: 'string' } }, () => ({})) });
 
 const defaultBuild: BuildAdapter = {
   kind: 'node',
@@ -170,7 +164,7 @@ const runError = (eff: ReturnType<typeof lowering>): LowerError =>
   Effect.runSync(Effect.flip(eff as Effect.Effect<LoweredNode, LowerError>));
 
 describe('buildConfig', () => {
-  test("matches a ResourceEnd input's params by name to the wired resource's lowered outputs, via the resource edge", () => {
+  test("matches a dependency input's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
     const auth = app('fake/compute', { db: dbEnd() }, { port: { type: 'number', default: 3000 } });
     const root = hex('shop', (h) => {
       const db = h.provision('db', dbResource());
@@ -300,12 +294,16 @@ describe('lowering a hex root â a single service', () => {
 
   test('the build descriptor is inert to lowering — any kind/entry lowers identically', () => {
     const { target } = fakeTarget();
-    const root = singleServiceHex('fake/compute', {}, {
-      kind: 'nonsense',
-      pack: '@fake/adapter',
-      module: 'file:///test/service.ts',
-      entry: 'whatever.js',
-    });
+    const root = singleServiceHex(
+      'fake/compute',
+      {},
+      {
+        kind: 'nonsense',
+        pack: '@fake/adapter',
+        module: 'file:///test/service.ts',
+        entry: 'whatever.js',
+      },
+    );
 
     const result = run(lowering(root, target, opts(svcBundles)));
 
@@ -524,7 +522,14 @@ describe('lowering a hex root — a provisioned resource and two connected servi
   test('fails with LowerError naming the type and the known types on an unknown resource type', () => {
     const { target } = fakeTarget();
     const root = hex('shop', (h) => {
-      h.provision('cache', resource({ name: 'cache', pack: 'test/pack', type: 'fake/unknown' }));
+      h.provision(
+        'cache',
+        resource({
+          name: 'cache',
+          pack: 'test/pack',
+          provides: providerContract('fake/unknown', {}),
+        }),
+      );
     });
 
     const error = runError(lowering(root, target, { name: 'shop', bundles: {} }));

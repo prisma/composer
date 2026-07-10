@@ -1,23 +1,23 @@
 // Bundle probe for the import-split guard: uses core's authoring entry the way
 // a user service module would, with real value usage so nothing tree-shakes away.
-import {
-  configOf,
-  connectionEnd,
-  hex,
-  hydrate,
-  Load,
-  resource,
-  resourceEnd,
-  service,
-} from '../../index.ts';
+import type { Contract } from '../../index.ts';
+import { configOf, dependency, hex, hydrate, Load, resource, service } from '../../index.ts';
 
-const db = resourceEnd({
+// A pack-shaped provider contract: kind-satisfies, like postgresContract.
+const dbContract: Contract<'probe/db', { url: string }> = Object.freeze({
+  kind: 'probe/db',
+  __cmp: { url: '' },
+  satisfies: (required: Contract<'probe/db', unknown>) => required.kind === 'probe/db',
+});
+
+const db = dependency({
   name: 'db',
   type: 'probe/db',
   connection: {
     params: { url: { type: 'string', secret: true } },
     hydrate: (v) => ({ url: v.url }),
   },
+  required: dbContract,
 });
 
 const app = service({
@@ -34,7 +34,7 @@ const app = service({
   },
 });
 
-const peer = connectionEnd({
+const peer = dependency({
   type: 'probe/http',
   connection: { params: { url: { type: 'string' } }, hydrate: (v) => ({ url: v.url }) },
 });
@@ -53,7 +53,7 @@ const caller = service({
   },
 });
 
-const dbNode = resource({ name: 'db', pack: 'test/pack', type: 'probe/db' });
+const dbNode = resource({ name: 'db', pack: 'test/pack', provides: dbContract });
 
 export const graph = Load(
   hex('probe-hex', (h) => {
