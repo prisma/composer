@@ -9,7 +9,7 @@
  * app dir for the duration of run(), the same way a real invocation's cwd is
  * wherever the app's package script runs from.
  *
- * selectTarget() is NOT faked — it calls the real `loadTarget()` on the
+ * the target node.loadTarget() is NOT faked — it imports the real target module for the
  * fixture service's node (node-owned loading: @prisma/app's node.ts does
  * the actual `import()`). The fixture's `targetModule` is a real `file://`
  * URL to a throwaway module written to a temp dir — not a package specifier
@@ -44,7 +44,7 @@ function writeFixtureTargetModule(dir: string): string {
  * A real app package in a temp dir: package.json + an entry module whose
  * default export is a genuine service node (importing core by absolute path
  * — the temp dir has no other node_modules). `targetModule` is a real
- * file:// URL (see writeFixtureTargetModule) so selectTarget's real
+ * file:// URL (see writeFixtureTargetModule) so the real target
  * `loadTarget()` call succeeds without any real Prisma App target/adapter pack.
  */
 function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {

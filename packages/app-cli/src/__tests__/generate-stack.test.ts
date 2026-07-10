@@ -4,7 +4,7 @@ import { Load, service, system } from '@prisma/app';
 import { assembleServices } from '@prisma/app-assemble';
 import { renderStackFile } from '../generate-stack.ts';
 import { loadEntry } from '../load-entry.ts';
-import { collectTargetModules, resolveSingleTargetModule } from '../select-target.ts';
+import { targetNodeOf } from '../target.ts';
 
 describe('renderStackFile() — a system root', () => {
   test('renders imports, the name literal, and the bundles dir/entry literals', () => {
@@ -72,7 +72,7 @@ describe('the generated stack file for a real system entry (no alchemy run)', ()
     expect(entry.root.name).toBe('fixture-system');
 
     const graph = Load(entry.root);
-    const targetModule = resolveSingleTargetModule(collectTargetModules(graph));
+    const { targetModule } = targetNodeOf(graph);
     expect(targetModule).toBe('test/pack/target');
 
     const content = renderStackFile({

@@ -17,7 +17,7 @@ export interface StackFileInput {
   readonly entryPath: string;
   /** The process's cwd — where `.prisma-app/` is written. */
   readonly cwd: string;
-  /** The full target module specifier, e.g. "@prisma/app-cloud/target" — selectTarget()'s SelectedTarget.targetModule. */
+  /** The full target module specifier, e.g. "@prisma/app-cloud/target" — targetNodeOf(). */
   readonly targetModule: string;
   readonly name: string;
   // No `stage` field: core's lower() never reads LowerOptions.stage — the

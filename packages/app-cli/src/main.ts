@@ -12,7 +12,7 @@ import { CliError } from './cli-error.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
 import { loadEntry } from './load-entry.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
-import { selectTarget } from './select-target.ts';
+import { extractFromEnv, targetNodeOf } from './target.ts';
 
 const BINARY_NAME = 'prisma-app';
 
@@ -190,10 +190,11 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     );
   }
 
-  // 3. Select the one target (ADR-0003) — the carrying node loads its own
-  // targetModule (ADR-0017); validate the target's env NOW, before any
-  // assembly work.
-  const { targetModule } = await selectTarget(graph);
+  // 3. The one target (ADR-0003): find a node that carries it and ask it to
+  // load its own target (ADR-0017 — the node resolves next to its packs), then
+  // read the target's env NOW so it fails before slow assembly work.
+  const { node: targetNode, targetModule } = targetNodeOf(graph);
+  extractFromEnv(targetModule, await targetNode.loadTarget())();
 
   // 4. Resolve the name.
   const name = args.name ?? entryModule.root.name;

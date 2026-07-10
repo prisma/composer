@@ -1,12 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { Graph } from '@prisma/app';
-import { resource, service } from '@prisma/app';
-import {
-  collectTargetModules,
-  extractFromEnv,
-  resolveSingleTargetModule,
-  selectTarget,
-} from '../select-target.ts';
+import { type Graph, resource, service } from '@prisma/app';
+import { extractFromEnv, targetNodeOf } from '../target.ts';
 
 const build = {
   kind: 'node',
@@ -33,14 +27,15 @@ function graphWithTargetModules(targetModules: readonly string[]): Graph {
   return { root, nodes, edges: [] };
 }
 
-describe('collectTargetModules() + resolveSingleTargetModule() (ADR-0003)', () => {
-  test('collects the distinct targetModule across service and resource nodes', () => {
+describe('targetNodeOf() (ADR-0003, one target per application)', () => {
+  test('returns the single target and a node that carries it', () => {
     const graph = graphWithTargetModules(['@prisma/app-cloud/target', '@prisma/app-cloud/target']);
-    expect(collectTargetModules(graph)).toEqual(['@prisma/app-cloud/target']);
-    expect(resolveSingleTargetModule(collectTargetModules(graph))).toBe('@prisma/app-cloud/target');
+    const { node, targetModule } = targetNodeOf(graph);
+    expect(targetModule).toBe('@prisma/app-cloud/target');
+    expect(node.targetModule).toBe('@prisma/app-cloud/target');
   });
 
-  test('includes resource-node targetModules too', () => {
+  test('reads a resource node targetModule too', () => {
     const svc = service({
       name: 'svc',
       pack: 'test/pack',
@@ -48,17 +43,12 @@ describe('collectTargetModules() + resolveSingleTargetModule() (ADR-0003)', () =
       inputs: {},
       params: {},
       build,
-      targetModule: '@prisma/app-cloud/target',
     });
     const res = resource({
       name: 'res',
-      pack: '@other/pack',
-      provides: {
-        kind: 'fixture/resource',
-        __cmp: {},
-        satisfies: () => true,
-      },
-      targetModule: '@other/pack/target',
+      pack: '@prisma/app-cloud',
+      provides: { kind: 'fixture/resource', __cmp: {}, satisfies: () => true },
+      targetModule: '@prisma/app-cloud/target',
     });
     const graph: Graph = {
       root: { id: 'root', node: svc },
@@ -68,10 +58,17 @@ describe('collectTargetModules() + resolveSingleTargetModule() (ADR-0003)', () =
       ],
       edges: [],
     };
-    expect(collectTargetModules(graph)).toEqual(['@other/pack/target', '@prisma/app-cloud/target']);
+    expect(targetNodeOf(graph).targetModule).toBe('@prisma/app-cloud/target');
   });
 
-  test('a service or resource with no targetModule contributes nothing', () => {
+  test('throws when the graph mixes more than one target', () => {
+    const graph = graphWithTargetModules(['@prisma/app-cloud/target', '@other/pack/target']);
+    expect(() => targetNodeOf(graph)).toThrow(
+      /mixes more than one deploy target \(@prisma\/app-cloud\/target, @other\/pack\/target\)/,
+    );
+  });
+
+  test('throws when no node carries a targetModule', () => {
     const svc = service({
       name: 'svc',
       pack: 'test/pack',
@@ -85,18 +82,15 @@ describe('collectTargetModules() + resolveSingleTargetModule() (ADR-0003)', () =
       nodes: [{ id: 'root', node: svc }],
       edges: [],
     };
-    expect(collectTargetModules(graph)).toEqual([]);
+    expect(() => targetNodeOf(graph)).toThrow(/carries no targetModule/);
   });
 
-  test('throws listing every targetModule found when a graph mixes more than one', () => {
-    const graph = graphWithTargetModules(['@prisma/app-cloud/target', '@other/pack/target']);
-    expect(() => resolveSingleTargetModule(collectTargetModules(graph))).toThrow(
-      /mixes more than one deploy target \(@other\/pack\/target, @prisma\/app-cloud\/target\)/,
+  test('the returned node loadTarget() surfaces a friendly resolution error, not a raw one', async () => {
+    const graph = graphWithTargetModules(['@prisma/does-not-exist/target']);
+    const { node } = targetNodeOf(graph);
+    await expect(node.loadTarget()).rejects.toThrow(
+      /Cannot resolve the target module "@prisma\/does-not-exist\/target".*must depend on the package/s,
     );
-  });
-
-  test('throws when the graph carries no targetModule at all', () => {
-    expect(() => resolveSingleTargetModule([])).toThrow(/carries no targetModule/);
   });
 });
 
@@ -115,15 +109,5 @@ describe('extractFromEnv() — the target module must export fromEnv()', () => {
 
   test('throws the same way when the module has no exports at all', () => {
     expect(() => extractFromEnv('@fake/pack/target', null)).toThrow(/has no fromEnv\(\) export/);
-  });
-});
-
-describe('selectTarget() — an unresolvable targetModule (node-owned loading)', () => {
-  test('surfaces an error naming the specifier and the fix, not a raw module error', async () => {
-    const graph = graphWithTargetModules(['@prisma/does-not-exist/target']);
-
-    await expect(selectTarget(graph)).rejects.toThrow(
-      /Cannot resolve the target module "@prisma\/does-not-exist\/target".*must depend on the package/s,
-    );
   });
 });
