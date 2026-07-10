@@ -30,9 +30,15 @@ coordinate — it collides with Slice A's export entries.
   Deviation from prisma-next: **no `sideEffects: false`** — it tree-shakes real code
   the packages' bundle-invariant tests assert on. `provenance` lives in the workflow
   env, not the manifests, to keep local `pnpm publish` from failing outside OIDC.
-- **Slice C — NEXT.** publish + preview workflows.
-- **Slice D — after C.** npm enablement (trusted publishing for the 9 names + unscoped
-  `prisma-app`), first release, `docs/oss/versioning.md`.
+- **Slice C — COMPLETE.** C1 `publish-packages.mjs` (parallel idempotent publisher),
+  C2 `publish.yml`, C3 `preview-publish.yml` + `detect-inert-diff` action + `pkg-pr-new`.
+  Reuses the repo's `./.github/actions/setup` (mise+pnpm), not prisma-next's inline setup.
+  Dropped the two prisma-next-only gates; GitHub Release uses `--generate-notes`.
+  Validated: actionlint clean; local build→gate→`publish-packages --dry-run` ships all 9
+  in dry-run (zero registry writes).
+- **Slice D — NEXT (needs external access).** npm trusted publishing for the 9 names +
+  unscoped `prisma-app`; `docs/oss/versioning.md`; first `bump-minor` → `latest` release.
+  Repo is public, so provenance is unblocked.
 
 ## Slice sequencing
 
