@@ -27,6 +27,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.2.6",
     "pathe": "^2.0.3",
+    "pkg-pr-new": "0.0.75",
     "turbo": "^2.6.1",
     "typescript": "^6.0.3"
   },
