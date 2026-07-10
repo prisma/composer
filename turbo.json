@@ -14,14 +14,14 @@
       "dependsOn": ["^lint"]
     },
     "test": {
-      "dependsOn": ["^test"],
+      "dependsOn": ["^build", "build"],
       "env": ["CI", "STATE_TEST_DATABASE_URL", "STATE_TEST_PG_TMPDIR"]
     },
     "test:types": {
-      "dependsOn": ["^test:types"]
+      "dependsOn": ["^build", "build"]
     },
     "typecheck": {
-      "dependsOn": ["^typecheck"]
+      "dependsOn": ["^build", "build"]
     },
     "clean": {
       "cache": false
