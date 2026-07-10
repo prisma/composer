@@ -1,0 +1,133 @@
+# Slice A — Build pipeline (tsdown → dist), exact prisma-next model
+
+One PR. Introduces a build so every publishable package emits `dist/` via tsdown,
+with `exports`/`types` pointing at `dist` in every context (build-always), matching
+prisma-next's packaging exactly. No versioning, manifests-hygiene, or workflows —
+those are Slices B/C.
+
+**Base:** `main` @ `a88097d` (post-#24). Re-baseline done; worktree is on merged main.
+
+## Slice contract
+
+- **In:** shared tsdown base config package; a prod tsconfig for dts emit; per-package
+  `tsdown.config.ts` + `build`/`clean` scripts; flip `exports`→`dist`; `files`;
+  the unscoped `prisma-app` launcher package; build-first dev/test loop; turbo wiring.
+- **Out:** `private` removal, `publishConfig`, `license`/`repository`, version lockstep,
+  `workspace:<version>` pinning (all Slice B); publish/preview workflows (Slice C);
+  npm enablement (Slice D). Packages stay `private: true` through Slice A.
+- **DoD:** `pnpm build` emits correct `dist/` (`.mjs` + `.d.mts`) for all 9;
+  `pnpm test` / `typecheck` / `lint` green under the build-first loop;
+  `node packages/app-cli/dist/bin.mjs --help` and the launcher's dist both run;
+  no change to which packages are private or published (still all private).
+
+## Grounded package inventory (origin/main)
+
+Publishable set and their export subpaths (each → one tsdown entry):
+
+| Package | dir | export subpaths |
+| --- | --- | --- |
+| `@prisma/app` | `packages/app` | `.`, `./deploy`, `./casts`, `./assertions` |
+| `@prisma/app-cloud` | `packages/app-cloud` | `.`, `./target` |
+| `@prisma/alchemy` | `packages/alchemy` | `.`, `./postgres`, `./compute`, `./state` |
+| `@prisma/app-nextjs` | `packages/app-nextjs` | `.`, `./assemble` |
+| `@prisma/app-node` | `packages/app-node` | `.`, `./assemble` |
+| `@prisma/app-rpc` | `packages/app-rpc` | `.` |
+| `@prisma/app-assemble` | `packages/app-assemble` | `.` |
+| `@prisma/app-cli` | `packages/app-cli` | `.` + bin `prisma-app` (→ `dist/bin.mjs`) |
+| `prisma-app` (new) | `packages/prisma-app` | bin-only launcher |
+
+External deps to externalize (never bundle): `effect`, `alchemy`,
+`@prisma/management-api-sdk`, `clipanion`, `postgres`. `skipNodeModulesBundle: true`
+in the base config handles this. Note `@prisma/management-api-sdk` is an **external**
+`@prisma/*` package — do not treat the `@prisma/` prefix as "internal" (design-notes
+Decision 2).
+
+## Build decisions (faithful to prisma-next, adapted where makerkit differs)
+
+1. **Base config verbatim.** Add private `@prisma/app-tsdown` with prisma-next's
+   `base.ts` copied as-is: `dts: { enabled, sourcemap }`, `skipNodeModulesBundle`,
+   `sourcemap`, `exports: { enabled: 'local-only', customExports: <strip exports/ +
+   filename-derive>, exclude: [/cli\./, /bin\./] }`, `tsconfig: 'tsconfig.prod.json'`.
+   Add `bin\.` to the exclude so the CLI bin chunk is not exported.
+
+2. **Keep makerkit's current `src/` file layout; list `entry` explicitly.** prisma-next
+   puts export entries under `src/exports/*.ts`; makerkit's live at `src/index.ts`,
+   `src/deploy.ts`, `src/postgres/index.ts`, etc. Faithful packaging does **not**
+   require reorganizing the source tree — it requires the same tool, base config, and
+   dist output shape. Each `tsdown.config.ts` lists `entry` at the real current paths;
+   the base `customExports` derives subpath keys from output filenames
+   (`dist/deploy.mjs` → `./deploy`). **Verify** the auto-generated `exports` matches the
+   table above per package; if a key mis-derives (e.g. two `index.ts` in subdirs →
+   collision), fall back to `exports: { enabled: false }` + a hand-written `exports`
+   map for that package (the CLI already uses this escape hatch).
+
+3. **Prod tsconfig for dts.** makerkit's `tsconfig.base.json` is source-consumption
+   (`noEmit`, `allowImportingTsExtensions`, `bundler`). Add a `tsconfig.prod.json`
+   (shared, extended per package) that enables declaration emit for tsdown's dts pass
+   and drops `noEmit`/`allowImportingTsExtensions`. Mirror `@prisma-next/tsconfig/prod`.
+
+4. **CLI bin.** `@prisma/app-cli` `tsdown.config.ts`: `entry` includes `src/bin.ts`;
+   `exports: { enabled: false }`; `outputOptions` banner adds `#!/usr/bin/env node` to
+   the bin chunk (prisma-next's exact CLI pattern). `bin: { "prisma-app": "./dist/bin.mjs" }`.
+
+5. **Unscoped `prisma-app` launcher.** New `packages/prisma-app` — bin-only, same bin
+   entry, its own `dist/bin.mjs`, `files: ["dist"]`, no library exports (mirrors
+   prisma-next's unscoped `prisma-next`). Depends on `@prisma/app-cli` (or re-bundles
+   the same entry — match prisma-next's launcher, which re-declares deps + builds its
+   own dist). Stays `private` until Slice B/D.
+
+6. **Build-first dev/test loop.** Add root `dev` = `turbo watch build`; make `test`
+   build package deps first (turbo `test` gains `dependsOn: ["^build"]`; `typecheck`
+   likewise). Runner stays `bun test`. Within-package tests import `./src` directly;
+   cross-package imports now resolve to `dist`, so a build must precede cross-package
+   tests. Update any example that imports a framework package to build-first.
+
+7. **turbo.json.** `build` already declares `dist/**` outputs; add `^build` to
+   `test`/`typecheck`/`test:types` `dependsOn`. Add `clean` to remove `dist`.
+
+## Top risks (validate before fan-out)
+
+1. **TS 6 × tsdown.** makerkit is on `typescript ^6.0.3`; prisma-next's toolchain is
+   `tsdown 0.22.1` + `typescript 5.9.3`. tsdown/rolldown-dts on TS 6 is unverified. If
+   it breaks, options: pin tsdown to a TS6-compatible release, or align makerkit's
+   TypeScript to the version tsdown supports. **This is why Task 1 is a one-package
+   end-to-end spike.**
+2. **`effect` / `alchemy` heavy types in dts.** dts generation over `effect`'s types can
+   be slow or surface resolution issues. The spike package (`@prisma/app`, which pulls
+   `effect`) exercises this early.
+3. **`.ts`-extension imports.** Source imports siblings as `./foo.ts`
+   (`allowImportingTsExtensions`). tsdown bundles these fine, but the prod tsconfig must
+   not choke on them during dts. Covered by the spike.
+
+## Task decomposition (dispatch units)
+
+- **A0 — Re-baseline (done).** Worktree reset to `origin/main`; stale `makerkit-*` dirs
+  removed.
+- **A1 — Spike: one package end to end.** Add `@prisma/app-tsdown` base config + shared
+  `tsconfig.prod.json`; wire tsdown build for **`@prisma/app`** only (4 entries, pulls
+  `effect`). Confirm: `dist` `.mjs` + `.d.mts` emit, auto-`exports` matches the 4
+  subpaths, `bun test` green after build, TS 6 works. **Resolve the TS/tsdown version
+  question here before proceeding.** If it forces a TS downgrade, that becomes an
+  explicit sub-decision surfaced to the operator.
+- **A2 — Fan out to the 6 remaining libraries.** app-cloud, alchemy, app-nextjs,
+  app-node, app-rpc, app-assemble: per-package `tsdown.config.ts` + `build`/`clean`,
+  flip `exports`→`dist`, `files: ["dist","src"]`. Verify each package's auto-exports.
+- **A3 — CLI + launcher.** `@prisma/app-cli` bin build (banner, `exports:false`,
+  `bin`→dist); new unscoped `packages/prisma-app` launcher. Verify both dist bins run.
+- **A4 — Loop + turbo wiring.** `dev` = `turbo watch build`; `test`/`typecheck`
+  `dependsOn ^build`; fix examples to build-first. Full `pnpm build && pnpm test &&
+  pnpm typecheck && pnpm lint` green.
+
+Dispatch A1 solo and gate on it (it answers the version risk). A2 can fan out per-package
+in parallel once A1's config is proven. A3, A4 sequential after A2.
+
+## Verification (slice DoD gate)
+
+```
+pnpm build                       # dist for all 9
+pnpm test && pnpm typecheck && pnpm lint
+node packages/app-cli/dist/bin.mjs --help
+node packages/prisma-app/dist/bin.mjs --help
+# spot-check a tarball's exports point at dist (full leak/pin gate is Slice B):
+pnpm --filter @prisma/app pack && tar -xzOf prisma-app-*.tgz package/package.json | grep -A6 '"exports"'
+```
