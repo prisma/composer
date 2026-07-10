@@ -75,9 +75,7 @@ test('a missing or mistyped handler does not compile', () => {
   serve(authService, {});
 
   // @ts-expect-error wrong input shape (token must be a string, not a number)
-  serve(authService, {
-    rpc: { verify: async (_input: { token: number }, _deps) => ({ ok: true }) },
-  });
+  serve(authService, { rpc: { verify: async (_input: { token: number }) => ({ ok: true }) } });
 
   // @ts-expect-error wrong output shape (ok must be a boolean, not a string)
   serve(authService, { rpc: { verify: async ({ token }, _deps) => ({ ok: token }) } });
