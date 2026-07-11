@@ -9,7 +9,12 @@ sketched — its slices are firmed at the M1-close health check, where we also
 decide whether M2 becomes a successor project instead.
 
 **Spec:** [spec.md](spec.md) · **Design notes:** [design-notes.md](design-notes.md)
-· **Tracker:** [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-app-forcing-function-apps-495e5a5c6a0d)
+
+## Tracker
+
+Slices are identified by their S-number here; this plan is the source of truth.
+Linear issues are created per-slice when the slice starts, not during planning.
+Tracker project: [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-app-forcing-function-apps-495e5a5c6a0d).
 
 ## External dependencies
 
@@ -51,7 +56,7 @@ with that session, not a parallel spike against their moving target.
 
 ## Milestone 1: datahub on the framework
 
-### S1 — Secrets as bindings ([TML-2998](https://linear.app/prisma-company/issue/TML-2998))
+### S1 — Secrets as bindings
 
 Secret declared as a dependency, resolved to a binding; backing grounded
 against the platform surface (Compute env vars vs management-API store) before
@@ -60,7 +65,7 @@ the design settles. ADR for the secrets model.
 - **Builds on:** nothing.
 - **Hands to:** S2 — apps can declare secret inputs and receive typed bindings.
 
-### S2 — datahub port skeleton ([TML-2999](https://linear.app/prisma-company/issue/TML-2999))
+### S2 — datahub port skeleton
 
 datahub deployed via `prisma-app deploy` from its own repo: ingest + web
 services, postgres resource, secrets bindings, published/preview packages.
@@ -70,7 +75,7 @@ Scheduling unchanged (in-process tick) for this slice.
 - **Hands to:** S4 — a framework-deployed datahub verified equivalent to the
   current deployment.
 
-### S3 — Cron as an emulated resource System ([TML-3000](https://linear.app/prisma-company/issue/TML-3000))
+### S3 — Cron as an emulated resource System
 
 Scheduler System (compute service + postgres schedule state) invoking target
 services via their http/rpc ports, behind an implementation-blind binding
@@ -82,7 +87,7 @@ contract. Contract filed as a platform ask.
   adds a composition capability, S3 waits on it.
 - **Hands to:** S4 — a `cron` resource any app can consume.
 
-### S4 — datahub on cron + cutover ([TML-3001](https://linear.app/prisma-company/issue/TML-3001))
+### S4 — datahub on cron + cutover
 
 `/tick` driven by the cron resource; equivalence verified; the team's real
 instance cut over. Closes M1.
@@ -105,10 +110,10 @@ Two independent threads join at S4:
 Slices below are placeholders, firmed at the M1-close health check (also the
 decision point for splitting M2 into a successor project):
 
-- **S5 — Object storage as an emulated resource System** ([TML-3002](https://linear.app/prisma-company/issue/TML-3002)): blob contract, postgres + R2 backings, the swap demonstration — a direct application of hex-composition's H3 pattern (reusable system + same-contract fake).
-- **S6 — Streams as a resource** ([TML-3003](https://linear.app/prisma-company/issue/TML-3003)): design pass first (wrapper System vs managed primitive).
-- **S7 — open-chat port** ([TML-3004](https://linear.app/prisma-company/issue/TML-3004)): builds on S5, S6 (+ S1, S3 from M1).
-- **S8 — The local dev loop** ([TML-3005](https://linear.app/prisma-company/issue/TML-3005)): builds on S7 — deliberately last, after two ports' worth of evidence.
+- **S5 — Object storage as an emulated resource System**: blob contract, postgres + R2 backings, the swap demonstration — a direct application of hex-composition's H3 pattern (reusable system + same-contract fake).
+- **S6 — Streams as a resource**: design pass first (wrapper System vs managed primitive).
+- **S7 — open-chat port**: builds on S5, S6 (+ S1, S3 from M1).
+- **S8 — The local dev loop**: builds on S7 — deliberately last, after two ports' worth of evidence.
 
 S5 and S6 are parallel; S7 joins them; S8 closes.
 
