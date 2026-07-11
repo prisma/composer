@@ -305,6 +305,40 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@25.9.5)(vite@8.1.2(@types/node@25.9.5)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
 
+  packages/app-cron:
+    dependencies:
+      '@prisma/app':
+        specifier: workspace:0.2.0
+        version: link:../app
+      '@prisma/app-cloud':
+        specifier: workspace:0.2.0
+        version: link:../app-cloud
+      '@prisma/app-node':
+        specifier: workspace:0.2.0
+        version: link:../app-node
+      '@prisma/app-rpc':
+        specifier: workspace:0.2.0
+        version: link:../app-rpc
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+    devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.9
+        version: 4.1.9(@types/node@25.9.5)(vite@8.1.2(@types/node@25.9.5)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
+
   packages/app-nextjs:
     dependencies:
       '@prisma/app':
