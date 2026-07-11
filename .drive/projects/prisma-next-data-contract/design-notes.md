@@ -92,21 +92,48 @@ migrations directory, but the frozen core `ResourceNode`
 
 ## Deploy lowering
 
-Per PN-postgres resource, after DB provisioning, an Alchemy resource:
+Per PN-postgres resource, after DB provisioning, a **tracked Alchemy resource**
+(keyed on the target `storageHash`) runs `applyPnMigration`:
 
 1. `readMarker()` on the live DB → compare marker `storageHash` to the
    contract's.
-2. Equal → no-op (idempotent redeploy).
-3. Different → PN `migrate`: walk the authored migration graph from the
-   marker's hash to the target hash. Resume-safe; marker writes are atomic
-   with apply.
-4. Fail the deploy on: no path through the graph, destructive step without
-   explicit opt-in (`acceptDataLoss` stays off), or runner failure. A failed
-   apply leaves marker and diff unchanged.
+2. Equal → no-op (idempotent redeploy; also an Alchemy-level no-op via the
+   `storageHash` key).
+3. No marker (fresh DB) → `dbInit({ mode: 'apply' })`. Existing marker at a
+   different hash → `migrate`: walk the authored migration graph from the
+   marker's hash to the target. Resume-safe; marker writes are atomic with
+   apply.
+4. Fail the deploy on: no authored path (`MIGRATION_PATH_NOT_FOUND`), or runner
+   failure (`RUNNER_FAILED` / `INIT_FAILED`). A failed apply leaves marker and
+   schema unchanged (confirmed live).
 
-The plan-mode operation list is the Alchemy diff preview. Migration files are
-read from disk relative to the config — deploys run from a machine/CI that has
-the workspace, so the files are present where the lowering runs.
+**Safety model — authored-only, never synthesize.** The guarantee is that the
+deploy runs *only* the user's authored migrations (`migrate`/`dbInit`) and
+*never* a synthesized `dbUpdate` plan. There is deliberately **no**
+`acceptDataLoss`/"reject destructive" hook: `migrate()` has no such option (it
+is a `dbUpdate` concept), and a destructive step in an *authored* migration is
+the user's explicit intent — the framework does not second-guess authored DDL.
+The protection against *accidental* data loss is that nothing synthesizes a
+plan; every DDL that runs is one the user wrote and committed.
+
+**Alchemy modeling (locked): a tracked resource defined in app-cloud, not in
+`@prisma/alchemy`.** Inside the lowering `Effect` the DB `url` is a lazy
+`Output`, so the migration must run at apply-time (after the DB provisions) —
+which means a tracked resource whose `reconcile` receives the resolved url, not
+an inline call. The resource + its provider live in **app-cloud** (which
+already owns the PN dependency); the descriptor merges the provider into its
+`providers()` layer (`Layer.merge(Prisma.providers(), pnMigrationProvider)` —
+`deploy.ts`'s `mergedProviders` already `Layer.mergeAll`s across extensions).
+`@prisma/alchemy` stays PN-free. Rejected: (a) an imperative
+`Output.mapEffect` in the lowering — a provisioned-but-unconsumed DB would
+never migrate, and it doesn't participate in deploy state; (b) defining the
+resource inside `@prisma/alchemy` — couples a generic Prisma-Cloud provisioning
+lib to `@prisma-next/postgres/control`.
+
+Migration files are read from disk relative to the config path (`node.config`)
+— deploys run from a machine/CI that has the workspace, so the files are
+present where the lowering runs. `control.ts` importing PN control is
+deploy-only and never enters a runtime bundle (index-isolation invariant).
 
 ## Packaging
 
