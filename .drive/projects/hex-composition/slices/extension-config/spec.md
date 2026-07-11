@@ -96,3 +96,59 @@ path and drives `lower()` with its registries + state) → drive alchemy.
 - H3 (reusable system package + fake, live in CI) — next slice, builds on this.
 - Docs/ADRs — orchestrator-owned, amended alongside (ADR-0017 replaced,
   ADR-0003 amended, deploy-cli.md + system-composition.md updated).
+
+## Pinned decisions (no implementer discretion)
+
+1. **Descriptor shape — exact:**
+   ```ts
+   interface ExtensionDescriptor {
+     readonly id: string;                               // the extension's package name
+     readonly nodes: Record<string, NodeControl>;       // ONE registry per extension, keyed by node ID
+     readonly application?: ApplicationControl;         // once-per-lowering hook (today's app-level Project provision, verbatim semantics)
+     readonly providers?: () => Layer;                  // today's Target.providers, verbatim
+   }
+   type NodeControl =
+     | ({ kind: 'resource' } & Lowering)                // today's resources[type] shape
+     | ({ kind: 'service' } & ServiceLowering)          // today's services[type] shape
+     | ({ kind: 'build'; assemble(input: AssembleInput): Promise<Bundle> });
+   ```
+   The `kind` discriminant is REQUIRED and checked at every lookup site against
+   what the site needs (a resource node looked up against a `service` control is
+   an error naming (extension, type, expected kind)). Reuse today's
+   `Lowering`/`ServiceLowering`/`AssembleInput`/`Bundle` types — move, don't
+   redesign.
+2. **App-level Project**: NOT relocated into node controls. It is the
+   descriptor's `application` hook — same shape, same once-per-lowering timing,
+   same threading into that extension's service controls as today's target
+   `application`.
+3. **State**: `PrismaAppConfig.state` is REQUIRED, type `() => <the exact type
+   Target.state returned>`. `@prisma/alchemy` exposes
+   `prismaState(opts?: { workspaceId?: string })` — omitted opts read
+   `PRISMA_WORKSPACE_ID`, error names the variable. Wrap the existing state
+   export if its signature differs; do not redesign it.
+4. **Config type + loading**: `PrismaAppConfig { extensions: ExtensionDescriptor[]; state: ... }`;
+   `defineConfig` is a typed identity function. Loading mirrors prisma-next's
+   `config-loader/src/load.ts` EXACTLY: manual walk-up from the entry file's
+   dir for the literal filename `prisma-app.config.ts`, then c12 with that
+   explicit path; `rcFile`/`globalRc`/`packageJson` lookups disabled. CLI
+   validates the loaded shape field-by-field with CliErrors naming the field.
+   No arktype, no new validation deps.
+5. **Providers composition**: merge ALL listed extensions' `providers()` layers
+   (config array order, `Layer.mergeAll`); extensions without `providers`
+   skipped. No "used-extensions-only" filtering.
+6. **Signatures**: `lower(root, config, opts)` / `lowering(root, config, opts)`
+   (config replaces the old target parameter; internal two-level map lookup,
+   no key-string concatenation). CLI test seam: `RunDeps.config?: PrismaAppConfig`
+   (provided → skip c12). `assembleServices(graph, config, run?)`.
+   Generated stack file: keep current entry-import mechanics; replace the
+   fromEnv import with a RELATIVE import of the user's config
+   (`path.relative(dirname(generatedFile), configPath)`, posix separators).
+7. **Package exports**: add `./control` to app-cloud/app-node/app-nextjs and
+   `./config` to `@prisma/app`; DELETE `./target` and `./assemble` exports (no
+   aliases, no deprecation shims).
+8. **Renames**: node field `pack` → `extension` (and `requirePack` →
+   `requireExtension`, all error strings); build descriptor `kind` → `type`,
+   `assembler` deleted. Integration: config at
+   `test/integration/prisma-app.config.ts`; test file →
+   `cli.extension-config.test.ts`; fixture dir `node-owned-loads/` →
+   `extension-config/`.
