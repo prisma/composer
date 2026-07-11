@@ -1,4 +1,4 @@
-# ADR-0020: Scheduled work is a driver System, not a loadable resource
+# ADR-0020: Scheduled work is a driver, not a resource
 
 ## Status
 
@@ -6,117 +6,136 @@ Proposed
 
 ## Decision
 
-Cron is modelled as a **driver**: a service that declares a dependency on the thing
-it calls and invokes it on a schedule — the mirror image of a resource, which you
-call. It is not something a consumer `load()`s. A reusable `cron-scheduler` service
-holds the timer and depends on a `trigger(jobId)` endpoint; the user supplies a
-`router` that implements `trigger` and routes each `jobId` to real work; the two
-compose inside a `Cron` system. The schedule is **build-time configuration** — a
-param on the scheduler, not runtime state — so it survives restarts and can be
-lowered to a native platform scheduler later without touching the app.
+Cron is modelled as a **driver**: a scheduler service that *depends on* the
+endpoint it calls and invokes it on a timer. It is not a resource — nothing ever
+`load()`s a cron binding. The schedule itself is **build-time configuration**, a
+structured param on the scheduler, never runtime state.
+
+```ts
+// The reusable scheduler: depends on what it calls; the schedule is a param.
+compute({
+  name: 'scheduler',
+  params: { jobs: /* [{ jobId: 'tick', every: '60s' }, …] — a structured param */ },
+  deps:   { trigger: rpc(triggerContract) },   // trigger(jobId) — the ONE call edge
+  build:  node({ module: import.meta.url, entry: '../dist/scheduler.js' }),
+});
+
+// The app composes it with a router it writes, inside a Cron system:
+const router = provision('router', myRouter, { ingest: inputs.ingest });
+provision('scheduler', cronScheduler(schedule), { trigger: router.trigger });
+```
+
+The user's `router` implements `trigger(jobId)` and dispatches each job id to
+real work; the scheduler stays generic. Its deployment keeps one instance
+always running — it is the clock.
 
 ## Reasoning
 
-An ingest service exposes an endpoint that runs one budgeted step, and we want it
-called every sixty seconds. The instinct is to model cron like a resource the
-service depends on — but the arrow points the wrong way. A resource (postgres,
-object storage) is something the consumer *calls*: you `load()` a client and invoke
-it. Cron *calls you*. So it isn't a binding a consumer loads; it's a caller.
+An ingest service exposes an endpoint that runs one budgeted step of work, and
+it should be called every sixty seconds. The instinct is to model "cron" the way
+the framework models a database — a resource the service depends on. But the
+arrow points the wrong way. A resource is something the consumer *calls*: you
+`load()` a client and invoke it. Cron *calls you*. It exposes nothing a consumer
+could load; it is a caller.
 
-Seen that way, nothing new is needed. A caller is an ordinary consumer of the
-callee's exposed endpoint. The scheduler is a service whose dependency is the target
-endpoint, exactly as a storefront depends on an auth service's RPC port:
+Seen that way, no new machinery is needed. A caller is an ordinary consumer of
+the callee's exposed endpoint — the same shape as a storefront depending on an
+auth service's RPC port. The scheduler is a plain service whose declared
+dependency is a `trigger(jobId)` endpoint; at runtime it `load()`s a typed
+client for it and calls it when a job is due. The scheduler depends on the
+router; the router does not depend on the scheduler. No cycle, no
+"reverse-edge" primitive, and every call path — scheduler to router to target —
+is a declared dependency, visible in the static graph the framework derives
+from source.
 
-```ts
-// the reusable scheduler — it depends on what it calls
-compute({
-  name: 'scheduler',
-  params: { jobs },                 // the schedule, build-time (see below)
-  deps:   { trigger: rpc(triggerContract) },
-  build:  node({ /* a timer loop */, scaleToZero: false }),
-});
-```
+**The schedule must be build-time data.** Suppose instead the scheduler exposed
+a `schedule(interval, jobId)` endpoint and jobs registered themselves at
+runtime. Two things break. Compute instances are stateless and get recycled at
+the platform's discretion, so a schedule held in a booted instance's memory
+evaporates on every restart. And the schedule becomes invisible at deploy time:
+machinery that translates the graph into platform state can only translate what
+the graph contains, so a runtime-registered schedule can never be lowered into a
+platform's own scheduling primitives. Baking the jobs in as a param fixes both
+— the scheduler re-reads them from config on every boot, and the same static
+table is there for a native realization to read. This is what the structured,
+schema-typed param exists for
+([ADR-0018](ADR-0018-config-params-carry-a-caller-owned-schema.md)).
 
-At runtime it `load()`s a client to `trigger` and calls `trigger.tick(jobId)` on a
-timer. The scheduler depends on the router; the router depends on nothing of the
-scheduler's — so there is no dependency cycle, and no reverse-edge primitive to
-invent.
+**One clock serves every job.** The job id travels as *data* through the single
+fixed `trigger(jobId)` dependency, so adding a job never adds a service or a
+port — the router's dispatch grows by one case and the `jobs` param by one
+entry. That matters because the scheduler must run always-on: the platform has
+no timer primitive and idle services scale to zero, so the emulated realization
+pays for exactly one warm instance per app — never per job. A native platform
+timer would remove even that.
 
-**The schedule must be build-time data.** A running instance is stateless and gets
-recycled; a schedule registered at runtime (an RPC that tells the scheduler its
-jobs after boot) is lost on every restart, and — worse — is invisible to a future
-Alchemy lowering that would translate it into a native platform scheduler, because
-that lowering can only read what's in the graph at deploy. So the jobs are a param
-on the scheduler, baked in at deploy: read from config on every boot, and the exact
-static artifact a native lowering reads to emit platform triggers. Build-time job
-config is what makes both the emulated and the native realization work.
-
-**One clock, not one per job.** The `jobId` rides as data through a single fixed
-`trigger(jobId)` dependency, so adding jobs never adds services or ports. The
-scheduler fans out to a `router` the user writes; the router's `switch(jobId)`
-dispatches to real work, and the router's own dependency on the target service is
-the declared call edge. A single always-on scheduler drives every job — which
-matters because the emulated realization keeps that one service warm (scale-to-zero
-off) at a small fixed cost, and we will not multiply it per job.
-
-**A utility keeps jobs and handlers in sync**, modelled on `serve()`. `serve()`
-forces a handler for every method a service exposes; the scheduling analog forces a
-handler for every declared job:
+**The authoring surface keeps jobs and handlers in sync.** Declaring a job in
+the schedule and forgetting its handler (or vice versa) should not be
+expressible. The framework already has this pattern: `serve()` forces a handler
+for every method a service exposes. Scheduling gets the same pair — a schedule
+definition, and a `serve()`-analog that is exhaustive over it:
 
 ```ts
 export const schedule = defineSchedule({ tick: '60s', mrr: '24h' });
-// router server.ts:
+
+// The router's entry — omitting a job id is a type error, like a missing serve() method:
 export default serveSchedule(service, schedule, {
   tick: () => ingest.tick(),
   mrr:  () => ingest.refreshMrr(),
-});   // omit a jobId → type error, exactly like a missing serve() method
+});
 ```
 
-`defineSchedule` produces the `jobs` param the scheduler reads; `serveSchedule`
-produces the `trigger` handler that dispatches it. The jobIds have one source.
+`defineSchedule` produces the scheduler's `jobs` param; `serveSchedule` produces
+the router's `trigger` handler. The job ids have one source of truth, checked by
+the compiler.
+
+**Native later is a realization swap, not an app change.** The router only ever
+speaks the `trigger(jobId)` interface, and the schedule is static data. A native
+scheduler realization lowers the same `jobs` table into platform triggers that
+call `router.trigger(jobId)` directly, and the always-on service disappears.
+Nothing the app authored moves.
 
 ## Consequences
 
-- **No new composition capability is needed.** A driver is a normal service
-  depending on a sibling's exposed endpoint, which system composition already
-  expresses. Cron is built from existing primitives.
-- **The emulated realization needs an always-on service.** Prisma Compute has no
-  timer and scales to zero, so the scheduler runs with scale-to-zero disabled — a
-  small standing cost, per app, not per job. This is a recorded limitation and a
-  concrete platform ask (a native timer would replace it).
-- **Native later is a realization swap behind one interface.** Because the schedule
-  is static build-time data and the router only ever talks to the
-  `schedule`/`trigger` shape, a native scheduler lowers the same `jobs` into
-  platform triggers that call `router.trigger`; the router and its target wiring
-  don't change.
-- **Cron is not a resource.** It exposes no binding and is never `load()`ed. It sits
-  on the opposite side of the dependency arrow from object storage, and the two
-  should not share one "emulated resource" mould.
-- **v1 holds no state.** With the schedule baked in and idempotent, self-healing
-  targets, the scheduler needs no durable store. Durable, exactly-once, or dynamic
-  (runtime-registered) scheduling is deliberately out of scope until something needs
-  it.
+- **Cron composes from existing primitives.** A service depending on a
+  sibling's exposed endpoint, wrapped with a router in a system — nothing new in
+  the composition model. If an implementation reaches for a new primitive, that
+  is a signal the design is being misread.
+- **The scheduler holds no state.** The schedule is config; missed ticks are
+  healed by idempotent targets, not by scheduler bookkeeping. Durable,
+  exactly-once, and runtime-registered scheduling are deliberately excluded
+  until a real consumer needs them — they are a different, stateful feature.
+- **The emulated realization keeps one instance always on**, because the
+  platform offers no timer and scales idle services to zero. One standing
+  instance per app is the accepted cost; a platform timer primitive is the thing
+  that would eliminate it.
+- **Cron and resources do not share a mould.** Object storage is a resource (you
+  load a client and call it); cron is a driver (it calls you). Modelling them
+  identically would force one of them through the wrong shape.
 
 ## Alternatives considered
 
-- **Cron as a stateful server you register jobs with at runtime (RPC `/schedule`).**
-  Rejected: it hides the call edges from the static graph — the very thing the
-  framework derives from source — and it loses jobs on the stateless instance's
-  recycle. Build-time config keeps the edges visible and the jobs durable.
-- **One scheduler service per job.** Rejected on cost: each is an always-on instance.
-  A single scheduler with `jobId`-as-data fans out to many jobs at one standing cost.
-- **A reverse-edge / "resource that calls you" primitive in composition.** Rejected
-  as unnecessary: reframing the scheduler as a normal consumer of the target's
-  endpoint removes the inversion entirely.
+- **A stateful cron server with runtime registration** (`schedule(interval,
+  jobId)` RPC). Rejected: the schedule dies with each stateless instance, the
+  call edges vanish from the static graph, and the scheduler↔router dependency
+  becomes cyclic (each calls the other).
+- **One scheduler service per job.** Rejected on cost: every scheduler is an
+  always-on instance. Job-id-as-data fans one clock out to any number of jobs.
+- **A "resource that calls you" — a reverse-edge composition primitive.**
+  Rejected as unnecessary: reframing the scheduler as an ordinary consumer of
+  the target's endpoint makes the inversion disappear.
+- **Cron as a loadable resource with a client** (`load()` returns a cron
+  handle). Rejected: there is nothing meaningful for the consumer to call; the
+  interaction is entirely inbound. The binding model has nothing to bind.
 
 ## Related
 
 - [`ADR-0018`](ADR-0018-config-params-carry-a-caller-owned-schema.md) /
-  [`ADR-0019`](ADR-0019-the-target-owns-config-serialization.md) — the schema-typed,
-  target-serialized param the schedule rides on.
-- [`ADR-0013`](ADR-0013-resources-are-provisioned-by-systems-deps-are-declarations.md) —
-  the resource model this contrasts with (cron is a driver, not a resource).
-- [`ADR-0016`](ADR-0016-a-system-has-the-same-boundary-as-a-service.md) — system
-  composition, which the `Cron` system uses to wrap scheduler + router.
-- [`scheduled-work.md`](../10-domains/scheduled-work.md) — the cron topology and
-  authoring surface in full.
+  [`ADR-0019`](ADR-0019-the-target-owns-config-serialization.md) — the
+  structured, target-serialized param the schedule rides on.
+- [`ADR-0013`](ADR-0013-resources-are-provisioned-by-systems-deps-are-declarations.md)
+  — the resource model cron deliberately is *not*.
+- [`ADR-0016`](ADR-0016-a-system-has-the-same-boundary-as-a-service.md) — the
+  system composition the Cron wrapper uses.
+- [`../10-domains/scheduled-work.md`](../10-domains/scheduled-work.md) — the
+  topology and authoring surface in full.

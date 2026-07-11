@@ -1,155 +1,163 @@
 # Config params
 
-How a service's configuration is declared, typed, carried through deploy, stored on
-a platform, and read back at boot. Rests on
+How a service's configuration is declared, typed, carried to the platform, and
+read back at boot. Rests on
 [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md)
-(params carry a caller-owned schema) and
-[ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md) (the
-target owns serialization, over key/value string pairs).
+(a param's type is a caller-owned schema) and
+[ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md)
+(the deploy target owns serialization).
 
-## The declaration
+## The problem in one example
 
-A param is a schema plus a few framework facets. The schema — a Standard Schema,
-with arktype as the canonical author — is the caller's, and it does double duty:
-TypeScript infers the value type from it, and it validates the value at boot.
-
-```ts
-import type { StandardSchemaV1 } from '@standard-schema/spec';
-
-export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
-  readonly schema: S;
-  readonly default?: StandardSchemaV1.InferOutput<S>;
-  readonly secret?: boolean;    // redaction + secure placement, a handling concern
-  readonly optional?: boolean;
-  serialize(value: StandardSchemaV1.InferOutput<S>): Record<string, string>;
-  deserialize(pairs: Record<string, string>): StandardSchemaV1.InferOutput<S>;
-}
-
-export type Params = Record<string, ConfigParam>;
-```
-
-`Values<P>` maps a param set to the values an implementation receives, inferring
-each through `InferOutput` and widening the optional ones. A service's `load()`
-returns those values (merged with its hydrated deps).
-
-Scalars stay terse behind helpers so the common case is a one-word declaration:
+A scheduler service needs its schedule as configuration — a list of jobs, fixed
+at deploy:
 
 ```ts
-const string = (o?: Omit<Facets, 'schema'>) => ({ schema: type('string'), ...o, /* serializer */ });
-// { url: string({ secret: true }) }
+const jobs = [
+  { jobId: 'tick', every: '60s' },
+  { jobId: 'mrr',  every: '24h' },
+];
 ```
 
-There is no `ParamType` enum and no curated set of permitted types. A new shape is a
-new schema in user space, never a change to core.
+That value has to be declared on the service in a typed way, survive the trip
+onto the deployed instance (which stores configuration as encrypted key/value
+environment variables), and come back out of `service.load()` at boot as a
+validated `Job[]` — not a string somebody remembered to parse. Everything in
+this document is the machinery that makes that round trip work, for this
+structured value and for the humbler scalars (`port`, a connection `url`) that
+travel the same road.
 
-## Two axes: type and serializer
+## Declaring a param
 
-A param carries both its **type** (the schema — the caller's) and its
-**serializer** (`serialize`/`deserialize` — the target's). They are independent
-concerns that meet on one object:
+A param is a **schema plus a few framework facets**. The schema — any Standard
+Schema validator, arktype canonically — is the caller's own; it both types the
+param (TypeScript infers the value type from it) and validates the value at
+boot:
 
-- The **schema** says what the value *is* and validates it. It is the same across
-  every deployment of the param.
-- The **serializer** says how the value becomes stored config and back. It belongs
-  to whatever target stores it.
-
-These don't conflict, because the param that reaches a Service node is the target's
-param type by construction. A `compute()` service's params are Compute params
-(`@prisma/app-cloud`'s), so their serializer is app-cloud's. The requirement floats
-up the type tree: a utility that builds a param for a Compute service returns the
-Compute param type, so user code passes the right thing without thinking about it,
-and the compiler rejects a param typed for a different target.
-
-The serializer's medium is fixed even though its format is not: it emits **key/value
-string pairs** under the param's key namespace. A structured value may collapse to
-one key holding an encoded blob, or fan out across several keys — the target's
-choice. The *format* inside a value (JSON or anything else) is the target's private
-business; core neither sees nor constrains it. What is fixed is that the medium
-between serializer and platform is key/value strings, which is what an
-environment-backed platform stores, one row per pair.
-
-## The pipeline, end to end
-
-Follow a structured value — a scheduler's `jobs`, a list of `{ jobId, every }` —
-from the developer's keyboard to a running instance and back. The scalar params
-(`port`, a dependency's `url`) travel the same path; the structured one just
-exercises more of it.
-
-**Author.** A utility returns the `jobs` param: its `schema` is the caller's job
-shape, its `default` is the schedule, its serializer is the target's (because it
-feeds a `compute()` service).
-
-**Graph.** `prisma-app deploy` loads the root system. The scheduler node carries
-`params.jobs` (schema + default) and its dependency inputs.
-
-**buildConfig** (deploy) assembles the node's typed `Config`. A service's own params
-come from their `default`; dependency-input params come from the producers' lowered
-outputs (a resource's address, a sibling's URL). The structured `jobs` value rides
-through as-is — `Config` values are `unknown`, so nothing flattens it:
-
-```
-Config = { service: { jobs: [ {jobId:'tick',every:'60s'}, … ], port: 3000 },
-           inputs:  { trigger: { url: 'https://…' } } }
+```ts
+compute({
+  name: 'scheduler',
+  params: {
+    jobs: param(type({ jobId: 'string', every: 'string' }).array()),
+    region: string({ optional: true }),
+  },
+  deps:  { trigger: rpc(triggerContract) },
+  build: node({ module: import.meta.url, entry: '../dist/scheduler.js' }),
+});
 ```
 
-**serialize** (deploy, the target). The target's `ServiceLowering.serialize` walks
-the `Config` and, per param, calls its `serialize` to get key/value string pairs,
-under the `ADDRESS_OWNER_NAME` key namespace:
+The facets are `default` (the value used when none is stored), `secret`
+(redacted in introspection, placed securely by the target), and `optional`.
+They are deliberately not schema concerns: they describe how a value is
+*handled*, not what it *is*.
+
+There is no framework enum of permitted types. `string()` and `number()` are
+one-word helpers for the common scalars; anything else is just another schema.
+
+## Where the serializer comes from
+
+Between the typed value and the platform sits serialization, and it is not the
+param author's job. The `param()` constructor in the example above comes from
+the **target extension** (`@prisma/app-cloud`), and the params it builds carry
+the target's `serialize`/`deserialize`. That is the whole resolution of "who
+encodes this": a param configures a service node, the service node is the
+target's (`compute()` is app-cloud's), so the param is the target's type by
+construction — and the compiler rejects a param built for some other target.
+A package that declares params without being a target (a scheduling extension
+declaring `jobs` for its Compute-based scheduler) uses the target's constructor
+and stays portable precisely because it never invents its own encoding.
+
+The serializer's contract is fixed only in its **medium**: key/value string
+pairs.
+
+```ts
+serialize(value)   → Record<string, string>   // under the param's key namespace
+deserialize(pairs) → value                    // reverses it; validates via the schema
+```
+
+Whether a value becomes one pair holding an encoded blob or fans out across
+several pairs — and what the string format inside a value is — is the target's
+private business. Core never sees it.
+
+## The round trip, end to end
+
+Follow `jobs` from the declaration above to a firing timer.
+
+**Deploy — build the Config.** The deploy loads the root system into the graph
+and, per service node, assembles its typed `Config`: the service's own params
+from their declared values, each dependency input's params from its producer's
+lowered outputs (the router's URL, a database's connection string). `Config`
+values are structurally untouched — the `Job[]` rides through as an array:
 
 ```
-CRON_JOBS        = '[{"jobId":"tick","every":"60s"}, …]'
-CRON_PORT        = '3000'
-CRON_TRIGGER_URL = 'https://…'
+Config = { service: { jobs: [ {jobId:'tick',…}, {jobId:'mrr',…} ], port: 3000 },
+           inputs:  { trigger: { url: 'https://…router…' } } }
 ```
 
-**Store** (deploy, the platform). Each pair becomes one project-scoped, encrypted
-environment variable via the platform API; the service's deployed version declares a
-dependency on them, so it is ordered after the writes and re-versioned when any
-value changes.
-
-**deserialize + stash** (boot, the target). The instance's bootstrap reads the
-stored pairs by key and, per param, calls `deserialize` to reverse them — the `jobs`
-serializer parses and validates against the schema, rebuilding the typed `Job[]`;
-scalars reverse to their types. That reconstructs the identical typed `Config`. The
-values are then re-emitted under address-free keys so `load()` needs no address.
-
-**load** (runtime). The service entry calls `load()` and receives `{ trigger, jobs,
-port }` — deps hydrated into clients, params resolved to their typed values. The
-structured value is back, validated, exactly as authored.
-
-The round trip in one line:
+**Deploy — serialize.** The target's control walks the `Config` and calls each
+param's `serialize`, collecting key/value string pairs under the
+`ADDRESS_OWNER_NAME` key namespace that keeps them unique within the shared
+project:
 
 ```
-value → param.default → Config.service.jobs (structured)
-      → target.serialize → CRON_JOBS='…' → env var (encrypted)
-      → target.deserialize → parse + validate → Job[] → load()
+SCHEDULER_JOBS        = '[{"jobId":"tick","every":"60s"},…]'
+SCHEDULER_PORT        = '3000'
+SCHEDULER_TRIGGER_URL = 'https://…router…'
+```
+
+**Deploy — store.** Each pair becomes one project-scoped, encrypted environment
+variable, written through the platform API. The service's deployed version
+declares those variables as inputs, which orders it after the writes and forces
+a new version whenever a value changes.
+
+**Boot — deserialize.** The instance's bootstrap reads the stored pairs back by
+key and calls each param's `deserialize`: `jobs` is parsed and validated
+against its schema into a `Job[]`; `port` back into a number; the dependency
+params into their connection values. The result is the identical typed
+`Config`, reconstructed. The values are then re-emitted under address-free keys
+so application code never needs to know its own deployment address.
+
+**Runtime — load.** The service entry calls `service.load()` and receives
+`{ trigger, jobs, port }`: dependencies hydrated into clients (`trigger` is a
+typed RPC client aimed at the router), params as their validated, typed values.
+The schedule is back exactly as authored, and the scheduler starts its timers.
+
+One line:
+
+```
+Job[] → Config (structured) → target serialize → k/v string pairs
+      → encrypted env vars → target deserialize → schema-validated Job[] → load()
 ```
 
 ## Introspection
 
-`configOf` enumerates a node's params into a declaration list without booting
-anything. Because a param carries its schema, the declaration carries the schema (or
-its JSON-Schema projection), so a structured param reports its real shape — not "a
-string." Topology tooling and agents see what a service is configured with.
+A service's config surface is enumerable from the graph alone, nothing booted:
+`configOf` lists every param — its owner, facets, and **schema** — so a
+structured param reports its real shape rather than "a string". Secret params
+appear with values redacted. This is what keeps topology tooling and agents
+able to answer "what is this service configured with?" truthfully.
 
 ## Boundaries
 
-- **Core never encodes.** It builds the typed `Config` from the graph and hands it
-  to the target. It never stringifies and never reads an environment; even the
-  medium (k/v strings) is the target's, not core's.
-- **Structured params are static data.** A param's own value is its `default`; refs
-  to other nodes arrive through dependency inputs. A schema param cannot embed a
-  provisioning ref — a needed address is a dependency edge, not a param field.
-- **`secret` is handling, not type.** It governs redaction in introspection and
-  secure placement by the target, independent of the schema.
+Three lines the model holds everywhere:
+
+- **Core never encodes.** It builds the typed `Config` and hands it to the
+  target; it never stringifies a value and never reads an environment. Even the
+  key/value medium is an agreement between param and target.
+- **Params are static data.** A value that must come from another node — an
+  address, a URL, credentials a resource mints — is a dependency input, never a
+  field inside a param value. A schema param cannot embed a provisioning ref.
+- **`secret` is handling, not type.** The schema says what a value is; `secret`
+  says it must be redacted and placed securely. The two never mix.
 
 ## Related
 
 - [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md),
-  [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md) — the
-  decisions this documents.
-- [`core-model.md`](core-model.md) — where params sit in the node/graph/Config model.
-- [`scheduled-work.md`](scheduled-work.md) — cron, the worked consumer of a
-  structured param.
-- [`connection-contracts.md`](connection-contracts.md) — the `Contract`/`rpc`
-  caller-owned-type idiom params mirror.
+  [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md) —
+  the decisions this documents.
+- [`core-model.md`](core-model.md) — where params sit in the node → graph →
+  Config model.
+- [`scheduled-work.md`](scheduled-work.md) — the scheduler whose `jobs` param is
+  this document's worked example.
+- [`connection-contracts.md`](connection-contracts.md) — the caller-owned-type
+  idiom (Contract/rpc) that params mirror.

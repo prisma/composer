@@ -1,4 +1,4 @@
-# ADR-0018: Config params carry a caller-owned schema, not a fixed type enum
+# ADR-0018: Config params carry a caller-owned schema, not a framework type enum
 
 ## Status
 
@@ -6,111 +6,125 @@ Proposed
 
 ## Decision
 
-A config param declares its type with a **Standard Schema** the caller supplies,
-not a value drawn from a fixed `ParamType` enum. `ConfigParam` carries a `schema`
-field; the param's value type is inferred from it (`StandardSchemaV1.InferOutput`),
-and the schema is what validates the value. The curated `ParamType = 'string' |
-'number'` and its `TypeOf` mapping are removed. A param can now hold any shape the
-schema expresses — a scalar, an object, an array — with no change to core.
+A config param declares its type as a **schema the caller supplies** — any
+[Standard Schema](https://standardschema.dev) validator, with arktype as the
+canonical author. The framework maintains no enum of permitted param types;
+whatever shape a schema can express, a param can carry.
+
+```ts
+// A scalar param and a structured one, declared the same way.
+compute({
+  name: 'scheduler',
+  params: {
+    region: { schema: type('string') },
+    jobs:   { schema: type({ jobId: 'string', every: 'string' }).array() },
+  },
+  // ...
+});
+
+// At boot, load() returns values typed by the schemas:
+const { region, jobs } = service.load();
+// region: string;  jobs: { jobId: string; every: string }[]
+```
+
+The schema does double duty: TypeScript infers the param's value type from it
+(`StandardSchemaV1.InferOutput`), and it validates the value when the service
+boots. `secret` and `optional` remain separate framework facets on the param —
+they govern redaction and absence, which are about *handling* a value, not about
+what it is.
 
 ## Reasoning
 
-Take a scheduled-work service that needs its schedule as configuration: a list of
-`{ jobId, every }` entries, baked in at deploy so it survives every restart. That
-value is a structured array. Today it has nowhere to live. `ConfigParam` is
+Consider a scheduler service that needs its schedule as configuration: a list of
+`{ jobId, every }` entries, fixed at deploy so it survives every restart. That
+value is a structured array, and it is genuinely configuration — it belongs with
+the service's other params, travels the same deploy-to-boot path, and should be
+visible wherever the service's config surface is inspected.
+
+A param model built on a fixed set of scalar types cannot hold it. The escape
+hatch — declare a string param and stuff a `JSON.stringify` of the schedule into
+it — works mechanically but destroys the information: introspection reports "a
+string" where there is a schedule, topology tooling and agents can't see inside
+it, and any deploy-time machinery that wants to *translate* the schedule (for
+instance, into a platform's own scheduling primitives) has to re-parse an opaque
+blob by private convention. The structure exists in the author's head and
+nowhere else.
+
+The tempting fix is to grow the type set: add `'boolean'`, then `'url'`, then
+some object type, each with its own validation. But the framework cannot
+enumerate every shape configuration will take, and each addition is core surface
+to maintain forever. The question is really *who owns a param's type* — and the
+framework has already answered that question once, one layer up. An RPC
+`Contract` imposes no structure on its message types; the caller supplies
+Standard Schema validators and the framework carries them:
 
 ```ts
-export type ParamType = 'string' | 'number';
-export interface ConfigParam<T extends ParamType = ParamType> {
-  readonly type: T;
-  readonly default?: TypeOf<T>;
-  // secret?, optional?
-}
+rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) })
 ```
 
-so the only way to carry the schedule is to stuff a `JSON.stringify` of it into a
-`string` param. That works mechanically but the graph goes blind: `configOf`
-reports "one string param," topology tooling and agents can't see the schedule,
-and — the part that actually costs us — a native lowering can't read the structure
-to translate it, because there is no structure, only an opaque blob it would have
-to re-parse by private convention.
-
-The framework already solved exactly this problem one layer over, for RPC. A
-`Contract` imposes no structure on its types; the caller supplies them, and `rpc`
-takes Standard Schema validators (arktype the canonical one) straight from the
-caller and simply carries them:
+Params adopt the same principle. The type is the caller's schema; the framework
+carries it, infers from it, and validates with it, imposing nothing:
 
 ```ts
-export function rpc<I extends StandardSchemaV1, O extends StandardSchemaV1>(m: {
-  input: I;
-  output: O;
-}): (input: InferInput<I>) => Promise<InferOutput<O>>;
-```
-
-Config params should work the same way. The type is the caller's schema; the
-framework carries it and imposes nothing:
-
-```ts
-export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
+interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S;
   readonly default?: StandardSchemaV1.InferOutput<S>;
   readonly secret?: boolean;
   readonly optional?: boolean;
+  // serialization is the target's — see ADR-0019
 }
 ```
 
-A string param is now `{ schema: type('string') }`, a number `{ schema:
-type('number') }`, the schedule `{ schema: type({ jobId: 'string', every: 'string'
-}).array() }`. `Values<P>` infers each value via `InferOutput`; validation runs
-the schema instead of a hand-written string/number check. The scalar case stays
-terse behind a helper (`string()`, `number()` returning the schema-shaped param),
-so existing declarations barely change.
+A string param is `{ schema: type('string') }`; the schedule is the array schema
+above; a shape nobody has thought of yet is just another schema. Validation at
+boot runs the schema itself, which checks structured values far more precisely
+than a hand-written scalar coercion ever did. Small helpers (`string()`,
+`number()`) keep the common scalar declarations to a single word.
 
-`secret` and `optional` stay as framework facets, not schema concerns — `secret`
-governs redaction and secure placement, which is about handling the value, not
-validating it.
+Because the schema travels with the declaration, the structure survives into the
+graph: the enumeration of a service's config surface (`configOf`) reports the
+real shape of every param, so tooling, agents, and deploy-time translation all
+see a schedule — not a string.
 
 ## Consequences
 
-- **A documented maintenance point disappears.** The core model listed "extend
-  `ParamType` consciously, with its validation" as a standing extension point.
-  With caller-owned schemas there is nothing to extend: a new shape is a new
-  schema in user space, never a core change.
-- **Core gains a type-only dependency** on `@standard-schema/spec` — the same one
-  `@prisma/app-rpc` already uses. It's an interface package with no runtime; users
-  bring the validator (arktype). Core stays validator-agnostic.
-- **Validation moves to the schema.** The framework no longer hand-codes
-  string/number coercion; `schema.validate` does it, which validates richer shapes
-  than the old enum ever could.
-- **This is a breaking change to every param declaration.** `ConfigParam` is also
-  what dependency connection params use (`postgres`/`rpc`'s `{ url }`), and every
-  service's own params. All of them migrate from `{ type: 'string' }` to the
-  schema form. The `string()`/`number()` helpers keep the common case a one-word
-  change.
-- **Structured params are static data.** A param's own value comes from its
-  declared `default`; refs to other nodes arrive through dependency inputs, not
-  param fields. So a schema param cannot embed a provisioning ref — if a value
-  needs another node's address, that is a dependency edge, not a param.
+- **There is no param-type extension point to maintain.** A new shape is a new
+  schema in user space, never a core change. The framework's only commitment is
+  to the Standard Schema interface.
+- **Core gains a type-only dependency** on `@standard-schema/spec` — the same
+  interface package `@prisma/app-rpc` already uses. Users bring the validator;
+  core names no specific one.
+- **Every param is declared this way** — a service's own params and the
+  connection params on dependency declarations alike. There is one declaration
+  shape, with helpers keeping scalars terse.
+- **Params are static data.** A param's value comes from its declaration; a
+  reference to another node (an address, a connection string) arrives through a
+  dependency input, never inside a param value. A schema param cannot smuggle in
+  a provisioning ref.
+- **How a schema-typed value is stored and read back is a separate concern** —
+  serialization — owned by the deploy target and decided in
+  [ADR-0019](ADR-0019-the-target-owns-config-serialization.md).
 
 ## Alternatives considered
 
-- **Add a `'schema'` variant alongside `'string' | 'number'`.** Keeps the enum and
-  special-cases structured values. Rejected: it preserves the maintenance point
-  this decision exists to remove, and leaves two ways to say "a string." Making the
-  type always a schema is simpler and strictly more general — the scalars become
-  ordinary schemas.
-- **Keep the enum and encode structured values as JSON strings.** The pragmatic
-  hack. Rejected: it is graph-blind (introspection and native lowering can't see
-  the structure) and pushes the stringify into user code. The whole point of a
-  first-class type is that the structure survives into the graph.
+- **Grow the type enum case by case** (`'boolean'`, `'url'`, an object type…).
+  Rejected: the framework cannot anticipate every shape, each addition is
+  permanent core surface, and the enum's validation logic re-implements what
+  schema validators already do well.
+- **Keep scalars and encode structured values as JSON strings.** Rejected: the
+  structure vanishes from the graph — introspection, tooling, and deploy-time
+  translation see an opaque blob — and every author re-invents the
+  stringify/parse convention.
+- **A schema variant alongside the scalar enum** (`type: 'schema'` next to
+  `type: 'string'`). Rejected: it preserves the enum this decision exists to
+  remove and leaves two ways to declare a string. Scalars are just small
+  schemas; one mechanism covers everything.
 
 ## Related
 
 - [`ADR-0019`](ADR-0019-the-target-owns-config-serialization.md) — how a
-  schema-typed value is serialized: the target owns it, over key/value string
-  pairs.
-- [`ADR-0015`](ADR-0015-dependencies-resolve-to-bindings-clients-are-app-side.md) —
-  the binding model params feed into.
-- [`connection-contracts.md`](../10-domains/connection-contracts.md) — the
-  `Contract`/`rpc` caller-owned-type idiom this mirrors.
-- [`config-params.md`](../10-domains/config-params.md) — the params model in full.
+  schema-typed value is serialized into platform storage and back.
+- [`../10-domains/config-params.md`](../10-domains/config-params.md) — the
+  params model end to end.
+- [`../10-domains/connection-contracts.md`](../10-domains/connection-contracts.md)
+  — the Contract/rpc idiom this mirrors: caller-owned types, framework-carried.
