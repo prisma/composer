@@ -53,6 +53,12 @@ export function nextStandaloneDir(appDir: string): string {
   return path.join(resolvedApp, '.next', 'standalone', rel);
 }
 
+/** The bootable standalone entry for a nextjs build — the output dir joined with the adapter's `entry`. Single-sourced so `assemble()` (deploy) and the integration-test seam can't drift. */
+export function standaloneEntryPath(build: NextjsBuildAdapter): string {
+  const resolvedApp = path.resolve(path.dirname(fileURLToPath(build.module)), build.appDir);
+  return path.join(nextStandaloneDir(resolvedApp), build.entry);
+}
+
 export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (!isNextjsBuild(input.build)) {
     throw new Error(
@@ -65,7 +71,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const moduleDir = path.dirname(serviceModule);
   const resolvedApp = path.resolve(moduleDir, buildDescriptor.appDir);
   const appOut = nextStandaloneDir(resolvedApp);
-  const entryPath = path.join(appOut, buildDescriptor.entry);
+  const entryPath = standaloneEntryPath(buildDescriptor);
   if (!fs.existsSync(entryPath)) {
     throw new Error(
       `no standalone ${buildDescriptor.entry} at ${appOut} — run \`next build\` with output: "standalone" first`,

@@ -22,12 +22,12 @@ function shippedSources(): { file: string; text: string }[] {
   return out;
 }
 
-describe('entry map: the extension splits into authoring + control only', () => {
-  test("package.json exports exactly '.' and './control' — no runtime entry", () => {
+describe('entry map: authoring + control + testing, no runtime entry', () => {
+  test("package.json exports '.', './control', and './testing'", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './control']);
+    expect(codeEntries.sort()).toEqual(['.', './control', './testing']);
   });
 });
 

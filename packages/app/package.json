@@ -8,6 +8,7 @@
     "./casts": "./dist/casts.mjs",
     "./config": "./dist/config.mjs",
     "./deploy": "./dist/deploy.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.mts",

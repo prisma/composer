@@ -10,5 +10,6 @@ export default defineConfig({
     casts: 'src/casts.ts',
     assertions: 'src/assertions.ts',
     config: 'src/app-config.ts',
+    testing: 'src/testing.ts',
   },
 });
