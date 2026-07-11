@@ -4,7 +4,7 @@
 
 **Please report security issues privately. Do not open a public GitHub issue.**
 
-Use GitHub's **[Private vulnerability reporting](https://github.com/prisma/makerkit/security/advisories/new)** form on this repository to send a confidential report. The form is the preferred channel: it routes the report directly to the maintainers, captures structured detail (affected package, version, reproduction), and allows us to coordinate a fix and disclosure with you in a private thread.
+Use GitHub's **[Private vulnerability reporting](https://github.com/prisma/app/security/advisories/new)** form on this repository to send a confidential report. The form is the preferred channel: it routes the report directly to the maintainers, captures structured detail (affected package, version, reproduction), and allows us to coordinate a fix and disclosure with you in a private thread.
 
 If you cannot use GitHub's form for any reason, you may instead email `security@prisma.io`. Reports filed there will be triaged into the same workflow.
 
@@ -54,4 +54,4 @@ When the framework reaches 1.0 this section will be revised; the supported-versi
 
 ## Public advisories
 
-When a fix lands, the corresponding advisory will be published via [GitHub Security Advisories](https://github.com/prisma/makerkit/security/advisories) and may be assigned a CVE.
+When a fix lands, the corresponding advisory will be published via [GitHub Security Advisories](https://github.com/prisma/app/security/advisories) and may be assigned a CVE.

@@ -1,10 +1,10 @@
-# Code owners for prisma/makerkit.
+# Code owners for prisma/app.
 #
 # Every PR auto-routes to the maintainer team for review. If branch
 # protection on `main` requires an approving review from a code owner,
 # the team below must exist and have write access to this repo.
 #
-# NOTE: verify this team slug is correct for prisma/makerkit before
+# NOTE: verify this team slug is correct for prisma/app before
 # enabling code-owner-required branch protection — it is carried over
 # from prisma-next and may need to change.
 #

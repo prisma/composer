@@ -125,7 +125,7 @@ one-time manual bootstrap; every release after that goes through the workflow:
 2. **Configure a trusted publisher on each of the nine packages** at
    `npmjs.com/package/<name>/access` → *Trusted Publisher* → GitHub Actions:
    - Organization or user: `prisma`
-   - Repository: `makerkit`
+   - Repository: `app`
    - Workflow filename: `publish.yml`
    - Environment: leave blank
    - Allowed action: **npm publish**

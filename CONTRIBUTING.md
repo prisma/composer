@@ -30,8 +30,8 @@ You need:
 ## Setup
 
 ```bash
-git clone https://github.com/prisma/makerkit.git
-cd makerkit
+git clone https://github.com/prisma/app.git
+cd app
 
 corepack enable                      # if you haven't already
 pnpm install --frozen-lockfile
