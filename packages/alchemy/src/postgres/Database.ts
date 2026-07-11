@@ -18,6 +18,8 @@ export interface DatabaseProps {
   name: string;
   region: Region;
   isDefault?: boolean;
+  /** When set, the Branch this database is attached to (named-stage deploys). */
+  branchId?: string;
 }
 
 export interface DatabaseAttributes {
@@ -47,21 +49,34 @@ export const DatabaseProvider = () =>
                 }),
               )
             : undefined;
+          let result: DatabaseAttributes;
           if (observed) {
-            return { id: observed.data.id, name: observed.data.name };
+            result = { id: observed.data.id, name: observed.data.name };
+          } else {
+            const created = yield* call(() =>
+              client.POST('/v1/projects/{projectId}/databases', {
+                params: { path: { projectId: news.projectId } },
+                body: {
+                  name: news.name,
+                  region: news.region,
+                  ...(news.isDefault !== undefined && { isDefault: news.isDefault }),
+                },
+              }),
+            );
+            result = { id: created.data.id, name: created.data.name };
           }
 
-          const created = yield* call(() =>
-            client.POST('/v1/projects/{projectId}/databases', {
-              params: { path: { projectId: news.projectId } },
-              body: {
-                name: news.name,
-                region: news.region,
-                ...(news.isDefault !== undefined && { isDefault: news.isDefault }),
-              },
-            }),
-          );
-          return { id: created.data.id, name: created.data.name };
+          if (news.branchId !== undefined) {
+            const branchId = news.branchId;
+            yield* call(() =>
+              client.PATCH('/v1/databases/{databaseId}', {
+                params: { path: { databaseId: result.id } },
+                body: { branchId },
+              }),
+            );
+          }
+
+          return result;
         }),
         delete: Effect.fn(function* ({ output }) {
           yield* callVoid(() =>

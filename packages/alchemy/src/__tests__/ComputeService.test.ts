@@ -1,7 +1,13 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Schedule from 'effect/Schedule';
-import { deleteSafeRetrySchedule, isDeleteNotSafeYet } from '../compute/ComputeService.ts';
+import { type ManagementApiClient, ManagementClient } from '../client.ts';
+import {
+  ComputeService,
+  ComputeServiceProvider,
+  deleteSafeRetrySchedule,
+  isDeleteNotSafeYet,
+} from '../compute/ComputeService.ts';
 import { PrismaApiError } from '../http.ts';
 
 const deleteNotSafeError = new PrismaApiError({
@@ -98,5 +104,149 @@ describe('delete retry wiring (Effect.retry({ schedule, while }))', () => {
 describe('deleteSafeRetrySchedule', () => {
   test('is a Schedule value wired into the delete provider', () => {
     expect(Schedule.isSchedule(deleteSafeRetrySchedule)).toBe(true);
+  });
+});
+
+interface RecordedCall {
+  method: 'GET' | 'POST' | 'PATCH';
+  path: string;
+  body?: unknown;
+}
+
+interface FakeState {
+  calls: RecordedCall[];
+  /** When set, GET /v1/compute-services/{computeServiceId} resolves to this — the observed path. */
+  observed?: { id: string; name: string; serviceEndpointDomain?: string };
+}
+
+const okResponse = <T>(data: T, status = 200) => ({
+  data,
+  error: undefined,
+  response: new Response(null, { status }),
+});
+
+const notFoundResponse = () => ({
+  data: undefined,
+  error: undefined,
+  response: new Response(null, { status: 404 }),
+});
+
+/**
+ * A stubbed `ManagementApiClient` covering only the ComputeService provider's
+ * endpoints (GET/POST for observe-or-create, PATCH for Branch attachment),
+ * recording every call it receives — the container.test.ts fake-client
+ * idiom. `as unknown as ManagementApiClient` is acceptable here (test file
+ * — exempt from the no-bare-cast rule).
+ */
+const fakeClient = (state: FakeState): ManagementApiClient => {
+  const GET = (path: string) => {
+    state.calls.push({ method: 'GET', path });
+    if (path === '/v1/compute-services/{computeServiceId}') {
+      return Promise.resolve(
+        state.observed ? okResponse({ data: state.observed }) : notFoundResponse(),
+      );
+    }
+    throw new Error(`fakeClient: unexpected GET ${path}`);
+  };
+
+  const POST = (path: string, init: { body?: Record<string, unknown> } = {}) => {
+    state.calls.push({ method: 'POST', path, body: init.body });
+    if (path === '/v1/projects/{projectId}/compute-services') {
+      return Promise.resolve(
+        okResponse({ data: { id: 'cs-created', name: String(init.body?.['displayName']) } }, 201),
+      );
+    }
+    throw new Error(`fakeClient: unexpected POST ${path}`);
+  };
+
+  const PATCH = (path: string, init: { body?: Record<string, unknown> } = {}) => {
+    state.calls.push({ method: 'PATCH', path, body: init.body });
+    if (path === '/v1/compute-services/{computeServiceId}') {
+      return Promise.resolve(okResponse({ data: { id: 'cs-created', name: 'compute' } }));
+    }
+    throw new Error(`fakeClient: unexpected PATCH ${path}`);
+  };
+
+  return { GET, POST, PATCH } as unknown as ManagementApiClient;
+};
+
+const getService = (state: FakeState) =>
+  Effect.runPromise(
+    ComputeService.Provider.pipe(
+      Effect.provide(ComputeServiceProvider()),
+      Effect.provideService(ManagementClient, fakeClient(state)),
+    ),
+  );
+
+const reconcile = async (
+  state: FakeState,
+  input: { news: Record<string, unknown>; output?: { id: string; name: string } | undefined },
+) => {
+  const svc = await getService(state);
+  return Effect.runPromise(svc.reconcile(input as unknown as Parameters<typeof svc.reconcile>[0]));
+};
+
+describe('ComputeService reconcile — Branch attachment via PATCH', () => {
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = { calls: [] };
+  });
+
+  test('branchId set, no prior output: creates, then PATCHes the Branch', async () => {
+    const result = await reconcile(state, {
+      news: { projectId: 'proj-1', name: 'compute', branchId: 'br-1' },
+      output: undefined,
+    });
+
+    expect(result).toEqual({ id: 'cs-created', name: 'compute' });
+    expect(state.calls.map((c) => c.method)).toEqual(['POST', 'PATCH']);
+    expect(state.calls[0]?.body).toEqual({ displayName: 'compute' });
+    expect(state.calls[1]).toEqual({
+      method: 'PATCH',
+      path: '/v1/compute-services/{computeServiceId}',
+      body: { branchId: 'br-1' },
+    });
+  });
+
+  test('branchId set, prior output exists: observes, and still PATCHes (idempotent/self-healing)', async () => {
+    state.observed = { id: 'cs-existing', name: 'compute' };
+
+    const result = await reconcile(state, {
+      news: { projectId: 'proj-1', name: 'compute', branchId: 'br-1' },
+      output: { id: 'cs-existing', name: 'compute' },
+    });
+
+    expect(result).toEqual({ id: 'cs-existing', name: 'compute' });
+    expect(state.calls.map((c) => c.method)).toEqual(['GET', 'PATCH']);
+    expect(state.calls[1]).toEqual({
+      method: 'PATCH',
+      path: '/v1/compute-services/{computeServiceId}',
+      body: { branchId: 'br-1' },
+    });
+  });
+
+  test('branchId unset, no prior output: creates and issues no PATCH', async () => {
+    const result = await reconcile(state, {
+      news: { projectId: 'proj-1', name: 'compute' },
+      output: undefined,
+    });
+
+    expect(result).toEqual({ id: 'cs-created', name: 'compute' });
+    expect(state.calls.map((c) => c.method)).toEqual(['POST']);
+    expect(state.calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
+  });
+
+  test('branchId unset, prior output exists: observes and issues no PATCH', async () => {
+    state.observed = { id: 'cs-existing', name: 'compute' };
+
+    const result = await reconcile(state, {
+      news: { projectId: 'proj-1', name: 'compute' },
+      output: { id: 'cs-existing', name: 'compute' },
+    });
+
+    expect(result).toEqual({ id: 'cs-existing', name: 'compute' });
+    expect(state.calls.map((c) => c.method)).toEqual(['GET']);
+    expect(state.calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
   });
 });

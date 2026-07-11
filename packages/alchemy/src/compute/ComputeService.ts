@@ -43,6 +43,8 @@ export interface ComputeServiceProps {
   projectId: string;
   name: string;
   region?: ComputeRegion;
+  /** When set, the Branch this compute service is attached to (named-stage deploys). */
+  branchId?: string;
 }
 
 export interface ComputeServiceAttributes {
@@ -78,26 +80,39 @@ export const ComputeServiceProvider = () =>
                 }),
               )
             : undefined;
+          let result: ComputeServiceAttributes;
           if (observed) {
-            return {
+            result = {
               id: observed.data.id,
               name: observed.data.name,
               endpointDomain: observed.data.serviceEndpointDomain,
             };
+          } else {
+            // Ensure — create it in the target project.
+            const created = yield* call(() =>
+              client.POST('/v1/projects/{projectId}/compute-services', {
+                params: { path: { projectId: news.projectId } },
+                body: { displayName: news.name, ...(news.region && { regionId: news.region }) },
+              }),
+            );
+            result = {
+              id: created.data.id,
+              name: created.data.name,
+              endpointDomain: created.data.serviceEndpointDomain,
+            };
           }
 
-          // Ensure — create it in the target project.
-          const created = yield* call(() =>
-            client.POST('/v1/projects/{projectId}/compute-services', {
-              params: { path: { projectId: news.projectId } },
-              body: { displayName: news.name, ...(news.region && { regionId: news.region }) },
-            }),
-          );
-          return {
-            id: created.data.id,
-            name: created.data.name,
-            endpointDomain: created.data.serviceEndpointDomain,
-          };
+          if (news.branchId !== undefined) {
+            const branchId = news.branchId;
+            yield* call(() =>
+              client.PATCH('/v1/compute-services/{computeServiceId}', {
+                params: { path: { computeServiceId: result.id } },
+                body: { branchId },
+              }),
+            );
+          }
+
+          return result;
         }),
         delete: Effect.fn(function* ({ output }) {
           yield* callVoid(() =>
