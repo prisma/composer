@@ -35,13 +35,9 @@ const leanTokens = [
 describe('entry map: core splits into authoring + deploy + pure utils — no runtime entry', () => {
   test("package.json exports '.', './deploy', './config', and the ./casts + ./assertions utilities", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
-    expect(Object.keys(pkg.exports).sort()).toEqual([
-      '.',
-      './assertions',
-      './casts',
-      './config',
-      './deploy',
-    ]);
+    // `./package.json` is a conventional manifest export, not a code entry.
+    const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
+    expect(codeEntries.sort()).toEqual(['.', './assertions', './casts', './config', './deploy']);
   });
 });
 
@@ -60,8 +56,11 @@ describe('invariant 1: core has no target or runtime dependency', () => {
       expect(dep).not.toMatch(/^@types\/(bun|node)$/);
       expect(dep).not.toMatch(/^node(-|:)/);
     }
-    // Target coupling must not hide in devDependencies either.
+    // Target coupling must not hide in devDependencies either. Build-only config
+    // (the shared tsdown base) ships nothing and is not target/runtime coupling.
+    const buildOnly = new Set(['@prisma/app-tsdown']);
     for (const dep of Object.keys(pkg.devDependencies ?? {})) {
+      if (buildOnly.has(dep)) continue;
       expect(dep).not.toMatch(/prisma/i);
     }
   });

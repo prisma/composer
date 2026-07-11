@@ -1,0 +1,15 @@
+# Code owners for prisma/app.
+#
+# Every PR auto-routes to the maintainer team for review. If branch
+# protection on `main` requires an approving review from a code owner,
+# the team below must exist and have write access to this repo.
+#
+# NOTE: verify this team slug is correct for prisma/app before
+# enabling code-owner-required branch protection — it is carried over
+# from prisma-next and may need to change.
+#
+# This is intentionally a flat ownership rule: until the maintainer
+# group is large enough to warrant subsystem-level routing, a single
+# rule is easier to keep current than per-directory rules that drift.
+
+* @prisma/ORM-TS-Maintain

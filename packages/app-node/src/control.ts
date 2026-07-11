@@ -78,6 +78,12 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     dts: false,
     sourcemap: false,
     clean: false,
+    // Self-contained runtime bundle: do NOT auto-load a discovered
+    // `tsdown.config.ts`. This package's build config enables tsdown's
+    // `exports` management, which would rewrite THIS package's package.json
+    // `exports` to point at the throwaway bundle dir — corrupting resolution
+    // of `@prisma/app-node` for everything that imports it afterward.
+    config: false,
   });
 
   const built = fs.readdirSync(bundleDir).find((f) => /^service\.m?js$/.test(f));

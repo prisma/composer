@@ -1,0 +1,24 @@
+---
+description: Test import patterns — within-package tests import source (../src), cross-package/integration tests import the package identifier
+globs: ["**/*.test.ts", "**/*.test-d.ts", "test/**", "packages/**/__tests__/**", "examples/**/test/**"]
+alwaysApply: false
+---
+
+# Test import patterns
+
+Packages build to `dist/` and export from there, so *how* a test imports a
+workspace package decides what it exercises.
+
+## Within-package tests
+
+- **Import from source** (`../foo.ts`, `./foo.ts`) — not from the package's own
+  identifier. Importing your own package by name (`@prisma/app`) resolves to its
+  built `dist/`, which is stale relative to the source you are editing.
+
+## Cross-package / integration tests
+
+- **Import from the package identifier** (`@prisma/app`, `@prisma/app-cloud`, …)
+  to verify the real public surface. This resolves to `dist/`, so the dependency
+  must be built first — the `test`/`typecheck` turbo tasks build deps up front,
+  and CI builds before testing (see
+  [`workspace-package-not-found`](./workspace-package-not-found.mdc)).

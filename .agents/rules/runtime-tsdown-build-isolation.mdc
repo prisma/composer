@@ -1,0 +1,42 @@
+---
+description: "Runtime tsdown build() calls (e.g. deploy-time assemble) must pass config:false — otherwise tsdown auto-loads the package's own tsdown.config.ts, whose exports management rewrites that package's package.json exports to the throwaway bundle dir and corrupts resolution of the package afterward"
+globs: ["packages/*/src/**/*.ts"]
+alwaysApply: false
+---
+
+# Runtime `tsdown build()` must be isolated from the package build config
+
+Some packages call tsdown's programmatic `build()` at **runtime** (not as their
+own build step) — e.g. `@prisma/app-node` and `@prisma/app-nextjs` bundle the
+user's server inside `assemble()` during `prisma-app deploy`.
+
+tsdown's `build()` **auto-discovers a `tsdown.config.ts`** from the working
+directory. Every publishable package now has one (it enables tsdown's `exports`
+management so the manifest tracks the built entries). If a runtime `build()`
+picks that config up, tsdown **rewrites the package's own `package.json`
+`exports`** to point at the throwaway bundle output — after which every later
+resolution of that package fails (`Cannot find module` under bun; `Invalid
+"exports" main target "/tmp/…"` under node).
+
+## Rule
+
+Any runtime `build(...)` call MUST pass `config: false`:
+
+```ts
+await build({
+  entry: [serviceModule],
+  outDir: bundleDir,
+  // …
+  config: false, // do NOT auto-load this package's tsdown.config.ts
+});
+```
+
+A runtime bundle is self-contained: it supplies its options inline and must never
+read — or mutate — a package manifest.
+
+## Why this is easy to miss
+
+It only bites once a package has both a `tsdown.config.ts` **and** a runtime
+`build()` call, and the symptom is a corrupted `package.json` that surfaces as a
+*resolution* failure in an unrelated test — see
+[`workspace-package-not-found`](./workspace-package-not-found.mdc).

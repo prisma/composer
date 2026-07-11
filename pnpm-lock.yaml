@@ -20,6 +20,12 @@ importers:
       lint-staged:
         specifier: ^16.2.6
         version: 16.4.0
+      pathe:
+        specifier: ^2.0.3
+        version: 2.0.3
+      pkg-pr-new:
+        specifier: 0.0.75
+        version: 0.0.75
       turbo:
         specifier: ^2.6.1
         version: 2.8.7
@@ -33,25 +39,25 @@ importers:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92(effect@4.0.0-beta.92)
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app
       '@prisma/app-cloud':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-cloud
       '@prisma/app-nextjs':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-nextjs
       '@prisma/app-node':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-node
       '@prisma/app-rpc':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-rpc
       '@storefront-auth/auth':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:systems/auth
       '@storefront-auth/storefront':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:systems/storefront
       alchemy:
         specifier: 2.0.0-beta.59
@@ -64,7 +70,7 @@ importers:
         version: 4.0.0-beta.92
     devDependencies:
       '@prisma/app-cli':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-cli
       '@types/bun':
         specifier: ^1.3.13
@@ -76,16 +82,16 @@ importers:
   examples/storefront-auth/systems/auth:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app
       '@prisma/app-cloud':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-cloud
       '@prisma/app-node':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-node
       '@prisma/app-rpc':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-rpc
       arktype:
         specifier: ^2.2.3
@@ -104,19 +110,19 @@ importers:
   examples/storefront-auth/systems/storefront:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app
       '@prisma/app-cloud':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-cloud
       '@prisma/app-nextjs':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-nextjs
       '@prisma/app-rpc':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../../../packages/app-rpc
       '@storefront-auth/auth':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../auth
       arktype:
         specifier: ^2.2.3
@@ -147,7 +153,7 @@ importers:
   packages/alchemy:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       '@prisma/management-api-sdk':
         specifier: ^1.47.0
@@ -162,12 +168,18 @@ importers:
         specifier: ^3.4.9
         version: 3.4.9
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
       '@types/node':
         specifier: ^24.10.13
         version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -181,9 +193,15 @@ importers:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -194,15 +212,21 @@ importers:
   packages/app-assemble:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
       '@types/node':
         specifier: ^24.10.13
         version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -210,10 +234,10 @@ importers:
   packages/app-cli:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       '@prisma/app-assemble':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app-assemble
       c12:
         specifier: ^3.3.4
@@ -222,12 +246,18 @@ importers:
         specifier: ^3.2.1
         version: 3.2.1(typanion@3.14.0)
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
       '@types/node':
         specifier: ^24.10.13
         version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -235,10 +265,10 @@ importers:
   packages/app-cloud:
     dependencies:
       '@prisma/alchemy':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../alchemy
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       alchemy:
         specifier: 2.0.0-beta.59
@@ -247,9 +277,15 @@ importers:
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -260,12 +296,15 @@ importers:
   packages/app-nextjs:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       tsdown:
         specifier: ^0.15.9
         version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
@@ -279,12 +318,15 @@ importers:
   packages/app-node:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       tsdown:
         specifier: ^0.15.9
         version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
@@ -298,7 +340,7 @@ importers:
   packages/app-rpc:
     dependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../app
       '@standard-schema/spec':
         specifier: ^1.1.0
@@ -307,9 +349,15 @@ importers:
         specifier: ^2.2.3
         version: 2.2.3
     devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -317,22 +365,50 @@ importers:
         specifier: ^4.1.9
         version: 4.1.9(@types/node@24.10.13)(vite@8.1.2(@types/node@24.10.13)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))
 
+  packages/prisma-app:
+    dependencies:
+      '@prisma/app-cli':
+        specifier: workspace:0.2.0
+        version: link:../app-cli
+    devDependencies:
+      '@prisma/app-tsdown':
+        specifier: workspace:0.2.0
+        version: link:../tsdown-config
+      '@types/node':
+        specifier: ^24.10.13
+        version: 24.10.13
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/tsdown-config:
+    devDependencies:
+      tsdown:
+        specifier: ^0.15.9
+        version: 0.15.12(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   test/integration:
     devDependencies:
       '@prisma/app':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app
       '@prisma/app-cli':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-cli
       '@prisma/app-cloud':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-cloud
       '@prisma/app-nextjs':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-nextjs
       '@prisma/app-node':
-        specifier: workspace:*
+        specifier: workspace:0.2.0
         version: link:../../packages/app-node
       '@types/bun':
         specifier: ^1.3.13
@@ -2297,6 +2373,10 @@ packages:
   picomatch@4.0.4:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
+
+  pkg-pr-new@0.0.75:
+    resolution: {integrity: sha512-u9mdErTewKSMsr+ceCt8VcNuNP0ro5AXiPXhUVApuEyqr2Zlvt+DdCFBcm+yGWN8mhOdZJ27meIDbnoZgfzpOw==}
+    hasBin: true
 
   pkg-types@2.3.1:
     resolution: {integrity: sha512-y+ichcgc2LrADuhLNAx8DFjVfgz91pRxfZdI3UDhxHvcVEZsenLO+7XaU5vOp0u/7V/wZ+plyuQxtrDlZJ+yeg==}
@@ -4641,6 +4721,8 @@ snapshots:
   picomatch@2.3.1: {}
 
   picomatch@4.0.4: {}
+
+  pkg-pr-new@0.0.75: {}
 
   pkg-types@2.3.1:
     dependencies:

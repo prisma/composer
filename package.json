@@ -6,7 +6,7 @@
   "scripts": {
     "setup:env": "bun scripts/setup-env.ts",
     "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
+    "dev": "turbo watch build",
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
@@ -14,8 +14,9 @@
     "lint:casts": "node scripts/lint-casts.mjs",
     "rules:sync": "node scripts/sync-agent-rules.mjs",
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
+    "check:publish-deps": "node scripts/check-publish-deps.mjs",
     "test": "turbo run test",
-    "test:scripts": "node --test scripts/*.test.mjs",
+    "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "husky && node scripts/sync-agent-rules.mjs"
@@ -25,7 +26,10 @@
     "@clack/prompts": "^1.6.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.6",
+    "pathe": "^2.0.3",
+    "pkg-pr-new": "0.0.75",
     "turbo": "^2.6.1",
     "typescript": "^6.0.3"
-  }
+  },
+  "version": "0.2.0"
 }

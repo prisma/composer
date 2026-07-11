@@ -1,0 +1,25 @@
+---
+description: Keep @prisma/app-tsdown source-only exports
+alwaysApply: false
+globs: ["packages/tsdown-config/**"]
+---
+
+# @prisma/app-tsdown source-only policy
+
+The package `packages/tsdown-config` (`@prisma/app-tsdown`) is the shared tsdown
+base config. It is source-only and must not add emitted JavaScript artifacts to
+work around runtime config loading.
+
+## Rules
+
+- Do not add `base.js` (or other transpiled JS siblings) in `packages/tsdown-config`.
+- Do not change `packages/tsdown-config/package.json` exports to point at `.js`.
+- Keep the export source-only (currently `./base.ts`), and keep the package
+  `private: true` — it is never published.
+
+## Rationale
+
+- It is an internal config helper and should remain canonical TypeScript source
+  imported by each package's `tsdown.config.ts`.
+- Workarounds for runtime loading must be solved in consumers/tooling, not by
+  emitting parallel JS files here.

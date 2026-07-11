@@ -1,0 +1,18 @@
+{
+  "name": "@prisma/app-tsdown",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Base tsdown configuration for the workspace",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./base.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsdown": "^0.15.9",
+    "typescript": "^6.0.3"
+  }
+}

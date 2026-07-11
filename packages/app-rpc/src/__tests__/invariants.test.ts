@@ -25,7 +25,9 @@ function shippedSources(): { file: string; text: string }[] {
 describe('entry map: @prisma/app-rpc ships a single entry', () => {
   test("package.json exports exactly '.'", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
-    expect(Object.keys(pkg.exports)).toEqual(['.']);
+    // `./package.json` is a conventional manifest export, not a code entry.
+    const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
+    expect(codeEntries).toEqual(['.']);
   });
 });
 

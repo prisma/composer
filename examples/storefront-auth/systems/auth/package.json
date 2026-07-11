@@ -1,6 +1,6 @@
 {
   "name": "@storefront-auth/auth",
-  "version": "0.0.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,10 +13,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/app": "workspace:*",
-    "@prisma/app-node": "workspace:*",
-    "@prisma/app-cloud": "workspace:*",
-    "@prisma/app-rpc": "workspace:*",
+    "@prisma/app": "workspace:0.2.0",
+    "@prisma/app-node": "workspace:0.2.0",
+    "@prisma/app-cloud": "workspace:0.2.0",
+    "@prisma/app-rpc": "workspace:0.2.0",
     "arktype": "^2.2.3"
   },
   "devDependencies": {
