@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { configOf, number, string } from '../config.ts';
 import { dependency, service } from '../node.ts';
-import { conn, scalarDecl } from './helpers.ts';
+import { conn, scalarDeclaration } from './helpers.ts';
 
 const build = {
   extension: '@prisma/app-node',
@@ -31,9 +31,9 @@ describe('configOf', () => {
     });
 
     expect(configOf(root)).toEqual([
-      scalarDecl({ input: 'db' }, 'url', { secret: true }),
-      scalarDecl({ input: 'db' }, 'schema', { optional: true }),
-      scalarDecl('service', 'port', { default: 3000 }),
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'db' }, 'schema', { optional: true }),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
   });
 
@@ -70,7 +70,7 @@ describe('configOf', () => {
       build,
     });
 
-    expect(configOf(root)).toEqual([scalarDecl('service', 'port', { default: 3000 })]);
+    expect(configOf(root)).toEqual([scalarDeclaration('service', 'port', { default: 3000 })]);
   });
 
   test('executes nothing — configOf never calls a connection hydrate', () => {
@@ -121,9 +121,9 @@ describe('configOf over dependency inputs', () => {
     });
 
     expect(configOf(root)).toEqual([
-      scalarDecl({ input: 'db' }, 'url', { secret: true }),
-      scalarDecl({ input: 'auth' }, 'url'),
-      scalarDecl('service', 'port', { default: 3000 }),
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'auth' }, 'url'),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
   });
 });

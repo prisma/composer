@@ -66,5 +66,5 @@ surface, and whether S1 splits.
 ## References
 
 - [spec.md](spec.md), [plan.md](plan.md)
-- ADR-0018/0019/0020 and the config-params / scheduled-work domain docs
+- ADR-0018/0019/0020/0021 and the config-params domain doc
 - Sibling: [Forcing-Function Apps](../forcing-function-apps/design-notes.md)

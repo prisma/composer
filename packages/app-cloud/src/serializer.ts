@@ -30,7 +30,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 declare const process: { env: Record<string, string | undefined> };
 
 /** One declared param, paired with its owner and the raw ConfigParam (functions included). */
-export interface DeclaredParam {
+export interface ParamEntry {
   readonly owner: 'service' | { readonly input: string };
   readonly name: string;
   readonly param: ConfigParam;
@@ -42,8 +42,8 @@ export interface DeclaredParam {
  * `ConfigParam` (with its `serialize`/`deserialize`) instead of a pure-data
  * projection.
  */
-export function declaredParams(node: ServiceNode): readonly DeclaredParam[] {
-  const entries: DeclaredParam[] = [];
+export function paramEntries(node: ServiceNode): readonly ParamEntry[] {
+  const entries: ParamEntry[] = [];
 
   for (const [input, value] of Object.entries(node.inputs)) {
     if (typeof value !== 'object' || value === null) continue;
@@ -65,7 +65,7 @@ export function declaredParams(node: ServiceNode): readonly DeclaredParam[] {
 
 export const configKey = (
   address: string,
-  d: { owner: DeclaredParam['owner']; name: string },
+  d: { owner: ParamEntry['owner']; name: string },
 ): string => {
   const segments = address.split('.').filter((s) => s.length > 0);
   const owner = d.owner === 'service' ? [] : [d.owner.input];
@@ -78,7 +78,7 @@ export const configKey = (
  * string at boot) and passes through untouched — LANDMINE: JSON-encoding it
  * would break the ordering edge Alchemy resolves through it.
  */
-export function encode(owner: DeclaredParam['owner'], value: unknown): string {
+export function encode(owner: ParamEntry['owner'], value: unknown): string {
   return owner === 'service'
     ? JSON.stringify(value)
     : blindCast<
@@ -88,11 +88,11 @@ export function encode(owner: DeclaredParam['owner'], value: unknown): string {
 }
 
 /** Reverses `encode`: JSON-parse a service-own value, take a dependency-input value raw. */
-function decode(owner: DeclaredParam['owner'], raw: string): unknown {
+function decode(owner: ParamEntry['owner'], raw: string): unknown {
   return owner === 'service' ? JSON.parse(raw) : raw;
 }
 
-function coerce(raw: string | undefined, d: DeclaredParam, key: string): unknown {
+function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
   // "" is UNRESOLVED, not a value — falls to the default or, if required, is
   // a loud boot failure; a NON-EMPTY value that fails its param's declared
   // schema is an error regardless of any default (a default substitutes for
@@ -120,7 +120,7 @@ export const deserialize = (node: ServiceNode, address: string): Config => {
   const service: Record<string, unknown> = {};
   const inputs: Record<string, Record<string, unknown>> = {};
 
-  for (const d of declaredParams(node)) {
+  for (const d of paramEntries(node)) {
     const key = configKey(address, d);
     const value = coerce(process.env[key], d, key);
     if (d.owner === 'service') {
@@ -146,7 +146,7 @@ export const deserialize = (node: ServiceNode, address: string): Config => {
  * Writes only these keys; nothing else is touched.
  */
 export const stash = (node: ServiceNode, config: Config): void => {
-  for (const d of declaredParams(node)) {
+  for (const d of paramEntries(node)) {
     const value =
       d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
     if (value === undefined) continue;

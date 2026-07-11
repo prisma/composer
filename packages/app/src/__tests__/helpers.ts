@@ -20,7 +20,7 @@ export const providerContract = <K extends string, Cmp>(kind: K, cmp: Cmp): Cont
   });
 
 /** The ConfigDeclaration `configOf` produces for a scalar param — one place for the shape. */
-export function scalarDecl(
+export function scalarDeclaration(
   owner: ConfigDeclaration['owner'],
   name: string,
   opts: { secret?: boolean; optional?: boolean; default?: unknown } = {},

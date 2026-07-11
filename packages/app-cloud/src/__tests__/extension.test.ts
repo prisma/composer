@@ -5,7 +5,7 @@ import { type } from 'arktype';
 import { compute, postgres, postgresContract } from '../index.ts';
 import { configKey, deserialize, encode } from '../serializer.ts';
 
-function scalarDecl(
+function scalarDeclaration(
   owner: ConfigDeclaration['owner'],
   name: string,
   opts: { secret?: boolean; optional?: boolean; default?: unknown } = {},
@@ -391,8 +391,8 @@ describe('the config pipeline over extension nodes', () => {
     });
 
     expect(configOf(app)).toEqual([
-      scalarDecl({ input: 'db' }, 'url', { secret: true }),
-      scalarDecl('service', 'port', { default: 3000 }),
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
     expect(JSON.stringify(configOf(app))).not.toContain('DATABASE_URL');
   });
@@ -404,7 +404,7 @@ describe('the config pipeline over extension nodes', () => {
       build,
     });
 
-    expect(configOf(app)).toEqual([scalarDecl('service', 'port', { default: 3000 })]);
+    expect(configOf(app)).toEqual([scalarDeclaration('service', 'port', { default: 3000 })]);
   });
 });
 

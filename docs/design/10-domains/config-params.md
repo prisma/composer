@@ -164,7 +164,7 @@ Three lines the model holds everywhere:
   the decisions this documents.
 - [`core-model.md`](core-model.md) — where params sit in the node → graph → Config
   model.
-- [`scheduled-work.md`](scheduled-work.md) — the scheduler whose `jobs` param is
-  this document's worked example.
+- [`ADR-0020`](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)
+  — cron, whose `jobs` schedule is this document's worked structured param.
 - [`connection-contracts.md`](connection-contracts.md) — the RPC contract whose
   caller-schema / target-owned-wire split params mirror.

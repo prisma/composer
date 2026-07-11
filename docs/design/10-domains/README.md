@@ -17,9 +17,6 @@ architecture/design phase that comes *after* the high-level model is settled.
   (a caller-owned schema), carried through deploy, serialized to platform
   storage by the target (over key/value string pairs), and read back at boot.
   Rests on ADR-0018 and ADR-0019.
-- [`scheduled-work.md`](scheduled-work.md) — cron as a driver System: a
-  scheduler that depends on what it calls, the schedule as build-time config,
-  emulated now and native-lowerable later. Rests on ADR-0020.
 
 The settled high-level model is recorded in:
 

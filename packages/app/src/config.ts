@@ -8,7 +8,6 @@
  * never touches an environment.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { blindCast } from './casts.ts';
 import type { ServiceNode } from './node.ts';
 
 /**
@@ -80,32 +79,15 @@ export interface Config {
 }
 
 /**
- * Best-effort JSON Schema projection of a param's schema — data only, never
- * the schema's own `validate`. Standard Schema's JSON-Schema conversion is an
- * OPTIONAL vendor extension (`StandardJSONSchemaV1`); when a vendor doesn't
- * implement it (or a particular schema instance can't convert), introspection
- * falls back to naming the vendor rather than throwing — "some shape info" is
- * still strictly more than the old `type: 'string' | 'number'` tag.
+ * A data-only descriptor of a param's schema for introspection — the
+ * validator's vendor tag, never the schema's own `validate`. `configOf`
+ * reports it where the old model reported `type: 'string' | 'number'`, so the
+ * config surface stays enumerable without leaking a function. Nothing consumes
+ * more than the vendor tag yet; a richer projection (e.g. a JSON-Schema export
+ * when the vendor offers one) is an additive change if a consumer needs it.
  */
 function projectSchema(schema: StandardSchemaV1): Readonly<Record<string, unknown>> {
-  const props = blindCast<
-    StandardSchemaV1.Props & {
-      readonly jsonSchema?: {
-        readonly output: (options: { target: string }) => Record<string, unknown>;
-      };
-    },
-    'read the optional JSON-Schema vendor extension off the standard props'
-  >(schema['~standard']);
-  if (props.jsonSchema !== undefined) {
-    try {
-      return props.jsonSchema.output({ target: 'draft-2020-12' });
-    } catch {
-      // The vendor advertises JSON Schema support but this schema instance
-      // couldn't convert — fall through to the vendor tag rather than let
-      // configOf, a pure introspection read, throw.
-    }
-  }
-  return { vendor: props.vendor };
+  return { vendor: schema['~standard'].vendor };
 }
 
 /**

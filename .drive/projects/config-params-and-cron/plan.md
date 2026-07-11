@@ -65,6 +65,21 @@ Scope:
 A stack: S1 → S2. No parallelism (S2 needs S1's structured param). Both are green
 at their boundary.
 
+## Follow-ups
+
+- **HTTP ingress should not be a `port` config param.** Surfaced in S1 review
+  ([PR #41](https://github.com/prisma/app/pull/41)): `compute()` reserves a `port`
+  config param (default 3000) that the service reads to bind its HTTP server and
+  the deploy reads for `portMapping.http`. But the listen port is a platform
+  runtime binding, not user configuration. Model it instead as a **declared HTTP
+  ingress capability** — the service declares it serves HTTP, the platform
+  supplies the bind address at runtime, and the deploy derives `portMapping` from
+  the declaration — removing the user-facing `port` param. Not a `deps` entry
+  (nothing is on the other end; it's the platform, not another node). Pre-existing
+  behaviour (not introduced by S1) and separable from the config-model mechanism;
+  likely its own ADR ("how a compute service declares HTTP ingress"). Deferred by
+  the operator to keep S1 focused.
+
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in [spec.md](spec.md) § Project-DoD

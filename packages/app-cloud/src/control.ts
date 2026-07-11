@@ -14,7 +14,7 @@ import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { configKey, declaredParams, encode } from './serializer.ts';
+import { configKey, encode, paramEntries } from './serializer.ts';
 
 /** The Prisma Cloud–hosted deploy state store; its implementation lives in @prisma/alchemy. */
 export { prismaState } from '@prisma/alchemy/state';
@@ -162,7 +162,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         serialize: ({ address, node }, provisioned, config) =>
           Effect.gen(function* () {
             const records = [];
-            for (const d of declaredParams(node as ServiceNode)) {
+            for (const d of paramEntries(node as ServiceNode)) {
               const value =
                 d.owner === 'service'
                   ? config.service[d.name]

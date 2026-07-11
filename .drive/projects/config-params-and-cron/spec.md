@@ -111,8 +111,8 @@ Four decisions, realized in two slices:
   [0019](../../../docs/design/90-decisions/ADR-0019-the-target-owns-config-serialization.md),
   [0020](../../../docs/design/90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md),
   [0021](../../../docs/design/90-decisions/ADR-0021-params-are-read-through-config-not-load.md).
-- Domain docs: [config-params.md](../../../docs/design/10-domains/config-params.md),
-  [scheduled-work.md](../../../docs/design/10-domains/scheduled-work.md).
+- Domain doc: [config-params.md](../../../docs/design/10-domains/config-params.md).
+  (Cron's design lives in ADR-0020, not a separate domain doc.)
 - Code this changes: `packages/app/src/config.ts` (`ConfigParam`, `Params`,
   `Values`, `configOf`), `packages/app/src/deploy.ts` (`buildConfig`,
   `ServiceLowering`), `packages/app-cloud/src/compute.ts` (`computeParams`),

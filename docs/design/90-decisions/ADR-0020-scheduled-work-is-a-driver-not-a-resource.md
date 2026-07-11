@@ -137,5 +137,3 @@ Nothing the app authored moves.
   — the resource model cron deliberately is *not*.
 - [`ADR-0016`](ADR-0016-a-system-has-the-same-boundary-as-a-service.md) — the
   system composition the Cron wrapper uses.
-- [`../10-domains/scheduled-work.md`](../10-domains/scheduled-work.md) — the
-  topology and authoring surface in full.
