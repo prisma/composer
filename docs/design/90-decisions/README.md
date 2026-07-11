@@ -32,4 +32,4 @@ _Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settl
 - [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md) — Name the framework "Prisma App" (`@prisma/app`), its unit "System" with one `system()` primitive, the CLI `prisma-app`.
 - [ADR-0015](ADR-0015-dependencies-resolve-to-bindings-clients-are-app-side.md) — Dependencies resolve to bindings (a client for protocol-owned kinds, typed config for resources); clients are constructed app-side.
 - [ADR-0016](ADR-0016-a-system-has-the-same-boundary-as-a-service.md) — A system has the same boundary as a service: deps in, expose out, forwarding as data flow; reusable systems follow.
-- [ADR-0017](ADR-0017-nodes-own-their-deploy-module-loads.md) — Nodes own their deploy-module loads: author-written specifiers as data, loaded through a variable-argument import; no CLI-side path resolution.
+- [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) — Control-plane code loads through `prisma-app.config.ts`: the config statically imports extension descriptors; registries are keyed by (extension ID, node ID); nodes are pure data; one explicit state store per deploy.

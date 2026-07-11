@@ -147,10 +147,12 @@ the path and build rules:
   system source builds it like the rest of its code; a prebuilt package ships its
   runnables and satisfies the requirement at publish time (ADR-0004 makes the
   paths resolve correctly either way, including from inside `node_modules`).
-- **Each service's build adapter travels with the service** — a system's
-  internal adapter choice never becomes the consuming app's dependency. The
-  loading mechanism is the deploy tooling's own decision, recorded separately;
-  this design only pins the requirement.
+- **A service's build descriptor names its extension as data** (`extension` +
+  `type`), and the consuming app's `prisma-app.config.ts` lists the extensions
+  its graph uses — including those a published system uses internally. The
+  system documents them and can re-export a config fragment
+  (`extensions: [...authSystemExtensions, prismaCloud()]`), keeping the cost to
+  one line (ADR-0017).
 - **For prebuilt distribution, versioning is the package manager's job, used
   as designed**: the system declares `@prisma/app*` and its target pack as peer
   dependencies, and the declared range asserts that the reader code frozen

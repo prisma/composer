@@ -5,7 +5,7 @@ command does, the contracts it introduces, and what stays out of its scope.
 The decisions it
 rests on are recorded in
 [ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)
-(no config file, everything derived from the root node),
+(the application derived from the root node),
 [ADR-0004](../90-decisions/ADR-0004-paths-resolve-relative-to-the-authoring-file.md)
 (every path is relative to the file that writes it),
 [ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md)
@@ -15,7 +15,9 @@ root's name names the application),
 [ADR-0007](../90-decisions/ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md)
 (the generated stack file), and
 [ADR-0008](../90-decisions/ADR-0008-wrapper-inlines-everything-except-runtime-builtins.md)
-(wrapper inlining).
+(wrapper inlining), and
+[ADR-0017](../90-decisions/ADR-0017-control-plane-loads-through-the-app-config.md)
+(control plane loads through `prisma-app.config.ts`).
 
 ## Scope
 
@@ -48,22 +50,20 @@ loading the graph imports that module — the app's choice, not a CLI limit.
    producer) fails here, with an error naming the input and pointing at the
    composing System. The deploy root must be a System — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
-   `system('name', (h) => h.provision(...))`).
-3. **Infer the target.** Collect the distinct target-module specifier each
-   pack-authored node carries (`targetModule`). Exactly one must appear (mixed
-   targets → error). Ask a node carrying it to load its own target —
-   `node.loadTarget()` dynamically imports the specifier (ADR-0017); the CLI
-   constructs no specifier and resolves no path — then call the module's
-   `fromEnv()` export, which reads its own environment variables and errors
-   naming any missing one. Inference can't silently pick wrong: `lower()`
-   routes every node type through the target's tables, and a mismatch is a
-   `LowerError` naming the unknown type.
+   `system('name', {}, ({ provision }) => { provision(...); return {}; })`).
+3. **Load the config + validate coverage.** `prisma-app.config.ts` — found by
+   walking up from the deploy entry, loaded with c12, never imported by app
+   code — supplies the extension registries and the deploy's one state store
+   (ADR-0017). Every node's and build descriptor's `(extension, type)` must
+   have a registry entry; a gap errors naming the extension to add to the
+   config. Extension factories validate their own environment during config
+   evaluation, erroring with the exact variable name — before any slow work.
 4. **Resolve the name.** The root node's name (every node is named — ADR-0006),
    unless `--name` overrides it — CI's per-run ephemeral deploys use this so a
    name never collides with a standing demo.
-5. **Assemble each service.** Ask each service node to assemble itself —
-   `node.assemble()` loads the build adapter's own assembler (ADR-0017) and
-   calls it. The assembler resolves its `entry` (and any other path field)
+5. **Assemble each service.** Look up the service's build descriptor in the
+   registries — `extensions[build.extension].nodes[build.type].assemble` — and
+   run it. The assembler resolves its `entry` (and any other path field)
    relative to `dirname(build.module)` — the authoring module the descriptor
    carries (ADR-0004) — no directory discovery of any kind. Assembly validates
    the user's built output exists (missing → "run your build" error; staleness
@@ -93,37 +93,34 @@ framework's envelope:
   self-contained (hoisted `node_modules`, static assets, `public/`, the
   runtime-autoinstall guard). Deterministic file-shuffling, not compilation.
 
-The target pack's `package()` then wraps the assembled dir in the target
-envelope (bootstrap, manifest, deterministic tar), unchanged from the current
-model.
+The extension's `package()` control entry then wraps the assembled dir in its
+platform envelope (bootstrap, manifest, deterministic tar), unchanged from the
+current model.
 
 ## Contracts this introduces
 
-Two new seams, both symmetric — a node carries the full module specifier of
-its deploy-only module as data and loads it itself (ADR-0017), with zero CLI
-changes for a new pack or adapter:
+One seam, uniform for every node kind — the **extension seam** (ADR-0017):
+the app's `prisma-app.config.ts` statically imports each extension's control
+descriptor, and deploy tooling looks up control-plane behavior by the data
+every node already carries:
 
-- **Pack CLI seam.** Every pack-authored node carries its target's specifier
-  (`targetModule`) and loads it via `node.loadTarget()`; the pack's `/target`
-  entry exports `fromEnv(): Target`. This is how a community pack becomes
-  deployable with zero CLI changes.
-- **Assembler seam.** The build adapter *descriptor* stays pure data on the
-  node (`{ kind, assembler, module, entry }` — where the user's build puts its
-  output, never how to produce it; `entry` and any kind-specific path resolve
-  relative to `dirname(module)`). `assembler` is the full specifier of the
-  adapter's own `/assemble` module, baked in by its factory (`node()` →
-  `"@prisma/app-node/assemble"`, `nextjs()` → `"@prisma/app-nextjs/assemble"`).
-  `node.assemble()` loads it via a variable-argument `import` (ADR-0017), so a
-  community build adapter works with zero changes anywhere and the heavy
-  assembler never leaks into the runtime wrapper. `kind` stays the descriptor's
-  own discriminant; the loaded `/assemble` module validates it matches. The
-  heavy assembly module never ships in a bundle. Its contract
+- **Nodes are pure data.** A node carries `extension` (the extension's package
+  name) and `type` (its node ID within it); a build *descriptor* carries the
+  same pair plus its path fields (`{ extension, type, module, entry }` —
+  where the user's build puts its output, never how to produce it; `entry`
+  and any kind-specific path resolve relative to `dirname(module)`).
+- **Registries route everything.** Services, resources, and build descriptors
+  all resolve the same way: `extensions[x.extension].nodes[x.type]`. A
+  community extension works with zero changes anywhere — the app imports its
+  descriptor in the config. Heavy control-plane code lives only in `/control`
+  entries, which nothing reachable from app code imports. The assemble entry's
+  contract
   is `assemble({ build: descriptor }) → { dir, entry }`
   (`@prisma/app/deploy`'s `AssembleInput`/`Bundle` — defined once there,
   imported by every adapter and by `@prisma/app-assemble` itself).
 - **`@prisma/app-assemble`** owns the orchestration this seam drives: routing
-  every service node in the loaded graph to its adapter's `/assemble` entry
-  (one bundle per provision id — the root is always a System) and the
+  every service node in the loaded graph to its registry's assemble entry
+  (one bundle per full address — the root is always a System) and the
   wrapper-inlining policy. The CLI is its first consumer; the future
   programmatic deploy API is its second — so its public surface carries no CLI
   concepts (no `CliError`, no argv/usage anything). It throws its own
@@ -139,10 +136,10 @@ The CLI's quality lives in its errors; each failure names its fix:
 | Default export isn't a node | what the entry module must export |
 | Deploy root isn't a System | to wrap the service in a System |
 | Unwired dependency slot | which input, and to deploy the composing System |
-| Mixed targets in one graph | the target specifiers found; one target per application |
-| Missing target env | the exact variable(s) `fromEnv()` needed |
+| Missing `prisma-app.config.ts` | the expected filename, where the walk-up looked, and what it must export |
+| Node `(extension, type)` not covered | the extension to add to `prisma-app.config.ts` |
+| Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
-| Unresolvable target/assembler module | the specifier, and to add/check the dependency on that package (node-owned load — ADR-0017) |
 
 ## Out of scope (designed around)
 

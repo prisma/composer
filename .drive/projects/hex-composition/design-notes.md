@@ -115,3 +115,25 @@ appears at rebase is updated in lockstep, not independently.
 - **Address depth vs config-key limits** — env-var name length is finite;
   deep nesting produces long keys. H1 tests document the practical bound
   rather than discovering it in production.
+
+## Extension-config redesign (2026-07-10, operator-ruled)
+
+Node-owned loads (was ADR-0017) failed empirically: `import(this.targetModule)`
+resolves from CORE's location; core depends on no extension, so the live e2e
+deploy died at `Cannot resolve the target module "@prisma/app-cloud/target"`
+while the same specifier resolves fine from the app root. Two prior designs on
+this seam also failed or were rejected (entry-anchored `createRequire` paths:
+rejected — manual path anchoring; loader thunk with a literal import: breaks
+the bundler firewall).
+
+Ruling: adopt prisma-next's control/execution-plane split verbatim.
+`prisma-app.config.ts` at the app root (c12, walk-up discovery — see
+prisma-next `config-loader/src/load.ts` and `PrismaNextConfig` descriptors)
+statically imports **extension** descriptors; registries keyed by
+(extension ID, node ID) = the node's `extension` (renamed from `pack`) +
+`type`. The **target concept dies** (no fromEnv, no one-target rule; mixed
+platforms per app intended; providers compose; ONE explicit `state:` — the
+alchemy state ledger is platform-agnostic). Nodes revert to pure data.
+Terminology: "extension" everywhere. Full spec:
+`slices/extension-config/spec.md`. Changing recorded decisions is fine —
+rewrite/delete ADRs; do not preserve superseded designs out of reverence.

@@ -1,4 +1,4 @@
-# ADR-0003: `prisma-app deploy` derives everything from the root node — there is no deploy config file
+# ADR-0003: `prisma-app deploy` derives the application from the root node
 
 ## Status
 
@@ -7,11 +7,12 @@ Accepted
 ## Decision
 
 The deploy entrypoint is `prisma-app deploy <entry>`, where `entry` is a module
-whose default export is a **system** — the application root. Everything else is
-derived: the application is the graph reachable from that system, the deployment
-target is inferred from the nodes themselves and constructed from the
-environment, and the application's name comes from the root node (overridable
-with `--name`). There is no `prisma-app.config.ts` and no stack file.
+whose default export is a **system** — the application root. Everything about
+the *application* is derived: it is the graph reachable from that system, and
+its name comes from the root node (overridable with `--name`). The one thing
+that is not derivable — which control-plane extensions exist, and the deploy's
+state store — lives in `prisma-app.config.ts` (ADR-0017). The config carries
+no application settings: no app reference, no name, no per-service options.
 
 > **Amended 2026-07:** the root must be a **system**, not "a service or a system".
 > A single service is deployed by wrapping it in a one-service system; the former
@@ -22,7 +23,7 @@ with `--name`). There is no `prisma-app.config.ts` and no stack file.
 ## Reasoning
 
 Start with what an app author actually writes. A service module declares a
-service and its dependencies, in vocabulary imported from a target pack:
+service and its dependencies, in vocabulary imported from an extension:
 
 ```ts
 // src/service.ts
@@ -30,7 +31,7 @@ import { compute, postgres } from "@prisma/app-cloud";
 import node from "@prisma/app-node";
 import { SQL } from "bun";
 
-const db = postgres({ client: ({ url }) => new SQL({ url }) });
+const db = postgres(); // a dependency slot: the binding is typed config (ADR-0015)
 
 export default compute({
   name: "hello",
@@ -43,9 +44,10 @@ import { system } from "@prisma/app";
 import { postgres } from "@prisma/app-cloud";
 import service from "./service.ts";
 
-export default system("hello", (h) => {
-  const db = h.provision("db", postgres({ name: "db" }));
-  h.provision("hello", service, { db });
+export default system("hello", {}, ({ provision }) => {
+  const db = provision("db", postgres({ name: "db" }));
+  provision("hello", service, { db });
+  return {};
 });
 ```
 
@@ -57,7 +59,10 @@ deployed by wrapping it in a one-service system:
 import { system } from "@prisma/app";
 import service from "./service.ts";
 
-export default system("hello", (h) => h.provision("hello", service));
+export default system("hello", {}, ({ provision }) => {
+  provision("hello", service);
+  return {};
+});
 ```
 
 Deploying it is one command:
@@ -66,43 +71,37 @@ Deploying it is one command:
 prisma-app deploy src/system.ts
 ```
 
-For that command to work, something has to construct a **Target** — the object
-carrying the lowering tables and provisioning glue for one host, e.g.
-`prismaCloud({ workspaceId })`. Constructing it is code, and that code lives in
-a heavy, deploy-only module (`@prisma/app-cloud/target` pulls in the
-provisioning engine). The service module above can never import it: service
-modules are bundled into the deployed artifact, so they must stay lean. Some
-deploy-side code therefore has to pick the target and construct it — and the
-only question is where that code lives.
+For that command to work, something has to supply each node's control-plane
+behavior — how a `compute` or a `postgres` is provisioned and deployed. That
+is code, and it lives in a heavy, deploy-only module (`@prisma/app-cloud`'s
+control entry pulls in the provisioning engine). The service module above can
+never import it: service modules are bundled into the deployed artifact, so
+they must stay lean. Some deploy-side code therefore has to bring that code
+in — and the only question is where it comes from.
 
-It can live in the graph itself, because every node knows how to load its own
-target. Each pack-authored node above — the service, the provisioned resource —
-was created by a factory from `@prisma/app-cloud`, and that factory writes the
-full module specifier of the pack's target entry onto the node as data:
-`targetModule: "@prisma/app-cloud/target"`. The node loads it itself
-(`node.loadTarget()` performs the `import`); the CLI never constructs a
-specifier or resolves a path. At deploy, the CLI collects the distinct
-`targetModule` values across the loaded graph, requires exactly one (mixed
-targets are an error naming them), and asks a node carrying it to load it.
-Because the field holds a real module specifier, a community pack resolves by
-exactly the same mechanism as a first-party one, with no registry and no naming
-convention. Why the specifier is stored as data and loaded through a variable —
-rather than written as a literal `import` in the factory — is a bundler-firewall
-requirement recorded in [ADR-0017](ADR-0017-nodes-own-their-deploy-module-loads.md).
+It lives in the app's config file. `prisma-app.config.ts` statically imports
+each extension's control-plane descriptor and hands the CLI its registries
+(ADR-0017); the app's own code never imports the config, so the heavy module
+never rides into a bundle. Correlation is pure data: every extension-authored node
+above carries `extension`, its extension's **package name**
+(`"@prisma/app-cloud"`), and `type`, its node ID within that extension
+(`"compute"`, `"postgres"`). Deploy tooling looks up
+`extensions[node.extension].nodes[node.type]` — a map hit, no specifier
+construction, no resolution. A community extension plugs in by exactly the
+same mechanism as a first-party one: the app imports its descriptor in the
+config.
 
-Constructing the target then needs its options — and those are
-environment-shaped in practice (a workspace id, a region). So each pack's
-`/target` entry exposes one conventional export, `fromEnv(): Target`, which
-reads its own environment variables and fails with an error naming any missing
-one. That export is the entire contract between the deploy tooling and a pack.
+Extension options are environment-shaped in practice (a workspace id, a
+region), so an extension factory (`prismaCloud()`) reads and validates its own
+environment when the config is evaluated, failing with an error naming any
+missing variable — before any slow work.
 
-`targetModule` and `type` are deliberately separate axes. `targetModule` selects
-the target; `type` is each node's own discriminant (`"compute"`, `"postgres"`),
-which the selected target's lowering tables key on. A target is already scoped to its
-pack, so its table keys carry no pack prefix. And inference cannot silently
-pick a wrong target: lowering routes every node's `type` through the target's
-tables, so a mismatch fails immediately with an error naming the target, the
-type, and the types the target knows.
+`extension` and `type` are deliberately separate axes. `extension` selects the
+registry; `type` routes within it. A registry is already scoped to its
+extension, so its keys carry no package prefix. And a gap cannot pass
+silently: a node whose `(extension, type)` has no registry entry fails
+immediately with an error naming the extension to add to
+`prisma-app.config.ts`.
 
 Deriving everything from the entry module also settles what "the root" means:
 **nothing marks a root in the model** beyond its kind — whatever system you point
@@ -124,15 +123,14 @@ follow:
 
 ## Consequences
 
-- The standard deploy is zero-config: `prisma-app deploy src/system.ts` plus
-  environment variables.
-- Target packs have a small, fixed CLI-facing contract: nodes carry the target
-  module's specifier and load it themselves (ADR-0017), and the `/target` entry
-  exports `fromEnv()`. This is the seam a community pack plugs into with zero
-  CLI changes.
-- One target per application. Multi-target or heavily parameterized setups
-  have no home in this design; if one is ever needed, a config file or flags
-  can be introduced as an *optional override* — never the standard path.
+- The standard deploy is one command plus environment variables and a
+  `prisma-app.config.ts` listing the app's extensions (ADR-0017).
+- Extensions have a small, fixed CLI-facing contract: nodes carry
+  `(extension, type)` as data, and the extension's control descriptor provides
+  the registry those keys look up. This is the seam a community extension
+  plugs into with zero CLI changes.
+- Platforms mix freely: nodes lowered by different extensions coexist in one
+  application; one deploy still writes one state store (ADR-0017).
 - `lower()` in `@prisma/app/deploy` remains the underlying mechanism and
   the escape hatch for hand-composed or mixed Alchemy stacks; the CLI wraps
   it and never replaces it.
@@ -142,22 +140,22 @@ follow:
 
 ## Alternatives considered
 
-- **A declarative `prisma-app.config.ts`** exporting `{ app, target, name }` —
-  rejected: every field is derivable. `app` is an import of the entry module;
-  `name` belongs on the root node (see ADR-0006); `target` is constructible by
-  the CLI as above. The file would drift toward being a second place that
-  names the app, against "your code is the source of truth".
-- **Naming the target with a CLI flag** (`--target @prisma/app-cloud`) —
-  workable but redundant: the nodes already know their pack, and a flag can
-  disagree with them.
-- **Inferring the pack from a type-id prefix** (a convention mapping a slug
-  like `prisma-cloud` to a package name) — breaks for any pack whose package
-  name doesn't follow the convention; carrying the real package name costs
-  one field and removes the convention entirely.
-- **Folding pack identity into the type id** (`type:
+- **A config that names the application** (`{ app, target, name }`) —
+  rejected: those fields are derivable. `app` is the entry module; `name`
+  belongs on the root node (ADR-0006). The config carries only the
+  control-plane extension list and the state store (ADR-0017); application
+  facts stay in code, against "your code is the source of truth".
+- **Selecting a platform with a CLI flag** (`--target @prisma/app-cloud`) —
+  redundant and too coarse: the nodes already carry their extension, a flag
+  can disagree with them, and one flag cannot express a mixed-platform graph.
+- **Inferring the extension from a type-id prefix** (a convention mapping a
+  slug like `prisma-cloud` to a package name) — breaks for any extension whose
+  package name doesn't follow the convention; carrying the real package name
+  costs one field and removes the convention entirely.
+- **Folding extension identity into the type id** (`type:
   "@prisma/app-cloud/compute"`, one field instead of two) — rejected:
-  the two strings have unrelated responsibilities. `pack` selects the target;
-  `type` routes within it. Fusing them would make every lowering-table key
+  the two strings have unrelated responsibilities. `extension` selects the
+  registry; `type` routes within it. Fusing them would make every registry key
   carry resolution information it never uses, and make parsing a string the
   way to answer a question a field answers directly.
 
