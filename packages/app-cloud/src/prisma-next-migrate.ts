@@ -81,13 +81,46 @@ export function targetStorageHash(contractJson: unknown): string {
  * `migrationsDir` is the on-disk migrations root (resolved from the resource's
  * `prisma-next.config.ts` by the caller).
  */
+/**
+ * Relax a TLS-requiring `sslmode` to `no-verify` so node-postgres connects to
+ * Prisma Postgres at deploy time.
+ *
+ * PPG's DSN carries `sslmode=require`. node-postgres's `pg-connection-string`
+ * (8.21) treats `require`/`prefer`/`verify-ca` as aliases for `verify-full` —
+ * strict certificate + hostname verification — and does NOT set
+ * `rejectUnauthorized: false`, so the TLS handshake fails against PPG's cert
+ * chain (which isn't in node's default trust store). The app's *runtime* path
+ * uses Bun's `SQL`, which connects to the same DB fine, so this only bites the
+ * deploy-time migration through `pg`. The control driver builds its client as
+ * `new Client({ connectionString: url })` — no way to pass a `ssl` config
+ * object — so the fix is URL-level: rewrite the strict `sslmode` to
+ * `no-verify` (TLS on, certificate not verified — the same posture the runtime
+ * connection uses, and the connection is to a Prisma-managed endpoint at deploy
+ * time). A DSN with no `sslmode` (a plain local Postgres) is left untouched, so
+ * it still connects without TLS.
+ */
+export function relaxSslModeForPg(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    // Not a parseable URL — leave it; the driver surfaces its own error.
+    return url;
+  }
+  const sslmode = parsed.searchParams.get('sslmode');
+  // No TLS requested (local Postgres), or already non-verifying — nothing to do.
+  if (sslmode === null || sslmode === 'disable' || sslmode === 'no-verify') return url;
+  parsed.searchParams.set('sslmode', 'no-verify');
+  return parsed.toString();
+}
+
 export async function applyPnMigration(opts: {
   readonly url: string;
   readonly contractJson: unknown;
   readonly migrationsDir: string;
 }): Promise<PnMigrationOutcome> {
   const target = targetStorageHash(opts.contractJson);
-  const client = createPostgresControlClient({ connection: opts.url });
+  const client = createPostgresControlClient({ connection: relaxSslModeForPg(opts.url) });
   await client.connect();
   try {
     const marker = await client.readMarker();
