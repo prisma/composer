@@ -48,9 +48,12 @@ The in-process counterpart of the deploy bootstrap. A `runForTest(config, boot)`
 capability on the runnable node (implemented in `@prisma/app-cloud`'s
 `compute.ts`, reusing the existing `stash` + `configOf`), wrapped by a generic
 `bootstrapService(service, config)` in `@prisma/app/testing` that returns a
-handle `{ url, fetch, close }`. It writes the chosen config to the environment
-exactly as `run` does, boots the real entry, and hands back a driveable server.
-**`server.ts` is not modified.**
+handle `{ url, fetch }`. It writes the chosen config to the environment exactly
+as `run` does, boots the real entry, and hands back a driveable server.
+**`server.ts` is not modified.** No `close()`: the entry owns its `Bun.serve`
+handle, so teardown rides on bun-test's per-file process isolation (a single
+boot per test file, cleaned up when the file's process ends). This is the
+accepted trade for leaving the entry untouched.
 
 ### 4. The fake auth (ships from the auth package)
 
@@ -81,18 +84,17 @@ the same contract. Used by both proof tests.
 - The post-merge cleanups (LoadedControl-style lookup dedup; folding
   `@prisma/alchemy` into `@prisma/app-cloud`) — tracked separately.
 
-## Open — needs an operator ruling before dispatch
+## Decisions (resolved)
 
-1. **`bootstrapService` teardown/handle.** `server.ts` calls `Bun.serve(...)` at
-   import and does not surface the server handle, so a clean `close()` needs the
-   handle. Options: (a) rely on bun-test per-file process isolation and drop
-   `close()` (simplest, leaks a listener within a file); (b) have the target's
-   `run`/`runForTest` capture the `Bun.serve` return so `close()` works, without
-   touching `server.ts`. (b) is cleaner but adds a run-path seam. **Which?**
-2. **Integration test target.** Boot the full Next.js storefront in-process
-   (heaviest, truest) vs. drive a lighter RPC consumer against the fake. Booting
-   Next is the honest proof but the slower, fiddlier test. **Full storefront, or
-   a lighter consumer?**
+- **Teardown:** option (a) — no `close()`; bun-test's per-file process isolation
+  cleans up. `server.ts` stays untouched. (A cleaner "target owns the listen"
+  refactor is explicitly out of scope for H3.)
+- **Both paths ship, not either/or.** The unit test (`stubLoad`) AND the
+  integration test (`bootstrapService`) are both deliverables. The integration
+  test boots the **full Next storefront** in-process against a loopback fake auth
+  — the real round trip. If Next-in-process boot proves genuinely intractable,
+  fall back to driving a minimal RPC consumer through `bootstrapService` and flag
+  it in the final report — do not drop the integration path.
 
 ## Notes for implementation
 
