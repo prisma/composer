@@ -10,6 +10,6 @@ const fixtureContract: Contract<'fixture/resource', Record<string, never>> = Obj
 
 export default resource({
   name: 'fixture-resource',
-  pack: 'test/pack',
+  extension: 'test/pack',
   provides: fixtureContract,
 });

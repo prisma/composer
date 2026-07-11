@@ -6,13 +6,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Load } from '@prisma/app';
+import type { PrismaAppConfig } from '@prisma/app/config';
 import { assembleServices, type RunAssembler } from '@prisma/app-assemble';
 import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
+import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
 import { loadEntry } from './load-entry.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
-import { extractFromEnv, targetNodeOf } from './target.ts';
+import { validateRegistryCoverage } from './validate-coverage.ts';
 
 const BINARY_NAME = 'prisma-app';
 
@@ -127,11 +129,13 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   throw new UsageError(cli.usage(null, { detailed: true }));
 }
 
-/** Injectable seams so tests can drive run() without a real wrapper build or alchemy process. */
+/** Injectable seams so tests can drive run() without a real wrapper build, config evaluation, or alchemy process. */
 export interface RunDeps {
   /** Substituted into assembleServices — see @prisma/app-assemble's RunAssembler. */
   readonly runAssembler?: RunAssembler;
   readonly alchemy?: (input: RunAlchemyInput) => number;
+  /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). */
+  readonly config?: PrismaAppConfig;
 }
 
 const ALCHEMY_STATE_DIR = '.alchemy';
@@ -143,7 +147,7 @@ const ALCHEMY_STATE_DIR = '.alchemy';
  * from a different directory" (nothing to destroy from here) or "nothing was
  * ever deployed" (destroy is a no-op either way). The CI destroy-guard script
  * already skips the CLI entirely when `.alchemy` is absent; this covers the
- * direct-invocation path that script doesn't gate.
+ * direct-invocation path that script doesn't cover.
  */
 function warnIfNoLocalDeployState(cwd: string): void {
   const stateDir = path.join(cwd, ALCHEMY_STATE_DIR);
@@ -172,16 +176,28 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
 
   // 0. destroy-only guardrail — first, ahead of every other step, so it
   // surfaces even when the rest of the pipeline goes on to fail for an
-  // unrelated reason (missing target env, missing built output — both common
+  // unrelated reason (missing config, missing built output — both common
   // companions of "nothing was ever deployed from here").
   if (args.command === 'destroy') {
     warnIfNoLocalDeployState(cwd);
   }
 
-  // 1. Import the entry module; its default export must be a node.
+  // 1. Find + load prisma-app.config.ts (ADR-0017): walk up from the resolved
+  // entry path, then c12 with the explicit file. Config evaluation runs the
+  // extension factories, so their env validation (e.g. a missing
+  // PRISMA_WORKSPACE_ID) fails HERE — before the entry import and before any
+  // slow assembly work.
+  const resolvedEntryPath = path.resolve(cwd, args.entry);
+  const configPath = findConfigPathForEntry(resolvedEntryPath);
+  if (configPath === undefined) {
+    throw missingConfigError(resolvedEntryPath);
+  }
+  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+
+  // 2. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(args.entry, cwd);
 
-  // 2. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
+  // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root);
   if (graph.root.node.kind !== 'system') {
     throw new CliError(
@@ -190,24 +206,24 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     );
   }
 
-  // 3. The one target (ADR-0003): find a node that carries it and ask it to
-  // load its own target (ADR-0017 — the node resolves next to its packs), then
-  // read the target's env NOW so it fails before slow assembly work.
-  const { node: targetNode, targetModule } = targetNodeOf(graph);
-  extractFromEnv(targetModule, await targetNode.loadTarget())();
+  // 4. Registry coverage: every node's and build descriptor's (extension,
+  // type) must have a control of the right kind in the config — named errors
+  // with the config fix, before assembly.
+  validateRegistryCoverage(graph, config);
 
-  // 4. Resolve the name.
+  // 5. Resolve the name.
   const name = args.name ?? entryModule.root.name;
   if (name.length === 0) {
     throw new CliError('The root node has no name — name it at authoring, or pass --name.');
   }
 
-  // 5. Assemble each service. A destroy evaluates the same stack program as a
-  // deploy (the generated file's lower() packages the artifacts), so missing
-  // built output blocks destroy too — say so instead of just "run your build".
+  // 6. Assemble each service through the config's registries. A destroy
+  // evaluates the same stack program as a deploy (the generated file's
+  // lower() packages the artifacts), so missing built output blocks destroy
+  // too — say so instead of just "run your build".
   let assembled: Awaited<ReturnType<typeof assembleServices>>;
   try {
-    assembled = await assembleServices(graph, deps.runAssembler);
+    assembled = await assembleServices(graph, config, deps.runAssembler);
   } catch (error) {
     if (args.command === 'destroy' && error instanceof Error) {
       throw new CliError(
@@ -218,17 +234,18 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     throw error;
   }
 
-  // 6. Generate .prisma-app/alchemy.run.ts inside the process's own cwd — tool
-  // state lives where you run the tool (ADR-0004's rewrite).
+  // 7. Generate .prisma-app/alchemy.run.ts inside the process's own cwd — tool
+  // state lives where you run the tool (ADR-0004's rewrite). It imports the
+  // user's config by relative path and drives lower() with its registries.
   const stackPath = writeStackFile({
     entryPath: entryModule.path,
     cwd,
-    targetModule,
+    configPath,
     name,
     assembled,
   });
 
-  // 7. Shell out to alchemy against the generated file.
+  // 8. Shell out to alchemy against the generated file.
   try {
     const status = (deps.alchemy ?? runAlchemy)({
       command: args.command,

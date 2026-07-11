@@ -2,13 +2,13 @@ import { service } from '@prisma/app';
 
 export default service({
   name: 'fixture-service',
-  pack: 'test/pack',
+  extension: 'test/pack',
   type: 'fixture/service',
   inputs: {},
   params: {},
   build: {
-    kind: 'node',
-    assembler: '@prisma/app-node/assemble',
+    extension: 'test/build',
+    type: 'node',
     module: import.meta.url,
     entry: 'server.js',
   },
