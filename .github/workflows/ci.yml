@@ -74,6 +74,15 @@ jobs:
       # under CI concurrency.
       - name: Build packages
         run: pnpm build
+      - name: DEBUG app-node resolution (temporary)
+        run: |
+          echo "== test/integration/node_modules/@prisma =="; ls -la test/integration/node_modules/@prisma/ 2>&1 || true
+          echo "== app-node dist =="; ls -la packages/app-node/dist/ 2>&1 | head -5 || true
+          echo "== app-node symlink realpath =="; readlink -f test/integration/node_modules/@prisma/app-node 2>&1 || true
+          echo "== bun resolve from fixture dir =="
+          ( cd test/integration/test/fixtures/entry-anchored && bun -e "import('@prisma/app-node').then(m=>console.log('OK',Object.keys(m).length)).catch(e=>console.log('FAIL',e.message))" ) 2>&1 || true
+          echo "== bun resolve from integration root =="
+          ( cd test/integration && bun -e "import('@prisma/app-node').then(m=>console.log('OK',Object.keys(m).length)).catch(e=>console.log('FAIL',e.message))" ) 2>&1 || true
       - name: Test
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
