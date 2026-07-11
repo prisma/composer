@@ -7,24 +7,23 @@
  * and reversing it (see core-model.md § Runtime). Core never stringifies and
  * never touches an environment.
  */
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ServiceNode } from './node.ts';
 
-/** Runtime-validatable param types. Curated; extended consciously. */
-export type ParamType = 'string' | 'number';
-export type TypeOf<T extends ParamType> = T extends 'string' ? string : number;
-
 /**
- * A declared config param — pure data. The declaration does double duty:
- * TypeScript derives the hydrate/load input types from it (the definition
- * object ENFORCES the final param input types), and the target pack validates
- * raw values against `type` when it reverses its own serialization at boot.
+ * A declared config param — pure data: a caller-owned Standard Schema
+ * (ADR-0018) plus a few framework facets. The framework carries the schema,
+ * infers the value type from it, and validates with it, without ever
+ * enumerating permitted shapes. Turning a value into stored config and back is
+ * the deploy target's job, not the param's (ADR-0019) — the same split RPC
+ * uses: schema on the declaration, wire owned by the mover.
  */
-export interface ConfigParam<T extends ParamType = ParamType> {
-  readonly type: T;
+export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
+  readonly schema: S;
   /** Redacted in any introspection output. */
   readonly secret?: boolean;
   readonly optional?: boolean;
-  readonly default?: TypeOf<T>;
+  readonly default?: StandardSchemaV1.InferOutput<S>;
 }
 
 export type Params = Record<string, ConfigParam>;
@@ -33,9 +32,9 @@ export type Params = Record<string, ConfigParam>;
 export type Values<P extends Params> = {
   readonly [K in keyof P]: P[K]['optional'] extends true
     ? undefined extends P[K]['default']
-      ? TypeOf<P[K]['type']> | undefined
-      : TypeOf<P[K]['type']>
-    : TypeOf<P[K]['type']>;
+      ? StandardSchemaV1.InferOutput<P[K]['schema']> | undefined
+      : StandardSchemaV1.InferOutput<P[K]['schema']>
+    : StandardSchemaV1.InferOutput<P[K]['schema']>;
 };
 
 /**
@@ -52,16 +51,18 @@ export interface Connection<P extends Params = Params, C = unknown> {
 /**
  * The enumerable config surface of a service — derivable from the graph
  * alone, nothing booted, no platform keys. The introspection artifact
- * (secrets marked, values absent). Physical locations are the target pack's
- * business.
+ * (secrets marked, values absent). `schema` is a data-only projection of the
+ * param's Standard Schema (JSON Schema when the vendor supports the optional
+ * conversion, a `{ vendor }` tag otherwise) — never the param's functions.
+ * Physical locations are the target pack's business.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
   readonly name: string;
-  readonly type: ParamType;
+  readonly schema: Readonly<Record<string, unknown>>;
   readonly secret: boolean;
   readonly optional: boolean;
-  readonly default: string | number | undefined;
+  readonly default: unknown;
 }
 
 /**
@@ -78,13 +79,25 @@ export interface Config {
 }
 
 /**
+ * A data-only descriptor of a param's schema for introspection — the
+ * validator's vendor tag, never the schema's own `validate`. `configOf`
+ * reports it where the old model reported `type: 'string' | 'number'`, so the
+ * config surface stays enumerable without leaking a function. Nothing consumes
+ * more than the vendor tag yet; a richer projection (e.g. a JSON-Schema export
+ * when the vendor offers one) is an additive change if a consumer needs it.
+ */
+function projectSchema(schema: StandardSchemaV1): Readonly<Record<string, unknown>> {
+  return { vendor: schema['~standard'].vendor };
+}
+
+/**
  * Enumerates every config param the service declares: each input's connection
  * params, then the service's own params. Pure — reads `root.inputs`/`params`
- * directly, executes nothing. Deliberately does not go through `Load`: a
- * service's connection-end inputs are legitimately unwired from its own
- * point of view (wiring is an enclosing system's concern), and this introspects
- * one service's declared shape regardless of how — or whether — it composes
- * into a larger graph.
+ * directly, executes nothing but the (also pure) schema projection. Deliberately
+ * does not go through `Load`: a service's connection-end inputs are legitimately
+ * unwired from its own point of view (wiring is an enclosing system's concern),
+ * and this introspects one service's declared shape regardless of how — or
+ * whether — it composes into a larger graph.
  */
 export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
   const entries: ConfigDeclaration[] = [];
@@ -97,7 +110,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
       entries.push({
         owner: { input },
         name,
-        type: param.type,
+        schema: projectSchema(param.schema),
         secret: param.secret === true,
         optional: param.optional === true,
         default: param.default,
@@ -109,7 +122,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
     entries.push({
       owner: 'service',
       name,
-      type: param.type,
+      schema: projectSchema(param.schema),
       secret: param.secret === true,
       optional: param.optional === true,
       default: param.default,
@@ -117,4 +130,74 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
   }
 
   return entries;
+}
+
+// ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———
+//
+// A param is just a schema plus facets; serialization is the deploy target's
+// (see @prisma/app-cloud's serializer.ts), so these constructors carry no
+// encoding. `string()`/`number()` supply hand-rolled Standard Schemas for the
+// common scalars — core needs no arktype dependency for them — and `param()`
+// wraps any caller-supplied schema.
+
+function scalarSchema<T>(
+  name: string,
+  check: (value: unknown) => value is T,
+): StandardSchemaV1<T, T> {
+  return {
+    '~standard': {
+      version: 1,
+      vendor: '@prisma/app',
+      validate: (value: unknown) =>
+        check(value)
+          ? { value }
+          : { issues: [{ message: `expected ${name}, got ${typeof value}` }] },
+    },
+  };
+}
+
+const stringSchema = scalarSchema<string>('string', (v): v is string => typeof v === 'string');
+const numberSchema = scalarSchema<number>(
+  'number',
+  (v): v is number => typeof v === 'number' && Number.isFinite(v),
+);
+
+export interface ParamOptions<T> {
+  readonly secret?: boolean;
+  readonly optional?: boolean;
+  readonly default?: T;
+}
+
+function withFacets<S extends StandardSchemaV1>(
+  schema: S,
+  opts: ParamOptions<StandardSchemaV1.InferOutput<S>>,
+): ConfigParam<S> {
+  return {
+    schema,
+    ...(opts.secret !== undefined ? { secret: opts.secret } : {}),
+    ...(opts.optional !== undefined ? { optional: opts.optional } : {}),
+    ...(opts.default !== undefined ? { default: opts.default } : {}),
+  };
+}
+
+/** A string-valued param. */
+export function string(
+  opts: ParamOptions<string> = {},
+): ConfigParam<StandardSchemaV1<string, string>> {
+  return withFacets(stringSchema, opts);
+}
+
+/** A number-valued param. */
+export function number(
+  opts: ParamOptions<number> = {},
+): ConfigParam<StandardSchemaV1<number, number>> {
+  return withFacets(numberSchema, opts);
+}
+
+/** A param over any caller-supplied Standard Schema — a structured `jobs`, say. */
+export function param<S extends StandardSchemaV1>(
+  schema: S,
+  opts: ParamOptions<StandardSchemaV1.InferOutput<S>> = {},
+): ConfigParam<S> {
+  return withFacets(schema, opts);
 }

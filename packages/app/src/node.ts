@@ -101,10 +101,11 @@ export interface ServiceNode<
  * authoring factory (e.g. `compute()`) returns. `run(address, boot)` is the
  * process controller: deserialize the platform environment (keyed off
  * `address`, the bootstrap's parameter) into a typed Config, stash it under
- * process-local keys, then call `boot()` to start the app's entry. `load()`
- * — called from inside that entry — reads the stash, hydrates + memoizes the
- * deps, and returns them typed. Core defines this shape; only an extension
- * instantiates it.
+ * process-local keys, then call `boot()` to start the app's entry. From inside
+ * that entry, `load()` reads the stash and returns the hydrated, memoized
+ * dependencies; `config()` returns the resolved, typed config params. The two
+ * are separate so a dependency and a param of the same name never collide
+ * (ADR-0021). Core defines this shape; only an extension instantiates it.
  */
 export interface RunnableServiceNode<
   D extends Deps = Deps,
@@ -112,7 +113,8 @@ export interface RunnableServiceNode<
   E extends Expose = Expose,
 > extends ServiceNode<D, P, E> {
   run(address: string, boot: () => Promise<unknown>): Promise<unknown>;
-  load(): Loaded<D, P>;
+  load(): HydratedDeps<D>;
+  config(): Values<P>;
 }
 
 /**
@@ -263,13 +265,6 @@ export type Hydrated<N> =
   // biome-ignore lint/suspicious/noExplicitAny: Req is irrelevant to the hydrated shape.
   N extends DependencyEnd<infer C, any> ? C : never;
 export type HydratedDeps<D extends Deps> = { readonly [K in keyof D]: Hydrated<D[K]> };
-
-/**
- * What load() returns: the hydrated deps and the service's resolved params,
- * merged for ergonomics (`const { db, port } = service.load()`). Dep and param
- * names are expected distinct; the merge is the surface the app entry consumes.
- */
-export type Loaded<D extends Deps, P extends Params> = HydratedDeps<D> & Values<P>;
 
 function requireType(type: string, factory: string): void {
   if (typeof type !== 'string' || type.length === 0) {

@@ -8,14 +8,13 @@
 
 import * as Prisma from '@prisma/alchemy';
 import type { ServiceNode } from '@prisma/app';
-import { configOf } from '@prisma/app';
 import type { ExtensionDescriptor } from '@prisma/app/config';
 import type { Lowering } from '@prisma/app/deploy';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { configKey } from './serializer.ts';
+import { configKey, encode, paramEntries } from './serializer.ts';
 
 /** The Prisma Cloud–hosted deploy state store; its implementation lives in @prisma/alchemy. */
 export { prismaState } from '@prisma/alchemy/state';
@@ -155,10 +154,15 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           }),
 
         // Encodes the typed Config into env vars, keyed by the same serializer run() reads at boot.
+        // `encode` does the typed→string mapping — LANDMINE: a dependency-input
+        // `url`'s value may be a provisioning ref at deploy, not a literal
+        // string; `encode` passes a dependency-input value through untouched
+        // (never stringified) so it keeps carrying the ordering edge. Only
+        // service-own literals (e.g. `port`) are ever actually encoded.
         serialize: ({ address, node }, provisioned, config) =>
           Effect.gen(function* () {
             const records = [];
-            for (const d of configOf(node as ServiceNode)) {
+            for (const d of paramEntries(node as ServiceNode)) {
               const value =
                 d.owner === 'service'
                   ? config.service[d.name]
@@ -168,10 +172,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
                 yield* Prisma.EnvironmentVariable(`${key}-var`, {
                   projectId: provisioned.outputs['projectId'] as string,
                   key,
-                  // encode typed→string: a concrete leaf stringifies; a
-                  // provisioning ref (already string-typed) passes through and
-                  // carries the edge.
-                  value: typeof value === 'number' ? String(value) : (value as never),
+                  value: encode(d.owner, value),
                   class: 'production',
                 }),
               );

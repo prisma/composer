@@ -1,3 +1,4 @@
+import { string } from '../config.ts';
 /**
  * Type-level tests for the system boundary (ADR-0016): the body's `SystemOutputs`
  * return type checked against `expose`, `ctx.inputs`' `InputRef` brand
@@ -32,14 +33,14 @@ declare const chargeContract: Contract<
 const verifyEnd = () =>
   dependency({
     type: 'fake/rpc-verify',
-    connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
     required: verifyContract,
   });
 
 const chargeEnd = () =>
   dependency({
     type: 'fake/rpc-charge',
-    connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
     required: chargeContract,
   });
 
@@ -104,7 +105,7 @@ system('forward-bad', { deps: { verify: verifyEnd() } }, ({ inputs, provision })
 const untypedEnd = () =>
   dependency({
     type: 'fake/http',
-    connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
   });
 
 type UntypedInput = InputRef<ReturnType<typeof untypedEnd>>;

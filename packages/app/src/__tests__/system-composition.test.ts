@@ -6,6 +6,7 @@
  * empty-boundary system); this file covers what the boundary adds on top.
  */
 import { describe, expect, test } from 'bun:test';
+import { string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import { Load, LoadError } from '../graph.ts';
 import type { ProvisionedRef } from '../node.ts';
@@ -35,7 +36,7 @@ const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => {
 const untypedEnd = () =>
   dependency({
     type: 'fake/http',
-    connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
   });
 
 const noOpService = () =>
@@ -260,14 +261,14 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
   const cfgEnd = () =>
     dependency({
       type: 'fake/rpc-cfg',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
       required: cfgContract,
     });
 
   const outEnd = () =>
     dependency({
       type: 'fake/rpc-out',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
       required: outContract,
     });
 
@@ -394,7 +395,7 @@ describe('pass-through: an expose may return a boundary input directly', () => {
   const rpcEnd = () =>
     dependency({
       type: 'fake/rpc',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
       required: rpcContract,
     });
 
@@ -478,7 +479,7 @@ describe('untyped inputs (http() escape hatch) forward with no compile-time chec
       inputs: {
         svc: dependency({
           type: 'fake/rpc',
-          connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+          connection: conn({ url: string() }, (v) => ({ url: v.url })),
           required: someContract,
         }),
       },
@@ -521,7 +522,7 @@ describe('a resource-backed input now forwards across a system boundary (unified
     dependency({
       name: 'db',
       type: 'fake/db',
-      connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
       required: dbContract,
     });
 

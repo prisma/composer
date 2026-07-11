@@ -24,6 +24,7 @@
     "test:types": "vitest --typecheck --run"
   },
   "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.59",
     "effect": "4.0.0-beta.92"
   },

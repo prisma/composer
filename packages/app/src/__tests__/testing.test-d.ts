@@ -6,7 +6,7 @@
  * testing.test.ts for the runtime behavior.
  */
 import { expectTypeOf, test } from 'vitest';
-import type { ConfigParam } from '../config.ts';
+import { number, string } from '../config.ts';
 import type { BuildAdapter, RunnableServiceNode } from '../node.ts';
 import { dependency, service } from '../node.ts';
 import { mockService } from '../testing.ts';
@@ -24,10 +24,10 @@ interface Verify {
 }
 
 const authDep = () =>
-  dependency<{ url: { type: 'string' } }, Verify>({
+  dependency<{ url: ReturnType<typeof string> }, Verify>({
     type: 'fake/rpc',
     connection: conn(
-      { url: { type: 'string' } },
+      { url: string() },
       (): Verify => ({
         verify: async () => ({ ok: false }),
       }),
@@ -35,7 +35,7 @@ const authDep = () =>
   });
 
 type ConsumerDeps = { auth: ReturnType<typeof authDep> };
-type ConsumerParams = { port: ConfigParam<'number'> };
+type ConsumerParams = { port: ReturnType<typeof number> };
 
 const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
   Object.freeze({
@@ -44,13 +44,16 @@ const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
       extension: 'test/pack',
       type: 'fake/compute',
       inputs: { auth: authDep() },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     }),
     async run(): Promise<unknown> {
       throw new Error('unused — type-only file, never executed');
     },
     load() {
+      throw new Error('unused — type-only file, never executed');
+    },
+    config() {
       throw new Error('unused — type-only file, never executed');
     },
   });

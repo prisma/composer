@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { ExtensionDescriptor, PrismaAppConfig } from '../app-config.ts';
-import type { Config } from '../config.ts';
+import type { Config, Params } from '../config.ts';
+import { number, string } from '../config.ts';
 import {
   type AlchemyStateLayer,
   type Artifact,
@@ -31,11 +32,11 @@ const dbEnd = () =>
   dependency({
     name: 'db',
     type: 'fake/db',
-    connection: conn({ url: { type: 'string' } }, () => ({})),
+    connection: conn({ url: string() }, () => ({})),
     required: providerContract('fake/db', { url: '' }),
   });
 const httpEnd = () =>
-  dependency({ type: 'fake/http', connection: conn({ url: { type: 'string' } }, () => ({})) });
+  dependency({ type: 'fake/http', connection: conn({ url: string() }, () => ({})) });
 
 const defaultBuild: BuildAdapter = {
   extension: '@prisma/app-node',
@@ -47,7 +48,7 @@ const defaultBuild: BuildAdapter = {
 const app = <D extends Deps>(
   type: string,
   inputs: D,
-  params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
+  params: Params = {},
   build: BuildAdapter = defaultBuild,
 ) =>
   service({
@@ -177,7 +178,7 @@ const runError = (eff: ReturnType<typeof lowering>): LowerError =>
 
 describe('buildConfig', () => {
   test("matches a dependency input's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
-    const auth = app('fake/compute', { db: dbEnd() }, { port: { type: 'number', default: 3000 } });
+    const auth = app('fake/compute', { db: dbEnd() }, { port: number({ default: 3000 }) });
     const root = system('shop', {}, (h) => {
       const db = h.provision('db', dbResource());
       h.provision('auth', auth, { db });
@@ -210,7 +211,7 @@ describe('buildConfig', () => {
 
 const singleServiceSystem = (
   type: string,
-  params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
+  params: Params = {},
   build: BuildAdapter = defaultBuild,
 ) =>
   system('hello', {}, (h) => {
@@ -221,9 +222,7 @@ const singleServiceSystem = (
 // A single service whose one dependency is a system-provisioned db resource —
 // the resource model's minimal shape: a service never embeds a resource; the
 // system provisions it and wires the slot.
-const singleServiceWithDbSystem = (
-  params: Record<string, { type: 'number' | 'string'; default?: unknown }> = {},
-) =>
+const singleServiceWithDbSystem = (params: Params = {}) =>
   system('hello', {}, (h) => {
     const db = h.provision('db', dbResource());
     h.provision('svc', app('fake/compute', { db: dbEnd() }, params), { db });
@@ -269,7 +268,7 @@ describe('lowering a system root — a single service', () => {
 
   test("buildConfig is fed to serialize with the resource's real lowered output", () => {
     const { config, calls } = fakeExtension();
-    const root = singleServiceWithDbSystem({ port: { type: 'number', default: 3000 } });
+    const root = singleServiceWithDbSystem({ port: number({ default: 3000 }) });
 
     run(lowering(root, config, opts(svcBundles)));
 

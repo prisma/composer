@@ -15,29 +15,29 @@ project: [Prisma App: Config Params + Cron](https://linear.app/prisma-company/pr
 
 ## S1 — The config-model change (ADR-0018 + ADR-0019)
 
-Replace the scalar `ParamType` enum with caller-owned schemas, move serialization to
-the target over key/value string pairs, and open `compute()` to user params — one
-coherent change, because changing the param type breaks the existing serializer, so
-they land together for a green tree.
+Realizes ADR-0018/0019/0021 as one coherent change — schema-typed params, the
+target owning serialization, and the `config()`/`load()` split — because they
+co-touch the same files and must land together for a green tree. Full contract:
+[specs/s1-schema-typed-params.md](specs/s1-schema-typed-params.md).
 
 Scope:
 
-- `config.ts`: `ConfigParam` carries `schema` (Standard Schema) + `serialize` /
-  `deserialize` (`Record<string,string>`); delete `ParamType` / `TypeOf`; `Values`
-  infers via `InferOutput`; `ConfigDeclaration` / `configOf` carry the schema.
-  `string()` / `number()` helpers. Core gains a type-only `@standard-schema/spec`
-  dependency.
-- `app-cloud/serializer.ts`: replace the `coerce` / `String()` scalar path with the
-  param's own `serialize` / `deserialize`; keep `configKey`'s `ADDRESS_OWNER_NAME`
-  namespacing.
-- `compute.ts`: accept a `params` field, merged with the reserved `port`; collision
-  check as with deps. `@prisma/app-cloud` exports a Compute-param constructor.
-- Migrate every existing param declaration to the schema form via the helpers.
+- `config.ts`: `ConfigParam` becomes plain `{ schema, secret?, optional?, default? }`
+  (no serialize method — the target owns encoding); delete `ParamType` / `TypeOf`;
+  `Values` infers via `InferOutput`; `ConfigDeclaration` / `configOf` carry the
+  schema projection. `string()` / `number()` / `param()` helpers. Core gains a
+  type-only `@standard-schema/spec` dependency.
+- `app-cloud` (`control.ts` deploy encode, `serializer.ts` boot decode): drive
+  encoding off the schema (JSON for service-own, ref pass-through for
+  dependency-inputs), validating on the way back; keep `configKey` namespacing.
+- `node.ts` / `compute.ts`: add `config()` (returns params); `load()` returns deps
+  only. `compute()` accepts user params, merged with the reserved `port`.
+- Migrate the four existing param declarations and the storefront-auth read site.
 
 - **Builds on:** the merged ADR-0016/0017 model (nothing else).
 - **Hands to:** S2 — a service can declare a structured, schema-typed param that
   round-trips through platform storage, validated.
-- **Note:** if one review can't hold this, split into "schema-typing + migration"
+- **Note:** if one review can't hold this, split into "schema-typing + config()"
   then "target serializer + compute-params" with a green boundary between (spec §
   Open questions).
 
@@ -64,6 +64,21 @@ Scope:
 
 A stack: S1 → S2. No parallelism (S2 needs S1's structured param). Both are green
 at their boundary.
+
+## Follow-ups
+
+- **HTTP ingress should not be a `port` config param.** Surfaced in S1 review
+  ([PR #41](https://github.com/prisma/app/pull/41)): `compute()` reserves a `port`
+  config param (default 3000) that the service reads to bind its HTTP server and
+  the deploy reads for `portMapping.http`. But the listen port is a platform
+  runtime binding, not user configuration. Model it instead as a **declared HTTP
+  ingress capability** — the service declares it serves HTTP, the platform
+  supplies the bind address at runtime, and the deploy derives `portMapping` from
+  the declaration — removing the user-facing `port` param. Not a `deps` entry
+  (nothing is on the other end; it's the platform, not another node). Pre-existing
+  behaviour (not introduced by S1) and separable from the config-model mechanism;
+  likely its own ADR ("how a compute service declares HTTP ingress"). Deferred by
+  the operator to keep S1 focused.
 
 ## Close-out (required)
 

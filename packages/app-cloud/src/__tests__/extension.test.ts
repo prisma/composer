@@ -1,9 +1,25 @@
 import { describe, expect, test } from 'bun:test';
-import type { Contract } from '@prisma/app';
-import { configOf, hydrateSync, isNode } from '@prisma/app';
+import type { ConfigDeclaration, Contract } from '@prisma/app';
+import { configOf, hydrateSync, isNode, number, param, string } from '@prisma/app';
+import { type } from 'arktype';
 import { compute, postgres, postgresContract } from '../index.ts';
-import { configKey, deserialize } from '../serializer.ts';
+import { configKey, deserialize, encode } from '../serializer.ts';
 import { bootstrapService } from '../testing.ts';
+
+function scalarDeclaration(
+  owner: ConfigDeclaration['owner'],
+  name: string,
+  opts: { secret?: boolean; optional?: boolean; default?: unknown } = {},
+): ConfigDeclaration {
+  return {
+    owner,
+    name,
+    schema: { vendor: '@prisma/app' },
+    secret: opts.secret ?? false,
+    optional: opts.optional ?? false,
+    default: opts.default,
+  };
+}
 
 const build = {
   extension: '@prisma/app-node',
@@ -49,7 +65,7 @@ describe('postgres()', () => {
     expect(end.type).toBe('postgres');
     expect(end.name).toBe('postgres');
     expect(end.required).toBe(postgresContract);
-    expect(end.connection.params).toEqual({ url: { type: 'string', secret: true } });
+    expect(end.connection.params).toEqual({ url: string({ secret: true }) });
   });
 
   test('the binding IS the typed config — hydrate is the identity on its values (ADR-0015)', () => {
@@ -74,7 +90,7 @@ describe('compute()', () => {
     expect(isNode(node)).toBe(true);
     expect(node.kind).toBe('service');
     expect(node.type).toBe('compute');
-    expect(node.params).toEqual({ port: { type: 'number', default: 3000 } });
+    expect(node.params).toEqual({ port: number({ default: 3000 }) });
     expect(typeof node.run).toBe('function');
     expect(typeof node.load).toBe('function');
   });
@@ -182,7 +198,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     const decl = {
       owner: { input: 'auth' },
       name: 'url',
-      type: 'string' as const,
+      schema: {},
       secret: false,
       optional: false,
       default: undefined,
@@ -200,10 +216,9 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
       },
       build,
     });
-    const shape = configOf(app);
 
     await withEnv({ DB_URL: 'postgres://x', PORT: '4001' }, () => {
-      const config = deserialize(shape, '');
+      const config = deserialize(app, '');
       expect(config).toEqual({ service: { port: 4001 }, inputs: { db: { url: 'postgres://x' } } });
     });
   });
@@ -214,10 +229,9 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
       deps: {},
       build,
     });
-    const shape = configOf(app);
 
     await withEnv({}, () => {
-      expect(deserialize(shape, '')).toEqual({ service: { port: 3000 }, inputs: {} });
+      expect(deserialize(app, '')).toEqual({ service: { port: 3000 }, inputs: {} });
     });
   });
 
@@ -229,10 +243,9 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
       },
       build,
     });
-    const shape = configOf(app);
 
     await withEnv({}, () => {
-      expect(() => deserialize(shape, '')).toThrow(/db\.url|"url"/);
+      expect(() => deserialize(app, '')).toThrow(/db\.url|"url"/);
     });
   });
 
@@ -242,10 +255,9 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
       deps: {},
       build,
     });
-    const shape = configOf(app);
 
     await withEnv({ PORT: 'not-a-number' }, () => {
-      expect(() => deserialize(shape, '')).toThrow(/port/);
+      expect(() => deserialize(app, '')).toThrow(/port/);
     });
   });
 
@@ -270,7 +282,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     expect(encoded).toBe('3000');
 
     await withEnv({ [configKey('auth', portDecl)]: encoded }, () => {
-      const config = deserialize(shape, 'auth');
+      const config = deserialize(app, 'auth');
       expect(config.service['port']).toBe(original);
       expect(typeof config.service['port']).toBe('number');
     });
@@ -294,7 +306,8 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://x' }, port: 4001 });
+    expect(loaded).toEqual({ db: { url: 'postgres://x' } });
+    expect(app.config()).toEqual({ port: 4001 });
   });
 
   test("a lone-service deploy (address '') reads and re-stashes the same unprefixed keys", async () => {
@@ -313,7 +326,8 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://y' }, port: 3000 });
+    expect(loaded).toEqual({ db: { url: 'postgres://y' } });
+    expect(app.config()).toEqual({ port: 3000 });
   });
 
   test('a postgres dependency in deps round-trips through run()/load() — the binding is its config', async () => {
@@ -327,7 +341,8 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://dual' }, port: 3000 });
+    expect(loaded).toEqual({ db: { url: 'postgres://dual' } });
+    expect(app.config()).toEqual({ port: 3000 });
   });
 
   test('run() calls boot() exactly once, even with nothing to hydrate', async () => {
@@ -350,35 +365,41 @@ describe('bootstrapService(service, config, boot) — the in-process integration
   test("stashes the given Config address-free (like run('', ...)) so the booted entry's load() reads it", async () => {
     const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
 
-    let loaded: unknown;
+    let deps: unknown;
+    let cfg: unknown;
     await withEnv({ DB_URL: '', PORT: '' }, () =>
       bootstrapService(
         app,
         { service: { port: 4321 }, inputs: { db: { url: 'postgres://bootstrap' } } },
         async () => {
-          loaded = app.load();
+          deps = app.load();
+          cfg = app.config();
         },
       ),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://bootstrap' }, port: 4321 });
+    expect(deps).toEqual({ db: { url: 'postgres://bootstrap' } });
+    expect(cfg).toEqual({ port: 4321 });
   });
 
   test('needs no pre-set environment — the caller supplies the Config directly, unlike run()', async () => {
     const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
 
-    let loaded: unknown;
+    let deps: unknown;
+    let cfg: unknown;
     await withEnv({ DB_URL: 'stale', PORT: 'stale' }, () =>
       bootstrapService(
         app,
         { service: { port: 5555 }, inputs: { db: { url: 'postgres://fresh' } } },
         async () => {
-          loaded = app.load();
+          deps = app.load();
+          cfg = app.config();
         },
       ),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://fresh' }, port: 5555 });
+    expect(deps).toEqual({ db: { url: 'postgres://fresh' } });
+    expect(cfg).toEqual({ port: 5555 });
   });
 
   test('returns { url, fetch } pointing at the configured port', async () => {
@@ -404,7 +425,7 @@ describe('bootstrapService(service, config, boot) — the in-process integration
 });
 
 describe('compute().load()', () => {
-  test('returns the deps merged with resolved params, memoized per process (same object on re-load)', async () => {
+  test('returns the deps, memoized per process (same object on re-load)', async () => {
     const app = compute({
       name: 'test-service',
       deps: { db: postgres() },
@@ -417,7 +438,8 @@ describe('compute().load()', () => {
 
       // Memoized: one binding set per process — the same object each call.
       expect(first).toBe(second);
-      expect(first).toEqual({ db: { url: 'postgres://z' }, port: 3000 });
+      expect(first).toEqual({ db: { url: 'postgres://z' } });
+      expect(app.config()).toEqual({ port: 3000 });
     });
   });
 });
@@ -433,22 +455,8 @@ describe('the config pipeline over extension nodes', () => {
     });
 
     expect(configOf(app)).toEqual([
-      {
-        owner: { input: 'db' },
-        name: 'url',
-        type: 'string',
-        secret: true,
-        optional: false,
-        default: undefined,
-      },
-      {
-        owner: 'service',
-        name: 'port',
-        type: 'number',
-        secret: false,
-        optional: false,
-        default: 3000,
-      },
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
     expect(JSON.stringify(configOf(app))).not.toContain('DATABASE_URL');
   });
@@ -460,16 +468,7 @@ describe('the config pipeline over extension nodes', () => {
       build,
     });
 
-    expect(configOf(app)).toEqual([
-      {
-        owner: 'service',
-        name: 'port',
-        type: 'number',
-        secret: false,
-        optional: false,
-        default: 3000,
-      },
-    ]);
+    expect(configOf(app)).toEqual([scalarDeclaration('service', 'port', { default: 3000 })]);
   });
 });
 
@@ -485,6 +484,47 @@ describe('importing a service module', () => {
       fixture.default.load(),
     );
 
-    expect(loaded).toEqual({ db: { url: 'postgres://fixture' }, port: 3000 });
+    expect(loaded).toEqual({ db: { url: 'postgres://fixture' } });
+    expect(fixture.default.config()).toEqual({ port: 3000 });
+  });
+});
+
+describe('structured params + target-owned serialization (ADR-0018/0019)', () => {
+  test('a schema-typed structured param round-trips: JSON on the wire, validated value back', async () => {
+    const jobs = [
+      { jobId: 'tick', every: '60s' },
+      { jobId: 'mrr', every: '24h' },
+    ];
+    const app = compute({
+      name: 'scheduler',
+      deps: {},
+      params: {
+        jobs: param(type({ jobId: 'string', every: 'string' }).array(), { default: jobs }),
+      },
+      build,
+    });
+    const jobsDecl = configOf(app).find((d) => d.name === 'jobs');
+    if (jobsDecl === undefined) throw new Error('expected a jobs declaration');
+
+    await withEnv({ [configKey('', jobsDecl)]: JSON.stringify(jobs) }, () => {
+      // deserialize JSON-parses the service-own value and validates it against the schema
+      expect(deserialize(app, '').service['jobs']).toEqual(jobs);
+    });
+  });
+
+  test('configOf reports a schema projection, not a scalar type tag', () => {
+    const app = compute({ name: 's', deps: { db: postgres() }, build });
+    const portDecl = configOf(app).find((d) => d.owner === 'service' && d.name === 'port');
+    expect(portDecl?.schema).toEqual({ vendor: '@prisma/app' });
+  });
+
+  test('LANDMINE: a dependency-input value passes through encode untouched — a provisioning ref keeps its edge', () => {
+    const ref: unknown = { __ref: 'services.auth.url' };
+    // encode's return type is `string`, but a dependency-input value is a ref
+    // that flows through unchanged — assert identity without a cast.
+    expect(Object.is(encode({ input: 'db' }, ref), ref)).toBe(true); // never JSON-stringified
+    // a service-own literal, by contrast, is JSON-encoded
+    expect(encode('service', 3000)).toBe('3000');
+    expect(encode('service', [{ jobId: 'tick' }])).toBe('[{"jobId":"tick"}]');
   });
 });

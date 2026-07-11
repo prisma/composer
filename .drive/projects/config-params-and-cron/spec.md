@@ -13,15 +13,18 @@ spec and its plan carry only what's true at the project level.
 
 # At a glance
 
-Three decisions, realized in two slices:
+Four decisions, realized in two slices:
 
 - **Config params carry a caller-owned schema** (ADR-0018) — `ConfigParam` holds a
   Standard Schema instead of a `type: 'string' | 'number'`; any shape becomes
   expressible with no core change.
-- **The target owns serialization, over key/value string pairs** (ADR-0019) — a
-  param's `serialize`/`deserialize` belong to the target that stores it, carried by
-  the target's param type; the medium is k/v strings, the format inside a value is
-  the target's business. `compute()` opens to user params.
+- **The target owns serialization** (ADR-0019) — the deploy target owns all
+  encoding, logic, and medium; params are plain schema+facets objects (no
+  serialize method), and core never encodes or reads storage. `compute()` opens to
+  user params.
+- **Params are read through `config()`** (ADR-0021) — a sibling to `load()`;
+  `load()` returns dependencies only, `config()` returns params, removing the
+  dep/param name collision.
 - **Cron is a driver System** (ADR-0020) — a reusable `cron-scheduler` that depends
   on a `trigger(jobId)` endpoint, a user `router`, and `defineSchedule` /
   `serveSchedule` utilities; the schedule is a build-time structured param.
@@ -54,12 +57,12 @@ Three decisions, realized in two slices:
 
 # Cross-cutting requirements
 
-- **Caller owns the type; the target owns the serialization.** These meet on the
-  param object and must not bleed: core imposes neither a type enum nor an encoding,
-  and never stringifies or reads an environment.
-- **The serializer medium is key/value string pairs.** A param serializes to
-  `Record<string, string>` under its key namespace; the string form inside a value
-  is private to the target's serializer/deserializer.
+- **Caller owns the type; the target owns the serialization.** A param is a plain
+  schema+facets object with no serialize method; core imposes neither a type enum
+  nor an encoding, never stringifies, and never reads storage.
+- **The target owns the medium too.** Encoding, logic, and medium are all the
+  target's; the framework fixes none of them (env key/value strings are
+  `@prisma/app-cloud`'s choice). Params are target-agnostic.
 - **Structured values stay visible to the graph.** `configOf` reports a param's
   schema, not "a string" — introspection and a future native lowering can read the
   real shape.
@@ -80,35 +83,36 @@ Three decisions, realized in two slices:
 # Project-DoD
 
 - [ ] A service can declare a **structured, schema-typed param**, and its value
-      round-trips deploy → platform storage → boot → `load()`, validated, with the
+      round-trips deploy → platform storage → boot → `config()`, validated, with the
       graph able to report its shape (`configOf`).
-- [ ] `compute()` accepts user params (typed as Compute params); the reserved `port`
-      still works; a colliding name fails at authoring.
-- [ ] Serialization is the **target's**, over key/value string pairs; core contains
-      no `ParamType` enum and no stringifying.
+- [ ] `compute()` accepts user params; the reserved `port` still works; a colliding
+      name fails at authoring. `load()` returns deps only; `config()` returns params.
+- [ ] Serialization is wholly the **target's** — logic, encoding, and medium; core
+      contains no `ParamType` enum, no serialize on `ConfigParam`, and no stringifying.
 - [ ] **Cron works end to end in an in-repo example**: a `cron-scheduler` +
       `router` + `Cron` system, jobs declared with `defineSchedule` /
       `serveSchedule`, deployed, firing its target on schedule — the structured
       `jobs` param exercised through the full pipeline.
-- [ ] ADR-0018/0019/0020 and the two domain docs are accurate to what shipped.
+- [ ] ADR-0018/0019/0020/0021 and the two domain docs are accurate to what shipped.
 
 # Open questions
 
-- **Helper surface for authoring a Compute param.** ADR-0019 implies `@prisma/app-cloud`
-  exports a param constructor (its branded `ConfigParam`) so `defineSchedule` and
-  Compute service authors build params carrying app-cloud's serializer. Exact
-  surface (`param(schema)` vs a typed re-export) is a slice-time call.
+- **Exact encoding branch in app-cloud's serializer.** The target encodes
+  service-own values (JSON) and passes dependency-input refs through; the precise
+  branch (owner-based vs schema-driven) is a slice-time call, guarded by the
+  round-trip and ref-passthrough tests.
 - **Whether the config-model slice (S1) splits.** It is one coherent change but may
-  be large; if a single review can't hold it, split into "schema-typing + migration"
-  then "serializer + compute-params" with a green boundary between.
+  be large; if a single review can't hold it, split into "schema-typing + config()"
+  then "target serializer + compute-params" with a green boundary between.
 
 # References
 
 - ADRs: [0018](../../../docs/design/90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md),
   [0019](../../../docs/design/90-decisions/ADR-0019-the-target-owns-config-serialization.md),
-  [0020](../../../docs/design/90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md).
-- Domain docs: [config-params.md](../../../docs/design/10-domains/config-params.md),
-  [scheduled-work.md](../../../docs/design/10-domains/scheduled-work.md).
+  [0020](../../../docs/design/90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md),
+  [0021](../../../docs/design/90-decisions/ADR-0021-params-are-read-through-config-not-load.md).
+- Domain doc: [config-params.md](../../../docs/design/10-domains/config-params.md).
+  (Cron's design lives in ADR-0020, not a separate domain doc.)
 - Code this changes: `packages/app/src/config.ts` (`ConfigParam`, `Params`,
   `Values`, `configOf`), `packages/app/src/deploy.ts` (`buildConfig`,
   `ServiceLowering`), `packages/app-cloud/src/compute.ts` (`computeParams`),

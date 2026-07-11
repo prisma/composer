@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { number, string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import { dependency, isNode, resource, service, system } from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
@@ -63,14 +64,14 @@ describe('dependency()', () => {
     const end = dependency({
       name: 'db',
       type: 'fake/db',
-      connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
     });
 
     expect(isNode(end)).toBe(true);
     expect(end.kind).toBe('dependency');
     expect(end.name).toBe('db');
     expect(end.type).toBe('fake/db');
-    expect(end.connection.params).toEqual({ url: { type: 'string', secret: true } });
+    expect(end.connection.params).toEqual({ url: string({ secret: true }) });
     expect(Object.isFrozen(end)).toBe(true);
     expect(Object.isFrozen(end.connection)).toBe(true);
     expect(Object.isFrozen(end.connection.params)).toBe(true);
@@ -90,7 +91,7 @@ describe('dependency()', () => {
     const required = dbContract();
     const end = dependency({
       type: 'fake/db',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
       required,
     });
 
@@ -101,7 +102,7 @@ describe('dependency()', () => {
     let calls = 0;
     const end = dependency({
       type: 'fake/db',
-      connection: conn({ url: { type: 'string' } }, (v) => {
+      connection: conn({ url: string() }, (v) => {
         calls += 1;
         return { url: v.url };
       }),
@@ -123,7 +124,7 @@ describe('dependency()', () => {
       dependency({
         name: 'db',
         type: 'fake/db',
-        connection: conn({ db_url: { type: 'string' } }, () => ({})),
+        connection: conn({ db_url: string() }, () => ({})),
       }),
     ).toThrow(/param name "db_url" may not contain "_"/);
   });
@@ -148,7 +149,7 @@ describe('service()', () => {
       extension: '@prisma/app-cloud',
       type: 'fake/app',
       inputs: { db },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
@@ -158,7 +159,7 @@ describe('service()', () => {
     expect(node.extension).toBe('@prisma/app-cloud');
     expect(node.type).toBe('fake/app');
     expect(node.inputs.db).toBe(db);
-    expect(node.params).toEqual({ port: { type: 'number', default: 3000 } });
+    expect(node.params).toEqual({ port: number({ default: 3000 }) });
     expect(node.build).toEqual({
       extension: '@prisma/app-node',
       type: 'node',
@@ -184,7 +185,7 @@ describe('service()', () => {
           connection: conn({}, () => ({})),
         }),
       },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
@@ -256,7 +257,7 @@ describe('service()', () => {
         extension: 'test/pack',
         type: 'fake/app',
         inputs: {},
-        params: { max_conns: { type: 'number', default: 1 } },
+        params: { max_conns: number({ default: 1 }) },
         build,
       }),
     ).toThrow(/param name "max_conns" may not contain "_"/);

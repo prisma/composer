@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { number, string } from '../config.ts';
 import { hydrate, hydrateSync } from '../hydrate.ts';
 import { dependency, service } from '../node.ts';
 import { conn } from './helpers.ts';
@@ -14,13 +15,13 @@ const dbEnd = (record?: (values: { url: string }) => void) =>
   dependency({
     name: 'db',
     type: 'fake/db',
-    connection: conn({ url: { type: 'string', secret: true } }, (v) => {
+    connection: conn({ url: string({ secret: true }) }, (v) => {
       record?.(v);
       return { client: v.url };
     }),
   });
 
-const portParams = { port: { type: 'number', default: 3000 } } as const;
+const portParams = { port: number({ default: 3000 }) } as const;
 
 describe('hydrate', () => {
   test("calls each input's connection.hydrate with its typed Config slice", async () => {
@@ -51,7 +52,7 @@ describe('hydrate', () => {
       inputs: {
         auth: dependency({
           type: 'fake/http',
-          connection: conn({ url: { type: 'string' } }, (v) => ({ fetchBase: v.url })),
+          connection: conn({ url: string() }, (v) => ({ fetchBase: v.url })),
         }),
       },
       params: {},
@@ -75,7 +76,7 @@ describe('hydrate', () => {
         db: dependency({
           name: 'db',
           type: 'fake/db',
-          connection: conn({ url: { type: 'string' } }, async (v) => {
+          connection: conn({ url: string() }, async (v) => {
             await Promise.resolve();
             return { asyncClient: v.url };
           }),
@@ -134,7 +135,7 @@ describe('hydrateSync', () => {
         db: dependency({
           name: 'db',
           type: 'fake/db',
-          connection: conn({ url: { type: 'string' } }, async (v) => ({ asyncClient: v.url })),
+          connection: conn({ url: string() }, async (v) => ({ asyncClient: v.url })),
         }),
       },
       params: {},

@@ -8,8 +8,7 @@
  * this reaches the production runtime (`compute()` ships only `run`/`load`).
  */
 
-import type { Deps, Expose, Params, RunnableServiceNode } from '@prisma/app';
-import { type Config, configOf } from '@prisma/app';
+import type { Config, Deps, Expose, Params, RunnableServiceNode } from '@prisma/app';
 import { stash } from './serializer.ts';
 
 /** What `bootstrapService` hands back: a live, driveable instance of the booted entry. */
@@ -49,7 +48,7 @@ export async function bootstrapService<D extends Deps, P extends Params, E exten
       await import(new URL(service.build.entry, service.build.module).href);
     });
 
-  stash(configOf(service), config);
+  stash(service, config);
   await bootEntry();
   return { url: `http://localhost:${port}/`, fetch };
 }

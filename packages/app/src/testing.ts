@@ -1,16 +1,16 @@
 /**
  * The unit-test seam (testing.md § Unit): `mockService` replaces a service
- * node's `load()` output so any code that pulls dependencies through
- * `service.load()` — a page, a server action, a helper — runs against typed
+ * node's `load()` and `config()` output so any code that pulls dependencies or
+ * params through them — a page, a server action, a helper — runs against typed
  * doubles with no server and no environment. Target-agnostic: every service
- * node has a `load()`. It does no module mocking; wiring the substitution into
- * a test runner (`vi.mock`, `mock.module`) stays in the test. The integration
- * seam (`bootstrapService`) is target-specific and lives in the target's own
- * testing entry (e.g. `@prisma/app-cloud/testing`).
+ * node has `load()`/`config()`. It does no module mocking; wiring the
+ * substitution into a test runner (`vi.mock`, `mock.module`) stays in the test.
+ * The integration seam (`bootstrapService`) is target-specific and lives in the
+ * target's own testing entry (e.g. `@prisma/app-cloud/testing`).
  */
 import { blindCast } from './casts.ts';
 import type { Params, Values } from './config.ts';
-import type { Deps, Expose, HydratedDeps, Loaded, RunnableServiceNode } from './node.ts';
+import type { Deps, Expose, HydratedDeps, RunnableServiceNode } from './node.ts';
 
 /**
  * `mockService`'s override argument: every declared dependency, typed against
@@ -33,27 +33,38 @@ function paramDefaults<P extends Params>(params: P): Partial<Values<P>> {
 }
 
 /**
- * Returns a service node whose `load()` yields `overrides` merged with the
- * service's own param defaults — everything else about the node (its deps,
- * params, build, expose) is unchanged. `run()` is not meaningful on a mock
+ * Returns a service node whose `load()` yields the dependency doubles and
+ * `config()` yields the service's params (defaults overlaid with any
+ * overrides) — everything else about the node (its deps, params, build,
+ * expose) is unchanged. `overrides` is one flat object: dependency keys route
+ * to `load()`, param keys to `config()`. `run()` is not meaningful on a mock
  * (there is no boot, no environment) and throws if called.
  */
 export function mockService<D extends Deps, P extends Params, E extends Expose>(
   service: RunnableServiceNode<D, P, E>,
   overrides: LoadOverrides<D, P>,
 ): RunnableServiceNode<D, P, E> {
-  const loaded = blindCast<
-    Loaded<D, P>,
-    'merges the param defaults with the caller-supplied overrides, which LoadOverrides<D, P> already types against HydratedDeps<D> & Partial<Values<P>> — exactly Loaded<D, P> once params are filled in'
-  >({ ...paramDefaults(service.params), ...overrides });
+  const entries = Object.entries(overrides);
+  const deps = blindCast<
+    HydratedDeps<D>,
+    "the override entries whose key names a declared dependency — LoadOverrides already types each against its dep's hydrated shape, so the dependency subset is exactly HydratedDeps<D>"
+  >(Object.fromEntries(entries.filter(([name]) => name in service.inputs)));
+  const config = blindCast<
+    Values<P>,
+    'the param defaults overlaid with the override entries whose key names a declared param — every param thus filled, exactly Values<P>'
+  >({
+    ...paramDefaults(service.params),
+    ...Object.fromEntries(entries.filter(([name]) => name in service.params)),
+  });
 
   return Object.freeze({
     ...service,
     run(): Promise<unknown> {
       throw new Error(
-        `mockService(): "${service.name}" is a load()-only mock — it has no run() (no boot, no environment).`,
+        `mockService(): "${service.name}" is a load()/config()-only mock — it has no run() (no boot, no environment).`,
       );
     },
-    load: () => loaded,
+    load: () => deps,
+    config: () => config,
   });
 }

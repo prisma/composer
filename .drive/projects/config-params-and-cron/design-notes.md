@@ -30,15 +30,22 @@ cron as its first consumer.
    Mirror how `Contract`/`rpc` let the caller own the type: a param carries a Standard
    Schema. → ADR-0018.
 5. **Serialization is the target's, not core's.** Env vars aren't the only target
-   (a future Compute may take JSON config). The serializer returns arbitrary values
-   the target stores; the target dictates the encoding and destination; core is
-   blind. The medium is fixed as key/value string pairs (what env storage is); the
-   string form inside a value is the target's business. → ADR-0019.
-6. **No ambiguity about who serializes, because the param type is the target's.**
-   `compute()` is app-cloud's and accepts Compute params; a scheduler is a `compute()`
-   service, so its `jobs` is a Compute param carrying app-cloud's serializer;
-   `defineSchedule` returns that type; the requirement floats up through the types.
-   → ADR-0019.
+   (a future Compute may take JSON config). The target dictates the encoding,
+   destination, and medium; core is blind. (An intermediate framing fixed the
+   medium to key/value string pairs and hung `serialize`/`deserialize` on the
+   param — both walked back in item 6.) → ADR-0019.
+6. **Who serializes? The target that runs the service.** An earlier framing put
+   the serializer on the param (a "Compute param type" carrying its own
+   serialize/deserialize). Rejected on review as over-built: a param is just a
+   schema + facets, and serialization — logic, encoding, and **medium** — is wholly
+   the target's, exactly the RPC split (schema on the declaration, wire owned by the
+   mover). Params are target-agnostic; the service factory (`compute()` is
+   app-cloud's) is what binds a service's config to a target's serialization. Core
+   fixes no medium — env key/value strings are app-cloud's choice. → ADR-0019.
+7. **Params are read through `config()`, not `load()`.** `load()` currently returns
+   deps *and* params merged, which risks a dep/param name collision silently
+   clobbering one. Split: `load()` for dependencies, a sibling `config()` for params.
+   → ADR-0021.
 
 ## Grounding checks done during design (against merged `main`)
 
@@ -59,5 +66,5 @@ surface, and whether S1 splits.
 ## References
 
 - [spec.md](spec.md), [plan.md](plan.md)
-- ADR-0018/0019/0020 and the config-params / scheduled-work domain docs
+- ADR-0018/0019/0020/0021 and the config-params domain doc
 - Sibling: [Forcing-Function Apps](../forcing-function-apps/design-notes.md)
