@@ -20,9 +20,15 @@ these, never *what they are*.
    `PRISMA_PROJECT_ID` and (named stages only) `PRISMA_BRANCH_ID` on the `alchemy` child
    process — **both `deploy` and `destroy`** (`run-alchemy.ts`), because `alchemy destroy`
    re-imports and re-evaluates the same stack, so its target reconstruction needs the same
-   ids. `fromEnv()` reads them; `PrismaCloudOptions` gains `projectId: string` and
-   `branchId?: string`. This mirrors the existing `PRISMA_WORKSPACE_ID` → `fromEnv()` path.
-   **Not** codegen into the stack file.
+   ids. The `@prisma/app-cloud` target (`control.ts`) reads them from `process.env` — like
+   the existing `PRISMA_WORKSPACE_ID` — and threads them through lowering. **Read at
+   lowering time, not construction:** `prismaCloud()` is constructed once when the CLI loads
+   `prisma-app.config.ts` in the *parent* (before `ensureContainers` has computed the ids),
+   and again in the *child* (where the ids are set). So `resolveOptions` reads
+   `PRISMA_PROJECT_ID`/`PRISMA_BRANCH_ID` **without requiring them** (both may be undefined at
+   parent construction); the *required* check for `projectId` lives in `application.provision`,
+   which runs only in the child. **No `PrismaCloudOptions` field is added** (the config-file
+   Project-id override is deferred, per scope); **not** codegen into the stack file.
 
 3. **Project resolver.** List *live* Projects in the workspace whose name matches the
    app name (root system name, or `--name`), oldest-first; **adopt the oldest**; if none,
@@ -46,22 +52,34 @@ these, never *what they are*.
      affect our provisioning, deferred.
 
 5. **Provisioning asymmetry (mechanical, no role lookup).**
-   - Default stage: `Database`, `ComputeService`, `EnvironmentVariable` written with **no
-     `branchId`**, config `class: production` — as today.
-   - Named stage: all three written with **`branchId` = the resolved Branch**; config
-     `class: preview`.
+   - Default stage (`branchId` undefined): `Database`, `ComputeService`, `EnvironmentVariable`
+     written with **no `branchId`**, config `class: production` — exactly as today.
+   - Named stage (`branchId` set): the `Database` and `ComputeService` are **assigned to the
+     Branch** (see decision 6 for the mechanism); every `EnvironmentVariable` is written with
+     **`branchId`** and config `class: preview`.
    - The rule is exactly: **`branchId` present ⟺ named stage ⟺ `class: preview`.** The
-     pack computes `class = branchId ? 'preview' : 'production'`; it never reads a Branch
+     target computes `class = branchId ? 'preview' : 'production'`; it never reads a Branch
      `role`. (Platform-derived `class` is the deferred end-state, ADR-0019.)
 
-6. **`branchId` must be added to providers.** `Database` and `ComputeService` alchemy
-   providers currently carry **no** `branchId`; add the prop and forward it to the
-   Management-API create body (the API bodies already accept it). `EnvironmentVariable`
-   already has `branchId`.
+6. **`branchId` on providers — assigned by PATCH, not a create-body field.** Verified against
+   `@prisma/management-api-sdk@1.47.0`: the `POST /v1/projects/:id/databases` and
+   `.../compute-services` **create bodies do NOT accept `branchId`** — a resource is created
+   project-scoped, then **attached to a Branch by `PATCH /v1/databases/:id` /
+   `PATCH /v1/compute-services/:id` with `{ branchId }`** (both PATCH bodies accept `branchId`).
+   So: add an optional `branchId` prop to the `Database` and `ComputeService` providers; when
+   set, the provider **PATCHes the resource to the Branch after observe-or-create, on every
+   reconcile** (idempotent — re-patching to the same Branch is a no-op), so a preview branch is
+   self-healing and a re-deploy stays a no-op. When `branchId` is unset (default stage), **no
+   PATCH** — byte-for-byte current behavior. `EnvironmentVariable` is different: its create body
+   **does** accept `branchId` + `class` (a preview-branch override when `branchId` is supplied),
+   so it already carries both and needs no PATCH.
 
-7. **`application.provision` references, never mints.** It stops calling
-   `Prisma.Project(...)`; it emits the injected `projectId` (from `PrismaCloudOptions`) as
-   its output. Project creation is the CLI's job (decision 3).
+7. **`application.provision` references, never mints.** It stops calling `Prisma.Project(...)`;
+   it reads `process.env['PRISMA_PROJECT_ID']` (**required here** — fail clearly if absent) and
+   emits it as its `projectId` output, which the postgres/compute lowerings read exactly as they
+   read the minted id today. Project creation is the CLI's job (decision 3). The poison
+   `DATABASE_URL` vars it writes follow decision 5 (`branchId` + `class: preview` on a named
+   stage).
 
 8. **No migrations, no schema.** The framework runs no migrations today and this slice
    adds none. A named stage's Postgres is created empty; the `storefront-auth` verify

@@ -39,21 +39,37 @@ from its barrel so the CLI can provide `ManagementClient` over `PRISMA_SERVICE_T
   validation; the `ensure` flag + barrel export in `@prisma/alchemy`. No provider or
   target-lowering changes. Branch soft-delete on destroy is **D4**, not here.
 
-## Dispatch 3 — Pack + providers consume the ids (`@prisma/alchemy`, `@prisma/app-cloud`)
+## Dispatch 3a — Providers gain a `branchId` (PATCH-attach) (`@prisma/alchemy`)
 
-**Outcome.** `PrismaCloudOptions`/`fromEnv()` gain `projectId` + optional `branchId`
-(read from the env vars). `application.provision` emits the injected `projectId` instead
-of calling `Prisma.Project(...)` (spec §7). `Database` and `ComputeService` providers gain
-a `branchId` prop forwarded to their create body (spec §6). `target.ts` sets `branchId` on
-`Database`/`ComputeService`/`EnvironmentVariable` **iff** a `branchId` is present, and sets
-config `class = branchId ? 'preview' : 'production'` (spec §5) — removing the unconditional
-hardcoded `production`.
+**Outcome.** `Database` and `ComputeService` providers gain an optional `branchId` prop
+(spec §6). The Management-API **create bodies do not accept `branchId`**, so when `branchId`
+is set the provider **PATCHes** the resource to the Branch (`PATCH /v1/databases/:id` /
+`PATCH /v1/compute-services/:id` with `{ branchId }`) after observe-or-create, on **every**
+reconcile (idempotent). When unset, no PATCH — byte-for-byte current behavior. Backward-
+compatible: `branchId` optional, undefined = today.
 
-- **Builds on:** D2's threaded env.
-- **Hands to:** D4 — a stack that provisions into `(Project, Branch?)`.
-- **Focus:** `packages/alchemy/src/postgres/Database.ts`, `.../compute/ComputeService.ts`,
-  `packages/app-cloud/src/target.ts`. Pure retargeting + the `branchId`/`class` conditional;
-  no new provisioning logic, no migrations.
+- **Builds on:** D2.
+- **Hands to:** D3b — providers that accept a Branch assignment.
+- **Focus:** `packages/alchemy/src/postgres/Database.ts`, `.../compute/ComputeService.ts` +
+  their tests (mocked HTTP: assert PATCH fires when `branchId` set, and does NOT when unset).
+  No `EnvironmentVariable` change (its create body already takes `branchId`+`class`). No
+  `control.ts` change.
+
+## Dispatch 3b — Target consumes the ids (`@prisma/app-cloud`)
+
+**Outcome.** `resolveOptions` reads `PRISMA_PROJECT_ID`/`PRISMA_BRANCH_ID` from env **without
+requiring them** (spec §2 — parent constructs before the ids exist). `application.provision`
+stops calling `Prisma.Project(...)`; it reads `process.env['PRISMA_PROJECT_ID']` (**required
+here**, clear error if absent) and emits it as its `projectId` output (spec §7). Every
+resource site — the postgres `Database`, the compute `ComputeService`, and every
+`EnvironmentVariable` (poison vars + serialized config) — passes `branchId` **iff** set and
+sets config `class = branchId ? 'preview' : 'production'` (spec §5), removing the hardcoded
+`production`.
+
+- **Builds on:** D3a.
+- **Hands to:** D4 — a target that provisions into `(Project, Branch?)`.
+- **Focus:** `packages/app-cloud/src/control.ts` + `__tests__/control-*.test.ts`. Pure
+  retargeting + the `branchId`/`class` conditional; no new provisioning logic, no migrations.
 
 ## Dispatch 4 — Prove it live: a second environment
 
