@@ -7,7 +7,8 @@ import { serve } from '@prisma/app-rpc';
 import { SQL } from 'bun';
 import service from './service.ts';
 
-const { db, port } = service.load(); // db: PostgresConfig — the app owns its client
+const { db } = service.load(); // db: PostgresConfig — the app owns its client
+const { port } = service.config(); // config params are read separately from deps (ADR-0021)
 
 // The app constructs its own client from the binding (ADR-0015). Module-scoped,
 // so it is one pool per process. idleTimeout closes the pooled connection

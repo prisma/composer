@@ -33,11 +33,18 @@ const leanTokens = [
 ];
 
 describe('entry map: core splits into authoring + deploy + pure utils — no runtime entry', () => {
-  test("package.json exports '.', './deploy', './config', and the ./casts + ./assertions utilities", () => {
+  test("package.json exports '.', './deploy', './config', './testing', and the ./casts + ./assertions utilities", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './assertions', './casts', './config', './deploy']);
+    expect(codeEntries.sort()).toEqual([
+      '.',
+      './assertions',
+      './casts',
+      './config',
+      './deploy',
+      './testing',
+    ]);
   });
 });
 

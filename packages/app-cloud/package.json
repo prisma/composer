@@ -6,6 +6,7 @@
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
     "./prisma-next": "./dist/prisma-next.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -29,7 +30,7 @@
     "@prisma-next/target-postgres": "0.14.0",
     "@prisma/app-tsdown": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
-    "tsdown": "^0.15.9",
+    "tsdown": "^0.22.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
@@ -37,8 +38,6 @@
     "dist",
     "src"
   ],
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "license": "Apache-2.0",
   "repository": {

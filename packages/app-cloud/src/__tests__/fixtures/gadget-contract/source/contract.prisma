@@ -2,7 +2,7 @@
 //
 // PSL-authored fixture: the gadget contract covers Prisma Next's PSL-first
 // authoring mode (the widget fixture covers the TS `defineContract()` mode),
-// so the two together exercise both modes ADR-0021 says to support. This
+// so the two together exercise both modes ADR-0022 says to support. This
 // schema is deliberately identical to what the old TS source produced —
 // `@@map("Gadget")` keeps the physical table capitalized (PSL lowercases by
 // default) so the emitted storageHash matches byte-for-byte.

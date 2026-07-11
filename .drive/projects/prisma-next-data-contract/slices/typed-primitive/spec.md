@@ -6,7 +6,7 @@
 
 A Prisma Next-typed postgres primitive exists in `@prisma/app-cloud` behind a
 dedicated subpath entry, with its static surface and its runtime hydrate both
-proven — unit/type tests plus a live local-Postgres round trip. ADR-0021 ships
+proven — unit/type tests plus a live local-Postgres round trip. ADR-0022 ships
 in the same PR.
 
 ## Scope

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { configOf } from '../config.ts';
+import { configOf, number, string } from '../config.ts';
 import { dependency, service } from '../node.ts';
-import { conn } from './helpers.ts';
+import { conn, scalarDeclaration } from './helpers.ts';
 
 const build = {
   extension: '@prisma/app-node',
@@ -21,40 +21,19 @@ describe('configOf', () => {
           name: 'db',
           type: 'fake/db',
           connection: conn(
-            { url: { type: 'string', secret: true }, schema: { type: 'string', optional: true } },
+            { url: string({ secret: true }), schema: string({ optional: true }) },
             () => ({}),
           ),
         }),
       },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
     expect(configOf(root)).toEqual([
-      {
-        owner: { input: 'db' },
-        name: 'url',
-        type: 'string',
-        secret: true,
-        optional: false,
-        default: undefined,
-      },
-      {
-        owner: { input: 'db' },
-        name: 'schema',
-        type: 'string',
-        secret: false,
-        optional: true,
-        default: undefined,
-      },
-      {
-        owner: 'service',
-        name: 'port',
-        type: 'number',
-        secret: false,
-        optional: false,
-        default: 3000,
-      },
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'db' }, 'schema', { optional: true }),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
   });
 
@@ -67,10 +46,10 @@ describe('configOf', () => {
         cache: dependency({
           name: 'cache',
           type: 'fake/cache',
-          connection: conn({ port: { type: 'number' } }, () => ({})),
+          connection: conn({ port: number() }, () => ({})),
         }),
       },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
@@ -87,20 +66,11 @@ describe('configOf', () => {
       extension: 'test/pack',
       type: 'fake/app',
       inputs: {},
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
-    expect(configOf(root)).toEqual([
-      {
-        owner: 'service',
-        name: 'port',
-        type: 'number',
-        secret: false,
-        optional: false,
-        default: 3000,
-      },
-    ]);
+    expect(configOf(root)).toEqual([scalarDeclaration('service', 'port', { default: 3000 })]);
   });
 
   test('executes nothing — configOf never calls a connection hydrate', () => {
@@ -113,7 +83,7 @@ describe('configOf', () => {
         db: dependency({
           name: 'db',
           type: 'fake/db',
-          connection: conn({ url: { type: 'string' } }, () => {
+          connection: conn({ url: string() }, () => {
             hydrateCalls += 1;
             return {};
           }),
@@ -139,42 +109,21 @@ describe('configOf over dependency inputs', () => {
         db: dependency({
           name: 'db',
           type: 'fake/db',
-          connection: conn({ url: { type: 'string', secret: true } }, () => ({})),
+          connection: conn({ url: string({ secret: true }) }, () => ({})),
         }),
         auth: dependency({
           type: 'fake/http',
-          connection: conn({ url: { type: 'string' } }, () => ({})),
+          connection: conn({ url: string() }, () => ({})),
         }),
       },
-      params: { port: { type: 'number', default: 3000 } },
+      params: { port: number({ default: 3000 }) },
       build,
     });
 
     expect(configOf(root)).toEqual([
-      {
-        owner: { input: 'db' },
-        name: 'url',
-        type: 'string',
-        secret: true,
-        optional: false,
-        default: undefined,
-      },
-      {
-        owner: { input: 'auth' },
-        name: 'url',
-        type: 'string',
-        secret: false,
-        optional: false,
-        default: undefined,
-      },
-      {
-        owner: 'service',
-        name: 'port',
-        type: 'number',
-        secret: false,
-        optional: false,
-        default: 3000,
-      },
+      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'auth' }, 'url'),
+      scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
   });
 });

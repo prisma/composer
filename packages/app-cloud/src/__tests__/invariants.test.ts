@@ -22,12 +22,12 @@ function shippedSources(): { file: string; text: string }[] {
   return out;
 }
 
-describe('entry map: the extension splits into authoring + control + prisma-next only', () => {
-  test("package.json exports exactly '.', './control', and './prisma-next' — no other runtime entry", () => {
+describe('entry map: authoring + control + prisma-next + testing, no other runtime entry', () => {
+  test("package.json exports '.', './control', './prisma-next', and './testing'", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './control', './prisma-next']);
+    expect(codeEntries.sort()).toEqual(['.', './control', './prisma-next', './testing']);
   });
 });
 
@@ -161,13 +161,13 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
   });
 });
 
-describe('invariant 7 (ADR-0021): the authoring entry never reaches the prisma-next entry', () => {
+describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-next entry', () => {
   test('no module reachable from src/index.ts imports the /prisma-next entry — Prisma Next stays opt-in', () => {
     // prisma-next.ts (and transitively @prisma-next/postgres + pg) is
     // imported only by an app that explicitly imports the ./prisma-next
     // subpath. A reachable import from the authoring barrel would drag that
     // dependency tree into every service, defeating the whole point of the
-    // dedicated subpath entry (ADR-0021, design-notes.md "opt-out stays real").
+    // dedicated subpath entry (ADR-0022, design-notes.md "opt-out stays real").
     const importPattern =
       /(?:import|export)\s+[^'"]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g;
     const importSpecifiers = (text: string): string[] => {

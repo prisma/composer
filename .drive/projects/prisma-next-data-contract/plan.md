@@ -18,7 +18,7 @@ an example conversion.
 `prisma-next.config.ts` import; dep end resolves to a
 `PostgresClient<Contract>` built in hydrate with warn-only marker
 verification; compile-time assignability is exact on `storageHash` and
-`satisfies()` mirrors it. ADR-0021 ships in this PR.
+`satisfies()` mirrors it. ADR-0022 ships in this PR.
 
 **Slice DoD:** unit tests for contract assignability/`satisfies`; integration
 test against a real local Postgres (existing harness) proving the typed
@@ -57,7 +57,7 @@ Stack: 1 → 2. No parallel groups — slice 2 consumes slice 1's primitive.
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in `spec.md`
-- [ ] Migrate long-lived docs into `docs/` (ADR-0021 already lands in slice 1;
+- [ ] Migrate long-lived docs into `docs/` (ADR-0022 already lands in slice 1;
       migrate the deferred multi-contract design from design-notes into
       docs/design if not already captured in the ADR)
 - [ ] Strip repo-wide references to `.drive/projects/prisma-next-data-contract/**`

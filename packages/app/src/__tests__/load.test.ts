@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { string } from '../config.ts';
 import { Load, LoadError } from '../graph.ts';
 import { dependency, resource, service, system } from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
@@ -109,7 +110,7 @@ describe('Load', () => {
     const auth = dependency({
       name: 'auth',
       type: 'fake/http',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
     });
     const root = service({
       name: 'storefront',

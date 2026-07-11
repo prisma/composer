@@ -1,3 +1,4 @@
+import { number, string } from '../../config.ts';
 // Bundle probe for the import-split guard: uses core's authoring entry the way
 // a user service module would, with real value usage so nothing tree-shakes away.
 import type { Contract } from '../../index.ts';
@@ -14,7 +15,7 @@ const db = dependency({
   name: 'db',
   type: 'probe/db',
   connection: {
-    params: { url: { type: 'string', secret: true } },
+    params: { url: string({ secret: true }) },
     hydrate: (v) => ({ url: v.url }),
   },
   required: dbContract,
@@ -25,7 +26,7 @@ const app = service({
   extension: 'test/pack',
   type: 'probe/app',
   inputs: { db },
-  params: { port: { type: 'number', default: 3000 } },
+  params: { port: number({ default: 3000 }) },
   build: {
     extension: '@prisma/app-node',
     type: 'node',
@@ -36,7 +37,7 @@ const app = service({
 
 const peer = dependency({
   type: 'probe/http',
-  connection: { params: { url: { type: 'string' } }, hydrate: (v) => ({ url: v.url }) },
+  connection: { params: { url: string() }, hydrate: (v) => ({ url: v.url }) },
 });
 
 const caller = service({

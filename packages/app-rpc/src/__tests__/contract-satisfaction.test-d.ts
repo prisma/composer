@@ -10,7 +10,7 @@
  * the negative wirings keep a `// @ts-expect-error` on the offending line.
  */
 import type { BuildAdapter, Contract, SystemBuilder } from '@prisma/app';
-import { dependency, service } from '@prisma/app';
+import { dependency, service, string } from '@prisma/app';
 import { type } from 'arktype';
 import { expectTypeOf, test } from 'vitest';
 import { contract } from '../contract.ts';
@@ -65,7 +65,7 @@ const wrongKind = wsContract({
 const legacyEnd = () =>
   dependency({
     type: 'fake/http',
-    connection: { params: { url: { type: 'string' } }, hydrate: (v: { url: string }) => v },
+    connection: { params: { url: string() }, hydrate: (v: { url: string }) => v },
   });
 
 const provider = <C extends Contract<string, unknown>>(exposed: C) =>

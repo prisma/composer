@@ -5,7 +5,7 @@
  * is the consumed emitted artifact the resource provides; a dependency end
  * takes that same wrapped contract value and hydrates to a typed Prisma Next
  * client, `Client<Contract>`, over the injected `{ url }` connection. This
- * amends ADR-0015 for this one dep kind (see ADR-0021): Prisma Next is
+ * amends ADR-0015 for this one dep kind (see ADR-0022): Prisma Next is
  * framework-blessed like rpc, so the binding is the typed client itself, not
  * a config the app builds its own client from.
  *
@@ -22,11 +22,11 @@
  * build/deploy-time job: the deploy migrates the database to the contract's
  * hash and guarantees it stays there, so hydrate just builds the client (no
  * `verifyMarker`). A running service can't be crashed by a marker check
- * because there is no marker check (ADR-0021).
+ * because there is no marker check (ADR-0022).
  */
 
 import type { Contract, DependencyEnd, ResourceNode } from '@prisma/app';
-import { dependency, resource } from '@prisma/app';
+import { dependency, resource, string } from '@prisma/app';
 import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/runtime';
 import type { SqlStorage } from '@prisma-next/sql-contract/types';
 
@@ -98,7 +98,7 @@ export function pnContract(contract: unknown): unknown {
  * `{ name, contract }` — the resource identity a system provisions: the ONE
  * place the database exists, providing `contract`. The `prisma-next.config.ts`
  * path the deploy migration step needs is NOT declared here — it rides on the
- * resource in slice 2, alongside the lowering that reads it (ADR-0021); the
+ * resource in slice 2, alongside the lowering that reads it (ADR-0022); the
  * app build never imports the config.
  */
 export function pnPostgres<C extends PnPostgresContract>(opts: {
@@ -122,10 +122,10 @@ export function pnPostgres(
     });
   }
   const contract = arg;
-  return dependency<{ url: { type: 'string'; secret: true } }, unknown, PnPostgresContract>({
+  return dependency({
     type: 'prisma-next',
     connection: {
-      params: { url: { type: 'string', secret: true } },
+      params: { url: string({ secret: true }) },
       hydrate: ({ url }) => buildClient(contract, url),
     },
     required: contract,

@@ -1,4 +1,4 @@
-# ADR-0021: Data deps carry a Prisma Next contract; deploys migrate to its hash
+# ADR-0022: Data deps carry a Prisma Next contract; deploys migrate to its hash
 
 ## Status
 

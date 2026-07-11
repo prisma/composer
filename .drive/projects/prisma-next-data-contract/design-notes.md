@@ -1,7 +1,7 @@
 # Design notes — Prisma Next data contract
 
 Settled in an operator design session (2026-07-11). The ADR draft
-(`docs/design/90-decisions/ADR-0021-*.md`) is the durable record; these notes
+(`docs/design/90-decisions/ADR-0022-*.md`) is the durable record; these notes
 carry the working detail and the deferred extension design.
 
 ## Principles
@@ -145,7 +145,7 @@ and the lowering doesn't change at all. Nothing to design in this project.
 
 ## References
 
-- ADR draft: `docs/design/90-decisions/ADR-0021-*.md`
+- ADR draft: `docs/design/90-decisions/ADR-0022-*.md`
 - PN surfaces: `@prisma-next/postgres` `/contract-builder`, `/runtime`,
   `/control`, `/config`; contract spaces ADR 212; `migrate` /
   `readMarker` / `readLedger` in the control API.

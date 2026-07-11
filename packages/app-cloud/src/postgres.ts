@@ -1,5 +1,5 @@
 import type { Contract, DependencyEnd, ResourceNode } from '@prisma/app';
-import { dependency, resource } from '@prisma/app';
+import { dependency, resource, string } from '@prisma/app';
 
 export interface PostgresConfig {
   readonly url: string;
@@ -45,17 +45,13 @@ export function postgres(opts?: {
       provides: postgresContract,
     });
   }
-  return dependency<
-    { url: { type: 'string'; secret: true } },
-    PostgresConfig,
-    typeof postgresContract
-  >({
+  return dependency({
     type: 'postgres',
     connection: {
-      params: { url: { type: 'string', secret: true } },
+      params: { url: string({ secret: true }) },
       // The binding IS the typed config: hydrate is the identity on its values
       // ({ url: string } = PostgresConfig). The app constructs its own client.
-      hydrate: (v) => v,
+      hydrate: (v): PostgresConfig => v,
     },
     required: postgresContract,
   });

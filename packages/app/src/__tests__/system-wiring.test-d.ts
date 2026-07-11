@@ -11,6 +11,7 @@
  * the offending line — the idiomatic form for "this must not compile".
  */
 import { expectTypeOf, test } from 'vitest';
+import { string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import type { BuildAdapter, RefPort, SystemBuilder } from '../node.ts';
 import { dependency, resource, service } from '../node.ts';
@@ -32,13 +33,13 @@ const cacheNode = resource({ name: 'cache', extension: 'test/pack', provides: ca
 const pgDep = dependency({
   name: 'db',
   type: 'fake/postgres',
-  connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+  connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
   required: pgContract,
 });
 
 const untypedDep = dependency({
   type: 'fake/http',
-  connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+  connection: conn({ url: string() }, (v) => ({ url: v.url })),
 });
 
 const consumer = service({

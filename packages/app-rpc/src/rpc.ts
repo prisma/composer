@@ -13,7 +13,7 @@
  * (compile time) and Load's `satisfies()` backstop re-checks it (runtime).
  */
 import type { Contract } from '@prisma/app';
-import { type DependencyEnd, dependency } from '@prisma/app';
+import { type DependencyEnd, dependency, string } from '@prisma/app';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { makeClient } from './client.ts';
 
@@ -34,7 +34,7 @@ export function rpc(
   return dependency({
     type: 'rpc',
     connection: {
-      params: { url: { type: 'string' } },
+      params: { url: string() },
       hydrate: ({ url }) => makeClient(arg, url),
     },
     required: arg,

@@ -84,7 +84,7 @@ implemented.
 - [ ] A service running against a DB with a mismatched marker logs a warning
       and still serves (test-verified).
 - [ ] Bare-`postgres()` examples and tests are untouched and green.
-- [ ] ADR-0021 accepted and merged; design-notes' deferred-extension content
+- [ ] ADR-0022 accepted and merged; design-notes' deferred-extension content
       preserved there or in docs/design.
 
 ## Open questions
@@ -97,6 +97,6 @@ implemented.
 ## References
 
 - `.drive/projects/prisma-next-data-contract/design-notes.md`
-- `docs/design/90-decisions/ADR-0021-*.md` (draft)
+- `docs/design/90-decisions/ADR-0022-*.md` (draft)
 - `docs/design/90-decisions/ADR-0013…0015`, `docs/design/03-domain-model/glossary.md` §Contracts
 - `packages/app-cloud/src/{postgres,control}.ts`

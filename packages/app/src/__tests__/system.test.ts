@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import { Load, LoadError } from '../graph.ts';
 import type { ProvisionedRef } from '../node.ts';
@@ -20,14 +21,14 @@ const dbDep = () =>
   dependency({
     name: 'db',
     type: 'fake/db',
-    connection: conn({ url: { type: 'string', secret: true } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
     required: dbContract(),
   });
 
 const httpDep = () =>
   dependency({
     type: 'fake/http',
-    connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
   });
 
 const makeAuthService = () =>
@@ -401,7 +402,7 @@ describe('Load of a system root — typed wiring (the satisfies() backstop)', ()
   const typedAuthDep = () =>
     dependency({
       type: 'fake/rpc',
-      connection: conn({ url: { type: 'string' } }, (v) => ({ url: v.url })),
+      connection: conn({ url: string() }, (v) => ({ url: v.url })),
       required: authContract,
     });
 

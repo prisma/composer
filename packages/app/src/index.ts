@@ -11,11 +11,9 @@ export type {
   ConfigParam,
   Connection,
   Params,
-  ParamType,
-  TypeOf,
   Values,
 } from './config.ts';
-export { configOf } from './config.ts';
+export { configOf, number, param, string } from './config.ts';
 export type { Contract } from './contract.ts';
 export type { Edge, Graph, GraphNode, NodeId } from './graph.ts';
 export { Load, LoadError } from './graph.ts';
@@ -28,7 +26,6 @@ export type {
   Hydrated,
   HydratedDeps,
   InputRef,
-  Loaded,
   ProvisionedRef,
   RefPort,
   ResourceNode,

@@ -1,4 +1,4 @@
-import type { Connection, Params, Values } from '../config.ts';
+import type { ConfigDeclaration, Connection, Params, Values } from '../config.ts';
 import type { Contract } from '../contract.ts';
 
 /** A test connection: declared params + a recording/simple hydrate. */
@@ -18,3 +18,19 @@ export const providerContract = <K extends string, Cmp>(kind: K, cmp: Cmp): Cont
     __cmp: cmp,
     satisfies: (required: Contract<K, unknown>) => required.kind === kind,
   });
+
+/** The ConfigDeclaration `configOf` produces for a scalar param — one place for the shape. */
+export function scalarDeclaration(
+  owner: ConfigDeclaration['owner'],
+  name: string,
+  opts: { secret?: boolean; optional?: boolean; default?: unknown } = {},
+): ConfigDeclaration {
+  return {
+    owner,
+    name,
+    schema: { vendor: '@prisma/app' },
+    secret: opts.secret ?? false,
+    optional: opts.optional ?? false,
+    default: opts.default,
+  };
+}

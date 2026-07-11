@@ -1,6 +1,6 @@
 // TS-authored fixture: the widget contract covers Prisma Next's TS no-emit
 // `defineContract()` authoring mode (the gadget fixture covers the PSL-first
-// mode), so the two together exercise both modes ADR-0021 says to support.
+// mode), so the two together exercise both modes ADR-0022 says to support.
 import { defineContract } from '@prisma-next/postgres/contract-builder';
 
 export const contract = defineContract({ extensionPacks: {} }, ({ field: f, model: m }) => ({

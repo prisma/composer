@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { Contract } from '@prisma/app';
-import { isNode } from '@prisma/app';
+import { isNode, string } from '@prisma/app';
 import { pnContract, pnPostgres } from '../prisma-next.ts';
 import type { Contract as GadgetContract } from './fixtures/gadget-contract/emitted/contract.d.ts';
 import gadgetContractJson from './fixtures/gadget-contract/emitted/contract.json' with {
@@ -92,7 +92,7 @@ describe('pnPostgres() factory shapes', () => {
     expect(dep.type).toBe('prisma-next');
     expect(dep.required).toBe(widget);
     expect(Object.keys(dep.connection.params)).toEqual(['url']);
-    expect(dep.connection.params['url']).toEqual({ type: 'string', secret: true });
+    expect(dep.connection.params['url']).toEqual(string({ secret: true }));
   });
 });
 
@@ -116,7 +116,7 @@ describe('hydrate — no live database required (lazy pool)', () => {
   });
 
   test('hydrate does no schema verification — it just builds the client', () => {
-    // There is no runtime marker check (ADR-0021): schema correctness is a
+    // There is no runtime marker check (ADR-0022): schema correctness is a
     // deploy-time job. Constructing the client can't be crashed by a marker
     // mismatch because hydrate sets no `verifyMarker` and reads no database.
     const widget = pnContract<WidgetContract>(widgetContractJson);

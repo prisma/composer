@@ -10,6 +10,6 @@ export default compute({
   deps: {
     db: postgres(),
   },
-  build: node({ module: import.meta.url, entry: '../dist/server.js' }),
+  build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: authContract },
 });

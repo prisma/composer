@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isNode } from '@prisma/app';
+import { isNode, string } from '@prisma/app';
 import { type } from 'arktype';
 import { contract } from '../contract.ts';
 import { rpc } from '../rpc.ts';
@@ -15,7 +15,7 @@ describe('rpc(contract) — the dependency end', () => {
     expect(isNode(end)).toBe(true);
     expect(end.kind).toBe('dependency');
     expect(end.type).toBe('rpc');
-    expect(end.connection.params).toEqual({ url: { type: 'string' } });
+    expect(end.connection.params).toEqual({ url: string() });
   });
 
   test('hydrate synchronously binds a client with a callable method per contract method', () => {

@@ -1,5 +1,5 @@
 import type { DependencyEnd } from '@prisma/app';
-import { dependency } from '@prisma/app';
+import { dependency, string } from '@prisma/app';
 
 /** A service-to-service dependency's client: a thin URL-anchored fetch wrapper. */
 export interface HttpClient {
@@ -26,7 +26,7 @@ export const http = (opts: { name: string }): DependencyEnd<HttpClient> =>
     name: opts.name,
     type: 'http',
     connection: {
-      params: { url: { type: 'string' } },
+      params: { url: string() },
       hydrate: (v) => defaultHttpClient({ url: v.url }),
     },
   });
