@@ -5,7 +5,7 @@
 `prisma-app deploy --stage <name>` provisions the topology into an isolated **Branch**
 of the app's single **Project** — its own compute, database, config, and Alchemy state —
 so an app can have production plus staging plus per-PR previews. Implements
-[ADR-0019](../../../docs/design/90-decisions/ADR-0019-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
+[ADR-0023](../../../docs/design/90-decisions/ADR-0023-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
 
 ## Pinned decisions — no implementer latitude
 
@@ -59,7 +59,7 @@ these, never *what they are*.
      **`branchId`** and config `class: preview`.
    - The rule is exactly: **`branchId` present ⟺ named stage ⟺ `class: preview`.** The
      target computes `class = branchId ? 'preview' : 'production'`; it never reads a Branch
-     `role`. (Platform-derived `class` is the deferred end-state, ADR-0019.)
+     `role`. (Platform-derived `class` is the deferred end-state, ADR-0023.)
 
 6. **`branchId` on providers — mechanism differs by provider's create body.** Verified
    against `@prisma/management-api-sdk@1.47.0`: the `POST /v1/projects/:id/databases` create body
@@ -144,6 +144,6 @@ previews; the platform state-API.
 
 ## References
 
-[ADR-0019](../../../docs/design/90-decisions/ADR-0019-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
-· [ADR-0018](../../../docs/design/90-decisions/ADR-0018-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
+[ADR-0023](../../../docs/design/90-decisions/ADR-0023-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
+· [ADR-0022](../../../docs/design/90-decisions/ADR-0022-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 · Plan: [`./plan.md`](./plan.md)
