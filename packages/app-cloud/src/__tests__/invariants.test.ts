@@ -22,12 +22,12 @@ function shippedSources(): { file: string; text: string }[] {
   return out;
 }
 
-describe('entry map: authoring + control + testing, no runtime entry', () => {
-  test("package.json exports '.', './control', and './testing'", () => {
+describe('entry map: authoring + control + prisma-next + testing, no other runtime entry', () => {
+  test("package.json exports '.', './control', './prisma-next', and './testing'", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './control', './testing']);
+    expect(codeEntries.sort()).toEqual(['.', './control', './prisma-next', './testing']);
   });
 });
 
@@ -158,5 +158,57 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
         offending: [],
       });
     }
+  });
+});
+
+describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-next entry', () => {
+  test('no module reachable from src/index.ts imports the /prisma-next entry — Prisma Next stays opt-in', () => {
+    // prisma-next.ts (and transitively @prisma-next/postgres + pg) is
+    // imported only by an app that explicitly imports the ./prisma-next
+    // subpath. A reachable import from the authoring barrel would drag that
+    // dependency tree into every service, defeating the whole point of the
+    // dedicated subpath entry (ADR-0022, design-notes.md "opt-out stays real").
+    const importPattern =
+      /(?:import|export)\s+[^'"]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g;
+    const importSpecifiers = (text: string): string[] => {
+      const out: string[] = [];
+      for (const match of text.matchAll(importPattern)) {
+        const spec = match[1] ?? match[2] ?? match[3];
+        if (spec !== undefined) out.push(spec);
+      }
+      return out;
+    };
+
+    const seen = new Map<string, string[]>();
+    const queue = [path.join(srcDir, 'index.ts')];
+    while (queue.length > 0) {
+      const file = queue.pop();
+      if (file === undefined || seen.has(file)) continue;
+      const specs = importSpecifiers(fs.readFileSync(file, 'utf8'));
+      seen.set(file, specs);
+      for (const spec of specs) {
+        if (!spec.startsWith('.')) continue;
+        const resolved = path.resolve(path.dirname(file), spec);
+        if (fs.existsSync(resolved)) queue.push(resolved);
+      }
+    }
+
+    expect(seen.size).toBeGreaterThan(0);
+    for (const [file, specs] of seen) {
+      const offending = specs.filter(
+        (spec) =>
+          /\/prisma-next(\.ts)?$/.test(spec) || spec.startsWith('@prisma-next/') || spec === 'pg',
+      );
+      expect({ file: path.relative(srcDir, file), offending }).toEqual({
+        file: path.relative(srcDir, file),
+        offending: [],
+      });
+    }
+  });
+
+  test('the built dist/index.mjs contains no @prisma-next/* or pg tokens', () => {
+    const built = fs.readFileSync(path.join(pkgDir, 'dist', 'index.mjs'), 'utf8');
+    expect(built).not.toContain('@prisma-next/');
+    expect(built.includes('"pg"') || built.includes("'pg'")).toBe(false);
   });
 });
