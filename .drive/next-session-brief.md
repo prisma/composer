@@ -4,8 +4,11 @@ You're picking up the **Prisma App Framework**, the authoring layer for Prisma C
 developers describe services and their typed dependencies in TypeScript, and
 the framework deploys them to Prisma Compute + Prisma Postgres. Work runs
 under the **Drive process** (`drive-process` skill). The **authoring-layer
-project is closed** — R1–R9 all shipped and merged; there is currently no
-active `.drive/projects/` project for this stream (open one when work starts).
+project is closed** — R1–R9 all shipped and merged. The active project is
+**`.drive/projects/forcing-function-apps/`** (opened 2026-07-11): port datahub
+then open-chat onto the framework, pulling in secrets, an emulated cron
+resource System, object storage, streams, and the local dev loop. Start from
+its `spec.md` and `plan.md`; tracker issues TML-2998…3005.
 
 ## What the system is now (read in this order)
 
