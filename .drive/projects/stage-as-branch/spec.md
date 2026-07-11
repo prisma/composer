@@ -33,9 +33,15 @@ these, never *what they are*.
      change to current production behavior.
    - **`--stage X` (named) = a Branch.** `gitName = X`, which **must pass git
      `check-ref-format`**; if invalid, the CLI **fails with a clear error** — no silent
-     normalization. The Branch is created-if-absent via
-     `POST /v1/projects/:id/branches` (`ifExists: "return"`). Its **role is PDP's
-     positional default** — cosmetic for us, does not gate our provisioning, deferred.
+     normalization. The Branch is **created-if-absent**: observe first via
+     `GET /v1/projects/:id/branches?gitName=X` (server-side exact match, ≤1 row), create
+     via `POST` only when absent, and tolerate a racing `409` by re-observing and adopting
+     the winner. The branches API has **no** `ifExists`/server-side idempotency field
+     (verified against `@prisma/management-api-sdk@1.47.0`: the POST body accepts only
+     `gitName` + `isDefault`); a `409` on duplicate `gitName` is the only signal, so
+     idempotency is client-side. Its **role is PDP's positional default** (first Branch =
+     production, later = preview; server-owned, unsettable) — cosmetic for us, does not
+     affect our provisioning, deferred.
 
 5. **Provisioning asymmetry (mechanical, no role lookup).**
    - Default stage: `Database`, `ComputeService`, `EnvironmentVariable` written with **no

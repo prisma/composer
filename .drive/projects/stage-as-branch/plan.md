@@ -8,8 +8,9 @@ for each code dispatch: `pnpm typecheck` + the touched package's tests; `pnpm bu
 
 **Outcome.** A client function, given the workspace token, returns
 `{ projectId, branchId? }` by: (a) listing live Projects by name, adopting the oldest or
-creating one (spec §3); (b) for a named stage, create-if-absent a Branch via
-`POST /v1/projects/:id/branches` with `ifExists: "return"` (spec §4). For the default
+creating one (spec §3); (b) for a named stage, create-if-absent a Branch — observe via
+`GET /v1/projects/:id/branches?gitName=X` (exact match), `POST` only when absent, tolerate
+a racing `409` by re-observing (spec §4; the API has no `ifExists` field). For the default
 stage it returns `branchId: undefined` and creates no Branch.
 
 - **Builds on:** the existing `ManagementClient` (already does authed Management-API
