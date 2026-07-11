@@ -19,7 +19,7 @@
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
-    "prepare": "husky && node scripts/sync-agent-rules.mjs"
+    "prepare": "husky && skills add prisma/skills --skill '*' --agent universal claude-code -y && skills add ./skills-contrib --skill '*' --agent universal claude-code -y && node scripts/sync-agent-rules.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.15",
@@ -28,6 +28,7 @@
     "lint-staged": "^16.2.6",
     "pathe": "^2.0.3",
     "pkg-pr-new": "0.0.75",
+    "skills": "^1.5.16",
     "turbo": "^2.6.1",
     "typescript": "^6.0.3"
   },

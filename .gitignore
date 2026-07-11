@@ -38,6 +38,15 @@ prisma-next/
 .cursor/rules
 .claude/rules
 
+# Agent skills are installed at `pnpm install` time, not vendored: `prepare` runs
+# `skills add` to pull the consumed product skills from `prisma/skills` and the
+# contributor skills from the tracked `skills-contrib/`. Ignore the generated
+# install trees and the per-machine lock; `skills-contrib/` is the only tracked
+# skill source.
+.agents/skills/
+.claude/skills/
+skills-lock.json
+
 # Next.js build output (any location — a stray copy under an unexpected path once got committed)
 .next/
 next-env.d.ts
