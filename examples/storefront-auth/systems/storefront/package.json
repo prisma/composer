@@ -18,7 +18,7 @@
     "@prisma/app-rpc": "workspace:0.2.0",
     "@storefront-auth/auth": "workspace:0.2.0",
     "arktype": "^2.2.3",
-    "next": "^15.5.4",
+    "next": "^16.2.9",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
