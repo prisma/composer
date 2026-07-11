@@ -6,11 +6,8 @@
  * package genuinely does, so `prisma-app deploy` here resolves
  * `@prisma/app-cloud/target` and `@prisma/app-node/assemble` for real.
  *
- * Drives the CLI as a binary (`node_modules/.bin/prisma-app`) under `node` — the
- * CLI's own `#!/usr/bin/env node` shebang runtime — rather than importing its
- * internals. (Spawning the compiled bin under `bun` hits a bun module-cache
- * quirk on Linux when a second CLI subprocess resolves the same dist-exporting
- * workspace packages; `node` is the published runtime and resolves them cleanly.)
+ * Drives the CLI as a binary (`node_modules/.bin/prisma-app`), the same way
+ * the example apps do, rather than importing the CLI's internals.
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -22,7 +19,7 @@ const fixtureEntry = path.join(integrationDir, 'test', 'fixtures', 'entry-anchor
 
 describe('prisma-app deploy — real entry-anchored resolution of prisma-cloud + node', () => {
   test('resolves both packs for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnSync('node', [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env: { ...process.env, PRISMA_WORKSPACE_ID: 'ws-integration-test' },
@@ -39,7 +36,7 @@ describe('prisma-app deploy — real entry-anchored resolution of prisma-cloud +
     const env = { ...process.env };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnSync('node', [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env,

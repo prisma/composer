@@ -121,6 +121,10 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       dts: false,
       sourcemap: false,
       clean: false,
+      // Do NOT auto-load this package's tsdown.config.ts: its `exports`
+      // management would rewrite this package's package.json to the throwaway
+      // bundle dir, corrupting resolution of @prisma/app-nextjs afterward.
+      config: false,
     });
     const built = fs.readdirSync(bundleTmp).find((f) => /^service\.m?js$/.test(f));
     if (built === undefined) {
