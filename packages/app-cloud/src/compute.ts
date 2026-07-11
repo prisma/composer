@@ -1,7 +1,6 @@
-import type { BuildAdapter, Config, Deps, Expose, Loaded, RunnableServiceNode } from '@prisma/app';
+import type { BuildAdapter, Deps, Expose, Loaded, RunnableServiceNode } from '@prisma/app';
 import { configOf, hydrateSync, service } from '@prisma/app';
 import { blindCast } from '@prisma/app/casts';
-import type { Testable } from '@prisma/app/testing';
 import { deserialize, stash } from './serializer.ts';
 
 const computeParams = { port: { type: 'number', default: 3000 } } as const;
@@ -16,10 +15,6 @@ const computeParams = { port: { type: 'number', default: 3000 } } as const;
  *   · load() — called from inside the app's entry: read the stash, hydrate the
  *     deps synchronously, memoize per process, return them merged with the
  *     resolved service params (typed).
- *   · runForTest(config, boot) — the in-process test counterpart of run(): the
- *     caller hands a concrete Config directly (no address, no environment to
- *     read), stash() writes it exactly as run() does, then boot() runs. The
- *     `@prisma/app/testing` seam (bootstrapService) drives this.
  *
  * `service()`'s underlying node carries `extension: '@prisma/app-cloud'` —
  * the control-plane registry key `prisma-app deploy` resolves through the
@@ -31,7 +26,7 @@ export const compute = <D extends Deps, E extends Expose = Record<never, never>>
   deps: D;
   build: BuildAdapter;
   expose?: E;
-}): RunnableServiceNode<D, typeof computeParams, E> & Testable => {
+}): RunnableServiceNode<D, typeof computeParams, E> => {
   // load() merges deps and service params into one object; a dep whose name
   // collides with a service param would be silently clobbered. Fail at
   // authoring instead.
@@ -61,10 +56,6 @@ export const compute = <D extends Deps, E extends Expose = Record<never, never>>
       stash(shape, deserialize(shape, address));
       return boot();
     },
-    async runForTest<T>(config: Config, boot: () => Promise<T>): Promise<T> {
-      stash(configOf(node), config);
-      return boot();
-    },
     load() {
       if (loaded === undefined) {
         const shape = configOf(node);
@@ -79,8 +70,8 @@ export const compute = <D extends Deps, E extends Expose = Record<never, never>>
   };
   return Object.freeze(
     blindCast<
-      RunnableServiceNode<D, typeof computeParams, E> & Testable,
-      "the spread copies node's own enumerable data (including the Symbol.for brand) and adds run/runForTest/load — exactly RunnableServiceNode & Testable's shape"
+      RunnableServiceNode<D, typeof computeParams, E>,
+      "the spread copies node's own enumerable data (including the Symbol.for brand) and adds run/load — exactly RunnableServiceNode's shape"
     >(runnable),
   );
 };

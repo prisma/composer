@@ -22,7 +22,7 @@ a fake; it controls what `load()` yields. Two altitudes need two tools — but
 they hit the same seam from opposite sides: one replaces `load()`'s output, the
 other feeds `load()`'s input.
 
-## Unit — `stubLoad`: replace the seam's output
+## Unit — `mockService`: replace the seam's output
 
 For code that calls `load()` directly and is exercised directly — a page
 component, a server action, a utility — the test mocks the service module so
@@ -30,10 +30,10 @@ component, a server action, a utility — the test mocks the service module so
 
 ```ts
 // storefront/app/page.test.tsx
-import { stubLoad } from '@prisma/app/testing';
+import { mockService } from '@prisma/app/testing';
 // mock storefront's own service module so load() returns a typed fake auth
 vi.mock('../src/service.ts', () => ({
-  default: stubLoad(realService, { auth: { verify: async () => ({ ok: true }) } }),
+  default: mockService(realService, { auth: { verify: async () => ({ ok: true }) } }),
 }));
 import Page from './page.tsx';
 
@@ -41,7 +41,7 @@ import Page from './page.tsx';
 expect(await Page()).toContain('true');
 ```
 
-`stubLoad(service, overrides)` returns a service node whose `load()` yields the
+`mockService(service, overrides)` returns a service node whose `load()` yields the
 overrides merged with the service's param defaults, **typed against the
 service's own `deps`** — a double that does not satisfy `Client<authContract>`
 is a compile error. This is ordinary dependency-injection testing; the app code
@@ -60,13 +60,23 @@ environment and boots the entry. `bootstrapService` does exactly that with a
 config the test chooses:
 
 ```ts
-// boot storefront in-process against an in-process fake auth
-const fake = Bun.serve({ port: 0, fetch: serve(fakeAuth, { rpc: { verify: async () => ({ ok: true }) } }) });
-const app = await bootstrapService(storefront, { inputs: { auth: { url: fake.url } }, port: 0 });
+import { bootstrapService } from '@prisma/app-cloud/testing';
+import fakeAuth from '@storefront-auth/auth/fake'; // a serve() handler, no db
+import storefront from '../src/service.ts';
+
+const fake = Bun.serve({ port: 0, fetch: fakeAuth });
+
+// storefront's build is nextjs(), whose entry lives in Next's standalone output
+// dir — not module-relative — so it supplies an explicit boot thunk. A `node`
+// service (like auth) needs none: the default derivation fits it.
+const app = await bootstrapService(
+  storefront,
+  { service: { port: 4310 }, inputs: { auth: { url: fake.url.href } } },
+  bootStandaloneNext(storefront.build),
+);
 
 const res = await app.fetch(new Request(app.url));
-expect(await res.text()).toContain('true');
-await app.close(); await fake.stop();
+expect(await res.text()).toContain('Auth /verify says: <!-- -->true');
 ```
 
 Nothing about `server.ts` changes — it boots and listens exactly as in
@@ -75,11 +85,15 @@ it over loopback. `load()` deserializes the injected environment identically to
 a deployed process. The fidelity is the point: an integration test exercises the
 production code path, not a stubbed one.
 
-`bootstrapService` is target-specific — it uses the target's serializer to write
-the environment (`stash`) and the target's `run` to boot. It is exposed as a
-`runForTest(config, boot)` capability on the runnable (each target implements
-it) that a thin `@prisma/app/testing` wrapper drives, so the generic entry stays
-in core and the target owns the environment mapping.
+`bootstrapService` is **target-specific** — writing the environment is the
+target's serializer's job — so it ships in the target's testing entry
+(`@prisma/app-cloud/testing`), not core. It reuses the exact `stash` the deploy
+boot uses, so `load()` reads the injected config identically to a deployed
+process; nothing about it lives in the production runtime. `config.service.port`
+must be concrete (the entry self-listens and never reports an OS-assigned port
+back), and there is no `close()` — teardown rides bun-test's per-file process
+isolation. `mockService` stays in core (`@prisma/app/testing`); it is
+target-agnostic because every service node has a `load()`.
 
 ## The doubles: same contract, by type
 

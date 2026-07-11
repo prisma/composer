@@ -18,12 +18,11 @@
  * `test` task depends on `build`, so `pnpm -w test` always has it).
  */
 import { describe, expect, it } from 'bun:test';
-import * as path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import type { BuildAdapter } from '@prisma/app';
-import { bootstrapService } from '@prisma/app/testing';
+import { bootstrapService } from '@prisma/app-cloud/testing';
 import type { NextjsBuildAdapter } from '@prisma/app-nextjs';
-import { nextStandaloneDir } from '@prisma/app-nextjs/control';
+import { standaloneEntryPath } from '@prisma/app-nextjs/control';
 import fakeAuthHandler from '@storefront-auth/auth/fake';
 import storefrontService from '../src/service.ts';
 
@@ -33,18 +32,13 @@ function isNextjsBuild(build: BuildAdapter): build is NextjsBuildAdapter {
   return build.type === 'nextjs' && 'appDir' in build && typeof build.appDir === 'string';
 }
 
-/** Imports the built standalone `server.js` — Next's own entry, unmodified — exactly as the deploy artifact's bootstrap would. */
+/** Boots the built standalone Next entry — its own `server.js`, unmodified — via the same path `assemble()` resolves for deploy (not the same bootstrap chain: deploy goes bootstrap.js -> main.mjs -> server.js; here `bootstrapService`'s `stash` stands in for the wrapper's env write). */
 function bootStandaloneNext(build: NextjsBuildAdapter): () => Promise<void> {
-  const moduleDir = path.dirname(fileURLToPath(build.module));
-  const appDir = path.resolve(moduleDir, build.appDir);
-  const entryPath = path.join(nextStandaloneDir(appDir), build.entry);
+  const entryPath = standaloneEntryPath(build);
   return async () => {
     await import(pathToFileURL(entryPath).href);
   };
 }
-
-/** React renders adjacent text/expression children with an interleaved `<!-- -->` comment marker — strip it before asserting on rendered text (mirrors scripts/e2e-verify.sh's own technique). */
-const stripComments = (html: string): string => html.replace(/<!--[^>]*-->/g, '');
 
 describe('storefront -> auth round trip, driven over real HTTP (bootstrapService)', () => {
   it('renders auth.verify() -> { ok: true } served by the fake auth on a loopback port', async () => {
@@ -61,8 +55,10 @@ describe('storefront -> auth round trip, driven over real HTTP (bootstrapService
     );
 
     const res = await app.fetch(new Request(app.url));
-    const html = stripComments(await res.text());
+    // React separates the static text from the {String(ok)} expression with an
+    // empty `<!-- -->` comment; assert around it rather than stripping HTML.
+    const html = await res.text();
 
-    expect(html).toContain('Auth /verify says: true');
+    expect(html).toContain('Auth /verify says: <!-- -->true');
   });
 });

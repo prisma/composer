@@ -78,6 +78,8 @@ jobs:
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: pnpm test
+      - name: Type-only tests (vitest --typecheck)
+        run: pnpm turbo run test:types
       - name: Test scripts (cast-ratchet unit tests)
         run: pnpm test:scripts
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ConfigParam } from '../config.ts';
 import type { BuildAdapter, RunnableServiceNode } from '../node.ts';
 import { dependency, service } from '../node.ts';
-import { stubLoad } from '../testing.ts';
+import { mockService } from '../testing.ts';
 import { conn } from './helpers.ts';
 
 const build: BuildAdapter = {
@@ -30,7 +30,7 @@ const authDep = () =>
 type ConsumerDeps = { auth: ReturnType<typeof authDep> };
 type ConsumerParams = { port: ConfigParam<'number'> };
 
-/** A RunnableServiceNode fixture whose own run()/load() must never actually run — stubLoad replaces load() entirely, and run() is never called under a stub. */
+/** A RunnableServiceNode fixture whose own run()/load() must never actually run — mockService replaces load() entirely, and run() is never called under a stub. */
 const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
   Object.freeze({
     ...service({
@@ -42,16 +42,18 @@ const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
       build,
     }),
     async run(): Promise<unknown> {
-      throw new Error('consumer.run() should never be called under stubLoad.');
+      throw new Error('consumer.run() should never be called under mockService.');
     },
     load() {
-      throw new Error('consumer.load() should never be reached — stubLoad replaces it entirely.');
+      throw new Error(
+        'consumer.load() should never be reached — mockService replaces it entirely.',
+      );
     },
   });
 
-describe('stubLoad', () => {
+describe('mockService', () => {
   test("load() yields the override merged with the service's param defaults", async () => {
-    const stub = stubLoad(consumer(), {
+    const stub = mockService(consumer(), {
       auth: { verify: async ({ token }) => ({ ok: token.length > 0 }) },
     });
 
@@ -61,7 +63,7 @@ describe('stubLoad', () => {
   });
 
   test('an overridden param wins over the default', () => {
-    const stub = stubLoad(consumer(), {
+    const stub = mockService(consumer(), {
       auth: { verify: async () => ({ ok: true }) },
       port: 8080,
     });
@@ -70,18 +72,18 @@ describe('stubLoad', () => {
   });
 
   test('load() returns the same object on every call', () => {
-    const stub = stubLoad(consumer(), { auth: { verify: async () => ({ ok: true }) } });
+    const stub = mockService(consumer(), { auth: { verify: async () => ({ ok: true }) } });
     expect(stub.load()).toBe(stub.load());
   });
 
   test('run() throws, naming the service', () => {
-    const stub = stubLoad(consumer(), { auth: { verify: async () => ({ ok: true }) } });
-    expect(() => stub.run('addr', async () => undefined)).toThrow(/"consumer".*load\(\)-only stub/);
+    const stub = mockService(consumer(), { auth: { verify: async () => ({ ok: true }) } });
+    expect(() => stub.run('addr', async () => undefined)).toThrow(/"consumer".*load\(\)-only mock/);
   });
 
   test('deps/params/build/name pass through unchanged', () => {
     const original = consumer();
-    const stub = stubLoad(original, { auth: { verify: async () => ({ ok: true }) } });
+    const stub = mockService(original, { auth: { verify: async () => ({ ok: true }) } });
     expect(stub.inputs).toBe(original.inputs);
     expect(stub.params).toBe(original.params);
     expect(stub.build).toBe(original.build);

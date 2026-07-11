@@ -1,5 +1,5 @@
 /**
- * `stubLoad`'s override argument is typed against the service's own `deps`
+ * `mockService`'s override argument is typed against the service's own `deps`
  * (`HydratedDeps<D>`) and `params` (`Partial<Values<P>>`) — a double that
  * doesn't satisfy a dep's hydrated shape, or a param of the wrong type, must
  * fail to compile. Type-only (vitest `--typecheck`, never executed): see
@@ -9,7 +9,7 @@ import { expectTypeOf, test } from 'vitest';
 import type { ConfigParam } from '../config.ts';
 import type { BuildAdapter, RunnableServiceNode } from '../node.ts';
 import { dependency, service } from '../node.ts';
-import { stubLoad } from '../testing.ts';
+import { mockService } from '../testing.ts';
 import { conn } from './helpers.ts';
 
 const build: BuildAdapter = {
@@ -56,10 +56,10 @@ const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
   });
 
 test('a correctly-shaped double, with or without the optional param override, compiles', () => {
-  const withoutParam = stubLoad(consumer(), {
+  const withoutParam = mockService(consumer(), {
     auth: { verify: async ({ token }: { token: string }) => ({ ok: token.length > 0 }) },
   });
-  const withParam = stubLoad(consumer(), {
+  const withParam = mockService(consumer(), {
     auth: { verify: async () => ({ ok: true }) },
     port: 8080,
   });
@@ -70,15 +70,15 @@ test('a correctly-shaped double, with or without the optional param override, co
 
 test('omitting the required "auth" override is a compile error', () => {
   // @ts-expect-error "auth" is a declared dep with no default — it must be supplied
-  stubLoad(consumer(), {});
+  mockService(consumer(), {});
 });
 
 test("a double whose method return shape doesn't satisfy the dep's hydrated contract is a compile error", () => {
   // @ts-expect-error verify must resolve to `{ ok: boolean }`, not `{ status: string }`
-  stubLoad(consumer(), { auth: { verify: async () => ({ status: 'ok' }) } });
+  mockService(consumer(), { auth: { verify: async () => ({ status: 'ok' }) } });
 });
 
 test('overriding a param with the wrong type is a compile error', () => {
   // @ts-expect-error port is declared `number`
-  stubLoad(consumer(), { auth: { verify: async () => ({ ok: true }) }, port: 'nope' });
+  mockService(consumer(), { auth: { verify: async () => ({ ok: true }) }, port: 'nope' });
 });

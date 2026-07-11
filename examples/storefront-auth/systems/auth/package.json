@@ -6,7 +6,7 @@
   "exports": {
     ".": "./src/system.ts",
     "./contract": "./src/contract.ts",
-    "./fake": "./src/fake.ts"
+    "./fake": "./testing/fake.ts"
   },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
