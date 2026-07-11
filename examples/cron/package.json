@@ -1,0 +1,30 @@
+{
+  "name": "@prisma/example-cron",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'nothing to build for this package itself — @cron/worker and @cron/router build via turbo ^build, from the workspace deps below'",
+    "typecheck": "tsc --noEmit",
+    "deploy": "pnpm turbo run build --filter @prisma/example-cron... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-app deploy system.ts ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )",
+    "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-app destroy system.ts ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )"
+  },
+  "dependencies": {
+    "@cron/router": "workspace:0.2.0",
+    "@cron/worker": "workspace:0.2.0",
+    "@effect/platform-bun": "4.0.0-beta.92",
+    "@prisma/app": "workspace:0.2.0",
+    "@prisma/app-cloud": "workspace:0.2.0",
+    "@prisma/app-cron": "workspace:0.2.0",
+    "@prisma/app-node": "workspace:0.2.0",
+    "@prisma/app-rpc": "workspace:0.2.0",
+    "alchemy": "2.0.0-beta.59",
+    "arktype": "^2.2.3",
+    "effect": "4.0.0-beta.92"
+  },
+  "devDependencies": {
+    "@prisma/app-cli": "workspace:0.2.0",
+    "@types/bun": "^1.3.13",
+    "typescript": "^6.0.3"
+  }
+}

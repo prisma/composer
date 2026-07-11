@@ -44,5 +44,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "inlinedDependencies": {
+    "@ark/schema": "0.56.2",
+    "@ark/util": "0.56.2",
+    "arkregex": "0.0.8",
+    "arktype": "2.2.3"
   }
 }

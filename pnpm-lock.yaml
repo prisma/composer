@@ -36,6 +36,114 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/cron:
+    dependencies:
+      '@cron/router':
+        specifier: workspace:0.2.0
+        version: link:systems/router
+      '@cron/worker':
+        specifier: workspace:0.2.0
+        version: link:systems/worker
+      '@effect/platform-bun':
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92(effect@4.0.0-beta.92)
+      '@prisma/app':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app
+      '@prisma/app-cloud':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app-cloud
+      '@prisma/app-cron':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app-cron
+      '@prisma/app-node':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app-node
+      '@prisma/app-rpc':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app-rpc
+      alchemy:
+        specifier: 2.0.0-beta.59
+        version: 2.0.0-beta.59(@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92))(@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1))(@types/node@25.9.5)(@types/react@19.2.17)(effect@4.0.0-beta.92)(vite@8.1.2(@types/node@25.9.5)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.9(@types/node@25.9.5)(vite@8.1.2(@types/node@25.9.5)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260617.1)(ws@8.21.0)
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+      effect:
+        specifier: 4.0.0-beta.92
+        version: 4.0.0-beta.92
+    devDependencies:
+      '@prisma/app-cli':
+        specifier: workspace:0.2.0
+        version: link:../../packages/app-cli
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/cron/systems/router:
+    dependencies:
+      '@cron/worker':
+        specifier: workspace:0.2.0
+        version: link:../worker
+      '@prisma/app-cron':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-cron
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+    devDependencies:
+      '@prisma/app':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app
+      '@prisma/app-cloud':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-cloud
+      '@prisma/app-node':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-node
+      '@prisma/app-rpc':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-rpc
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/cron/systems/worker:
+    dependencies:
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+    devDependencies:
+      '@prisma/app':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app
+      '@prisma/app-cloud':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-cloud
+      '@prisma/app-node':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-node
+      '@prisma/app-rpc':
+        specifier: workspace:0.2.0
+        version: link:../../../../packages/app-rpc
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   examples/storefront-auth:
     dependencies:
       '@effect/platform-bun':
@@ -758,12 +866,6 @@ packages:
 
   '@effect/platform-bun@4.0.0-beta.92':
     resolution: {integrity: sha512-Q/XKoE7gIHa1+ypOflLxR/TXitR094XUfTJmHGi/hV791+e2QJP+7Dcz+BPGqAKi9RU3DPyOMHzoUPop9eDKow==}
-    peerDependencies:
-      effect: ^4.0.0-beta.92
-
-  '@effect/platform-node-shared@4.0.0-beta.92':
-    resolution: {integrity: sha512-156ADSfmWcqz0mC8VxlHN9IHyT97AbYsBc3wJxyz2ceiWyGJOWkIRd6H/n5Be4hd6dQ4IegSt6J3HinBIJ9S/A==}
-    engines: {node: '>=18.0.0'}
     peerDependencies:
       effect: ^4.0.0-beta.92
 
@@ -2361,10 +2463,6 @@ packages:
     resolution: {integrity: sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA==}
     engines: {node: '>=8.6'}
 
-  picomatch@4.0.4:
-    resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
-    engines: {node: '>=12'}
-
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
@@ -2432,10 +2530,6 @@ packages:
     engines: {node: '>=0.10.0'}
     peerDependencies:
       react: ^19.2.0
-
-  react@19.2.0:
-    resolution: {integrity: sha512-tmbWg6W31tQLeB5cdIBOicJDJRR2KzXsV7uSK9iNfLWQ5bIZfxuPEHp7M8wiHyHnn0DD1i7w3Zmin0FtkrwoCQ==}
-    engines: {node: '>=0.10.0'}
 
   react@19.2.7:
     resolution: {integrity: sha512-HNe9WslTbXmFK8o8cmwgAeJFSBvt1bPdHCVKtaaV+WlAN36mpT4hcRpwbf3fY56ar2oIXzsBpOAiIRHAdY0OlQ==}
@@ -3238,17 +3332,8 @@ snapshots:
 
   '@effect/platform-bun@4.0.0-beta.92(effect@4.0.0-beta.92)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.92(effect@4.0.0-beta.92)
+      '@effect/platform-node-shared': 4.0.0-beta.97(effect@4.0.0-beta.92)
       effect: 4.0.0-beta.92
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
-  '@effect/platform-node-shared@4.0.0-beta.92(effect@4.0.0-beta.92)':
-    dependencies:
-      '@types/ws': 8.18.1
-      effect: 4.0.0-beta.92
-      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -3261,7 +3346,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-    optional: true
 
   '@effect/platform-node@4.0.0-beta.92(effect@4.0.0-beta.92)(ioredis@5.11.1)':
     dependencies:
@@ -4013,15 +4097,15 @@ snapshots:
       effect: 4.0.0-beta.92
       fast-glob: 3.3.3
       fast-xml-parser: 5.9.3
-      ink: 6.8.0(@types/react@19.2.17)(react@19.2.0)
+      ink: 6.8.0(@types/react@19.2.17)(react@19.2.7)
       jszip: 3.10.1
       libsodium-wrappers: 0.8.4
       magic-string: 0.30.21
       mysql2: 3.22.5(@types/node@25.9.5)
       pathe: 2.0.3
       pg: 8.22.0
-      picomatch: 4.0.4
-      react: 19.2.0
+      picomatch: 4.0.5
+      react: 19.2.7
       rolldown: 1.0.1
       undici: 7.28.0
       yaml: 2.9.0
@@ -4332,7 +4416,7 @@ snapshots:
 
   ini@7.0.0: {}
 
-  ink@6.8.0(@types/react@19.2.17)(react@19.2.0):
+  ink@6.8.0(@types/react@19.2.17)(react@19.2.7):
     dependencies:
       '@alcalzone/ansi-tokenize': 0.2.5
       ansi-escapes: 7.3.0
@@ -4347,8 +4431,8 @@ snapshots:
       indent-string: 5.0.0
       is-in-ci: 2.0.0
       patch-console: 2.0.0
-      react: 19.2.0
-      react-reconciler: 0.33.0(react@19.2.0)
+      react: 19.2.7
+      react-reconciler: 0.33.0(react@19.2.7)
       scheduler: 0.27.0
       signal-exit: 3.0.7
       slice-ansi: 8.0.0
@@ -4672,8 +4756,6 @@ snapshots:
 
   picomatch@2.3.2: {}
 
-  picomatch@4.0.4: {}
-
   picomatch@4.0.5: {}
 
   pkg-pr-new@0.0.75: {}
@@ -4728,12 +4810,10 @@ snapshots:
       react: 19.2.7
       scheduler: 0.27.0
 
-  react-reconciler@0.33.0(react@19.2.0):
+  react-reconciler@0.33.0(react@19.2.7):
     dependencies:
-      react: 19.2.0
+      react: 19.2.7
       scheduler: 0.27.0
-
-  react@19.2.0: {}
 
   react@19.2.7: {}
 

@@ -9,5 +9,17 @@ import { defineConfig } from 'tsdown';
 // chunk file, when it assembles an app that uses cronScheduler().
 export default defineConfig([
   { ...baseConfig, entry: { index: 'src/index.ts' }, clean: true },
-  { ...baseConfig, entry: { 'scheduler-entry': 'src/scheduler-entry.ts' }, clean: false },
+  {
+    ...baseConfig,
+    entry: { 'scheduler-entry': 'src/scheduler-entry.ts' },
+    clean: false,
+    // The shipped entry is copied standalone by assemble() (no sibling
+    // node_modules), mirroring examples/storefront-auth's server.mjs build:
+    // inline its runtime deps rather than leaving them as bare imports.
+    // `skipNodeModulesBundle` and `noExternal` are mutually exclusive in
+    // tsdown, so this entry overrides the base config's `skipNodeModulesBundle`
+    // instead of composing with it.
+    skipNodeModulesBundle: false,
+    noExternal: [/^@prisma\//, /^arktype/],
+  },
 ]);

@@ -1,0 +1,36 @@
+{
+  "name": "@cron/router",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/service.ts",
+    "./schedule": "./src/schedule.ts"
+  },
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@cron/worker": "workspace:0.2.0",
+    "@prisma/app-cron": "workspace:0.2.0",
+    "arktype": "^2.2.3"
+  },
+  "peerDependencies": {
+    "@prisma/app": "workspace:0.2.0",
+    "@prisma/app-node": "workspace:0.2.0",
+    "@prisma/app-cloud": "workspace:0.2.0",
+    "@prisma/app-rpc": "workspace:0.2.0"
+  },
+  "devDependencies": {
+    "@prisma/app": "workspace:0.2.0",
+    "@prisma/app-node": "workspace:0.2.0",
+    "@prisma/app-cloud": "workspace:0.2.0",
+    "@prisma/app-rpc": "workspace:0.2.0",
+    "@types/bun": "^1.3.13",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  }
+}
