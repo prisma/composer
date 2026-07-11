@@ -5,6 +5,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
+    "./prisma-next": "./dist/prisma-next.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -17,10 +18,14 @@
   "dependencies": {
     "@prisma/app": "workspace:0.2.0",
     "@prisma/alchemy": "workspace:0.2.0",
+    "@prisma-next/contract": "0.14.0",
+    "@prisma-next/postgres": "0.14.0",
+    "@prisma-next/sql-contract": "0.14.0",
     "alchemy": "2.0.0-beta.59",
     "effect": "4.0.0-beta.92"
   },
   "devDependencies": {
+    "@prisma-next/cli": "0.14.0",
     "@prisma/app-tsdown": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "tsdown": "^0.15.9",
