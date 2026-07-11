@@ -211,4 +211,23 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     expect(built).not.toContain('@prisma-next/');
     expect(built.includes('"pg"') || built.includes("'pg'")).toBe(false);
   });
+
+  // The ./prisma-next authoring entry legitimately bundles
+  // @prisma-next/postgres/runtime (the typed client). But the slice-2
+  // deploy-only machinery — the CLI config loader, the control client, and the
+  // migration/config/resource modules — must NEVER leak into it, or every
+  // service using pnPostgres would pull pg + the CLI into its runtime bundle.
+  // dist/index.mjs is checked above; this locks dist/prisma-next.mjs too.
+  test('the built dist/prisma-next.mjs contains no deploy-only machinery', () => {
+    const built = fs.readFileSync(path.join(pkgDir, 'dist', 'prisma-next.mjs'), 'utf8');
+    for (const token of [
+      '@prisma-next/cli',
+      'postgres/control',
+      'pn-config',
+      'pn-migration-resource',
+      'prisma-next-migrate',
+    ]) {
+      expect({ token, present: built.includes(token) }).toEqual({ token, present: false });
+    }
+  });
 });
