@@ -3,3 +3,10 @@ packages:
   - examples/*
   - examples/*/systems/*
   - test/**
+
+# Next.js standalone output traces a flat `next` copy and resolves peers like
+# styled-jsx relative to it. pnpm's default isolated layout hides those peers
+# under .pnpm, so the standalone server crashes at boot. A hoisted (flat)
+# node_modules keeps the standalone self-contained. (pnpm reads this natively;
+# keeping it out of .npmrc avoids npm's "Unknown config node-linker" warning.)
+nodeLinker: hoisted
