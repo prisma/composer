@@ -20,6 +20,7 @@
       "!**/.prisma",
       "!**/.alchemy",
       "!**/*.d.ts",
+      "!**/fixtures/**/emitted",
       "!**/pnpm-lock.yaml"
     ]
   },

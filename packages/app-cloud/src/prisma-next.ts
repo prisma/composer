@@ -27,7 +27,6 @@
 
 import type { Contract, DependencyEnd, ResourceNode } from '@prisma/app';
 import { dependency, resource } from '@prisma/app';
-import type { Contract as PnRawContract } from '@prisma-next/contract/types';
 import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/runtime';
 import type { SqlStorage } from '@prisma-next/sql-contract/types';
 
@@ -36,7 +35,7 @@ import type { SqlStorage } from '@prisma-next/sql-contract/types';
  * authoring modes (TS no-emit `defineContract()`, or PSL/emitted
  * `contract.d.ts`) satisfy.
  */
-export type AnyPnContract = PnRawContract<SqlStorage>;
+export type AnyPnContract = import('@prisma-next/contract/types').Contract<SqlStorage>;
 
 /**
  * The comparison payload behind a `prisma-next` Contract. `contractJson` is
