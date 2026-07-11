@@ -73,13 +73,26 @@ these, never *what they are*.
    physical names per environment; the store keys by `(stack, stage)`. No state work in
    this slice.
 
-10. **Destroy resolves find-only; teardown removes the named-stage Branch.** `destroy`
-    runs the same two-phase flow, but ensure-containers is **find-only**: it must never
-    create anything. `resolveContainer` gains `ensure: boolean` — `deploy` passes `true`
-    (create-if-absent, decisions 3–4 unchanged), `destroy` passes `false` (find only). On
-    `ensure: false`, an absent Project (or, for a named stage, an absent Branch) makes the
-    CLI **fail with a clear "nothing deployed for `<app>`[`/<stage>`]"** message. The
-    resolved ids are injected on the `destroy` child exactly as for deploy (decision 2).
+10. **Destroy is explicit — no default target — resolves find-only; teardown removes the
+    named-stage Branch.**
+    - **Destroy never defaults to production.** `deploy` may default (no `--stage` =
+      production); `destroy` must **not** — a bare `destroy <entry>` with no target is a
+      **hard `CliError`** ("destroy requires an explicit target: `--stage <name>` for a
+      branch environment, or `--production` for the production environment"). This prevents
+      an omitted/typo'd stage from silently tearing down production.
+    - **Target selection.** `destroy --stage X` tears down branch `X`. `destroy
+      --production` (a boolean flag) tears down the project-level production environment (no
+      branch). `--stage` + `--production` together → `CliError` (mutually exclusive).
+      `--production` is **destroy-only**; passed to `deploy` it is a `CliError` (deploy
+      already targets production by default). Internally `--production` is just
+      `stage = undefined` on the find-only path — no new resolver behavior.
+    - **Find-only.** ensure-containers is **find-only** for destroy: it must never create
+      anything. `resolveContainer` gains `ensure: boolean` — `deploy` passes `true`
+      (create-if-absent, decisions 3–4 unchanged), `destroy` passes `false`. On `ensure:
+      false`, an absent Project (or, for a named stage, an absent Branch) makes the CLI
+      **fail with a clear "nothing deployed for `<app>`[`/<stage>`]"** message — it does
+      **not** fall back to production. The resolved ids are injected on the `destroy` child
+      exactly as for deploy (decision 2).
     After `alchemy destroy` removes the Branch's members (compute, database, config), the
     CLI **soft-deletes the named-stage Branch** via `DELETE /v1/branches/:branchId` — the
     members must be gone first (the API refuses to delete a Branch that is the default/

@@ -22,6 +22,8 @@ stage it returns `branchId: undefined` and creates no Branch.
 ## Dispatch 2 — CLI ensure-containers step (`@prisma/app-cli`)
 
 **Outcome.** Before running the stack, the pipeline (for **both** deploy and destroy):
+enforces the **explicit-destroy-target** rule (spec §10) — bare `destroy` errors; `destroy`
+takes `--stage <name>` or `--production`, mutually exclusive; `--production` is destroy-only;
 validates a named stage against git `check-ref-format` (fail clearly if invalid, spec §4);
 calls the D1 resolver with the app name (root system name or `--name`) and the stage —
 `ensure: true` for deploy (create-if-absent), `ensure: false` for destroy (find-only,
