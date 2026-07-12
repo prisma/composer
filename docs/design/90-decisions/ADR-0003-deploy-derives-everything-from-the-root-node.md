@@ -1,4 +1,4 @@
-# ADR-0003: `prisma-app deploy` derives the application from the root node
+# ADR-0003: `prisma-compose deploy` derives the application from the root node
 
 ## Status
 
@@ -6,12 +6,12 @@ Accepted
 
 ## Decision
 
-The deploy entrypoint is `prisma-app deploy <entry>`, where `entry` is a module
+The deploy entrypoint is `prisma-compose deploy <entry>`, where `entry` is a module
 whose default export is a **module** — the application root. Everything about
 the *application* is derived: it is the graph reachable from that module, and
 its name comes from the root node (overridable with `--name`). The one thing
 that is not derivable — which control-plane extensions exist, and the deploy's
-state store — lives in `prisma-app.config.ts` (ADR-0017). The config carries
+state store — lives in `prisma-compose.config.ts` (ADR-0017). The config carries
 no application settings: no app reference, no name, no per-service options.
 
 > **Amended 2026-07:** the root must be a **module**, not "a service or a module".
@@ -27,8 +27,8 @@ service and its dependencies, in vocabulary imported from an extension:
 
 ```ts
 // src/service.ts
-import { compute, postgres } from "@prisma/app-cloud";
-import node from "@prisma/app-node";
+import { compute, postgres } from "@prisma/compose-cloud";
+import node from "@prisma/compose-node";
 import { SQL } from "bun";
 
 const db = postgres(); // a dependency slot: the binding is typed config (ADR-0015)
@@ -40,8 +40,8 @@ export default compute({
 });
 
 // src/module.ts — the root: the module provisions the database and wires it in (ADR-0013).
-import { module } from "@prisma/app";
-import { postgres } from "@prisma/app-cloud";
+import { module } from "@prisma/compose";
+import { postgres } from "@prisma/compose-cloud";
 import service from "./service.ts";
 
 export default module("hello", {}, ({ provision }) => {
@@ -56,7 +56,7 @@ deployed by wrapping it in a one-service module:
 
 ```ts
 // src/module.ts
-import { module } from "@prisma/app";
+import { module } from "@prisma/compose";
 import service from "./service.ts";
 
 export default module("hello", {}, ({ provision }) => {
@@ -68,23 +68,23 @@ export default module("hello", {}, ({ provision }) => {
 Deploying it is one command:
 
 ```sh
-prisma-app deploy src/module.ts
+prisma-compose deploy src/module.ts
 ```
 
 For that command to work, something has to supply each node's control-plane
 behavior — how a `compute` or a `postgres` is provisioned and deployed. That
-is code, and it lives in a heavy, deploy-only module (`@prisma/app-cloud`'s
+is code, and it lives in a heavy, deploy-only module (`@prisma/compose-cloud`'s
 control entry pulls in the provisioning engine). The service module above can
 never import it: service modules are bundled into the deployed artifact, so
 they must stay lean. Some deploy-side code therefore has to bring that code
 in — and the only question is where it comes from.
 
-It lives in the app's config file. `prisma-app.config.ts` statically imports
+It lives in the app's config file. `prisma-compose.config.ts` statically imports
 each extension's control-plane descriptor and hands the CLI its registries
 (ADR-0017); the app's own code never imports the config, so the heavy module
 never rides into a bundle. Correlation is pure data: every extension-authored node
 above carries `extension`, its extension's **package name**
-(`"@prisma/app-cloud"`), and `type`, its node ID within that extension
+(`"@prisma/compose-cloud"`), and `type`, its node ID within that extension
 (`"compute"`, `"postgres"`). Deploy tooling looks up
 `extensions[node.extension].nodes[node.type]` — a map hit, no specifier
 construction, no resolution. A community extension plugs in by exactly the
@@ -101,7 +101,7 @@ registry; `type` routes within it. A registry is already scoped to its
 extension, so its keys carry no package prefix. And a gap cannot pass
 silently: a node whose `(extension, type)` has no registry entry fails
 immediately with an error naming the extension to add to
-`prisma-app.config.ts`.
+`prisma-compose.config.ts`.
 
 Deriving everything from the entry module also settles what "the root" means:
 **nothing marks a root in the model** beyond its kind — whatever module you point
@@ -124,14 +124,14 @@ follow:
 ## Consequences
 
 - The standard deploy is one command plus environment variables and a
-  `prisma-app.config.ts` listing the app's extensions (ADR-0017).
+  `prisma-compose.config.ts` listing the app's extensions (ADR-0017).
 - Extensions have a small, fixed CLI-facing contract: nodes carry
   `(extension, type)` as data, and the extension's control descriptor provides
   the registry those keys look up. This is the seam a community extension
   plugs into with zero CLI changes.
 - Platforms mix freely: nodes lowered by different extensions coexist in one
   application; one deploy still writes one state store (ADR-0017).
-- `lower()` in `@prisma/app/deploy` remains the underlying mechanism and
+- `lower()` in `@prisma/compose/deploy` remains the underlying mechanism and
   the escape hatch for hand-composed or mixed Alchemy stacks; the CLI wraps
   it and never replaces it.
 - The Load error for unwired inputs is user-facing surface: it is the message
@@ -145,7 +145,7 @@ follow:
   belongs on the root node (ADR-0006). The config carries only the
   control-plane extension list and the state store (ADR-0017); application
   facts stay in code, against "your code is the source of truth".
-- **Selecting a platform with a CLI flag** (`--target @prisma/app-cloud`) —
+- **Selecting a platform with a CLI flag** (`--target @prisma/compose-cloud`) —
   redundant and too coarse: the nodes already carry their extension, a flag
   can disagree with them, and one flag cannot express a mixed-platform graph.
 - **Inferring the extension from a type-id prefix** (a convention mapping a
@@ -153,7 +153,7 @@ follow:
   package name doesn't follow the convention; carrying the real package name
   costs one field and removes the convention entirely.
 - **Folding extension identity into the type id** (`type:
-  "@prisma/app-cloud/compute"`, one field instead of two) — rejected:
+  "@prisma/compose-cloud/compute"`, one field instead of two) — rejected:
   the two strings have unrelated responsibilities. `extension` selects the
   registry; `type` routes within it. Fusing them would make every registry key
   carry resolution information it never uses, and make parsing a string the

@@ -1,6 +1,6 @@
 # Cloudflare platform execution flows (research)
 
-This document captures the "always happening" flows: dev, deploy, request handling, and binding resolution. Kept high-signal for Prisma App Framework relevance.
+This document captures the "always happening" flows: dev, deploy, request handling, and binding resolution. Kept high-signal for Prisma Compose relevance.
 
 Source context: [Cloudflare Workers Bindings](https://developers.cloudflare.com/workers/runtime-apis/bindings/), [Wrangler commands](https://developers.cloudflare.com/workers/wrangler/commands/)
 
@@ -56,6 +56,6 @@ Key: config is the single source of truth for "what runs" and "what it's bound t
 
 ## Open questions / assumptions
 
-- **Assumption**: HTTP and cron are the primary ingress patterns for Prisma App Framework comparison; queues and Durable Objects are secondary.
+- **Assumption**: HTTP and cron are the primary ingress patterns for Prisma Compose comparison; queues and Durable Objects are secondary.
 - **Open question**: Exact isolation model for Workers for Platforms / multi-tenant dispatch.
 

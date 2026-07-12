@@ -74,7 +74,7 @@ Source context: [Wrangler documentation](https://developers.cloudflare.com/worke
 
 - Assumption: `wrangler check` covers both config and code validation; exact scope may vary by Wrangler version.
 - Open: Does auto-provision write back to TOML as well as JSON config, or only JSON?
-- Open: What is the full taxonomy of resource-management subcommands (containers, d1, kv, r2, queues, workflows, etc.) for Prisma App Framework mapping?
+- Open: What is the full taxonomy of resource-management subcommands (containers, d1, kv, r2, queues, workflows, etc.) for Prisma Compose mapping?
 
 # Wrangler operations (research)
 
@@ -152,4 +152,4 @@ Source context: [Wrangler documentation](https://developers.cloudflare.com/worke
 
 - Assumption: `wrangler check` covers both config and code validation; exact scope may vary by Wrangler version.
 - Open: Does auto-provision write back to TOML as well as JSON config, or only JSON?
-- Open: What is the full taxonomy of resource-management subcommands (containers, d1, kv, r2, queues, workflows, etc.) for Prisma App Framework mapping?
+- Open: What is the full taxonomy of resource-management subcommands (containers, d1, kv, r2, queues, workflows, etc.) for Prisma Compose mapping?

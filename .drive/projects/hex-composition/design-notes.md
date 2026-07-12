@@ -10,20 +10,20 @@ durable in the ADRs, the domain docs, and the code; this workspace's scratch
 - **A System has a service's typed boundary** — `system(name, { deps?, expose? },
   body)`, nesting, forwarding as data flow across the boundary.
   **ADR-0016**; `docs/design/10-domains/module-composition.md`.
-- **The control plane loads through `prisma-app.config.ts`** — the config
+- **The control plane loads through `prisma-compose.config.ts`** — the config
   statically imports extension descriptors; registries are keyed by
   `(extension, node type)`; nodes are pure data; one explicit state store per
   deploy. **ADR-0017**; `docs/design/10-domains/deploy-cli.md`. (This replaced a
   failed node-owned-loads approach that the live e2e caught.)
 - **A reusable System, proven, plus the testing seam** — auth becomes a System
   that owns its own database and exposes only its contract; `mockService`
-  (`@prisma/app/testing`, unit) and `bootstrapService` (`@prisma/app-cloud/testing`,
+  (`@prisma/compose/testing`, unit) and `bootstrapService` (`@prisma/compose-cloud/testing`,
   integration), with no test code in the production node. Proven by a unit test,
   an integration test, and a live "Deploy, verify, destroy" e2e.
-  `docs/design/10-domains/testing.md`; `skills/testing-prisma-apps`; PR #39.
+  `docs/design/10-domains/testing.md`; `skills/testing-prisma-composes`; PR #39.
 
 Built on the merged model: unified dependency slots (#21), always-system root
-(#22), the `@prisma/app*` / System naming (#24 = ADR-0014), and
+(#22), the `@prisma/compose*` / System naming (#24 = ADR-0014), and
 dependencies-resolve-to-bindings (#26 = ADR-0015).
 
 ## Deferred follow-ups (off the critical path, not started)
@@ -32,7 +32,7 @@ dependencies-resolve-to-bindings (#26 = ADR-0015).
   lookups (in `deploy.ts`, `validate-coverage.ts`, `assemble-services.ts`) with
   one in-memory client that *performs* control-plane operations — not a state
   map. Open design; raised in the PR #39 review.
-- **Fold `@prisma/alchemy` into `@prisma/app-cloud`.** One consumer, a
+- **Fold `@prisma/alchemy` into `@prisma/compose-cloud`.** One consumer, a
   misleading generic name; the firewall that matters is a file boundary, so the
   package boundary earns nothing. Needs a slice note plus a mechanical PR.
 

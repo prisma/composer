@@ -217,7 +217,7 @@ Refined into **four import planes** — **authoring** (write the model),
 **control** (load/interrogate/mutate it at build time), **deploy** (convert it to
 Alchemy), **execution** (run it) — mapped to concrete package entries in
 [`core-model.md`](../10-domains/core-model.md#package-and-entry-map).
-`@prisma/app/control` is reserved as the control surface's home once it
+`@prisma/compose/control` is reserved as the control surface's home once it
 outgrows the core root.
 
 ### Entrypoint
@@ -248,13 +248,13 @@ inside them and never creates or destroys a container itself.
 
 How a developer actually writes the [Core nouns](#core-nouns). The concrete
 vocabulary — `compute` (a Service), `postgres` (a Resource), connection types like
-`http` — comes from a **target pack**; `@prisma/app` is a target-agnostic router
+`http` — comes from a **target pack**; `@prisma/compose` is a target-agnostic router
 beneath it. See [`core-and-targets.md`](core-and-targets.md) for that split and
 [`authoring-surface.md`](authoring-surface.md) for the full narrative.
 
 ### Target pack
 
-A pack (e.g. `@prisma/app-cloud`) that supplies the concrete vocabulary for one
+A pack (e.g. `@prisma/compose-cloud`) that supplies the concrete vocabulary for one
 deployment platform as **data**: `compute` (a Service), `postgres` (a Resource),
 `http` (a Connection). Each is an ergonomic constructor returning a plain object whose
 metadata routes it to an Alchemy Stack/Provider (and, for a Resource, a runtime
@@ -348,7 +348,7 @@ is in `layering.md`; this is the term-by-term catalogue.
 
 - **Stack** — the root of an Alchemy program; a set of Resources deployed as a
   unit. `Alchemy.Stack(name, { providers, state }, Effect.gen(…))`. `lower()`
-  emits one Stack for the whole app; `prisma-app deploy <entry>` drives it over the
+  emits one Stack for the whole app; `prisma-compose deploy <entry>` drives it over the
   app module directly (no hand-written stack file, no config file — ADR-0003).
   `→` **Topology / implicit root Module**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
@@ -448,7 +448,7 @@ is where the framework's own binding layer gets built.
   composition). "System" and "Hex" were earlier working names; see
   [ADR-0025](../90-decisions/ADR-0025-name-the-unit-of-composition-module.md),
   which supersedes the unit noun in
-  [ADR-0014](../90-decisions/ADR-0014-name-the-framework-prisma-app.md).
+  [ADR-0014](../90-decisions/ADR-0014-one-authoring-primitive.md).
 - **App** is no longer superseded: it names the **outermost Module** — the whole
   application you build and deploy. Use **Topology** for the wired graph and
   **Module** for a unit; **App** for the composed whole.

@@ -15,14 +15,14 @@ against the router's handlers (`serveSchedule`). None of this needs a new
 composition primitive — the scheduler is an ordinary consumer of the router's
 exposed endpoint, exactly the storefront→auth shape.
 
-New package `@prisma/app-cron` ships the reusable pieces; an in-repo example
+New package `@prisma/compose-cron` ships the reusable pieces; an in-repo example
 proves the whole pipeline. After this slice a service can be scheduled without
 writing a timer, and the schedule rides through S1's structured `jobs` param end
 to end.
 
 ## Deliverables
 
-1. **`@prisma/app-cron` package** with the reusable scheduler, the two authoring
+1. **`@prisma/compose-cron` package** with the reusable scheduler, the two authoring
    utilities, and the trigger contract.
 2. **A worked in-repo example** — scheduler + user router + target service,
    composed in a Cron system, deploy-ready, proven to fire on schedule by an
@@ -128,7 +128,7 @@ project's recorded follow-up, not this slice.)
 
 ## 4. `serveSchedule` (`packages/app-cron/src/serve-schedule.ts`)
 
-The router's entry. Mirrors `@prisma/app-rpc`'s `serve()` exactly — a fetch
+The router's entry. Mirrors `@prisma/compose-rpc`'s `serve()` exactly — a fetch
 handler that is **exhaustive over the schedule** at compile time — but the single
 exposed `trigger` method dispatches internally on `jobId` to the matching
 handler:
@@ -194,9 +194,9 @@ is the implementer's call, guarded by the example type-checking.
 
 ## 6. Package shape (`packages/app-cron/`)
 
-**Superseded in review:** cron shipped as its own package briefly, then folded into `@prisma/app-cloud/cron` — a subpath of Prisma Cloud's common-Systems package rather than a standalone one (one entry point per System, tree-shakable). The package-shape details below describe the superseded standalone-package form.
+**Superseded in review:** cron shipped as its own package briefly, then folded into `@prisma/compose-cloud/cron` — a subpath of Prisma Cloud's common-Systems package rather than a standalone one (one entry point per System, tree-shakable). The package-shape details below describe the superseded standalone-package form.
 
-Model on `@prisma/app-rpc` (authoring utilities) plus a built entry like a
+Model on `@prisma/compose-rpc` (authoring utilities) plus a built entry like a
 compute service. `package.json` exports `.` (the authoring API) and the built
 `scheduler-entry`. `tsdown.config.ts` lists `index` and `scheduler-entry` as
 entries. Public API from `index.ts`: `defineSchedule`, `serveSchedule`,
@@ -204,8 +204,8 @@ entries. Public API from `index.ts`: `defineSchedule`, `serveSchedule`,
 types. `parseEvery`/`runScheduler` are internal (tested directly, not exported)
 unless a test needs them exported.
 
-Dependencies: `@prisma/app`, `@prisma/app-cloud` (`compute`), `@prisma/app-node`
-(`node` build adapter), `@prisma/app-rpc` (`contract`, `rpc`, `serve`), `arktype`.
+Dependencies: `@prisma/compose`, `@prisma/compose-cloud` (`compute`), `@prisma/compose-node`
+(`node` build adapter), `@prisma/compose-rpc` (`contract`, `rpc`, `serve`), `arktype`.
 
 ## 7. The worked example (`examples/cron-datahub/` or similar)
 
@@ -220,13 +220,13 @@ A minimal app proving the pipeline, structured like `examples/storefront-auth`:
   `cron('cron', { schedule, router })` wired to the target.
 - `defineSchedule({ tick: '2s', mrr: '5s' })` (short intervals so the test is
   quick), its own `package.json`/`tsconfig`/`tsdown.config`, and a
-  `prisma-app.config.ts` if it is to be deployable.
+  `prisma-compose.config.ts` if it is to be deployable.
 
 **Proof of firing (the DoD test).** An in-process integration test (bun test,
 like storefront-auth's `page.integration.test.ts`) that:
 
 1. Boots the router's real entry with `bootstrapService` (from
-   `@prisma/app-cloud/testing`) against a fake target, so `POST /rpc/trigger`
+   `@prisma/compose-cloud/testing`) against a fake target, so `POST /rpc/trigger`
    works over real HTTP.
 2. Drives `runScheduler` (or the scheduler entry) with a **fake timer** against
    the booted router URL, advances time, and asserts `trigger` was called with

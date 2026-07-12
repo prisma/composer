@@ -194,7 +194,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 
 **Cause (corrected after reading pdp-control-plane source).** Env vars are `ConfigVariable` rows **materialized into a version at version-create time** (`materializeBranchEnvVars` resolves the branch's map and hands it to Foundry with the version) and frozen there — version start does not re-resolve, and updating a variable touches only the row, never an existing version. So the race is the env-var POST vs the consumer's **version-create** call, issued by one apply with no dependency edge between them. Consequences: (1) a version created before the row exists never sees it, regardless of VM recycles; (2) config changes take effect only via a new version — there is no restart-on-config-change. _The original filing (and this entry's first version) claimed boot-time application and recycle-healing; the source model contradicts that. Our one observed recycle-heal is treated as a platform bug, not behavior to rely on._
 
-**Workaround.** Give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). In the Prisma App Framework this is the Connection primitive's corrected lowering: `Deployment` declares its expected environment records as a prop, which both orders the write first and redeploys the consumer when a value changes. Manual stacks: create the variable, then ship a new version.
+**Workaround.** Give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). In Prisma Compose this is the Connection primitive's corrected lowering: `Deployment` declares its expected environment records as a prop, which both orders the write first and redeploys the consumer when a value changes. Manual stacks: create the variable, then ship a new version.
 
 **Reproduction.**
 
@@ -279,7 +279,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with) — _"Management API: project-scoped compute-service create collides with production on `main`; branchId-on-create differs from databases"_
 **Product:** Prisma Compute (Management API)
 **Version:** `@prisma/management-api-sdk` 1.47.0
-**First hit:** `prisma-app deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
+**First hit:** `prisma-compose deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
 **Cost:** ~1 hour — one failed live deploy, diagnosis, and a provider rework.
 
 **Symptom.** Deploying a same-named compute service into a preview Branch fails outright: `compute_service:already_exists: An app named "auth" already exists on branch "main"`.

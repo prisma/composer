@@ -43,7 +43,7 @@ against real Prisma Cloud primitives.
 
 - **Deploy Compute via the Prisma CLI (`prisma compute deploy`) and use Alchemy
   only for Postgres.** Faster to a first deploy, but leaves half the system outside
-  Alchemy and doesn't surface the seam the Prisma App Framework must close. Rejected in favour of
+  Alchemy and doesn't surface the seam Prisma Compose must close. Rejected in favour of
   an all-Alchemy path (operator's call).
 - **Use the v1 Postgres provider.** Rejected — see above.
 

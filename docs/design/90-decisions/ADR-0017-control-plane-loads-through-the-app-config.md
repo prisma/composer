@@ -6,15 +6,15 @@ Accepted
 
 ## Decision
 
-An application root carries a `prisma-app.config.ts`. The config statically
+An application root carries a `prisma-compose.config.ts`. The config statically
 imports **extension** descriptors — the control-plane face of each extension
 package the app deploys with — and declares the deploy's one state store:
 
 ```ts
-// prisma-app.config.ts — loaded by the CLI, never imported by app code
-import { defineConfig } from "@prisma/app/config";
-import { prismaCloud, prismaState } from "@prisma/app-cloud/control";
-import { nodeBuild } from "@prisma/app-node/control";
+// prisma-compose.config.ts — loaded by the CLI, never imported by app code
+import { defineConfig } from "@prisma/compose/config";
+import { prismaCloud, prismaState } from "@prisma/compose-cloud/control";
+import { nodeBuild } from "@prisma/compose-node/control";
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],
@@ -26,7 +26,7 @@ Deploy tooling loads the config (found by walking up from the deploy entry,
 loaded with c12 — the same mechanism Prisma Next uses for
 `prisma-next.config.ts`), then looks up each node's control-plane behavior in
 the registries the descriptors provide, keyed by **(extension ID, node ID)**:
-a node's `extension` field (`"@prisma/app-cloud"`) and its `type`
+a node's `extension` field (`"@prisma/compose-cloud"`) and its `type`
 (`"compute"`). Nodes are pure data; the framework never constructs a module
 specifier, never resolves a path, and never dynamically imports by a computed
 name.
@@ -44,7 +44,7 @@ code imports*.
 The config file is that boundary, and it is a file boundary rather than a
 compiler trick. App code — service modules, the module entry — imports
 authoring factories, which are pure data. Only the CLI loads
-`prisma-app.config.ts`, and only the config imports the `/control` entries
+`prisma-compose.config.ts`, and only the config imports the `/control` entries
 where the heavy code lives. A bundler walking the app's import graph never
 encounters the config, so no discipline about *how* imports are written is
 needed: the firewall holds by construction. (Each extension still carries a
@@ -80,7 +80,7 @@ platform-agnostic (it records resource state regardless of which provider made
 it), so the config declares it once, explicitly; the concrete provider is not.
 `prismaState` is a Prisma Cloud store — a hosted Postgres in the workspace,
 provisioned by the same Management API as `prismaCloud()` — so it ships from
-`@prisma/app-cloud/control` alongside `prismaCloud()`, not from the private
+`@prisma/compose-cloud/control` alongside `prismaCloud()`, not from the private
 `@prisma/alchemy` package the extension is built on. Another platform would
 supply its own state provider through its own extension.
 
@@ -136,7 +136,7 @@ kept failing — for an explicit, deterministic list.
   hand-rolled path resolution: anchor-file plumbing through the pipeline, and
   a dead end on layouts with no `node_modules` to walk (Yarn PnP, Deno).
 - **A loader thunk with a literal import on the node**
-  (`loadAssembler: () => import("@prisma/app-node/assemble")`) — the literal
+  (`loadAssembler: () => import("@prisma/compose-node/assemble")`) — the literal
   lives in factory code that ships inside the wrapper bundle, so the bundler
   follows it and drags the control plane into the runtime artifact. The exact
   failure the firewall exists to prevent.

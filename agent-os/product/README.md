@@ -7,7 +7,7 @@ This directory contains artifacts produced by the **Agent OS product planning wo
 
 ## Source of truth for design/architecture
 
-Prisma App Framework design and architecture documentation lives in:
+Prisma Compose design and architecture documentation lives in:
 
 - `docs/design/`
 

@@ -3,7 +3,7 @@
 ## Status
 
 Accepted. Supersedes the framework-name, package-family, and CLI decisions of
-[ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md). With
+[ADR-0014](ADR-0014-one-authoring-primitive.md). With
 [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) having superseded the
 unit noun, ADR-0014 remains authoritative only for the single-primitive model — one
 authoring construct, no separate `app()`.
@@ -90,8 +90,8 @@ Alternatives.
   (`prisma-app` → `prisma-compose`), the config file
   (`prisma-app.config.ts` → `prisma-compose.config.ts`), the scratch directory
   (`.prisma-app/` → `.prisma-compose/`), and all docs prose — README, design docs,
-  glossary, skills, and earlier ADRs — stop calling the framework "Prisma App" /
-  "the Prisma App Framework" and say "Prisma Compose."
+  glossary, skills, and earlier ADRs — stop calling the framework "Prisma App" and
+  say "Prisma Compose."
 - **Artifact-sense "Prisma App" stays.** Occurrences that mean the *artifact* (e.g.
   ADR-0023's "a Prisma App is one Prisma Cloud Project," "deploy your Prisma App")
   are correct and remain. The prose sweep is judgment work, not a blind
@@ -157,7 +157,7 @@ Alternatives.
 - `agent-os/product/vocabulary-tests.md` — the referential test battery and the
   "Prisma App" failure record.
 - `agent-os/product/naming.md` — the family table and register model.
-- [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md) — the
+- [ADR-0014](ADR-0014-one-authoring-primitive.md) — the
   superseded framework, package, and CLI names; its single-primitive decision
   stands.
 - [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) — the unit noun

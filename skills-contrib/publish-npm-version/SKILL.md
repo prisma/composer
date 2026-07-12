@@ -1,7 +1,7 @@
 ---
 name: publish-npm-version
 description: >-
-  Cuts the next minor release of the Prisma App Framework: bumps the root
+  Cuts the next minor release of Prisma Compose: bumps the root
   package.json version, propagates it to every workspace package in lockstep,
   and opens a PR titled "chore(release): v<next-version>". When a maintainer
   merges the PR, the `Publish to npm` workflow runs automatically and ships the

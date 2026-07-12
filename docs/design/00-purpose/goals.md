@@ -1,6 +1,6 @@
 # Goals
 
-The concrete aims that deliver the Prisma App Framework's [purpose](README.md). Each is derived
+The concrete aims that deliver Prisma Compose's [purpose](README.md). Each is derived
 from the purpose, not the other way around.
 
 ## Goals

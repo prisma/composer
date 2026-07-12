@@ -9,8 +9,8 @@ of the dependency graph rather than luck.
 
 A PDP Project is a **shared config namespace** (every App on a branch snapshots
 the same variable set into its versions) and a **shared lifecycle** (deletion
-cascades). The Prisma App Framework's placement rule: **one Project per
-Prisma App Framework application** — all of an application's services are
+cascades). Prisma Compose's placement rule: **one Project per
+Prisma Compose application** — all of an application's services are
 Apps in that one Project, with the Module-provisioned Databases beside them.
 Consequences, stated plainly:
 
@@ -61,7 +61,7 @@ it manages whatever a provider package registers).
 
 | Our resource | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
-| `Project` | Project | workspaceId, name | id | **one per Prisma App Framework application**; the poison `DATABASE_URL` variables are written at provision (see above) |
+| `Project` | Project | workspaceId, name | id | **one per Prisma Compose application**; the poison `DATABASE_URL` variables are written at provision (see above) |
 | `Database` | Database | projectId, name | id, connection info | one per Module-provisioned postgres resource; never the project default; created project-scoped, then attached to a named stage's Branch by a follow-up `PATCH` (the create body doesn't accept `branchId`) |
 | `Connection` | database connection info | databaseId | url | direct/pooled endpoints; the url is written as the service's own named variable via the pack's `serialize` |
 | `ComputeService` | App | projectId, name, region, branchId? | id | `branchId` in the create body targets a named stage's Branch directly; omitted, PDP attaches it to the Project's default (production) Branch |
@@ -115,13 +115,13 @@ store's location and internal logic are untouched.
 
 ## The lowering graphs
 
-Lowering turns the Prisma App Framework's semantic graph into an Alchemy
+Lowering turns Prisma Compose's semantic graph into an Alchemy
 resource graph. Arrows read "depends on / consumes a value from"; Alchemy
 executes in dependency order and **runs unordered resources concurrently —
 declaration order is never consulted** — so every ordering the framework's
 semantics require must exist as an edge.
 
-**The Prisma App Framework's graph** (what the user means):
+**Prisma Compose's graph** (what the user means):
 
 ```mermaid
 flowchart LR

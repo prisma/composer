@@ -70,13 +70,13 @@ relative to the authoring module (ADR-0004), so assembly finds output inside
 "built output exists before deploy" (ADR-0005) holds at publish time. The
 wrapper inlines each service's imports from that package's own dependency tree
 (ADR-0008). Version compatibility is the package manager's job: a module
-declares `@prisma/app*` as peer dependencies, and its declared range asserts
+declares `@prisma/compose*` as peer dependencies, and its declared range asserts
 that the reader code frozen into its published runnables understands the config
 the app's deploy-time serializer writes.
 
 One requirement lands on the deploy tooling: a module's internal choice of build
 adapter must stay internal — a consuming app must not have to declare
-`@prisma/app-nextjs` because some installed module happens to use Next inside.
+`@prisma/compose-nextjs` because some installed module happens to use Next inside.
 How the tooling loads adapter and target modules is a separate decision
 (ADR-0017); this ADR only pins the requirement. The target itself stays the
 application's own declaration — one target per application (ADR-0003).
@@ -96,7 +96,7 @@ application's own declaration — one target per application (ADR-0003).
 - The serialized-config/stash encoding is versioned public surface: a module
   published against a pack freezes reader code at publish time, so a format
   change is a semver-major of the pack.
-- Reusable modules are pack-specific: a module authored in `@prisma/app-cloud`'s
+- Reusable modules are pack-specific: a module authored in `@prisma/compose-cloud`'s
   vocabulary deploys only to that target. A target-neutral authoring vocabulary
   would lift that, and is deliberately out of scope here.
 - Nothing about a module exists at runtime. Modules are topology; Load flattens

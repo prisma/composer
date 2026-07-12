@@ -3,24 +3,24 @@
 [Alchemy](https://alchemy.run) is a TypeScript-native infrastructure framework.
 Its v2 line ("Infrastructure-as-Effects") rebuilds the tool on
 [Effect](https://effect.website) and models applications very close to how
-the Prisma App Framework does: resources + executables defined in code, dependency injection
+Prisma Compose does: resources + executables defined in code, dependency injection
 instead of globals, and swappable implementations behind typed interfaces.
 
 This folder exists for two reasons:
 
 1. **Reference library** — a local copy of the v2 docs so we can mine the model.
-2. **Viability study** — whether the Prisma App Framework should adopt Alchemy instead of being built.
+2. **Viability study** — whether Prisma Compose should adopt Alchemy instead of being built.
 
 ## Read this first
 
 - **[viability-assessment.md](viability-assessment.md)** — the answer to "use
-  Alchemy instead of building the Prisma App Framework?", with the reasoning.
+  Alchemy instead of building Prisma Compose?", with the reasoning.
 
 ## Domain analysis (research library)
 
 DDD-style notes on Alchemy's domain and ubiquitous language, mirroring the
 structure of the other inspirations (e.g. `../Convex/`). "How Alchemy works" is
-kept here; "what the Prisma App Framework should do about it" lives in the takeaways doc.
+kept here; "what Prisma Compose should do about it" lives in the takeaways doc.
 
 - `glossary.md`: domain terms and definitions (user-facing vs internal)
 - `domain-map.md`: a conceptual relationship map of the domain
@@ -28,7 +28,7 @@ kept here; "what the Prisma App Framework should do about it" lives in the takea
 - `user-domain.md`: the user's mental model and how it maps to internal mechanics
 - `execution-flows.md`: the core loop — declare resources, wire bindings, deploy
   (plan → apply), run; plus phases, Layer-swap, references, local dev, streams
-- `takeaways-for-prisma-app.md`: what we want to emulate/adapt (expected to change)
+- `takeaways-for-prisma-compose.md`: what we want to emulate/adapt (expected to change)
 
 ## What's here
 

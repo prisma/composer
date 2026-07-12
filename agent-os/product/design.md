@@ -2,6 +2,6 @@
 
 This file is a stub kept for compatibility with Agent OS workflows.
 
-- Prisma App Framework design overview: `docs/design/10-domains/prisma-app-overview.md`
-- Prisma App Framework design docs root: `docs/design/README.md`
+- Prisma Compose design overview: `docs/design/10-domains/prisma-compose-overview.md`
+- Prisma Compose design docs root: `docs/design/README.md`
 

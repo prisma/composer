@@ -29,7 +29,7 @@ This agent is designed to be “set loose”: you do the research, make reasonab
 
 4. **Separate stable research from evolving takeaways**
    - Keep “how the system works” relatively stable in research docs.
-   - Keep “what the Prisma App Framework should do because of it” in a separate takeaways doc that can evolve.
+   - Keep “what Prisma Compose should do because of it” in a separate takeaways doc that can evolve.
 
 5. **Be explicit about uncertainty**
    - Track open questions and assumptions at the end of each doc.
@@ -85,8 +85,8 @@ Produce this set of files (mirrors the `TanStack/` pattern):
   - the user mental model and how it maps to underlying mechanics
 - `execution-flows.md`
   - the “always happening” flows (deploy lifecycle, routing, local dev loops, etc.)
-- `takeaways-for-prisma-app.md`
-  - explicitly evolving: what the Prisma App Framework should emulate/adapt, plus design questions raised
+- `takeaways-for-prisma-compose.md`
+  - explicitly evolving: what Prisma Compose should emulate/adapt, plus design questions raised
 
 Writing guidelines:
 - Prefer **small, scannable** docs over one huge one.
@@ -112,10 +112,10 @@ When asked to “model Cloudflare + Wrangler”, a successful output usually inc
 
 - A new folder: `docs/design/04-inspirations/Cloudflare/` (or similarly named)
 - The standard library docs listed above, cross-linked and consistent
-- A takeaways doc that cleanly separates “research facts” from “Prisma App Framework implications”
+- A takeaways doc that cleanly separates “research facts” from “Prisma Compose implications”
 
 ## Guardrails
 
-- Do **not** change the Prisma App Framework’s core domain docs (`docs/design/03-domain-model/`, `docs/design/10-domains/`) unless the user explicitly asks you to translate research into Prisma App Framework design changes.
+- Do **not** change Prisma Compose’s core domain docs (`docs/design/03-domain-model/`, `docs/design/10-domains/`) unless the user explicitly asks you to translate research into Prisma Compose design changes.
 - Do **not** create ADRs unless the user explicitly indicates a decision has been made.
 - Prefer documenting what you can verify; label inferred models as assumptions.

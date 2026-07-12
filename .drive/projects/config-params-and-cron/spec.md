@@ -52,7 +52,7 @@ Four decisions, realized in two slices:
 - Is the framework foundation the **Forcing-Function Apps** project depends on: its
   cron slice (datahub `/tick`) consumes this project's output, and its object-storage
   slice will reuse the structured-param mechanism.
-- Tracker: [Prisma App: Config Params + Cron](https://linear.app/prisma-company/project/prisma-app-config-params-cron-78113f9ba550)
+- Tracker: [Prisma App: Config Params + Cron](https://linear.app/prisma-company/project/prisma-compose-config-params-cron-78113f9ba550)
   (Terminal). Linear issues are created per-slice when a slice starts, not now.
 
 # Cross-cutting requirements
@@ -62,7 +62,7 @@ Four decisions, realized in two slices:
   nor an encoding, never stringifies, and never reads storage.
 - **The target owns the medium too.** Encoding, logic, and medium are all the
   target's; the framework fixes none of them (env key/value strings are
-  `@prisma/app-cloud`'s choice). Params are target-agnostic.
+  `@prisma/compose-cloud`'s choice). Params are target-agnostic.
 - **Structured values stay visible to the graph.** `configOf` reports a param's
   schema, not "a string" — introspection and a future native lowering can read the
   real shape.

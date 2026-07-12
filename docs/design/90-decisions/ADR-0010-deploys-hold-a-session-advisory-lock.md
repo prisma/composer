@@ -18,7 +18,7 @@ over a short window), and fails loudly if the lease is gone.
 
 ## Reasoning
 
-Start with the collision this prevents. Two engineers run `prisma-app deploy`
+Start with the collision this prevents. Two engineers run `prisma-compose deploy`
 for the same application within seconds of each other — a human and a CI job,
 say, after a merge. Each deploy is a long sequence of steps: read the state
 rows, diff, create or update cloud resources, write the results back.

@@ -1,10 +1,10 @@
-# PDP data model — as it pertains to the Prisma App Framework
+# PDP data model — as it pertains to Prisma Compose
 
 The Prisma Data Platform's actual entity model, read from `pdp-control-plane`
 source (schema: `prisma/schema.prisma`; behavior: `services/management-api/**`,
 `packages/interactors/**`). This is the ground truth the
 [Alchemy lowering](alchemy-lowering.md) maps onto. Scope: only what the
-Prisma App Framework touches — compute, config, databases; billing/auth/SCM
+Prisma Compose touches — compute, config, databases; billing/auth/SCM
 omitted.
 
 ## The entity graph
@@ -63,7 +63,7 @@ Edge semantics, with the properties that matter to us:
 
 ## The config lifecycle — what is resolved when
 
-This is the timing model the Prisma App Framework's graph must respect:
+This is the timing model Prisma Compose's graph must respect:
 
 | Moment | What happens | Source |
 | --- | --- | --- |
@@ -73,7 +73,7 @@ This is the timing model the Prisma App Framework's graph must respect:
 | version start | boots the version; **no env re-resolution** | `routes/v1/version-handlers.ts` |
 | promote | endpoint routed to the version; `serviceEndpointDomain` persisted. The domain returned at *create* time is a placeholder region — only the post-promote read is trustworthy (PRO-200) | `interactors/compute/service.ts` |
 
-Consequences the Prisma App Framework designs around:
+Consequences Prisma Compose designs around:
 
 1. **A version's environment is a snapshot taken at version creation.** A config
    value that must be visible to a service's code has to exist as a
@@ -87,7 +87,7 @@ Consequences the Prisma App Framework designs around:
    [alchemy-lowering.md](alchemy-lowering.md)).
 3. **`DATABASE_URL` is not a separate mechanism.** It is a module-written
    template flowing through the same materialization as user variables — a
-   convenience for hand-provisioned single services. The Prisma App Framework
+   convenience for hand-provisioned single services. Prisma Compose
    forbids its use and poisons it at project provision (see
    [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-actively-poisoned));
    every database URL a service consumes is an explicit, service-named variable.
@@ -102,4 +102,4 @@ Consequences the Prisma App Framework designs around:
 - [`alchemy-lowering.md`](alchemy-lowering.md) — the Alchemy resources we define
   over this model, and the lowering graphs.
 - [`../03-domain-model/layering.md`](../03-domain-model/layering.md) — where the
-  hosting plane sits in the Prisma App Framework's three-plane picture.
+  hosting plane sits in Prisma Compose's three-plane picture.

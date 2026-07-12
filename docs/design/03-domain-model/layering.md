@@ -1,6 +1,6 @@
-# Layering: the Prisma App Framework → Alchemy → Prisma Cloud
+# Layering: Prisma Compose → Alchemy → Prisma Cloud
 
-The Prisma App Framework's model exists at three planes. The developer authors
+Prisma Compose's model exists at three planes. The developer authors
 in the framework's plane; the framework **lowers** that into the Alchemy/Effect
 **provisioning plane**, which provisions it to run as Prisma Cloud hosting
 primitives.
@@ -10,12 +10,12 @@ This is the same shape as Prisma Next: an authored data contract lowers to an IR
 resource graph, which deploys to the cloud.
 
 > Naming: the grouping unit is called a **Module** (see
-> [ADR-0014](../90-decisions/ADR-0014-name-the-framework-prisma-app.md)
+> [ADR-0014](../90-decisions/ADR-0014-one-authoring-primitive.md)
 > for the settled name). "Module" thereafter.
 
 ## The three planes
 
-- **Authoring plane (Prisma App Framework)** — what the developer writes.
+- **Authoring plane (Prisma Compose)** — what the developer writes.
   Nouns: **Module**, **Service**, **Resource**, **Input**, **Output**,
   **Data Contract**, **Topology**. Statically analyzable; this is the
   ubiquitous language (see `glossary.md`).
@@ -30,7 +30,7 @@ resource graph, which deploys to the cloud.
 
 ## The mapping
 
-| Authoring (Prisma App Framework) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
+| Authoring (Prisma Compose) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
 | --- | --- | --- |
 | **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its ports | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
 | **Service** (your code; entrypoint + ingress) | Platform (compute Resource running the bundle) | ComputeService → ComputeVersion (tar.gz bundle + manifest + endpoint) |
@@ -68,7 +68,7 @@ resource graph, which deploys to the cloud.
 
 - **Compute** — Bun on Unikraft microVMs, HTTP-first, scale-to-zero. Deploy
   artifact = a tar.gz bundle + a minimal manifest (`{manifestVersion, entrypoint}`).
-  A Prisma App Framework Service lowers almost directly to this.
+  A Prisma Compose Service lowers almost directly to this.
 - **Postgres** — managed; `Environment:Database` is 1:1, so co-located Services
   share one Database.
 - **Streams** — assume a streaming primitive is available.
@@ -85,7 +85,7 @@ discontinued.
 
 ## Resources: first-class vs BYO
 
-In the Prisma App Framework, a Resource is an Alchemy resource surfaced as a
+In Prisma Compose, a Resource is an Alchemy resource surfaced as a
 typed **capability**. A Module's Input requires a capability; a Resource's
 Output provides one (via an Alchemy
 Layer); the wire is valid iff the provided capability satisfies the required one —

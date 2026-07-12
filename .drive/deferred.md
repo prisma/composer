@@ -11,7 +11,7 @@
 - **"Built output missing" error not covered by CLI-package tests — closed by
   S5.** `test/integration/test/cli.entry-anchored-resolution.test.ts` now
   drives the real CLI binary against a real, unbuilt fixture app and asserts
-  on the real "no built entry at" message from `@prisma/app-node`'s assembler.
+  on the real "no built entry at" message from `@prisma/compose-node`'s assembler.
   Origin: S3 review.
 - **CLI publishability — closed by S5.** The CLI no longer depends on any
   target/adapter pack; resolution is anchored at the app's entry package via
@@ -31,7 +31,7 @@
    encryption at rest.
 2. **Reserved/unique project names** — PDP allows duplicate project names
    (verified 2026-07-09), so name-based discovery of control-plane projects
-   (`prisma-app-state`) is ambiguous and squattable; the client-side ownership
+   (`prisma-compose-state`) is ambiguous and squattable; the client-side ownership
    marker (bootstrap.ts `verifyOwnership`) is a workaround. Ask: unique names
    per workspace, or atomic create-if-absent, or a system-project concept.
    Related: workspace ids circulate in two shapes (`wksp_`-prefixed in API
@@ -59,25 +59,25 @@
   the standing concern).
 - **Deterministic Next-standalone artifact** (BUILD_ID non-determinism →
   Next services re-version on unchanged redeploys).
-- **`@prisma/app-node` rename** (descriptor kind means "plain server process",
+- **`@prisma/compose-node` rename** (descriptor kind means "plain server process",
   not Node.js runtime — needs operator naming call).
 - **Interval-lease follow-ups from R8/R9 reviews**: `--wait` affordance on
   lock contention; connection-cap telemetry for the state store.
-- **CI workspace sweep** (operator/token): ~17 duplicate `prisma-app-state`
+- **CI workspace sweep** (operator/token): ~17 duplicate `prisma-compose-state`
   projects accumulated in the CI workspace during the id-shape bug; deploys
   are stable (deterministic oldest-first adoption) but they're quota noise.
 - **core-model.md R6 absorption**: the doc's type sketches (Nodes, factories,
   Graph, SystemBuilder) predate R6 — `expose`, `ConnectionEnd.required`,
   ref-ports, the two-overload `provision()`, and required `name`/`pack` are
   shipped but absent from the sketches. The false "not yet built" claims and
-  the missing `@prisma/app-rpc` entry-map row were fixed at close-out; absorbing
+  the missing `@prisma/compose-rpc` entry-map row were fixed at close-out; absorbing
   the full mechanism into the sketches is a docs slice of its own
   (connection-contracts.md is the accurate record meanwhile).
 
 # Stage-as-branch — deferred (2026-07-12)
 
 - **Route container resolution through the extension, not the CLI.** Today
-  `@prisma/app-cli` hard-codes the Prisma Cloud specifics of stage resolution:
+  `@prisma/compose-cli` hard-codes the Prisma Cloud specifics of stage resolution:
   it imports `@prisma/alchemy`'s `resolveContainer`/`deleteBranch` directly and
   sets the target-specific `PRISMA_PROJECT_ID`/`PRISMA_BRANCH_ID` env vars on
   the alchemy child (`run-alchemy.ts`). That is Prisma Cloud config leaking
@@ -91,7 +91,7 @@
 # Auth — deferred (2026-07-12)
 
 - **Adopt the `@prisma/cli` credential mechanism; stop rolling our own auth.**
-  `@prisma/app` authenticates the Management API with a static
+  `@prisma/compose` authenticates the Management API with a static
   `PRISMA_SERVICE_TOKEN` read from the env and sent as a raw `Bearer` header
   (`@prisma/alchemy` `credentials.ts` `fromEnv()` → `client.ts`
   `createManagementApiClient({ token })`) — no login, no refresh, no stored
@@ -101,8 +101,8 @@
   `PRISMA_SERVICE_TOKEN` as the CI/non-interactive fallback. The same SDK ships
   the machinery we're not using (`@prisma/management-api-sdk`:
   `createManagementApiSdk` + `createTokenRefreshingFetch`). Ask: reuse the
-  prisma CLI's credential resolution in `@prisma/app` — ideally its own loader,
-  so we don't reimplement the store/refresh — so `prisma-app deploy`
+  prisma CLI's credential resolution in `@prisma/compose` — ideally its own loader,
+  so we don't reimplement the store/refresh — so `prisma-compose deploy`
   authenticates exactly like the rest of the CLI and we maintain no auth of our
   own. Touches `credentials.ts`, `client.ts`, `app-cli/ensure-containers.ts`,
   and the token-based state-store bootstrap (`state/bootstrap.ts`). Origin: auth

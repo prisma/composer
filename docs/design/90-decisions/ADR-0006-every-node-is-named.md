@@ -9,7 +9,7 @@ Accepted
 Every node — module, service, or resource — carries an explicit,
 human-readable name, given at authoring. When a node is deployed as the root,
 its name becomes the application's name (on Prisma Cloud: the Project name).
-`prisma-app deploy --name` overrides it for a single run. Nothing derives a
+`prisma-compose deploy --name` overrides it for a single run. Nothing derives a
 name from a `package.json` or a directory.
 
 ## Reasoning

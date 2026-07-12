@@ -10,15 +10,15 @@ An app is deployed to a named **stage** — an environment. The topology is
 authored stage-neutral; the stage is chosen on the command line:
 
 ```sh
-prisma-app deploy module.ts                  # the production environment
-prisma-app deploy module.ts --stage staging  # an isolated "staging" environment
-prisma-app deploy module.ts --stage pr-42    # one isolated environment per PR
+prisma-compose deploy module.ts                  # the production environment
+prisma-compose deploy module.ts --stage staging  # an isolated "staging" environment
+prisma-compose deploy module.ts --stage pr-42    # one isolated environment per PR
 ```
 
 Every deploy runs in **two phases**:
 
 ```
-prisma-app deploy module.ts --stage staging
+prisma-compose deploy module.ts --stage staging
 │
 │  Phase 1 — the CLI, against the Management API
 │    ensure Project "storefront-auth"    find by app name, create if absent
@@ -90,7 +90,7 @@ derived from Branch presence, never from a role lookup.
 - **The default stage is the Project level.** No Branch is created and no
   Branch id threads through lowering. On a named stage, every resource the
   target provisions carries the Branch id.
-- **Destroy names its target explicitly.** `prisma-app destroy` requires
+- **Destroy names its target explicitly.** `prisma-compose destroy` requires
   `--stage <name>` or `--production`; a bare destroy is an error, so an omitted
   or mistyped stage can never silently tear down production. Destroying a named
   stage removes its resources and then its Branch; the production Branch is

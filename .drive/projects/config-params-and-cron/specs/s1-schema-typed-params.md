@@ -13,7 +13,7 @@ Three coupled changes to the config model:
 
 1. **Schema-typed params** — `ConfigParam` becomes a plain `{ schema, secret?,
    optional?, default? }`; the `ParamType = 'string' | 'number'` enum is deleted.
-2. **Target-owned serialization** — the target (`@prisma/app-cloud`) owns all
+2. **Target-owned serialization** — the target (`@prisma/compose-cloud`) owns all
    encoding, driven by the schema; core never stringifies. `compute()` opens to
    user params.
 3. **`config()`/`load()` split** — params are read through a new `config()`;
@@ -42,18 +42,18 @@ export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
 - Delete `ParamType` and `TypeOf`. `Values<P>` infers each value via
   `StandardSchemaV1.InferOutput<P[K]['schema']>`, keeping the existing
   optional/default widening.
-- Add core dep `@standard-schema/spec` (type-only; already used by `@prisma/app-rpc`).
+- Add core dep `@standard-schema/spec` (type-only; already used by `@prisma/compose-rpc`).
 - Core helpers `string(opts?)`, `number(opts?)` (→ `{ schema: type('string'|'number'), ...opts }`)
-  and `param(schema, opts?)` (→ `{ schema, ...opts }`). Export from `@prisma/app`.
+  and `param(schema, opts?)` (→ `{ schema, ...opts }`). Export from `@prisma/compose`.
   Update `packages/app/src/index.ts` (drop `ParamType`/`TypeOf`).
 - `ConfigDeclaration` / `configOf` (introspection): replace `type: ParamType` with a
   JSON-Schema projection of the param's schema. Stays pure data.
 - `packages/app/src/node.ts` `freezeParams` keeps working over the new shape.
 
-## 2. Target-owned serialization (`@prisma/app-cloud`)
+## 2. Target-owned serialization (`@prisma/compose-cloud`)
 
 The target owns encoding, logic, and medium; core hands it the typed `Config`.
-Two sites in `@prisma/app-cloud` do the work today by hand and must drive off the
+Two sites in `@prisma/compose-cloud` do the work today by hand and must drive off the
 schema instead:
 
 - **Deploy encode** — `control.ts` `serialize` (`ServiceLowering.serialize`):
@@ -127,7 +127,7 @@ are already correct.)
 ## Non-goals (this slice)
 
 - **Cron** — S2.
-- **A second target** — only `@prisma/app-cloud` serializes; a second target's
+- **A second target** — only `@prisma/compose-cloud` serializes; a second target's
   medium is out of scope.
 - **Field-level secrets, provisioning refs inside structured params** — excluded by
   ADR-0018/0019.

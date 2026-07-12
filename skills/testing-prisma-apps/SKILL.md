@@ -1,16 +1,16 @@
 ---
-name: testing-prisma-apps
+name: testing-prisma-composes
 description: >-
-  How to test an app built on the Prisma App Framework. Every dependency an app
+  How to test an app built on Prisma Compose. Every dependency an app
   uses arrives through one call, `service.load()`; you test by controlling what
   it returns or reads, never by editing the code under test. Two tools:
-  `mockService` (from `@prisma/app/testing`) for unit tests, and
-  `bootstrapService` (from `@prisma/app-cloud/testing`) for integration tests.
+  `mockService` (from `@prisma/compose/testing`) for unit tests, and
+  `bootstrapService` (from `@prisma/compose-cloud/testing`) for integration tests.
   Use when writing tests for a Prisma App, faking a service dependency,
   unit-testing a page / server action / RPC handler, or integration-testing the
   real request path without a deployment. Triggers on "test a prisma app",
   "mockService", "bootstrapService", "fake a service dependency",
-  "test a page/action without deploying", "@prisma/app/testing".
+  "test a page/action without deploying", "@prisma/compose/testing".
 ---
 
 # Testing Prisma Apps
@@ -22,8 +22,8 @@ of the real path you want to run.
 
 | You want to… | Use | From |
 | --- | --- | --- |
-| Test a page / action / handler in isolation | `mockService` | `@prisma/app/testing` |
-| Run the real boot + request path against a fake dependency | `bootstrapService` | `@prisma/app-cloud/testing` |
+| Test a page / action / handler in isolation | `mockService` | `@prisma/compose/testing` |
+| Run the real boot + request path against a fake dependency | `bootstrapService` | `@prisma/compose-cloud/testing` |
 
 The full model is in
 [`docs/design/10-domains/testing.md`](../../docs/design/10-domains/testing.md).
@@ -35,7 +35,7 @@ returns doubles, then run the code with no server and no environment:
 
 ```tsx
 // page.test.tsx
-import { mockService } from '@prisma/app/testing';
+import { mockService } from '@prisma/compose/testing';
 import realService from '../src/service.ts';
 
 vi.mock('../src/service.ts', () => ({
@@ -63,7 +63,7 @@ HTTP requests:
 
 ```ts
 // service.integration.test.ts  (run under `bun test`)
-import { bootstrapService } from '@prisma/app-cloud/testing';
+import { bootstrapService } from '@prisma/compose-cloud/testing';
 import fakeAuth from '@storefront-auth/auth/fake'; // an in-memory handler, no db
 import storefront from '../src/service.ts';
 
@@ -88,7 +88,7 @@ expect(await res.text()).toContain('Signed in: true');
   entry lives in Next's standalone output directory:
 
   ```ts
-  import { standaloneEntryPath } from '@prisma/app-nextjs/control';
+  import { standaloneEntryPath } from '@prisma/compose-nextjs/control';
   await bootstrapService(storefront, config, async () => {
     await import(standaloneEntryPath(storefront.build));
   });

@@ -98,7 +98,7 @@ for the framework to model; it is ordinary app code.
   One uniform rule makes it coherent — "the most-derived thing the contract can
   construct" — even though the results differ in shape. Documentation states this
   directly rather than promising "typed clients".
-- **The pack ships no driver and blesses none.** `@prisma/app-cloud` has no
+- **The pack ships no driver and blesses none.** `@prisma/compose-cloud` has no
   `bun`/`pg` dependency and constructs no postgres client; the runtime-agnostic
   and driver-free invariants hold without exception.
 - **`http()` derives its fetch wrapper** and takes no client argument, so the "no
