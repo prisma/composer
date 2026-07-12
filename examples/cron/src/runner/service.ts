@@ -3,10 +3,11 @@
  * ids `serveSchedule` forces a handler for, and the `every` intervals
  * `runScheduler` fires on. Short intervals so the integration test is quick.
  */
-import { compute } from '@prisma/compose-cloud';
-import { defineSchedule, triggerContract } from '@prisma/compose-cloud/cron';
-import node from '@prisma/compose-node';
-import { rpc } from '@prisma/compose-rpc';
+
+import node from '@prisma/compose/node';
+import { rpc } from '@prisma/compose/rpc';
+import { compute } from '@prisma/compose-prisma-cloud';
+import { defineSchedule, triggerContract } from '@prisma/compose-prisma-cloud/cron';
 import { workerContract } from '../worker/contract.ts';
 
 export const schedule = defineSchedule({ tick: '2s', mrr: '5s' });

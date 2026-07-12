@@ -1,5 +1,5 @@
 import { module } from '@prisma/compose';
-import { pnPostgres } from '@prisma/compose-cloud/prisma-next';
+import { pnPostgres } from '@prisma/compose-prisma-cloud/prisma-next';
 import { widgetContract } from './src/contract.ts';
 import widgetsService from './src/service.ts';
 

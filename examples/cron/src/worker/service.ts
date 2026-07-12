@@ -1,5 +1,5 @@
-import { compute } from '@prisma/compose-cloud';
-import node from '@prisma/compose-node';
+import node from '@prisma/compose/node';
+import { compute } from '@prisma/compose-prisma-cloud';
 import { workerContract } from './contract.ts';
 
 export default compute({

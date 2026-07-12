@@ -1,0 +1,40 @@
+{
+  "name": "@internal/rpc",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:types": "vitest --typecheck --run",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/core": "workspace:0.1.0",
+    "@internal/foundation": "workspace:0.1.0",
+    "@standard-schema/spec": "^1.1.0",
+    "arktype": "^2.2.3"
+  },
+  "devDependencies": {
+    "@internal/tsdown-config": "workspace:0.1.0",
+    "@types/bun": "^1.3.13",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/compose-rpc"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true,
+  "types": "./dist/index.d.mts"
+}

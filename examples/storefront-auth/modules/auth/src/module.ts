@@ -15,7 +15,7 @@
  * same as this enclosing module, so a defaulted id would read as "auth.auth".
  */
 import { module } from '@prisma/compose';
-import { postgres } from '@prisma/compose-cloud';
+import { postgres } from '@prisma/compose-prisma-cloud';
 import { authContract } from './contract.ts';
 import authService from './service.ts';
 

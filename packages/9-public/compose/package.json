@@ -1,0 +1,67 @@
+{
+  "name": "@prisma/compose",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Prisma Compose — build a Prisma App by composing Modules. Core authoring, deploy pipeline, the prisma-compose CLI, and the rpc/node/nextjs authoring surfaces.",
+  "bin": {
+    "prisma-compose": "./dist/bin.mjs"
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./config": "./dist/config.mjs",
+    "./deploy": "./dist/deploy.mjs",
+    "./testing": "./dist/testing.mjs",
+    "./casts": "./dist/casts.mjs",
+    "./assertions": "./dist/assertions.mjs",
+    "./rpc": "./dist/rpc.mjs",
+    "./node": "./dist/node.mjs",
+    "./node/control": "./dist/node-control.mjs",
+    "./nextjs": "./dist/nextjs.mjs",
+    "./nextjs/control": "./dist/nextjs-control.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0",
+    "alchemy": "2.0.0-beta.59",
+    "arktype": "^2.2.3",
+    "c12": "^3.3.4",
+    "clipanion": "^3.2.1",
+    "effect": "4.0.0-beta.92",
+    "postgres": "^3.4.9",
+    "@prisma/management-api-sdk": "^1.47.0",
+    "tsdown": "^0.22.3"
+  },
+  "devDependencies": {
+    "@internal/assemble": "workspace:0.1.0",
+    "@internal/cli": "workspace:0.1.0",
+    "@internal/core": "workspace:0.1.0",
+    "@internal/foundation": "workspace:0.1.0",
+    "@internal/lowering": "workspace:0.1.0",
+    "@internal/nextjs": "workspace:0.1.0",
+    "@internal/node": "workspace:0.1.0",
+    "@internal/rpc": "workspace:0.1.0",
+    "@internal/tsdown-config": "workspace:0.1.0",
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/9-public/compose"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

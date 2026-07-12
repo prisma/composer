@@ -1,0 +1,19 @@
+{
+  "name": "@internal/tsdown-config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Base tsdown configuration for the workspace",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./base.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  }
+}

@@ -3,7 +3,7 @@
  * auth exposes and serves it (service.ts / server.ts); a consumer imports it and
  * depends on it via `rpc(authContract)`, getting back a typed client.
  */
-import { contract, rpc } from '@prisma/compose-rpc';
+import { contract, rpc } from '@prisma/compose/rpc';
 import { type } from 'arktype';
 
 export const authContract = contract({

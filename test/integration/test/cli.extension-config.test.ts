@@ -4,7 +4,7 @@
  * own suite: the CLI itself must not depend on any specific extension (see
  * test/README.md), but this package genuinely does, so `prisma-compose deploy`
  * here evaluates this package's own `prisma-compose.config.ts`, whose static
- * imports of `@prisma/compose-cloud/control` and `@prisma/compose-node/control`
+ * imports of `@prisma/compose-prisma-cloud/control` and `@prisma/compose/node/control`
  * resolve from THIS app's own dependency tree — ambient resolution, no
  * anchor file, no framework-constructed specifier.
  *

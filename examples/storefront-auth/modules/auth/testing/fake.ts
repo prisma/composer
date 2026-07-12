@@ -11,9 +11,10 @@
  * assembled or deployed, only `serve()`d on a loopback port by a consumer's
  * integration test.
  */
-import { compute } from '@prisma/compose-cloud';
-import node from '@prisma/compose-node';
-import { serve } from '@prisma/compose-rpc';
+
+import node from '@prisma/compose/node';
+import { serve } from '@prisma/compose/rpc';
+import { compute } from '@prisma/compose-prisma-cloud';
 import { authContract } from '../src/contract.ts';
 
 const fakeAuth = compute({

@@ -5,8 +5,8 @@
  * enter the deploy. No Next here, so no nextjsBuild.
  */
 import { defineConfig } from '@prisma/compose/config';
-import { prismaCloud, prismaState } from '@prisma/compose-cloud/control';
-import { nodeBuild } from '@prisma/compose-node/control';
+import { nodeBuild } from '@prisma/compose/node/control';
+import { prismaCloud, prismaState } from '@prisma/compose-prisma-cloud/control';
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],

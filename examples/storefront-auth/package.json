@@ -1,29 +1,26 @@
 {
   "name": "@prisma/example-storefront-auth",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'nothing to build for this package itself — @storefront-auth/auth and @storefront-auth/storefront build via turbo ^build, from the workspace deps below'",
+    "build": "echo 'nothing to build for this package itself \u2014 @storefront-auth/auth and @storefront-auth/storefront build via turbo ^build, from the workspace deps below'",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-storefront-auth... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-compose deploy module.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
     "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-compose destroy module.ts --production ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.92",
-    "@prisma/compose": "workspace:0.3.0",
-    "@prisma/compose-nextjs": "workspace:0.3.0",
-    "@prisma/compose-node": "workspace:0.3.0",
-    "@prisma/compose-cloud": "workspace:0.3.0",
-    "@prisma/compose-rpc": "workspace:0.3.0",
-    "@storefront-auth/auth": "workspace:0.3.0",
-    "@storefront-auth/storefront": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0",
+    "@storefront-auth/auth": "workspace:0.1.0",
+    "@storefront-auth/storefront": "workspace:0.1.0",
     "alchemy": "2.0.0-beta.59",
     "arktype": "^2.2.3",
     "effect": "4.0.0-beta.92"
   },
   "devDependencies": {
-    "@prisma/compose-cli": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
     "typescript": "^6.0.3"
   }

@@ -1,0 +1,47 @@
+{
+  "name": "@internal/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The `prisma-compose` deploy CLI.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/assemble": "workspace:0.1.0",
+    "@internal/core": "workspace:0.1.0",
+    "@internal/foundation": "workspace:0.1.0",
+    "@internal/lowering": "workspace:0.1.0",
+    "c12": "^3.3.4",
+    "clipanion": "^3.2.1"
+  },
+  "devDependencies": {
+    "@internal/tsdown-config": "workspace:0.1.0",
+    "@types/bun": "^1.3.13",
+    "@types/node": "^25.9.3",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/compose-cli"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true,
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts"
+}

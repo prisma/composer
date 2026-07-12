@@ -4,7 +4,7 @@
  * contract.ts); the runner imports it to depend on the worker via
  * `rpc(workerContract)`.
  */
-import { contract, rpc } from '@prisma/compose-rpc';
+import { contract, rpc } from '@prisma/compose/rpc';
 import { type } from 'arktype';
 
 export const workerContract = contract({

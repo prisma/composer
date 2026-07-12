@@ -1,5 +1,5 @@
 import { module } from '@prisma/compose';
-import { cron } from '@prisma/compose-cloud/cron';
+import { cron } from '@prisma/compose-prisma-cloud/cron';
 import runnerService, { schedule } from './src/runner/service.ts';
 import workerService from './src/worker/service.ts';
 

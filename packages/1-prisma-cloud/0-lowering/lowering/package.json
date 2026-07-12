@@ -1,0 +1,44 @@
+{
+  "name": "@internal/lowering",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./compute": "./dist/compute/index.mjs",
+    "./postgres": "./dist/postgres/index.mjs",
+    "./state": "./dist/state/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/core": "workspace:0.1.0",
+    "@internal/foundation": "workspace:0.1.0",
+    "@prisma/management-api-sdk": "^1.47.0",
+    "alchemy": "2.0.0-beta.59",
+    "effect": "4.0.0-beta.92",
+    "postgres": "^3.4.9"
+  },
+  "devDependencies": {
+    "@internal/tsdown-config": "workspace:0.1.0",
+    "@types/bun": "^1.3.13",
+    "@types/node": "^25.9.3",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/compose-alchemy"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true,
+  "types": "./dist/index.d.mts"
+}

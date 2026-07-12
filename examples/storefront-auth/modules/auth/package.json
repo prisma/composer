@@ -1,6 +1,6 @@
 {
   "name": "@storefront-auth/auth",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -17,16 +17,12 @@
     "arktype": "^2.2.3"
   },
   "peerDependencies": {
-    "@prisma/compose": "workspace:0.3.0",
-    "@prisma/compose-node": "workspace:0.3.0",
-    "@prisma/compose-cloud": "workspace:0.3.0",
-    "@prisma/compose-rpc": "workspace:0.3.0"
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0"
   },
   "devDependencies": {
-    "@prisma/compose": "workspace:0.3.0",
-    "@prisma/compose-node": "workspace:0.3.0",
-    "@prisma/compose-cloud": "workspace:0.3.0",
-    "@prisma/compose-rpc": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
     "tsdown": "^0.22.3",
     "typescript": "^6.0.3"

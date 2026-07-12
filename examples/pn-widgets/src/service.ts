@@ -1,6 +1,6 @@
-import { compute } from '@prisma/compose-cloud';
-import { pnPostgres } from '@prisma/compose-cloud/prisma-next';
-import node from '@prisma/compose-node';
+import node from '@prisma/compose/node';
+import { compute } from '@prisma/compose-prisma-cloud';
+import { pnPostgres } from '@prisma/compose-prisma-cloud/prisma-next';
 import { widgetContract } from './contract.ts';
 
 /**

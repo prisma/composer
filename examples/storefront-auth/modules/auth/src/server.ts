@@ -3,7 +3,7 @@
 // re-keyed the platform environment address-free, so service.load() below
 // reads it directly, with no address.
 
-import { serve } from '@prisma/compose-rpc';
+import { serve } from '@prisma/compose/rpc';
 import { SQL } from 'bun';
 import service from './service.ts';
 

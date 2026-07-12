@@ -1,0 +1,22 @@
+{
+  "name": "@internal/foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Foundation utilities: the audited cast helpers and runtime assertions.",
+  "exports": {
+    "./assertions": "./dist/assertions.mjs",
+    "./casts": "./dist/casts.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "tsdown": "^0.22.3",
+    "@internal/tsdown-config": "workspace:0.1.0"
+  }
+}

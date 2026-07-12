@@ -9,8 +9,8 @@ specific extension.
 
 This package carries its own `prisma-compose.config.ts` (ADR-0017): `prisma-compose
 deploy` discovers it by walking up from the fixture entry and evaluates it
-with c12, so its static imports of `@prisma/compose-cloud/control` and
-`@prisma/compose-node/control` resolve from THIS package's own dependency tree —
+with c12, so its static imports of `@prisma/compose-prisma-cloud/control` and
+`@prisma/compose/node/control` resolve from THIS package's own dependency tree —
 the same ambient resolution an end user's app gets. No special install layout
 is needed: the old `dependenciesMeta.*.injected` scaffolding existed only to
 serve the node-owned-loads model (dynamic imports resolved from core's own
