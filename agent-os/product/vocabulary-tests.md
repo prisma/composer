@@ -66,5 +66,10 @@ The case study that produced these tests:
 | Gloss | Fails: the README introduces it as "a component — a System —". The gloss contained the better register. |
 | Prior art | The deciding claim ("nobody says 'my auth module'") was false — tested at one grain, in one sentence, against one example app whose units were all hero-sized. |
 
-Whether and when to rename the construct is a separate decision. This document only
-fixes the rubric so the next choice is made against the right tests.
+**Outcome:** the rubric was applied and the unit renamed — the unit of composition
+is a **Module**, authored with `module()`
+([ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md)).
+"Module" passed every test; "component" fell to adjacency (a Module contains React
+components — an intra-app collision); branded nouns (Prism, Shard, Facet, Lens) fell
+to the gloss test and the identity rule, with Prism moving to the registry
+shortlist.
