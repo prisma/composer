@@ -11,8 +11,9 @@
  * `postgres<Contract>({ contractJson })` convention (see prisma-next.ts).
  */
 import { describe, expect, test } from 'bun:test';
-import type { Contract } from '@prisma/app';
+import type { Contract, ResourceNode } from '@prisma/app';
 import { isNode, Load, string, system } from '@prisma/app';
+import { blindCast } from '@prisma/app/casts';
 import { postgres } from '../postgres.ts';
 import { isPnPostgresResourceNode, pnContract, pnPostgres } from '../prisma-next.ts';
 import type { Contract as GadgetContract } from './fixtures/gadget-contract/emitted/contract.d.ts';
@@ -109,8 +110,10 @@ describe('pnPostgres() factory shapes', () => {
 describe("isPnPostgresResourceNode (the deploy lowering's read predicate)", () => {
   const widget = pnContract<WidgetContract>(widgetContractJson);
 
-  test('true for a pnPostgres resource node — and narrows so `.config` reads', () => {
-    const node: unknown = pnPostgres({
+  test('narrows a base-typed resource node so `.config` reads', () => {
+    // The lowering's ctx.node is the base union; the predicate is a downcast
+    // of a known node, not an untrusted-value guard.
+    const node: ResourceNode = pnPostgres({
       name: 'database',
       contract: widget,
       config: './prisma-next.config.ts',
@@ -123,22 +126,28 @@ describe("isPnPostgresResourceNode (the deploy lowering's read predicate)", () =
   });
 
   test('false for a pnPostgres dependency end (kind is dependency, no config)', () => {
-    expect(isPnPostgresResourceNode(pnPostgres(widget))).toBe(false);
+    // A dependency end is never a lowering's ctx.node — cast only to prove
+    // the kind check rejects it.
+    const dep = blindCast<ResourceNode, 'test-only: prove the kind check rejects a dependency end'>(
+      pnPostgres(widget),
+    );
+    expect(isPnPostgresResourceNode(dep)).toBe(false);
   });
 
   test('false for a bare postgres() resource (type is postgres, not prisma-next)', () => {
     expect(isPnPostgresResourceNode(postgres({ name: 'db' }))).toBe(false);
   });
 
-  test('false for non-nodes and lookalikes without a string config', () => {
-    expect(isPnPostgresResourceNode(null)).toBe(false);
-    expect(isPnPostgresResourceNode(undefined)).toBe(false);
-    expect(isPnPostgresResourceNode({})).toBe(false);
-    // right kind + type but config missing / not a string → still false
-    expect(isPnPostgresResourceNode({ kind: 'resource', type: 'prisma-next' })).toBe(false);
-    expect(isPnPostgresResourceNode({ kind: 'resource', type: 'prisma-next', config: 42 })).toBe(
-      false,
+  test('false for a resource lookalike whose config is missing or not a string', () => {
+    const noConfig = blindCast<ResourceNode, 'test-only: right kind+type, config missing'>({
+      kind: 'resource',
+      type: 'prisma-next',
+    });
+    expect(isPnPostgresResourceNode(noConfig)).toBe(false);
+    const numberConfig = blindCast<ResourceNode, 'test-only: right kind+type, config not a string'>(
+      { kind: 'resource', type: 'prisma-next', config: 42 },
     );
+    expect(isPnPostgresResourceNode(numberConfig)).toBe(false);
   });
 });
 
@@ -162,9 +171,10 @@ describe('the config path rides through provisioning (brand intact)', () => {
     // Provisioned as a resource (the brand survived, so Load recognized it).
     const db = graph.nodes.find((n) => n.id === 'db');
     expect(db?.node.kind).toBe('resource');
-    // The exact augmented node is in the graph, config and all.
+    // The exact augmented node is in the graph, config and all — so the
+    // predicate holds for the very value the graph carries.
     expect(db?.node).toBe(node);
-    expect(isPnPostgresResourceNode(db?.node)).toBe(true);
+    expect(isPnPostgresResourceNode(node)).toBe(true);
   });
 });
 

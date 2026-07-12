@@ -25,7 +25,7 @@
  * because there is no marker check (ADR-0022).
  */
 
-import type { Contract, DependencyEnd } from '@prisma/app';
+import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@prisma/app';
 import { dependency, freezeNode, ResourceNodeBase, string } from '@prisma/app';
 import { blindCast } from '@prisma/app/casts';
 import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/runtime';
@@ -94,19 +94,17 @@ export class PnPostgresResourceNode<
 }
 
 /**
- * True if `node` is a `pnPostgres` resource node carrying its config path —
- * the deploy lowering's read predicate for `ctx.node` (typed `ServiceNode |
- * ResourceNode`), so it reads `config` without a bare cast. Checks the
- * resource kind, the `prisma-next` routing type, and that `config` is a
- * string.
+ * Narrows `ctx.node` (typed `ServiceNode | ResourceNode`) to a `pnPostgres`
+ * resource node carrying its config path, so the deploy lowering reads
+ * `config` without a bare cast. A downcast of a known node, not an
+ * untrusted-value guard: checks the resource kind, the `prisma-next` routing
+ * type, and that `config` is a string — structural, never `instanceof`.
  */
-export function isPnPostgresResourceNode(node: unknown): node is PnPostgresResourceNode {
+export function isPnPostgresResourceNode(
+  node: ServiceNode | ResourceNode,
+): node is PnPostgresResourceNode {
   return (
-    typeof node === 'object' &&
-    node !== null &&
-    'kind' in node &&
     node.kind === 'resource' &&
-    'type' in node &&
     node.type === 'prisma-next' &&
     'config' in node &&
     typeof node.config === 'string'
