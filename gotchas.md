@@ -24,6 +24,8 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Next.js on Compute ignores runtime env vars unless the route is force-dynamic](#nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force-dynamic)
 - [Connection create/read response buries the real Postgres DSN under endpoints.*; `url` is an API self-link](#connection-createread-response-buries-the-real-postgres-dsn-under-endpoints-url-is-an-api-self-link)
 - [Compute's bun auto-installs at runtime — masks incomplete artifacts and cross-platform native binaries as an ENOSPC crash loop](#computes-bun-auto-installs-at-runtime--masks-incomplete-artifacts-and-cross-platform-native-binaries-as-an-enospc-crash-loop)
+- [Branch create has no idempotency — a duplicate gitName 409s, with no create-or-return](#branch-create-has-no-idempotency--a-duplicate-gitname-409s-with-no-create-or-return)
+- [A project-scoped compute-service create lands on the default branch — and collides with production](#a-project-scoped-compute-service-create-lands-on-the-default-branch--and-collides-with-production)
 
 ---
 
@@ -247,3 +249,45 @@ process.on("unhandledRejection", (e) => console.error(e));
 - Upstream: [PRO-213](https://linear.app/prisma-company/issue/PRO-213/compute-runs-bun-with-runtime-auto-install-on-masks-incomplete)
 - Fix: [`packages/app-nextjs/src/assemble.ts`](packages/app-nextjs/src/assemble.ts), [`examples/storefront-auth/systems/storefront/next.config.ts`](examples/storefront-auth/systems/storefront/next.config.ts)
 - Related: PRO-201 (Next standalone packaging), FT-5219 (Bun.SQL scale-to-zero)
+
+---
+
+## Branch create has no idempotency — a duplicate gitName 409s, with no create-or-return
+
+**Filed upstream:** [PRO-214](https://linear.app/prisma-company/issue/PRO-214/management-api-branch-create-has-no-idempotency-ifexists-409-on) — _"Management API: branch create has no idempotency (`ifExists`) — 409 on duplicate gitName"_
+**Product:** Prisma Postgres / Compute (Management API, branches)
+**Version:** `@prisma/management-api-sdk` 1.47.0
+**First hit:** the deploy CLI's ensure-containers step (`resolveBranch`), building stage-as-branch
+**Cost:** low — caught at implementation; the client-side dance is boilerplate every caller repeats.
+
+**Symptom.** `POST /v1/projects/{projectId}/branches` with a `gitName` that already exists returns `409`, full stop. Any "ensure this branch exists" step that runs on every deploy cannot just create.
+
+**Cause.** The create body accepts only `gitName` + `isDefault` (`additionalProperties: false`) — there is no `ifExists`/upsert option, so idempotency must be client-side.
+
+**Workaround.** Observe first (`GET …/branches?gitName=X` — server-side exact match, ≤1 row), `POST` only when absent, and on a racing `409` re-read and adopt the winner instead of failing.
+
+**References.**
+
+- Upstream: [PRO-214](https://linear.app/prisma-company/issue/PRO-214/management-api-branch-create-has-no-idempotency-ifexists-409-on)
+- Fix: [`packages/alchemy/src/container.ts`](packages/alchemy/src/container.ts) (`resolveBranch`)
+
+---
+
+## A project-scoped compute-service create lands on the default branch — and collides with production
+
+**Filed upstream:** [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with) — _"Management API: project-scoped compute-service create collides with production on `main`; branchId-on-create differs from databases"_
+**Product:** Prisma Compute (Management API)
+**Version:** `@prisma/management-api-sdk` 1.47.0
+**First hit:** `prisma-app deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
+**Cost:** ~1 hour — one failed live deploy, diagnosis, and a provider rework.
+
+**Symptom.** Deploying a same-named compute service into a preview Branch fails outright: `compute_service:already_exists: An app named "auth" already exists on branch "main"`.
+
+**Cause.** `POST /v1/projects/{projectId}/compute-services` with no `branchId` lands the service on the project's default (`main`) Branch, and compute-service names are unique **per Branch** — so the create collides with the production service before any later branch-attach can run. Databases are the mirror image: their create body has **no** `branchId` at all (attach is a `PATCH` after create), so the two sibling resource types need opposite mechanisms and the naive uniform approach hard-fails only for compute.
+
+**Workaround.** For compute services, pass `branchId` in the create body (create directly on the target Branch; no PATCH). For databases, create project-scoped, then `PATCH /v1/databases/{id}` with `{ branchId }`.
+
+**References.**
+
+- Upstream: [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with)
+- Fix: [`packages/alchemy/src/compute/ComputeService.ts`](packages/alchemy/src/compute/ComputeService.ts), [`packages/alchemy/src/postgres/Database.ts`](packages/alchemy/src/postgres/Database.ts)
