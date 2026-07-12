@@ -26,7 +26,7 @@ People say "the auth module" all the time. See the failure record at the bottom.
 Three registers, only one of which we name:
 
 - **Package** — the artifact npm hosts. npm owns this vocabulary; we don't rename it.
-- **Extension** — what you slot into `prisma-app.config.ts`: deploy targets, build
+- **Extension** — what you slot into `prisma-compose.config.ts`: deploy targets, build
   kinds, anything that extends the toolchain.
 - **Unit of composition** — what you plug together inside the app. This is the noun
   under test.

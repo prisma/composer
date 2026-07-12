@@ -2,11 +2,11 @@
 
 ## Status
 
-Accepted. Supersedes the framework-name half of
+Accepted. Supersedes the framework-name, package-family, and CLI decisions of
 [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md). With
 [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) having superseded the
-unit noun, ADR-0014 remains authoritative only for the single-primitive model, the
-`@prisma/app*` package family, and the `prisma-app` CLI — all of which stand.
+unit noun, ADR-0014 remains authoritative only for the single-primitive model — one
+authoring construct, no separate `app()`.
 
 ## Decision
 
@@ -14,11 +14,16 @@ The framework is **Prisma Compose**. The thing you build and deploy with it is a
 **Prisma App** — that name is kept and now means *only* the artifact, which is what
 it always named best. You compose Modules with Prisma Compose into your Prisma App.
 
-The package family stays `@prisma/app*`, the CLI stays `prisma-app`, and the config
-file stays `prisma-app.config.ts`. These are artifact-oriented surfaces — you deploy
-*your app* — and the `next`-package/Next.js precedent shows a framework's name and
-its package path need not coincide. Renaming the repository is a separate, optional
-decision.
+The whole surface follows the name: the package family becomes **`@prisma/compose*`**
+(`@prisma/compose`, `@prisma/compose-cloud`, `@prisma/compose-node`,
+`@prisma/compose-rpc`, `@prisma/compose-nextjs`, `@prisma/compose-assemble`,
+`@prisma/compose-cli`, `@prisma/compose-cron`; `@prisma/alchemy` stays — it is an
+independent package). The CLI binary becomes **`prisma-compose`**, the config file
+**`prisma-compose.config.ts`**, and the scratch directory **`.prisma-compose/`**.
+A name that exists so people can refer to the tool must be the name they meet at
+every surface — a split identity (framework called one thing, packages called
+another) re-creates the referential problem this decision exists to fix. Renaming
+the repository is a separate, optional decision.
 
 ## Reasoning
 
@@ -77,13 +82,24 @@ Alternatives.
 
 ## Consequences
 
-- **A docs-and-prose rename, not a code rename.** README, design docs, glossary,
-  skills, and earlier ADRs' prose stop calling the framework "Prisma App" / "the
-  Prisma App Framework" and say "Prisma Compose." Occurrences of "Prisma App" that
-  mean the *artifact* (e.g. ADR-0023's "a Prisma App is one Prisma Cloud Project")
-  are correct and stay. This is judgment work, not a blind substitution.
-- **No code, package, CLI, or config changes.** `@prisma/app*`, `prisma-app`,
-  `prisma-app.config.ts`, and `.prisma-app/` all stand per ADR-0014.
+- **A full-surface rename.** Packages (`@prisma/app*` → `@prisma/compose*`, with
+  directory names, workspace references, and imports following), the CLI binary
+  (`prisma-app` → `prisma-compose`), the config file
+  (`prisma-app.config.ts` → `prisma-compose.config.ts`), the scratch directory
+  (`.prisma-app/` → `.prisma-compose/`), and all docs prose — README, design docs,
+  glossary, skills, and earlier ADRs — stop calling the framework "Prisma App" /
+  "the Prisma App Framework" and say "Prisma Compose."
+- **Artifact-sense "Prisma App" stays.** Occurrences that mean the *artifact* (e.g.
+  ADR-0023's "a Prisma App is one Prisma Cloud Project," "deploy your Prisma App")
+  are correct and remain. The prose sweep is judgment work, not a blind
+  substitution: substitute "the user's application" → keep; substitute "the tool" →
+  rename.
+- **Published package names churn pre-GA.** The `@prisma/app*` packages are on npm
+  at 0.2.0-dev; the rename means new names and a deprecation pointer on the old
+  ones, handled per the repo's versioning process.
+- **A future unified CLI reads naturally.** `prisma-compose deploy` today leaves
+  room for `prisma compose deploy` as a subcommand later, per the same reasoning
+  ADR-0014 applied to `prisma-app`.
 - **"Prisma App" gains a sharper meaning.** It is the artifact and the platform
   story ("build Prisma Apps"), never the tool. Docs should not say "built with
   Prisma App"; they say "built with Prisma Compose."
@@ -139,6 +155,7 @@ Alternatives.
   "Prisma App" failure record.
 - `agent-os/product/naming.md` — the family table and register model.
 - [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md) — the
-  superseded framework name; its package, CLI, and single-primitive decisions stand.
+  superseded framework, package, and CLI names; its single-primitive decision
+  stands.
 - [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) — the unit noun
   (Module) this name composes with.

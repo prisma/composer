@@ -47,16 +47,16 @@ the job:
 |---|---|---|
 | **Prisma App** | the artifact: the application you build (the outermost Module) | software with users and features — the whole point |
 | **Module** | a building block you compose | a capability you reuse instead of writing |
-| **Extension** | what you slot into `prisma-app.config.ts` | the toolchain reaches my target/stack |
+| **Extension** | what you slot into `prisma-compose.config.ts` | the toolchain reaches my target/stack |
 | **Topology** | the graph the framework produces | *(machinery — the user never says this)* |
 
 You build a **Prisma App** by composing **Modules** with **Prisma Compose** — each
 Module wrapping primitives like Compute and Postgres; the framework infers the
 **Topology** and provisions it. App, Module, and Compose are the words a developer
 says; Topology is the machinery underneath. The App is not a separate construct — it
-is simply the outermost Module, the one you point `prisma-app deploy` at. (The
-package family and CLI stay `@prisma/app*` and `prisma-app` — artifact-oriented
-surfaces, per ADR-0026.)
+is simply the outermost Module, the one you point `prisma-compose deploy` at. (The
+whole surface carries the name: `@prisma/compose*` packages, the `prisma-compose`
+CLI, `prisma-compose.config.ts` — per ADR-0026.)
 
 ## Name for value, not machinery
 
@@ -133,9 +133,9 @@ full reasoning is in
 [ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md).
 
 Vocabulary sits in three registers: a **package** is the artifact npm hosts (npm's
-word, not ours); an **extension** slots into `prisma-app.config.ts` and extends the
+word, not ours); an **extension** slots into `prisma-compose.config.ts` and extends the
 toolchain; a **Module** is what you plug together inside the app. One package may
-register an extension and provide modules — "use the cron module from the app-cloud
+register an extension and provide modules — "use the cron module from the compose-cloud
 extension" is the model in one sentence.
 
 ## How Modules are distributed
