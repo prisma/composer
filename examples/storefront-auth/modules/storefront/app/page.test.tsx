@@ -3,7 +3,7 @@
  * `load()` returns a typed fake auth via `mockService`, then renders the page
  * directly — no server, no environment, no cloud.
  */
-import { mockService } from '@prisma/app/testing';
+import { mockService } from '@prisma/compose/testing';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type Service from '../src/service.ts';

@@ -1,4 +1,4 @@
-import { module } from '@prisma/app';
+import { module } from '@prisma/compose';
 import authModule from '@storefront-auth/auth';
 import storefrontService from '@storefront-auth/storefront';
 

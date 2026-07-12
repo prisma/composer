@@ -1,5 +1,5 @@
 {
-  "name": "@prisma/app-tsdown",
+  "name": "@prisma/compose-tsdown",
   "version": "0.3.0",
   "private": true,
   "type": "module",

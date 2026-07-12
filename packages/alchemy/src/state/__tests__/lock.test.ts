@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { assertDefined } from '@prisma/app/assertions';
+import { assertDefined } from '@prisma/compose/assertions';
 import * as Effect from 'effect/Effect';
 import postgres from 'postgres';
 import { acquireStateLock } from '../lock.ts';
@@ -100,7 +100,7 @@ describe.skipIf(pg === undefined)('acquireStateLock', () => {
     // — by joining the advisory lock it holds (identified by the same key
     // `acquireStateLock` computes) to `pg_stat_activity`, not by reaching
     // into `acquireStateLock`'s internals.
-    const key = `prisma-app:${stack}/${stage}`;
+    const key = `prisma-compose:${stack}/${stage}`;
     const lockRows = await admin<{ pid: number }[]>`
       select l.pid
       from pg_locks l

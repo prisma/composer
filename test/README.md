@@ -9,6 +9,6 @@ different package's real implementation (for example, driving the CLI
 against a real target/adapter pack) does not belong in that package's own
 test suite; it belongs here instead.
 
-The Prisma App Framework has no automated import-boundary check (e.g. dependency-cruiser) —
+Prisma Compose has no automated import-boundary check (e.g. dependency-cruiser) —
 this file is the boundary rule. See `test/integration/README.md` for what
 lives in this specific package.

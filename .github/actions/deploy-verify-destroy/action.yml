@@ -12,7 +12,7 @@ inputs:
     description: turbo --filter argument for the build step
     required: true
   stack-name:
-    description: Per-run stack name passed to `prisma-app deploy --name`
+    description: Per-run stack name passed to `prisma-compose deploy --name`
     required: true
   verify-command:
     description: Command that verifies the deployed round trip
@@ -48,7 +48,7 @@ runs:
       # or use Bun.serve, which throw under node.
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: bun node_modules/.bin/prisma-app deploy module.ts --name "${{ inputs.stack-name }}"
+      run: bun node_modules/.bin/prisma-compose deploy module.ts --name "${{ inputs.stack-name }}"
 
     - name: Verify the round trip
       shell: bash

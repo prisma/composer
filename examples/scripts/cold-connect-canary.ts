@@ -4,7 +4,7 @@
  * project/database/connection, makes ONE bare `pg` connect with no retry,
  * and asserts it fails the known transient way. Passes only while the
  * platform bug is still present — the point is for this to start FAILING
- * the day FT-5226 is fixed, so `withConnectionRetry` (packages/app-cloud/src
+ * the day FT-5226 is fixed, so `withConnectionRetry` (packages/compose-cloud/src
  * /pg-connection.ts) can be removed.
  */
 import pg from 'pg';

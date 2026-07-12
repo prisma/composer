@@ -1,5 +1,5 @@
 <!--
-Thanks for contributing to the Prisma App Framework!
+Thanks for contributing to Prisma Compose!
 
 Before you submit:
 - Have you read CONTRIBUTING.md?

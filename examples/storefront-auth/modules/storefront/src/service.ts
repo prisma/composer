@@ -1,6 +1,6 @@
-import { compute } from '@prisma/app-cloud';
-import nextjs from '@prisma/app-nextjs';
-import { rpc } from '@prisma/app-rpc';
+import { compute } from '@prisma/compose-cloud';
+import nextjs from '@prisma/compose-nextjs';
+import { rpc } from '@prisma/compose-rpc';
 import { authContract } from '@storefront-auth/auth/contract';
 
 export default compute({

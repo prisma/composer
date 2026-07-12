@@ -33,10 +33,10 @@ describe('isEphemeralCiProjectName', () => {
   });
 
   it('never matches the hosted deploy-state project, even with a hostile prefix', () => {
-    assert.equal(isEphemeralCiProjectName('prisma-app-state', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('prisma-compose-state', PREFIXES), false);
     // Even a prefix crafted so the pattern WOULD match is hard-denied.
-    assert.equal(isEphemeralCiProjectName('prisma-app-state', ['prisma-app-state']), false);
-    assert.ok(PROTECTED_PROJECT_NAMES.includes('prisma-app-state'));
+    assert.equal(isEphemeralCiProjectName('prisma-compose-state', ['prisma-compose-state']), false);
+    assert.ok(PROTECTED_PROJECT_NAMES.includes('prisma-compose-state'));
   });
 
   it('treats prefixes literally — regex metacharacters cannot widen the match', () => {
@@ -55,7 +55,7 @@ describe('isLegacyStaleProjectName', () => {
   });
 
   it('rejects the current state-store name and anything else', () => {
-    assert.equal(isLegacyStaleProjectName('prisma-app-state'), false);
+    assert.equal(isLegacyStaleProjectName('prisma-compose-state'), false);
     assert.equal(isLegacyStaleProjectName('storefront-auth-ci-1'), false);
     assert.equal(isLegacyStaleProjectName('makerkit-state-old'), false);
   });

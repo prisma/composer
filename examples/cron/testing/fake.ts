@@ -11,9 +11,9 @@
  * rather than a single served instance (contrast auth's `fake.ts`, whose
  * `verify` has no state to reset between tests).
  */
-import { compute } from '@prisma/app-cloud';
-import node from '@prisma/app-node';
-import { serve } from '@prisma/app-rpc';
+import { compute } from '@prisma/compose-cloud';
+import node from '@prisma/compose-node';
+import { serve } from '@prisma/compose-rpc';
 import { workerContract } from '../src/worker/contract.ts';
 
 const fakeWorker = compute({

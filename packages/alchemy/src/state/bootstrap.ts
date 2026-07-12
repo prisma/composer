@@ -12,10 +12,10 @@ import { STATE_META_MARKER } from './schema.ts';
  * circular (it doesn't exist before the first apply, and is itself tracked
  * in the state it would have to host).
  */
-const STATE_PROJECT_NAME = 'prisma-app-state';
+const STATE_PROJECT_NAME = 'prisma-compose-state';
 
 /** Every connection this bootstrap mints carries this prefix — see `cleanupAgedConnections`. */
-const CONNECTION_NAME_PREFIX = 'prisma-app-state-';
+const CONNECTION_NAME_PREFIX = 'prisma-compose-state-';
 const CONNECTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_DATABASE_POLL_ATTEMPTS = 5;
@@ -75,7 +75,7 @@ const bareWorkspaceId = (id: string): string =>
   id.startsWith('wksp_') ? id.slice('wksp_'.length) : id;
 
 /**
- * All projects named `prisma-app-state` in the workspace — plural, because PDP
+ * All projects named `prisma-compose-state` in the workspace — plural, because PDP
  * allows duplicate project names (verified 2026-07-09), so name-based
  * discovery can never assume there is at most one. See `resolveStateProject`
  * for how candidates get disambiguated.
@@ -255,7 +255,7 @@ export type OwnershipVerifier = (
 ) => Effect.Effect<OwnershipVerdict, PrismaApiError>;
 
 /**
- * PDP allows duplicate project names, so a project named `prisma-app-state`
+ * PDP allows duplicate project names, so a project named `prisma-compose-state`
  * found by listing is not proof it's ours — it could be an unrelated
  * project that happens to share the name (a squatter, deliberate or not).
  * Connects to the candidate's default database and inspects its tables:
@@ -313,7 +313,7 @@ interface ResolvedStateProject {
 }
 
 /**
- * Finds the workspace's `prisma-app-state` project, verifying ownership rather
+ * Finds the workspace's `prisma-compose-state` project, verifying ownership rather
  * than trusting the name alone (PDP allows duplicate names — see
  * `verifyOwnership`). Zero candidates creates one: nothing to verify, since
  * only this run could possibly have touched the brand-new database between
@@ -377,7 +377,7 @@ const resolveStateProject = (
   });
 
 /**
- * Find-or-create the workspace's `prisma-app-state` project, resolve its
+ * Find-or-create the workspace's `prisma-compose-state` project, resolve its
  * default database, and mint a fresh connection — the automatic bootstrap
  * every deploy runs once, needing nothing beyond the service token and
  * workspace id a deployer already has.

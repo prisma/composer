@@ -1,0 +1,64 @@
+{
+  "name": "@prisma/compose-cloud",
+  "version": "0.3.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./control": "./dist/control.mjs",
+    "./prisma-next": "./dist/prisma-next.mjs",
+    "./testing": "./dist/testing.mjs",
+    "./cron": "./dist/cron/index.mjs",
+    "./cron/scheduler-entrypoint": "./dist/cron/scheduler-entrypoint.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:types": "vitest --typecheck --run"
+  },
+  "dependencies": {
+    "@prisma-next/cli": "0.14.0",
+    "@prisma-next/contract": "0.14.0",
+    "@prisma-next/migration-tools": "0.14.0",
+    "@prisma-next/postgres": "0.14.0",
+    "@prisma-next/sql-contract": "0.14.0",
+    "@prisma/alchemy": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.3.0",
+    "@prisma/compose-node": "workspace:0.3.0",
+    "@prisma/compose-rpc": "workspace:0.3.0",
+    "@standard-schema/spec": "^1.1.0",
+    "alchemy": "2.0.0-beta.59",
+    "arktype": "^2.2.3",
+    "effect": "4.0.0-beta.92",
+    "pathe": "^2.0.3"
+  },
+  "devDependencies": {
+    "@prisma-next/target-postgres": "0.14.0",
+    "@prisma/compose-tsdown": "workspace:0.3.0",
+    "@types/bun": "^1.3.13",
+    "@types/pg": "8.20.0",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "types": "./dist/index.d.mts",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/compose-cloud"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

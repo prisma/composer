@@ -2,13 +2,13 @@
  * Proves the extension-config design (ADR-0017) resolves REAL extension
  * `/control` entries — not fixtures. This cannot live in packages/app-cli's
  * own suite: the CLI itself must not depend on any specific extension (see
- * test/README.md), but this package genuinely does, so `prisma-app deploy`
- * here evaluates this package's own `prisma-app.config.ts`, whose static
- * imports of `@prisma/app-cloud/control` and `@prisma/app-node/control`
+ * test/README.md), but this package genuinely does, so `prisma-compose deploy`
+ * here evaluates this package's own `prisma-compose.config.ts`, whose static
+ * imports of `@prisma/compose-cloud/control` and `@prisma/compose-node/control`
  * resolve from THIS app's own dependency tree — ambient resolution, no
  * anchor file, no framework-constructed specifier.
  *
- * Drives the CLI as a binary (`node_modules/.bin/prisma-app`), the same way
+ * Drives the CLI as a binary (`node_modules/.bin/prisma-compose`), the same way
  * the example apps do, rather than importing the CLI's internals.
  */
 import { describe, expect, test } from 'bun:test';
@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
-const prismaAppBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-app');
+const prismaAppBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-compose');
 const fixtureEntry = path.join(
   integrationDir,
   'test',
@@ -25,7 +25,7 @@ const fixtureEntry = path.join(
   'service.ts',
 );
 
-describe('prisma-app deploy — real extension-config resolution of prisma-cloud + node', () => {
+describe('prisma-compose deploy — real extension-config resolution of prisma-cloud + node', () => {
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
     const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,

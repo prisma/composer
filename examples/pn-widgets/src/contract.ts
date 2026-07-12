@@ -7,7 +7,7 @@
  * service's typed client flows from (PSL-first authoring mode — the type is
  * passed explicitly since a JSON import's inferred type is plain data).
  */
-import { pnContract } from '@prisma/app-cloud/prisma-next';
+import { pnContract } from '@prisma/compose-cloud/prisma-next';
 import type { Contract } from '../contract.d.ts';
 import contractJson from '../contract.json' with { type: 'json' };
 

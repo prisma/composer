@@ -132,7 +132,7 @@ describe('packageComputeArtifact', () => {
     expect(a.path).not.toBe(b.path);
   });
 
-  test('the output path is namespaced per OS user, never the bare shared prisma-app-compute dir', () => {
+  test('the output path is namespaced per OS user, never the bare shared prisma-compose-compute dir', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const artifact = packageComputeArtifact({
@@ -142,11 +142,11 @@ describe('packageComputeArtifact', () => {
       address: 'auth',
     });
 
-    // A fixed os.tmpdir()/prisma-app-compute dir is owned by whichever OS user
+    // A fixed os.tmpdir()/prisma-compose-compute dir is owned by whichever OS user
     // creates it first; every other user's writes then fail EACCES.
-    const sharedDir = path.join(os.tmpdir(), 'prisma-app-compute');
+    const sharedDir = path.join(os.tmpdir(), 'prisma-compose-compute');
     expect(artifact.path.startsWith(`${sharedDir}${path.sep}`)).toBe(false);
-    expect(artifact.path).toContain(`prisma-app-compute-${String(os.userInfo().uid)}`);
+    expect(artifact.path).toContain(`prisma-compose-compute-${String(os.userInfo().uid)}`);
   });
 
   test('a different address changes the hash (the bootstrap is address-specific)', () => {
@@ -204,7 +204,7 @@ describe('packageComputeArtifact', () => {
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {
     const artifact = packageComputeArtifact({
       id: 'auth',
-      bundleDir: path.join(os.tmpdir(), 'prisma-app-artifact-test-does-not-exist'),
+      bundleDir: path.join(os.tmpdir(), 'prisma-compose-artifact-test-does-not-exist'),
       appEntry: 'server.js',
       address: 'auth',
     });

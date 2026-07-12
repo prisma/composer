@@ -12,12 +12,12 @@ workspace package decides what it exercises.
 ## Within-package tests
 
 - **Import from source** (`../foo.ts`, `./foo.ts`) — not from the package's own
-  identifier. Importing your own package by name (`@prisma/app`) resolves to its
+  identifier. Importing your own package by name (`@prisma/compose`) resolves to its
   built `dist/`, which is stale relative to the source you are editing.
 
 ## Cross-package / integration tests
 
-- **Import from the package identifier** (`@prisma/app`, `@prisma/app-cloud`, …)
+- **Import from the package identifier** (`@prisma/compose`, `@prisma/compose-cloud`, …)
   to verify the real public surface. This resolves to `dist/`, so the dependency
   must be built first — the `test`/`typecheck` turbo tasks build deps up front,
   and CI builds before testing (see

@@ -26,10 +26,10 @@ export interface StateLock {
   readonly release: () => Promise<void>;
 }
 
-// Built here (not `select ... where 'prisma-app:' || stack || '/' || stage`)
+// Built here (not `select ... where 'prisma-compose:' || stack || '/' || stage`)
 // so the lock id is computed once, in one place, from the same string every
 // caller (JS or a human reading logs) would produce.
-const lockKey = (stack: string, stage: string): string => `prisma-app:${stack}/${stage}`;
+const lockKey = (stack: string, stage: string): string => `prisma-compose:${stack}/${stage}`;
 
 /**
  * Acquires a session-scoped Postgres advisory lock on a reserved

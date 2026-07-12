@@ -7,16 +7,16 @@
 
 /**
  * Never deleted, no matter what a prefix or legacy-name argument would
- * otherwise match. `prisma-app-state` is the current, in-use hosted
+ * otherwise match. `prisma-compose-state` is the current, in-use hosted
  * deploy-state control plane (packages/alchemy/src/state/bootstrap.ts).
  */
-export const PROTECTED_PROJECT_NAMES: readonly string[] = ['prisma-app-state'];
+export const PROTECTED_PROJECT_NAMES: readonly string[] = ['prisma-compose-state'];
 
 /**
  * Stale duplicates of the state-store project under its pre-rename name.
  * `makerkit-state` was `STATE_PROJECT_NAME` before the MakerKit -> Prisma
  * App Framework rename; the CI workspace accumulated ~20 of these before the
- * rename to `prisma-app-state`. None of these names may ever collide with
+ * rename to `prisma-compose-state`. None of these names may ever collide with
  * `PROTECTED_PROJECT_NAMES` — see the `LEGACY_STALE_PROJECT_NAMES` test.
  */
 export const LEGACY_STALE_PROJECT_NAMES: readonly string[] = ['makerkit-state'];

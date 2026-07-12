@@ -1,4 +1,4 @@
-import { blindCast } from '@prisma/app/casts';
+import { blindCast } from '@prisma/compose/casts';
 import {
   encodeState,
   type PersistedState,

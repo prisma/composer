@@ -13,10 +13,10 @@
     "test": "vitest run && bun test app/page.integration.test.ts"
   },
   "dependencies": {
-    "@prisma/app": "workspace:0.3.0",
-    "@prisma/app-nextjs": "workspace:0.3.0",
-    "@prisma/app-cloud": "workspace:0.3.0",
-    "@prisma/app-rpc": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.3.0",
+    "@prisma/compose-nextjs": "workspace:0.3.0",
+    "@prisma/compose-cloud": "workspace:0.3.0",
+    "@prisma/compose-rpc": "workspace:0.3.0",
     "@storefront-auth/auth": "workspace:0.3.0",
     "arktype": "^2.2.3",
     "next": "^16.2.9",

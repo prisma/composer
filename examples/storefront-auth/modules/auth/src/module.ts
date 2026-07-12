@@ -14,8 +14,8 @@
  * The auth service keeps an explicit "service" id: its own name is "auth", the
  * same as this enclosing module, so a defaulted id would read as "auth.auth".
  */
-import { module } from '@prisma/app';
-import { postgres } from '@prisma/app-cloud';
+import { module } from '@prisma/compose';
+import { postgres } from '@prisma/compose-cloud';
 import { authContract } from './contract.ts';
 import authService from './service.ts';
 

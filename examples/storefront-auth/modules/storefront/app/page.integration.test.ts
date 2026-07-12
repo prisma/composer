@@ -13,16 +13,16 @@
  * `build.module` — `bootstrapService`'s default derivation fits the `node`
  * adapter (see auth), not this one, so this test supplies its own boot
  * thunk, reusing the same standalone-path math
- * `@prisma/app-nextjs/control`'s deploy assembly uses (`nextStandaloneDir`).
+ * `@prisma/compose-nextjs/control`'s deploy assembly uses (`nextStandaloneDir`).
  * Requires `next build` to have already produced `.next/standalone` (turbo's
  * `test` task depends on `build`, so `pnpm -w test` always has it).
  */
 import { describe, expect, it } from 'bun:test';
 import { pathToFileURL } from 'node:url';
-import type { BuildAdapter } from '@prisma/app';
-import { bootstrapService } from '@prisma/app-cloud/testing';
-import type { NextjsBuildAdapter } from '@prisma/app-nextjs';
-import { standaloneEntryPath } from '@prisma/app-nextjs/control';
+import type { BuildAdapter } from '@prisma/compose';
+import { bootstrapService } from '@prisma/compose-cloud/testing';
+import type { NextjsBuildAdapter } from '@prisma/compose-nextjs';
+import { standaloneEntryPath } from '@prisma/compose-nextjs/control';
 import fakeAuthHandler from '@storefront-auth/auth/fake';
 import storefrontService from '../src/service.ts';
 

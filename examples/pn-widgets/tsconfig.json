@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["bun"]
   },
-  "include": ["module.ts", "prisma-app.config.ts", "src", "scripts", "contract.d.ts"]
+  "include": ["module.ts", "prisma-compose.config.ts", "src", "scripts", "contract.d.ts"]
 }

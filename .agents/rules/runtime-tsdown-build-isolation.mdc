@@ -7,8 +7,8 @@ alwaysApply: false
 # Runtime `tsdown build()` must be isolated from the package build config
 
 Some packages call tsdown's programmatic `build()` at **runtime** (not as their
-own build step) — e.g. `@prisma/app-node` and `@prisma/app-nextjs` bundle the
-user's server inside `assemble()` during `prisma-app deploy`.
+own build step) — e.g. `@prisma/compose-node` and `@prisma/compose-nextjs` bundle the
+user's server inside `assemble()` during `prisma-compose deploy`.
 
 tsdown's `build()` **auto-discovers a `tsdown.config.ts`** from the working
 directory. Every publishable package now has one (it enables tsdown's `exports`

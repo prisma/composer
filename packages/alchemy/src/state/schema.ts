@@ -11,7 +11,7 @@ import { toStateStoreError } from './errors.ts';
  * a same-named project squatting on the discovery query (see `bootstrap.ts`
  * `verifyOwnership` — PDP allows duplicate project names).
  */
-export const STATE_META_MARKER = 'prisma-app-state-v1';
+export const STATE_META_MARKER = 'prisma-compose-state-v1';
 
 /**
  * Idempotent schema migration for the Prisma-hosted state store — safe to run

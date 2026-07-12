@@ -1,7 +1,7 @@
 /**
  * Pass/fail logic for cold-connect-canary.ts, split out for offline unit
  * testing. Duplicates the transient-error signatures from
- * packages/app-cloud/src/pg-connection.ts (not exported from that package's
+ * packages/compose-cloud/src/pg-connection.ts (not exported from that package's
  * public entry points) — keep in sync if that list changes.
  */
 

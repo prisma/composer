@@ -202,13 +202,13 @@ describe('bootstrapStateConnection', () => {
     expect(result.projectId).toBe('proj-1');
     expect(state.createCalls).toBe(1);
     expect(state.projects).toHaveLength(1);
-    expect(state.projects[0]?.name).toBe('prisma-app-state');
+    expect(state.projects[0]?.name).toBe('prisma-compose-state');
   });
 
   test('adopt-marked: a candidate whose database already carries our marker is adopted outright', async () => {
     state.projects.push({
       id: 'proj-existing',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
@@ -224,7 +224,7 @@ describe('bootstrapStateConnection', () => {
   test('workspace-id shape mismatch: a wksp_-prefixed API id still matches a bare configured id (and vice versa)', async () => {
     state.projects.push({
       id: 'proj-existing',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'wksp_ws-1' },
     });
@@ -245,7 +245,7 @@ describe('bootstrapStateConnection', () => {
   test('adopt-legacy: a candidate with our tables but no marker yet is adopted (migratePrismaState writes the marker on the way in)', async () => {
     state.projects.push({
       id: 'proj-legacy',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
@@ -260,7 +260,7 @@ describe('bootstrapStateConnection', () => {
   test('squatter rejection: the only candidate has foreign data — bootstrap fails loudly, naming the project', async () => {
     state.projects.push({
       id: 'proj-squatter',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
@@ -281,19 +281,19 @@ describe('bootstrapStateConnection', () => {
     state.projects.push(
       {
         id: 'proj-newest',
-        name: 'prisma-app-state',
+        name: 'prisma-compose-state',
         createdAt: new Date(3).toISOString(),
         workspace: { id: 'ws-1' },
       },
       {
         id: 'proj-oldest-squatter',
-        name: 'prisma-app-state',
+        name: 'prisma-compose-state',
         createdAt: new Date(1).toISOString(),
         workspace: { id: 'ws-1' },
       },
       {
         id: 'proj-middle-ours',
-        name: 'prisma-app-state',
+        name: 'prisma-compose-state',
         createdAt: new Date(2).toISOString(),
         workspace: { id: 'ws-1' },
       },
@@ -342,7 +342,7 @@ describe('bootstrapStateConnection', () => {
   test('a workspace with no default database fails loudly rather than creating one', async () => {
     state.projects.push({
       id: 'proj-nodefault',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
@@ -355,7 +355,7 @@ describe('bootstrapStateConnection', () => {
   test('aged-connection cleanup: connections matching our naming pattern older than 24h are deleted, others are left alone', async () => {
     state.projects.push({
       id: 'proj-existing',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
@@ -366,10 +366,10 @@ describe('bootstrapStateConnection', () => {
     state.connections['db-existing'] = [
       {
         id: 'conn-aged',
-        name: 'prisma-app-state-1',
+        name: 'prisma-compose-state-1',
         createdAt: new Date(now - 2 * dayMs).toISOString(),
       },
-      { id: 'conn-fresh', name: 'prisma-app-state-2', createdAt: new Date(now).toISOString() },
+      { id: 'conn-fresh', name: 'prisma-compose-state-2', createdAt: new Date(now).toISOString() },
       {
         id: 'conn-foreign',
         name: 'someone-elses-connection',
@@ -385,7 +385,7 @@ describe('bootstrapStateConnection', () => {
   test('aged-connection cleanup is best-effort: a listing failure never fails bootstrap', async () => {
     state.projects.push({
       id: 'proj-existing',
-      name: 'prisma-app-state',
+      name: 'prisma-compose-state',
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });

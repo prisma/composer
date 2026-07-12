@@ -3,7 +3,7 @@
 // re-keyed the platform environment address-free, so service.load()/config()
 // below read it directly, with no address.
 
-import { serve } from '@prisma/app-rpc';
+import { serve } from '@prisma/compose-rpc';
 import service from './service.ts';
 
 const { port } = service.config();

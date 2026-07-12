@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "prisma-app-ws",
+      "name": "prisma-compose-ws",
       "devDependencies": {
         "@biomejs/biome": "2.5.2",
         "@clack/prompts": "^1.6.0",
@@ -21,14 +21,14 @@
       "version": "0.2.0",
       "dependencies": {
         "@prisma-next/postgres": "0.14.0",
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-node": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-node": "workspace:0.2.0",
         "effect": "4.0.0-beta.92",
         "pg": "8.21.0",
       },
       "devDependencies": {
-        "@prisma/app-cli": "workspace:0.2.0",
+        "@prisma/compose-cli": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
@@ -39,11 +39,11 @@
       "version": "0.2.0",
       "dependencies": {
         "@effect/platform-bun": "4.0.0-beta.92",
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-nextjs": "workspace:0.2.0",
-        "@prisma/app-node": "workspace:0.2.0",
-        "@prisma/app-rpc": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-nextjs": "workspace:0.2.0",
+        "@prisma/compose-node": "workspace:0.2.0",
+        "@prisma/compose-rpc": "workspace:0.2.0",
         "@storefront-auth/auth": "workspace:0.2.0",
         "@storefront-auth/storefront": "workspace:0.2.0",
         "alchemy": "2.0.0-beta.59",
@@ -51,7 +51,7 @@
         "effect": "4.0.0-beta.92",
       },
       "devDependencies": {
-        "@prisma/app-cli": "workspace:0.2.0",
+        "@prisma/compose-cli": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "typescript": "^6.0.3",
       },
@@ -63,29 +63,29 @@
         "arktype": "^2.2.3",
       },
       "devDependencies": {
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-node": "workspace:0.2.0",
-        "@prisma/app-rpc": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-node": "workspace:0.2.0",
+        "@prisma/compose-rpc": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-node": "workspace:0.2.0",
-        "@prisma/app-rpc": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-node": "workspace:0.2.0",
+        "@prisma/compose-rpc": "workspace:0.2.0",
       },
     },
     "examples/storefront-auth/systems/storefront": {
       "name": "@storefront-auth/storefront",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-nextjs": "workspace:0.2.0",
-        "@prisma/app-rpc": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-nextjs": "workspace:0.2.0",
+        "@prisma/compose-rpc": "workspace:0.2.0",
         "@storefront-auth/auth": "workspace:0.2.0",
         "arktype": "^2.2.3",
         "next": "^16.2.9",
@@ -105,14 +105,14 @@
       "name": "@prisma/alchemy",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
         "@prisma/management-api-sdk": "^1.47.0",
         "alchemy": "2.0.0-beta.59",
         "effect": "4.0.0-beta.92",
         "postgres": "^3.4.9",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "tsdown": "^0.22.3",
@@ -120,7 +120,7 @@
       },
     },
     "packages/app": {
-      "name": "@prisma/app",
+      "name": "@prisma/compose",
       "version": "0.2.0",
       "dependencies": {
         "@standard-schema/spec": "^1.1.0",
@@ -128,7 +128,7 @@
         "effect": "4.0.0-beta.92",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
@@ -136,13 +136,13 @@
       },
     },
     "packages/app-assemble": {
-      "name": "@prisma/app-assemble",
+      "name": "@prisma/compose-assemble",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "tsdown": "^0.22.3",
@@ -150,20 +150,20 @@
       },
     },
     "packages/app-cli": {
-      "name": "@prisma/app-cli",
+      "name": "@prisma/compose-cli",
       "version": "0.2.0",
       "bin": {
-        "prisma-app": "./dist/bin.mjs",
+        "prisma-compose": "./dist/bin.mjs",
       },
       "dependencies": {
         "@prisma/alchemy": "workspace:0.2.0",
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-assemble": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-assemble": "workspace:0.2.0",
         "c12": "^3.3.4",
         "clipanion": "^3.2.1",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "tsdown": "^0.22.3",
@@ -171,7 +171,7 @@
       },
     },
     "packages/app-cloud": {
-      "name": "@prisma/app-cloud",
+      "name": "@prisma/compose-cloud",
       "version": "0.2.0",
       "dependencies": {
         "@prisma-next/cli": "0.14.0",
@@ -180,14 +180,14 @@
         "@prisma-next/postgres": "0.14.0",
         "@prisma-next/sql-contract": "0.14.0",
         "@prisma/alchemy": "workspace:0.2.0",
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
         "alchemy": "2.0.0-beta.59",
         "effect": "4.0.0-beta.92",
         "pathe": "^2.0.3",
       },
       "devDependencies": {
         "@prisma-next/target-postgres": "0.14.0",
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/pg": "8.20.0",
         "tsdown": "^0.22.3",
@@ -196,67 +196,67 @@
       },
     },
     "packages/app-nextjs": {
-      "name": "@prisma/app-nextjs",
+      "name": "@prisma/compose-nextjs",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
         "tsdown": "^0.22.3",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "typescript": "^6.0.3",
       },
     },
     "packages/app-node": {
-      "name": "@prisma/app-node",
+      "name": "@prisma/compose-node",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
         "tsdown": "^0.22.3",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "typescript": "^6.0.3",
       },
     },
     "packages/app-rpc": {
-      "name": "@prisma/app-rpc",
+      "name": "@prisma/compose-rpc",
       "version": "0.2.0",
       "dependencies": {
-        "@prisma/app": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
         "@standard-schema/spec": "^1.1.0",
         "arktype": "^2.2.3",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
         "vitest": "^4.1.9",
       },
     },
-    "packages/prisma-app": {
-      "name": "prisma-app",
+    "packages/prisma-compose": {
+      "name": "prisma-compose",
       "version": "0.2.0",
       "bin": {
-        "prisma-app": "./dist/bin.mjs",
+        "prisma-compose": "./dist/bin.mjs",
       },
       "dependencies": {
-        "@prisma/app-cli": "workspace:0.2.0",
+        "@prisma/compose-cli": "workspace:0.2.0",
       },
       "devDependencies": {
-        "@prisma/app-tsdown": "workspace:0.2.0",
+        "@prisma/compose-tsdown": "workspace:0.2.0",
         "@types/node": "^25.9.3",
         "tsdown": "^0.22.3",
         "typescript": "^6.0.3",
       },
     },
     "packages/tsdown-config": {
-      "name": "@prisma/app-tsdown",
+      "name": "@prisma/compose-tsdown",
       "version": "0.2.0",
       "devDependencies": {
         "tsdown": "^0.22.3",
@@ -267,11 +267,11 @@
       "name": "@prisma/integration-tests",
       "version": "0.2.0",
       "devDependencies": {
-        "@prisma/app": "workspace:0.2.0",
-        "@prisma/app-cli": "workspace:0.2.0",
-        "@prisma/app-cloud": "workspace:0.2.0",
-        "@prisma/app-nextjs": "workspace:0.2.0",
-        "@prisma/app-node": "workspace:0.2.0",
+        "@prisma/compose": "workspace:0.2.0",
+        "@prisma/compose-cli": "workspace:0.2.0",
+        "@prisma/compose-cloud": "workspace:0.2.0",
+        "@prisma/compose-nextjs": "workspace:0.2.0",
+        "@prisma/compose-node": "workspace:0.2.0",
         "@types/bun": "^1.3.13",
         "@types/node": "^25.9.3",
         "typescript": "^6.0.3",
@@ -681,21 +681,21 @@
 
     "@prisma/alchemy": ["@prisma/alchemy@workspace:packages/alchemy"],
 
-    "@prisma/app": ["@prisma/app@workspace:packages/app"],
+    "@prisma/compose": ["@prisma/compose@workspace:packages/app"],
 
-    "@prisma/app-assemble": ["@prisma/app-assemble@workspace:packages/app-assemble"],
+    "@prisma/compose-assemble": ["@prisma/compose-assemble@workspace:packages/app-assemble"],
 
-    "@prisma/app-cli": ["@prisma/app-cli@workspace:packages/app-cli"],
+    "@prisma/compose-cli": ["@prisma/compose-cli@workspace:packages/app-cli"],
 
-    "@prisma/app-cloud": ["@prisma/app-cloud@workspace:packages/app-cloud"],
+    "@prisma/compose-cloud": ["@prisma/compose-cloud@workspace:packages/app-cloud"],
 
-    "@prisma/app-nextjs": ["@prisma/app-nextjs@workspace:packages/app-nextjs"],
+    "@prisma/compose-nextjs": ["@prisma/compose-nextjs@workspace:packages/app-nextjs"],
 
-    "@prisma/app-node": ["@prisma/app-node@workspace:packages/app-node"],
+    "@prisma/compose-node": ["@prisma/compose-node@workspace:packages/app-node"],
 
-    "@prisma/app-rpc": ["@prisma/app-rpc@workspace:packages/app-rpc"],
+    "@prisma/compose-rpc": ["@prisma/compose-rpc@workspace:packages/app-rpc"],
 
-    "@prisma/app-tsdown": ["@prisma/app-tsdown@workspace:packages/tsdown-config"],
+    "@prisma/compose-tsdown": ["@prisma/compose-tsdown@workspace:packages/tsdown-config"],
 
     "@prisma/example-pn-widgets": ["@prisma/example-pn-widgets@workspace:examples/pn-widgets"],
 
@@ -1163,7 +1163,7 @@
 
     "prettier": ["prettier@3.9.5", "", { "bin": { "prettier": "bin/prettier.cjs" } }, "sha512-/FVl766LpUfB5vXgCYOYa0MeV/441Ia99AeICQIQFTY/Nw0roZwULcXpku5i1/m5kt/baz+s4Zogspd839HSMg=="],
 
-    "prisma-app": ["prisma-app@workspace:packages/prisma-app"],
+    "prisma-compose": ["prisma-compose@workspace:packages/prisma-compose"],
 
     "process-nextick-args": ["process-nextick-args@2.0.1", "", {}, "sha512-3ouUOpQhtgrbOa17J7+uxOTpITYWaGP7/AhoR3+A+/1e9skrzelGi/dXzEYyvbxubEF6Wn2ypscTKiKJFFn1ag=="],
 

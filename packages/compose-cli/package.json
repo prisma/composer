@@ -1,0 +1,52 @@
+{
+  "name": "@prisma/compose-cli",
+  "version": "0.3.0",
+  "type": "module",
+  "description": "The `prisma-compose` deploy CLI.",
+  "bin": {
+    "prisma-compose": "./dist/bin.mjs"
+  },
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@prisma/alchemy": "workspace:0.3.0",
+    "@prisma/compose-assemble": "workspace:0.3.0",
+    "@prisma/compose": "workspace:0.3.0",
+    "clipanion": "^3.2.1",
+    "c12": "^3.3.4"
+  },
+  "devDependencies": {
+    "@prisma/compose-tsdown": "workspace:0.3.0",
+    "@types/bun": "^1.3.13",
+    "@types/node": "^25.9.3",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/app.git",
+    "directory": "packages/compose-cli"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -8,8 +8,8 @@
  * via `bun test` (needs `bootstrapService`'s env write, not vitest).
  */
 import { describe, expect, test } from 'bun:test';
-import { cronScheduler } from '@prisma/app-cloud/cron';
-import { bootstrapService } from '@prisma/app-cloud/testing';
+import { cronScheduler } from '@prisma/compose-cloud/cron';
+import { bootstrapService } from '@prisma/compose-cloud/testing';
 import { schedule } from '../src/runner/service.ts';
 
 const PORT = 4501;
