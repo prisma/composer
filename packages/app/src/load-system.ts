@@ -218,11 +218,22 @@ function flatten(
   };
 
   const provision = (
-    id: string,
-    child: ServiceNode | ResourceNode | SystemNode,
-    provisionWiring?: Record<string, unknown>,
+    idOrChild: string | ServiceNode | ResourceNode | SystemNode,
+    childOrWiring?: (ServiceNode | ResourceNode | SystemNode) | Record<string, unknown>,
+    maybeWiring?: Record<string, unknown>,
     // biome-ignore lint/suspicious/noExplicitAny: SystemBuilder's real overload set is checked at the call site; the collector implementation is untyped by design (see the existing service overloads).
   ): any => {
+    // Two call shapes: `provision(id, child, wiring?)` and the id-omitting
+    // `provision(child, wiring?)`, where the child's own `name` is the id. A
+    // node first argument (not a string) selects the second shape.
+    const idOmitted = isNode(idOrChild);
+    const child = blindCast<ServiceNode | ResourceNode | SystemNode, 'reassigned per call shape'>(
+      idOmitted ? idOrChild : childOrWiring,
+    );
+    const provisionWiring = blindCast<Record<string, unknown> | undefined, 'per call shape'>(
+      idOmitted ? childOrWiring : maybeWiring,
+    );
+    const id = idOmitted ? idOrChild.name : idOrChild;
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (system "${systemNode.name}").`);
     }

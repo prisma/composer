@@ -8,12 +8,8 @@ import storefrontService from '@storefront-auth/storefront';
  * nothing of auth's internals — it wires auth's exposed `rpc` port into
  * storefront's `auth` slot exactly as it would for any other producer of
  * that contract.
- *
- * A closed root: empty boundary (no inputs, no outputs) — nothing wires into
- * or out of this system from the outside.
  */
-export default system('storefront-auth', {}, ({ provision }) => {
-  const auth = provision('auth', authSystem);
-  provision('storefront', storefrontService, { auth: auth.rpc });
-  return {};
+export default system('storefront-auth', ({ provision }) => {
+  const auth = provision(authSystem);
+  provision(storefrontService, { auth: auth.rpc });
 });

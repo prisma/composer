@@ -190,6 +190,25 @@ export interface SystemBuilder {
     child: SystemNode<D, E>,
     wiring: Wiring<D>,
   ): ProvisionedRef<E>;
+  /** Same as the id-first overloads, but the child's own `name` becomes its id. */
+  // biome-ignore lint/suspicious/noExplicitAny: opaque per-contract Cmp — matches RefPort's own `any` bound.
+  provision<C extends Contract<any, any>>(
+    resource: ResourceNode<C>,
+  ): { readonly id: string } & RefPort<C>;
+  provision<E extends Expose>(
+    // biome-ignore lint/suspicious/noExplicitAny: accepts any concrete service node; ServiceNode generics are invariant so `any` is required.
+    service: ServiceNode<any, any, E>,
+  ): ProvisionedRef<E>;
+  provision<D extends Deps, E extends Expose>(
+    // biome-ignore lint/suspicious/noExplicitAny: accepts any concrete service node; ServiceNode generics are invariant so `any` is required.
+    service: ServiceNode<D, any, E>,
+    wiring: Wiring<D>,
+  ): ProvisionedRef<E>;
+  provision<D extends Deps, E extends Expose>(child: SystemNode<D, E>): ProvisionedRef<E>;
+  provision<D extends Deps, E extends Expose>(
+    child: SystemNode<D, E>,
+    wiring: Wiring<D>,
+  ): ProvisionedRef<E>;
 }
 
 /** Dependency map: name → the slot the service declares. Only declarations are admitted, never a concrete ResourceNode. */
@@ -395,9 +414,18 @@ export function dependency<P extends Params, C, Req = unknown>(def: {
 }
 
 /**
- * Constructs a branded, frozen System node. Construction is inert — `body`
- * runs only when the system is Loaded. `boundary` (`deps`/`expose`) is
- * optional; an empty one is the closed, deploy-root form.
+ * A closed root: no `deps`, no `expose`, nothing wiring in or out. The body
+ * only provisions and needs no return. Omitting the boundary argument IS the
+ * closed-root shape — `system(name, body)` instead of `system(name, {}, () =>
+ * ({}))`.
+ */
+export function system(
+  name: string,
+  body: (ctx: SystemContext<Record<never, never>>) => void,
+): SystemNode<Record<never, never>, Record<never, never>>;
+/**
+ * A system with a boundary: `deps` and/or `expose` declare what wires in and
+ * out, the same way a service does. The body returns one port per `expose` key.
  */
 export function system<
   D extends Deps = Record<never, never>,
@@ -406,22 +434,34 @@ export function system<
   name: string,
   boundary: { deps?: D; expose?: E },
   body: (ctx: SystemContext<D>) => SystemOutputs<E>,
-): SystemNode<D, E> {
+): SystemNode<D, E>;
+/**
+ * Constructs a branded, frozen System node. Construction is INERT — the body is
+ * wiring, not user code, and runs only when the system is Loaded.
+ */
+export function system(
+  name: string,
+  boundaryOrBody: { deps?: Deps; expose?: Expose } | ((ctx: SystemContext<Deps>) => void),
+  maybeBody?: (ctx: SystemContext<Deps>) => SystemOutputs<Expose>,
+): SystemNode {
   requireName(name, 'system');
-  const deps = blindCast<
-    D,
-    'an omitted `deps` only arises when D itself infers to the empty default'
-  >(boundary.deps ?? {});
-  const expose = blindCast<
-    E,
-    'an omitted `expose` only arises when E itself infers to the empty default'
-  >(boundary.expose ?? {});
+  const closedRoot = typeof boundaryOrBody === 'function';
+  const boundary = closedRoot ? {} : boundaryOrBody;
+  const deps = frozenShallowCopy(boundary.deps ?? {});
+  const expose = frozenShallowCopy(boundary.expose ?? {});
+  const body: (ctx: SystemContext<Deps>) => SystemOutputs<Expose> = closedRoot
+    ? (ctx) => {
+        boundaryOrBody(ctx);
+        return {};
+      }
+    : // biome-ignore lint/style/noNonNullAssertion: the non-function overload always passes a third argument.
+      maybeBody!;
   return Object.freeze({
     [NODE]: true as const,
     kind: 'system' as const,
     name,
-    deps: frozenShallowCopy(deps),
-    expose: frozenShallowCopy(expose),
+    deps,
+    expose,
     body,
   });
 }
