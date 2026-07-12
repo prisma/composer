@@ -95,7 +95,7 @@ stand-in you run yourself, and drive the round trip.
 
 ```ts
 // storefront/app/page.integration.test.ts
-import { bootstrapService } from '@prisma/compose-cloud/testing';
+import { bootstrapService } from '@prisma/compose-prisma-cloud/testing';
 import fakeAuth from '@storefront-auth/auth/fake'; // an in-memory auth handler, no database
 import storefront from '../src/service.ts';
 
@@ -120,7 +120,7 @@ production code path, not a rewrite of it.
 
 Starting a service the way a deployment does is specific to the platform you
 deploy to, so `bootstrapService` ships in that platform's testing entry
-(`@prisma/compose-cloud/testing`), not the core. (`mockService` only substitutes a
+(`@prisma/compose-prisma-cloud/testing`), not the core. (`mockService` only substitutes a
 return value, so it needs to know nothing about deployment and stays in core.)
 
 Three practical notes:
@@ -135,7 +135,7 @@ Three practical notes:
   imports it:
 
   ```ts
-  import { standaloneEntryPath } from '@prisma/compose-nextjs/control';
+  import { standaloneEntryPath } from '@prisma/compose/nextjs/control';
 
   await bootstrapService(storefront, config, async () => {
     await import(standaloneEntryPath(storefront.build));

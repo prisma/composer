@@ -27,13 +27,14 @@ Every workspace package — publishable, private, and the workspace root — car
 same `version`. One read of root `package.json` answers "what version is this code?"
 for the entire repository.
 
-- The published packages (`@prisma/compose`, `@prisma/compose-nextjs`, `@prisma/compose-node`,
-  `@prisma/compose-cloud`, `@prisma/compose-rpc`, `@prisma/compose-assemble`,
-  `@prisma/compose-cli`, `@prisma/compose-alchemy`, and the unscoped `prisma-compose` CLI) all publish at the same
-  version, and each pins its workspace siblings to that **exact** version.
-- Private packages (build config, examples, tests) are never published but still
-  version in lockstep, so a contributor cloning any commit sees one consistent answer.
-  `pnpm publish` skips them via `"private": true`.
+- The two published packages (`@prisma/compose` and `@prisma/compose-prisma-cloud`
+  — the only publishable packages, both under `packages/9-public/`, ADR-0027)
+  publish at the same version, and each pins its workspace siblings to that
+  **exact** version.
+- Private packages (the `@internal/*` workspace packages, build config, examples,
+  tests) are never published but still version in lockstep, so a contributor
+  cloning any commit sees one consistent answer. `pnpm publish` skips them via
+  `"private": true`.
 
 If lockstep ever broke, the "one read of root tells you everything" invariant would be
 silently violated, and the publish-time gate that reads the root version would be

@@ -79,7 +79,7 @@ Alchemy resource itself, since its lifecycle lives outside Alchemy
 
 ## Stages and container resolution
 
-`@prisma/compose-alchemy` also hosts the **container-resolution client**
+`@internal/lowering` also hosts the **container-resolution client**
 (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the
 generated stack, not through an Alchemy resource: `resolveContainer`
 finds-or-creates the app's Project (oldest name match adopted) and, for a

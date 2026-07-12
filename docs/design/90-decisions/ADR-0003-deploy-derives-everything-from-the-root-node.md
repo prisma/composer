@@ -27,8 +27,8 @@ service and its dependencies, in vocabulary imported from an extension:
 
 ```ts
 // src/service.ts
-import { compute, postgres } from "@prisma/compose-cloud";
-import node from "@prisma/compose-node";
+import { compute, postgres } from "@prisma/compose-prisma-cloud";
+import node from "@prisma/compose/node";
 import { SQL } from "bun";
 
 const db = postgres(); // a dependency slot: the binding is typed config (ADR-0015)
@@ -41,7 +41,7 @@ export default compute({
 
 // src/module.ts — the root: the module provisions the database and wires it in (ADR-0013).
 import { module } from "@prisma/compose";
-import { postgres } from "@prisma/compose-cloud";
+import { postgres } from "@prisma/compose-prisma-cloud";
 import service from "./service.ts";
 
 export default module("hello", {}, ({ provision }) => {
@@ -73,7 +73,7 @@ prisma-compose deploy src/module.ts
 
 For that command to work, something has to supply each node's control-plane
 behavior — how a `compute` or a `postgres` is provisioned and deployed. That
-is code, and it lives in a heavy, deploy-only module (`@prisma/compose-cloud`'s
+is code, and it lives in a heavy, deploy-only module (`@prisma/compose-prisma-cloud`'s
 control entry pulls in the provisioning engine). The service module above can
 never import it: service modules are bundled into the deployed artifact, so
 they must stay lean. Some deploy-side code therefore has to bring that code
@@ -84,7 +84,7 @@ each extension's control-plane descriptor and hands the CLI its registries
 (ADR-0017); the app's own code never imports the config, so the heavy module
 never rides into a bundle. Correlation is pure data: every extension-authored node
 above carries `extension`, its extension's **package name**
-(`"@prisma/compose-cloud"`), and `type`, its node ID within that extension
+(`"@prisma/compose-prisma-cloud"`), and `type`, its node ID within that extension
 (`"compute"`, `"postgres"`). Deploy tooling looks up
 `extensions[node.extension].nodes[node.type]` — a map hit, no specifier
 construction, no resolution. A community extension plugs in by exactly the
@@ -145,7 +145,7 @@ follow:
   belongs on the root node (ADR-0006). The config carries only the
   control-plane extension list and the state store (ADR-0017); application
   facts stay in code, against "your code is the source of truth".
-- **Selecting a platform with a CLI flag** (`--target @prisma/compose-cloud`) —
+- **Selecting a platform with a CLI flag** (`--target @prisma/compose-prisma-cloud`) —
   redundant and too coarse: the nodes already carry their extension, a flag
   can disagree with them, and one flag cannot express a mixed-platform graph.
 - **Inferring the extension from a type-id prefix** (a convention mapping a
@@ -153,7 +153,7 @@ follow:
   package name doesn't follow the convention; carrying the real package name
   costs one field and removes the convention entirely.
 - **Folding extension identity into the type id** (`type:
-  "@prisma/compose-cloud/compute"`, one field instead of two) — rejected:
+  "@prisma/compose-prisma-cloud/compute"`, one field instead of two) — rejected:
   the two strings have unrelated responsibilities. `extension` selects the
   registry; `type` routes within it. Fusing them would make every registry key
   carry resolution information it never uses, and make parsing a string the

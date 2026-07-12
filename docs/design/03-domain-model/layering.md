@@ -126,7 +126,7 @@ local, to workspace-hosted, to eventually platform-run:
 - **Local** — Alchemy's local or Cloudflare-backed state. Fine for a solo
   developer; nothing else needs to see it.
 - **Workspace-hosted** — a `StateService` implementation
-  (`@prisma/compose-alchemy/state`) backed by a Prisma Postgres database in a
+  (`@internal/lowering/state`) backed by a Prisma Postgres database in a
   workspace-scoped project, native to the Workspace → Project → Environment
   hierarchy (Pulumi/Terraform-Cloud-style hosted state, without the
   BYO-state bootstrap). Bootstrap is automatic: the Management API finds or

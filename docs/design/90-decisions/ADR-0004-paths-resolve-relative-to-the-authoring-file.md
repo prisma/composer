@@ -64,7 +64,7 @@ with an error naming the resolved path and telling the author to run their
 build.
 
 The deploy tooling's resolution follows the same logic. To load
-`@prisma/compose-cloud/target` on behalf of an app, the tool seeds
+`@prisma/compose-prisma-cloud/target` on behalf of an app, the tool seeds
 `createRequire` with the entry module's file path.
 `createRequire(file).resolve(...)` walks `node_modules` upward from
 `dirname(file)` — that is Node's own module-resolution algorithm, identical to

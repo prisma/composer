@@ -8,7 +8,7 @@ Proposed
 
 A second data primitive joins bare `postgres()`: a Prisma Next-typed postgres
 resource and dependency (working name `pnPostgres`, final name TBD), shipped
-in `@prisma/compose-cloud` behind a dedicated subpath entry.
+in `@prisma/compose-prisma-cloud` behind a dedicated subpath entry.
 
 - The **resource end** takes two separate things: the **contract**, consumed
   as its emitted artifact (`contract.json` data + `contract.d.ts` types — pure
@@ -129,7 +129,7 @@ connection URL at hydrate (no-globals).
 - Services get schema-typed data access with the schema version enforced at
   the type level, at Load, and at deploy — three checkpoints, same shape as
   rpc contracts.
-- `@prisma/compose-cloud` takes `@prisma-next/postgres` (and transitively `pg`)
+- `@prisma/compose-prisma-cloud` takes `@prisma-next/postgres` (and transitively `pg`)
   as a dependency; install weight is shared by all users, runtime weight only
   by importers of the subpath.
 - The deploy pipeline becomes schema-aware: contract changes without an

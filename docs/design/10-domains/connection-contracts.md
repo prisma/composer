@@ -185,7 +185,7 @@ derived as a mapped type over `M`, comparing two instantiations would relate the
 `M`s covariantly — silently dropping input-contravariance and accepting a provider
 that demands an input the consumer never sends. Materialising `Cmp` as concrete
 functions in the kind's builder is what makes plain assignability sound. (See
-`@prisma/compose-rpc`'s `contract-satisfaction.test-d.ts` for the full accept/reject
+`@prisma/compose/rpc`'s `contract-satisfaction.test-d.ts` for the full accept/reject
 matrix, typechecked in CI.)
 
 Schemas are **Standard Schema** (arktype is the canonical authoring library; any

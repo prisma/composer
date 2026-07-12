@@ -48,15 +48,15 @@ Because serialization is bound to the target and not the param, a param is
 target-agnostic: the same `jobs` declaration can be deployed through any target,
 and each target serializes it its own way. What ties a particular service's
 params to a particular target is not the params — it is the service factory. A
-scheduler is a `compute()` service, `compute()` is `@prisma/compose-cloud`'s, so
-`@prisma/compose-cloud` is the target that serializes that scheduler's `jobs`. A
+scheduler is a `compute()` service, `compute()` is `@prisma/compose-prisma-cloud`'s, so
+`@prisma/compose-prisma-cloud` is the target that serializes that scheduler's `jobs`. A
 scheduling extension that ships `defineSchedule` returns a plain param; the target
 hosting the scheduler is what encodes it. Nobody has to answer "which serializer"
 — the target that runs the service does.
 
 ### On Prisma Cloud specifically
 
-`@prisma/compose-cloud` stores configuration as project-scoped, encrypted environment
+`@prisma/compose-prisma-cloud` stores configuration as project-scoped, encrypted environment
 variables — rows of `{ key, value: string }` — which Compute injects into the
 service, keyed so each param is unique within the shared project. It encodes a
 service's own param values into those strings at deploy and reverses them at
@@ -69,7 +69,7 @@ strings is *this target's* choice; a different target is free to store the same
 - **A new platform is a new target with its own serialization — not a change to
   core or to consuming code.** The param's schema is unchanged; only the storage
   side differs.
-- **`compute()` accepts user params**, and `@prisma/compose-cloud` is what serializes
+- **`compute()` accepts user params**, and `@prisma/compose-prisma-cloud` is what serializes
   them. Its reserved params (`port`) merge with the user's; a colliding name fails
   at authoring, as a colliding dependency name does.
 - **Core stays out of encoding entirely** — logic, medium, and destination are all

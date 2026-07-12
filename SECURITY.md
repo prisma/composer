@@ -28,7 +28,7 @@ We are still establishing public response-time and patch-time SLOs; the 5-busine
 In scope — we accept reports against any of the following published packages:
 
 - The `prisma-compose` CLI launcher.
-- The framework packages published to npm: `@prisma/compose`, `@prisma/compose-nextjs`, `@prisma/compose-node`, `@prisma/compose-cloud`, `@prisma/compose-rpc`, `@prisma/compose-assemble`, `@prisma/compose-cli`, and `@prisma/compose-alchemy`. The canonical list is whichever of these packages appear on npm at any given time.
+- The framework packages published to npm: `@prisma/compose`, `@prisma/compose/nextjs`, `@prisma/compose/node`, `@prisma/compose-prisma-cloud`, `@prisma/compose/rpc`, `@internal/assemble`, `@internal/cli`, and `@internal/lowering`. The canonical list is whichever of these packages appear on npm at any given time.
 
 Out of scope (please do not file vulnerability reports for these):
 

@@ -25,7 +25,7 @@ names users install are not. The two public packages:
 
 There is no unscoped wrapper package: `npx @prisma/compose` runs the bin, and the
 CLI is temporary surface anyway — it folds into a unified `prisma` CLI later, per
-the note in [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md).
+the note in [ADR-0014](ADR-0014-one-authoring-primitive.md).
 
 Naming conventions this sets: under the `@prisma` scope, framework-family packages
 are `compose-*`; outside the scope, community packages use the `prisma-compose-*`
@@ -106,6 +106,6 @@ family's unpublish — two names is the entire republish burden.
   rename; its package enumeration is consolidated here.
 - [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) — the register model
   (package / extension / Module) this leans on.
-- [ADR-0014](ADR-0014-name-the-framework-prisma-app-and-its-unit-system.md) — the
+- [ADR-0014](ADR-0014-one-authoring-primitive.md) — the
   single-primitive model and the unified-CLI note.
 - `agent-os/product/naming.md` — the family table and distribution model.

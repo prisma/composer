@@ -4,7 +4,7 @@ Lower-level, per-domain deep dives live here. They are written in the
 architecture/design phase that comes *after* the high-level model is settled.
 
 - [`core-model.md`](core-model.md) — the complete class/data-structure design of
-  `@prisma/compose` and the target-pack contract, with `@prisma/compose-cloud` as
+  `@prisma/compose` and the target-pack contract, with `@prisma/compose-prisma-cloud` as
   the worked instance.
 - [`deploy-cli.md`](deploy-cli.md) — Prisma Compose's own deploy
   entrypoint (`prisma-compose deploy` / `prisma-compose destroy`): the pipeline,

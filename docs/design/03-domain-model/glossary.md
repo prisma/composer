@@ -254,7 +254,7 @@ beneath it. See [`core-and-targets.md`](core-and-targets.md) for that split and
 
 ### Target pack
 
-A pack (e.g. `@prisma/compose-cloud`) that supplies the concrete vocabulary for one
+A pack (e.g. `@prisma/compose-prisma-cloud`) that supplies the concrete vocabulary for one
 deployment platform as **data**: `compute` (a Service), `postgres` (a Resource),
 `http` (a Connection). Each is an ergonomic constructor returning a plain object whose
 metadata routes it to an Alchemy Stack/Provider (and, for a Resource, a runtime
@@ -377,7 +377,7 @@ is in `layering.md`; this is the term-by-term catalogue.
   `pr-42`) with its own state and physical names. `→` **Environment**.
 - **State store** — persists each Resource's state per stack+stage so the engine
   can diff the next deploy. `prismaCloud()` defaults every deploy to a
-  Prisma-hosted, workspace-scoped store (`@prisma/compose-alchemy/state`); an
+  Prisma-hosted, workspace-scoped store (`@internal/lowering/state`); an
   explicit state layer always overrides it. Control-plane infra, never a
   topology node.
 

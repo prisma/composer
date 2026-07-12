@@ -14,7 +14,7 @@ design, not a settled decision record.
 Grounding example — a service with a Postgres dependency, deployed to Prisma Cloud:
 
 ```ts
-import { compute, postgres } from "@prisma/compose-cloud"
+import { compute, postgres } from "@prisma/compose-prisma-cloud"
 
 export default compute({ db: postgres() }, ({ db }) => Bun.serve(/* uses db */))
 ```
@@ -22,7 +22,7 @@ export default compute({ db: postgres() }, ({ db }) => Bun.serve(/* uses db */))
 - **`@prisma/compose`** knows three kinds — **Service**, **Resource**, **Connection**
   — as a graph, plus the machinery to Load, validate, lower, and run that graph. It
   imports no deployment target. It never learns what "Postgres" or "Compute" is.
-- **`@prisma/compose-cloud`** (a target pack) provides the concrete vocabulary:
+- **`@prisma/compose-prisma-cloud`** (a target pack) provides the concrete vocabulary:
   `compute()` — a Service; `postgres()` — a Resource; and connection types like
   `http()`. Each is an ergonomic constructor that returns a **plain data object**
   carrying the metadata that routes it to an Alchemy Stack/Provider.
@@ -35,7 +35,7 @@ underneath.
 `postgres()` does not *do* anything — it returns a description:
 
 ```ts
-// inside @prisma/compose-cloud — illustrative shape
+// inside @prisma/compose-prisma-cloud — illustrative shape
 export const postgres = ({ client }) => ({
   kind: "resource",
   provider: /* the prisma-alchemy Prisma Postgres provider (deploy entry) */,
@@ -65,7 +65,7 @@ then routes: for each node it instantiates the Alchemy object the node's metadat
 points at. A Service node → its `host` provider; a Resource node → its `provider`.
 That is the whole of lowering. There is no per-target branch and no provisioning
 logic in core; the router only ever follows references it was handed. Swap
-`@prisma/compose-cloud` for another target pack and the router is unchanged.
+`@prisma/compose-prisma-cloud` for another target pack and the router is unchanged.
 
 ## Runtime: core owns structure, the pack owns encoding
 
@@ -101,7 +101,7 @@ bootstrap and assembling a tar is deploy-time assembly, not bundling.
 
 ## Why this is the correct boundary
 
-The test of the split is a one-line swap: change `@prisma/compose-cloud` to another
+The test of the split is a one-line swap: change `@prisma/compose-prisma-cloud` to another
 target pack and nothing in `@prisma/compose` changes — not the abstract model, not the
 router, not the boot pipeline. Everything a platform is idiosyncratic about — its
 compute unit, its managed Postgres, how it injects config, its artifact format —

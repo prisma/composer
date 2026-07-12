@@ -165,8 +165,8 @@ every node already carries:
   contract
   is `assemble({ build: descriptor }) → { dir, entry }`
   (`@prisma/compose/deploy`'s `AssembleInput`/`Bundle` — defined once there,
-  imported by every adapter and by `@prisma/compose-assemble` itself).
-- **`@prisma/compose-assemble`** owns the orchestration this seam drives: routing
+  imported by every adapter and by `@internal/assemble` itself).
+- **`@internal/assemble`** owns the orchestration this seam drives: routing
   every service node in the loaded graph to its registry's assemble entry
   (one bundle per full address — the root is always a Module) and the
   wrapper-inlining policy. The CLI is its first consumer; the future

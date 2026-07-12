@@ -3,14 +3,14 @@
 How a developer writes Prisma Compose's [Core nouns](glossary.md#core-nouns) and what
 running them does. The developer imports a concrete **vocabulary from a target pack**
 — for Prisma Cloud, `compute` (a Service) and `postgres` (a Resource) from
-`@prisma/compose-cloud` — and wires them into a graph. `@prisma/compose` is the
+`@prisma/compose-prisma-cloud` — and wires them into a graph. `@prisma/compose` is the
 target-agnostic engine underneath; see [core and targets](core-and-targets.md) for
 that split. This describes the current design, not a settled decision record.
 
 Grounding example — a service with a Postgres dependency:
 
 ```ts
-import { compute, postgres } from "@prisma/compose-cloud"
+import { compute, postgres } from "@prisma/compose-prisma-cloud"
 
 export default compute({ db: postgres() }, ({ db }) =>
   Bun.serve({ port, fetch: async () => Response.json(await db`select 1 as ok`) })

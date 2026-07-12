@@ -5,7 +5,7 @@ description: >-
   uses arrives through one call, `service.load()`; you test by controlling what
   it returns or reads, never by editing the code under test. Two tools:
   `mockService` (from `@prisma/compose/testing`) for unit tests, and
-  `bootstrapService` (from `@prisma/compose-cloud/testing`) for integration tests.
+  `bootstrapService` (from `@prisma/compose-prisma-cloud/testing`) for integration tests.
   Use when writing tests for a Prisma App, faking a service dependency,
   unit-testing a page / server action / RPC handler, or integration-testing the
   real request path without a deployment. Triggers on "test a prisma app",
@@ -23,7 +23,7 @@ of the real path you want to run.
 | You want to… | Use | From |
 | --- | --- | --- |
 | Test a page / action / handler in isolation | `mockService` | `@prisma/compose/testing` |
-| Run the real boot + request path against a fake dependency | `bootstrapService` | `@prisma/compose-cloud/testing` |
+| Run the real boot + request path against a fake dependency | `bootstrapService` | `@prisma/compose-prisma-cloud/testing` |
 
 The full model is in
 [`docs/design/10-domains/testing.md`](../../docs/design/10-domains/testing.md).
@@ -63,7 +63,7 @@ HTTP requests:
 
 ```ts
 // service.integration.test.ts  (run under `bun test`)
-import { bootstrapService } from '@prisma/compose-cloud/testing';
+import { bootstrapService } from '@prisma/compose-prisma-cloud/testing';
 import fakeAuth from '@storefront-auth/auth/fake'; // an in-memory handler, no db
 import storefront from '../src/service.ts';
 
@@ -88,7 +88,7 @@ expect(await res.text()).toContain('Signed in: true');
   entry lives in Next's standalone output directory:
 
   ```ts
-  import { standaloneEntryPath } from '@prisma/compose-nextjs/control';
+  import { standaloneEntryPath } from '@prisma/compose/nextjs/control';
   await bootstrapService(storefront, config, async () => {
     await import(standaloneEntryPath(storefront.build));
   });

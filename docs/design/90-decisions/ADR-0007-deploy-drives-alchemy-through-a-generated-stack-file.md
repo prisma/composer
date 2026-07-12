@@ -21,7 +21,7 @@ is always a module — see ADR-0003):
 ```ts
 // .prisma-compose/alchemy.run.ts — generated; do not edit
 import { lower } from '@prisma/compose/deploy';
-import { fromEnv } from "@prisma/compose-cloud/target";
+import { fromEnv } from "@prisma/compose-prisma-cloud/target";
 import app from "../src/module.ts";
 
 export default lower(app, fromEnv(), {

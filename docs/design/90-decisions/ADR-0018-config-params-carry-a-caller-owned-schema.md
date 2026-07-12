@@ -94,7 +94,7 @@ not a string.
   schema in user space, never a core change. The framework commits only to the
   Standard Schema interface.
 - **Core gains a type-only dependency** on `@standard-schema/spec` — the same
-  interface package `@prisma/compose-rpc` already uses. Users bring the validator;
+  interface package `@prisma/compose/rpc` already uses. Users bring the validator;
   core names none.
 - **A param value must be serializable by its target.** Since serialization is
   the target's ([ADR-0019](ADR-0019-the-target-owns-config-serialization.md)), a

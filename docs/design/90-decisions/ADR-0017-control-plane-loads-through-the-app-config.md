@@ -13,8 +13,8 @@ package the app deploys with — and declares the deploy's one state store:
 ```ts
 // prisma-compose.config.ts — loaded by the CLI, never imported by app code
 import { defineConfig } from "@prisma/compose/config";
-import { prismaCloud, prismaState } from "@prisma/compose-cloud/control";
-import { nodeBuild } from "@prisma/compose-node/control";
+import { prismaCloud, prismaState } from "@prisma/compose-prisma-cloud/control";
+import { nodeBuild } from "@prisma/compose/node/control";
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],
@@ -26,7 +26,7 @@ Deploy tooling loads the config (found by walking up from the deploy entry,
 loaded with c12 — the same mechanism Prisma Next uses for
 `prisma-next.config.ts`), then looks up each node's control-plane behavior in
 the registries the descriptors provide, keyed by **(extension ID, node ID)**:
-a node's `extension` field (`"@prisma/compose-cloud"`) and its `type`
+a node's `extension` field (`"@prisma/compose-prisma-cloud"`) and its `type`
 (`"compute"`). Nodes are pure data; the framework never constructs a module
 specifier, never resolves a path, and never dynamically imports by a computed
 name.
@@ -80,8 +80,8 @@ platform-agnostic (it records resource state regardless of which provider made
 it), so the config declares it once, explicitly; the concrete provider is not.
 `prismaState` is a Prisma Cloud store — a hosted Postgres in the workspace,
 provisioned by the same Management API as `prismaCloud()` — so it ships from
-`@prisma/compose-cloud/control` alongside `prismaCloud()`, not from the private
-`@prisma/compose-alchemy` package the extension is built on. Another platform would
+`@prisma/compose-prisma-cloud/control` alongside `prismaCloud()`, not from the private
+`@internal/lowering` package the extension is built on. Another platform would
 supply its own state provider through its own extension.
 
 Environment validation keeps its fail-fast shape without a framework
@@ -136,7 +136,7 @@ kept failing — for an explicit, deterministic list.
   hand-rolled path resolution: anchor-file plumbing through the pipeline, and
   a dead end on layouts with no `node_modules` to walk (Yarn PnP, Deno).
 - **A loader thunk with a literal import on the node**
-  (`loadAssembler: () => import("@prisma/compose-node/assemble")`) — the literal
+  (`loadAssembler: () => import("@prisma/compose/node/assemble")`) — the literal
   lives in factory code that ships inside the wrapper bundle, so the bundler
   follows it and drags the control plane into the runtime artifact. The exact
   failure the firewall exists to prevent.
