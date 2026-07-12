@@ -312,4 +312,22 @@ describe('system()', () => {
   test('throws on an empty name', () => {
     expect(() => system('', {}, () => ({}))).toThrow(/non-empty name/);
   });
+
+  test('closed-root overload — no boundary, no return — is empty on both sides', () => {
+    let ran = false;
+    const node = system('root', (ctx) => {
+      ran = true;
+      expect(ctx.provision).toBeInstanceOf(Function);
+    });
+
+    expect(ran).toBe(false);
+    expect(node.deps).toEqual({});
+    expect(node.expose).toEqual({});
+    expect(node.body(unusedCtx())).toEqual({});
+    expect(ran).toBe(true);
+  });
 });
+
+function unusedCtx() {
+  return { inputs: {}, provision: () => ({ id: 'x' }) } as never;
+}

@@ -49,6 +49,39 @@ const noOpService = () =>
     build,
   });
 
+describe('provision without an explicit id — the node name becomes the id', () => {
+  const apiService = () =>
+    service({
+      name: 'api',
+      extension: 'test/pack',
+      type: 'fake/compute',
+      inputs: { in: untypedEnd() },
+      params: {},
+      build,
+    });
+
+  test('the name becomes the address, and wiring by the returned ref still resolves', () => {
+    const root = system('shop', ({ provision }) => {
+      const db = provision(noOpService()); // id defaults to "noop"
+      provision(apiService(), { in: db }); // id defaults to "api"
+    });
+
+    const ids = Load(root).nodes.map((n) => n.id);
+    expect(ids).toContain('noop');
+    expect(ids).toContain('api');
+  });
+
+  test('two nodes of the same name collide, exactly as two identical explicit ids would', () => {
+    const root = system('shop', ({ provision }) => {
+      provision(noOpService());
+      provision(noOpService());
+    });
+
+    expect(() => Load(root)).toThrow(LoadError);
+    expect(() => Load(root)).toThrow('Duplicate provision id "noop"');
+  });
+});
+
 describe('a system with a declared dep that is never forwarded (Load error a)', () => {
   test('names the system and the input, and points at the fix', () => {
     const brokenAuthSystem = () =>

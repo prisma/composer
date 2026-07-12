@@ -53,7 +53,7 @@ loading the graph imports that module — the app's choice, not a CLI limit.
    producer) fails here, with an error naming the input and pointing at the
    composing System. The deploy root must be a System — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
-   `system('name', {}, ({ provision }) => { provision(...); return {}; })`).
+   `system('name', ({ provision }) => { provision(...); })`).
 3. **Load the config + validate coverage.** `prisma-app.config.ts` — found by
    walking up from the deploy entry, loaded with c12, never imported by app
    code — supplies the extension registries and the deploy's one state store

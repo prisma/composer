@@ -186,3 +186,23 @@ system('root-bad', {}, ({ provision }) => {
   provision('consumerX', chargeConsumer, { pay: mid.verify });
   return {};
 });
+
+// Closed-root overload: no boundary argument, no return. `ctx` still carries
+// `provision`, and `inputs` is empty — the body needs nothing else.
+system('closed-root', ({ provision }) => {
+  provision('provider', verifyProvider());
+});
+
+// provision without an explicit id — the node's own name is used. Inference is
+// unchanged: the returned ref still carries the exposed port, and wiring is
+// still contract-checked.
+system('id-defaulted-ok', ({ provision }) => {
+  const p = provision(verifyProvider());
+  provision(verifyConsumer(), { verify: p.verify });
+});
+
+system('id-defaulted-bad', ({ provision }) => {
+  const p = provision(verifyProvider());
+  // @ts-expect-error p.verify carries verifyContract; chargeConsumer's "pay" requires chargeContract
+  provision(chargeConsumer, { pay: p.verify });
+});

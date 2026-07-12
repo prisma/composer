@@ -215,7 +215,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   if (graph.root.node.kind !== 'system') {
     throw new CliError(
       'The deploy root must be a system — wrap your service, e.g. ' +
-        "export default system('name', {}, ({ provision }) => { provision('name', service); return {}; }).",
+        "export default system('name', ({ provision }) => { provision('name', service); }).",
     );
   }
 
