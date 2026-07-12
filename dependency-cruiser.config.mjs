@@ -224,16 +224,19 @@ export default {
     },
     includeOnly: '^(packages|examples|test)/',
     exclude: {
+      // Tests inside packages are excluded (they legitimately cross plane
+      // boundaries); build tooling configs are excluded by NAME, deliberately
+      // not by a generic `.config.` pattern — the examples'
+      // `prisma-compose.config.ts` files are user-facing imports and MUST be
+      // cruised (they are how /control extensions enter the deploy, ADR-0017).
       path: [
         'node_modules',
-        '\\.test\\.',
-        '\\.test-d\\.',
-        '\\.spec\\.',
-        '__tests__',
-        '/testing/fake',
-        '\\.config\\.',
+        '^packages/.*\\.test\\.',
+        '^packages/.*\\.test-d\\.',
+        '^packages/.*__tests__',
         'vitest\\.config',
         'tsdown\\.config',
+        'next\\.config',
         '\\.d\\.ts$',
         '\\.d\\.mts$',
         'dist',
