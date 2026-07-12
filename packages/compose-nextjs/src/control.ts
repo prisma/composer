@@ -108,7 +108,9 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // server.js as main.mjs (unambiguously ESM — the standalone tree's
   // package.json is CJS-default). Its run()'s `import("./server.js")`
   // resolves relative to this file inside the artifact.
-  const bundleTmp = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'prisma-compose-nextjs-main-'));
+  const bundleTmp = await fs.promises.mkdtemp(
+    path.join(os.tmpdir(), 'prisma-compose-nextjs-main-'),
+  );
   try {
     await build({
       entry: [serviceModule],

@@ -7,7 +7,9 @@ import { resolveAlchemyBin, runAlchemy } from '../run-alchemy.ts';
 const tmpDirs: string[] = [];
 
 function makeTmpDir(): string {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-compose-cli-alchemy-')));
+  const dir = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-compose-cli-alchemy-')),
+  );
   tmpDirs.push(dir);
   return dir;
 }
