@@ -36,4 +36,12 @@ export type {
   SystemNode,
   SystemOutputs,
 } from './node.ts';
-export { dependency, isNode, resource, service, system } from './node.ts';
+export {
+  dependency,
+  freezeNode,
+  isNode,
+  ResourceNodeBase,
+  resource,
+  service,
+  system,
+} from './node.ts';

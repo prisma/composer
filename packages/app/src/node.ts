@@ -329,6 +329,74 @@ function frozenShallowCopy<T extends object>(obj: T): T {
 }
 
 /**
+ * Seal a node instance after its constructor has assigned all fields — the
+ * LAST statement of a concrete node class's constructor. A free helper rather
+ * than a method on the base class (the same shape as Prisma Next's IR
+ * `freezeNode`): keeping freeze out of the class type means an instance stays
+ * structurally identical to a plain frozen node literal — a method would leak
+ * into the public type surface and every receiver would see it.
+ */
+export function freezeNode<T extends object>(node: T): T {
+  Object.freeze(node);
+  return node;
+}
+
+/**
+ * The Resource node's class root — everything `resource()` establishes (the
+ * validations, the `[NODE]` brand, and the kind/name/extension/type/provides
+ * fields), minus the freeze. An extension whose resource node carries extra
+ * fields (e.g. app-cloud's pnPostgres `config` path) extends this, assigns its
+ * own fields, and calls `freezeNode(this)` as its constructor's LAST statement
+ * — instead of spreading a frozen node into a new literal. The base does not
+ * freeze precisely so a subclass can still assign; it carries no methods, so
+ * receivers cannot tell an instance from a factory-built literal. Narrowing
+ * stays structural (kind/type/field checks), never `instanceof` — the same
+ * duplicated-module rationale as the `Symbol.for` brand.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: opaque per-contract Cmp — matches ResourceNode's own bound.
+export abstract class ResourceNodeBase<C extends Contract<any, any> = Contract<any, any>>
+  implements ResourceNode<C>
+{
+  readonly [NODE] = true as const;
+  readonly kind = 'resource' as const;
+  readonly name: string;
+  readonly extension: string;
+  readonly type: C['kind'];
+  readonly provides: C;
+
+  constructor(def: { name: string; extension: string; provides: C }) {
+    requireName(def.name, 'resource');
+    requireExtension(def.extension, 'resource');
+    const provides = def.provides;
+    if (
+      typeof provides !== 'object' ||
+      provides === null ||
+      typeof provides.kind !== 'string' ||
+      provides.kind.length === 0 ||
+      typeof provides.satisfies !== 'function'
+    ) {
+      throw new Error(
+        'resource() requires `provides` — the Contract this resource offers ' +
+          '(a non-empty `kind` plus its `satisfies()`).',
+      );
+    }
+    this.name = def.name;
+    this.extension = def.extension;
+    this.type = provides.kind;
+    this.provides = provides;
+  }
+}
+
+/** The core leaf: exactly the base, frozen. */
+// biome-ignore lint/suspicious/noExplicitAny: opaque per-contract Cmp — matches ResourceNode's own bound.
+class FrozenResourceNode<C extends Contract<any, any>> extends ResourceNodeBase<C> {
+  constructor(def: { name: string; extension: string; provides: C }) {
+    super(def);
+    freezeNode(this);
+  }
+}
+
+/**
  * Constructs a branded, frozen Resource node — an identity plus the Contract
  * it provides; the routing `type` is the contract's `kind`. Pure — nothing
  * executes; nothing is provisioned until a system provisions it. `extension`
@@ -341,29 +409,7 @@ export function resource<C extends Contract<any, any>>(def: {
   extension: string;
   provides: C;
 }): ResourceNode<C> {
-  requireName(def.name, 'resource');
-  requireExtension(def.extension, 'resource');
-  const provides = def.provides;
-  if (
-    typeof provides !== 'object' ||
-    provides === null ||
-    typeof provides.kind !== 'string' ||
-    provides.kind.length === 0 ||
-    typeof provides.satisfies !== 'function'
-  ) {
-    throw new Error(
-      'resource() requires `provides` — the Contract this resource offers ' +
-        '(a non-empty `kind` plus its `satisfies()`).',
-    );
-  }
-  return Object.freeze({
-    [NODE]: true as const,
-    kind: 'resource' as const,
-    name: def.name,
-    extension: def.extension,
-    type: provides.kind,
-    provides,
-  });
+  return new FrozenResourceNode(def);
 }
 
 /**

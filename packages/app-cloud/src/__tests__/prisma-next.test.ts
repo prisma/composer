@@ -80,8 +80,8 @@ describe('pnPostgres() factory shapes', () => {
       config: './prisma-next.config.ts',
     });
 
-    // The [NODE] Symbol.for brand survives the `{ ...resource(), config }`
-    // spread — the augmented node is still a recognized node.
+    // The leaf class inherits the [NODE] Symbol.for brand from
+    // ResourceNodeBase as an own instance field — still a recognized node.
     expect(isNode(node)).toBe(true);
     expect(node.kind).toBe('resource');
     expect(node.name).toBe('database');

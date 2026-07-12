@@ -25,8 +25,8 @@
  * because there is no marker check (ADR-0022).
  */
 
-import type { Contract, DependencyEnd, ResourceNode } from '@prisma/app';
-import { dependency, resource, string } from '@prisma/app';
+import type { Contract, DependencyEnd } from '@prisma/app';
+import { dependency, freezeNode, ResourceNodeBase, string } from '@prisma/app';
 import { blindCast } from '@prisma/app/casts';
 import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/runtime';
 import type { SqlStorage } from '@prisma-next/sql-contract/types';
@@ -68,16 +68,30 @@ export type PnContractOf<Ct> = Ct extends PnPostgresContract<infer C> ? C : neve
 export type Client<Ct> = PostgresClient<PnContractOf<Ct>>;
 
 /**
- * The `prisma-next` resource node: a core `ResourceNode` augmented with
+ * The `prisma-next` resource node: a core Resource node augmented with
  * `config`, the `prisma-next.config.ts` path. Two doors (ADR-0022): the
  * contract is consumed through `provides` (types + wires the resource, and
  * gives the deploy its target `storageHash`); `config` is a deploy-only path
  * the migration lowering loads to resolve the migrations directory — the app
  * build never imports it. Not a core `ResourceNode` field: the path is this
- * extension's deploy concern, so it rides on app-cloud's own node shape.
+ * extension's deploy concern, so it rides on app-cloud's own node shape — a
+ * leaf of core's `ResourceNodeBase` (the frozen node-class pattern: the base
+ * brands and validates without freezing; the leaf assigns its own field and
+ * `freezeNode(this)` last). No methods, so an instance stays structurally a
+ * plain resource node plus `config`; narrowing stays structural, never
+ * `instanceof`.
  */
-export type PnPostgresResourceNode<C extends PnPostgresContract = PnPostgresContract> =
-  ResourceNode<C> & { readonly config: string };
+export class PnPostgresResourceNode<
+  C extends PnPostgresContract = PnPostgresContract,
+> extends ResourceNodeBase<C> {
+  readonly config: string;
+
+  constructor(def: { name: string; contract: C; config: string }) {
+    super({ name: def.name, extension: '@prisma/app-cloud', provides: def.contract });
+    this.config = def.config;
+    freezeNode(this);
+  }
+}
 
 /**
  * True if `node` is a `pnPostgres` resource node carrying its config path —
@@ -153,18 +167,7 @@ export function pnPostgres(
   arg: { name: string; contract: PnPostgresContract; config: string } | PnPostgresContract,
 ): unknown {
   if (!isPnPostgresContract(arg)) {
-    // Augment the frozen core node with `config`. The `[NODE]`
-    // `Symbol.for('prisma:node')` brand is an enumerable own symbol prop, so
-    // object spread copies it — the augmented node stays a recognized node
-    // (provisions and Loads exactly like a bare resource).
-    return Object.freeze({
-      ...resource({
-        name: arg.name,
-        extension: '@prisma/app-cloud',
-        provides: arg.contract,
-      }),
-      config: arg.config,
-    });
+    return new PnPostgresResourceNode(arg);
   }
   const contract = arg;
   return dependency({
