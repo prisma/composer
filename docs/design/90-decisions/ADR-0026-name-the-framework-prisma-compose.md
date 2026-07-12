@@ -17,8 +17,10 @@ it always named best. You compose Modules with Prisma Compose into your Prisma A
 The whole surface follows the name: the package family becomes **`@prisma/compose*`**
 (`@prisma/compose`, `@prisma/compose-cloud`, `@prisma/compose-node`,
 `@prisma/compose-rpc`, `@prisma/compose-nextjs`, `@prisma/compose-assemble`,
-`@prisma/compose-cli`, `@prisma/compose-cron`; `@prisma/alchemy` stays — it is an
-independent package). The CLI binary becomes **`prisma-compose`**, the config file
+`@prisma/compose-cli`, `@prisma/compose-cron`). `@prisma/alchemy` is renamed too —
+**`@prisma/compose-alchemy`** — because its independence was a fiction: every
+published version depends on `@prisma/app`, so it is a member of the family and
+should say so. The CLI binary becomes **`prisma-compose`**, the config file
 **`prisma-compose.config.ts`**, and the scratch directory **`.prisma-compose/`**.
 A name that exists so people can refer to the tool must be the name they meet at
 every surface — a split identity (framework called one thing, packages called
@@ -82,8 +84,9 @@ Alternatives.
 
 ## Consequences
 
-- **A full-surface rename.** Packages (`@prisma/app*` → `@prisma/compose*`, with
-  directory names, workspace references, and imports following), the CLI binary
+- **A full-surface rename.** Packages (`@prisma/app*` → `@prisma/compose*` and
+  `@prisma/alchemy` → `@prisma/compose-alchemy`, with directory names, workspace
+  references, and imports following), the CLI binary
   (`prisma-app` → `prisma-compose`), the config file
   (`prisma-app.config.ts` → `prisma-compose.config.ts`), the scratch directory
   (`.prisma-app/` → `.prisma-compose/`), and all docs prose — README, design docs,
