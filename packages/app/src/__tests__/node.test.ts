@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { number, string } from '../config.ts';
 import type { Contract } from '../contract.ts';
+import { Load } from '../graph.ts';
 import { dependency, isNode, resource, service, system } from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
 
@@ -311,5 +312,23 @@ describe('system()', () => {
 
   test('throws on an empty name', () => {
     expect(() => system('', {}, () => ({}))).toThrow(/non-empty name/);
+  });
+
+  test('closed-root overload — no boundary, no return — is empty on both sides', () => {
+    let ran = false;
+    const node = system('root', (ctx) => {
+      ran = true;
+      expect(ctx.provision).toBeInstanceOf(Function);
+    });
+
+    // Inert at construction; empty boundary on both sides.
+    expect(ran).toBe(false);
+    expect(node.deps).toEqual({});
+    expect(node.expose).toEqual({});
+
+    // Load runs the body against a real ctx; the wrapper returns no ports.
+    const graph = Load(node);
+    expect(ran).toBe(true);
+    expect(graph.nodes.map((n) => n.id)).toEqual(['root']);
   });
 });

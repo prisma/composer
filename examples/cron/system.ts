@@ -11,10 +11,9 @@ import workerService from './src/worker/service.ts';
  * root wires the worker's exposed `rpc` port into the cron system's `worker`
  * boundary input exactly as it would for any other producer of that contract.
  *
- * A closed root: empty boundary (no inputs, no outputs).
+ * A closed root: no boundary argument and no return — it only provisions.
  */
-export default system('cron-example', {}, ({ provision }) => {
+export default system('cron-example', ({ provision }) => {
   const worker = provision(workerService);
   provision(cron({ schedule, runner: runnerService }), { deps: { worker: worker.rpc } });
-  return {};
 });
