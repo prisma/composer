@@ -1,10 +1,10 @@
-# Contributing to Prisma App Framework
+# Contributing to Prisma Compose
 
-Thanks for your interest in the Prisma App Framework. This document is the entry point for external contributors: you do not need any maintainer-onboarding material to file a bug report or open a PR.
+Thanks for your interest in Prisma Compose. This document is the entry point for external contributors: you do not need any maintainer-onboarding material to file a bug report or open a PR.
 
 ## Status — please read first
 
-The Prisma App Framework is **pre-1.0**. While we are pre-1.0:
+Prisma Compose is **pre-1.0**. While we are pre-1.0:
 
 - **Expect breaking changes between minor versions.** APIs, authoring contracts, on-disk formats, and CLI flags can shift without a deprecation cycle.
 - **Only the latest minor receives security fixes.** Older minors are not backported. See [`SECURITY.md`](./SECURITY.md).
@@ -109,7 +109,7 @@ A few conventions that will save review round-trips:
 
 Use the [bug report issue template](./.github/ISSUE_TEMPLATE/bug_report.yml). Please include:
 
-- The published package and version (e.g. `@prisma/app@0.1.0`, or the `prisma-app` CLI version).
+- The published package and version (e.g. `@prisma/compose@0.1.0`, or the `prisma-compose` CLI version).
 - A minimal reproduction (the smaller the better — we cannot triage "my whole app is broken" reports without isolation).
 - Expected vs actual behaviour.
 - Whether you are on the latest minor; if not, please upgrade and re-verify before filing.

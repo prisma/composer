@@ -73,4 +73,4 @@ The main indirections the user must internalize:
 - Open question: how much does the **client-side apply + client-side state**
   model match a *managed* platform's needs (where the platform, not the
   developer, should own reconciliation state)? This is the crux for the Prisma
-  App Framework — see `takeaways-for-prisma-app.md`.
+  App Framework — see `takeaways-for-prisma-compose.md`.

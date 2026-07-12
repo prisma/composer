@@ -1,7 +1,7 @@
-# Alchemy → Prisma App Framework takeaways (evolving)
+# Alchemy → Prisma Compose takeaways (evolving)
 
 This doc is explicitly **not** "research." It records what we currently believe
-the Prisma App Framework should emulate/adapt from **Alchemy v2**, and it is
+Prisma Compose should emulate/adapt from **Alchemy v2**, and it is
 expected to change as the framework's design evolves.
 
 Primary reference: [Alchemy v2 docs](https://v2.alchemy.run) (local mirror:
@@ -44,7 +44,7 @@ vs **engine**:
 
 ## What we want: the Convex Component, on Alchemy's substrate
 
-The goal we're chasing (see `../Convex/takeaways-for-prisma-app.md`) is the
+The goal we're chasing (see `../Convex/takeaways-for-prisma-compose.md`) is the
 **Convex Component**: a sandboxed, self-contained unit with its own
 data/contract and an explicit API boundary — composed into an app by
 **explicit wiring**, never ambient access. Alchemy has the substrate
@@ -57,18 +57,18 @@ Concretely, two Alchemy ideas have to be **fused**, which Alchemy keeps separate
 - A **Layer** is a typed-interface-with-swappable-implementation (a port), but
   **in-process only**.
 
-A Component in the Prisma App Framework wants to be both at once: a deployable
+A Component in Prisma Compose wants to be both at once: a deployable
 grouping *and* a typed-port interface that other Components connect to
 **across deployment boundaries**. That fusion is the core design work — not a
 thin wrapper.
 
-## What we likely need to adapt for the Prisma App Framework
+## What we likely need to adapt for Prisma Compose
 
 - **Engine / reconciliation location.** Client-side (Alchemy today) vs server-side
   (platform-owned). Leaning server-side; this is the live decision.
 - **Unify the two "connect" mechanisms.** Alchemy splits **Layer** (local DI) from
   **Reference** (concrete, address-based, cross-deployment pull from state). A
-  Prisma App Framework **port** should be one typed interface satisfiable
+  Prisma Compose **port** should be one typed interface satisfiable
   *either way* — local adapter or connection to a remotely-deployed Component —
   with the consumer blind to which. This inter-Component wiring is the
   differentiator Alchemy doesn't provide.
@@ -92,9 +92,9 @@ thin wrapper.
 - Are the existing Prisma Postgres / Compute Alchemy wrappers v1 (async) or v2
   (Effect)? Determines how much of the Layer/DI model is already in flight.
 - Do we adopt **Effect** as the framework's substrate? (The thing that makes
-  Alchemy "feel like the Prisma App Framework" is Effect, not the apply
+  Alchemy "feel like Prisma Compose" is Effect, not the apply
   engine.) → warrants an ADR.
-- What is the precise Prisma App Framework **Component** primitive that fuses
+- What is the precise Prisma Compose **Component** primitive that fuses
   Stack (grouping) and Layer (typed port), and lowers into Alchemy/Effect
   resources + bindings?
 - How does a **port** represent both a local adapter and a Durable-Stream-backed

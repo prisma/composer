@@ -1,16 +1,16 @@
 # The authoring surface
 
-How a developer writes the Prisma App Framework's [Core nouns](glossary.md#core-nouns) and what
+How a developer writes Prisma Compose's [Core nouns](glossary.md#core-nouns) and what
 running them does. The developer imports a concrete **vocabulary from a target pack**
 — for Prisma Cloud, `compute` (a Service) and `postgres` (a Resource) from
-`@prisma/app-cloud` — and wires them into a graph. `@prisma/app` is the
+`@prisma/compose-cloud` — and wires them into a graph. `@prisma/compose` is the
 target-agnostic engine underneath; see [core and targets](core-and-targets.md) for
 that split. This describes the current design, not a settled decision record.
 
 Grounding example — a service with a Postgres dependency:
 
 ```ts
-import { compute, postgres } from "@prisma/app-cloud"
+import { compute, postgres } from "@prisma/compose-cloud"
 
 export default compute({ db: postgres() }, ({ db }) =>
   Bun.serve({ port, fetch: async () => Response.json(await db`select 1 as ok`) })
@@ -115,18 +115,18 @@ At boot, the node's **`run`** loop executes: core enumerates the config shape
 platform environment into a typed `Config` by its own serializer (privately knowing
 that a `url` param lives at, say, `AUTH_DB_URL`), and core's **`hydrate`** hands
 each connection its typed values so it can build its client — with the driver
-factory the app supplied at authoring time, since the Prisma App Framework ships
+factory the app supplied at authoring time, since Prisma Compose ships
 none (the
 [runtime-agnostic principle](../01-principles/architectural-principles.md)).
 Validating the values is the pack reversing its own serialization. Config is
 thereby enumerable without booting (`configOf`), injectable with fakes in tests
 (`invoke`), and reportable (secrets redacted) in production. When the "handler" is a framework that owns
-its own server — Next.js — the Prisma App Framework does not wrap the handler
+its own server — Next.js — Prisma Compose does not wrap the handler
 signature; it wires the
 framework in as the implementation of an HTTP Output, and framework code reaches its
 dependencies through a DI accessor (`use(…)`), never through the environment. This is
 the concrete form of the [no-globals
-principle](../01-principles/architectural-principles.md): the Prisma App Framework
+principle](../01-principles/architectural-principles.md): Prisma Compose
 propagates data to user code only through dependency injection.
 
 ## Load, then Hydrate

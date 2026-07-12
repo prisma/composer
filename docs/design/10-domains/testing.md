@@ -31,7 +31,7 @@ service — no database, no deployment, no cloud account — you replace what
 
 ```tsx
 // storefront/app/page.test.tsx
-import { mockService } from '@prisma/app/testing';
+import { mockService } from '@prisma/compose/testing';
 
 vi.mock('../src/service.ts', () => ({
   default: mockService(realService, {
@@ -80,7 +80,7 @@ must be a valid `authContract` client, so a wrong-shaped fake is a compile
 error, not a test that passes by accident.
 
 It works for any service — every service has a `load()` — so it lives in the
-framework core, `@prisma/app/testing`. The one part that depends on your test
+framework core, `@prisma/compose/testing`. The one part that depends on your test
 runner is *how* you substitute the module (`vi.mock` in Vitest, `mock.module`
 in bun test). The framework gives you the typed value to substitute; wiring it
 into the runner stays in your test.
@@ -95,7 +95,7 @@ stand-in you run yourself, and drive the round trip.
 
 ```ts
 // storefront/app/page.integration.test.ts
-import { bootstrapService } from '@prisma/app-cloud/testing';
+import { bootstrapService } from '@prisma/compose-cloud/testing';
 import fakeAuth from '@storefront-auth/auth/fake'; // an in-memory auth handler, no database
 import storefront from '../src/service.ts';
 
@@ -120,7 +120,7 @@ production code path, not a rewrite of it.
 
 Starting a service the way a deployment does is specific to the platform you
 deploy to, so `bootstrapService` ships in that platform's testing entry
-(`@prisma/app-cloud/testing`), not the core. (`mockService` only substitutes a
+(`@prisma/compose-cloud/testing`), not the core. (`mockService` only substitutes a
 return value, so it needs to know nothing about deployment and stays in core.)
 
 Three practical notes:
@@ -135,7 +135,7 @@ Three practical notes:
   imports it:
 
   ```ts
-  import { standaloneEntryPath } from '@prisma/app-nextjs/control';
+  import { standaloneEntryPath } from '@prisma/compose-nextjs/control';
 
   await bootstrapService(storefront, config, async () => {
     await import(standaloneEntryPath(storefront.build));

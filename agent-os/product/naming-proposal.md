@@ -1,6 +1,6 @@
 # Naming the family — a proposal
 
-> **Status: superseded by [ADR-0014](../../docs/design/90-decisions/ADR-0014-name-the-framework-prisma-app.md).**
+> **Status: superseded by [ADR-0014](../../docs/design/90-decisions/ADR-0014-one-authoring-primitive.md).**
 > This is the original proposal that opened the naming discussion, kept as a record of
 > the strategic reasoning (one product identity; why now, with agents). The decision
 > differs in three ways: the framework is **Prisma App** — not "Prisma Compose"; the

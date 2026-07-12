@@ -98,7 +98,7 @@ the interface-based substitution of Flow 3.
 - Assumption: Flows 1–2 always run through the engine; there is no documented
   "produce the plan/graph as a portable artifact and stop" flow.
 - Assumption: `alchemy dev`'s "real cloud, local handler" model is a fixed stance,
-  not a configuration — relevant where the Prisma App Framework wants local
+  not a configuration — relevant where Prisma Compose wants local
   emulation instead.
 - Open question: how event-source/sink flows (Flow 6, tied to cloud queues) would
   map onto a Durable-Streams-backed substrate.

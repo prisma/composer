@@ -1,6 +1,6 @@
 # Purpose
 
-Prove that the Prisma App Framework's model can be provisioned and deployed to
+Prove that Prisma Compose's model can be provisioned and deployed to
 Prisma Cloud **entirely through Alchemy** — by standing up the smallest real,
 connected, deployed application. The point is to ground the architecture in
 something that actually runs, so the lower-level framework design is made
@@ -22,7 +22,7 @@ round-trips to Auth, and each service talks to its own database.
 
 # Non-goals
 
-- **Prisma App Framework primitives.** This project builds *directly* on Alchemy.
+- **Prisma Compose primitives.** This project builds *directly* on Alchemy.
   The framework's composition layer on top is the next phase, not this one.
 - **Shared data.** No shared Postgres, data contracts, or aggregate contracts —
   each System gets its own database.
@@ -35,7 +35,7 @@ round-trips to Auth, and each service talks to its own database.
 
 # Place in the larger world
 
-Builds on the settled Prisma App Framework design in
+Builds on the settled Prisma Compose design in
 [`docs/design/`](../../../docs/design/) and the already-committed Postgres
 provider in [`packages/prisma-alchemy`](../../../packages/prisma-alchemy)
 (commit `64e530f`). Depends on `alchemy@2.0.0-beta.59`, `effect@4.0.0-beta.92`,
@@ -90,7 +90,7 @@ Inherits the team DoD floor. Project-specific close conditions:
 
 # References
 
-- [`docs/design/`](../../../docs/design/) — the settled Prisma App Framework model.
+- [`docs/design/`](../../../docs/design/) — the settled Prisma Compose model.
 - [`packages/prisma-alchemy`](../../../packages/prisma-alchemy) — the Postgres
   provider (done); Compute provider to be added here.
 - `@prisma/management-api-sdk` — the Management API client the providers wrap.

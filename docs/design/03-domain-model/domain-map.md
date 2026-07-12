@@ -1,10 +1,10 @@
 # Domain map
 
-The conceptual map of the Prisma App Framework's **authoring plane** — the
+The conceptual map of Prisma Compose's **authoring plane** — the
 things a developer models and how they relate. For how these lower to Alchemy
 and Prisma Cloud, see `layering.md`; for definitions, see `glossary.md`.
 
-(The Prisma App Framework's *own* internal architecture — its
+(Prisma Compose's *own* internal architecture — its
 control/execution-plane contexts, emitter, runtime — is a separate concern for
 the architecture phase, not this map.)
 

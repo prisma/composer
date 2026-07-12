@@ -21,22 +21,22 @@ describe('rewriteWorkspaceDeps', () => {
       name: 'b-mixed-workspace-deps',
       version: '0.7.0',
       dependencies: {
-        '@prisma/app': 'workspace:*',
-        '@prisma/app-cloud': 'workspace:0.6.0',
+        '@prisma/compose': 'workspace:*',
+        '@prisma/compose-cloud': 'workspace:0.6.0',
         arktype: '^2.1.29',
       },
       devDependencies: {
-        '@prisma/app-tsdown': 'workspace:*',
+        '@prisma/compose-tsdown': 'workspace:*',
       },
     };
     rewriteWorkspaceDeps(pkg, '0.8.0');
     assert.deepEqual(pkg.dependencies, {
-      '@prisma/app': 'workspace:0.8.0',
-      '@prisma/app-cloud': 'workspace:0.8.0',
+      '@prisma/compose': 'workspace:0.8.0',
+      '@prisma/compose-cloud': 'workspace:0.8.0',
       arktype: '^2.1.29',
     });
     assert.deepEqual(pkg.devDependencies, {
-      '@prisma/app-tsdown': 'workspace:0.8.0',
+      '@prisma/compose-tsdown': 'workspace:0.8.0',
     });
   });
 
@@ -45,10 +45,10 @@ describe('rewriteWorkspaceDeps', () => {
       name: 'c-already-pinned',
       version: '0.8.0',
       dependencies: {
-        '@prisma/app': 'workspace:0.8.0',
+        '@prisma/compose': 'workspace:0.8.0',
       },
       peerDependencies: {
-        '@prisma/app-cloud': 'workspace:0.8.0',
+        '@prisma/compose-cloud': 'workspace:0.8.0',
       },
     };
     const before = JSON.stringify(pkg);
@@ -62,33 +62,33 @@ describe('rewriteWorkspaceDeps', () => {
     const pkg: MutablePackageJson = {
       name: 'all-fields',
       version: '0.7.0',
-      dependencies: { '@prisma/app': 'workspace:*' },
-      peerDependencies: { '@prisma/app-cloud': 'workspace:*' },
-      devDependencies: { '@prisma/app-tsdown': 'workspace:*' },
-      optionalDependencies: { '@prisma/app-rpc': 'workspace:*' },
+      dependencies: { '@prisma/compose': 'workspace:*' },
+      peerDependencies: { '@prisma/compose-cloud': 'workspace:*' },
+      devDependencies: { '@prisma/compose-tsdown': 'workspace:*' },
+      optionalDependencies: { '@prisma/compose-rpc': 'workspace:*' },
     };
     rewriteWorkspaceDeps(pkg, '1.0.0');
-    assert.equal(pkg.dependencies!['@prisma/app'], 'workspace:1.0.0');
-    assert.equal(pkg.peerDependencies!['@prisma/app-cloud'], 'workspace:1.0.0');
-    assert.equal(pkg.devDependencies!['@prisma/app-tsdown'], 'workspace:1.0.0');
-    assert.equal(pkg.optionalDependencies!['@prisma/app-rpc'], 'workspace:1.0.0');
+    assert.equal(pkg.dependencies!['@prisma/compose'], 'workspace:1.0.0');
+    assert.equal(pkg.peerDependencies!['@prisma/compose-cloud'], 'workspace:1.0.0');
+    assert.equal(pkg.devDependencies!['@prisma/compose-tsdown'], 'workspace:1.0.0');
+    assert.equal(pkg.optionalDependencies!['@prisma/compose-rpc'], 'workspace:1.0.0');
   });
 
   it('does not rewrite a non-workspace pin (e.g. a published-version pin)', () => {
-    // A consumer package installs a published `@prisma/app*` dep from the
+    // A consumer package installs a published `@prisma/compose*` dep from the
     // registry. That spec is an exact published version (no `workspace:`
     // prefix) and must not be touched by a host-workspace version bump.
     const pkg: MutablePackageJson = {
       name: 'consumer-with-published-app-dep',
       version: '0.7.0',
       dependencies: {
-        '@prisma/app': '0.7.0',
-        '@prisma/app-cloud': '^0.7.0',
+        '@prisma/compose': '0.7.0',
+        '@prisma/compose-cloud': '^0.7.0',
       },
     };
     rewriteWorkspaceDeps(pkg, '0.8.0');
-    assert.equal(pkg.dependencies!['@prisma/app'], '0.7.0');
-    assert.equal(pkg.dependencies!['@prisma/app-cloud'], '^0.7.0');
+    assert.equal(pkg.dependencies!['@prisma/compose'], '0.7.0');
+    assert.equal(pkg.dependencies!['@prisma/compose-cloud'], '^0.7.0');
   });
 
   it('rewrites a workspace: dep regardless of its name (no name-prefix filter)', () => {
@@ -97,12 +97,12 @@ describe('rewriteWorkspaceDeps', () => {
       version: '0.7.0',
       dependencies: {
         '@example/sibling': 'workspace:*',
-        '@prisma/app': 'workspace:*',
+        '@prisma/compose': 'workspace:*',
       },
     };
     rewriteWorkspaceDeps(pkg, '0.8.0');
     assert.equal(pkg.dependencies!['@example/sibling'], 'workspace:0.8.0');
-    assert.equal(pkg.dependencies!['@prisma/app'], 'workspace:0.8.0');
+    assert.equal(pkg.dependencies!['@prisma/compose'], 'workspace:0.8.0');
   });
 
   it('tolerates a package with missing dep-field objects', () => {

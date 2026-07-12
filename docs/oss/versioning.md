@@ -1,6 +1,6 @@
 # Versioning
 
-This page covers the **version contract** the Prisma App Framework offers, and the
+This page covers the **version contract** Prisma Compose offers, and the
 **mechanism** that delivers it. The first half is the policy you can rely on; the
 second half is the procedure maintainers follow to honour it.
 
@@ -27,9 +27,9 @@ Every workspace package — publishable, private, and the workspace root — car
 same `version`. One read of root `package.json` answers "what version is this code?"
 for the entire repository.
 
-- The published packages (`@prisma/app`, `@prisma/app-nextjs`, `@prisma/app-node`,
-  `@prisma/app-cloud`, `@prisma/app-rpc`, `@prisma/app-assemble`,
-  `@prisma/app-cli`, `@prisma/alchemy`, and the unscoped `prisma-app` CLI) all publish at the same
+- The published packages (`@prisma/compose`, `@prisma/compose-nextjs`, `@prisma/compose-node`,
+  `@prisma/compose-cloud`, `@prisma/compose-rpc`, `@prisma/compose-assemble`,
+  `@prisma/compose-cli`, `@prisma/alchemy`, and the unscoped `prisma-compose` CLI) all publish at the same
   version, and each pins its workspace siblings to that **exact** version.
 - Private packages (build config, examples, tests) are never published but still
   version in lockstep, so a contributor cloning any commit sees one consistent answer.
@@ -42,7 +42,7 @@ building on a false assumption.
 ## Dist-tag convention
 
 - **`latest`** — the most recent stable release; the default for `npm install
-  @prisma/app`. New `latest` releases happen automatically when a release PR merges
+  @prisma/compose`. New `latest` releases happen automatically when a release PR merges
   (see procedure below).
 - **`dev`** — every push to `main` that doesn't change the root `version` produces a
   `<base>-dev.N` tarball under this tag. **No stability promise** — may be yanked freely.
@@ -101,7 +101,7 @@ publish trigger** — there is no separate dispatch step for a normal release.
    `latest`, and cuts a GitHub Release with auto-generated notes.
 
 Between releases, every merge to `main` publishes a `<base>-dev.N` build under `dev` —
-useful for `npm install @prisma/app@dev` reproductions.
+useful for `npm install @prisma/compose@dev` reproductions.
 
 ## Validating publish changes
 
@@ -119,7 +119,7 @@ one-time manual bootstrap; every release after that goes through the workflow:
 
 1. **Create the packages once, with a token.** On a machine logged in to npm as a user
    with publish rights to the `@prisma` scope (and the ability to create the unscoped
-   `prisma-app`): `pnpm install && pnpm build`, then
+   `prisma-compose`): `pnpm install && pnpm build`, then
    `node scripts/publish-packages.mjs --tag latest`. This publishes all nine packages at
    the current root version with correct exact-pinned deps.
 2. **Configure a trusted publisher on each of the nine packages** at

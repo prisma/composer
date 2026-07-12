@@ -1,13 +1,13 @@
 # Product Tech Stack
 
-This is the tech stack for building the **Prisma App Framework** (the TypeScript framework) and its supporting toolchain, plus the
+This is the tech stack for building the **Prisma Compose** (the TypeScript framework) and its supporting toolchain, plus the
 platform primitives it targets on the Prisma Platform.
 
 ## Framework & Runtime
 - **Language:** TypeScript
 - **Runtime (target):** Bun (Prisma Compute runs JS on Bun instances)
 - **Runtime (dev/tooling):** Node.js (Prisma Next stack uses Node `>=24`) + Bun where useful
-- **Distribution:** npm packages (Prisma App Framework as a library + companion packages)
+- **Distribution:** npm packages (Prisma Compose as a library + companion packages)
 - **Package Manager:** pnpm (match Prisma Next; pnpm workspaces)
 - **Monorepo tooling:** Turborepo (task runner + caching)
 - **Module system:** ESM (`"type": "module"`)

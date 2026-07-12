@@ -3,17 +3,18 @@
 ## Status
 
 Accepted. Supersedes the unit-noun half of
-[ADR-0014](ADR-0014-name-the-framework-prisma-app.md): the unit
-of composition is a **Module**, not a System. ADR-0014's other decisions stand
-unchanged — the framework is Prisma App, the packages are `@prisma/app*`, the CLI is
-`prisma-app`, and there is exactly one authoring primitive with no separate `app()`
-construct.
+[ADR-0014](ADR-0014-one-authoring-primitive.md): the unit
+of composition is a **Module**, not a System. ADR-0014's single-primitive model
+stands — exactly one authoring primitive with no separate `app()` construct; its
+framework, package, and CLI names were later superseded by
+[ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) (**Prisma Compose**,
+`@prisma/compose*`, `prisma-compose`).
 
 ## Decision
 
 The unit of composition is a **Module**, authored with a single primitive,
 **`module()`**. The App is the outermost Module — the node you point
-`prisma-app deploy` at. Everything ADR-0014 established about the primitive's shape
+`prisma-compose deploy` at. Everything ADR-0014 established about the primitive's shape
 (recursive composition, no privileged root, deploy derives everything from the root
 node) carries over under the new name.
 
@@ -24,7 +25,7 @@ framework.
 
 The vocabulary sits in a three-register model. A **package** is the artifact npm
 hosts; npm owns that word and we do not rename it. An **extension** is what you slot
-into `prisma-app.config.ts` — deploy targets, build kinds, anything that extends the
+into `prisma-compose.config.ts` — deploy targets, build kinds, anything that extends the
 toolchain. A **Module** is what you plug together inside the app. One npm package
 may register an extension and provide modules; the registers name roles, not
 artifacts.
@@ -86,7 +87,7 @@ units fails where most of the usage is.
   itself performed: `system()` becomes `module()`, `SystemNode` becomes
   `ModuleNode` (and kin), `system.ts` files and `systems/` directories are renamed,
   and the README, glossary, domain docs, and earlier ADRs' prose move from "System"
-  to "Module." Package names, the CLI, and `prisma-app.config.ts` are untouched.
+  to "Module." Package names, the CLI, and the config file are untouched.
 - **"System" must not survive as a term.** The Service-vs-unit adjacency the first
   naming asked the glossary to defend disappears; Service stays, unambiguous now.
 - **The register model is canon**: package (npm's word) / extension (toolchain slot)
@@ -127,7 +128,7 @@ units fails where most of the usage is.
   "System" failure record.
 - `agent-os/product/naming.md` — product-name tests and the register model's place
   in the family story.
-- [ADR-0014](ADR-0014-name-the-framework-prisma-app.md) — the
+- [ADR-0014](ADR-0014-one-authoring-primitive.md) — the
   superseded unit-noun decision; its framework, package, CLI, and single-primitive
   decisions stand.
 - [ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md),

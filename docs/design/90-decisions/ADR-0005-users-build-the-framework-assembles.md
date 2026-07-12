@@ -7,7 +7,7 @@ Accepted
 ## Decision
 
 The framework never initiates or configures a user's build. The contract is:
-built output exists before `prisma-app deploy` runs, produced by the user's
+built output exists before `prisma-compose deploy` runs, produced by the user's
 own tooling. Downstream of that boundary, the deploy artifact is the
 framework's to manufacture however it likes: per-adapter-kind **assembly**
 locates and validates the built output, applies the framework's envelope —
@@ -39,7 +39,7 @@ bundler option it mediated would become a support surface, every framework
 upgrade a compatibility matrix, and monorepo tools already own build ordering
 and caching better than a deploy tool ever will. The idiomatic monorepo flow
 is a deploy task that depends on build tasks; without a monorepo tool it is
-"run your build, then `prisma-app deploy`". Either way the framework
+"run your build, then `prisma-compose deploy`". Either way the framework
 consumes outputs; it does not produce them.
 
 On the framework's side sits the deploy artifact, and holding that side
@@ -62,7 +62,7 @@ declared location fails loudly — an error naming the resolved path and saying
 
 ## Consequences
 
-- `prisma-app deploy` has no build invocation: no build-command convention, no
+- `prisma-compose deploy` has no build invocation: no build-command convention, no
   skip flags, no build-script discovery. That machinery only becomes a
   question if a separate build command ever exists.
 - Missing outputs are detected; *stale* ones are not. Deploying a forgotten

@@ -11,7 +11,7 @@ fixed by ADR-0018/0019/0020 and the two domain docs; these slices implement it.
 
 Slices are identified by S-number here; this plan is the source of truth. Linear
 issues are created per-slice when the slice starts, not during planning. Tracker
-project: [Prisma App: Config Params + Cron](https://linear.app/prisma-company/project/prisma-app-config-params-cron-78113f9ba550).
+project: [Prisma App: Config Params + Cron](https://linear.app/prisma-company/project/prisma-compose-config-params-cron-78113f9ba550).
 
 - **S1** — TML-3007 — Done ([PR #41](https://github.com/prisma/app/pull/41), merged).
 - **S2** — TML-3010 — In progress ([spec](specs/s2-cron-driver-system.md)).

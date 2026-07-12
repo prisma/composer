@@ -1,6 +1,6 @@
-# Purpose: what is the Prisma App Framework?
+# Purpose: what is Prisma Compose?
 
-**The Prisma App Framework lets you write an application as connected components
+**Prisma Compose lets you write an application as connected components
 and turns it into a running, deployed module — without wiring infrastructure by
 hand.**
 

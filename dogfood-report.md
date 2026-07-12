@@ -1,4 +1,4 @@
-# Prisma dogfood report — rough edges building the Prisma App Framework MVP
+# Prisma dogfood report — rough edges building Prisma Compose MVP
 
 Friction hit while building a two-system example (**Storefront** = Next.js, **Auth** =
 Bun/Hono), each with its own Prisma Postgres, deployed to **Prisma Compute** through a

@@ -1,6 +1,6 @@
-# Next-session brief — Prisma App Framework
+# Next-session brief — Prisma Compose
 
-You're picking up the **Prisma App Framework**, the authoring layer for Prisma Cloud:
+You're picking up the **Prisma Compose**, the authoring layer for Prisma Cloud:
 developers describe services and their typed dependencies in TypeScript, and
 the framework deploys them to Prisma Compute + Prisma Postgres. Work runs
 under the **Drive process** (`drive-process` skill). The **authoring-layer
@@ -18,7 +18,7 @@ its `spec.md` and `plan.md`; tracker issues TML-2998…3005.
 2. `docs/design/10-domains/connection-contracts.md` — typed service-to-service
    Contracts (`contract()`/`rpc()`/`serve()`, assignability + `satisfies()` +
    per-call validation).
-3. `docs/design/10-domains/deploy-cli.md` — `prisma-app deploy <entry>`: the
+3. `docs/design/10-domains/deploy-cli.md` — `prisma-compose deploy <entry>`: the
    zero-config pipeline (Load → infer target → assemble → generated stack →
    Alchemy).
 4. `docs/design/90-decisions/` — ADR-0003…0012. The state-store set
@@ -32,8 +32,8 @@ its `spec.md` and `plan.md`; tracker issues TML-2998…3005.
 
 ## Likely next work
 
-- **Naming/rename**: an operator design session settled **Prisma App Framework
-  (`@prisma/app`) replacing "MakerKit" and Module/`mod()` replacing Hex** (see
+- **Naming/rename**: an operator design session settled **Prisma Compose
+  (`@prisma/compose`) replacing "MakerKit" and Module/`mod()` replacing Hex** (see
   agent memory `naming-decisions-2026-07`); the rename has since shipped as
   ADR-0014 (framework: Prisma App, unit: System, not Module). Confirm any
   remaining scope with the operator.
@@ -70,7 +70,7 @@ its `spec.md` and `plan.md`; tracker issues TML-2998…3005.
   Never print secrets.
 - **Deploy state is hosted** (ADR-0009): no local `.alchemy` state matters;
   any credentialed machine deploys incrementally. The workspace shows a
-  `prisma-app-state` project — control-plane, never delete it as cleanup.
+  `prisma-compose-state` project — control-plane, never delete it as cleanup.
 - **turbo 2 strict env** strips undeclared vars from tasks — declare in
   turbo.json (`env`/`globalPassThroughEnv`). Check this first when CI-only
   failures make no sense.

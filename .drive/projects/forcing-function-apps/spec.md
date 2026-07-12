@@ -1,6 +1,6 @@
 # Purpose
 
-Ground the Prisma App Framework's next capabilities in **real applications we
+Ground Prisma Compose's next capabilities in **real applications we
 run ourselves**, so the high-value gaps — secrets, scheduled work, object
 storage, streams, and the local dev loop — are discovered, shaped, and
 prioritized by real pressure rather than speculation. A hypothetical example
@@ -76,12 +76,12 @@ speculatively):
   That seam is **owned by hex-composition**; this project consumes it (see
   plan.md § "What we consume from hex-composition"), and does not re-derive it.
 - **Depends on the publishing setup** (PR #29): the ports live in their own
-  repos and consume published `@prisma/app*` packages, which makes this
+  repos and consume published `@prisma/compose*` packages, which makes this
   project the first real consumer of the release pipeline.
 - Consumes the platform: Prisma Compute, Prisma Postgres, Prisma Streams
   (`prisma/streams`). Platform friction feeds `gotchas.md` and the Linear
   gotchas projects, as before.
-- Tracker: [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-app-forcing-function-apps-495e5a5c6a0d)
+- Tracker: [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-compose-forcing-function-apps-495e5a5c6a0d)
   (Terminal).
 
 # Cross-cutting requirements
@@ -113,13 +113,13 @@ speculatively):
 - Capability slices that need resource-as-System (cron, object storage) do not
   start until the system-composition branch lands on main. Secrets and the
   datahub port skeleton have no such dependency and can proceed first.
-- Ports may begin against `workspace:`/preview versions of `@prisma/app*`, but
+- Ports may begin against `workspace:`/preview versions of `@prisma/compose*`, but
   the datahub port must end on published versions (that's part of its DoD).
 
 # Project-DoD
 
-- [ ] **datahub deploys via `prisma-app deploy`** from its own repo, consuming
-      published `@prisma/app*` packages: ingest + web as services, postgres as
+- [ ] **datahub deploys via `prisma-compose deploy`** from its own repo, consuming
+      published `@prisma/compose*` packages: ingest + web as services, postgres as
       a resource, secrets as bindings, and its `/tick` driven by the cron
       resource System. The team's real instance runs on this deployment.
 - [ ] **open-chat deploys the same way**, with streams, object storage, cron,

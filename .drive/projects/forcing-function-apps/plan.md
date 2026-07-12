@@ -14,7 +14,7 @@ decide whether M2 becomes a successor project instead.
 
 Slices are identified by their S-number here; this plan is the source of truth.
 Linear issues are created per-slice when the slice starts, not during planning.
-Tracker project: [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-app-forcing-function-apps-495e5a5c6a0d).
+Tracker project: [Prisma App: Forcing-Function Apps](https://linear.app/prisma-company/project/prisma-compose-forcing-function-apps-495e5a5c6a0d).
 
 ## External dependencies
 
@@ -67,7 +67,7 @@ the design settles. ADR for the secrets model.
 
 ### S2 — datahub port skeleton
 
-datahub deployed via `prisma-app deploy` from its own repo: ingest + web
+datahub deployed via `prisma-compose deploy` from its own repo: ingest + web
 services, postgres resource, secrets bindings, published/preview packages.
 Scheduling unchanged (in-process tick) for this slice.
 

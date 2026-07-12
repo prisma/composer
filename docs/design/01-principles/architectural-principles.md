@@ -1,6 +1,6 @@
 # Architectural Principles
 
-Structural rules that shape the Prisma App Framework's architecture and package boundaries.
+Structural rules that shape Prisma Compose's architecture and package boundaries.
 
 ## No globals — all dependencies are injected
 

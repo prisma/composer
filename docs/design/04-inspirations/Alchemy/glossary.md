@@ -181,5 +181,5 @@ under `~/.alchemy/`; providers read them at deploy time (or from env on CI).
 - Assumption: the **state store is the source of truth** for "what's
   provisioned", and it is **client-side by default**.
 - Open question: can the desired resource graph be **extracted without running
-  the apply loop**? This bears directly on whether the Prisma App Framework can
+  the apply loop**? This bears directly on whether Prisma Compose can
   keep Alchemy's definition language while replacing its engine.

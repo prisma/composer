@@ -1,11 +1,12 @@
-# Prisma App
+# Prisma Compose
 
-The **Prisma App Framework** is a TypeScript framework for building and deploying
-applications composed of components. A component — a **Module** — owns its Services
-and Resources and exposes typed **Inputs** and **Outputs**; you build your app by
-connecting one Module's Outputs to another's Inputs, and at runtime the framework
-injects the dependencies that satisfy them. The whole app is itself a Module — the
-outermost one — and that is what you deploy.
+**Prisma Compose** is a TypeScript framework for building and deploying
+applications composed of components. You build a **Prisma App** by composing
+**Modules** with Prisma Compose. A component — a Module — owns its Services and
+Resources and exposes typed **Inputs** and **Outputs**; you connect one Module's
+Outputs to another's Inputs, and at runtime Prisma Compose injects the dependencies
+that satisfy them. The whole app is itself a Module — the outermost one — and that
+is what you deploy.
 
 From that structure the framework derives your application's dependency graph and
 uses Alchemy to provision and deploy it. Deployment targets like Prisma Cloud plug
@@ -101,7 +102,7 @@ one you or an agent can query from the CLI without deploying anything.
 
 ## From code to a running app
 
-Prisma App spans three planes and **lowers** your model down through them:
+Prisma Compose spans three planes and **lowers** your model down through them:
 
 - **Authoring** — what you write: Modules, Services, Resources, connections.
 - **Provisioning** — the framework turns the topology into an Alchemy resource
@@ -119,7 +120,7 @@ development, with no change to your code.
 
 ## Decisions
 
-- **Prisma App owns composition and borrows everything beneath it.** The Module
+- **Prisma Compose owns composition and borrows everything beneath it.** The Module
   model and the topology are its own; provisioning is Alchemy, data contracts are
   Prisma Next, hosting is Prisma Cloud. It rebuilds none of them.
 - **Thin core, fat targets.** The core is the Module / Input / Output model and the
@@ -137,9 +138,9 @@ development, with no change to your code.
 ## Status
 
 The design lives in `docs/design/`; this page is the short version. Core,
-extension packs, and the `prisma-app` deploy CLI are implemented under
+extension packs, and the `prisma-compose` deploy CLI are implemented under
 `packages/`, and the example apps under `examples/` deploy with
-`prisma-app deploy` / `prisma-app destroy` (see
+`prisma-compose deploy` / `prisma-compose destroy` (see
 [`docs/design/10-domains/deploy-cli.md`](docs/design/10-domains/deploy-cli.md)).
 
 - **Purpose and goals** — [`docs/design/00-purpose/`](docs/design/00-purpose/)

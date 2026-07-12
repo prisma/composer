@@ -19,7 +19,7 @@ The same rule holds one layer up, in the deploy tooling. Resolving a pack's
 `/target` or `/assemble` module happens by seeding `createRequire` with the
 entry module's own file path, letting the platform's resolver walk
 `node_modules` upward the way it would for a plain `import` in that file. And
-tool state — the generated `.prisma-app/alchemy.run.ts`, Alchemy's `.alchemy`
+tool state — the generated `.prisma-compose/alchemy.run.ts`, Alchemy's `.alchemy`
 state directory — lives in the process's working directory, like any other
 CLI's state: where you run the tool, not somewhere the tool infers.
 
@@ -64,7 +64,7 @@ with an error naming the resolved path and telling the author to run their
 build.
 
 The deploy tooling's resolution follows the same logic. To load
-`@prisma/app-cloud/target` on behalf of an app, the tool seeds
+`@prisma/compose-cloud/target` on behalf of an app, the tool seeds
 `createRequire` with the entry module's file path.
 `createRequire(file).resolve(...)` walks `node_modules` upward from
 `dirname(file)` — that is Node's own module-resolution algorithm, identical to
@@ -72,7 +72,7 @@ what a plain `import` in the entry file would do. Discovering a directory
 ourselves and building a synthetic anchor from it would be reimplementing a
 piece of the platform's resolver.
 
-Tool state completes the picture: `.prisma-app/` and Alchemy's state land in the
+Tool state completes the picture: `.prisma-compose/` and Alchemy's state land in the
 working directory. That matches every CLI a developer already uses, and it
 means running `deploy` and `destroy` from an app's directory keeps that app's
 state with it. The corollary is that destroy must run where deploy ran; the

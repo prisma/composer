@@ -2,7 +2,7 @@
 
 This directory captures **stable research notes** about TanStack DB’s domain model and user-facing interaction patterns.
 
-The intent is to keep “how TanStack works” relatively static here, while keeping “what the Prisma App Framework should do because of it” in a separate takeaways doc that we can revise as our own design evolves.
+The intent is to keep “how TanStack works” relatively static here, while keeping “what Prisma Compose should do because of it” in a separate takeaways doc that we can revise as our own design evolves.
 
 Primary reference: [TanStack DB Overview](https://tanstack.com/db/latest/docs/overview)
 
@@ -13,5 +13,5 @@ Primary reference: [TanStack DB Overview](https://tanstack.com/db/latest/docs/ov
 - `operations.md`: common operations on domain concepts (CRUD, sync, subscriptions)
 - `user-domain.md`: the user’s mental model and how it maps to internal mechanics
 - `execution-flows.md`: common execution flows (especially “live query”)
-- `takeaways-for-prisma-app.md`: what we want to emulate/adapt in the Prisma App Framework (expected to change)
+- `takeaways-for-prisma-compose.md`: what we want to emulate/adapt in Prisma Compose (expected to change)
 

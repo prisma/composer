@@ -1,10 +1,10 @@
-# Wrangler → Prisma App Framework takeaways (evolving)
+# Wrangler → Prisma Compose takeaways (evolving)
 
-This doc is explicitly **not** "research." It records what we currently believe the Prisma App Framework should emulate/adapt from Wrangler, and it is expected to change as the framework's design evolves.
+This doc is explicitly **not** "research." It records what we currently believe Prisma Compose should emulate/adapt from Wrangler, and it is expected to change as the framework's design evolves.
 
 Primary reference: [Wrangler documentation](https://developers.cloudflare.com/workers/wrangler/)
 
-## The core interaction pattern to base the Prisma App Framework on
+## The core interaction pattern to base Prisma Compose on
 
 **Config (or descriptors) as source of truth → validate → build artifact → dev locally with parity → deploy.**
 
@@ -26,29 +26,29 @@ That is the foundational shift away from:
 - **Environment abstraction**
   - Staging vs production as first-class env selection; inheritable vs non-inheritable config keys.
 
-## What we likely need to adapt for the Prisma App Framework
+## What we likely need to adapt for Prisma Compose
 
 - **Source of truth**
   - Wrangler: hand-authored manifest (`wrangler.toml` / `wrangler.jsonc`).
-  - The Prisma App Framework: code-first descriptors; manifest/artifacts **generated** from TypeScript, not authored by hand.
+  - Prisma Compose: code-first descriptors; manifest/artifacts **generated** from TypeScript, not authored by hand.
 - **Binding model**
   - Wrangler: explicit bindings in config; IDs or auto-provision.
-  - The Prisma App Framework: inferred topology from descriptors; bindings derived from topology map.
+  - Prisma Compose: inferred topology from descriptors; bindings derived from topology map.
 - **Build pipeline**
   - Wrangler: esbuild default; custom build escape hatch.
-  - The Prisma App Framework: descriptor compilation → topology map → platform-facing bundle/artifacts.
+  - Prisma Compose: descriptor compilation → topology map → platform-facing bundle/artifacts.
 
 ## Artifact boundaries (emphasized)
 
 - Wrangler's artifact = bundle + resolved config (routes, bindings, limits).
-- The Prisma App Framework's artifact = `prisma-app.map.json` (or equivalent) + per-entrypoint bundles.
+- Prisma Compose's artifact = `prisma-compose.map.json` (or equivalent) + per-entrypoint bundles.
 - Both: artifact is the contract between author-time and runtime; what gets deployed is explicit.
 
 ## Validation UX (emphasized)
 
 - Schema-driven config validation (Wrangler uses JSON Schema).
 - `wrangler check` validates Worker before deploy.
-- The Prisma App Framework: validate descriptors early; errors with file:line and clear remediation.
+- Prisma Compose: validate descriptors early; errors with file:line and clear remediation.
 
 ## Command surface (emphasized)
 
@@ -56,22 +56,22 @@ That is the foundational shift away from:
 - Validation: check.
 - Observability: tail (logs).
 - Resource management: domain-specific subcommands (d1, kv, r2, ...).
-- The Prisma App Framework equivalents: define minimal set; avoid command sprawl.
+- Prisma Compose equivalents: define minimal set; avoid command sprawl.
 
 ## Open questions / assumptions
 
-- What are the Prisma App Framework's "Wrangler equivalents" for: init, dev, deploy, check, tail?
+- What are Prisma Compose's "Wrangler equivalents" for: init, dev, deploy, check, tail?
 - What are the minimal stable artifacts we need (topology map schema, bundle format)?
 - How do we expose "remote binding" semantics for resources that can't be simulated locally?
 - Should we support environment selection (`--env`) with inheritable vs non-inheritable keys in our generated manifest?
 
-# Wrangler → Prisma App Framework takeaways (evolving)
+# Wrangler → Prisma Compose takeaways (evolving)
 
-This doc is explicitly **not** “research.” It records what we currently believe the Prisma App Framework should emulate/adapt from Wrangler, and it is expected to change as the framework’s design evolves.
+This doc is explicitly **not** “research.” It records what we currently believe Prisma Compose should emulate/adapt from Wrangler, and it is expected to change as the framework’s design evolves.
 
 Primary reference: [Wrangler documentation](https://developers.cloudflare.com/workers/wrangler/)
 
-## The core interaction pattern to base the Prisma App Framework on
+## The core interaction pattern to base Prisma Compose on
 
 **Config (or descriptors) as source of truth → validate → build artifact → dev locally with parity → deploy.**
 
@@ -93,29 +93,29 @@ That is the foundational shift away from:
 - **Environment abstraction**
   - Staging vs production as first-class env selection; inheritable vs non-inheritable config keys.
 
-## What we likely need to adapt for the Prisma App Framework
+## What we likely need to adapt for Prisma Compose
 
 - **Source of truth**
   - Wrangler: hand-authored manifest (`wrangler.toml` / `wrangler.jsonc`).
-  - The Prisma App Framework: code-first descriptors; manifest/artifacts **generated** from TypeScript, not authored by hand.
+  - Prisma Compose: code-first descriptors; manifest/artifacts **generated** from TypeScript, not authored by hand.
 - **Binding model**
   - Wrangler: explicit bindings in config; IDs or auto-provision.
-  - The Prisma App Framework: inferred topology from descriptors; bindings derived from topology map.
+  - Prisma Compose: inferred topology from descriptors; bindings derived from topology map.
 - **Build pipeline**
   - Wrangler: esbuild default; custom build escape hatch.
-  - The Prisma App Framework: descriptor compilation → topology map → platform-facing bundle/artifacts.
+  - Prisma Compose: descriptor compilation → topology map → platform-facing bundle/artifacts.
 
 ## Artifact boundaries (emphasized)
 
 - Wrangler’s artifact = bundle + resolved config (routes, bindings, limits).
-- The Prisma App Framework’s artifact = `prisma-app.map.json` (or equivalent) + per-entrypoint bundles.
+- Prisma Compose’s artifact = `prisma-compose.map.json` (or equivalent) + per-entrypoint bundles.
 - Both: artifact is the contract between author-time and runtime; what gets deployed is explicit.
 
 ## Validation UX (emphasized)
 
 - Schema-driven config validation (Wrangler uses JSON Schema).
 - `wrangler check` validates Worker before deploy.
-- The Prisma App Framework: validate descriptors early; errors with file:line and clear remediation.
+- Prisma Compose: validate descriptors early; errors with file:line and clear remediation.
 
 ## Command surface (emphasized)
 
@@ -123,11 +123,11 @@ That is the foundational shift away from:
 - Validation: check.
 - Observability: tail (logs).
 - Resource management: domain-specific subcommands (d1, kv, r2, ...).
-- The Prisma App Framework equivalents: define minimal set; avoid command sprawl.
+- Prisma Compose equivalents: define minimal set; avoid command sprawl.
 
 ## Open questions / assumptions
 
-- What are the Prisma App Framework’s “Wrangler equivalents” for: init, dev, deploy, check, tail?
+- What are Prisma Compose’s “Wrangler equivalents” for: init, dev, deploy, check, tail?
 - What are the minimal stable artifacts we need (topology map schema, bundle format)?
 - How do we expose “remote binding” semantics for resources that can’t be simulated locally?
 - Should we support environment selection (`--env`) with inheritable vs non-inheritable keys in our generated manifest?

@@ -98,5 +98,5 @@ Source context: [Alchemy v2 docs](https://v2.alchemy.run) (local mirror: `./docs
 - Assumption: every operation routes through the engine + state store; there is
   no first-class "serialize the desired graph and hand it off" verb.
 - Open question: exact mechanics of extracting/serializing the resource graph for
-  an external consumer (would underpin a Prisma App Framework "emit artifact"
+  an external consumer (would underpin a Prisma Compose "emit artifact"
   operation).
