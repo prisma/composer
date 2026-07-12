@@ -24,6 +24,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Next.js on Compute ignores runtime env vars unless the route is force-dynamic](#nextjs-on-compute-ignores-runtime-env-vars-unless-the-route-is-force-dynamic)
 - [Connection create/read response buries the real Postgres DSN under endpoints.*; `url` is an API self-link](#connection-createread-response-buries-the-real-postgres-dsn-under-endpoints-url-is-an-api-self-link)
 - [Compute's bun auto-installs at runtime — masks incomplete artifacts and cross-platform native binaries as an ENOSPC crash loop](#computes-bun-auto-installs-at-runtime--masks-incomplete-artifacts-and-cross-platform-native-binaries-as-an-enospc-crash-loop)
+- [First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations](#first-connection-to-a-freshly-provisioned-postgres-is-rejected-while-the-upstream-is-cold--breaks-deploy-time-migrations)
 
 ---
 
@@ -247,3 +248,39 @@ process.on("unhandledRejection", (e) => console.error(e));
 - Upstream: [PRO-213](https://linear.app/prisma-company/issue/PRO-213/compute-runs-bun-with-runtime-auto-install-on-masks-incomplete)
 - Fix: [`packages/app-nextjs/src/assemble.ts`](packages/app-nextjs/src/assemble.ts), [`examples/storefront-auth/systems/storefront/next.config.ts`](examples/storefront-auth/systems/storefront/next.config.ts)
 - Related: PRO-201 (Next standalone packaging), FT-5219 (Bun.SQL scale-to-zero)
+
+---
+
+## First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations
+
+**Filed upstream:** [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while) — _"First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations"_
+**Product:** Prisma Postgres (edge proxy / cold-start)
+**Version:** node-postgres (`pg` 8.21) via `@prisma-next/driver-postgres`; PPg direct connection; connecting at deploy time
+**First hit:** `examples/pn-widgets` — the `pnPostgres` deploy-migrate lowering connects to the DB the instant it is provisioned
+**Cost:** ~2 hours — several live E2E iterations plus a throwaway-DB diagnosis, and a red-herring SSL "fix" on the way
+
+**Symptom.** A client connecting to a PPg database **immediately after it is provisioned** fails on the first connection. Through Prisma Next's control client it surfaces as `CliStructuredError: Database connection failed`; the raw node-postgres error is `message: "Failed to connect to upstream database. Please contact Prisma support…"`, `err.code === undefined`, no `err.cause`. The **direct** endpoint fast-rejects (~0.4–0.6s); the **pooled** endpoint slow-times-out (~10s). Intermittent — the same DSN sometimes connects on attempt 1; it reproduces reliably only when connecting within a moment of provisioning.
+
+**Cause.** The PPg edge accepts the TCP/TLS connection but the **upstream database is cold** (just provisioned / scaled to zero) and not yet ready, so the proxy rejects with the generic "upstream" error. Confirmed **not** TLS, **not** network (no `ECONNREFUSED`/`ETIMEDOUT`), **not** auth: on a **warmed** DB every SSL posture (`require`, `verify-full`, `no-verify`) and both endpoints connect, and PPg's cert is publicly trusted. Same cold/scale-to-zero family as FT-5219, different surface — FT-5219 is an *idle-close* crash of a persistent runtime client; this is the *first connect* being rejected at deploy time. A deploy-time migration hits the cold window ~every time because it connects the instant the DB is provisioned.
+
+**Workaround.** Bounded connection **retry** on connect — retry connect/transient failures (not real errors) for ~1 min; warm DBs connect immediately and the retry rides out the cold-start (observed connect at ~10s):
+
+```ts
+// deploy-time only; wraps the control client's connect + operation
+await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 5000 });
+// real migration errors (no-path / runner) are surfaced immediately, never retried
+```
+
+**Red herring.** The failure is preceded by a `pg-connection-string@8.21` `deprecatedSslModeWarning`. Not the cause: pg 8.21 now treats `sslmode=require` as strict `verify-full` (and warns), but PPg's cert is publicly trusted so verification succeeds on a warm DB. Downgrading to `sslmode=no-verify` silences the warning but does **not** fix the failure, and is a needless security downgrade — don't chase it.
+
+**Reproduction.**
+
+1. Provision a PPg database via the Management API.
+2. Immediately (sub-second) open a node-postgres connection to `endpoints.direct.connectionString` and run `select 1`.
+3. → "Failed to connect to upstream database" (fast-reject on direct; ~10s timeout on pooled). Wait ~10s, retry → connects.
+
+**References.**
+
+- Upstream: [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while)
+- Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
+- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
