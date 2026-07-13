@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { number, string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import { Load } from '../graph.ts';
-import { dependency, isNode, module, resource, service } from '../node.ts';
+import { dependency, isNode, module, resource, secret, service } from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
 
 const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => ({
@@ -262,6 +262,40 @@ describe('service()', () => {
         build,
       }),
     ).toThrow(/param name "max_conns" may not contain "_"/);
+  });
+
+  test('rejects a secret slot name that collides with a service param name', () => {
+    expect(() =>
+      service({
+        name: 'hello',
+        extension: 'test/pack',
+        type: 'fake/app',
+        inputs: {},
+        params: { token: string() },
+        secrets: { token: secret() },
+        build,
+      }),
+    ).toThrow(/secret slot "token" collides with a param of the same name/);
+  });
+
+  test('a secret slot name may match a dependency input name — their config keys never collide', () => {
+    const node = service({
+      name: 'hello',
+      extension: 'test/pack',
+      type: 'fake/app',
+      inputs: {
+        token: dependency({
+          name: 'token',
+          type: 'fake/rpc',
+          connection: conn({ url: string() }, () => ({})),
+        }),
+      },
+      params: {},
+      secrets: { token: secret() },
+      build,
+    });
+    expect(Object.keys(node.secretSlots)).toEqual(['token']);
+    expect(Object.keys(node.inputs)).toEqual(['token']);
   });
 
   test('expose is absent by default', () => {

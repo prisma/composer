@@ -494,6 +494,19 @@ export function service<
   requireNoUnderscoreNames(Object.keys(def.inputs), 'input', 'service');
   requireNoUnderscoreNames(Object.keys(def.params), 'param', 'service');
   requireNoUnderscoreNames(Object.keys(def.secrets ?? {}), 'secret', 'service');
+  // A secret slot and a service-OWN param of the same name derive the SAME
+  // config key (COMPOSE_<addr>_<NAME>), so they'd write two rows to one key.
+  // A same-named dependency is fine — its keys carry the input+param segments
+  // (COMPOSE_<addr>_<NAME>_<param>), which never collide — matching how a dep
+  // and a param may already share a name (ADR-0021).
+  for (const slot of Object.keys(def.secrets ?? {})) {
+    if (Object.hasOwn(def.params, slot)) {
+      throw new Error(
+        `service() secret slot "${slot}" collides with a param of the same name — a secret slot and ` +
+          `a service param derive the same config key (COMPOSE_<addr>_${slot.toUpperCase()}); rename one.`,
+      );
+    }
+  }
   return Object.freeze({
     [NODE]: true as const,
     kind: 'service' as const,

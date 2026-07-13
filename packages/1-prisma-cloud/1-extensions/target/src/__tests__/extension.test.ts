@@ -130,6 +130,18 @@ describe('compute()', () => {
 
     expect(deps).toEqual({ db: { url: 'postgres://fake' } });
   });
+
+  test('rejects a secret slot name that collides with a param name (same config key)', () => {
+    expect(() =>
+      compute({
+        name: 'test-service',
+        deps: {},
+        params: { token: string() },
+        secrets: { token: secret() },
+        build,
+      }),
+    ).toThrow(/secret slot "token" collides with a param of the same name/);
+  });
 });
 
 describe('compute({ expose })', () => {
