@@ -18,9 +18,10 @@ export default async function Home() {
   // Two typed clients, injected by the root module's wiring. This page
   // doesn't know where catalog and orders run — only their contracts.
   const { catalog, orders } = service.load();
-  const [{ products }, { orders: recent }] = await Promise.all([
+  const [{ products }, { orders: recent }, { product: special }] = await Promise.all([
     catalog.listProducts({}),
     orders.listOrders({}),
+    catalog.getSpecial({}),
   ]);
 
   return (
@@ -35,6 +36,7 @@ export default async function Home() {
         <div className="product" key={p.id}>
           <div className="product-info">
             <strong>{p.name}</strong> <span className="price">{price(p.priceCents)}</span>
+            {special?.id === p.id && <span className="special">★ today’s special</span>}
             <p>{p.description}</p>
           </div>
           <form action={buy}>

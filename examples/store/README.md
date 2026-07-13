@@ -1,7 +1,8 @@
 # store — Compose Coffee
 
-A readable example Prisma App: a Next.js storefront, a **catalog** module, and
-an **orders** module.
+A readable example Prisma App: a Next.js storefront, a **catalog** module, an
+**orders** module, and the shared **cron** module rotating the special of the
+day.
 
 ```mermaid
 flowchart TB
@@ -20,11 +21,17 @@ flowchart TB
     ODB[("Postgres — private")]
     OR --- ODB
   end
+  subgraph Cron["Module: cron (shared)"]
+    SCH["scheduler · Compute Service"]
+    PR["promotions runner · Compute Service"]
+    SCH -->|"trigger(jobId)"| PR
+  end
 
   User -->|HTTP| SF
   SF -->|rpc · catalogContract| CA
   SF -->|rpc · ordersContract| OR
   OR -->|rpc · catalogContract| CA
+  PR -->|rpc · catalogContract| CA
 ```
 
 Each module owns its own Postgres; the only edges between components are the
@@ -42,6 +49,13 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
 - [modules/storefront](modules/storefront) — a real Next.js app. The page
   calls both typed clients; the Buy button is a server action that places an
   order.
+- [modules/promotions](modules/promotions) + the shared
+  `@prisma/compose-prisma-cloud/cron` module — **composition of a shared
+  module**. promotions defines the schedule
+  (`rotateSpecial: '30s'`) and the runner that maps the job id to
+  `catalog.rotateSpecial()`; the root provisions `cron({ schedule, runner })`
+  and wires `catalog.rpc` into its boundary like any other edge. The ★
+  special on the menu moves every 30 seconds.
 
 ## Run it locally (no cloud)
 

@@ -45,6 +45,12 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.special {
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  color: #b8860b;
+}
+
 button {
   font: inherit;
   padding: 0.4rem 1rem;

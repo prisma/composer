@@ -19,6 +19,15 @@ vi.mock('../src/service.ts', async () => {
           ],
         }),
         getProduct: async () => ({ product: null }),
+        getSpecial: async () => ({
+          product: {
+            id: 'espresso',
+            name: 'Espresso',
+            description: 'A double shot.',
+            priceCents: 350,
+          },
+        }),
+        rotateSpecial: async () => ({ product: null }),
       },
       orders: {
         placeOrder: async () => ({ order: null }),
@@ -48,5 +57,6 @@ describe('Home (page.tsx)', () => {
     expect(html).toContain('Espresso');
     expect(html).toContain('$3.50');
     expect(html).toContain('$7.00');
+    expect(html).toContain('today’s special');
   });
 });

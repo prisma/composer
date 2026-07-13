@@ -21,11 +21,18 @@ const fakeCatalog = compute({
   expose: { rpc: catalogContract },
 });
 
+let specialIdx = 0;
+
 export default serve(fakeCatalog, {
   rpc: {
     listProducts: async () => ({ products: FAKE_PRODUCTS }),
     getProduct: async ({ id }) => ({
       product: FAKE_PRODUCTS.find((p) => p.id === id) ?? null,
     }),
+    getSpecial: async () => ({ product: FAKE_PRODUCTS[specialIdx] }),
+    rotateSpecial: async () => {
+      specialIdx = (specialIdx + 1) % FAKE_PRODUCTS.length;
+      return { product: FAKE_PRODUCTS[specialIdx] };
+    },
   },
 });

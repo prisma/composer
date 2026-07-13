@@ -118,6 +118,9 @@ importers:
       '@store/orders':
         specifier: workspace:0.1.0
         version: link:modules/orders
+      '@store/promotions':
+        specifier: workspace:0.1.0
+        version: link:modules/promotions
       '@store/storefront':
         specifier: workspace:0.1.0
         version: link:modules/storefront
@@ -161,6 +164,31 @@ importers:
         version: 6.0.3
 
   examples/store/modules/orders:
+    dependencies:
+      '@store/catalog':
+        specifier: workspace:0.1.0
+        version: link:../catalog
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
+    devDependencies:
+      '@prisma/compose':
+        specifier: workspace:0.1.0
+        version: link:../../../../packages/9-public/compose
+      '@prisma/compose-prisma-cloud':
+        specifier: workspace:0.1.0
+        version: link:../../../../packages/9-public/compose-prisma-cloud
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.3
+        version: 0.22.3(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  examples/store/modules/promotions:
     dependencies:
       '@store/catalog':
         specifier: workspace:0.1.0

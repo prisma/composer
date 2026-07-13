@@ -47,6 +47,14 @@ await sql`
     price_cents integer not null
   )
 `;
+// Single-row table holding the current special of the day; the promotions
+// cron job advances it via rotateSpecial.
+await sql`
+  create table if not exists special (
+    singleton boolean primary key default true,
+    product_id text not null
+  )
+`;
 for (const p of SEED) {
   await sql`
     insert into products (id, name, description, price_cents)
@@ -54,6 +62,11 @@ for (const p of SEED) {
     on conflict (id) do nothing
   `;
 }
+await sql`
+  insert into special (singleton, product_id)
+  values (true, ${SEED[0].id})
+  on conflict (singleton) do nothing
+`;
 
 const toProduct = (row: Record<string, unknown>): Product => ({
   id: String(row.id),
@@ -71,6 +84,27 @@ const handler = serve(service, {
     getProduct: async ({ id }) => {
       const rows = await sql`select * from products where id = ${id}`;
       return { product: rows.length > 0 ? toProduct(rows[0]) : null };
+    },
+    getSpecial: async () => {
+      const rows = await sql`
+        select p.* from special s join products p on p.id = s.product_id
+      `;
+      return { product: rows.length > 0 ? toProduct(rows[0]) : null };
+    },
+    rotateSpecial: async () => {
+      const products = await sql`select * from products order by name`;
+      if (products.length === 0) return { product: null };
+
+      const current = await sql`select product_id from special`;
+      const currentIdx = products.findIndex(
+        (p: Record<string, unknown>) => p.id === current[0]?.product_id,
+      );
+      const next = toProduct(products[(currentIdx + 1) % products.length]);
+      await sql`
+        insert into special (singleton, product_id) values (true, ${next.id})
+        on conflict (singleton) do update set product_id = ${next.id}
+      `;
+      return { product: next };
     },
   },
 });

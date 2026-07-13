@@ -24,4 +24,12 @@ export const catalogContract = contract({
     input: type({ id: 'string' }),
     output: type({ product: product.or('null') }),
   }),
+  getSpecial: rpc({
+    input: type({}),
+    output: type({ product: product.or('null') }),
+  }),
+  rotateSpecial: rpc({
+    input: type({}),
+    output: type({ product: product.or('null') }),
+  }),
 });
