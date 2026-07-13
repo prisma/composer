@@ -1,6 +1,6 @@
 # Deploy-assembly bugs surfaced by the datahub live deploy (2026-07-13)
 
-> **DESIGN SETTLED — [ADR-0029](../../../docs/design/90-decisions/ADR-0029-deploy-bundles-are-user-produced-flat-trees.md). Do not relitigate.**
+> **DESIGN SETTLED — [ADR-0005](../../../docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md). Do not relitigate.**
 > The contract: the user's build hands the framework a finished **flat** bundle;
 > the framework only wraps it in its bootstrap. No path-string arithmetic, no
 > filesystem-derived identity, no layout inference, no absolute paths in
@@ -37,7 +37,7 @@ cron scheduler, whose `build.module` is `scheduler-service.mjs` → tsdown emits
 **Impact:** any app using `cron()` cannot deploy — including the framework's
 own `examples/cron` (never deployed in CI).
 
-**Fix (ADR-0029):** dictate the output name instead of discovering it —
+**Fix (ADR-0005):** dictate the output name instead of discovering it —
 tsdown object entry (`entry: { main: serviceModule }`) emits `main.mjs`
 directly; the readdir hunt, regex, and rename all delete. Stage the wrapper in
 a deploy-owned dir keyed by the node's graph address
@@ -65,7 +65,7 @@ false for datahub's `apps/web/` (two deep). Observed: framework looks for
 **Impact:** any Next.js app not exactly 4 directories below its tracing root
 cannot deploy. That's most real monorepos.
 
-**Fix (ADR-0029):** no inference of any kind. The user supplies the path to
+**Fix (ADR-0005):** no inference of any kind. The user supplies the path to
 their standalone app dir on the `nextjs()` adapter (relative resolves against
 `dirname(module)`, absolute passes through). Keep the "run `next build` with
 output: standalone" error when the declared path has no entry. (Discovery via
@@ -92,7 +92,7 @@ be skipped; dereferencing would double the artifact (targets are also walked).
 **Impact:** any Next.js app (and anything else with symlinked node_modules)
 fails at `packageComputeArtifact`.
 
-**Fix (ADR-0029):** flat bundles are the contract; a symlink in a bundle is
+**Fix (ADR-0005):** flat bundles are the contract; a symlink in a bundle is
 a **hard error** at package time, naming the offending path and the fix
 ("materialize links in your build, e.g. `cp -RL`"). No dereferencing, no
 symlink representation, no cycle/containment machinery — producing a flat tree

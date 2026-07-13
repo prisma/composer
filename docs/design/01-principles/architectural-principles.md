@@ -41,11 +41,10 @@ The framework **never** bundles, transforms, discovers, or repairs application
 code. Your build hands deploy a finished, flat, self-contained bundle; deploy
 wraps it in the framework's own bootstrap and ships it exactly as handed over.
 No filename guessing, no monorepo-layout inference, no tree fix-ups — a symlink
-in a bundle is an error to report, not a job to do.
-[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md)
-states the ownership;
-[ADR-0029](../90-decisions/ADR-0029-deploy-bundles-are-user-produced-flat-trees.md)
-binds the deploy path to it after three live violations. Do not relitigate.
+in a bundle is an error to report, not a job to do. See
+[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md);
+every violation of this principle has produced a real deploy failure. Do not
+relitigate.
 
 ## Code over configuration
 

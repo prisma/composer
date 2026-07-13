@@ -6,7 +6,7 @@ They are binding, not advisory. Proposals and code that contradict a recorded
 principle are wrong by definition — the principle wins until an ADR supersedes
 it. In particular: **we don't do bundling** — the framework never bundles,
 transforms, discovers, or repairs application code
-([ADR-0029](docs/design/90-decisions/ADR-0029-deploy-bundles-are-user-produced-flat-trees.md)).
+([ADR-0005](docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)).
 
 For design work, also check:
 

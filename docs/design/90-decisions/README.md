@@ -20,7 +20,7 @@ _Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settl
 
 - [ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md) — `prisma-compose deploy` derives everything from the root node; there is no deploy config file.
 - [ADR-0004](ADR-0004-paths-resolve-relative-to-the-authoring-file.md) — Paths resolve relative to the file that writes them; the build adapter carries the authoring module.
-- [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) — Users build their app; the framework assembles deploy artifacts from built output.
+- [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) — We don't bundle: the user's build produces a finished flat bundle; the framework only validates it and adds its boot wrapper. No path arithmetic, no layout inference, symlink in a bundle = hard error.
 - [ADR-0006](ADR-0006-every-node-is-named.md) — Every node is named; the root's name names the application.
 - [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md) — Deploy drives Alchemy through a generated, inspectable stack file.
 - [ADR-0008](ADR-0008-wrapper-inlines-everything-except-runtime-builtins.md) — The boot wrapper inlines everything except runtime built-ins.
@@ -44,4 +44,3 @@ _Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settl
 - [ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) — The framework is **Prisma Compose**; "Prisma App" names only the artifact you build. Supersedes ADR-0014's framework, package, and CLI names: `@prisma/compose*` (incl. `compose-alchemy`), `prisma-compose`, `prisma-compose.config.ts`.
 - [ADR-0027](ADR-0027-two-packages-compose-and-compose-prisma-cloud.md) — Ship two **public** packages: `@prisma/compose` (core + CLI + agnostic subpaths) and `@prisma/compose-prisma-cloud` (target + first-party modules as entrypoints, cron first). Boundary = the user's one choice: where does it run.
 - [ADR-0028](ADR-0028-numbered-domains-and-layers-enforced-by-dependency-cruiser.md) — `packages/` organizes into numbered domains (0-framework, 1-prisma-cloud, 9-public) and layers; planes as config-mapped entrypoints; internals are `@internal/*`; only 9-public publishes; dependency-cruiser enforces.
-- [ADR-0029](ADR-0029-deploy-bundles-are-user-produced-flat-trees.md) — Deploy bundles are user-produced flat trees; the framework only wraps in its bootstrap. No path arithmetic, no layout inference, symlink in a bundle = hard error; staging keys on the node's graph address.

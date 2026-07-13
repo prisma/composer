@@ -1,5 +1,5 @@
 ---
-description: "WE DON'T DO BUNDLING. The framework never bundles, transforms, discovers, or repairs application code — the user's build hands deploy a finished flat bundle; deploy only wraps it in the bootstrap. Settled by ADR-0029 after three live deploy failures. Do not relitigate."
+description: "WE DON'T DO BUNDLING. The framework never bundles, transforms, discovers, or repairs application code — the user's build hands deploy a finished flat bundle; deploy only wraps it in the bootstrap. Settled by ADR-0005. Do not relitigate."
 alwaysApply: true
 ---
 
@@ -9,10 +9,8 @@ alwaysApply: true
 code.** The user's build produces a finished, flat, self-contained bundle;
 deploy wraps it in the framework's bootstrap and ships it as handed over. This
 is a guiding design principle (`docs/design/01-principles/architectural-principles.md`),
-settled and bound to the deploy path by
-`docs/design/90-decisions/ADR-0029-deploy-bundles-are-user-produced-flat-trees.md`
-after three live deploy failures. **Do not relitigate it, and do not "helpfully"
-violate it:**
+settled by `docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md`.
+**Do not relitigate it, and do not "helpfully" violate it:**
 
 - Never guess or discover a bundle filename — dictate names we own; take paths
   the user owns as input.
@@ -27,4 +25,4 @@ violate it:**
   output; staging is deploy-owned, keyed by graph address.
 
 If a change seems to need any of the above, the design is being misread — stop
-and re-read ADR-0029.
+and re-read ADR-0005.
