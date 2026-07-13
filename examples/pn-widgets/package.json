@@ -14,7 +14,7 @@
     "@prisma/compose": "workspace:0.1.0",
     "@prisma/compose-prisma-cloud": "workspace:0.1.0",
     "effect": "4.0.0-beta.92",
-    "pg": "8.21.0"
+    "pg": "8.22.0"
   },
   "devDependencies": {
     "@prisma/compose": "workspace:0.1.0",

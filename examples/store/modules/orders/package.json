@@ -17,7 +17,7 @@
     "@prisma-next/postgres": "0.14.0",
     "@store/catalog": "workspace:0.1.0",
     "arktype": "^2.2.3",
-    "pg": "8.21.0"
+    "pg": "8.22.0"
   },
   "peerDependencies": {
     "@prisma/compose": "workspace:0.1.0",
