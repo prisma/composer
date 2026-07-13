@@ -8,8 +8,8 @@ read back at boot. Rests on
 deploy target owns serialization),
 [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md)
 (params are read through `config()`), and
-[ADR-0029](../90-decisions/ADR-0029-secrets-are-env-named-params.md) (a secret
-param is bound to an explicit platform env-var name).
+[ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) (a secret
+is a distinct forwardable slot, read through `secrets()`).
 
 ## The problem in one example
 
@@ -48,9 +48,9 @@ compute({
 });
 ```
 
-The facets are `default` (used when no value is stored), `secret` (redacted in
-introspection, placed securely by the target), and `optional`. They describe how
-a value is *handled*, not what it *is*. `string()`/`number()` are one-word helpers
+The facets are `default` (used when no value is stored) and `optional`. They
+describe how a value is *handled*, not what it *is*. (A secret is not a param
+facet — it is its own slot, see § Secrets.) `string()`/`number()` are one-word helpers
 for the common scalars; `param(schema)` wraps any other schema. There is no
 framework enum of permitted types.
 
@@ -141,66 +141,70 @@ Job[] → Config (structured) → target serialize (its medium) → stored confi
 
 ## Secrets
 
-A secret is a param whose value the user provisions on the platform, never the
-framework. `envSecret` declares one, binding it to the platform env-var name
-that holds the value:
+A secret is **not** a param — it is its own forwardable slot (ADR-0029). The
+value is provisioned out-of-band on the platform; the framework carries only the
+NAME. A service declares a nameless *need* with `secret()`; the root binds it to
+a platform env-var with `envSecret('NAME')` and forwards it in; it reads back
+through a third accessor, `secrets()`, as a redacting `SecretBox`:
 
 ```ts
-compute({
-  name: 'ingest',
-  params: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
-  // ...
-});
+// A service/module declares the need — no platform name here:
+compute({ name: 'auth', secrets: { signingKey: secret() }, build: … });
+
+// A module forwards its need down to an inner service (ctx.secrets):
+module('auth', { secrets: { signingKey: secret() }, expose: … }, ({ secrets, provision }) =>
+  provision(inner, { secrets: { signingKey: secrets.signingKey } }),
+);
+
+// Only the ROOT names the platform variable:
+provision(auth, { secrets: { signingKey: envSecret('AUTH_SIGNING_KEY') } });
+
+// Read at the point of use — expose() is the sole reader:
+const { signingKey } = service.secrets(); // SecretBox<string>
+signingKey.expose();                       // the one door to the value
 ```
 
-`envSecret(name)` is `{ schema: <string>, secret: true, external: name }`.
-`secret` forbids `default` — a fallback value would let a missing secret pass
-silently and would leak into introspection, which is exactly what `secret`
-exists to prevent. `optional` is still allowed.
+`secrets()` sits beside `load()`/`config()` (ADR-0021). The `SecretBox` redacts
+under `toString`/`toJSON`/`valueOf`/`inspect`, so a stray log or serialization
+prints `[REDACTED]`; only `expose()` returns the value.
 
 The round trip carries only the name, never the value:
 
-1. **Declare.** A leaf binds its own secret param with `envSecret`. A param
-   that is `secret: true` with no `external` name has no value source and
-   fails at deploy build — either bind it directly or wire it from a
-   producer's own bound param, the same as any other dependency value.
-2. **Manifest.** `configOf` reports every param's `external` name; the
-   graph's aggregate of secret declarations is the app's provision manifest
-   — everything that must exist on the platform before deploy.
-3. **Preflight.** Before Alchemy runs, the deploy pipeline checks that every
-   manifest name exists on the platform for the target stage's class/branch,
-   filling a name from the deploy shell's environment when the platform
-   doesn't have it yet (a direct API call, never an Alchemy resource, never
-   overwriting an existing platform value). A name missing from both fails
-   the deploy, listing exactly what's absent.
-4. **Pointer row.** The pack writes a secret param's row as a pointer — the
-   generated key (`COMPOSE_`-prefixed, like every generated key) maps to the
-   `external` name, not a value:
+1. **Bind + forward.** The root binds each need to a platform name and wires it
+   down the module topology (the same rail dependency inputs use). Load records
+   one binding per resolved service secret slot: `{ serviceAddress, slot, name }`.
+2. **Preflight.** Before Alchemy runs, the deploy verifies every bound name
+   exists on the platform for the target stage's class/branch, filling a name
+   from the deploy shell when the platform lacks it (a direct write-only POST,
+   never an Alchemy resource, never overwriting an existing value). A name
+   missing from both fails the deploy, listing exactly what's absent.
+3. **Pointer row.** The target writes a pointer per slot — the generated key
+   (`COMPOSE_`-prefixed, like every generated key) maps to the bound name, not a
+   value:
    ```
-   COMPOSE_INGEST_STRIPEKEY = "STRIPE_SECRET_KEY"
+   COMPOSE_AUTH_SIGNINGKEY = "AUTH_SIGNING_KEY"
    ```
-5. **Boot double-lookup.** Deserialize reads the pointer, then reads
-   `process.env` for the name it names, validating through the param's
-   schema.
+4. **Boot double-lookup.** Boot reads the pointer for the name, then reads
+   `process.env[name]` for the platform value, and wraps it in a `SecretBox`.
 
 The `COMPOSE_` prefix reserves the framework's generated keys into their own
-namespace, so a generated key never collides with — and silently overwrites —
-a user's own secret name.
+namespace, so a generated key never collides with — and silently overwrites — a
+user-provisioned platform variable.
 
-**Rotation is PATCH + redeploy.** A compute version snapshots its whole env
-map at creation and never re-resolves it, so changing a secret's value is the
-platform's existing semantics: `PATCH` the value on the platform, then create
-a new version. Nothing about that is specific to secrets.
+**Rotation is PATCH + redeploy.** A compute version snapshots its whole env map
+at creation and never re-resolves it, so changing a secret's value is the
+platform's own semantics: `PATCH` the value, then create a new version.
 
-See [ADR-0029](../90-decisions/ADR-0029-secrets-are-env-named-params.md) for
-the full design and its alternatives.
+See [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) for the full design and its
+alternatives.
 
 ## Introspection
 
 A service's config surface is enumerable from the graph alone, nothing booted:
 every param lists its owner, facets, and **schema**, so a structured param reports
-its real shape rather than "a string". Secret params appear with values redacted.
-This is what keeps topology tooling and agents able to answer "what is this service
+its real shape rather than "a string". Secrets are not params — they are a
+separate slot (§ Secrets) whose value never enters this surface at all. This is
+what keeps topology tooling and agents able to answer "what is this service
 configured with?" truthfully.
 
 ## Boundaries
@@ -213,8 +217,9 @@ Three lines the model holds everywhere:
 - **Params are static data.** A value that must come from another node — an
   address, a URL, credentials a resource mints — is a dependency input, never a
   field inside a param value.
-- **`secret` is handling, not type.** The schema says what a value is; `secret`
-  says it must be redacted and placed securely. The two never mix.
+- **Secrets are not params.** A secret is a distinct forwardable slot (§ Secrets,
+  ADR-0029), read through `secrets()` as a `SecretBox` — sensitivity is carried by
+  the type, never a param facet.
 
 ## Related
 
@@ -222,7 +227,7 @@ Three lines the model holds everywhere:
   [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md),
   [ADR-0021](../90-decisions/ADR-0021-params-are-read-through-config-not-load.md) —
   the decisions this documents.
-- [ADR-0029](../90-decisions/ADR-0029-secrets-are-env-named-params.md) — the
+- [ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md) — the
   secrets model this document's § Secrets summarizes.
 - [`core-model.md`](core-model.md) — where params sit in the node → graph → Config
   model.
