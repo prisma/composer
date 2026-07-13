@@ -103,7 +103,7 @@ describe('pnPostgres() factory shapes', () => {
     expect(dep.type).toBe('prisma-next');
     expect(dep.required).toBe(widget);
     expect(Object.keys(dep.connection.params)).toEqual(['url']);
-    expect(dep.connection.params['url']).toEqual(string({ secret: true }));
+    expect(dep.connection.params['url']).toEqual(string());
   });
 });
 

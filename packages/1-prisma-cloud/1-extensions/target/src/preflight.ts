@@ -1,6 +1,7 @@
 /**
- * Deploy preflight (ADR-0029): before Alchemy runs, verify every pointer secret
- * in the app's provision manifest exists on Prisma Cloud for the target stage.
+ * Deploy preflight (ADR-0029): before Alchemy runs, verify every secret binding
+ * in the app's provision manifest (each a platform env-var NAME) exists on Prisma
+ * Cloud for the target stage.
  * A name absent on the platform but present in the deploy shell is provisioned
  * via a direct Management API POST — NEVER an Alchemy resource, so the value
  * never lands in hosted deploy state. A name absent from both fails the deploy,
@@ -90,11 +91,7 @@ async function existsOnPlatform(
       client,
       cursor === null ? { projectId, class: cls, key } : { projectId, class: cls, key, cursor },
     );
-    if (res.error !== undefined) {
-      throw new Error(
-        `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(res.error)}.`,
-      );
-    }
+    if (res.error !== undefined) throw listFailedError(key, res.error);
     const page = res.data;
     if (page === undefined) return false;
     if (page.data.some(visible)) return true;
@@ -126,25 +123,36 @@ async function fillMissing(
     },
   });
   if (res.error !== undefined && res.response.status !== 409) {
-    throw new Error(
-      `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(res.error)}.`,
-    );
+    throw fillFailedError(key, res.error);
   }
 }
 
 interface MissingSecret {
-  readonly external: string;
+  readonly name: string;
   readonly serviceAddress: string;
 }
+
+// ——— Preflight errors (centralized; ADR-0029). Values are never logged. ———
+
+const tokenRequiredError = (): Error =>
+  new Error('environment variable PRISMA_SERVICE_TOKEN is required for deploy preflight.');
+
+const listFailedError = (key: string, error: unknown): Error =>
+  new Error(
+    `deploy preflight: Prisma Management API error listing "${key}": ${JSON.stringify(error)}.`,
+  );
+
+const fillFailedError = (key: string, error: unknown): Error =>
+  new Error(
+    `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
+  );
 
 function missingError(missing: readonly MissingSecret[], input: PreflightInput): Error {
   const scope =
     input.branchId === undefined
       ? 'the production class (project-level template)'
       : `the preview class of stage "${input.stage ?? input.branchId}" (branch override or template)`;
-  const lines = missing.map(
-    (m) => `  - ${m.external}  (required by service "${m.serviceAddress}")`,
-  );
+  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
   return new Error(
     `Deploy preflight failed — ${missing.length} secret env var(s) are not provisioned on Prisma ` +
       `Cloud for ${scope}, and are absent from the deploy shell:\n${lines.join('\n')}\n\n` +
@@ -154,9 +162,7 @@ function missingError(missing: readonly MissingSecret[], input: PreflightInput):
 }
 
 async function managementClient(): Promise<ManagementApiClient> {
-  if ((process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
-    throw new Error('environment variable PRISMA_SERVICE_TOKEN is required for deploy preflight.');
-  }
+  if ((process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) throw tokenRequiredError();
   return Effect.runPromise(
     Effect.gen(function* () {
       return yield* ManagementClient;
@@ -178,40 +184,25 @@ export async function runPreflight(
   const manifest = provisionManifest(input.graph);
   if (manifest.length === 0) return;
 
-  // One check per external name; a name is required if ANY binding of it is required.
-  const names = new Map<string, MissingSecret & { optional: boolean }>();
-  for (const entry of manifest) {
-    const prev = names.get(entry.external);
-    if (prev === undefined) {
-      names.set(entry.external, {
-        external: entry.external,
-        serviceAddress: entry.serviceAddress,
-        optional: entry.optional,
-      });
-    } else if (!entry.optional) {
-      // Upgrade to required AND carry this (required) binding's serviceAddress,
-      // so a missing-secret error never attributes it to a service that only
-      // declared it optional.
-      names.set(entry.external, {
-        external: entry.external,
-        serviceAddress: entry.serviceAddress,
-        optional: false,
-      });
+  // One check per platform NAME (many slots/services may bind the same one).
+  // Every wired secret is required — the forwarding model has no optional slot.
+  const names = new Map<string, MissingSecret>();
+  for (const binding of manifest) {
+    if (!names.has(binding.name)) {
+      names.set(binding.name, { name: binding.name, serviceAddress: binding.serviceAddress });
     }
   }
 
   const client = deps?.client ?? (await managementClient());
   const missing: MissingSecret[] = [];
   for (const meta of names.values()) {
-    if (await existsOnPlatform(client, input.projectId, input.branchId, meta.external)) continue;
-    const shellValue = process.env[meta.external];
+    if (await existsOnPlatform(client, input.projectId, input.branchId, meta.name)) continue;
+    const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
-      await fillMissing(client, input, meta.external, shellValue);
+      await fillMissing(client, input, meta.name, shellValue);
       continue;
     }
-    if (!meta.optional) {
-      missing.push({ external: meta.external, serviceAddress: meta.serviceAddress });
-    }
+    missing.push(meta);
   }
   if (missing.length > 0) throw missingError(missing, input);
 }

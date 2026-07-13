@@ -48,21 +48,10 @@ export const EnvironmentVariableProvider = () =>
         list: () => Effect.succeed([] as EnvironmentVariableAttributes[]),
         reconcile: Effect.fn(function* ({ news, output }) {
           const cls = news.class ?? 'production';
-          // The value is write-only (encrypted), so we never diff it — we PATCH.
-          // Find the row to write, adopting in order: our own prior row
-          // (output.id), then — ONLY for a platform-seeded poison key — a
-          // pre-existing row at the same (project, class, key). The platform
-          // seeds DATABASE_URL/_POOLED at project creation, which Prisma App
-          // poisons; adopting that row makes the poison write idempotent.
-          //
-          // Every other key the framework writes is COMPOSE_-prefixed (ADR-0029,
-          // a reserved namespace users cannot bind into). So a pre-existing
-          // non-poison match we hold no state for is NOT ours to overwrite —
-          // something is squatting the reserved namespace, and we fail loudly
-          // rather than clobber it. (Trade-off: a redeploy after hosted deploy
-          // state is lost will also hit this on its own COMPOSE_ rows and must
-          // be resolved by hand — the spec chooses fail-loud over silent
-          // overwrite.)
+          // Value is write-only, so we PATCH, never diff. Adopt our own prior
+          // row (output.id), or a pre-existing poison-key row (DATABASE_URL(_POOLED),
+          // platform-seeded). Any other untracked match is a COMPOSE_ collision we
+          // refuse to overwrite (see the throw below).
           let id = output?.id;
           if (id !== undefined) {
             const priorId = id;
@@ -86,12 +75,10 @@ export const EnvironmentVariableProvider = () =>
               const isPoison = news.key === 'DATABASE_URL' || news.key === 'DATABASE_URL_POOLED';
               if (!isPoison) {
                 throw new Error(
-                  `EnvironmentVariable "${news.key}" already exists on project "${news.projectId}" ` +
-                    `(class "${cls}") but is not tracked in this deploy's state — refusing to ` +
-                    'overwrite. Keys the framework writes live in the reserved COMPOSE_ namespace ' +
-                    "users cannot bind into, so this row is almost certainly this app's own prior " +
-                    "deploy: restore this deploy's hosted state if it was lost, or remove the " +
-                    'variable on the platform to let this deploy recreate it.',
+                  `EnvironmentVariable "${news.key}" (project "${news.projectId}", class "${cls}") ` +
+                    'exists but is untracked in this deploy state — refusing to overwrite a reserved ' +
+                    "COMPOSE_ key. Restore this deploy's hosted state, or remove the variable to let " +
+                    'this deploy recreate it.',
                 );
               }
               id = matchId;

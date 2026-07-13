@@ -1,22 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 import type { ConfigDeclaration, Contract } from '@internal/core';
-import { configOf, envSecret, hydrateSync, isNode, number, param, string } from '@internal/core';
+import {
+  configOf,
+  hydrateSync,
+  isNode,
+  number,
+  param,
+  SecretBox,
+  secret,
+  string,
+} from '@internal/core';
 import { type } from 'arktype';
 import { compute, postgres, postgresContract } from '../index.ts';
-import { configKey, deserialize, encode } from '../serializer.ts';
+import { configKey, deserialize, deserializeSecrets, encode, secretKey } from '../serializer.ts';
 import { bootstrapService } from '../testing.ts';
 
 function scalarDeclaration(
   owner: ConfigDeclaration['owner'],
   name: string,
-  opts: { secret?: boolean; optional?: boolean; default?: unknown; external?: string } = {},
+  opts: { optional?: boolean; default?: unknown } = {},
 ): ConfigDeclaration {
   return {
     owner,
     name,
     schema: { vendor: '@prisma/compose' },
-    secret: opts.secret ?? false,
-    ...(opts.external !== undefined ? { external: opts.external } : {}),
     optional: opts.optional ?? false,
     default: opts.default,
   };
@@ -58,7 +65,7 @@ describe('postgres({ name })', () => {
 });
 
 describe('postgres()', () => {
-  test('returns a branded dependency end requiring postgresContract, declaring { url: string, secret }', () => {
+  test('returns a branded dependency end requiring postgresContract, declaring { url: string }', () => {
     const end = postgres();
 
     expect(isNode(end)).toBe(true);
@@ -66,7 +73,7 @@ describe('postgres()', () => {
     expect(end.type).toBe('postgres');
     expect(end.name).toBe('postgres');
     expect(end.required).toBe(postgresContract);
-    expect(end.connection.params).toEqual({ url: string({ secret: true }) });
+    expect(end.connection.params).toEqual({ url: string() });
   });
 
   test('the binding IS the typed config — hydrate is the identity on its values (ADR-0015)', () => {
@@ -200,7 +207,6 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
       owner: { input: 'auth' },
       name: 'url',
       schema: {},
-      secret: false,
       optional: false,
       default: undefined,
     };
@@ -453,7 +459,7 @@ describe('compute().load()', () => {
 });
 
 describe('the config pipeline over extension nodes', () => {
-  test('configOf is semantic — owner/name/type/secret, no platform keys', () => {
+  test('configOf is semantic — owner/name/type, no platform keys', () => {
     const app = compute({
       name: 'test-service',
       deps: {
@@ -463,7 +469,7 @@ describe('the config pipeline over extension nodes', () => {
     });
 
     expect(configOf(app)).toEqual([
-      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'db' }, 'url'),
       scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
     expect(JSON.stringify(configOf(app))).not.toContain('DATABASE_URL');
@@ -537,102 +543,71 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
   });
 });
 
-describe('secret pointer rows + double-lookup (ADR-0029)', () => {
-  const secretApp = (opts?: { optional?: boolean }) =>
-    compute({
-      name: 'ingest',
-      deps: {},
-      params: {
-        stripeKey:
-          opts?.optional === true
-            ? envSecret('STRIPE_SECRET_KEY', { optional: true })
-            : envSecret('STRIPE_SECRET_KEY'),
+describe('secret slots — pointer rows + boot double-lookup (ADR-0029)', () => {
+  const secretApp = () =>
+    compute({ name: 'ingest', deps: {}, secrets: { stripeKey: secret() }, build });
+
+  test('secretKey derives COMPOSE_<addr>_<slot>', () => {
+    expect(secretKey('', 'stripeKey')).toBe('COMPOSE_STRIPEKEY');
+    expect(secretKey('ingest', 'stripeKey')).toBe('COMPOSE_INGEST_STRIPEKEY');
+  });
+
+  test('the pointer key holds the platform NAME; deserializeSecrets double-looks-up the value', async () => {
+    const app = secretApp();
+    await withEnv(
+      { [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY', STRIPE_SECRET_KEY: 'sk_live_abc' },
+      () => {
+        expect(deserializeSecrets(app, '')).toEqual({ stripeKey: 'sk_live_abc' });
       },
-      build,
+    );
+  });
+
+  test('a missing pointer row fails loudly', async () => {
+    const app = secretApp();
+    await withEnv({}, () => {
+      expect(() => deserializeSecrets(app, '')).toThrow(/missing secret pointer/);
     });
-
-  const stripeKeyDecl = () => {
-    const decl = configOf(secretApp()).find((d) => d.name === 'stripeKey');
-    if (decl === undefined) throw new Error('expected a stripeKey declaration');
-    return decl;
-  };
-
-  test('configOf reports the external platform name; the generated key is COMPOSE_-prefixed', () => {
-    expect(configOf(secretApp())).toContainEqual(
-      scalarDeclaration('service', 'stripeKey', { secret: true, external: 'STRIPE_SECRET_KEY' }),
-    );
-    expect(configKey('', stripeKeyDecl())).toBe('COMPOSE_STRIPEKEY');
   });
 
-  test('the COMPOSE_ key holds the external NAME; the value lives only in that platform var', async () => {
+  test('a missing platform var fails loudly, naming both keys', async () => {
     const app = secretApp();
+    await withEnv({ [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY' }, () => {
+      expect(() => deserializeSecrets(app, '')).toThrow(/STRIPE_SECRET_KEY/);
+    });
+  });
+
+  test('an empty platform var fails loudly — empty is unresolved', async () => {
+    const app = secretApp();
+    await withEnv(
+      { [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY', STRIPE_SECRET_KEY: '' },
+      () => {
+        expect(() => deserializeSecrets(app, '')).toThrow(/unset or empty/);
+      },
+    );
+  });
+
+  test('secrets() returns a redacting SecretBox; it survives run() → stashSecrets → secrets() (the stash trap)', async () => {
+    const app = secretApp();
+    let box: SecretBox<string> | undefined;
     await withEnv(
       {
-        [configKey('', stripeKeyDecl())]: 'STRIPE_SECRET_KEY',
-        STRIPE_SECRET_KEY: 'sk_live_abc',
-        COMPOSE_PORT: '',
-      },
-      () => {
-        expect(deserialize(app, '').service['stripeKey']).toBe('sk_live_abc');
-      },
-    );
-  });
-
-  test('a required secret whose platform var is unset fails loudly, naming both keys', async () => {
-    const app = secretApp();
-    await withEnv(
-      { [configKey('', stripeKeyDecl())]: 'STRIPE_SECRET_KEY', COMPOSE_PORT: '' },
-      () => {
-        expect(() => deserialize(app, '')).toThrow(/COMPOSE_STRIPEKEY.*STRIPE_SECRET_KEY/);
-      },
-    );
-  });
-
-  test('a required secret whose platform var is empty ("") fails loudly — empty is unresolved', async () => {
-    const app = secretApp();
-    await withEnv(
-      {
-        [configKey('', stripeKeyDecl())]: 'STRIPE_SECRET_KEY',
-        STRIPE_SECRET_KEY: '',
-        COMPOSE_PORT: '',
-      },
-      () => {
-        expect(() => deserialize(app, '')).toThrow(/STRIPE_SECRET_KEY/);
-      },
-    );
-  });
-
-  test('an optional secret whose platform var is unset resolves to undefined', async () => {
-    const app = secretApp({ optional: true });
-    await withEnv(
-      { [configKey('', stripeKeyDecl())]: 'STRIPE_SECRET_KEY', COMPOSE_PORT: '' },
-      () => {
-        expect(deserialize(app, '').service['stripeKey']).toBeUndefined();
-      },
-    );
-  });
-
-  test('a secret survives run() → stash → config(): the address-free re-read double-looks-up identically (the stash trap)', async () => {
-    const app = secretApp();
-    let cfg: unknown;
-    await withEnv(
-      {
-        // address-keyed pointer row + the user-provisioned external var:
+        // address-keyed pointer row + the user-provisioned platform var:
         COMPOSE_INGEST_STRIPEKEY: 'STRIPE_SECRET_KEY',
         STRIPE_SECRET_KEY: 'sk_live_trap',
         COMPOSE_INGEST_PORT: '',
-        // address-free keys stash (over)writes — tracked so withEnv restores them:
+        // address-free keys stashSecrets/stash (over)write — tracked so withEnv restores them:
         COMPOSE_STRIPEKEY: '',
         COMPOSE_PORT: '',
       },
       () =>
         app.run('ingest', async () => {
-          cfg = app.config();
+          box = app.secrets().stripeKey;
         }),
     );
-    // If stash re-emitted the resolved VALUE instead of the pointer, the
-    // address-free deserialize would read it as a pointer to a non-existent var
-    // and config() would have thrown — this asserts the pointer survives.
-    expect(cfg).toEqual({ port: 3000, stripeKey: 'sk_live_trap' });
+    expect(box).toBeInstanceOf(SecretBox);
+    expect(box?.expose()).toBe('sk_live_trap');
+    // Redacted everywhere but expose() — if stashSecrets re-emitted the VALUE
+    // instead of the POINTER, the address-free double-lookup would have thrown.
+    expect(String(box)).toBe('[REDACTED]');
   });
 });

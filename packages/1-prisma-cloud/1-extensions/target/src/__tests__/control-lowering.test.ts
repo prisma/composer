@@ -88,7 +88,7 @@ mock.module('../pg-warm-resource.ts', () => ({
 
 const { prismaCloud } = await import('../control.ts');
 const { compute, postgres } = await import('../index.ts');
-const { module, envSecret } = await import('@internal/core');
+const { module, secret } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 
 const run = <A>(eff: Effect.Effect<A, unknown, unknown>): A =>
@@ -327,7 +327,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth', node } as unknown as LowerContext;
+      const ctx = { address: 'auth', node, graph: { secrets: [] } } as unknown as LowerContext;
       const provisioned: LoweredNode = {
         outputs: { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' },
       };
@@ -370,7 +370,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('a secret param serializes to a POINTER row — value is the external NAME, never the value (ADR-0029)', async () => {
+  test('a secret slot serializes to a POINTER row — value is the bound platform NAME, never a value (ADR-0029)', async () => {
     await withEnv(
       // The real secret value is present in the deploy shell, proving it still
       // cannot reach the serialized row.
@@ -380,7 +380,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         const node = compute({
           name: 'ingest',
           deps: {},
-          params: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+          secrets: { stripeKey: secret() },
           build: {
             extension: '@prisma/compose/node',
             type: 'node',
@@ -388,9 +388,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             entry: 'server.js',
           },
         });
-        const ctx = { address: 'ingest', node } as unknown as LowerContext;
+        // The root bound the slot to STRIPE_SECRET_KEY — it rides on graph.secrets.
+        const graph = {
+          secrets: [{ serviceAddress: 'ingest', slot: 'stripeKey', name: 'STRIPE_SECRET_KEY' }],
+        };
+        const ctx = { address: 'ingest', node, graph } as unknown as LowerContext;
         const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
-        // buildConfig omits the defaultless secret; serialize still writes its pointer row.
         const config = { service: { port: 3000 }, inputs: {} };
         const before = recorded.envVar.length;
 
@@ -399,7 +402,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         );
 
         const writes = recorded.envVar.slice(before).map(([, props]) => props);
-        // The secret's row holds the external NAME (a pointer), never a value.
+        // The pointer row holds the bound platform NAME, never a value.
         expect(writes).toContainEqual({
           projectId: 'shop-project#cloud-id',
           key: 'COMPOSE_INGEST_STRIPEKEY',
@@ -425,7 +428,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth3', node } as unknown as LowerContext;
+      const ctx = { address: 'auth3', node, graph: { secrets: [] } } as unknown as LowerContext;
       const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
       const config = { service: { port: 3000 }, inputs: {} };
       const before = recorded.envVar.length;
@@ -460,7 +463,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth', node } as unknown as LowerContext;
+      const ctx = { address: 'auth', node, graph: { secrets: [] } } as unknown as LowerContext;
       const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
       // A port other than the pack default: serialize must carry 8080 through,
       // not silently normalize it back to 3000.

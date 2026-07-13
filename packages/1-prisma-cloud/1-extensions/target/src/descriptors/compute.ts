@@ -4,7 +4,7 @@ import type { ServiceNode } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import * as Prisma from '@internal/lowering';
 import * as Effect from 'effect/Effect';
-import { configKey, paramEntries, storedForm } from '../serializer.ts';
+import { configKey, encode, paramEntries, secretPointerRows } from '../serializer.ts';
 import { DEFAULT_REGION, projectIdOf, type ResolvedCloudOptions, validateName } from './shared.ts';
 
 export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
@@ -26,29 +26,46 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         };
       }),
 
-    // storedForm keys each row: a service-own literal is JSON-stringified, a
-    // dependency-input provisioning ref passes through untouched (keeping its
-    // ordering edge), and a secret bound to a platform name writes only that
-    // name (a pointer), never a value (ADR-0029).
-    serialize: ({ address, node }, provisioned, config) =>
+    // Two channels of rows: PARAMS (service-own literals JSON-encoded; dependency
+    // provisioning refs passed through, keeping their ordering edge) and SECRETS
+    // (a POINTER row per slot holding the bound platform NAME, never a value —
+    // ADR-0029). The class/branch scope is identical for both.
+    serialize: ({ address, node, graph }, provisioned, config) =>
       Effect.gen(function* () {
+        const cls = o.branchId ? ('preview' as const) : ('production' as const);
+        const branch = o.branchId !== undefined ? { branchId: o.branchId } : {};
+        const projectId = projectIdOf(provisioned);
+        const svc = node as ServiceNode;
         const records = [];
-        for (const d of paramEntries(node as ServiceNode)) {
+
+        for (const d of paramEntries(svc)) {
           const value =
             d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
           const key = configKey(address, d);
           records.push(
             yield* Prisma.EnvironmentVariable(`${key}-var`, {
-              projectId: projectIdOf(provisioned),
+              projectId,
               key,
-              // A secret bound to a platform name writes only that NAME (a
-              // pointer), never a value (ADR-0029); storedForm holds the rule.
-              value: storedForm(d, value),
-              class: o.branchId ? 'preview' : 'production',
-              ...(o.branchId !== undefined ? { branchId: o.branchId } : {}),
+              value: encode(d.owner, value),
+              class: cls,
+              ...branch,
             }),
           );
         }
+
+        for (const { key, name } of secretPointerRows(svc, address, graph.secrets)) {
+          records.push(
+            yield* Prisma.EnvironmentVariable(`${key}-var`, {
+              projectId,
+              key,
+              // The pointer: the platform env-var NAME the root bound the slot to.
+              value: name,
+              class: cls,
+              ...branch,
+            }),
+          );
+        }
+
         // Carries the resolved port to deploy() via serialize's outputs; falls back to 3000 if unset.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return { outputs: { environment: records, port } };

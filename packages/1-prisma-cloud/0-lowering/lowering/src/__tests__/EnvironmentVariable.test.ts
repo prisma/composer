@@ -141,7 +141,7 @@ describe('EnvironmentVariable reconcile — restricted adoption (ADR-0029)', () 
 
     expect(exit._tag).toBe('Failure');
     if (exit._tag === 'Failure') {
-      expect(Cause.pretty(exit.cause)).toContain('reserved COMPOSE_ namespace');
+      expect(Cause.pretty(exit.cause)).toContain('reserved COMPOSE_ key');
     }
     // It observed the collision, then refused — no PATCH, no POST.
     expect(state.calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);

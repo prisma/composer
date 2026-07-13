@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { envSecret, Load, module } from '@internal/core';
+import { envSecret, Load, module, secret } from '@internal/core';
 import type { ManagementApiClient } from '@internal/lowering';
 import { compute } from '../index.ts';
 import { runPreflight } from '../preflight.ts';
@@ -57,58 +57,35 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
-const secretGraph = (opts?: { optional?: boolean }) =>
+const secretGraph = () =>
   Load(
-    module('app', {}, (h) => {
-      h.provision(
-        compute({
-          name: 'ingest',
-          deps: {},
-          params: {
-            stripeKey:
-              opts?.optional === true
-                ? envSecret('STRIPE_SECRET_KEY', { optional: true })
-                : envSecret('STRIPE_SECRET_KEY'),
-          },
-          build,
-        }),
-        { id: 'ingest' },
-      );
-      return {};
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'ingest', deps: {}, secrets: { stripeKey: secret() }, build }), {
+        id: 'ingest',
+        secrets: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      });
     }),
   );
 
 const noSecretGraph = () =>
   Load(
-    module('app', {}, (h) => {
-      h.provision(compute({ name: 'ingest', deps: {}, build }), { id: 'ingest' });
-      return {};
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'ingest', deps: {}, build }), { id: 'ingest' });
     }),
   );
 
-/** Two services binding the SAME external name — one optional (web), one required (ingest). */
+/** Two services binding the SAME platform name — the manifest dedups it. */
 const sharedSecretGraph = () =>
   Load(
-    module('app', {}, (h) => {
-      h.provision(
-        compute({
-          name: 'web',
-          deps: {},
-          params: { key: envSecret('STRIPE_SECRET_KEY', { optional: true }) },
-          build,
-        }),
-        { id: 'web' },
-      );
-      h.provision(
-        compute({
-          name: 'ingest',
-          deps: {},
-          params: { key: envSecret('STRIPE_SECRET_KEY') },
-          build,
-        }),
-        { id: 'ingest' },
-      );
-      return {};
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'web', deps: {}, secrets: { key: secret() }, build }), {
+        id: 'web',
+        secrets: { key: envSecret('STRIPE_SECRET_KEY') },
+      });
+      provision(compute({ name: 'ingest', deps: {}, secrets: { key: secret() }, build }), {
+        id: 'ingest',
+        secrets: { key: envSecret('STRIPE_SECRET_KEY') },
+      });
     }),
   );
 
@@ -260,22 +237,6 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
-  test('an optional secret absent from both passes (no failure, no write)', async () => {
-    state.rows = [];
-
-    await runPreflight(
-      {
-        graph: secretGraph({ optional: true }),
-        projectId: 'proj',
-        branchId: undefined,
-        stage: undefined,
-      },
-      { client: fakeClient(state) },
-    );
-
-    expect(state.posts).toEqual([]);
-  });
-
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
     await runPreflight(
       { graph: noSecretGraph(), projectId: 'proj', branchId: undefined, stage: undefined },
@@ -342,7 +303,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(posts).toEqual([]); // found present → no fill
   });
 
-  test('a name declared optional by one service and required by another is attributed to the requiring service', async () => {
+  test('the same platform name bound by two services is checked once and named in the failure', async () => {
     state.rows = [];
 
     const error: unknown = await runPreflight(
@@ -351,6 +312,9 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     ).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toContain('service "ingest"');
+    expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
+    expect((error as Error).message).toMatch(/service "(web|ingest)"/);
+    // The shared name is deduped to a single platform existence check.
+    expect(state.gets).toHaveLength(1);
   });
 });
