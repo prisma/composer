@@ -1,32 +1,44 @@
 import { describe, expect, test } from 'bun:test';
 import nextjs from '../index.ts';
 
-describe('nextjs({ module, appDir, entry })', () => {
-  test('returns a plain { extension, type, module, appDir, entry } build adapter descriptor', () => {
+describe('nextjs({ module, standalone, entry })', () => {
+  test('returns a plain { extension, type, module, standalone, entry } build adapter descriptor', () => {
     expect(
-      nextjs({ module: 'file:///app/src/service.ts', appDir: '..', entry: 'server.js' }),
+      nextjs({
+        module: 'file:///app/src/service.ts',
+        standalone: '../.next/standalone',
+        entry: 'apps/web/server.js',
+      }),
     ).toEqual({
       extension: '@prisma/compose/nextjs',
       type: 'nextjs',
       module: 'file:///app/src/service.ts',
-      appDir: '..',
-      entry: 'server.js',
+      standalone: '../.next/standalone',
+      entry: 'apps/web/server.js',
     });
   });
 
-  test("carries the entry through unmodified — Next's standalone server.js, resolved inside the assembled standalone dir", () => {
+  test('carries the entry through unmodified — the bootable server path relative to the standalone root', () => {
     expect(
       nextjs({
         module: 'file:///app/src/service.ts',
-        appDir: '..',
-        entry: '.next/standalone/server.js',
+        standalone: '../.next/standalone',
+        entry: 'apps/web/server.js',
       }).entry,
-    ).toBe('.next/standalone/server.js');
+    ).toBe('apps/web/server.js');
   });
 
   test('is pure data — calling it twice with the same input yields equal, independent objects', () => {
-    const a = nextjs({ module: 'file:///app/src/service.ts', appDir: '..', entry: 'server.js' });
-    const b = nextjs({ module: 'file:///app/src/service.ts', appDir: '..', entry: 'server.js' });
+    const a = nextjs({
+      module: 'file:///app/src/service.ts',
+      standalone: '..',
+      entry: 'server.js',
+    });
+    const b = nextjs({
+      module: 'file:///app/src/service.ts',
+      standalone: '..',
+      entry: 'server.js',
+    });
 
     expect(a).toEqual(b);
     expect(a).not.toBe(b);

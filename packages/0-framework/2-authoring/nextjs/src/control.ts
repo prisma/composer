@@ -1,33 +1,27 @@
 /**
  * The extension's control entry (ADR-0017): `nextjsBuild()` returns the
  * descriptor `prisma-compose.config.ts` lists — one build control, node ID
- * "nextjs". Deploy-only (ADR-0005): assembles a Next.js `output:
- * "standalone"` build into the bundle dir packaged at deploy. Run `next
- * build` first. The heavy tsdown import lives only here, never in the
- * authoring entry.
+ * "nextjs". Deploy-only (ADR-0005): the user's own build produces a finished,
+ * flat Next.js `output: "standalone"` tree — server.js, the traced
+ * node_modules, and the client assets (`.next/static`, `public/`) copied in —
+ * and `assemble` only wraps it. The heavy tsdown import lives only here.
  *
- * Next's standalone tree omits the static assets and `public/`, so this
- * copies them in. The bundle entry is NOT server.js directly: the app's
- * Prisma App wrapper (the service module — declarations only, whose node
- * carries its own run()) is bundled to `main.mjs` next to server.js, so the
- * relative import resolves inside the artifact and the Prisma App boot loop
- * runs first (bootstrap.js imports main.mjs, then dynamically imports
- * server.js — see @prisma/compose/deploy's PackageInput).
+ * We don't complete or repair the tree (ADR-0005): no static/public copy, no
+ * node_modules hoisting, no path arithmetic to locate the standalone output.
+ * The user hands us the standalone root via `standalone` and the bootable
+ * server path via `entry`; we copy that tree wholesale into the artifact's
+ * `bundle/` and add our wrapper beside it. A symlink in the tree is the
+ * packager's hard error, not ours to dereference.
  *
- * Prisma App ships no build step, but it does own the artifact envelope —
- * bootstrap.js + compute.manifest.json + the deterministic tar are printed
- * by the platform extension's `package()` at deploy, not here.
+ * Artifact layout: `<workDir>/main.mjs` (our wrapper) + `<workDir>/bundle/`
+ * (the user's standalone tree); the packager adds `bootstrap.js` + the
+ * manifest. bootstrap imports main.mjs, whose run() dynamically imports
+ * `./bundle/<entry>`; server.js resolves its deps from `bundle/node_modules`.
  *
- * Requires a hoisted node_modules (see the repo `.npmrc`): pnpm's default
- * isolated layout hides Next's peers (e.g. styled-jsx) under `.pnpm`, and the
- * flattened standalone `next` copy can't resolve them at boot.
- *
- * All paths are file-relative (ADR-0004): the build adapter's `appDir`
- * resolves against `dirname(build.module)`, never against a discovered
- * package directory.
+ * All paths are file-relative (ADR-0004): `standalone` resolves against
+ * `dirname(build.module)`, never against a discovered package directory.
  */
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BuildAdapter } from '@internal/core';
@@ -41,115 +35,96 @@ export type { AssembleInput, Bundle } from '@internal/core/deploy';
 /** Narrows the shared BuildAdapter to this extension's own descriptor — the value-level mirror of the registry routing on (extension, type). */
 function isNextjsBuild(descriptor: BuildAdapter): descriptor is NextjsBuildAdapter {
   return (
-    descriptor.type === 'nextjs' && 'appDir' in descriptor && typeof descriptor.appDir === 'string'
+    descriptor.type === 'nextjs' &&
+    'standalone' in descriptor &&
+    typeof descriptor.standalone === 'string'
   );
 }
 
-/** Where Next's standalone build places this app, given `outputFileTracingRoot` pins the monorepo root. */
-export function nextStandaloneDir(appDir: string): string {
-  const resolvedApp = path.resolve(appDir);
-  const workspaceRoot = path.resolve(resolvedApp, '../../../..');
-  const rel = path.relative(workspaceRoot, resolvedApp);
-  return path.join(resolvedApp, '.next', 'standalone', rel);
+/** The user's finished standalone root — `standalone` resolved against the authoring module's dir (ADR-0004); absolute passes through. */
+function standaloneRoot(build: NextjsBuildAdapter): string {
+  return path.resolve(path.dirname(fileURLToPath(build.module)), build.standalone);
 }
 
-/** The bootable standalone entry for a nextjs build — the output dir joined with the adapter's `entry`. Single-sourced so `assemble()` (deploy) and the integration-test seam can't drift. */
+/** The bootable standalone server's absolute path — the standalone root joined with the user-nominated `entry`. Single-sourced so `assemble()` (deploy) and the integration-test seam can't drift. */
 export function standaloneEntryPath(build: NextjsBuildAdapter): string {
-  const resolvedApp = path.resolve(path.dirname(fileURLToPath(build.module)), build.appDir);
-  return path.join(nextStandaloneDir(resolvedApp), build.entry);
+  return path.join(standaloneRoot(build), build.entry);
 }
 
 export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (!isNextjsBuild(input.build)) {
     throw new Error(
-      `@prisma/compose/nextjs/control: expected a "nextjs" build adapter (with appDir), got "${input.build.type}".`,
+      `@prisma/compose/nextjs/control: expected a "nextjs" build adapter (with standalone), got "${input.build.type}".`,
     );
   }
   const buildDescriptor = input.build;
 
-  const serviceModule = fileURLToPath(buildDescriptor.module);
-  const moduleDir = path.dirname(serviceModule);
-  const resolvedApp = path.resolve(moduleDir, buildDescriptor.appDir);
-  const appOut = nextStandaloneDir(resolvedApp);
+  const root = standaloneRoot(buildDescriptor);
   const entryPath = standaloneEntryPath(buildDescriptor);
   if (!fs.existsSync(entryPath)) {
     throw new Error(
-      `no standalone ${buildDescriptor.entry} at ${appOut} — run \`next build\` with output: "standalone" first`,
+      `no standalone ${buildDescriptor.entry} at ${root} — run \`next build\` with output: ` +
+        '"standalone" and flatten it (copy .next/static + public in, materialize any symlinks) ' +
+        'so the tree is complete and flat.',
+    );
+  }
+  // "main" is the wrapper's name at the working-dir root; an entry with that
+  // basename would collide with it.
+  if (/^main\.m?js$/.test(path.basename(buildDescriptor.entry))) {
+    throw new Error(
+      `the build adapter's entry ("${buildDescriptor.entry}") may not be named main.js/main.mjs — ` +
+        'that name is reserved for the Prisma App wrapper at the artifact root.',
     );
   }
 
-  // Next hoists the traced node_modules to the STANDALONE ROOT, resolved from
-  // the nested server.js by walking up. But the artifact tars only this app
-  // subdir (the bundle dir), so those deps (`next`, `react`, …) are left out —
-  // the VM then can't resolve `next` from server.js. Copy the hoisted tree in
-  // so the bundle dir is self-contained.
-  const standaloneRoot = path.join(resolvedApp, '.next', 'standalone');
-  const rootModules = path.join(standaloneRoot, 'node_modules');
-  if (
-    path.resolve(rootModules) !== path.resolve(appOut, 'node_modules') &&
-    fs.existsSync(rootModules)
-  ) {
-    await fs.promises.cp(rootModules, path.join(appOut, 'node_modules'), { recursive: true });
-  }
+  // Deploy-owned, address-keyed working dir (ADR-0005) — never inside the
+  // user's build output.
+  const workDir = path.join(input.cwd, '.prisma-compose', 'artifacts', input.address);
+  await fs.promises.rm(workDir, { recursive: true, force: true });
+  await fs.promises.mkdir(workDir, { recursive: true });
 
-  // The standalone build ships server.js + traced node_modules but not the
-  // client assets; copy them where server.js serves them from.
-  await fs.promises.cp(
-    path.join(resolvedApp, '.next', 'static'),
-    path.join(appOut, '.next', 'static'),
-    { recursive: true },
-  );
-  const publicDir = path.join(resolvedApp, 'public');
-  if (fs.existsSync(publicDir)) {
-    await fs.promises.cp(publicDir, path.join(appOut, 'public'), { recursive: true });
-  }
+  // The user's finished flat standalone tree, copied in wholesale. It must
+  // already be complete (static/public in, node_modules present) and flat (no
+  // symlinks — the packager rejects them); producing that is the user's build's
+  // job (ADR-0005), not ours.
+  await fs.promises.cp(root, path.join(workDir, 'bundle'), { recursive: true });
 
-  // Bundle the Prisma App wrapper to a temp dir, then place it next to
-  // server.js as main.mjs (unambiguously ESM — the standalone tree's
-  // package.json is CJS-default). Its run()'s `import("./server.js")`
-  // resolves relative to this file inside the artifact.
-  const bundleTmp = await fs.promises.mkdtemp(
-    path.join(os.tmpdir(), 'prisma-compose-nextjs-main-'),
-  );
-  try {
-    await build({
-      entry: [serviceModule],
-      outDir: bundleTmp,
-      format: 'esm',
-      platform: 'node',
-      external: ['bun'],
-      // Workspace packages must be inlined (this is .ts source, not requireable
-      // JS); everything Next needs is already in the standalone tree and is NOT
-      // imported by the entry. The caller adds the app's own import-time deps
-      // via wrapperNoExternal — this build is separate from Next's, so it can't
-      // rely on the standalone node_modules trace to cover them.
-      noExternal: [/^@prisma\//, ...(input.wrapperNoExternal ?? [])],
-      dts: false,
-      sourcemap: false,
-      clean: false,
-      // Do NOT auto-load this package's tsdown.config.ts: its `exports`
-      // management would rewrite this package's package.json to the throwaway
-      // bundle dir, corrupting resolution of @prisma/compose/nextjs afterward.
-      config: false,
-    });
-    const built = fs.readdirSync(bundleTmp).find((f) => /^service\.m?js$/.test(f));
-    if (built === undefined) {
-      throw new Error(`tsdown produced no service.js in ${bundleTmp}`);
-    }
-    await fs.promises.copyFile(path.join(bundleTmp, built), path.join(appOut, 'main.mjs'));
-  } finally {
-    await fs.promises.rm(bundleTmp, { recursive: true, force: true });
+  // Our wrapper, bundled to main.mjs at the working-dir root (unambiguously
+  // ESM). run()'s `import("./bundle/<entry>")` resolves from here.
+  const serviceModule = fileURLToPath(buildDescriptor.module);
+  await build({
+    entry: { main: serviceModule },
+    outDir: workDir,
+    format: 'esm',
+    platform: 'node',
+    external: ['bun'],
+    // Workspace packages must be inlined (this is .ts source, not requireable
+    // JS); everything Next needs is already in the standalone tree and is NOT
+    // imported by the entry. The caller adds the app's own import-time deps via
+    // wrapperNoExternal.
+    noExternal: [/^@prisma\//, ...(input.wrapperNoExternal ?? [])],
+    dts: false,
+    sourcemap: false,
+    clean: false,
+    // Do NOT auto-load this package's tsdown.config.ts: its `exports`
+    // management would rewrite this package's package.json to the throwaway
+    // bundle dir, corrupting resolution of @prisma/compose/nextjs afterward.
+    config: false,
+  });
+  const wrapperPath = path.join(workDir, 'main.mjs');
+  if (!fs.existsSync(wrapperPath)) {
+    throw new Error(`tsdown produced no main.mjs in ${workDir}`);
   }
 
   // Disable bun's runtime auto-install. Next's server.js references `sharp` /
   // `@next/swc` (optional native deps this app never uses); on Compute, bun
   // tries to fetch their linux binaries at that `require`, filling the tiny
   // disk (ENOSPC -> reboot loop). With auto-install off, the require fails
-  // gracefully and Next boots — exactly as it does locally. bun reads bunfig
-  // from the process CWD, which is the artifact root at boot.
-  await fs.promises.writeFile(path.join(appOut, 'bunfig.toml'), '[install]\nauto = "disable"\n');
+  // gracefully and Next boots. bun reads bunfig from the process CWD, which is
+  // the artifact root (this working dir) at boot.
+  await fs.promises.writeFile(path.join(workDir, 'bunfig.toml'), '[install]\nauto = "disable"\n');
 
-  return { dir: appOut, entry: buildDescriptor.entry };
+  return { dir: workDir, entry: path.posix.join('bundle', buildDescriptor.entry) };
 }
 
 /** The nextjs build extension descriptor — `prisma-compose.config.ts` lists it under `extensions`. */
