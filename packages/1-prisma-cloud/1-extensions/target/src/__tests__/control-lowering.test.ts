@@ -530,6 +530,35 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     });
   });
 
+  test('serialize fails closed when credentials or bucket are unwired (F5)', async () => {
+    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = s3StoreService({ name: 'store', deps: {}, build });
+      const ctx = { address: 'store', node } as unknown as LowerContext;
+      const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
+      const serialize = (config: unknown) =>
+        run<LoweredNode>(
+          serviceDescriptorOf(target, 's3-store').serialize(
+            ctx,
+            provisioned,
+            config as Parameters<ReturnType<typeof serviceDescriptorOf>['serialize']>[2],
+          ),
+        );
+
+      // No credentials wired.
+      expect(() => serialize({ service: { port: 3000, bucket: 'streams' }, inputs: {} })).toThrow(
+        /must wire a 'credentials' dependency and a 'bucket' param/,
+      );
+      // No bucket param.
+      expect(() =>
+        serialize({
+          service: { port: 3000 },
+          inputs: { credentials: { accessKeyId: 'AKIA123', secretAccessKey: 'sekret' } },
+        }),
+      ).toThrow(/must wire a 'credentials' dependency and a 'bucket' param/);
+    });
+  });
+
   test('deploy outputs carry all four S3Config field names for a consumer s3() slot', async () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = { id: 'store' } as unknown as LowerContext;

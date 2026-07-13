@@ -31,10 +31,24 @@ export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       Effect.gen(function* () {
         const serialized = yield* base.serialize(ctx, provisioned, config);
         const credentials = config.inputs['credentials'] ?? {};
+        const bucket = config.service['bucket'];
+        // The D4a↔D4b naming contract: the storage module must wire a
+        // `credentials` dependency and a `bucket` param. A missing one would
+        // otherwise deploy a store that 403s every request (unverifiable creds)
+        // or has no namespace — fail the deploy with a clear message instead.
+        if (
+          credentials['accessKeyId'] === undefined ||
+          credentials['secretAccessKey'] === undefined ||
+          bucket === undefined
+        ) {
+          throw new Error(
+            "s3-store service must wire a 'credentials' dependency and a 'bucket' param",
+          );
+        }
         return {
           outputs: {
             ...serialized.outputs,
-            bucket: config.service['bucket'],
+            bucket,
             accessKeyId: credentials['accessKeyId'],
             secretAccessKey: credentials['secretAccessKey'],
           },
