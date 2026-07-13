@@ -69,7 +69,11 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(bundleDir, { recursive: true });
 
   await build({
-    entry: [serviceModule],
+    // Named entry: tsdown derives the output filename from the entry key, so
+    // the bundle is service.mjs regardless of the module's own basename (a
+    // shared module's service file may not be named service.ts — the cron
+    // scheduler's is scheduler-service.mjs).
+    entry: { service: serviceModule },
     outDir: bundleDir,
     format: 'esm',
     platform: 'node',
