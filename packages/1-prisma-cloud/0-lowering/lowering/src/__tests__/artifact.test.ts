@@ -201,6 +201,20 @@ describe('packageComputeArtifact', () => {
     expect(names).toEqual(['a.txt', 'b.txt', 'bootstrap.js', 'compute.manifest.json', 'main.js']);
   });
 
+  test('a symlink in the bundle is a hard error naming the path and the fix (flat bundles only)', () => {
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      'node_modules/real/index.js': '// real',
+    });
+    // A bun/pnpm-shaped relative dir-symlink, the kind a Next standalone tree
+    // is full of — the framework must reject it, not dereference it.
+    fs.symlinkSync('real', path.join(bundleDir, 'node_modules', 'link'));
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/symlink at node_modules\/link .* deploy bundles must be flat/);
+  });
+
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {
     const artifact = packageComputeArtifact({
       id: 'auth',

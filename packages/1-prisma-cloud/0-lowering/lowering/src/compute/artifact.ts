@@ -45,12 +45,21 @@ function resolveEntry(bundleDir: string, entry: string | undefined): string {
   return found;
 }
 
-/** All files under `dir`, as dir-relative POSIX paths, in sorted order. */
+/** All files under `dir`, as dir-relative POSIX paths, in sorted order. A
+ * symlink is a hard error: deploy bundles must be flat (ADR-0005), and the
+ * user's build owns flattening — dereferencing here would relink the tree and
+ * risk packaging files from outside it. */
 function walkFiles(dir: string): string[] {
   const out: string[] = [];
   const visit = (sub: string): void => {
     for (const entry of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
       const rel = sub.length > 0 ? `${sub}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) {
+        throw new Error(
+          `bundle contains a symlink at ${rel} — deploy bundles must be flat; ` +
+            'materialize links in your build (e.g. cp -RL) so the tree is self-contained.',
+        );
+      }
       if (entry.isDirectory()) visit(rel);
       else out.push(rel);
     }
