@@ -83,7 +83,7 @@ export const configKey = (
  * A `secret` param WITHOUT `external` — e.g. a database url valued by its
  * producer — is not a pointer; it carries its value the ordinary way.
  */
-function isPointerParam(param: ConfigParam): boolean {
+function isPointerParam(param: ConfigParam): param is ConfigParam & { external: string } {
   return param.secret === true && param.external !== undefined;
 }
 
@@ -94,8 +94,7 @@ function isPointerParam(param: ConfigParam): boolean {
  * value.
  */
 export function storedForm(d: ParamEntry, value: unknown): string {
-  const external = d.param.external;
-  if (d.param.secret === true && external !== undefined) return external;
+  if (isPointerParam(d.param)) return d.param.external;
   return encode(d.owner, value);
 }
 
@@ -149,10 +148,9 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
  * keys so a missing required secret fails loudly and unambiguously.
  */
 function readParam(d: ParamEntry, key: string): { raw: string | undefined; label: string } {
-  const external = d.param.external;
-  if (d.param.secret === true && external !== undefined) {
+  if (isPointerParam(d.param)) {
     const stored = process.env[key];
-    const name = stored !== undefined && stored !== '' ? stored : external;
+    const name = stored !== undefined && stored !== '' ? stored : d.param.external;
     return { raw: process.env[name], label: `${key} → ${name}` };
   }
   return { raw: process.env[key], label: key };

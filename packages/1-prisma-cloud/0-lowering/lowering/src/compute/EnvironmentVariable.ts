@@ -88,9 +88,10 @@ export const EnvironmentVariableProvider = () =>
                 throw new Error(
                   `EnvironmentVariable "${news.key}" already exists on project "${news.projectId}" ` +
                     `(class "${cls}") but is not tracked in this deploy's state — refusing to ` +
-                    'overwrite. Keys the framework writes live in the reserved COMPOSE_ namespace; ' +
-                    'a pre-existing one it did not create signals a collision. Remove the variable ' +
-                    'on the platform, or rebind the conflicting secret to a non-reserved name.',
+                    'overwrite. Keys the framework writes live in the reserved COMPOSE_ namespace ' +
+                    "users cannot bind into, so this row is almost certainly this app's own prior " +
+                    "deploy: restore this deploy's hosted state if it was lost, or remove the " +
+                    'variable on the platform to let this deploy recreate it.',
                 );
               }
               id = matchId;
