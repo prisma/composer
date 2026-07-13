@@ -535,6 +535,12 @@ importers:
       '@internal/core':
         specifier: workspace:0.1.0
         version: link:../../../0-framework/1-core/core
+      '@internal/node':
+        specifier: workspace:0.1.0
+        version: link:../../../0-framework/2-authoring/node
+      '@internal/prisma-cloud':
+        specifier: workspace:0.1.0
+        version: link:../../1-extensions/target
     devDependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.1085.0
@@ -691,6 +697,9 @@ importers:
       '@internal/rpc':
         specifier: workspace:0.1.0
         version: link:../../0-framework/2-authoring/rpc
+      '@internal/storage':
+        specifier: workspace:0.1.0
+        version: link:../../1-prisma-cloud/2-shared-modules/storage
       '@internal/tsdown-config':
         specifier: workspace:0.1.0
         version: link:../../0-framework/0-foundation/tsdown-config
