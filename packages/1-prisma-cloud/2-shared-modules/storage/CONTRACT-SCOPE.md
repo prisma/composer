@@ -1,9 +1,9 @@
 # `@internal/storage` contract scope
 
 The S3-compatible wire protocol this module implements. Scope is exactly what
-`@prisma/streams-server` calls against S3 (`src/objectstore/r2.ts`,
-`src/bootstrap.ts`, `test/r2_objectstore.test.ts` in that repo) plus presigned
-URLs — not general S3 compatibility.
+`@prisma/streams-server` calls against S3 (its object-store client and
+cold-start bootstrap paths, and their tests) plus presigned URLs — not general
+S3 compatibility.
 
 ## Binding
 
