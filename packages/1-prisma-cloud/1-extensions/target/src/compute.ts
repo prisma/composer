@@ -95,10 +95,19 @@ export const compute = <
   const runnable = {
     ...node,
     async run(address: string, boot: () => Promise<unknown>) {
-      stash(node, deserialize(node, address));
+      const config = deserialize(node, address);
+      stash(node, config);
       // Re-emit the secret POINTERS address-free too, so secrets() double-looks-up
       // the same way with no address (the value stays only in its platform var).
       stashSecrets(node, address);
+      // Expose the resolved service port under the near-universal PORT convention,
+      // so a framework-unaware server (Next.js's standalone server.js binds the
+      // PORT env var) listens on the port Compute routes to — not its own default.
+      // A server that reads config().port explicitly (e.g. a Bun HTTP listener)
+      // simply ignores it. Read the reserved `port` param the same way serialize
+      // does (descriptors/compute.ts).
+      const port = config.service['port'];
+      if (typeof port === 'number') process.env['PORT'] = String(port);
       return boot();
     },
     load() {

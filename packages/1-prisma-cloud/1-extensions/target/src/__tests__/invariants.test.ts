@@ -85,7 +85,7 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer and the control factory', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, secret double-lookup+stash), control.ts's prismaCloud(), and preflight.ts (shell token + fill-missing lookup) (the extension factory's env read, ADR-0017 — PRISMA_WORKSPACE_ID + optional PRISMA_REGION; ADR-0019 — PRISMA_PROJECT_ID + optional PRISMA_BRANCH_ID)", () => {
+  test("the process-env token appears only in serializer.ts (param read+stash, secret double-lookup+stash), control.ts's prismaCloud(), preflight.ts (shell token + fill-missing lookup), and compute.ts (boot exposes the resolved port as PORT) (the extension factory's env read, ADR-0017 — PRISMA_WORKSPACE_ID + optional PRISMA_REGION; ADR-0019 — PRISMA_PROJECT_ID + optional PRISMA_BRANCH_ID)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -96,6 +96,7 @@ describe('invariant 4: environment touches are confined to the config serializer
     });
 
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
+      { file: 'compute.ts', count: 1 },
       { file: 'control.ts', count: 4 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 6 },

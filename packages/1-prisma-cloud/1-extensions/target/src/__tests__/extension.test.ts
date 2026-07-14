@@ -385,6 +385,30 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
 
     expect(bootCalls).toBe(1);
   });
+
+  test('run() exposes the resolved service port as process.env.PORT before boot (non-default)', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let portAtBoot: string | undefined;
+    await withEnv({ COMPOSE_INGEST_PORT: '8080', COMPOSE_PORT: '', PORT: '' }, () =>
+      app.run('ingest', async () => {
+        // Set before boot() runs — a framework-unaware server (Next standalone)
+        // binds process.env.PORT, so it must see the port Compute routes to.
+        portAtBoot = process.env['PORT'];
+      }),
+    );
+    expect(portAtBoot).toBe('8080');
+  });
+
+  test('run() exposes the default port (3000) when none is configured', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let portAtBoot: string | undefined;
+    await withEnv({ COMPOSE_INGEST_PORT: '', COMPOSE_PORT: '', PORT: '' }, () =>
+      app.run('ingest', async () => {
+        portAtBoot = process.env['PORT'];
+      }),
+    );
+    expect(portAtBoot).toBe('3000');
+  });
 });
 
 describe('bootstrapService(service, config, boot) — the in-process integration seam', () => {
