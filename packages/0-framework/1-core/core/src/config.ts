@@ -6,8 +6,12 @@
  * pack owns encoding — serializing that Config to the platform environment
  * and reversing it (see core-model.md § Runtime). Core never stringifies and
  * never touches an environment.
+ *
+ * Secrets are NOT params — they are their own forwardable slot (ADR-0029, see
+ * `secret()`/`envSecret()`/`secrets()` in node.ts). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { Graph, SecretBinding } from './graph-types.ts';
 import type { ServiceNode } from './node.ts';
 
 /**
@@ -20,8 +24,6 @@ import type { ServiceNode } from './node.ts';
  */
 export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S;
-  /** Redacted in any introspection output. */
-  readonly secret?: boolean;
   readonly optional?: boolean;
   readonly default?: StandardSchemaV1.InferOutput<S>;
 }
@@ -50,17 +52,16 @@ export interface Connection<P extends Params = Params, C = unknown> {
 
 /**
  * The enumerable config surface of a service — derivable from the graph
- * alone, nothing booted, no platform keys. The introspection artifact
- * (secrets marked, values absent). `schema` is a data-only projection of the
- * param's Standard Schema (JSON Schema when the vendor supports the optional
- * conversion, a `{ vendor }` tag otherwise) — never the param's functions.
- * Physical locations are the target pack's business.
+ * alone, nothing booted, no platform keys. The introspection artifact (values
+ * absent). `schema` is a data-only projection of the param's Standard Schema
+ * (JSON Schema when the vendor supports the optional conversion, a `{ vendor }`
+ * tag otherwise) — never the param's functions. Physical locations are the
+ * target pack's business. Secrets are not here — they live on their own slot.
  */
 export interface ConfigDeclaration {
   readonly owner: 'service' | { readonly input: string };
   readonly name: string;
   readonly schema: Readonly<Record<string, unknown>>;
-  readonly secret: boolean;
   readonly optional: boolean;
   readonly default: unknown;
 }
@@ -111,7 +112,6 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
         owner: { input },
         name,
         schema: projectSchema(param.schema),
-        secret: param.secret === true,
         optional: param.optional === true,
         default: param.default,
       });
@@ -123,13 +123,23 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
       owner: 'service',
       name,
       schema: projectSchema(param.schema),
-      secret: param.secret === true,
       optional: param.optional === true,
       default: param.default,
     });
   }
 
   return entries;
+}
+
+/**
+ * The app's provision manifest: every secret binding the root resolved across
+ * the graph (ADR-0029) — an opaque, target-defined source per service secret
+ * slot; a deploy target's preflight reads its own payload. Pure graph
+ * introspection, TARGET-AGNOSTIC — the target consumes it to verify each secret
+ * exists on the platform before deploy. The values are provisioned out-of-band.
+ */
+export function provisionManifest(graph: Graph): readonly SecretBinding[] {
+  return graph.secrets;
 }
 
 // ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———
@@ -163,7 +173,6 @@ const numberSchema = scalarSchema<number>(
 );
 
 export interface ParamOptions<T> {
-  readonly secret?: boolean;
   readonly optional?: boolean;
   readonly default?: T;
 }
@@ -174,7 +183,6 @@ function withFacets<S extends StandardSchemaV1>(
 ): ConfigParam<S> {
   return {
     schema,
-    ...(opts.secret !== undefined ? { secret: opts.secret } : {}),
     ...(opts.optional !== undefined ? { optional: opts.optional } : {}),
     ...(opts.default !== undefined ? { default: opts.default } : {}),
   };

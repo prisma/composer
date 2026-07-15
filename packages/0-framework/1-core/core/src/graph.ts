@@ -3,7 +3,7 @@ import { loadModule } from './load-module.ts';
 import { loadService } from './load-service.ts';
 import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
 
-export type { Edge, Graph, GraphNode, NodeId } from './graph-types.ts';
+export type { Edge, Graph, GraphNode, NodeId, SecretBinding } from './graph-types.ts';
 export { LoadError } from './graph-types.ts';
 
 /**

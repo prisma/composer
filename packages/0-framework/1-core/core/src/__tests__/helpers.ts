@@ -23,13 +23,12 @@ export const providerContract = <K extends string, Cmp>(kind: K, cmp: Cmp): Cont
 export function scalarDeclaration(
   owner: ConfigDeclaration['owner'],
   name: string,
-  opts: { secret?: boolean; optional?: boolean; default?: unknown } = {},
+  opts: { optional?: boolean; default?: unknown } = {},
 ): ConfigDeclaration {
   return {
     owner,
     name,
     schema: { vendor: '@prisma/compose' },
-    secret: opts.secret ?? false,
     optional: opts.optional ?? false,
     default: opts.default,
   };

@@ -56,6 +56,9 @@ const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
     config() {
       throw new Error('unused — type-only file, never executed');
     },
+    secrets() {
+      throw new Error('unused — type-only file, never executed');
+    },
   });
 
 test('a correctly-shaped double, with or without the optional param override, compiles', () => {

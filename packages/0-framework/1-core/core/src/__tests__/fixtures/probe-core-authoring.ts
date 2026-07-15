@@ -15,7 +15,7 @@ const db = dependency({
   name: 'db',
   type: 'probe/db',
   connection: {
-    params: { url: string({ secret: true }) },
+    params: { url: string() },
     hydrate: (v) => ({ url: v.url }),
   },
   required: dbContract,

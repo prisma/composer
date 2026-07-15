@@ -252,6 +252,23 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     stage,
   });
 
+  // 7.5 Preflight (deploy only): each extension verifies its platform
+  // prerequisites — e.g. that every secret env var in the provision manifest
+  // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
+  // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
+  if (args.command === 'deploy') {
+    for (const extension of config.extensions) {
+      if (extension.preflight === undefined) continue;
+      try {
+        await extension.preflight({ graph, projectId, branchId, stage });
+      } catch (error) {
+        throw error instanceof CliError
+          ? error
+          : new CliError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
   // 8. Generate .prisma-compose/alchemy.run.ts (tool state lives where you run the tool).
   const stackPath = writeStackFile({
     entryPath: entryModule.path,

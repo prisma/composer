@@ -20,9 +20,10 @@
  * input's params are provisioning refs at deploy (resolved strings at boot)
  * and pass through untouched, so a ref keeps carrying its ordering edge.
  */
-import type { Config, ConfigParam, Params, ServiceNode } from '@internal/core';
+import type { Config, ConfigParam, Params, SecretBinding, ServiceNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { secretName } from './secret.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
 // structurally so this entry imports no runtime's types. Writable: stash()
@@ -69,7 +70,12 @@ export const configKey = (
 ): string => {
   const segments = address.split('.').filter((s) => s.length > 0);
   const owner = d.owner === 'service' ? [] : [d.owner.input];
-  return [...segments, ...owner, d.name].join('_').toUpperCase();
+  // Every generated key lives in the framework's reserved COMPOSE_ namespace
+  // (ADR-0029), so it can never collide with — and silently overwrite — a
+  // user-provisioned platform var (e.g. a secret's external name). The poison
+  // keys DATABASE_URL(_POOLED) are written directly in control.ts, not here, so
+  // they stay unprefixed (they are the platform's own names).
+  return ['COMPOSE', ...segments, ...owner, d.name].join('_').toUpperCase();
 };
 
 /**
@@ -114,7 +120,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
 /**
  * Boot: read each declared param from env by its key, reverse the param's own
  * serialization (missing/invalid fails loudly), assemble the typed Config.
- * The one place in the extension that reads the platform environment.
+ * Secrets ride a separate channel (deserializeSecrets), not this one.
  */
 export const deserialize = (node: ServiceNode, address: string): Config => {
   const service: Record<string, unknown> = {};
@@ -151,6 +157,89 @@ export const stash = (node: ServiceNode, config: Config): void => {
       d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
     if (value === undefined) continue;
     process.env[configKey('', d)] = encode(d.owner, value);
+  }
+};
+
+// ——— Secret channel (ADR-0029): a POINTER row per secret slot, boot double-lookup.
+//
+// A secret is NOT a param — it is its own slot on the node (`node.secretSlots`).
+// Deploy writes COMPOSE_<addr>_<slot> = <platform env-var NAME> (the name the
+// root bound it to, from `graph.secrets`); the value never enters this row or
+// deploy state. Boot reads that pointer, then the platform var it names, and
+// wraps the result in a SecretBox (core's `hydrateSecrets`). Writer (deploy) and
+// reader (boot) share `secretKey`, so they cannot drift.
+
+/** The pointer-row key for a secret slot: COMPOSE_<addr>_<slot> (secrets are service-level). */
+export const secretKey = (address: string, slot: string): string =>
+  configKey(address, { owner: 'service', name: slot });
+
+/** One secret pointer row to write at deploy: the slot's key mapped to the bound platform NAME. */
+export interface SecretRow {
+  readonly key: string;
+  readonly name: string;
+}
+
+/**
+ * Deploy: the pointer rows for a node's secret slots — each slot's key mapped to
+ * the platform NAME the root bound it to (looked up in `graph.secrets`). Never a
+ * value. A declared slot with no binding is a Load-invariant violation (Load
+ * binds every slot), surfaced loudly here rather than written as a blank row.
+ */
+export function secretPointerRows(
+  node: ServiceNode,
+  address: string,
+  bindings: readonly SecretBinding[],
+): readonly SecretRow[] {
+  const rows: SecretRow[] = [];
+  for (const slot of Object.keys(node.secretSlots)) {
+    const binding = bindings.find((b) => b.serviceAddress === address && b.slot === slot);
+    if (binding === undefined) {
+      throw new Error(
+        `secret slot "${slot}" of "${address}" has no bound platform name — Load should have bound it (ADR-0029).`,
+      );
+    }
+    rows.push({ key: secretKey(address, slot), name: secretName(binding) });
+  }
+  return rows;
+}
+
+/**
+ * Boot: resolve every secret slot to its value by double-lookup — read the
+ * pointer key (the platform NAME), then read that platform var. A missing
+ * pointer or a missing/empty platform value is a loud failure naming both keys.
+ * Returns a plain Record for core's `hydrateSecrets` to box.
+ */
+export const deserializeSecrets = (node: ServiceNode, address: string): Record<string, string> => {
+  const values: Record<string, string> = {};
+  for (const slot of Object.keys(node.secretSlots)) {
+    const key = secretKey(address, slot);
+    const name = process.env[key];
+    if (name === undefined || name === '') {
+      throw new Error(
+        `missing secret pointer for slot "${slot}" (env ${key}) — the deploy did not write it.`,
+      );
+    }
+    const value = process.env[name];
+    if (value === undefined || value === '') {
+      throw new Error(
+        `secret "${slot}" is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset or empty.`,
+      );
+    }
+    values[slot] = value;
+  }
+  return values;
+};
+
+/**
+ * run()'s setup step for secrets: re-emit each slot's pointer NAME under its
+ * address-free key, so the address-free `deserializeSecrets` double-looks-up
+ * identically. Never the value — the value stays only in the platform var.
+ */
+export const stashSecrets = (node: ServiceNode, address: string): void => {
+  for (const slot of Object.keys(node.secretSlots)) {
+    const name = process.env[secretKey(address, slot)];
+    if (name === undefined) continue;
+    process.env[secretKey('', slot)] = name;
   }
 };
 

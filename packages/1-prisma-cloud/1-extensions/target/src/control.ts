@@ -17,6 +17,7 @@ import { s3StoreDescriptor } from './descriptors/s3-store.ts';
 import type { ResolvedCloudOptions } from './descriptors/shared.ts';
 import { PgWarmProvider } from './pg-warm-resource.ts';
 import { PnMigrationProvider } from './pn-migration-resource.ts';
+import { runPreflight } from './preflight.ts';
 import { S3CredentialsProvider } from './s3-credentials-resource.ts';
 
 export { prismaState };
@@ -87,6 +88,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           S3CredentialsProvider(),
         ),
       ),
+
+    // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
+    // the provision manifest exists for the resolved stage, filling absent-but-
+    // in-shell names via a direct API POST — before any stack file or Alchemy.
+    preflight: (input) => runPreflight(input),
 
     // Runs once per lowering, before any service: references the CLI-ensured
     // Project, with the poison DATABASE_URL variables written immediately so

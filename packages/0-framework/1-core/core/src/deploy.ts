@@ -307,8 +307,9 @@ export function lowering(
         );
       }
 
+      const service = node as ServiceNode;
       const provisioned = yield* descriptor.provision(ctx);
-      const typedConfig = buildConfig(node as ServiceNode, id, graph, lowered);
+      const typedConfig = buildConfig(service, id, graph, lowered);
       const serialized = yield* descriptor.serialize(ctx, provisioned, typedConfig);
       const bundle = opts.bundles[id];
       if (bundle === undefined) {

@@ -10,7 +10,7 @@
  */
 import { blindCast } from '@internal/foundation/casts';
 import type { Params, Values } from './config.ts';
-import type { Deps, Expose, HydratedDeps, RunnableServiceNode } from './node.ts';
+import type { Deps, Expose, HydratedDeps, RunnableServiceNode, Secrets } from './node.ts';
 
 /**
  * `mockService`'s override argument: every declared dependency, typed against
@@ -40,10 +40,10 @@ function paramDefaults<P extends Params>(params: P): Partial<Values<P>> {
  * to `load()`, param keys to `config()`. `run()` is not meaningful on a mock
  * (there is no boot, no environment) and throws if called.
  */
-export function mockService<D extends Deps, P extends Params, E extends Expose>(
-  service: RunnableServiceNode<D, P, E>,
+export function mockService<D extends Deps, P extends Params, E extends Expose, S extends Secrets>(
+  service: RunnableServiceNode<D, P, E, S>,
   overrides: LoadOverrides<D, P>,
-): RunnableServiceNode<D, P, E> {
+): RunnableServiceNode<D, P, E, S> {
   const entries = Object.entries(overrides);
   const deps = blindCast<
     HydratedDeps<D>,

@@ -14,7 +14,7 @@ import { storageService } from './storage-service.ts';
 export function storage(opts?: {
   name?: string;
   bucket?: string;
-}): ModuleNode<Record<never, never>, { store: typeof s3Contract }> {
+}): ModuleNode<Record<never, never>, { store: typeof s3Contract }, Record<never, never>> {
   return module(opts?.name ?? 'storage', { expose: { store: s3Contract } }, ({ provision }) => {
     const db = provision(postgres({ name: 'db' }), { id: 'db' });
     const credentials = provision(s3Credentials({ name: 'credentials' }), { id: 'credentials' });

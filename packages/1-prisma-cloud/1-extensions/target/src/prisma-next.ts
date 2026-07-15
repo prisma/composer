@@ -121,7 +121,7 @@ export function pnPostgres(
   return dependency({
     type: 'prisma-next',
     connection: {
-      params: { url: string({ secret: true }) },
+      params: { url: string() },
       hydrate: ({ url }) => buildClient(contract, url),
     },
     required: contract,

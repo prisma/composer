@@ -35,12 +35,13 @@ body=""
 while [ "$SECONDS" -lt "$deadline" ]; do
   body="$(curl -sS --max-time 30 "$url" || true)"
   clean="$(printf '%s' "$body" | sed -e 's/<!--[^>]*-->//g' -e 's/&quot;/"/g')"
-  if printf '%s' "$clean" | grep -q 'Auth /verify says: true'; then
-    echo 'Round trip OK — storefront rendered auth.verify() -> { ok: true }'
+  if printf '%s' "$clean" | grep -q 'Auth /verify says: true' \
+    && printf '%s' "$clean" | grep -q 'Secret /check says: true'; then
+    echo 'Round trip OK — storefront rendered auth.verify() -> { ok: true } AND the secret proof (secretCheck -> { ok: true })'
     exit 0
   fi
   sleep 6
 done
-echo "Round trip never rendered 'Auth /verify says: true' within the deadline. Last body:"
+echo "Round trip never rendered both 'Auth /verify says: true' and 'Secret /check says: true' within the deadline. Last body:"
 printf '%s' "$body" | head -c 3000
 exit 1

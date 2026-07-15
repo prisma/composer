@@ -48,12 +48,10 @@ export const EnvironmentVariableProvider = () =>
         list: () => Effect.succeed([] as EnvironmentVariableAttributes[]),
         reconcile: Effect.fn(function* ({ news, output }) {
           const cls = news.class ?? 'production';
-          // The value is write-only (encrypted), so we never diff it — we PATCH.
-          // Find the row to write, adopting in order: our own prior row
-          // (output.id), then a pre-existing row at the same (project, class,
-          // key). The platform seeds DATABASE_URL/_POOLED at project creation,
-          // which Prisma App poisons — a duplicate POST 409s and the API directs
-          // callers to PATCH. Adopting also makes create idempotent.
+          // Value is write-only, so we PATCH, never diff. Adopt our own prior
+          // row (output.id), or a pre-existing poison-key row (DATABASE_URL(_POOLED),
+          // platform-seeded). Any other untracked match is a COMPOSE_ collision we
+          // refuse to overwrite (see the throw below).
           let id = output?.id;
           if (id !== undefined) {
             const priorId = id;
@@ -72,7 +70,19 @@ export const EnvironmentVariableProvider = () =>
                 },
               }),
             );
-            id = (match as { data?: Array<{ id: string }> }).data?.[0]?.id;
+            const matchId = (match as { data?: Array<{ id: string }> }).data?.[0]?.id;
+            if (matchId !== undefined) {
+              const isPoison = news.key === 'DATABASE_URL' || news.key === 'DATABASE_URL_POOLED';
+              if (!isPoison) {
+                throw new Error(
+                  `EnvironmentVariable "${news.key}" (project "${news.projectId}", class "${cls}") ` +
+                    'exists but is untracked in this deploy state — refusing to overwrite a reserved ' +
+                    "COMPOSE_ key. Restore this deploy's hosted state, or remove the variable to let " +
+                    'this deploy recreate it.',
+                );
+              }
+              id = matchId;
+            }
           }
           if (id !== undefined) {
             const targetId = id;

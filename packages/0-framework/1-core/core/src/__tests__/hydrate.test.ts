@@ -15,7 +15,7 @@ const dbEnd = (record?: (values: { url: string }) => void) =>
   dependency({
     name: 'db',
     type: 'fake/db',
-    connection: conn({ url: string({ secret: true }) }, (v) => {
+    connection: conn({ url: string() }, (v) => {
       record?.(v);
       return { client: v.url };
     }),

@@ -27,5 +27,9 @@ const fakeAuth = compute({
 export default serve(fakeAuth, {
   rpc: {
     verify: async ({ token }) => ({ ok: token.length > 0 }),
+    // The fake stands in for the auth dependency's wiring, not its secret: it
+    // always proves the round trip. The real secret injection is proven by the
+    // live auth service in the CI E2E.
+    secretCheck: async () => ({ ok: true }),
   },
 });

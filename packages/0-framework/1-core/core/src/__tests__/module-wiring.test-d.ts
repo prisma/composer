@@ -33,7 +33,7 @@ const cacheNode = resource({ name: 'cache', extension: 'test/pack', provides: ca
 const pgDep = dependency({
   name: 'db',
   type: 'fake/postgres',
-  connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
+  connection: conn({ url: string() }, (v) => ({ url: v.url })),
   required: pgContract,
 });
 

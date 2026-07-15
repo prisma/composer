@@ -279,6 +279,88 @@ describe('run() — the full pipeline over fakes', () => {
     ).rejects.toThrow(/name it at authoring, or pass --name/);
   });
 
+  test('invokes each extension preflight with the resolved context, before alchemy runs', async () => {
+    const app = makeAppDir('hello-preflight');
+    process.chdir(app.dir);
+    const preflightCalls: Array<{
+      projectId: string;
+      branchId: string | undefined;
+      stage: string | undefined;
+      nodeCount: number;
+    }> = [];
+    const config = fakeConfig();
+    const withPreflight: PrismaAppConfig = {
+      ...config,
+      extensions: config.extensions.map((e) =>
+        e.id === 'fixture-extension'
+          ? {
+              ...e,
+              preflight: async (input) => {
+                preflightCalls.push({
+                  projectId: input.projectId,
+                  branchId: input.branchId,
+                  stage: input.stage,
+                  nodeCount: input.graph.nodes.length,
+                });
+              },
+            }
+          : e,
+      ),
+    };
+
+    const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
+      config: withPreflight,
+      runAssembler: fakeAssembler,
+      ensureContainers: fakeEnsureContainers,
+      alchemy: () => 0,
+    });
+
+    expect(status).toBe(0);
+    expect(preflightCalls).toHaveLength(1);
+    expect(preflightCalls[0]).toMatchObject({
+      projectId: 'proj-fake',
+      branchId: 'branch-ci-7',
+      stage: 'ci-7',
+    });
+    expect(preflightCalls[0]!.nodeCount).toBeGreaterThan(0);
+  });
+
+  test('a preflight failure aborts as a CliError before any stack file is written or alchemy runs', async () => {
+    const app = makeAppDir('hello-preflight-fail');
+    process.chdir(app.dir);
+    const config = fakeConfig();
+    let alchemyRan = false;
+    const withFailingPreflight: PrismaAppConfig = {
+      ...config,
+      extensions: config.extensions.map((e) =>
+        e.id === 'fixture-extension'
+          ? {
+              ...e,
+              preflight: async () => {
+                throw new Error('SECRET_X is not provisioned');
+              },
+            }
+          : e,
+      ),
+    };
+
+    const error: unknown = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
+      config: withFailingPreflight,
+      runAssembler: fakeAssembler,
+      ensureContainers: fakeEnsureContainers,
+      alchemy: () => {
+        alchemyRan = true;
+        return 0;
+      },
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect((error as CliError).message).toContain('SECRET_X is not provisioned');
+    expect(alchemyRan).toBe(false);
+    // Preflight (step 7.5) runs before writeStackFile (step 8) — nothing side-effected.
+    expect(fs.existsSync(path.join(app.dir, '.prisma-compose', 'alchemy.run.ts'))).toBe(false);
+  });
+
   test('an alchemy failure propagates the nonzero exit and prints the generated file path', async () => {
     const app = makeAppDir();
     process.chdir(app.dir);

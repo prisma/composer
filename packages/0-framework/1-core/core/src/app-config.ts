@@ -8,6 +8,7 @@ import type {
   Lowering,
   ServiceLowering,
 } from './deploy.ts';
+import type { Graph } from './graph.ts';
 
 /**
  * One extension's control-plane registry: everything the deploy pipeline may
@@ -23,6 +24,26 @@ export interface ExtensionDescriptor {
   readonly application?: ApplicationDescriptor;
   /** The extension's Alchemy providers — merged across all configured extensions (config order). */
   readonly providers?: () => Layer.Layer<never>;
+  /**
+   * Deploy-time prerequisite check — the CLI runs it once, after the app's
+   * Project/Branch are resolved and BEFORE any stack file is written or Alchemy
+   * runs. A target uses it to verify platform prerequisites (e.g. that every
+   * secret env var in the provision manifest exists for the resolved stage) and
+   * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
+   */
+  readonly preflight?: (input: PreflightInput) => Promise<void>;
+}
+
+/** The resolved deploy context handed to an extension's `preflight` hook. */
+export interface PreflightInput {
+  /** The loaded application graph — the manifest of prerequisites is read from it (`provisionManifest`). */
+  readonly graph: Graph;
+  /** The resolved Prisma Cloud Project id. */
+  readonly projectId: string;
+  /** The resolved Branch id for a named stage; `undefined` for the default (production) stage. */
+  readonly branchId: string | undefined;
+  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
+  readonly stage: string | undefined;
 }
 
 /**

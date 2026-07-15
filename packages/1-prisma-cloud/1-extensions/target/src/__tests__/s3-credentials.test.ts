@@ -53,13 +53,13 @@ describe('s3Credentials() authoring factory', () => {
     expect(identity.provides).toBe(credentialsContract);
   });
 
-  test('s3Credentials() yields a dependency requiring credentialsContract; secretAccessKey is secret', () => {
+  test('s3Credentials() yields a dependency requiring credentialsContract, binding the key pair', () => {
     const dep: DependencyEnd<CredentialsConfig, typeof credentialsContract> = s3Credentials();
     expect(dep.kind).toBe('dependency');
     expect(dep.type).toBe('credentials');
     expect(dep.required).toBe(credentialsContract);
-    expect(dep.connection.params['secretAccessKey']?.secret).toBe(true);
-    expect(dep.connection.params['accessKeyId']?.secret).toBeUndefined();
+    expect(dep.connection.params['accessKeyId']).toBeDefined();
+    expect(dep.connection.params['secretAccessKey']).toBeDefined();
   });
 
   test('credentialsContract.satisfies compares kind only', () => {

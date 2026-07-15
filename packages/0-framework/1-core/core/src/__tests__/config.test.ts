@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { configOf, number, string } from '../config.ts';
-import { dependency, service } from '../node.ts';
+import { configOf, number, provisionManifest, string } from '../config.ts';
+import { Load } from '../graph.ts';
+import { dependency, module, secret, secretSource, service } from '../node.ts';
 import { conn, scalarDeclaration } from './helpers.ts';
 
 const build = {
@@ -20,10 +21,7 @@ describe('configOf', () => {
         db: dependency({
           name: 'db',
           type: 'fake/db',
-          connection: conn(
-            { url: string({ secret: true }), schema: string({ optional: true }) },
-            () => ({}),
-          ),
+          connection: conn({ url: string(), schema: string({ optional: true }) }, () => ({})),
         }),
       },
       params: { port: number({ default: 3000 }) },
@@ -31,7 +29,7 @@ describe('configOf', () => {
     });
 
     expect(configOf(root)).toEqual([
-      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
+      scalarDeclaration({ input: 'db' }, 'url'),
       scalarDeclaration({ input: 'db' }, 'schema', { optional: true }),
       scalarDeclaration('service', 'port', { default: 3000 }),
     ]);
@@ -97,33 +95,79 @@ describe('configOf', () => {
 
     expect(hydrateCalls).toBe(0);
   });
-});
 
-describe('configOf over dependency inputs', () => {
-  test('every dependency input appears with owner { input }, whatever it will be wired to', () => {
+  test('a secret slot is NOT a config param — configOf never reports it', () => {
     const root = service({
-      name: 'test-service',
+      name: 'ingest',
       extension: 'test/pack',
       type: 'fake/app',
-      inputs: {
-        db: dependency({
-          name: 'db',
-          type: 'fake/db',
-          connection: conn({ url: string({ secret: true }) }, () => ({})),
-        }),
-        auth: dependency({
-          type: 'fake/http',
-          connection: conn({ url: string() }, () => ({})),
-        }),
-      },
+      inputs: {},
       params: { port: number({ default: 3000 }) },
+      secrets: { stripeKey: secret() },
       build,
     });
 
-    expect(configOf(root)).toEqual([
-      scalarDeclaration({ input: 'db' }, 'url', { secret: true }),
-      scalarDeclaration({ input: 'auth' }, 'url'),
-      scalarDeclaration('service', 'port', { default: 3000 }),
-    ]);
+    expect(configOf(root)).toEqual([scalarDeclaration('service', 'port', { default: 3000 })]);
+  });
+});
+
+describe('provisionManifest', () => {
+  test('aggregates the root-bound secret names across the graph', () => {
+    const ingest = service({
+      name: 'ingest',
+      extension: 'test/pack',
+      type: 'fake/app',
+      inputs: {},
+      params: {},
+      secrets: { stripeKey: secret() },
+      build,
+    });
+    const web = service({
+      name: 'web',
+      extension: 'test/pack',
+      type: 'fake/app',
+      inputs: {},
+      params: {},
+      secrets: { sendgrid: secret() },
+      build,
+    });
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(ingest, {
+          id: 'ingest',
+          secrets: { stripeKey: secretSource('STRIPE_SECRET_KEY') },
+        });
+        provision(web, { id: 'web', secrets: { sendgrid: secretSource('SENDGRID_API_KEY') } });
+      }),
+    );
+
+    const manifest = provisionManifest(graph);
+    // Core records the binding per (service, slot) with an opaque source; the
+    // env-var name lives in the target's payload, which core never reads.
+    expect(manifest).toHaveLength(2);
+    expect(manifest).toContainEqual(
+      expect.objectContaining({ serviceAddress: 'ingest', slot: 'stripeKey' }),
+    );
+    expect(manifest).toContainEqual(
+      expect.objectContaining({ serviceAddress: 'web', slot: 'sendgrid' }),
+    );
+  });
+
+  test('is empty when no service declares a secret slot', () => {
+    const svc = service({
+      name: 'x',
+      extension: 'test/pack',
+      type: 'fake/app',
+      inputs: {},
+      params: { port: number({ default: 3000 }) },
+      build,
+    });
+    const graph = Load(
+      module('app', ({ provision }) => {
+        provision(svc, { id: 'x' });
+      }),
+    );
+
+    expect(provisionManifest(graph)).toEqual([]);
   });
 });

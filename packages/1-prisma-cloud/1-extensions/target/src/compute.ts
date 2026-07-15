@@ -6,11 +6,13 @@ import type {
   HydratedDeps,
   Params,
   RunnableServiceNode,
+  Secrets,
+  SecretValues,
   Values,
 } from '@internal/core';
-import { hydrateSync, number, service } from '@internal/core';
+import { hydrateSecrets, hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
-import { deserialize, stash } from './serializer.ts';
+import { deserialize, deserializeSecrets, stash, stashSecrets } from './serializer.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
@@ -38,13 +40,15 @@ export const compute = <
   D extends Deps,
   P extends Params = Record<never, never>,
   E extends Expose = Record<never, never>,
+  S extends Secrets = Record<never, never>,
 >(def: {
   name: string;
   deps: D;
   params?: P;
+  secrets?: S;
   build: BuildAdapter;
   expose?: E;
-}): RunnableServiceNode<D, P & ReservedParams, E> => {
+}): RunnableServiceNode<D, P & ReservedParams, E, S> => {
   const userParams = def.params ?? blindCast<P, 'no user params supplied'>({});
 
   // load() merges deps and service params into one object; a dep or a user
@@ -67,12 +71,13 @@ export const compute = <
     ...userParams,
     ...reservedParams,
   });
-  const node = service<D, P & ReservedParams, E>({
+  const node = service<D, P & ReservedParams, E, S>({
     name: def.name,
     extension: '@prisma/compose-prisma-cloud',
     type: 'compute',
     inputs: def.deps,
     params,
+    ...(def.secrets !== undefined ? { secrets: def.secrets } : {}),
     build: def.build,
     ...(def.expose !== undefined ? { expose: def.expose } : {}),
   });
@@ -81,6 +86,7 @@ export const compute = <
   let resolved: Config | undefined;
   let loadedDeps: HydratedDeps<D> | undefined;
   let loadedParams: Values<P & ReservedParams> | undefined;
+  let loadedSecrets: SecretValues<S> | undefined;
   function processConfig(): Config {
     if (resolved === undefined) resolved = deserialize(node, '');
     return resolved;
@@ -89,7 +95,19 @@ export const compute = <
   const runnable = {
     ...node,
     async run(address: string, boot: () => Promise<unknown>) {
-      stash(node, deserialize(node, address));
+      const config = deserialize(node, address);
+      stash(node, config);
+      // Re-emit the secret POINTERS address-free too, so secrets() double-looks-up
+      // the same way with no address (the value stays only in its platform var).
+      stashSecrets(node, address);
+      // Expose the resolved service port under the near-universal PORT convention,
+      // so a framework-unaware server (Next.js's standalone server.js binds the
+      // PORT env var) listens on the port Compute routes to — not its own default.
+      // A server that reads config().port explicitly (e.g. a Bun HTTP listener)
+      // simply ignores it. Read the reserved `port` param the same way serialize
+      // does (descriptors/compute.ts).
+      const port = config.service['port'];
+      if (typeof port === 'number') process.env['PORT'] = String(port);
       return boot();
     },
     load() {
@@ -110,11 +128,21 @@ export const compute = <
       }
       return loadedParams;
     },
+    secrets() {
+      if (loadedSecrets === undefined) {
+        // Double-lookup (address-free) → resolved strings → SecretBoxes (core).
+        loadedSecrets = blindCast<
+          SecretValues<S>,
+          'hydrateSecrets boxes one string per declared slot; for this node the slots are S'
+        >(hydrateSecrets(node, deserializeSecrets(node, '')));
+      }
+      return loadedSecrets;
+    },
   };
   return Object.freeze(
     blindCast<
-      RunnableServiceNode<D, P & ReservedParams, E>,
-      "the spread copies node's own enumerable data (including the Symbol.for brand) and adds run/load — exactly RunnableServiceNode's shape"
+      RunnableServiceNode<D, P & ReservedParams, E, S>,
+      "the spread copies node's own enumerable data (including the Symbol.for brand) and adds run/load/config/secrets — exactly RunnableServiceNode's shape"
     >(runnable),
   );
 };

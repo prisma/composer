@@ -1,10 +1,18 @@
 import { blindCast } from '@internal/foundation/casts';
-import { type Edge, type Graph, type GraphNode, LoadError, type NodeId } from './graph-types.ts';
+import {
+  type Edge,
+  type Graph,
+  type GraphNode,
+  LoadError,
+  type NodeId,
+  type SecretBinding,
+} from './graph-types.ts';
 import { serviceInputs } from './load-service.ts';
 import {
   type DependencyEnd,
   type Deps,
   isNode,
+  isSecretSource,
   type ModuleBuilder,
   type ModuleContext,
   type ModuleNode,
@@ -58,6 +66,9 @@ function producerIdOf(ref: unknown): string | undefined {
  * identity the branding copy creates, never on reading this back.
  */
 const MODULE_INPUT_KEY = Symbol('prisma:module-input-key');
+
+/** Same per-key identity trick as MODULE_INPUT_KEY, for the parallel `ctx.secrets` forwarding channel. */
+const MODULE_SECRET_KEY = Symbol('prisma:module-secret-key');
 
 /** Whether `ref` carries a callable `satisfies` that accepts `required` truthily. */
 function satisfiesRequired(ref: unknown, required: unknown): boolean {
@@ -166,6 +177,45 @@ function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] 
 }
 
 /**
+ * Checks the secrets wired into one provisioned child: every declared slot is
+ * bound to a real secret source (an `envSecret` or a forwarded ctx.secrets
+ * ref), and no wired key names a slot the child doesn't declare — the secret
+ * analog of `validateWiring`'s per-input checks, but resolved inline (a source
+ * carries its own name, so no whole-graph pass is needed).
+ */
+function validateSecretBinding(
+  child: ServiceNode | ModuleNode,
+  id: string,
+  secretWiring: Record<string, unknown>,
+  enclosingModuleName: string,
+): void {
+  const { kind } = child;
+  for (const slot of Object.keys(child.secretSlots)) {
+    const bound = secretWiring[slot];
+    if (bound === undefined) {
+      throw new LoadError(
+        `Secret slot "${slot}" of provisioned ${kind} "${id}" is not bound (module ` +
+          `"${enclosingModuleName}") — bind it with envSecret('NAME') or forward ctx.secrets.`,
+      );
+    }
+    if (!isSecretSource(bound)) {
+      throw new LoadError(
+        `Secret slot "${slot}" of "${id}" (module "${enclosingModuleName}") was wired with a ` +
+          "non-secret value — use envSecret('NAME') or a forwarded ctx.secrets ref.",
+      );
+    }
+  }
+  for (const slot of Object.keys(secretWiring)) {
+    if (!Object.hasOwn(child.secretSlots, slot)) {
+      throw new LoadError(
+        `The secrets for "${id}" name "${slot}", which is not a secret slot of that ${kind} ` +
+          `(module "${enclosingModuleName}").`,
+      );
+    }
+  }
+}
+
+/**
  * Recursively flattens one module's body into the shared graph state and
  * returns its resolved ModuleOutputs (one ref-port per expose key) for the
  * caller (the enclosing provision() call, or Load itself for the root) to
@@ -183,13 +233,16 @@ function flatten(
   moduleNode: ModuleNode,
   address: string | undefined,
   wiring: Record<string, unknown>,
+  secretWiring: Record<string, unknown>,
   nodes: GraphNode[],
   edges: Edge[],
   pending: PendingWiring[],
+  secretBindings: SecretBinding[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
 ): Record<string, unknown> {
   const localIds = new Set<string>();
   const used = new Set<string>();
+  const usedSecrets = new Set<string>();
 
   // Each ctx.inputs entry gets its OWN object identity: a shallow copy of the
   // wired producer ref, branded (symbol-keyed) with the input key it stands
@@ -217,17 +270,35 @@ function flatten(
     }
   };
 
+  // The secrets forwarding channel mirrors ctx.inputs: each declared secret slot
+  // gets its OWN branded copy of the source bound to it, so forwarding one down a
+  // provision counts precisely (identity), and `name` reads through unchanged.
+  const ctxSecrets: Record<string, unknown> = {};
+  for (const key of Object.keys(moduleNode.secretSlots)) {
+    const bound = secretWiring[key];
+    ctxSecrets[key] =
+      typeof bound === 'object' && bound !== null ? { ...bound, [MODULE_SECRET_KEY]: key } : bound;
+  }
+  const markSecretsUsed = (values: Record<string, unknown>): void => {
+    for (const value of Object.values(values)) {
+      for (const key of Object.keys(ctxSecrets)) {
+        if (value === ctxSecrets[key]) usedSecrets.add(key);
+      }
+    }
+  };
+
   const provision = (
     child: ServiceNode | ResourceNode | ModuleNode,
-    opts?: { id?: string; deps?: Record<string, unknown> },
+    opts?: { id?: string; deps?: Record<string, unknown>; secrets?: Record<string, unknown> },
     // biome-ignore lint/suspicious/noExplicitAny: ModuleBuilder's real overload set is checked at the call site; the collector implementation is untyped by design.
   ): any => {
-    // The id defaults to the node's own `name`; `opts.deps` carries the
-    // producers that satisfy its dependency slots. The "_"/"." and duplicate-id
-    // checks, brand-check and address join below are identical whether the id
-    // was written or inferred.
+    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets` carry
+    // the producers and secret sources that satisfy its slots. The "_"/"." and
+    // duplicate-id checks, brand-check and address join below are identical
+    // whether the id was written or inferred.
     const id = opts?.id ?? child.name;
     const provisionWiring = opts?.deps;
+    const provisionSecrets = opts?.secrets;
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (module "${moduleNode.name}").`);
     }
@@ -267,6 +338,11 @@ function flatten(
           `provision("${id}") received deps for a resource — a resource has no dependency slots to satisfy.`,
         );
       }
+      if (provisionSecrets !== undefined) {
+        throw new LoadError(
+          `provision("${id}") received secrets for a resource — a resource has no secret slots to satisfy.`,
+        );
+      }
       if (child.type.length === 0) {
         throw new LoadError(`provision("${id}") received a resource with an empty node type.`);
       }
@@ -278,7 +354,22 @@ function flatten(
     const localWiring = { ...(provisionWiring ?? {}) };
     markUsed(localWiring);
 
+    // Secrets: validate every declared slot is bound to a real secret source,
+    // reject extras, and mark forwarded refs used (identity). No `pending`
+    // deferral — a secret source carries its own name, so nothing needs the
+    // whole graph to resolve (unlike a dependency's producer).
+    const localSecrets = { ...(provisionSecrets ?? {}) };
+    markSecretsUsed(localSecrets);
+    validateSecretBinding(child, id, localSecrets, moduleNode.name);
+
     if (child.kind === 'service') {
+      // A service's slots resolve to names HERE — record one binding per slot.
+      for (const slot of Object.keys(child.secretSlots)) {
+        const bound = localSecrets[slot];
+        if (isSecretSource(bound)) {
+          secretBindings.push({ serviceAddress: fullAddress, slot, source: bound });
+        }
+      }
       const inputs = serviceInputs(child, fullAddress);
       nodes.push(...inputs.nodes, { id: fullAddress, node: child });
       edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
@@ -301,7 +392,17 @@ function flatten(
       targetKind: 'module',
       enclosingModuleName: moduleNode.name,
     });
-    const childOutputs = flatten(child, fullAddress, localWiring, nodes, edges, pending, byId);
+    const childOutputs = flatten(
+      child,
+      fullAddress,
+      localWiring,
+      localSecrets,
+      nodes,
+      edges,
+      pending,
+      secretBindings,
+      byId,
+    );
     nodes.push({ id: fullAddress, node: child });
     byId.set(fullAddress, child);
     return blindCast<
@@ -312,9 +413,10 @@ function flatten(
 
   const ctx = blindCast<
     ModuleContext<Deps>,
-    "ctxInputs holds one resolved InputRef per moduleNode.deps key (built above from wiring, the same ref-port shape a producer's port has), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D> structurally for whatever D this moduleNode declares"
+    "ctxInputs/ctxSecrets hold one resolved ref per moduleNode.deps/secrets key (the same shapes a producer port and an envSecret source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S> structurally for whatever D/S this moduleNode declares"
   >({
     inputs: ctxInputs,
+    secrets: ctxSecrets,
     provision: blindCast<
       ModuleBuilder['provision'],
       'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
@@ -324,7 +426,7 @@ function flatten(
   const outputs = blindCast<
     Record<string, unknown>,
     'ModuleOutputs<E> is a mapped type over the declared expose keys; the loop below reads it by key, which is all a Record<string, unknown> view needs'
-  >(moduleNode.body(ctx));
+  >(moduleNode.body(ctx) ?? {});
 
   // Pass-through: returning an input as an expose port re-offers it to the
   // enclosing scope — that is using it, not ignoring it (module-composition.md
@@ -336,6 +438,16 @@ function flatten(
     if (!used.has(key)) {
       throw new LoadError(
         `Module "${moduleNode.name}" declares input "${key}" but never forwards it into a provision nor returns it as an output.`,
+      );
+    }
+  }
+
+  // A declared secret slot must be forwarded into a provision (a secret is not
+  // re-exposed as a port, so there is no pass-through case for it).
+  for (const key of Object.keys(moduleNode.secretSlots)) {
+    if (!usedSecrets.has(key)) {
+      throw new LoadError(
+        `Module "${moduleNode.name}" declares secret "${key}" but never forwards it into a provision.`,
       );
     }
   }
@@ -368,13 +480,23 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
         `"${root.name}" from another module that provisions and wires it instead.`,
     );
   }
+  const rootSecretKeys = Object.keys(root.secretSlots);
+  if (rootSecretKeys.length > 0) {
+    const names = rootSecretKeys.map((k) => `"${k}"`).join(', ');
+    throw new LoadError(
+      `Module "${root.name}" declares secret${rootSecretKeys.length > 1 ? 's' : ''} ${names} but is ` +
+        'being deployed as the root — a root has no enclosing scope to bind them; the root binds ' +
+        `secrets with envSecret('NAME'), it does not declare secret slots of its own.`,
+    );
+  }
 
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
+  const secretBindings: SecretBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
 
-  flatten(root, undefined, {}, nodes, edges, pending, byId);
+  flatten(root, undefined, {}, {}, nodes, edges, pending, secretBindings, byId);
 
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
@@ -384,6 +506,7 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
+    secrets: secretBindings,
   };
 }
 

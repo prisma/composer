@@ -35,7 +35,7 @@ export function s3(): DependencyEnd<S3Config, typeof s3Contract> {
         url: string(),
         bucket: string(),
         accessKeyId: string(),
-        secretAccessKey: string({ secret: true }),
+        secretAccessKey: string(),
       },
       hydrate: (v): S3Config => v,
     },

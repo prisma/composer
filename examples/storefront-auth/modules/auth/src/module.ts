@@ -14,13 +14,24 @@
  * The auth service keeps an explicit "service" id: its own name is "auth", the
  * same as this enclosing module, so a defaulted id would read as "auth.auth".
  */
-import { module } from '@prisma/compose';
+import { module, secret } from '@prisma/compose';
 import { postgres } from '@prisma/compose-prisma-cloud';
 import { authContract } from './contract.ts';
 import authService from './service.ts';
 
-export default module('auth', { expose: { rpc: authContract } }, ({ provision }) => {
-  const db = provision(postgres({ name: 'database' }));
-  const service = provision(authService, { id: 'service', deps: { db } });
-  return { rpc: service.rpc };
-});
+export default module(
+  'auth',
+  // Declare the secret NEED as a forwardable module input; the root binds it to
+  // a platform name. This module never learns the name (ADR-0029) — that is the
+  // point of the forwarding model.
+  { secrets: { signingKey: secret() }, expose: { rpc: authContract } },
+  ({ secrets, provision }) => {
+    const db = provision(postgres({ name: 'database' }));
+    const service = provision(authService, {
+      id: 'service',
+      deps: { db },
+      secrets: { signingKey: secrets.signingKey },
+    });
+    return { rpc: service.rpc };
+  },
+);

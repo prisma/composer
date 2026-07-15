@@ -29,6 +29,13 @@ jobs:
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
       PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+      # The root binds the auth module's secret need to AUTH_SIGNING_SECRET (ADR-0029).
+      # This non-sensitive test marker in the runner env is what deploy preflight
+      # fill-missing provisions onto the ephemeral per-run stack — the single-step
+      # CI path (runner env -> direct API POST -> platform). It must match the
+      # auth service's EXPECTED_SIGNING_SECRET (modules/auth/src/server.ts); the
+      # value never enters deploy state, only its pointer name does.
+      AUTH_SIGNING_SECRET: sk_test_ci_storefront_auth
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:

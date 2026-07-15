@@ -27,7 +27,7 @@ const dbDep = () =>
   dependency({
     name: 'db',
     type: 'fake/db',
-    connection: conn({ url: string({ secret: true }) }, (v) => ({ url: v.url })),
+    connection: conn({ url: string() }, (v) => ({ url: v.url })),
     required: dbContract(),
   });
 

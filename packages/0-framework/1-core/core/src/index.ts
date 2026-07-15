@@ -5,6 +5,8 @@
  * surface grows.) Pure barrel — no implementations live here.
  */
 
+export type { SecretString } from '@internal/foundation/secret';
+export { SecretBox } from '@internal/foundation/secret';
 export type {
   Config,
   ConfigDeclaration,
@@ -13,11 +15,11 @@ export type {
   Params,
   Values,
 } from './config.ts';
-export { configOf, number, param, string } from './config.ts';
+export { configOf, number, param, provisionManifest, string } from './config.ts';
 export type { Contract } from './contract.ts';
-export type { Edge, Graph, GraphNode, NodeId } from './graph.ts';
+export type { Edge, Graph, GraphNode, NodeId, SecretBinding } from './graph.ts';
 export { Load, LoadError } from './graph.ts';
-export { hydrate, hydrateSync } from './hydrate.ts';
+export { hydrate, hydrateSecrets, hydrateSync } from './hydrate.ts';
 export type {
   BuildAdapter,
   DependencyEnd,
@@ -34,14 +36,22 @@ export type {
   RefPort,
   ResourceNode,
   RunnableServiceNode,
+  SecretBindings,
+  SecretNeed,
+  SecretSource,
+  Secrets,
+  SecretValues,
   ServiceNode,
 } from './node.ts';
 export {
   dependency,
   freezeNode,
   isNode,
+  isSecretSource,
   module,
   ResourceNodeBase,
   resource,
+  secret,
+  secretSource,
   service,
 } from './node.ts';

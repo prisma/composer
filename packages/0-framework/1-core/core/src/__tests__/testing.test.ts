@@ -54,6 +54,11 @@ const consumer = (): RunnableServiceNode<ConsumerDeps, ConsumerParams> =>
         'consumer.config() should never be reached — mockService replaces it entirely.',
       );
     },
+    secrets() {
+      throw new Error(
+        'consumer.secrets() should never be reached — mockService replaces it entirely.',
+      );
+    },
   });
 
 describe('mockService', () => {

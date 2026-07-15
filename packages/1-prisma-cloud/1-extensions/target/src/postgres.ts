@@ -48,7 +48,7 @@ export function postgres(opts?: {
   return dependency({
     type: 'postgres',
     connection: {
-      params: { url: string({ secret: true }) },
+      params: { url: string() },
       // The binding IS the typed config: hydrate is the identity on its values
       // ({ url: string } = PostgresConfig). The app constructs its own client.
       hydrate: (v): PostgresConfig => v,

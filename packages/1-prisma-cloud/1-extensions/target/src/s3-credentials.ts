@@ -27,9 +27,8 @@ export type CredentialsContract = typeof credentialsContract;
 export function s3Credentials(opts: { name: string }): ResourceNode<typeof credentialsContract>;
 /**
  * `s3Credentials()` — a service's dependency on the minted pair. Its binding is
- * the typed `CredentialsConfig`; `secretAccessKey` is secret-flagged so it is
- * redacted in introspection. The storage service reads the pair through this
- * slot (invariant 4 — no bespoke env reads).
+ * the typed `CredentialsConfig`. The storage service reads the pair through this
+ * dependency binding (invariant 4 — no bespoke env reads).
  */
 export function s3Credentials(): DependencyEnd<CredentialsConfig, typeof credentialsContract>;
 export function s3Credentials(opts?: {
@@ -49,7 +48,7 @@ export function s3Credentials(opts?: {
     connection: {
       params: {
         accessKeyId: string(),
-        secretAccessKey: string({ secret: true }),
+        secretAccessKey: string(),
       },
       hydrate: (v): CredentialsConfig => v,
     },

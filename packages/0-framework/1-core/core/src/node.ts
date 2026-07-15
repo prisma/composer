@@ -3,12 +3,69 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
+import type { SecretString } from '@internal/foundation/secret';
 import type { ConfigParam, Connection, Params, Values } from './config.ts';
 import type { Contract } from './contract.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
 const NODE: unique symbol = Symbol.for('prisma:node') as never;
+
+// A secret slot rides its OWN brand + field, structurally distinct from deps and
+// params (ADR-0029): sensitivity is by type, not a flag. `secret()` is the NEED
+// (a nameless slot); `envSecret('NAME')` is the SOURCE (the platform name the
+// root binds it to) — the same need-vs-source split as rpc(contract) vs a
+// producer's exposed port.
+const SECRET_NEED: unique symbol = blindCast<never, 'unique-symbol brand for a secret need'>(
+  Symbol.for('prisma:secret-need'),
+);
+const SECRET_SOURCE: unique symbol = blindCast<never, 'unique-symbol brand for a secret source'>(
+  Symbol.for('prisma:secret-source'),
+);
+
+/** A declared secret input slot — nameless; the root binds it and the topology forwards it in. */
+export interface SecretNeed {
+  readonly [SECRET_NEED]: true;
+  readonly kind: 'secret';
+}
+
+/** A service/module's secret slots: name → the need it declares. */
+export type Secrets = Record<string, SecretNeed>;
+
+/** The wiring value bound to a secret slot: a target-defined payload core forwards but never inspects. A target (e.g. @prisma/compose-prisma-cloud's `envSecret`) builds one via `secretSource()`. */
+export interface SecretSource<T = unknown> {
+  readonly [SECRET_SOURCE]: true;
+  /** Target-defined. Core never reads this; the target that authored the source reads it back. */
+  readonly payload: T;
+}
+
+/** What `provision(node, { secrets })` supplies: one source per declared secret slot. */
+export type SecretBindings<S extends Secrets> = { [K in keyof S]: SecretSource };
+
+/** What `secrets()` returns: one redacting SecretBox per declared slot. */
+export type SecretValues<S extends Secrets> = { readonly [K in keyof S]: SecretString };
+
+/** Declares a secret NEED. Nameless — the platform name is bound at the root via `envSecret`. */
+export function secret(): SecretNeed {
+  return Object.freeze({ [SECRET_NEED]: true as const, kind: 'secret' as const });
+}
+
+/** Builds an opaque secret source from a target-defined payload — the SPI a deploy target's own source constructor (e.g. `envSecret`) calls. Core forwards the source and never inspects the payload. */
+export function secretSource<T>(payload: T): SecretSource<T> {
+  return Object.freeze({ [SECRET_SOURCE]: true as const, payload });
+}
+
+/** True if `value` is a secret source (an `envSecret` result or a forwarded ctx.secrets ref). */
+export function isSecretSource(value: unknown): value is SecretSource {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    blindCast<
+      Record<PropertyKey, unknown>,
+      'reading the secret-source brand off an unknown object'
+    >(value)[SECRET_SOURCE] === true
+  );
+}
 
 /** Opaque `Contract<any, any>` bound shared by every node/port type that doesn't care which contract. */
 // biome-ignore lint/suspicious/noExplicitAny: the one alias for this bound — see doc comment.
@@ -56,6 +113,7 @@ export interface ServiceNode<
   D extends Deps = Deps,
   P extends Params = Params,
   E extends Expose = Expose,
+  S extends Secrets = Secrets,
 > {
   readonly [NODE]: true;
   readonly kind: 'service';
@@ -67,6 +125,8 @@ export interface ServiceNode<
   readonly inputs: D;
   /** Service-level config declarations (e.g. port). */
   readonly params: P;
+  /** Declared secret input slots (authored as `secrets`) — bound at the root via `envSecret`, read via the `secrets()` accessor (ADR-0029). Named `secretSlots` on the node so the data field does not collide with that accessor. */
+  readonly secretSlots: S;
   /** How the app's entry is built + assembled. */
   readonly build: BuildAdapter;
   /** Named output ports this service exposes — the Contracts a consumer's `rpc(contract)` can require. `undefined` when the service exposes nothing. */
@@ -82,10 +142,13 @@ export interface RunnableServiceNode<
   D extends Deps = Deps,
   P extends Params = Params,
   E extends Expose = Expose,
-> extends ServiceNode<D, P, E> {
+  S extends Secrets = Secrets,
+> extends ServiceNode<D, P, E, S> {
   run(address: string, boot: () => Promise<unknown>): Promise<unknown>;
   load(): HydratedDeps<D>;
   config(): Values<P>;
+  /** The service's secrets, each a redacting SecretBox — a third accessor beside load()/config() (ADR-0021). */
+  secrets(): SecretValues<S>;
 }
 
 /**
@@ -105,23 +168,31 @@ export interface DependencyEnd<C = unknown, Req = unknown> {
 }
 
 /** A Module: the same Deps/Expose boundary a service has, around transparent wiring instead of a black-box body — its `body` runs at Load, not at authoring. */
-export interface ModuleNode<D extends Deps = Deps, E extends Expose = Expose> {
+export interface ModuleNode<
+  D extends Deps = Deps,
+  E extends Expose = Expose,
+  S extends Secrets = Secrets,
+> {
   readonly [NODE]: true;
   readonly kind: 'module';
   /** Human-readable, given at authoring — logs/diagnostics only. */
   readonly name: string;
   readonly deps: D;
+  /** Declared secret input slots (authored as `secrets`) — forwarded to internals via `ctx.secrets` (ADR-0029). */
+  readonly secretSlots: S;
   readonly expose: E;
-  body(ctx: ModuleContext<D>): ModuleOutputs<E>;
+  body(ctx: ModuleContext<D, S>): ModuleOutputs<E> | void;
 }
 
 /**
  * What a module's body receives: its declared inputs as forwardable wiring
  * values, plus `provision` to register the owned services/modules it wires them into.
  */
-export interface ModuleContext<D extends Deps> {
+export interface ModuleContext<D extends Deps, S extends Secrets = Secrets> {
   /** The module's declared inputs as wiring values — pass them into provision(). */
   readonly inputs: { [K in keyof D]: InputRef<D[K]> };
+  /** The module's declared secret slots as forwardable sources — pass them into a child's `secrets` (ADR-0029). */
+  readonly secrets: { readonly [K in keyof S]: SecretSource };
   /** Registers an owned child (service or module) under a stable id. */
   readonly provision: ModuleBuilder['provision'];
 }
@@ -176,9 +247,13 @@ type DepBindings<D extends Deps> = {
  * never be left unwired at compile time. The whole object is therefore
  * optional for a slot-less node and required for one with slots.
  */
-type ProvisionArgs<D extends Deps> = [keyof D] extends [never]
-  ? [opts?: { id?: string }]
-  : [opts: { id?: string; deps: DepBindings<D> }];
+type ProvisionArgs<D extends Deps, S extends Secrets> = [keyof D] extends [never]
+  ? [keyof S] extends [never]
+    ? [opts?: { id?: string }]
+    : [opts: { id?: string; secrets: SecretBindings<S> }]
+  : [keyof S] extends [never]
+    ? [opts: { id?: string; deps: DepBindings<D> }]
+    : [opts: { id?: string; deps: DepBindings<D>; secrets: SecretBindings<S> }];
 
 export interface ModuleBuilder {
   /** Provisions an owned resource; its id defaults to the node's `name`. */
@@ -186,32 +261,32 @@ export interface ModuleBuilder {
     resource: ResourceNode<C>,
     opts?: { id?: string },
   ): { readonly id: string } & RefPort<C>;
-  /** Registers an owned service; its id defaults to the node's `name`, and `deps` is required iff it declares dependency slots. */
-  provision<D extends Deps, E extends Expose>(
+  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`secrets` are required iff it declares them. */
+  provision<D extends Deps, E extends Expose, S extends Secrets>(
     // biome-ignore lint/suspicious/noExplicitAny: accepts any concrete service node; ServiceNode's params generic is opaque here.
-    service: ServiceNode<D, any, E>,
-    ...args: ProvisionArgs<D>
+    service: ServiceNode<D, any, E, S>,
+    ...args: ProvisionArgs<D, S>
   ): ProvisionedRef<E>;
   /**
-   * The service call with `deps` spelled out. `ProvisionArgs` above cannot
-   * resolve while `D` is still an unbound type parameter — a generic wrapper
-   * like `cron()` provisioning a caller-supplied service — so that call site
-   * resolves to this concrete-`deps` overload instead.
+   * The service call with `deps`/`secrets` spelled out. `ProvisionArgs` above
+   * cannot resolve while `D`/`S` are still unbound type parameters — a generic
+   * wrapper like `cron()` provisioning a caller-supplied service — so that call
+   * site resolves to this concrete overload instead.
    */
-  provision<D extends Deps, E extends Expose>(
+  provision<D extends Deps, E extends Expose, S extends Secrets>(
     // biome-ignore lint/suspicious/noExplicitAny: accepts any concrete service node; ServiceNode's params generic is opaque here.
-    service: ServiceNode<D, any, E>,
-    opts: { id?: string; deps: DepBindings<D> },
+    service: ServiceNode<D, any, E, S>,
+    opts: { id?: string; deps: DepBindings<D>; secrets?: SecretBindings<S> },
   ): ProvisionedRef<E>;
-  /** Registers an owned child module; its id defaults to the node's `name`, and `deps` is required iff it declares dependency slots. */
-  provision<D extends Deps, E extends Expose>(
-    child: ModuleNode<D, E>,
-    ...args: ProvisionArgs<D>
+  /** Registers an owned child module; its id defaults to the node's `name`; `deps`/`secrets` are required iff it declares them. */
+  provision<D extends Deps, E extends Expose, S extends Secrets>(
+    child: ModuleNode<D, E, S>,
+    ...args: ProvisionArgs<D, S>
   ): ProvisionedRef<E>;
-  /** The child-module call with `deps` spelled out — the same generic-wrapper escape as the service overload above. */
-  provision<D extends Deps, E extends Expose>(
-    child: ModuleNode<D, E>,
-    opts: { id?: string; deps: DepBindings<D> },
+  /** The child-module call with `deps`/`secrets` spelled out — the same generic-wrapper escape as the service overload above. */
+  provision<D extends Deps, E extends Expose, S extends Secrets>(
+    child: ModuleNode<D, E, S>,
+    opts: { id?: string; deps: DepBindings<D>; secrets?: SecretBindings<S> },
   ): ProvisionedRef<E>;
 }
 
@@ -252,7 +327,11 @@ function requireExtension(extension: string, factory: string): void {
  * underscore inside a name would collide with that separator (e.g. param
  * "db_url" vs input "db"'s param "url" both hitting env key "DB_URL").
  */
-function requireNoUnderscoreName(name: string, kind: 'input' | 'param', factory: string): void {
+function requireNoUnderscoreName(
+  name: string,
+  kind: 'input' | 'param' | 'secret',
+  factory: string,
+): void {
   if (name.includes('_')) {
     throw new Error(
       `${factory}() ${kind} name "${name}" may not contain "_" — config keys join names with ` +
@@ -264,7 +343,7 @@ function requireNoUnderscoreName(name: string, kind: 'input' | 'param', factory:
 
 function requireNoUnderscoreNames(
   names: Iterable<string>,
-  kind: 'input' | 'param',
+  kind: 'input' | 'param' | 'secret',
   factory: string,
 ): void {
   for (const name of names) requireNoUnderscoreName(name, kind, factory);
@@ -276,6 +355,16 @@ function freezeParams<P extends Params>(params: P): P {
     frozen[name] = Object.freeze({ ...param });
   }
   return Object.freeze(frozen) as P;
+}
+
+function freezeSecrets<S extends Secrets>(secrets: S): S {
+  const frozen: Record<string, SecretNeed> = {};
+  for (const [name, need] of Object.entries(secrets)) {
+    frozen[name] = Object.freeze({ ...need });
+  }
+  return blindCast<S, 'the frozen per-slot copy is exactly the declared Secrets map S'>(
+    Object.freeze(frozen),
+  );
 }
 
 /** A frozen shallow copy that keeps the caller's declared type. */
@@ -363,20 +452,36 @@ export function service<
   D extends Deps,
   P extends Params,
   E extends Expose = Record<never, never>,
+  S extends Secrets = Record<never, never>,
 >(def: {
   name: string;
   extension: string;
   type: string;
   inputs: D;
   params: P;
+  secrets?: S;
   build: BuildAdapter;
   expose?: E;
-}): ServiceNode<D, P, E> {
+}): ServiceNode<D, P, E, S> {
   requireName(def.name, 'service');
   requireExtension(def.extension, 'service');
   requireType(def.type, 'service');
   requireNoUnderscoreNames(Object.keys(def.inputs), 'input', 'service');
   requireNoUnderscoreNames(Object.keys(def.params), 'param', 'service');
+  requireNoUnderscoreNames(Object.keys(def.secrets ?? {}), 'secret', 'service');
+  // A secret slot and a service-OWN param of the same name derive the SAME
+  // config key (COMPOSE_<addr>_<NAME>), so they'd write two rows to one key.
+  // A same-named dependency is fine — its keys carry the input+param segments
+  // (COMPOSE_<addr>_<NAME>_<param>), which never collide — matching how a dep
+  // and a param may already share a name (ADR-0021).
+  for (const slot of Object.keys(def.secrets ?? {})) {
+    if (Object.hasOwn(def.params, slot)) {
+      throw new Error(
+        `service() secret slot "${slot}" collides with a param of the same name — a secret slot and ` +
+          `a service param derive the same config key (COMPOSE_<addr>_${slot.toUpperCase()}); rename one.`,
+      );
+    }
+  }
   return Object.freeze({
     [NODE]: true as const,
     kind: 'service' as const,
@@ -385,6 +490,9 @@ export function service<
     type: def.type,
     inputs: frozenShallowCopy(def.inputs),
     params: freezeParams(def.params),
+    secretSlots: freezeSecrets(
+      def.secrets ?? blindCast<S, 'no secrets declared → an empty slot map'>({}),
+    ),
     build: Object.freeze({ ...def.build }),
     expose: def.expose !== undefined ? frozenShallowCopy(def.expose) : undefined,
   });
@@ -425,8 +533,8 @@ export function dependency<P extends Params, C, Req = unknown>(def: {
  */
 export function module(
   name: string,
-  body: (ctx: ModuleContext<Record<never, never>>) => void,
-): ModuleNode<Record<never, never>, Record<never, never>>;
+  body: (ctx: ModuleContext<Record<never, never>, Record<never, never>>) => void,
+): ModuleNode<Record<never, never>, Record<never, never>, Record<never, never>>;
 /**
  * A module with a boundary: `deps` and/or `expose` declare what wires in and
  * out, the same way a service does. The body returns one port per `expose` key.
@@ -434,26 +542,30 @@ export function module(
 export function module<
   D extends Deps = Record<never, never>,
   E extends Expose = Record<never, never>,
+  S extends Secrets = Record<never, never>,
 >(
   name: string,
-  boundary: { deps?: D; expose?: E },
-  body: (ctx: ModuleContext<D>) => ModuleOutputs<E>,
-): ModuleNode<D, E>;
+  boundary: { deps?: D; secrets?: S; expose?: E },
+  body: (ctx: ModuleContext<D, S>) => ModuleOutputs<E> | void,
+): ModuleNode<D, E, S>;
 /**
  * Constructs a branded, frozen Module node. Construction is INERT — the body is
  * wiring, not user code, and runs only when the module is Loaded.
  */
 export function module(
   name: string,
-  boundaryOrBody: { deps?: Deps; expose?: Expose } | ((ctx: ModuleContext<Deps>) => void),
-  maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose>,
+  boundaryOrBody:
+    | { deps?: Deps; secrets?: Secrets; expose?: Expose }
+    | ((ctx: ModuleContext<Deps>) => void),
+  maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
   requireName(name, 'module');
   const closedRoot = typeof boundaryOrBody === 'function';
   const boundary = closedRoot ? {} : boundaryOrBody;
   const deps = frozenShallowCopy(boundary.deps ?? {});
+  const secretSlots = frozenShallowCopy(boundary.secrets ?? {});
   const expose = frozenShallowCopy(boundary.expose ?? {});
-  const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> = closedRoot
+  const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void = closedRoot
     ? (ctx) => {
         boundaryOrBody(ctx);
         return {};
@@ -465,6 +577,7 @@ export function module(
     kind: 'module' as const,
     name,
     deps,
+    secretSlots,
     expose,
     body,
   });

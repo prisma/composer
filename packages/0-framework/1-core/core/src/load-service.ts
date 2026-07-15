@@ -48,11 +48,24 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
       );
     }
   }
+  // A lone service has no enclosing scope to bind its secrets — nothing writes
+  // the pointer rows or runs preflight for them, so it would fail opaquely at
+  // boot. Reject it at Load, the same as an unwired dependency above.
+  const secretSlots = Object.keys(root.secretSlots);
+  if (secretSlots.length > 0) {
+    const names = secretSlots.map((k) => `"${k}"`).join(', ');
+    throw new LoadError(
+      `Service "${rootId}" declares secret slot${secretSlots.length > 1 ? 's' : ''} ${names} but is ` +
+        'being loaded directly — a lone service has no enclosing scope to bind them. Compose it ' +
+        `inside a module that binds each with envSecret('NAME').`,
+    );
+  }
   const rootGraphNode: GraphNode = { id: rootId, node: root };
   const { nodes, edges } = serviceInputs(root, rootId);
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
+    secrets: [],
   };
 }
