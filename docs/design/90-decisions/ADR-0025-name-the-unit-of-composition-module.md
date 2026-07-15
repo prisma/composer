@@ -131,7 +131,7 @@ where most of the actual usage is.
 - [ADR-0014](ADR-0014-one-authoring-primitive.md) — the single-primitive model
   this renames; its shape stands unchanged, its framework, package, and CLI
   names are superseded by
-  [ADR-0026](ADR-0026-name-the-framework-prisma-composer.md).
+  [ADR-0026](ADR-0026-name-the-framework-prisma-compose.md).
 - [ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md),
   [ADR-0006](ADR-0006-every-node-is-named.md) — the root-node mechanics "the
   App is the outermost Module" rests on.

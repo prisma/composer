@@ -27,7 +27,7 @@ There is no separate `app()` construct. The name for what you build is a
 (This ADR's naming choices for the unit, the framework, the packages, and the
 CLI are superseded — see
 [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) and
-[ADR-0026](ADR-0026-name-the-framework-prisma-composer.md); the single-primitive
+[ADR-0026](ADR-0026-name-the-framework-prisma-compose.md); the single-primitive
 model here stands.)
 
 ## Reasoning
@@ -72,7 +72,7 @@ word for the deployed result — but the only thing a developer ever writes is
   once it's in the wild.
 - **The unit noun, framework name, package family, and CLI now live in other
   ADRs.** [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) names the
-  unit Module; [ADR-0026](ADR-0026-name-the-framework-prisma-composer.md) names
+  unit Module; [ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) names
   the framework Prisma Composer and renames the packages and CLI to match.
 
 ## Alternatives considered
@@ -85,7 +85,7 @@ word for the deployed result — but the only thing a developer ever writes is
 
 ## Related
 
-- [ADR-0026](ADR-0026-name-the-framework-prisma-composer.md) — the framework
+- [ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) — the framework
   name (Prisma Composer), the package family, and the CLI.
 - [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) — the unit of
   composition (Module), authored with `module()`.

@@ -5,7 +5,7 @@ one for **units of composition** (produced by the "System" failure, resolved by
 [ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md)),
 and one for **product names that must refer** (produced by the "Prisma App"
 framework-name failure, resolved by
-[ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-composer.md)).
+[ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-compose.md)).
 Every test in both is a sentence said aloud to a colleague.
 
 ## Part 1 — naming a unit of composition
@@ -120,10 +120,11 @@ which is the proper register for a milieu, not a violation of the value rule.
 | Identity frames | Fails: "App 2.0" and "Intro to Prisma App" cannot pick out the product. |
 
 **Outcome:** the framework is **Prisma Composer**
-([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-composer.md));
+([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-compose.md));
 "Prisma App" is kept as the name of the *artifact*, where it was always right — you
-compose Modules with Prisma Composer into your Prisma App. Compose beat the field
-(Construct, Alloy, Assemble, Wire, Forge, Stack, Prism, and a nineteen-word synonym
-sweep) as the only candidate with no failing grade — and as the semantically correct
-verb: build/construct/make mean fabricating from raw material; *compose* means
-assembling finished parts into a whole, which is what the framework does.
+compose Modules with Prisma Composer into your Prisma App. The verb *compose* beat
+the field (Construct, Alloy, Assemble, Wire, Forge, Stack, Prism, and a nineteen-word
+synonym sweep) as the only candidate with no failing grade and the semantically
+correct one — build/construct/make mean fabricating from raw material, while *compose*
+means assembling finished parts into a whole, which is what the framework does; the
+framework itself takes the agent-noun form, **Composer**.

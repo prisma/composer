@@ -9,7 +9,7 @@ distributed.
 
 The framework name and its unit are settled: **Prisma Composer** (← Prisma App ←
 MakerKit), recorded in
-[ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-composer.md),
+[ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-compose.md),
 and **Module** (← System ← Hex), recorded in
 [ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md).
 **"Prisma App" names the artifact** — the thing you build and deploy — never the
@@ -86,7 +86,7 @@ output). Both rubrics live in [vocabulary-tests.md](vocabulary-tests.md). Applyi
 the description tests alone is how the unit was misnamed "System"
 ([ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md))
 and the framework was misnamed "Prisma App"
-([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-composer.md)).
+([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-compose.md)).
 
 The payoff of taking the value word for the brand: the precise words stay **free to
 mean exactly what they mean one level down**. The same shape repeats at every layer —
@@ -198,6 +198,6 @@ with docker-compose-with-Prisma content (winnable; see ADR-0026).
   ([ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md));
   plain-English use in prose is fine, but no construct, term, or diagram label.
 - **"Prisma App" for the tool** — it names the artifact only
-  ([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-composer.md)).
+  ([ADR-0026](../../docs/design/90-decisions/ADR-0026-name-the-framework-prisma-compose.md)).
   Docs say "built with Prisma Composer," never "built with Prisma App." The general
   rule is hard: never name a tool after its output.
