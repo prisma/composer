@@ -22,8 +22,10 @@ disciplines bound it — each was violated in the first real out-of-repo deploy:
 
 - **No guessing.** No path arithmetic, no monorepo-depth inference, no absolute
   deploy-machine path baked into an artifact. When the framework needs the app's
-  (possibly deep) location in a standalone tree, it **finds** it — locating
-  `server.js` — it does not compute it from an assumed depth.
+  (possibly deep) location in a standalone tree, it **reads the build tool's own
+  manifest** (`nextjs()` reads `.next/required-server-files.json`'s
+  `relativeAppDir`) — it neither walks the tree nor computes the location from an
+  assumed depth.
 - **No laundering.** `node_modules` ships exactly as the build produced it. A
   symlinked (non-hoisted) `node_modules` is a **hard error** at package time,
   never dereferenced — the user's to fix (a hoisted linker: npm, or pnpm/bun
@@ -77,10 +79,11 @@ deterministic file-shuffling that belongs to the artifact, not to any
 user-visible build step.
 
 The discipline is not "do nothing to the tree" but "do only the documented,
-deterministic thing, find don't compute, and reject anything that isn't a plain
-file." Guessing and laundering are the hazards it rules out: inferring a
-monorepo depth breaks on the next layout, and walking-and-dereferencing trees
-inherits every package manager's pathology and, worse, opens a security hole —
+deterministic thing, read the build tool's own record instead of guessing, and
+reject anything that isn't a plain file." Guessing and laundering are the hazards
+it rules out: inferring a monorepo depth breaks on the next layout, and
+walking-and-dereferencing trees inherits every package manager's pathology and,
+worse, opens a security hole —
 a symlink escaping the repo (a compromised postinstall, or accident) would
 silently package deploy-machine files (`~/.aws`, ssh keys) into the artifact,
 and an absolute path baked into an artifact encodes the build machine's
@@ -122,8 +125,11 @@ declared location fails loudly — an error naming the resolved path and saying
   build script, worse ergonomics for zero safety gain. The real rule is no
   *guessing*, not no *copying*.
 - **Infer the bundle location** (fixed monorepo depth, or glob-and-hope) —
-  rejected: inference is the root cause of the deploy failures; find `server.js`
-  deterministically instead.
+  rejected: inference is the root cause of the deploy failures; read the app's
+  location from the build tool's own manifest (Next's `relativeAppDir`) instead.
+- **Walk the standalone tree for `server.js`** (a first cut) — rejected: it's a
+  heuristic (shallowest non-dependency `server.js`) where an authoritative record
+  exists. Next writes `relativeAppDir`; read it.
 - **A packager-wide `bunfig` disabling auto-install** — rejected: node and Next
   services have opposite auto-install needs; the toggle is adapter-specific.
 - **The user's build produces the wrapper too** — honest about who bundles

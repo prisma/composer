@@ -26,7 +26,7 @@ _Earlier drafts (ADR-0001, ADR-0002) were retired as the high-level design settl
 
 - [ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md) — `prisma-compose deploy` derives everything from the root node; there is no deploy config file.
 - [ADR-0004](ADR-0004-paths-resolve-relative-to-the-authoring-file.md) — Paths resolve relative to the file that writes them; the build adapter carries the authoring module.
-- [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) — Users build the app's code; the framework assembles the artifact by documented, deterministic steps (validate, wrap, each app-type's documented deploy step — e.g. Next's static/public copy). No guessing (arithmetic/depth-inference/discovery), no laundering (symlink = hard error); find don't compute.
+- [ADR-0005](ADR-0005-users-build-the-framework-assembles.md) — Users build the app's code; the framework assembles the artifact by documented, deterministic steps (validate, wrap, each app-type's documented deploy step — e.g. Next's static/public copy). No guessing (arithmetic/depth-inference/discovery), no laundering (symlink = hard error); read the build tool's own manifest (Next's `relativeAppDir`), don't walk or compute.
 - [ADR-0006](ADR-0006-every-node-is-named.md) — Every node is named; the root's name names the application.
 - [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md) — Deploy drives Alchemy through a generated, inspectable stack file.
 - [ADR-0008](ADR-0008-wrapper-inlines-everything-except-runtime-builtins.md) — The boot wrapper inlines everything except runtime built-ins.

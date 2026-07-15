@@ -22,9 +22,10 @@ function moduleUrl(root: string): string {
 
 /**
  * Writes a `next build` standalone tree with the app nested at `apps/web` (the
- * monorepo shape — `outputFileTracingRoot` above the app) plus the client assets
- * Next omits: `.next/static` and `public/` live at the app root, NOT in
- * standalone. Returns the deep app-relative path.
+ * monorepo shape — `outputFileTracingRoot` above the app), plus the client assets
+ * Next omits (`.next/static`, `public/` at the app root, NOT in standalone) and
+ * the `required-server-files.json` manifest Next writes recording where it put
+ * the app (`relativeAppDir`). Returns the deep app-relative path.
  */
 function writeNextBuild(root: string): { appRel: string } {
   const standalone = path.join(root, '.next', 'standalone');
@@ -38,6 +39,11 @@ function writeNextBuild(root: string): { appRel: string } {
   fs.writeFileSync(path.join(root, '.next', 'static', 'chunk.js'), '// static asset\n');
   fs.mkdirSync(path.join(root, 'public'), { recursive: true });
   fs.writeFileSync(path.join(root, 'public', 'favicon.ico'), 'icon\n');
+  // Next's manifest — records the app's subpath within standalone (posix).
+  fs.writeFileSync(
+    path.join(root, '.next', 'required-server-files.json'),
+    JSON.stringify({ relativeAppDir: 'apps/web' }),
+  );
   fs.writeFileSync(
     path.join(root, 'src', 'service.ts'),
     'export default { hello: "wrap" as const };\n',
@@ -95,7 +101,7 @@ describe('assemble()', () => {
     const workDir = path.join(cwd, '.prisma-compose', 'artifacts', 'storefront.web');
     const bundleApp = path.join(workDir, 'bundle', appRel);
     expect(result.dir).toBe(workDir);
-    // The deep server path was FOUND, not authored, and prefixed with bundle/.
+    // The deep server path came from Next's manifest (relativeAppDir), prefixed with bundle/.
     expect(result.entry).toBe('bundle/apps/web/server.js');
     expect(fs.existsSync(path.join(workDir, 'main.mjs'))).toBe(true);
     // Standalone tree shipped (incl. the hoisted node_modules at its root).

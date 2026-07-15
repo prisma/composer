@@ -8,17 +8,18 @@
  * Next docs, run at deploy so no app needs a build-script for it.
  *
  * It does not guess: the app's location inside the standalone tree (deep, when
- * `outputFileTracingRoot` is the monorepo root) is *found* by locating
- * `server.js`, never computed from a hardcoded depth. It does not launder:
- * node_modules is shipped exactly as `next build` produced it, so a symlinked
- * (non-hoisted) node_modules is the packager's hard error — the same
- * misconfiguration crashes the standalone server at boot, so it must be a flat
- * install (npm, or pnpm/bun with a hoisted node-linker).
+ * `outputFileTracingRoot` is the monorepo root) is *read from Next's own build
+ * manifest* (`.next/required-server-files.json`'s `relativeAppDir`), never walked
+ * for or computed from a hardcoded depth. It does not launder: node_modules is
+ * shipped exactly as `next build` produced it, so a symlinked (non-hoisted)
+ * node_modules is the packager's hard error — the same misconfiguration crashes
+ * the standalone server at boot, so it must be a flat install (npm, or pnpm/bun
+ * with a hoisted node-linker).
  *
  * Artifact layout: `<workDir>/main.mjs` (our wrapper) + `<workDir>/bundle/`
  * (the standalone tree, with static/public copied in). The packager adds
  * `bootstrap.js` + the manifest at the root; bootstrap imports main.mjs, whose
- * run() dynamically imports `./bundle/<found server.js>`.
+ * run() dynamically imports `./bundle/<relativeAppDir>/server.js`.
  *
  * Paths are file-relative (ADR-0004): `appDir` resolves against
  * `dirname(build.module)`.
@@ -41,33 +42,43 @@ function isNextjsBuild(descriptor: BuildAdapter): descriptor is NextjsBuildAdapt
   );
 }
 
-/** The app's own server.js inside the standalone tree — the shallowest one that isn't a dependency's. Found, not computed: this is the app's deep location under `outputFileTracingRoot`. */
-function findAppServer(standaloneRoot: string): string | undefined {
-  const found: string[] = [];
-  const visit = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules') continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) visit(full);
-      else if (entry.name === 'server.js') found.push(full);
-    }
-  };
-  visit(standaloneRoot);
-  found.sort((a, b) => a.split(path.sep).length - b.split(path.sep).length);
-  return found[0];
-}
-
-/** The built standalone server.js for a nextjs build — `appDir`'s standalone root plus the located server. Single-sourced so `assemble()` (deploy) and the integration-test seam can't drift. */
-export function standaloneServerPath(build: NextjsBuildAdapter): string {
-  const appDir = path.resolve(path.dirname(fileURLToPath(build.module)), build.appDir);
-  const standaloneRoot = path.join(appDir, '.next', 'standalone');
-  const server = findAppServer(standaloneRoot);
-  if (server === undefined) {
+/**
+ * The app's own subpath within `.next/standalone`, as an OS-relative path. Next
+ * mirrors the app's location under `outputFileTracingRoot` (deep, when that's the
+ * monorepo root); rather than walk the tree for `server.js`, we read where Next
+ * put it from `.next/required-server-files.json` — `relativeAppDir` is exactly
+ * that subpath. Older Next lacks the field; fall back to computing it from the
+ * same manifest's `config.outputFileTracingRoot`.
+ */
+function nextAppRel(appDir: string): string {
+  const manifestPath = path.join(appDir, '.next', 'required-server-files.json');
+  if (!fs.existsSync(manifestPath)) {
     throw new Error(
-      `no server.js under ${standaloneRoot} — run \`next build\` with output: "standalone"`,
+      `no ${path.join('.next', 'required-server-files.json')} under ${appDir} — run \`next build\` with output: "standalone" first.`,
     );
   }
-  return server;
+  // JSON.parse is `any`; both fields we read are re-checked with `typeof` below.
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const relativeAppDir: unknown = manifest?.relativeAppDir;
+  const tracingRoot: unknown = manifest?.config?.outputFileTracingRoot;
+  const posixRel =
+    typeof relativeAppDir === 'string'
+      ? relativeAppDir
+      : typeof tracingRoot === 'string'
+        ? path.relative(tracingRoot, appDir).split(path.sep).join('/')
+        : undefined;
+  if (posixRel === undefined) {
+    throw new Error(
+      `${manifestPath} records neither relativeAppDir nor config.outputFileTracingRoot — cannot locate the standalone server`,
+    );
+  }
+  return posixRel.split('/').join(path.sep);
+}
+
+/** The built standalone server.js for a nextjs build — `appDir`'s standalone root plus the app subpath Next recorded. Single-sourced so `assemble()` (deploy) and the integration-test seam can't drift. */
+export function standaloneServerPath(build: NextjsBuildAdapter): string {
+  const appDir = path.resolve(path.dirname(fileURLToPath(build.module)), build.appDir);
+  return path.join(appDir, '.next', 'standalone', nextAppRel(appDir), 'server.js');
 }
 
 export async function assemble(input: AssembleInput): Promise<Bundle> {
@@ -88,12 +99,9 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       `no ${path.join('.next', 'standalone')} under ${appDir} — run \`next build\` with output: "standalone" first.`,
     );
   }
-  const serverPath = findAppServer(standaloneRoot);
-  if (serverPath === undefined) {
-    throw new Error(`no server.js found under ${standaloneRoot} — is this a standalone build?`);
-  }
-  // The app's deep location, relative to the standalone root — found, not computed.
-  const appRel = path.relative(standaloneRoot, path.dirname(serverPath));
+  // The app's (possibly deep) location within the standalone tree — read from
+  // Next's own build manifest, not searched for.
+  const appRel = nextAppRel(appDir);
 
   const workDir = path.join(input.cwd, '.prisma-compose', 'artifacts', input.address);
   await fs.promises.rm(workDir, { recursive: true, force: true });
