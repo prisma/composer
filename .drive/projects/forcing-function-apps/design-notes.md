@@ -102,3 +102,26 @@ cutover, streams integration shape, secrets backing, dev-loop architecture.
 - [prisma/datahub](https://github.com/prisma/datahub),
   [prisma/open-chat](https://github.com/prisma/open-chat),
   [prisma/streams](https://github.com/prisma/streams)
+
+## Streams consumer auth — settled by ADR-0030 (2026-07-15)
+
+The streams slice shipped with a root-bound `secret()` bearer key and a
+`{ url }`-only binding: consumers declare their own secret slot and the root
+binds both to one platform variable. Flagged in review as the first
+authenticated module contract — the two slots are connected only by
+convention (nothing checks they name the same variable; a mismatch deploys
+green and 401s at runtime).
+
+PR #89 (ADR-0030, rpc-service-key project) settles the pattern framework-wide:
+wired-peer auth uses a **framework-minted service key carried on the binding's
+own config rail** (like the URL), kept in deploy state — explicitly not an
+ADR-0029 secret, which is reserved for user-supplied external values.
+
+**Follow-up (blocked on #89 slice 2 — the ServiceKey resource + generic
+per-edge value channel):** re-shape streams to match — drop the module's
+`apiKey` secret slot, mint the key at deploy, binding becomes
+`{ url, apiKey }`. Constraint: `@prisma/streams-server` auth is single-key
+(`API_KEY`), so v1 is one minted key per module instance delivered on every
+binding; distinct per-edge keys need an upstream accepted-key-set change
+(mirroring what #89 slice 1 added to rpc's serve()) — candidate minimal
+upstream PR. Do this before S7 (open-chat port) consumes the module.
