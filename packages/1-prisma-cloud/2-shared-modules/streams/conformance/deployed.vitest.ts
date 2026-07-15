@@ -18,12 +18,13 @@ if (apiKey === undefined || apiKey === '') {
 }
 
 const bareFetch = globalThis.fetch;
-globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+const authedFetch: typeof fetch = (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (!url.startsWith(baseUrl)) return bareFetch(input, init);
   const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : {}));
   if (!headers.has('authorization')) headers.set('authorization', `Bearer ${apiKey}`);
   return bareFetch(input, { ...init, headers });
-}) as typeof fetch;
+};
+globalThis.fetch = authedFetch;
 
 runConformanceTests({ baseUrl, longPollTimeoutMs: 30_000 });
