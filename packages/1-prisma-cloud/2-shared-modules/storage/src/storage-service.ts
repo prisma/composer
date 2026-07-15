@@ -19,7 +19,7 @@ export function storageService(opts: { bucket: string }) {
     deps: { db: postgres(), credentials: s3Credentials() },
     params: { bucket: string({ default: opts.bucket }) },
     build: node({
-      module: new URL('./service.mjs', import.meta.url).href,
+      module: new URL('./storage-service.mjs', import.meta.url).href,
       entry: './storage-entrypoint.mjs',
     }),
     expose: { store: s3Contract },

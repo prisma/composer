@@ -89,9 +89,7 @@ export default defineConfig([
     ...baseConfig,
     dts: false,
     entry: {
-      // Emitted as `service.mjs` — @prisma/compose/node's assemble() requires
-      // the service node's `build.module` basename to be `service.*`.
-      service: `${storageDist}/service.mjs`,
+      'storage-service': `${storageDist}/storage-service.mjs`,
       'storage-entrypoint': `${storageDist}/storage-entrypoint.mjs`,
     },
     outDir: 'dist/storage',
