@@ -1,28 +1,33 @@
 ---
-description: "WE DON'T DO BUNDLING. The framework never bundles, transforms, discovers, or repairs application code — the user's build hands deploy a finished flat bundle; deploy only wraps it in the bootstrap. Settled by ADR-0005. Do not relitigate."
+description: "We don't bundle the app's code, and we don't guess or launder. The user's build produces the runnable; the framework assembles the deploy artifact by DOCUMENTED, DETERMINISTIC steps only (validate, wrap, and each app-type's documented deploy step) — never by guessing filenames/depths or laundering trees. Settled by ADR-0005. Do not relitigate."
 alwaysApply: true
 ---
 
-# We don't do bundling
+# We don't bundle the app's code — and we don't guess
 
-**The framework never bundles, transforms, discovers, or repairs application
-code.** The user's build produces a finished, flat, self-contained bundle;
-deploy wraps it in the framework's bootstrap and ships it as handed over. This
-is a guiding design principle (`docs/design/01-principles/architectural-principles.md`),
-settled by `docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md`.
-**Do not relitigate it, and do not "helpfully" violate it:**
+**The framework never bundles or transforms the application's code** — the
+user's build (`next build`, `tsdown`, …) produces the runnable. Downstream, the
+framework assembles the deploy artifact, but only by **documented, deterministic**
+steps: validate the built output, add the boot wrapper, and perform that
+app-type's documented deploy step (e.g. `nextjs()` does Next's documented
+`.next/static`+`public/` copy; `node()` ships the entry). Guiding principle:
+`docs/design/01-principles/architectural-principles.md`; settled by
+`docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md`.
 
-- Never guess or discover a bundle filename — dictate names we own; take paths
-  the user owns as input.
-- Never infer monorepo layout, workspace roots, or output locations. If the
-  framework needs a path, the user supplies it.
+The real rule is **no guessing, no laundering** — do not "helpfully" violate it:
+
+- Never guess or discover a bundle filename — dictate names we own (`main.mjs`).
+- Never infer monorepo layout, workspace roots, or a fixed depth. When the app's
+  location in a standalone tree is needed, **find** it (locate `server.js`); do
+  not compute it.
 - Never derive identity from file paths, and never write an absolute
-  deploy-machine path into an artifact. Uniqueness comes from the node's graph
-  address.
-- A symlink in a bundle is a hard error to report ("materialize links in your
-  build"), never something to dereference, represent, or route around.
-- Never write deploy output into `node_modules` or into the user's build
-  output; staging is deploy-owned, keyed by graph address.
+  deploy-machine path into an artifact. Uniqueness comes from the graph address.
+- A symlink in a bundle is a hard error ("use a hoisted node_modules"), never
+  dereferenced or represented. Ship `node_modules` as the build produced it.
+- Never write deploy output into `node_modules` or the user's build output;
+  staging is deploy-owned, keyed by graph address; the user's tree goes under
+  `bundle/`.
 
-If a change seems to need any of the above, the design is being misread — stop
-and re-read ADR-0005.
+Doing an app-type's *documented* deploy step (the Next asset copy) is fine — it's
+deterministic. Guessing or laundering is not. If a change needs guessing/
+inference/dereferencing, the design is being misread — re-read ADR-0005.

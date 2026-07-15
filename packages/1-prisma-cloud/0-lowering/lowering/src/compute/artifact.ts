@@ -153,15 +153,6 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   }));
   files.push({ relPath: 'bootstrap.js', content: Buffer.from(bootstrap, 'utf8') });
   files.push({ relPath: 'compute.manifest.json', content: Buffer.from(manifest, 'utf8') });
-  // Disable bun's runtime auto-install for every Compute artifact. A require of
-  // an optional native dep the app never uses (e.g. Next's `sharp`/`@next/swc`)
-  // would otherwise make bun fetch its linux binary at boot, filling the tiny
-  // disk (ENOSPC -> reboot loop). bun reads bunfig from the process CWD, which
-  // is the artifact root at boot.
-  files.push({
-    relPath: 'bunfig.toml',
-    content: Buffer.from('[install]\nauto = "disable"\n', 'utf8'),
-  });
 
   const gz = createDeterministicTarGz(files);
   const sha256 = crypto.createHash('sha256').update(gz).digest('hex');

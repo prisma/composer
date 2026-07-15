@@ -35,15 +35,20 @@ or through an adapter the app supplies. A deployment platform may fix a runtime
 (Prisma Compute runs Bun); that is a hosting fact about the target, not a dependency
 of the framework.
 
-## We don't bundle — users build, the framework wraps
+## We don't bundle the app's code — and we don't guess
 
-The framework **never** bundles, transforms, discovers, or repairs application
-code. Your build hands deploy a finished, flat, self-contained bundle; deploy
-wraps it in the framework's own bootstrap and ships it exactly as handed over.
-No filename guessing, no monorepo-layout inference, no tree fix-ups — a symlink
-in a bundle is an error to report, not a job to do. See
+The framework **never** bundles or transforms your application's code — your
+build (`next build`, `tsdown`, …) produces the runnable. Downstream, the
+framework assembles the deploy artifact, but only by **documented, deterministic**
+steps: it validates the built output, adds its boot wrapper, and performs the
+app-type's documented deploy step (a Next app gets its `.next/static`+`public/`
+copied in exactly as the Next docs prescribe). What it must **never** do is
+*guess* or *launder*: no filename guessing (the wrapper's name is dictated), no
+monorepo-depth inference (the app's location in a standalone tree is *found* by
+locating `server.js`, not computed), no baking absolute paths into artifacts, and
+a symlinked `node_modules` is a hard error, never dereferenced. See
 [ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md);
-every violation of this principle has produced a real deploy failure. Do not
+every guessing/laundering violation has produced a real deploy failure. Do not
 relitigate.
 
 ## Code over configuration
