@@ -26,7 +26,9 @@ surface tracks this repo's packages.
 
 ## Authoring rules
 
-For anyone editing the skill:
+The skill is the agent-condensed mirror of the human guides in
+[`docs/guides/`](../docs/guides/) — the guides are canonical for humans; a
+surface change lands in both. For anyone editing the skill:
 
 - **Verify every claim while drafting, not in a final pass.** Every import
   must resolve against a `packages/9-public/*` export map, and every CLI
