@@ -1,19 +1,17 @@
 import { baseConfig } from '@internal/tsdown-config';
 import { defineConfig } from 'tsdown';
 
-// Mirrors storage's three passes. index + the service node share the dist
-// root; the service file is emitted as `service.mjs` only because the service
-// node resolves its own module as `new URL('./service.mjs', import.meta.url)`
-// — assemble() re-bundles `build.module` to `main.mjs` regardless of its
-// basename, so the entry key's sole constraint is agreeing with that URL
-// string. streams-entrypoint stands alone and fully inlines its graph —
-// including `@prisma/streams-server`, which ships raw TypeScript — so the
-// bundle's only externals are `bun`/`bun:*` and `node:` builtins (ADR-0008).
-// The testing pass inlines `@prisma/streams-local` the same way.
+// Mirrors storage's three passes. index + streams-service share the dist root
+// so any shared chunk sits beside them — streamsService resolves
+// `./streams-service.mjs` from the code that calls it (import.meta.url).
+// streams-entrypoint stands alone and fully inlines its graph — including
+// `@prisma/streams-server`, which ships raw TypeScript — so the bundle's only
+// externals are `bun`/`bun:*` and `node:` builtins (ADR-0008). The testing
+// pass inlines `@prisma/streams-local` the same way.
 export default defineConfig([
   {
     ...baseConfig,
-    entry: { index: 'src/index.ts', service: 'src/streams-service.ts' },
+    entry: { index: 'src/index.ts', 'streams-service': 'src/streams-service.ts' },
     exports: false,
     clean: true,
   },

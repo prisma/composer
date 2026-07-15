@@ -30,12 +30,12 @@ let baseUrl: string;
 function childEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    COMPOSE_STORE_URL: storageServer.url,
-    COMPOSE_STORE_BUCKET: 'streams',
-    COMPOSE_STORE_ACCESSKEYID: 'local',
-    COMPOSE_STORE_SECRETACCESSKEY: 'local-secret',
-    COMPOSE_PORT: JSON.stringify(port),
-    COMPOSE_APIKEY: 'STREAMS_TEST_API_KEY',
+    COMPOSER_STORE_URL: storageServer.url,
+    COMPOSER_STORE_BUCKET: 'streams',
+    COMPOSER_STORE_ACCESSKEYID: 'local',
+    COMPOSER_STORE_SECRETACCESSKEY: 'local-secret',
+    COMPOSER_PORT: JSON.stringify(port),
+    COMPOSER_APIKEY: 'STREAMS_TEST_API_KEY',
     STREAMS_TEST_API_KEY: API_KEY,
     DS_ROOT: dsRoot,
     DS_HOST: '127.0.0.1',

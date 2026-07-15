@@ -4,9 +4,9 @@
  * place the extensions' /control entries (provisioning, bundlers, alchemy)
  * enter the deploy; they resolve from this app's own dependencies.
  */
-import { defineConfig } from '@prisma/compose/config';
-import { nodeBuild } from '@prisma/compose/node/control';
-import { prismaCloud, prismaState } from '@prisma/compose-prisma-cloud/control';
+import { defineConfig } from '@prisma/composer/config';
+import { nodeBuild } from '@prisma/composer/node/control';
+import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],

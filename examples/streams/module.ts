@@ -1,7 +1,7 @@
-import { module } from '@prisma/compose';
-import { envSecret } from '@prisma/compose-prisma-cloud';
-import { storage } from '@prisma/compose-prisma-cloud/storage';
-import { streams } from '@prisma/compose-prisma-cloud/streams';
+import { module } from '@prisma/composer';
+import { envSecret } from '@prisma/composer-prisma-cloud';
+import { storage } from '@prisma/composer-prisma-cloud/storage';
+import { streams } from '@prisma/composer-prisma-cloud/streams';
 
 /**
  * The streams example: durable event streams backed by the `storage()`

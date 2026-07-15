@@ -37,7 +37,7 @@ process.env['DS_TOUCH_WORKERS'] ??= '0';
 process.env['DURABLE_STREAMS_R2_BUCKET'] = store.bucket;
 process.env['DURABLE_STREAMS_R2_ENDPOINT'] = store.url;
 // Unused when ENDPOINT is set, but the server requires it non-empty.
-process.env['DURABLE_STREAMS_R2_ACCOUNT_ID'] ??= 'prisma-compose';
+process.env['DURABLE_STREAMS_R2_ACCOUNT_ID'] ??= 'prisma-composer';
 process.env['DURABLE_STREAMS_R2_ACCESS_KEY_ID'] = store.accessKeyId;
 process.env['DURABLE_STREAMS_R2_SECRET_ACCESS_KEY'] = store.secretAccessKey;
 

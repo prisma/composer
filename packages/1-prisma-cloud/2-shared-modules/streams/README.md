@@ -1,13 +1,13 @@
-# `@prisma/compose-prisma-cloud/streams`
+# `@prisma/composer-prisma-cloud/streams`
 
-Durable append-only event streams as a Prisma Compose module. It wraps the
+Durable append-only event streams as a Prisma Composer module. It wraps the
 production `@prisma/streams-server` runtime (npm, unmodified) as a Compute
 service behind a typed boundary: the module's `store` dependency takes a
 `storage()` module's port as its durable tier, its `apiKey` secret slot holds
 the bearer key, and it exposes a single `streams` port. Consumers get a
 `{ url }` binding and speak the **Durable Streams HTTP protocol** directly.
 
-Ships as the `@prisma/compose-prisma-cloud/streams` subpath (like `/storage`).
+Ships as the `@prisma/composer-prisma-cloud/streams` subpath (like `/storage`).
 
 ## Contract scope
 
@@ -46,10 +46,10 @@ into `streams()`, and binds the bearer key by name:
 
 ```ts
 // module.ts — the deploy root
-import { module } from '@prisma/compose';
-import { envSecret } from '@prisma/compose-prisma-cloud';
-import { storage } from '@prisma/compose-prisma-cloud/storage';
-import { streams } from '@prisma/compose-prisma-cloud/streams';
+import { module } from '@prisma/composer';
+import { envSecret } from '@prisma/composer-prisma-cloud';
+import { storage } from '@prisma/composer-prisma-cloud/storage';
+import { streams } from '@prisma/composer-prisma-cloud/streams';
 import worker from './src/worker/service.ts';
 
 export default module('my-app', ({ provision }) => {
@@ -69,10 +69,10 @@ export default module('my-app', ({ provision }) => {
 
 ```ts
 // src/worker/service.ts — the consumer
-import node from '@prisma/compose/node';
-import { secret } from '@prisma/compose';
-import { compute } from '@prisma/compose-prisma-cloud';
-import { durableStreams } from '@prisma/compose-prisma-cloud/streams';
+import node from '@prisma/composer/node';
+import { secret } from '@prisma/composer';
+import { compute } from '@prisma/composer-prisma-cloud';
+import { durableStreams } from '@prisma/composer-prisma-cloud/streams';
 
 export default compute({
   name: 'worker',
@@ -112,12 +112,12 @@ integration test and a deployed consumer smoke script.
 
 ## Local development
 
-`@prisma/compose-prisma-cloud/streams/testing` embeds the local stand-in
+`@prisma/composer-prisma-cloud/streams/testing` embeds the local stand-in
 (`@prisma/streams-local`): SQLite-only, loopback, **no auth, no object store,
 no cloud credentials** — the same protocol surface.
 
 ```ts
-import { startLocalStreamsServer } from '@prisma/compose-prisma-cloud/streams/testing';
+import { startLocalStreamsServer } from '@prisma/composer-prisma-cloud/streams/testing';
 
 const server = await startLocalStreamsServer({ name: 'dev', port: 0 });
 // server.exports.http.url is a Durable Streams endpoint (no Authorization needed).

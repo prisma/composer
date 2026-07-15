@@ -2,7 +2,7 @@
 
 ## At a glance
 
-Durable append-only event streams as a `@prisma/compose-prisma-cloud/streams`
+Durable append-only event streams as a `@prisma/composer-prisma-cloud/streams`
 module: the production `prisma-streams` server (npm `@prisma/streams-server`
 0.1.11, unmodified) wrapped as a Compute service behind a typed contract, with
 the shipped `storage` module as its durable tier and a root-bound bearer-key
@@ -35,7 +35,7 @@ Settled in the scoping spike (SCOPE.md is the authoritative record):
   loopback, no auth, no cloud creds.
 - **Packaging** mirrors storage exactly: `@internal/streams` three-pass tsdown
   (index+service / fully-inlined entrypoint / testing), re-exported by the
-  `@prisma/compose-prisma-cloud` umbrella as `/streams`,
+  `@prisma/composer-prisma-cloud` umbrella as `/streams`,
   `/streams/streams-entrypoint`, `/streams/testing`.
 
 ## Coherence rationale

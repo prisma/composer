@@ -18,7 +18,7 @@ export function streamsService() {
     deps: { store: s3() },
     secrets: { apiKey: secret() },
     build: node({
-      module: new URL('./service.mjs', import.meta.url).href,
+      module: new URL('./streams-service.mjs', import.meta.url).href,
       entry: './streams-entrypoint.mjs',
     }),
     expose: { streams: streamsContract },

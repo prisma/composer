@@ -7,7 +7,7 @@
  *
  *   STREAMS_URL=https://… STREAMS_API_KEY=… bun scripts/smoke.ts
  */
-import { blindCast } from '@prisma/compose/casts';
+import { blindCast } from '@prisma/composer/casts';
 
 const readJsonArray = async (res: Response): Promise<unknown[]> =>
   blindCast<unknown[], 'the streams read endpoint is documented to return a JSON array'>(

@@ -9,9 +9,9 @@
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
-    "./service": {
-      "types": "./dist/service.d.mts",
-      "default": "./dist/service.mjs"
+    "./streams-service": {
+      "types": "./dist/streams-service.d.mts",
+      "default": "./dist/streams-service.mjs"
     },
     "./streams-entrypoint": {
       "types": "./dist/streams-entrypoint.d.mts",

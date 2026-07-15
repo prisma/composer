@@ -10,7 +10,7 @@ role `src/streams-app/index.ts` plays in open-chat today.
 
 Mirrors `storage`: `contract.ts`, `streams-module.ts`, `streams-service.ts`,
 `streams-entrypoint.ts`, `testing.ts`, published as
-`@prisma/compose-prisma-cloud/streams`.
+`@prisma/composer-prisma-cloud/streams`.
 
 ```
 root module
@@ -76,7 +76,7 @@ carry the key.
 
 ## Local development
 
-`@prisma/compose-prisma-cloud/streams/testing` re-exports the embedded local
+`@prisma/composer-prisma-cloud/streams/testing` re-exports the embedded local
 stand-in (`@prisma/streams-local`, the runtime open-chat embeds when
 `STREAMS_URL` is unset): SQLite-only, loopback, no auth, no object store, no
 cloud credentials. Same protocol surface; the local conformance suite runs

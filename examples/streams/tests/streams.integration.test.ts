@@ -1,6 +1,6 @@
 /**
  * The streams example's local integration test: boots the module's embedded
- * local stand-in (`@prisma/compose-prisma-cloud/streams/testing` —
+ * local stand-in (`@prisma/composer-prisma-cloud/streams/testing` —
  * SQLite-only, loopback, no auth, no object store, no cloud credentials) and
  * drives the Durable Streams protocol a consumer would use: create a stream,
  * append events, read them back from an offset.
@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import {
   type LocalStreamsServer,
   startLocalStreamsServer,
-} from '@prisma/compose-prisma-cloud/streams/testing';
+} from '@prisma/composer-prisma-cloud/streams/testing';
 
 let server: LocalStreamsServer;
 let baseUrl: string;

@@ -128,14 +128,11 @@ export default defineConfig([
   {
     // Re-emitted from @internal/streams' dist, where streams-entrypoint was
     // already fully inlined (the streams server + its dynamic-import chain) by
-    // that package's own build. Emitted as `service.mjs` only because the
-    // service node resolves itself as `new URL('./service.mjs',
-    // import.meta.url)` — assemble() re-bundles `build.module` to `main.mjs`
-    // regardless of basename; the entry key just has to match that URL string.
+    // that package's own build.
     ...baseConfig,
     dts: false,
     entry: {
-      service: `${streamsDist}/service.mjs`,
+      'streams-service': `${streamsDist}/streams-service.mjs`,
       'streams-entrypoint': `${streamsDist}/streams-entrypoint.mjs`,
     },
     outDir: 'dist/streams',
