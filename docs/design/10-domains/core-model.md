@@ -194,31 +194,28 @@ interface PackAuthoredNode extends NodeBase {
 // ——— Configuration model (core owns structure; the pack owns encoding) ———
 //
 // Split by ownership (see § Runtime):
-//   · CORE — the config SHAPE (declarations: names + runtime type tags,
-//     target-independent, no platform keys) and the typed `Config` VALUE it
-//     builds from the graph at deploy and consumes (hydrate) at boot.
+//   · CORE — the config SHAPE (declarations: names + a caller-owned schema per
+//     param, target-independent, no platform keys) and the typed `Config`
+//     VALUE it builds from the graph at deploy and consumes (hydrate) at boot.
 //   · PACK — encoding: serialize the typed Config into env strings at deploy,
 //     deserialize the identical typed Config back at boot. The pack owns both
 //     ends through one serializer, so writer and reader cannot drift; core never
 //     sees a platform key or a string.
 
-// Runtime-validatable param types. Curated; extended consciously.
-type ParamType = "string" | "number"
-type TypeOf<T extends ParamType> = T extends "string" ? string : number
-
-// A declared config param — pure data. The declaration does double duty: the
-// pack validates raw values against `type` at boot, and TypeScript derives the
-// hydrate/load input types from it — the definition object ENFORCES the final
-// param input types. A param is never secret — a secret is its own forwardable
-// slot, declared with secret() and read with secrets() (ADR-0029).
-interface ConfigParam<T extends ParamType = ParamType> {
-  readonly type: T
+// A declared config param — pure data: a caller-owned Standard Schema
+// (ADR-0018) plus a few framework facets. The pack validates raw values
+// against `schema` at boot, and TypeScript infers the hydrate/load input types
+// from it — there is no framework enum of permitted types. A param is never
+// secret — a secret is its own forwardable slot, declared with secret() and
+// read with secrets() (ADR-0029).
+interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
+  readonly schema: S
   readonly optional?: boolean
-  readonly default?: TypeOf<T>
+  readonly default?: StandardSchemaV1.InferOutput<S>
 }
 type Params = Record<string, ConfigParam>
 type Values<P extends Params> = {              // what implementations receive
-  readonly [K in keyof P]: TypeOf<P[K]["type"]>   // (| undefined when optional with no default)
+  readonly [K in keyof P]: StandardSchemaV1.InferOutput<P[K]["schema"]>   // (| undefined when optional with no default)
 }
 
 // The connection face of a dependency: declared params (data) and how validated
@@ -689,14 +686,16 @@ At boot, the deployed artifact runs the bootstrap, which calls the node's
 ```ts
 // The enumerable config surface of a service — derivable from the graph alone,
 // nothing booted, no platform keys. The introspection artifact (values absent).
-// Physical locations are the pack's business. Secrets are not here — they live
-// on their own slot (ADR-0029).
+// `schema` is a data-only projection of the param's Standard Schema (its vendor
+// tag, never the schema's own `validate`) — a structured param reports its real
+// shape instead of a `type` enum. Physical locations are the pack's business.
+// Secrets are not here — they live on their own slot (ADR-0029).
 interface ConfigDeclaration {
   readonly owner: "service" | { readonly input: string }
   readonly name: string              // "url" · "port"
-  readonly type: ParamType
+  readonly schema: Readonly<Record<string, unknown>>
   readonly optional: boolean
-  readonly default: string | number | undefined
+  readonly default: unknown
 }
 function configOf(root: ServiceNode): readonly ConfigDeclaration[]   // in @prisma/compose (pure)
 
@@ -737,7 +736,7 @@ no driver, and a resource dependency's binding is its typed config (the app
 builds its own client — ADR-0015):
 
 ```ts
-import { resource, dependency, service, configOf, hydrate,
+import { resource, dependency, service, configOf, hydrate, string, number,
   type BuildAdapter, type Config, type ConfigDeclaration, type Connection,
   type Contract, type Deps, type DependencyEnd, type Loaded, type ResourceNode,
   type RunnableServiceNode } from "@prisma/compose"
@@ -765,7 +764,7 @@ export function postgres(opts?: { name: string }): unknown {
   if (opts?.name !== undefined) return resource({ name: opts.name, pack: "@prisma/compose-prisma-cloud", provides: postgresContract })
   return dependency({
     type: "postgres",
-    connection: { params: { url: { type: "string" } }, hydrate: (v) => v },
+    connection: { params: { url: string() }, hydrate: (v) => v },
     required: postgresContract,
   })
 }
@@ -783,12 +782,12 @@ export const http = (opts: { name: string }): DependencyEnd<HttpClient> =>
     name: opts.name,
     type: "http",
     connection: {
-      params: { url: { type: "string" } },
+      params: { url: string() },
       hydrate: (v) => defaultHttpClient({ url: v.url }),
     },
   })
 
-const computeParams = { port: { type: "number", default: 3000 } } as const
+const computeParams = { port: number({ default: 3000 }) }
 
 // compute() declares a service — deps + build — and returns the pack's RUNNABLE
 // subclass carrying run()/load(). It takes NO handler: the app's entry is the
@@ -1199,8 +1198,6 @@ producer from a resource — one mechanism.
   byte-deterministic; the Next standalone case embeds a per-build `BUILD_ID`, so a
   Next service may re-version on redeploy even when unchanged. A deterministic
   standalone assembly (fixed ids/mtimes) is the follow-up for a true no-op redeploy.
-- **`ParamType` growth** — the tag set is `"string" | "number"`, curated; new tags
-  (`"boolean"`, `"url"`, …) are added consciously with their validation.
 - **Serialized topology** — the topology view of Graph is already JSON-safe; an emit
   step for external tooling is additive.
 
@@ -1209,3 +1206,6 @@ producer from a resource — one mechanism.
 - [`../03-domain-model/core-and-targets.md`](../03-domain-model/core-and-targets.md) — the architectural split this implements.
 - [`../03-domain-model/authoring-surface.md`](../03-domain-model/authoring-surface.md) — the developer-facing narrative.
 - [`../03-domain-model/layering.md`](../03-domain-model/layering.md) — Alchemy as the provisioning plane (claim 3).
+- [`config-params.md`](config-params.md) — the config param model this document sketches, in full, resting on
+  [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md) and
+  [ADR-0019](../90-decisions/ADR-0019-the-target-owns-config-serialization.md).

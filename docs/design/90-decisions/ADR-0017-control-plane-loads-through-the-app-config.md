@@ -68,7 +68,8 @@ build descriptors alike. One mechanism, no special cases.
 
 That uniformity deliberately kills the "target" as a privileged concept.
 There is no one blessed platform per application: each node's descriptor entry
-knows how to provision, serialize, package, and deploy *that node*, alchemy
+knows how to provision, serialize, package, and deploy *that node*, **Alchemy**
+— the infrastructure-provisioning engine the framework's deploy lowers onto —
 composes the used extensions' provider layers into one stack, and nodes on
 different platforms coexist in one graph. What remains singular is the
 **state store** — one deploy writes one ledger. The store's *contract* is

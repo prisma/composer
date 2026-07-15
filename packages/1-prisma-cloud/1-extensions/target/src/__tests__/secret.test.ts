@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { isSecretSource } from '@internal/core';
+import { isSecretSource, secretSource } from '@internal/core';
 import { envSecret, secretName } from '../secret.ts';
 
 describe('envSecret (Prisma Cloud secret source)', () => {
@@ -16,5 +16,14 @@ describe('envSecret (Prisma Cloud secret source)', () => {
     expect(() => envSecret('COMPOSE_X')).toThrow(/COMPOSE_/);
     expect(() => envSecret('DATABASE_URL')).toThrow(/reserved/);
     expect(() => envSecret('DATABASE_URL_POOLED')).toThrow(/reserved/);
+  });
+
+  test('secretName rejects a slot bound to a source not built by envSecret', () => {
+    // A user who bypasses envSecret and binds a raw core secretSource: the
+    // payload has no envSecret brand, so there is no platform name to read.
+    const source = secretSource('STRIPE_SECRET_KEY');
+    const read = () => secretName({ serviceAddress: 'ingest', slot: 'stripeKey', source });
+    expect(read).toThrow(/secret slot "stripeKey" of service "ingest".*not created by envSecret/);
+    expect(read).toThrow(/envSecret\('NAME'\) from @prisma\/compose-prisma-cloud/);
   });
 });

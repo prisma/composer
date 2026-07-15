@@ -10,14 +10,14 @@ locates and validates the built output, applies the framework's envelope —
 including bundling the internal boot wrapper — and hands a normalized bundle
 to lowering.
 
-## Reasoning
-
 Take a Next.js storefront. The author builds it the way every Next app is
 built:
 
 ```sh
 next build   # output: "standalone" → .next/standalone/…
 ```
+
+## Reasoning
 
 The framework plays no part in that step — not the bundler options, not the
 framework version, not whether it ran via a package script or a monorepo

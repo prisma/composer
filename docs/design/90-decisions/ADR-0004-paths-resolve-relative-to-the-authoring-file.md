@@ -11,16 +11,6 @@ authored it. The descriptor captures that module explicitly —
 directory discovery anywhere in the module: no walk to a nearest
 `package.json`, no inferred "service directory".
 
-The same rule holds one layer up, in the deploy tooling. Resolving a pack's
-`/target` or `/assemble` module happens by seeding `createRequire` with the
-entry module's own file path, letting the platform's resolver walk
-`node_modules` upward the way it would for a plain `import` in that file. And
-tool state — the generated `.prisma-compose/alchemy.run.ts`, Alchemy's `.alchemy`
-state directory — lives in the process's working directory, like any other
-CLI's state: where you run the tool, not somewhere the tool infers.
-
-## Reasoning
-
 Ground it in the file an author actually edits:
 
 ```ts
@@ -35,9 +25,20 @@ export default compute({
 `entry` points at the app's built runnable. The author writing that line is
 sitting in `src/service.ts` and knows exactly where their build puts its
 output: one directory up, in `dist/`. `"../dist/server.js"` means precisely
-what `import "../dist/server.js"` would mean in the same file. That is the
-whole convention — the one every import statement in the codebase already
-follows — and it needs no second rule beside it.
+what `import "../dist/server.js"` would mean in the same file.
+
+The same rule holds one layer up, in the deploy tooling. Resolving a pack's
+`/target` or `/assemble` module happens by seeding `createRequire` with the
+entry module's own file path, letting the platform's resolver walk
+`node_modules` upward the way it would for a plain `import` in that file. And
+tool state — the generated `.prisma-compose/alchemy.run.ts`, Alchemy's `.alchemy`
+state directory — lives in the process's working directory, like any other
+CLI's state: where you run the tool, not somewhere the tool infers.
+
+## Reasoning
+
+That is the whole convention — the one every import statement in the codebase
+already follows — and it needs no second rule beside it.
 
 The reason the descriptor must capture `module` at all: the descriptor is
 plain data, and deploy-time code meets it far from where it was authored. A

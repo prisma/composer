@@ -1,8 +1,20 @@
 import { type SecretBinding, type SecretSource, secretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 
-/** The Prisma Cloud secret source payload: the platform env-var name the slot resolves to. */
+/**
+ * Brands the payload `envSecret` builds. Core's `secretSource()` is a public
+ * SPI, so a user could bypass `envSecret` and bind a raw `secretSource('x')`;
+ * the brand lets `secretName` reject such a source (or another target's) with a
+ * clear error instead of reading an absent `.name`.
+ */
+const PRISMA_CLOUD_SECRET_SOURCE: unique symbol = blindCast<
+  never,
+  'unique-symbol brand for the prisma-cloud envSecret payload'
+>(Symbol.for('prisma:prisma-cloud-secret-source'));
+
+/** The Prisma Cloud secret source payload: the platform env-var name the slot resolves to, under a brand only `envSecret` sets. */
 export interface EnvSecretPayload {
+  readonly [PRISMA_CLOUD_SECRET_SOURCE]: true;
   readonly name: string;
 }
 
@@ -33,13 +45,36 @@ export function envSecret(name: string): SecretSource<EnvSecretPayload> {
         'poisoned at project provision and cannot back a secret.',
     );
   }
-  return secretSource({ name });
+  return secretSource<EnvSecretPayload>({ [PRISMA_CLOUD_SECRET_SOURCE]: true, name });
 }
 
-/** Reads the Prisma Cloud env-var name back out of a secret binding's opaque source — the target reading the payload its own `envSecret` authored. */
+/** True only for a payload that `envSecret` built — i.e. one carrying the brand. */
+function isEnvSecretPayload(payload: unknown): payload is EnvSecretPayload {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    blindCast<
+      Record<PropertyKey, unknown>,
+      'reading the prisma-cloud envSecret brand off an unknown payload'
+    >(payload)[PRISMA_CLOUD_SECRET_SOURCE] === true
+  );
+}
+
+/**
+ * Reads the Prisma Cloud env-var name back out of a secret binding's opaque
+ * source. A source not built by `envSecret` (a raw `secretSource(...)` or
+ * another target's source) carries no name — reject it here. `secretName` runs
+ * in preflight before any provisioning, so a foreign source fails early and
+ * clearly rather than producing a broken deploy with an undefined name.
+ */
 export function secretName(binding: SecretBinding): string {
-  return blindCast<
-    EnvSecretPayload,
-    'the prisma-cloud target reads back the {name} payload its own envSecret authored'
-  >(binding.source.payload).name;
+  const payload = binding.source.payload;
+  if (!isEnvSecretPayload(payload)) {
+    throw new Error(
+      `secret slot "${binding.slot}" of service "${binding.serviceAddress}" is bound to a source ` +
+        "not created by envSecret() — bind secrets with envSecret('NAME') from " +
+        '@prisma/compose-prisma-cloud.',
+    );
+  }
+  return payload.name;
 }

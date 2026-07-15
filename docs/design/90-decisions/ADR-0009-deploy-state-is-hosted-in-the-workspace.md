@@ -10,6 +10,16 @@ project, verify ownership, mint a fresh database connection for the run.
 Possession of the workspace's service token is the only credential; no state
 file, password, or connection string is ever shared between machines.
 
+The project name alone doesn't prove ownership — the platform allows several
+projects to share a name — so bootstrap inspects each same-named candidate's
+default database, oldest first, until one resolves:
+
+| Candidate's default database holds | Bootstrap does |
+| --- | --- |
+| Our marker table (it's already our store) | Adopts it |
+| No tables (a freshly created project) | Initializes it, writing the marker |
+| Foreign tables (something else's data) | Refuses, naming the project |
+
 ## Reasoning
 
 Start with the failure this kills. A developer deploys an app from their

@@ -12,6 +12,21 @@ releases the lock — crash recovery needs no bookkeeping. During the run, every
 state operation re-verifies the lease from a *separate* connection (amortized
 over a short window), and fails loudly if the lease is gone.
 
+```
+acquire  pg_try_advisory_lock(hash(stack, stage))  on a dedicated connection
+           ├─ granted:    hold that connection for the whole run
+           └─ contended:  fail now — "another deploy holds the state lock
+                           for <stack>/<stage>"
+
+during   each state operation re-checks: does the connection's backend pid
+         still hold the lock (asked from a separate, pooled connection)?
+           ├─ yes: proceed
+           └─ no:  fail now — the lease was lost mid-run
+
+end      the dedicated connection closes (explicit release, or the process
+         crashes) — Postgres frees the session-scoped lock automatically
+```
+
 ## Reasoning
 
 Start with the collision this prevents. Two engineers run `prisma-compose deploy`

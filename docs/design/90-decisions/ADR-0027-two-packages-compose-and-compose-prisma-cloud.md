@@ -59,7 +59,7 @@ family's unpublish — two names is the entire republish burden.
 ## Consequences
 
 - **Only two names are ever republished.** The old family (`@prisma/app*`,
-  `@prisma/alchemy`, unscoped `prisma-app`) was unpublished on 2026-07-12;
+  `@prisma/alchemy`, unscoped `prisma-app`) is unpublished;
   `compose-node`, `compose-rpc`, `compose-nextjs`, `compose-assemble`,
   `compose-cli`, `compose-alchemy`, and `compose-cron` never exist as packages —
   they are subpaths or internals.
