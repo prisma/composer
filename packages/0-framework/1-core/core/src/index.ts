@@ -15,9 +15,9 @@ export type {
   Params,
   Values,
 } from './config.ts';
-export { configOf, number, param, provisionManifest, string } from './config.ts';
+export { configOf, number, param, paramManifest, provisionManifest, string } from './config.ts';
 export type { Contract } from './contract.ts';
-export type { Edge, Graph, GraphNode, NodeId, SecretBinding } from './graph.ts';
+export type { Edge, Graph, GraphNode, NodeId, ParamBinding, SecretBinding } from './graph.ts';
 export { Load, LoadError } from './graph.ts';
 export { hydrate, hydrateSecrets, hydrateSync } from './hydrate.ts';
 export type {
@@ -32,6 +32,11 @@ export type {
   ModuleContext,
   ModuleNode,
   ModuleOutputs,
+  ParamBindings,
+  ParamNeed,
+  ParamNeedBindings,
+  ParamNeeds,
+  ParamSource,
   ProvisionedRef,
   ProvisionNeed,
   RefPort,
@@ -48,9 +53,12 @@ export {
   dependency,
   freezeNode,
   isNode,
+  isParamSource,
   isProvisionNeed,
   isSecretSource,
   module,
+  paramNeed,
+  paramSource,
   provisionNeed,
   ResourceNodeBase,
   resource,

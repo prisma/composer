@@ -5,6 +5,7 @@ import {
   type GraphNode,
   LoadError,
   type NodeId,
+  type ParamBinding,
   type SecretBinding,
 } from './graph-types.ts';
 import { serviceInputs } from './load-service.ts';
@@ -12,6 +13,7 @@ import {
   type DependencyEnd,
   type Deps,
   isNode,
+  isParamSource,
   isSecretSource,
   type ModuleBuilder,
   type ModuleContext,
@@ -69,6 +71,9 @@ const MODULE_INPUT_KEY = Symbol('prisma:module-input-key');
 
 /** Same per-key identity trick as MODULE_INPUT_KEY, for the parallel `ctx.secrets` forwarding channel. */
 const MODULE_SECRET_KEY = Symbol('prisma:module-secret-key');
+
+/** Same per-key identity trick as MODULE_INPUT_KEY, for the parallel `ctx.params` forwarding channel. */
+const MODULE_PARAM_KEY = Symbol('prisma:module-param-key');
 
 /** Whether `ref` carries a callable `satisfies` that accepts `required` truthily. */
 function satisfiesRequired(ref: unknown, required: unknown): boolean {
@@ -216,6 +221,67 @@ function validateSecretBinding(
 }
 
 /**
+ * Checks the params wired into a provisioned SERVICE: unlike a secret slot, a
+ * declared param is never required to be bound here — it may fall back to its
+ * own `default` (checked later, at `buildConfig`) — so this only rejects a
+ * wired key that names something other than a real declared param.
+ */
+function validateServiceParamBinding(
+  child: ServiceNode,
+  id: string,
+  paramWiring: Record<string, unknown>,
+  enclosingModuleName: string,
+): void {
+  for (const slot of Object.keys(paramWiring)) {
+    if (!Object.hasOwn(child.params, slot)) {
+      throw new LoadError(
+        `The params for "${id}" name "${slot}", which is not a param of that service ` +
+          `(module "${enclosingModuleName}").`,
+      );
+    }
+  }
+}
+
+/**
+ * Checks the params wired into a provisioned MODULE: every declared
+ * param-forwarding slot must be bound to a real `ParamSource` — a slot has no
+ * schema of its own, so (unlike a service param) it cannot fall back to a
+ * literal or a default; the param analog of `validateSecretBinding`.
+ */
+function validateParamNeedBinding(
+  child: ModuleNode,
+  id: string,
+  paramWiring: Record<string, unknown>,
+  enclosingModuleName: string,
+): void {
+  for (const slot of Object.keys(child.paramSlots)) {
+    const bound = paramWiring[slot];
+    if (bound === undefined) {
+      throw new LoadError(
+        `Param slot "${slot}" of provisioned module "${id}" is not bound (module ` +
+          `"${enclosingModuleName}") — bind it with a param source (e.g. envParam('NAME')) or ` +
+          'forward ctx.params.',
+      );
+    }
+    if (!isParamSource(bound)) {
+      throw new LoadError(
+        `Param slot "${slot}" of "${id}" (module "${enclosingModuleName}") was wired with a ` +
+          'non-source value — a module param-forwarding slot carries no schema to validate a ' +
+          "literal against; use envParam('NAME') or a forwarded ctx.params ref.",
+      );
+    }
+  }
+  for (const slot of Object.keys(paramWiring)) {
+    if (!Object.hasOwn(child.paramSlots, slot)) {
+      throw new LoadError(
+        `The params for "${id}" name "${slot}", which is not a param slot of that module ` +
+          `(module "${enclosingModuleName}").`,
+      );
+    }
+  }
+}
+
+/**
  * Recursively flattens one module's body into the shared graph state and
  * returns its resolved ModuleOutputs (one ref-port per expose key) for the
  * caller (the enclosing provision() call, or Load itself for the root) to
@@ -234,15 +300,18 @@ function flatten(
   address: string | undefined,
   wiring: Record<string, unknown>,
   secretWiring: Record<string, unknown>,
+  paramWiring: Record<string, unknown>,
   nodes: GraphNode[],
   edges: Edge[],
   pending: PendingWiring[],
   secretBindings: SecretBinding[],
+  paramBindings: ParamBinding[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
 ): Record<string, unknown> {
   const localIds = new Set<string>();
   const used = new Set<string>();
   const usedSecrets = new Set<string>();
+  const usedParams = new Set<string>();
 
   // Each ctx.inputs entry gets its OWN object identity: a shallow copy of the
   // wired producer ref, branded (symbol-keyed) with the input key it stands
@@ -287,18 +356,41 @@ function flatten(
     }
   };
 
+  // The params forwarding channel mirrors ctx.secrets: each declared param-forwarding
+  // slot gets its OWN branded copy of the source bound to it, so forwarding one down a
+  // provision counts precisely (identity), and `payload` reads through unchanged.
+  const ctxParams: Record<string, unknown> = {};
+  for (const key of Object.keys(moduleNode.paramSlots)) {
+    const bound = paramWiring[key];
+    ctxParams[key] =
+      typeof bound === 'object' && bound !== null ? { ...bound, [MODULE_PARAM_KEY]: key } : bound;
+  }
+  const markParamsUsed = (values: Record<string, unknown>): void => {
+    for (const value of Object.values(values)) {
+      for (const key of Object.keys(ctxParams)) {
+        if (value === ctxParams[key]) usedParams.add(key);
+      }
+    }
+  };
+
   const provision = (
     child: ServiceNode | ResourceNode | ModuleNode,
-    opts?: { id?: string; deps?: Record<string, unknown>; secrets?: Record<string, unknown> },
+    opts?: {
+      id?: string;
+      deps?: Record<string, unknown>;
+      secrets?: Record<string, unknown>;
+      params?: Record<string, unknown>;
+    },
     // biome-ignore lint/suspicious/noExplicitAny: ModuleBuilder's real overload set is checked at the call site; the collector implementation is untyped by design.
   ): any => {
-    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets` carry
-    // the producers and secret sources that satisfy its slots. The "_"/"." and
-    // duplicate-id checks, brand-check and address join below are identical
-    // whether the id was written or inferred.
+    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/`opts.params`
+    // carry the producers, secret sources, and param bindings that satisfy its slots.
+    // The "_"/"." and duplicate-id checks, brand-check and address join below are
+    // identical whether the id was written or inferred.
     const id = opts?.id ?? child.name;
     const provisionWiring = opts?.deps;
     const provisionSecrets = opts?.secrets;
+    const provisionParams = opts?.params;
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (module "${moduleNode.name}").`);
     }
@@ -343,6 +435,11 @@ function flatten(
           `provision("${id}") received secrets for a resource — a resource has no secret slots to satisfy.`,
         );
       }
+      if (provisionParams !== undefined) {
+        throw new LoadError(
+          `provision("${id}") received params for a resource — a resource has no params to satisfy.`,
+        );
+      }
       if (child.type.length === 0) {
         throw new LoadError(`provision("${id}") received a resource with an empty node type.`);
       }
@@ -362,6 +459,9 @@ function flatten(
     markSecretsUsed(localSecrets);
     validateSecretBinding(child, id, localSecrets, moduleNode.name);
 
+    const localParams = { ...(provisionParams ?? {}) };
+    markParamsUsed(localParams);
+
     if (child.kind === 'service') {
       // A service's slots resolve to names HERE — record one binding per slot.
       for (const slot of Object.keys(child.secretSlots)) {
@@ -369,6 +469,13 @@ function flatten(
         if (isSecretSource(bound)) {
           secretBindings.push({ serviceAddress: fullAddress, slot, source: bound });
         }
+      }
+      // A service param binding is optional per slot (default is the
+      // fallback), so this only rejects a name that isn't a real param —
+      // every entry actually supplied is recorded, literal or source alike.
+      validateServiceParamBinding(child, id, localParams, moduleNode.name);
+      for (const [slot, binding] of Object.entries(localParams)) {
+        paramBindings.push({ serviceAddress: fullAddress, slot, binding });
       }
       const inputs = serviceInputs(child, fullAddress);
       nodes.push(...inputs.nodes, { id: fullAddress, node: child });
@@ -384,6 +491,11 @@ function flatten(
       return refFor(fullAddress, child);
     }
 
+    // A module's param-forwarding slots have no schema of their own: every
+    // declared one must be bound to a real ParamSource, the same requirement
+    // secrets place on a module's secret slots.
+    validateParamNeedBinding(child, id, localParams, moduleNode.name);
+
     edges.push(...wiringEdges(localWiring, fullAddress));
     pending.push({
       deps: child.deps,
@@ -397,10 +509,12 @@ function flatten(
       fullAddress,
       localWiring,
       localSecrets,
+      localParams,
       nodes,
       edges,
       pending,
       secretBindings,
+      paramBindings,
       byId,
     );
     nodes.push({ id: fullAddress, node: child });
@@ -413,10 +527,11 @@ function flatten(
 
   const ctx = blindCast<
     ModuleContext<Deps>,
-    "ctxInputs/ctxSecrets hold one resolved ref per moduleNode.deps/secrets key (the same shapes a producer port and an envSecret source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S> structurally for whatever D/S this moduleNode declares"
+    "ctxInputs/ctxSecrets/ctxParams hold one resolved ref per moduleNode.deps/secrets/paramSlots key (the same shapes a producer port, an envSecret source, and an envParam source carry), and provision is exactly ModuleBuilder['provision'] — together they satisfy ModuleContext<D, S, PN> structurally for whatever D/S/PN this moduleNode declares"
   >({
     inputs: ctxInputs,
     secrets: ctxSecrets,
+    params: ctxParams,
     provision: blindCast<
       ModuleBuilder['provision'],
       'single implementation behind the provision() overloads — returns the contract-carrying ref for a resource, a ProvisionedRef for a service, and a ProvisionedRef for a nested module, exactly what each overload pins, but an object property cannot carry an overloaded implementation signature'
@@ -448,6 +563,16 @@ function flatten(
     if (!usedSecrets.has(key)) {
       throw new LoadError(
         `Module "${moduleNode.name}" declares secret "${key}" but never forwards it into a provision.`,
+      );
+    }
+  }
+
+  // Same rule for a declared param-forwarding slot — no pass-through case,
+  // it must reach some child's provision().
+  for (const key of Object.keys(moduleNode.paramSlots)) {
+    if (!usedParams.has(key)) {
+      throw new LoadError(
+        `Module "${moduleNode.name}" declares param "${key}" but never forwards it into a provision.`,
       );
     }
   }
@@ -489,14 +614,24 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
         `secrets with envSecret('NAME'), it does not declare secret slots of its own.`,
     );
   }
+  const rootParamKeys = Object.keys(root.paramSlots);
+  if (rootParamKeys.length > 0) {
+    const names = rootParamKeys.map((k) => `"${k}"`).join(', ');
+    throw new LoadError(
+      `Module "${root.name}" declares param${rootParamKeys.length > 1 ? 's' : ''} ${names} but is ` +
+        'being deployed as the root — a root has no enclosing scope to bind them; the root binds ' +
+        'params directly on each provision() call, it does not declare param-forwarding slots of its own.',
+    );
+  }
 
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
   const secretBindings: SecretBinding[] = [];
+  const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
 
-  flatten(root, undefined, {}, {}, nodes, edges, pending, secretBindings, byId);
+  flatten(root, undefined, {}, {}, {}, nodes, edges, pending, secretBindings, paramBindings, byId);
 
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
@@ -507,6 +642,7 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
     secrets: secretBindings,
+    params: paramBindings,
   };
 }
 

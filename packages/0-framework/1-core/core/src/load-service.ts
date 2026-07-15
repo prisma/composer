@@ -67,5 +67,6 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
     secrets: [],
+    params: [],
   };
 }

@@ -6,9 +6,16 @@ import type { State } from 'alchemy/State/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from './app-config.ts';
-import type { Config } from './config.ts';
+import type { Config, ConfigParam } from './config.ts';
 import { type Graph, Load, type NodeId } from './graph.ts';
-import type { BuildAdapter, ModuleNode, ProvisionNeed, ResourceNode, ServiceNode } from './node.ts';
+import {
+  type BuildAdapter,
+  isParamSource,
+  type ModuleNode,
+  type ProvisionNeed,
+  type ResourceNode,
+  type ServiceNode,
+} from './node.ts';
 
 /** The Layer shape every Alchemy state store must satisfy — what `LowerOptions.state` and `PrismaAppConfig.state` both traffic in. */
 export type AlchemyStateLayer = Layer.Layer<State, never, StackServices>;
@@ -152,11 +159,71 @@ export class LowerError extends Error {
 }
 
 /**
- * Assembles a service's typed Config from its dependency edges' lowered
- * outputs plus its own param defaults. A param carrying a `provision` need
- * (ADR-0031) sources its value from `provisioned` (keyed by edge id) instead
- * of the producer's outputs — the framework mints it, the producer hands
- * nothing over.
+ * Resolves one SERVICE-OWN param to its config value. The full resolution
+ * order across both value channels:
+ *
+ * 1. A param claiming BOTH a provision-time binding and a `provision` need
+ *    (ADR-0031) is a loud error — two sources for one value.
+ * 2. A provision-time binding (a schema-validated literal, or an opaque
+ *    `ParamSource` the target resolves at boot per ADR-0019) beats the
+ *    declared `default`.
+ * 3. A framework-minted `provision` need is resolved per dependency EDGE
+ *    against the consumer extension's registry — that path fills CONNECTION
+ *    params in `buildConfig`'s inputs loop, never this function. A
+ *    service-own param has no edge to mint against, so an unbound need here
+ *    falls through like any unbound param.
+ * 4. The `default`, else absent (only legal when `optional`), else a loud
+ *    error naming the param, the service, and the fix.
+ */
+function resolveParam(
+  node: ServiceNode,
+  serviceId: NodeId,
+  name: string,
+  param: ConfigParam,
+  bound: unknown,
+): unknown {
+  if (bound !== undefined) {
+    if (param.provision !== undefined) {
+      throw new LowerError(
+        `Param "${name}" of "${serviceId}" (service "${node.name}") has two sources claiming one ` +
+          `value: a provision-time binding (${isParamSource(bound) ? 'a param source' : 'a literal value'}) ` +
+          `AND a framework provision need ("${String(param.provision.brand)}") on its declaration — ` +
+          'remove the binding or drop the `provision` facet.',
+      );
+    }
+    if (isParamSource(bound)) return bound;
+    const result = param.schema['~standard'].validate(bound);
+    if (result instanceof Promise) {
+      throw new LowerError(
+        `Param "${name}" of "${serviceId}" (service "${node.name}") uses an async Standard Schema — ` +
+          'a provision-time literal value requires a synchronous validator.',
+      );
+    }
+    if (result.issues !== undefined) {
+      const messages = result.issues.map((issue) => issue.message).join('; ');
+      throw new LowerError(
+        `Param "${name}" of "${serviceId}" (service "${node.name}") received an invalid ` +
+          `provision-time value: ${messages}`,
+      );
+    }
+    return result.value;
+  }
+  if (param.default !== undefined) return param.default;
+  if (param.optional === true) return undefined;
+  throw new LowerError(
+    `Param "${name}" of "${serviceId}" (service "${node.name}") has no default, is not optional, ` +
+      'and was not bound at provision — bind it with a literal value or a param source ' +
+      "(e.g. envParam('NAME')) on its provision() call, or give it a default.",
+  );
+}
+
+/**
+ * Assembles a service's typed Config. Connection params come from the
+ * dependency edge's lowered outputs — or, for a param carrying a `provision`
+ * need (ADR-0031), from `provisioned` (keyed by edge id): the framework mints
+ * it, the producer hands nothing over. The service's own params resolve via
+ * `resolveParam` (provision-time binding, then default, then loud
+ * unbound-required failure).
  */
 export function buildConfig(
   node: ServiceNode,
@@ -182,9 +249,13 @@ export function buildConfig(
     inputs[inputName] = values;
   }
 
+  const boundParams = new Map(
+    graph.params.filter((binding) => binding.serviceAddress === id).map((b) => [b.slot, b.binding]),
+  );
   const service: Record<string, unknown> = {};
   for (const [name, param] of Object.entries(node.params)) {
-    if (param.default !== undefined) service[name] = param.default;
+    const value = resolveParam(node, id, name, param, boundParams.get(name));
+    if (value !== undefined) service[name] = value;
   }
 
   return { service, inputs };

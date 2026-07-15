@@ -25,7 +25,9 @@ import {
   type BuildAdapter,
   type Deps,
   dependency,
+  isParamSource,
   module,
+  paramSource,
   provisionNeed,
   resource,
   service,
@@ -55,10 +57,11 @@ const defaultBuild: BuildAdapter = {
   entry: 'server.js',
 };
 
-const app = <D extends Deps>(
+const app = <D extends Deps, P extends Params = Record<never, never>>(
   type: string,
   inputs: D,
-  params: Params = {},
+  // biome-ignore lint/suspicious/noExplicitAny: test helper default; the empty map satisfies every P callers actually pass.
+  params: P = {} as any,
   build: BuildAdapter = defaultBuild,
 ) =>
   service({
@@ -66,7 +69,7 @@ const app = <D extends Deps>(
     extension: 'test/pack',
     type,
     inputs,
-    params: params as never,
+    params,
     build,
   });
 
@@ -246,6 +249,87 @@ describe('buildConfig', () => {
       service: {},
       inputs: { auth: { token: 'minted-value' } },
     });
+  });
+});
+
+describe('buildConfig — provision-time param binding', () => {
+  test('a provision-time literal overrides the param default', () => {
+    const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth', params: { port: 8080 } });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+      service: { port: 8080 },
+      inputs: {},
+    });
+  });
+
+  test('an unbound param falls back to its default', () => {
+    const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+      service: { port: 3000 },
+      inputs: {},
+    });
+  });
+
+  test('a param with no default, not optional, and never bound fails loudly, naming the param and the service', () => {
+    const auth = app('fake/compute', {}, { origin: string() });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"origin"/);
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"auth"/);
+  });
+
+  test('an optional param with no default and never bound resolves to absent, not an error', () => {
+    const auth = app('fake/compute', {}, { origin: string({ optional: true }) });
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({ service: {}, inputs: {} });
+  });
+
+  test('a ParamSource binding flows through to Config.service opaquely — buildConfig never validates it against the schema (the target resolves and validates at boot)', () => {
+    const auth = app('fake/compute', {}, { origin: string() });
+    const source = paramSource('APP_ORIGIN');
+    const root = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth', params: { origin: source } });
+      return {};
+    });
+    const graph = Load(root);
+
+    const config = buildConfig(auth, 'auth', graph, new Map(), new Map());
+    expect(isParamSource(config.service['origin'])).toBe(true);
+    expect(config.service['origin']).toBe(source);
+  });
+
+  test('a literal that fails the param schema is a LowerError naming the param, the service, and the schema issue', () => {
+    const auth = app('fake/compute', {}, { port: number({ default: 3000 }) });
+    const root = module('shop', {}, (h) => {
+      // @ts-expect-error a number param rejects a string literal
+      h.provision(auth, { id: 'auth', params: { port: 'not-a-number' } });
+      return {};
+    });
+    const graph = Load(root);
+
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"port"/);
   });
 });
 

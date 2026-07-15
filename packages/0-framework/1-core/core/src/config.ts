@@ -11,7 +11,7 @@
  * `secret()`/`envSecret()`/`secrets()` in node.ts). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, SecretBinding } from './graph-types.ts';
+import type { Graph, ParamBinding, SecretBinding } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -147,6 +147,18 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
  */
 export function provisionManifest(graph: Graph): readonly SecretBinding[] {
   return graph.secrets;
+}
+
+/**
+ * The app's param-binding manifest: every param a `provision()` call bound —
+ * literal or an opaque, target-defined `ParamSource` — at the address that
+ * declared it. The param sibling of `provisionManifest`, for a deploy
+ * target's own preflight to consume (D2). Pure graph introspection,
+ * TARGET-AGNOSTIC; a param this manifest omits simply falls back to its own
+ * `default` at `buildConfig`.
+ */
+export function paramManifest(graph: Graph): readonly ParamBinding[] {
+  return graph.params;
 }
 
 // ——— Param constructors: plain data, target-agnostic (ADR-0018/0019). ———
