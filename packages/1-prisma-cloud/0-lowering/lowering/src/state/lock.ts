@@ -3,6 +3,7 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import type postgres from 'postgres';
 import { toStateStoreError } from './errors.ts';
+import { retryColdStart } from './transient.ts';
 
 /** Another deploy already holds the lock for this stack/stage. Never queued — fails immediately. */
 export class StateLockContentionError extends Data.TaggedError('StateLockContentionError')<{
@@ -82,31 +83,37 @@ export const acquireStateLock = (
     // captured at acquire time still holds this advisory lock in
     // `pg_locks` gets the same answer (a dead or reused backend can't hold
     // the lock) without ever touching the connection that might be dead.
-    const checkLive: Effect.Effect<void, StateStoreError, never> = Effect.tryPromise({
-      try: async () => {
-        const rows = await sql<{ live: boolean }[]>`
-          select exists (
-            select 1 from pg_locks
-            where locktype = 'advisory'
-              and pid = ${lockPid}
-              and objsubid = 1
-              and granted
-              and ((classid::bigint << 32) | (objid::bigint & 4294967295))
-                = hashtextextended(${key}, 0)
-          ) as live
-        `;
-        return rows[0]?.live ?? false;
-      },
-      catch: toStateStoreError,
-    }).pipe(
-      Effect.flatMap((live) =>
-        live
-          ? Effect.void
-          : Effect.fail(
-              new StateStoreError({
-                message: `the state lock for ${stack}/${stage} was lost mid-run; refusing to continue unlocked`,
-              }),
-            ),
+    // Retry only a cold-start on the check's own connection; a lost lease
+    // (`live` = false) and a dropped/terminated connection both stay loud —
+    // the former is not a connection error, the latter is a mid-session drop
+    // the cold-start predicate deliberately excludes (see `transient.ts`).
+    const checkLive: Effect.Effect<void, StateStoreError, never> = retryColdStart(
+      Effect.tryPromise({
+        try: async () => {
+          const rows = await sql<{ live: boolean }[]>`
+            select exists (
+              select 1 from pg_locks
+              where locktype = 'advisory'
+                and pid = ${lockPid}
+                and objsubid = 1
+                and granted
+                and ((classid::bigint << 32) | (objid::bigint & 4294967295))
+                  = hashtextextended(${key}, 0)
+            ) as live
+          `;
+          return rows[0]?.live ?? false;
+        },
+        catch: toStateStoreError,
+      }).pipe(
+        Effect.flatMap((live) =>
+          live
+            ? Effect.void
+            : Effect.fail(
+                new StateStoreError({
+                  message: `the state lock for ${stack}/${stage} was lost mid-run; refusing to continue unlocked`,
+                }),
+              ),
+        ),
       ),
     );
 

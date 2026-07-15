@@ -11,9 +11,10 @@ import {
 import * as Effect from 'effect/Effect';
 import type postgres from 'postgres';
 import { toStateStoreError } from './errors.ts';
+import { retryColdStart } from './transient.ts';
 
 const attempt = <A>(f: () => Promise<A>): Effect.Effect<A, StateStoreError, never> =>
-  Effect.tryPromise({ try: f, catch: toStateStoreError });
+  retryColdStart(Effect.tryPromise({ try: f, catch: toStateStoreError }));
 
 /**
  * Wraps an already-`encodeState`d value as a jsonb-typed bind parameter.
