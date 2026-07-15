@@ -13,6 +13,9 @@
     "./storage": "./dist/storage/index.mjs",
     "./storage/storage-entrypoint": "./dist/storage/storage-entrypoint.mjs",
     "./storage/testing": "./dist/storage/testing.mjs",
+    "./streams": "./dist/streams/index.mjs",
+    "./streams/streams-entrypoint": "./dist/streams/streams-entrypoint.mjs",
+    "./streams/testing": "./dist/streams/testing.mjs",
     "./package.json": "./package.json"
   },
   "files": [
@@ -50,6 +53,7 @@
     "@internal/prisma-cloud": "workspace:0.1.0",
     "@internal/rpc": "workspace:0.1.0",
     "@internal/storage": "workspace:0.1.0",
+    "@internal/streams": "workspace:0.1.0",
     "@internal/tsdown-config": "workspace:0.1.0",
     "@types/node": "^25.9.3",
     "typescript": "^6.0.3"

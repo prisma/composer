@@ -36,6 +36,7 @@ const externalizeFramework = {
 // scheduler-entrypoint was already fully inlined by that package's own build.
 const cronDist = '../../1-prisma-cloud/2-shared-modules/cron/dist';
 const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
+const streamsDist = '../../1-prisma-cloud/2-shared-modules/streams/dist';
 export default defineConfig([
   {
     ...baseConfig,
@@ -107,6 +108,48 @@ export default defineConfig([
     ...baseConfig,
     entry: { testing: 'src/storage-testing.ts' },
     outDir: 'dist/storage',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    ...baseConfig,
+    entry: { index: 'src/streams.ts' },
+    outDir: 'dist/streams',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // Re-emitted from @internal/streams' dist, where streams-entrypoint was
+    // already fully inlined (the streams server + its dynamic-import chain) by
+    // that package's own build. Emitted as `service.mjs` — assemble() requires
+    // the service node's `build.module` basename to be `service.*`.
+    ...baseConfig,
+    dts: false,
+    entry: {
+      service: `${streamsDist}/service.mjs`,
+      'streams-entrypoint': `${streamsDist}/streams-entrypoint.mjs`,
+    },
+    outDir: 'dist/streams',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // The /streams/testing local stand-in (@prisma/streams-local, already
+    // inlined by @internal/streams' own build).
+    ...baseConfig,
+    entry: { testing: 'src/streams-testing.ts' },
+    outDir: 'dist/streams',
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,

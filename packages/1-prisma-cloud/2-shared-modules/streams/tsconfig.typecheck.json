@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@prisma/streams-server/compute": ["./src/streams-server.d.ts"]
+    }
+  }
+}

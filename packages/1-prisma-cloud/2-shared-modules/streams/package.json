@@ -1,0 +1,50 @@
+{
+  "name": "@internal/streams",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Durable append-only event streams: streamsContract, StreamsConfig, the durableStreams() dependency factory, and the streams() module wrapping @prisma/streams-server.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./service": {
+      "types": "./dist/service.d.mts",
+      "default": "./dist/service.mjs"
+    },
+    "./streams-entrypoint": {
+      "types": "./dist/streams-entrypoint.d.mts",
+      "default": "./dist/streams-entrypoint.mjs"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.mts",
+      "default": "./dist/testing.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit",
+    "test": "bun test src",
+    "test:conformance:local": "vitest run -c vitest.conformance.local.config.ts",
+    "test:conformance:deployed": "vitest run -c vitest.conformance.deployed.config.ts",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/core": "workspace:0.1.0",
+    "@internal/node": "workspace:0.1.0",
+    "@internal/prisma-cloud": "workspace:0.1.0",
+    "@internal/storage": "workspace:0.1.0",
+    "@prisma/streams-local": "0.1.11",
+    "@prisma/streams-server": "0.1.11"
+  },
+  "devDependencies": {
+    "@durable-streams/server-conformance-tests": "^0.2.3",
+    "@internal/tsdown-config": "workspace:0.1.0",
+    "@types/bun": "^1.3.13",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.18"
+  }
+}
