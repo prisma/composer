@@ -825,8 +825,8 @@ importers:
         version: 0.1.11
     devDependencies:
       '@durable-streams/server-conformance-tests':
-        specifier: ^0.3.5
-        version: 0.3.5(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))
+        specifier: 0.2.3
+        version: 0.2.3(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))
       '@internal/tsdown-config':
         specifier: workspace:0.1.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1395,13 +1395,18 @@ packages:
     peerDependencies:
       effect: '>=4.0.0-beta.66 || >=4.0.0'
 
+  '@durable-streams/client@0.2.3':
+    resolution: {integrity: sha512-609hWTqe8/OXzIFnv+oDdlT57QsCAc3F2c/nAQBcYhSLmmbXk5rHx7rnQSmk9MeGGQ8dsg9UCZf47dTJG3q3ig==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   '@durable-streams/client@0.2.6':
     resolution: {integrity: sha512-uHKKbWpsKLhFMeGjG0PgM6LXE3oEIi7FHKlJZkmYGxcqd4Yjjd/QEvnQnDzteRP4Av1uJVM8qjTL7kfKsgeS/w==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
-  '@durable-streams/server-conformance-tests@0.3.5':
-    resolution: {integrity: sha512-sXl2S562yVa+gO9ypZMJ3rC9lMpsUoc7XIBw24iY/k8g0RczgKdK3jYpgc10bttZLQLLGQMo3QxZ+pbGgIO5dw==}
+  '@durable-streams/server-conformance-tests@0.2.3':
+    resolution: {integrity: sha512-qJmrlD4QUon0TExZ72Rf9l99Rq6gCmD3nKapI+OIhDDUGc72V8hy90yFUGGwleV7tPtFPmXU5bj4KJSAjLiOWQ==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -4941,14 +4946,19 @@ snapshots:
       '@distilled.cloud/core': 0.27.0(effect@4.0.0-beta.93)
       effect: 4.0.0-beta.93
 
+  '@durable-streams/client@0.2.3':
+    dependencies:
+      '@microsoft/fetch-event-source': 2.0.1
+      fastq: 1.20.1
+
   '@durable-streams/client@0.2.6':
     dependencies:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@durable-streams/server-conformance-tests@0.3.5(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))':
+  '@durable-streams/server-conformance-tests@0.2.3(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))':
     dependencies:
-      '@durable-streams/client': 0.2.6
+      '@durable-streams/client': 0.2.3
       fast-check: 4.9.0
       vitest: 4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))
     transitivePeerDependencies:

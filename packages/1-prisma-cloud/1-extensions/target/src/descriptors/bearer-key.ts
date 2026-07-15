@@ -1,0 +1,23 @@
+/** The `bearer-key` node kind's descriptor: mint one stable bearer API key per module-provisioned bearer-key resource. */
+
+import type { NodeDescriptor } from '@internal/core/config';
+import type { Lowering } from '@internal/core/deploy';
+import * as Effect from 'effect/Effect';
+import { BearerKey } from '../bearer-key-resource.ts';
+import type { ResolvedCloudOptions } from './shared.ts';
+
+/**
+ * One `BearerKey` resource per provisioned bearer-key node — `id` is the
+ * module provision id, so a key shared by a module's service is minted once
+ * and kept stable across deploys (the resource's provider preserves it).
+ * `_o` is unused (the mint needs no region/project) but kept for symmetry
+ * with the other descriptors' signature.
+ */
+export function bearerKeyDescriptor(_o: ResolvedCloudOptions): NodeDescriptor {
+  const lowering: Lowering = ({ id }) =>
+    Effect.gen(function* () {
+      const key = yield* BearerKey(`${id}-key`, {});
+      return { outputs: { apiKey: key.apiKey } };
+    });
+  return Object.assign(lowering, { kind: 'resource' as const });
+}

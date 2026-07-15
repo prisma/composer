@@ -101,9 +101,15 @@ mock.module('../pg-warm-resource.ts', () => ({
 }));
 
 const { prismaCloud } = await import('../control.ts');
-const { compute, envParam, envSecret, postgres, postgresContract, s3StoreService } = await import(
-  '../index.ts'
-);
+const {
+  compute,
+  envParam,
+  envSecret,
+  postgres,
+  postgresContract,
+  s3StoreService,
+  streamsCompute,
+} = await import('../index.ts');
 const { dependency, module, provisionNeed, secret, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/rpc');
@@ -873,6 +879,106 @@ describe('s3StoreService() authoring factory', () => {
     expect(node.kind).toBe('service');
     expect(Object.keys(node.inputs)).toEqual(['db']);
     expect(node.expose).toEqual({ store: postgresContract });
+    expect(typeof node.load).toBe('function');
+    expect(typeof node.config).toBe('function');
+    // The reserved compute param survives the type override.
+    expect(node.params.port).toBeDefined();
+  });
+});
+
+describe("prismaCloud().nodes['streams'] — the service descriptor surfacing the minted bearer key", () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+
+  test('serialize surfaces the wired bearer key alongside compute env writes', async () => {
+    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = streamsCompute({ name: 'streams', deps: {}, build });
+      const ctx = { address: 'streams', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const provisioned: LoweredNode = {
+        outputs: { serviceId: 'streams-svc#cloud-id', projectId: 'shop-project#cloud-id' },
+      };
+      // buildConfig would populate inputs.credentials from the wired bearer-key
+      // resource's lowered outputs.
+      const config = {
+        service: { port: 3000 },
+        inputs: { credentials: { apiKey: 'a'.repeat(48) } },
+      };
+
+      const result = run<LoweredNode>(
+        serviceDescriptorOf(target, 'streams').serialize(ctx, provisioned, config),
+      );
+
+      expect(result.outputs['apiKey']).toBe('a'.repeat(48));
+      // compute's own outputs survive.
+      expect(result.outputs['port']).toBe(3000);
+      expect(Array.isArray(result.outputs['environment'])).toBe(true);
+    });
+  });
+
+  test('serialize fails closed when the bearer key is unwired', async () => {
+    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = streamsCompute({ name: 'streams', deps: {}, build });
+      const ctx = { address: 'streams', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
+      expect(() =>
+        run<LoweredNode>(
+          serviceDescriptorOf(target, 'streams').serialize(ctx, provisioned, {
+            service: { port: 3000 },
+            inputs: {},
+          } as Parameters<ReturnType<typeof serviceDescriptorOf>['serialize']>[2]),
+        ),
+      ).toThrow(/must wire a 'credentials' dependency/);
+    });
+  });
+
+  test("deploy outputs carry url + apiKey for a consumer's durableStreams() slot", async () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const ctx = { id: 'streams' } as unknown as LowerContext;
+    const provisioned: LoweredNode = {
+      outputs: { serviceId: 'streams-svc#cloud-id', projectId: 'shop-project#cloud-id' },
+    };
+    const artifact = { path: '/tmp/streams.tar.gz', sha256: 'sha-streams' };
+    const serialized: LoweredNode = {
+      outputs: {
+        environment: [{ id: 'STREAMS_PORT-var#cloud-id', key: 'STREAMS_PORT' }],
+        apiKey: 'k'.repeat(48),
+      },
+    };
+
+    const result = run<LoweredNode>(
+      serviceDescriptorOf(target, 'streams').deploy(ctx, provisioned, artifact, serialized),
+    );
+
+    expect(result.outputs['apiKey']).toBe('k'.repeat(48));
+    expect(typeof result.outputs['url']).toBe('string');
+  });
+});
+
+describe('streamsCompute() authoring factory', () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+
+  test("routes to the 'streams' lowering but keeps compute's deps/params/expose/load", () => {
+    const node = streamsCompute({
+      name: 'streams',
+      deps: { db: postgres() },
+      build,
+      expose: { streams: postgresContract },
+    });
+    expect(node.type).toBe('streams');
+    expect(node.kind).toBe('service');
+    expect(Object.keys(node.inputs)).toEqual(['db']);
+    expect(node.expose).toEqual({ streams: postgresContract });
     expect(typeof node.load).toBe('function');
     expect(typeof node.config).toBe('function');
     // The reserved compute param survives the type override.

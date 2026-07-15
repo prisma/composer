@@ -24,11 +24,13 @@ describe('prismaCloud() — env read + validation at construction (config evalua
       const descriptor = prismaCloud();
       expect(descriptor.id).toBe('@prisma/composer-prisma-cloud');
       expect(Object.keys(descriptor.nodes).sort()).toEqual([
+        'bearer-key',
         'compute',
         'credentials',
         'postgres',
         'prisma-next',
         's3-store',
+        'streams',
       ]);
     });
   });

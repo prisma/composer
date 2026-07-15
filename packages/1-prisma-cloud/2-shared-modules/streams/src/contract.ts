@@ -3,21 +3,22 @@
  * dependency requires, and the streams service's `streams` port provides.
  * Mirrors `s3Contract`/`s3()`: `satisfies` compares kind only, and the binding
  * IS the typed connection config (ADR-0015) — the app builds its own HTTP
- * client against the Durable Streams protocol. The bearer key is NOT in the
- * binding: secret values never travel through framework config (ADR-0029), so
- * a consumer declares its own `secret()` slot bound to the same platform
- * variable as the module's `apiKey`.
+ * client against the Durable Streams protocol. The bearer key IS in the
+ * binding: it is a deploy-minted capability token (ADR-0030), not an ADR-0029
+ * secret — minted once at deploy, stable in deploy state, delivered to
+ * consumers on the same rail as the URL.
  */
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
 
 export interface StreamsConfig {
   readonly url: string;
+  readonly apiKey: string;
 }
 
 export const streamsContract: Contract<'streams', StreamsConfig> = Object.freeze({
   kind: 'streams',
-  __cmp: { url: '' },
+  __cmp: { url: '', apiKey: '' },
   satisfies: (required: Contract<'streams', unknown>) => required.kind === 'streams',
 });
 
@@ -28,7 +29,7 @@ export function durableStreams(): DependencyEnd<StreamsConfig, typeof streamsCon
   return dependency({
     type: 'streams',
     connection: {
-      params: { url: string() },
+      params: { url: string(), apiKey: string() },
       hydrate: (v): StreamsConfig => v,
     },
     required: streamsContract,

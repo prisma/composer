@@ -8,11 +8,10 @@ import { streamsService } from './streams-service.ts';
 
 const service = streamsService();
 
-const { store } = service.load();
-const { apiKey } = service.secrets();
+const { store, credentials } = service.load();
 const { port } = service.config();
 
-process.env['API_KEY'] = apiKey.expose();
+process.env['API_KEY'] = credentials.apiKey;
 process.env['PORT'] = String(port);
 // Bind beyond loopback so the Compute router can reach the server.
 process.env['DS_HOST'] ??= '0.0.0.0';

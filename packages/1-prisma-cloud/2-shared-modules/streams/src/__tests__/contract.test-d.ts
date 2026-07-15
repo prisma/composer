@@ -10,7 +10,10 @@ describe('durableStreams()', () => {
     >();
   });
 
-  test('the binding carries only the endpoint url', () => {
-    expectTypeOf<StreamsConfig>().toEqualTypeOf<{ readonly url: string }>();
+  test('the binding carries the endpoint url and the minted bearer key', () => {
+    expectTypeOf<StreamsConfig>().toEqualTypeOf<{
+      readonly url: string;
+      readonly apiKey: string;
+    }>();
   });
 });

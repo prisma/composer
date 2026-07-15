@@ -11,12 +11,15 @@ import { prismaState } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/rpc';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { BearerKeyProvider } from './bearer-key-resource.ts';
+import { bearerKeyDescriptor } from './descriptors/bearer-key.ts';
 import { computeDescriptor } from './descriptors/compute.ts';
 import { postgresDescriptor } from './descriptors/postgres.ts';
 import { prismaNextDescriptor } from './descriptors/prisma-next.ts';
 import { s3CredentialsDescriptor } from './descriptors/s3-credentials.ts';
 import { s3StoreDescriptor } from './descriptors/s3-store.ts';
 import type { ResolvedCloudOptions } from './descriptors/shared.ts';
+import { streamsDescriptor } from './descriptors/streams.ts';
 import { PgWarmProvider } from './pg-warm-resource.ts';
 import { PnMigrationProvider } from './pn-migration-resource.ts';
 import { runPreflight } from './preflight.ts';
@@ -106,6 +109,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           PnMigrationProvider(),
           S3CredentialsProvider(),
           Prisma.ServiceKeyProvider(),
+          BearerKeyProvider(),
         ),
       ),
 
@@ -156,6 +160,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       compute: computeDescriptor(o),
       credentials: s3CredentialsDescriptor(o),
       's3-store': s3StoreDescriptor(o),
+      'bearer-key': bearerKeyDescriptor(o),
+      streams: streamsDescriptor(o),
     },
   };
 };
