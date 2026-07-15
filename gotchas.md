@@ -29,6 +29,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations](#first-connection-to-a-freshly-provisioned-postgres-is-rejected-while-the-upstream-is-cold--breaks-deploy-time-migrations)
 - [Idle direct-connection close kills pooled node-postgres clients — first query after idle 500s with "Connection terminated unexpectedly"](#idle-direct-connection-close-kills-pooled-node-postgres-clients--first-query-after-idle-500s-with-connection-terminated-unexpectedly)
 - [Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero](#service-to-service-http-gets-econnreset-while-the-target-cold-starts-from-scale-to-zero)
+- [Compute ingress buffers streaming responses until completion — an open SSE tail delivers nothing and 504s at 60s](#compute-ingress-buffers-streaming-responses-until-completion--an-open-sse-tail-delivers-nothing-and-504s-at-60s)
 
 ---
 
@@ -396,3 +397,31 @@ An always-on / min-instances option on Compute services would remove the window;
 
 - Observed in `storefront` runtime logs (`app logs --project store --app storefront`): `code: 'ECONNRESET', path: 'https://….ewr.prisma.build/rpc/listProducts'`
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family)
+
+---
+
+## Compute ingress buffers streaming responses until completion — an open SSE tail delivers nothing and 504s at 60s
+
+**Filed upstream:** [PRO-218](https://linear.app/prisma-company/issue/PRO-218/compute-ingress-buffers-streaming-responses-sse-cannot-deliver-edge) — _"Compute ingress buffers streaming responses — SSE cannot deliver; edge 504s at 60s"_
+**Product:** Prisma Compute (ingress / streaming responses)
+**Version:** Prisma Compute, observed 2026-07-15; server: `@prisma/streams-server` 0.1.11 behind the streams module
+**First hit:** `examples/streams` — the streams module's deployed consumer smoke (`?live=sse` tail)
+**Cost:** ~1 hour isolating the layer — the same request works on localhost and against the local stand-in, and the server-side code is provably correct
+
+**Symptom.** An open `?live=sse` tail on a deployed service never delivers a byte — no response headers, no catch-up data, no events — and the edge returns a plain-text `504` after exactly ~60s (`time_starttransfer: 60.3s`, zero upstream bytes forwarded). Appends POSTed while the tail is open are accepted (204) and readable by normal GETs. Same behavior on the promoted domain and the version preview domain, over HTTP/2 and HTTP/1.1. Long-poll (`?live=long-poll`) works end to end. Observed on `cps_cfqde5muxclzwpjr5sud3ioj` (project `streams-example`), version `cpv_fmsobwdnu9g9z9vqkxljjdzj`.
+
+**Cause (observed, mechanism presumed).** The ingress buffers HTTP responses until the upstream response **completes**, then forwards them as fixed-length responses. Determinative experiment: SSE on a *closed* stream (the server's SSE loop ends, completing the response) arrives instantly — with an ingress-**added** `content-length: 139` on a `text/event-stream` body the server sent chunked. And the 60s timeout is response-completion, not idle: the streams server emits an SSE `control` keep-alive every 30s on an idle tail, so upstream bytes were flowing when the edge 504'd. Any indefinitely-streaming response — SSE, long-lived chunked downloads — cannot traverse the ingress; every completing response is unaffected.
+
+**Workaround.** Use `?live=long-poll` for live tailing on deployed services — each delivery is a completing response, and it is verified live end to end (the streams module's deployed smoke and the full non-SSE conformance suite pass: 215/239, all 24 failures in the suite's "SSE Mode" group). SSE remains correct locally and against the module's local stand-in; the deployed conformance harness keeps the SSE tests so they flip green when the platform streams responses.
+
+**Reproduction.**
+
+1. Deploy any service that serves an unbounded `text/event-stream` (e.g. the streams module); `curl -N` its SSE endpoint on the deployed URL.
+2. → zero bytes (not even headers), then a plain-text `504` at ~60s, while POSTs to the same service succeed throughout.
+3. Make the stream end server-side (for durable streams: append with `stream-closed: true`, then re-open the SSE read) → the whole SSE body arrives at once with an added `content-length`.
+
+**References.**
+
+- Upstream: [PRO-218](https://linear.app/prisma-company/issue/PRO-218/compute-ingress-buffers-streaming-responses-sse-cannot-deliver-edge)
+- Workaround + note: [`packages/1-prisma-cloud/2-shared-modules/streams/README.md`](packages/1-prisma-cloud/2-shared-modules/streams/README.md) — "Deployed live path: use long-poll"
+- Related: [PRO-217](https://linear.app/prisma-company/issue/PRO-217) (same ingress, cold-start face); server SSE handler: `@prisma/streams-server` `src/app_core.ts` (returns the stream `Response` immediately — upstream is not the buffer)
