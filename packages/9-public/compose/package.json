@@ -18,6 +18,7 @@
     "./node/control": "./dist/node-control.mjs",
     "./nextjs": "./dist/nextjs.mjs",
     "./nextjs/control": "./dist/nextjs-control.mjs",
+    "./tsdown": "./dist/tsdown.mjs",
     "./package.json": "./package.json"
   },
   "files": [

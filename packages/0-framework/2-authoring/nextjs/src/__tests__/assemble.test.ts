@@ -98,10 +98,6 @@ describe('assemble()', () => {
     // The deep server path was FOUND, not authored, and prefixed with bundle/.
     expect(result.entry).toBe('bundle/apps/web/server.js');
     expect(fs.existsSync(path.join(workDir, 'main.mjs'))).toBe(true);
-    // bunfig disables bun auto-install (Next's sharp/@next/swc would fill the disk).
-    expect(fs.readFileSync(path.join(workDir, 'bunfig.toml'), 'utf8')).toContain(
-      'auto = "disable"',
-    );
     // Standalone tree shipped (incl. the hoisted node_modules at its root).
     expect(fs.existsSync(path.join(bundleApp, 'server.js'))).toBe(true);
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(

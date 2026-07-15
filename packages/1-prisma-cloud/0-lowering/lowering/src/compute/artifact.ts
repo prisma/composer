@@ -153,6 +153,16 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   }));
   files.push({ relPath: 'bootstrap.js', content: Buffer.from(bootstrap, 'utf8') });
   files.push({ relPath: 'compute.manifest.json', content: Buffer.from(manifest, 'utf8') });
+  // Disable bun's runtime auto-install for every Compute artifact. App builds
+  // are self-contained (prismaTsDownConfig inlines all deps), so nothing needs
+  // fetching at boot; this guards against a stray optional `require` (e.g. a
+  // Next standalone's `sharp`/`@next/swc`) making bun fetch a linux binary at
+  // boot and fill the tiny disk (ENOSPC -> reboot loop). bun reads bunfig from
+  // the process CWD, which is the artifact root at boot.
+  files.push({
+    relPath: 'bunfig.toml',
+    content: Buffer.from('[install]\nauto = "disable"\n', 'utf8'),
+  });
 
   const gz = createDeterministicTarGz(files);
   const sha256 = crypto.createHash('sha256').update(gz).digest('hex');

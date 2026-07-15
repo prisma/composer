@@ -139,15 +139,6 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     throw new Error(`tsdown produced no main.mjs in ${workDir}`);
   }
 
-  // Disable bun's runtime auto-install — Next-specific. Next's server.js
-  // references optional native deps this app never uses (`sharp`, `@next/swc`);
-  // with auto-install on, bun fetches their linux binaries at boot and fills
-  // the tiny Compute disk (ENOSPC -> reboot loop). This is the opposite of a
-  // plain node service, which relies on auto-install to resolve dynamic
-  // requires (e.g. `pg`'s), so it belongs here, not as a packager-wide default.
-  // bun reads bunfig from the process CWD, which is the artifact root at boot.
-  await fs.promises.writeFile(path.join(workDir, 'bunfig.toml'), '[install]\nauto = "disable"\n');
-
   return {
     dir: workDir,
     entry: path.posix.join('bundle', appRel.split(path.sep).join('/'), 'server.js'),

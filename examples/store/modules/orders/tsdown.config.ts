@@ -1,15 +1,6 @@
-import { defineConfig } from 'tsdown';
+import { prismaTsDownConfig } from '@prisma/compose/tsdown';
 
-// Build only the runnable (src/server.ts). @prisma/*, @store/* and arktype are
-// inlined — node_modules isn't shipped; `bun` is a Compute runtime built-in.
-export default defineConfig({
-  entry: { server: 'src/server.ts' },
-  outDir: 'dist',
-  format: 'esm',
-  platform: 'node',
-  external: ['bun'],
-  noExternal: [/^@prisma\//, /^@prisma-next\//, /^@store\//, /^arktype/, /^pg$/, /^pg-/, /^pathe$/],
-  dts: false,
-  sourcemap: false,
-  clean: true,
-});
+// The app's own build (ADR-0005): a self-contained ESM bundle of its runnable.
+// `prismaTsDownConfig` inlines everything except runtime built-ins, so
+// node_modules is never shipped and boot never leans on bun auto-install.
+export default prismaTsDownConfig({ entry: { server: 'src/server.ts' } });

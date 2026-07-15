@@ -198,7 +198,26 @@ describe('packageComputeArtifact', () => {
     });
     const { names } = readTar(fs.readFileSync(artifact.path));
 
-    expect(names).toEqual(['a.txt', 'b.txt', 'bootstrap.js', 'compute.manifest.json', 'main.js']);
+    expect(names).toEqual([
+      'a.txt',
+      'b.txt',
+      'bootstrap.js',
+      'bunfig.toml',
+      'compute.manifest.json',
+      'main.js',
+    ]);
+  });
+
+  test('injects bunfig.toml disabling bun auto-install into every artifact', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+    expect(read('bunfig.toml')).toContain('auto = "disable"');
   });
 
   test('a symlink in the bundle is a hard error naming the path and the fix (flat bundles only)', () => {
