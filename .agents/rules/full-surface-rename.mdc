@@ -1,0 +1,49 @@
+---
+description: "Traps when doing a repo-wide token rename / codemod (renaming a product, package scope, CLI bin, or wire prefix across the whole tree). Read before running the sweep and before declaring it clean."
+globs: []
+alwaysApply: false
+---
+
+# Full-surface rename / codemod traps
+
+Hard-won from the Compose → Composer rename (packages, bin, config file, wire
+prefix). A repo-wide token swap looks mechanical but has sharp edges that pass a
+naive sweep and a naive "did I get everything?" grep.
+
+## Rules
+
+- **Verify with a boundary grep, not a literal one.** `git grep 'old-token'`
+  matches the NEW token as a substring — `@prisma/compose` matches
+  `@prisma/composer` — so a literal grep reports false "remnants" and hides real
+  ones. Verify with a boundary: `old-token([^<expected-next-char>]|$)` (e.g.
+  `@prisma/compose([^r]|$)`).
+
+- **Escaped separators evade both the sweep and the grep.** Test error-message
+  assertions hold regex-escaped forms like `@prisma\/compose-prisma-cloud`
+  (backslash-slash). A literal-slash replace rule skips them, and a literal-slash
+  verification grep can't see them — so the source string renames but its test
+  regex doesn't, and the mismatch only surfaces as a test failure. Recheck
+  `\/`-escaped variants explicitly after the sweep.
+
+- **Find every emit site, not just the constant.** A token can be assembled from a
+  bare literal that doesn't contain the full token. The `COMPOSE_` env prefix was
+  built two ways: the `RESERVED_SECRET_PREFIX = 'COMPOSE_'` constant AND a
+  standalone `'COMPOSE'` array literal (no underscore) joined with `'_'` in
+  `serializer.ts` `configKey()`. Grep the bare token (`COMPOSE`), not only the
+  full one (`COMPOSE_`).
+
+- **Excluding a file from the rename does NOT protect links to it.** ADR-0026 /
+  ADR-0027 were excluded and kept their old filenames, but the sweep still rewrote
+  cross-reference link *paths* pointing at them → ~10 dead 404 links. When you
+  exclude a file, also protect or repair every reference to its filename.
+
+- **`.agents/rules/*.mdc` are canonical; the sweep can silently skip them.** The
+  `.claude/rules` and `.cursor/rules` trees are symlinks back into `.agents/rules`.
+  A naive `perl -pi` can skip the `.mdc` files (symlink/perms/CRLF). After the
+  sweep, verify each `.mdc` was actually rewritten, then run `pnpm rules:sync` and
+  confirm `pnpm lint:rules:symlinks`.
+
+- **Rebase by redo, not by hand-resolve.** A full-tree rename conflicts with every
+  concurrent merge to `main`. Do not hand-resolve — redo the deterministic codemod
+  on the fresh base (`git reset --hard origin/main`, then re-run the sweep) and
+  land it fast, freezing other merges, because `main` keeps moving underneath.
