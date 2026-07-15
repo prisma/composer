@@ -23,7 +23,7 @@ import { standardValidate } from './standard-schema.ts';
 declare const process: { env: Record<string, string | undefined> };
 
 /** The reserved env var the target (slice 2) writes the accepted key set to. */
-export const RPC_ACCEPTED_KEYS_ENV = 'COMPOSE_RPC_ACCEPTED_KEYS';
+export const RPC_ACCEPTED_KEYS_ENV = 'COMPOSER_RPC_ACCEPTED_KEYS';
 
 // biome-ignore lint/suspicious/noExplicitAny: accepts any concrete runnable service node — generics are invariant, so `any` is required (mirrors ModuleBuilder.provision in @prisma/composer).
 type AnyRunnable = RunnableServiceNode<any, any, any>;

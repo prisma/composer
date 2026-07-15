@@ -142,7 +142,7 @@ describe('serve()', () => {
   });
 });
 
-describe('serve() — service-key enforcement (COMPOSE_RPC_ACCEPTED_KEYS)', () => {
+describe('serve() — service-key enforcement (COMPOSER_RPC_ACCEPTED_KEYS)', () => {
   afterEach(() => {
     delete process.env[RPC_ACCEPTED_KEYS_ENV];
   });

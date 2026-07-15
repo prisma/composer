@@ -27,10 +27,10 @@ This spec is the build contract for it.
    names, reads, or sees the key. It is minted at deploy and wired to both ends
    by the framework.
 4. **Rides the binding's env rail.** The consumer's key is a `serviceKey`
-   connection parameter alongside `url`, serialized to a reserved `COMPOSE_*`
+   connection parameter alongside `url`, serialized to a reserved `COMPOSER_*`
    variable and hydrated into the client through the host shim — never read from
    `process.env` in user code (No-globals principle). The provider's accepted set
-   is a reserved `COMPOSE_*` variable read by `serve()` through the same shim.
+   is a reserved `COMPOSER_*` variable read by `serve()` through the same shim.
 5. **Value in deploy state, stable across redeploys.** The key is minted once per
    edge and held in the workspace-hosted deploy state store, not the user-facing
    Prisma Cloud project. A no-op redeploy stays a no-op (the key doesn't churn);

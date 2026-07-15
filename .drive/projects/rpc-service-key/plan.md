@@ -40,8 +40,8 @@ Turns the mechanism on end to end and proves it live.
   any `rpc`/`serviceKey` knowledge (react to the facet only).
 - **Target (`@internal/composer-prisma-cloud` lowering)** — a per-edge `ServiceKey`
   Alchemy resource (random value, stable in deploy state). Wire its value ref
-  into (a) the consumer's `serviceKey` `COMPOSE_*` variable and (b) the provider's
-  accepted-set `COMPOSE_*` variable, aggregating all inbound edges (Alchemy string
+  into (a) the consumer's `serviceKey` `COMPOSER_*` variable and (b) the provider's
+  accepted-set `COMPOSER_*` variable, aggregating all inbound edges (Alchemy string
   interpolation over the JSON array).
 - **Example + live proof** — deploy `storefront-auth`, assert the wired round trip
   returns `ok` and an anonymous `curl` returns `401`; second redeploy is a no-op.

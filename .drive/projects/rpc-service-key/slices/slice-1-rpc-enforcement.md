@@ -25,7 +25,7 @@ no example. Fully unit-testable via the in-memory transport.
 ### 3. Server verifies — `src/serve.ts`
 
 - Export a constant for the reserved accepted-keys env var name, e.g.
-  `export const RPC_ACCEPTED_KEYS_ENV = 'COMPOSE_RPC_ACCEPTED_KEYS'`. The target
+  `export const RPC_ACCEPTED_KEYS_ENV = 'COMPOSER_RPC_ACCEPTED_KEYS'`. The target
   (slice 2) imports this to know what to write; the reader owns the name.
 - `serve()` reads that env var (address-free — one served service per process,
   same as the stashed config `load()`/`config()` read). Declare `process`

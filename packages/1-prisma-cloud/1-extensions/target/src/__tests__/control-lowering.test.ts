@@ -411,13 +411,13 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // The provided url still writes its row...
       expect(writes).toContainEqual({
         projectId: 'shop-project#cloud-id',
-        key: 'COMPOSE_CONSUMER_AUTH_URL',
+        key: 'COMPOSER_CONSUMER_AUTH_URL',
         value: 'http://auth.internal',
         class: 'production',
       });
       // ...but the unprovisioned serviceKey writes none — no "value: Required" at deploy.
       const writtenKeys = writes.map((p) => (p as { key: string }).key);
-      expect(writtenKeys).not.toContain('COMPOSE_CONSUMER_AUTH_SERVICEKEY');
+      expect(writtenKeys).not.toContain('COMPOSER_CONSUMER_AUTH_SERVICEKEY');
     });
   });
 

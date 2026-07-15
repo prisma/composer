@@ -23,7 +23,7 @@ await client.place({ sku, qty });      // sends Authorization: Bearer <service-k
 
 The key rides the **same wire the binding's URL already rides**: it is a second
 connection parameter on the RPC dependency (`serviceKey`, alongside `url`),
-serialized to a reserved `COMPOSE_*` environment variable and hydrated into the
+serialized to a reserved `COMPOSER_*` environment variable and hydrated into the
 client through the framework's host shim — the developer's code never reads the
 environment (see the *No globals* principle). Its value is minted at deploy and
 kept in the workspace-hosted deploy state store, so it is stable across
@@ -74,7 +74,7 @@ per-deploy value baked into the artifact changes the artifact's hash on every
 deploy, which breaks no-op-redeploy detection, and it splits one value across two
 independently built artifacts. The env-var rail is the one the binding's URL
 already uses, it keeps the artifact reproducible, and one more reserved
-`COMPOSE_*` variable is consistent with the config the framework already writes
+`COMPOSER_*` variable is consistent with the config the framework already writes
 there. The value being visible to someone with project access is acceptable
 given what the value is.
 
