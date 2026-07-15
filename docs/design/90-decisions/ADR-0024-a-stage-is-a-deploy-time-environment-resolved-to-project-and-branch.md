@@ -1,9 +1,5 @@
 # ADR-0024: A stage is a deploy-time environment; the CLI resolves its Project and Branch before Alchemy
 
-## Status
-
-Accepted
-
 ## Decision
 
 An app is deployed to a named **stage** — an environment. The topology is

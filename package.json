@@ -20,7 +20,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "husky && skills add prisma/skills --skill '*' --agent universal claude-code -y && skills add ./skills-contrib --skill '*' --agent universal claude-code -y && node scripts/sync-agent-rules.mjs",
-    "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test && node scripts/lint-publishable-location.mjs"
+    "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.2",

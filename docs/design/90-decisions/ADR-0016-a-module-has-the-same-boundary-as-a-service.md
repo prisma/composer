@@ -1,9 +1,5 @@
 # ADR-0016: A module has the same boundary as a service
 
-## Status
-
-Accepted
-
 ## Decision
 
 A module declares the same boundary a service does: a `Deps` map of typed

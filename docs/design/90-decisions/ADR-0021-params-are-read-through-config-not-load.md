@@ -1,9 +1,5 @@
 # ADR-0021: Params are read through config(), separate from load()'s dependencies
 
-## Status
-
-Proposed
-
 ## Decision
 
 A service reads its **dependencies** through `load()` and its **config params**

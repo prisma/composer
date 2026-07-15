@@ -20,10 +20,6 @@ for a reader a year from now:
   about the decision and the module, not the project that produced them.
 -->
 
-## Status
-
-Proposed | Accepted | Deprecated | Superseded by ADR-XXXX
-
 ## Decision
 
 What we're doing, in a sentence or two. The first thing the reader should learn.

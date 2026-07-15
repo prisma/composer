@@ -1,9 +1,5 @@
 # ADR-0005: Users build their app; the framework assembles deploy artifacts from built output
 
-## Status
-
-Accepted
-
 ## Decision
 
 The framework never initiates or configures a user's build. The contract is:

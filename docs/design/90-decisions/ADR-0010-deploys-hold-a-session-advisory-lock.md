@@ -1,9 +1,5 @@
 # ADR-0010: Deploys hold a session advisory lock per stack and stage
 
-## Status
-
-Accepted
-
 ## Decision
 
 A deploy acquires a Postgres session advisory lock on the hosted state

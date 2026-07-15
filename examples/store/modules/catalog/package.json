@@ -1,0 +1,32 @@
+{
+  "name": "@store/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/module.ts",
+    "./contract": "./src/contract.ts",
+    "./fake": "./testing/fake.ts"
+  },
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma-next/postgres": "0.14.0",
+    "arktype": "^2.2.3",
+    "pg": "8.21.0"
+  },
+  "peerDependencies": {
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0"
+  },
+  "devDependencies": {
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0",
+    "@types/bun": "^1.3.13",
+    "tsdown": "^0.22.3",
+    "typescript": "^6.0.3"
+  }
+}

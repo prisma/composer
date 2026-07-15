@@ -1,9 +1,5 @@
 # ADR-0018: Config params carry a caller-owned schema, not a framework type enum
 
-## Status
-
-Proposed
-
 ## Decision
 
 A config param declares its type as a **schema the caller supplies** — any

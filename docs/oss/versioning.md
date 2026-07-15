@@ -118,15 +118,18 @@ cannot publish the initial version of a package via OIDC** — the package must 
 exist before you can enable a trusted publisher (unlike PyPI). So the first release is a
 one-time manual bootstrap; every release after that goes through the workflow:
 
-1. **Create the packages once, with a token.** On a machine logged in to npm as a user
-   with publish rights to the `@prisma` scope (and the ability to create the unscoped
-   `prisma-compose`): `pnpm install && pnpm build`, then
-   `node scripts/publish-packages.mjs --tag latest`. This publishes all nine packages at
-   the current root version with correct exact-pinned deps.
-2. **Configure a trusted publisher on each of the nine packages** at
+_Completed 2026-07-12 for both packages; kept as the procedure for any future
+package (e.g. a new `@prisma/compose-<target>`)._
+
+1. **Create the package once, with a token.** On a machine logged in to npm as a
+   user with publish rights to the `@prisma` scope: `pnpm install && pnpm build`,
+   then `node scripts/publish-packages.mjs --tag latest`. This publishes the
+   publishable packages (the two in `packages/9-public/`) at the current root
+   version with correct exact-pinned deps.
+2. **Configure a trusted publisher on each published package** at
    `npmjs.com/package/<name>/access` → *Trusted Publisher* → GitHub Actions:
    - Organization or user: `prisma`
-   - Repository: `app`
+   - Repository: `compose`
    - Workflow filename: `publish.yml`
    - Environment: leave blank
    - Allowed action: **npm publish**

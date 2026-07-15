@@ -20,6 +20,10 @@
       "types": "./dist/testing.d.mts",
       "default": "./dist/testing.mjs"
     },
+    "./connection": {
+      "types": "./dist/pg-connection.d.mts",
+      "default": "./dist/pg-connection.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -44,7 +48,8 @@
     "alchemy": "2.0.0-beta.59",
     "arktype": "^2.2.3",
     "effect": "4.0.0-beta.92",
-    "pathe": "^2.0.3"
+    "pathe": "^2.0.3",
+    "pg": "8.21.0"
   },
   "devDependencies": {
     "@prisma-next/target-postgres": "0.14.0",

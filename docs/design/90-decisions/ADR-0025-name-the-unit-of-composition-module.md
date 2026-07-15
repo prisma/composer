@@ -1,15 +1,5 @@
 # ADR-0025: Name the unit of composition "Module", authored with `module()`
 
-## Status
-
-Accepted. Supersedes the unit-noun half of
-[ADR-0014](ADR-0014-one-authoring-primitive.md): the unit
-of composition is a **Module**, not a System. ADR-0014's single-primitive model
-stands — exactly one authoring primitive with no separate `app()` construct; its
-framework, package, and CLI names were later superseded by
-[ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) (**Prisma Compose**,
-`@prisma/compose*`, `prisma-compose`).
-
 ## Decision
 
 The unit of composition is a **Module**, authored with a single primitive,

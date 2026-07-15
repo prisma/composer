@@ -1,9 +1,5 @@
 # ADR-0020: Scheduled work is a driver, not a resource
 
-## Status
-
-Accepted
-
 ## Decision
 
 Cron is modelled as a **driver**: a scheduler service that *depends on* the

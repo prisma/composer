@@ -1,12 +1,5 @@
 # ADR-0027: Ship two packages — `@prisma/compose` and `@prisma/compose-prisma-cloud`
 
-## Status
-
-Accepted. Consolidates the package family enumerated in
-[ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) (which renamed it) down
-to two published packages; supersedes that ADR's per-capability package list,
-including `@prisma/compose-alchemy` as a separate package.
-
 ## Decision
 
 The framework publishes exactly two **public** packages. The constraint is on the

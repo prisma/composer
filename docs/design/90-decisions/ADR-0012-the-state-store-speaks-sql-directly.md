@@ -1,9 +1,5 @@
 # ADR-0012: The state store speaks SQL directly; Prisma Next adoption is deferred
 
-## Status
-
-Accepted
-
 ## Decision
 
 The hosted state store's data access is hand-written SQL over a plain Postgres

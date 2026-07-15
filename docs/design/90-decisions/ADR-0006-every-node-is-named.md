@@ -1,9 +1,5 @@
 # ADR-0006: Every node is named; the root's name names the application
 
-## Status
-
-Accepted
-
 ## Decision
 
 Every node — module, service, or resource — carries an explicit,

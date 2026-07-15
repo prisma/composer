@@ -23,7 +23,13 @@ describe('prismaCloud() — env read + validation at construction (config evalua
     await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: undefined }, () => {
       const descriptor = prismaCloud();
       expect(descriptor.id).toBe('@prisma/compose-prisma-cloud');
-      expect(Object.keys(descriptor.nodes).sort()).toEqual(['compute', 'postgres', 'prisma-next']);
+      expect(Object.keys(descriptor.nodes).sort()).toEqual([
+        'compute',
+        'credentials',
+        'postgres',
+        'prisma-next',
+        's3-store',
+      ]);
     });
   });
 
@@ -56,6 +62,8 @@ describe('prismaCloud() — env read + validation at construction (config evalua
       const descriptor = prismaCloud();
       expect(descriptor.nodes['postgres']?.kind).toBe('resource');
       expect(descriptor.nodes['compute']?.kind).toBe('service');
+      expect(descriptor.nodes['credentials']?.kind).toBe('resource');
+      expect(descriptor.nodes['s3-store']?.kind).toBe('service');
       expect(descriptor.application).toBeDefined();
       expect(descriptor.providers).toBeDefined();
     });

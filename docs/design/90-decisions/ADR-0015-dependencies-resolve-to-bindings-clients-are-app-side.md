@@ -1,9 +1,5 @@
 # ADR-0015: Dependencies resolve to bindings; clients are constructed app-side
 
-## Status
-
-Accepted
-
 ## Decision
 
 `service.load()` returns each dependency's **binding** — the most-derived value

@@ -1,9 +1,5 @@
 # ADR-0003: `prisma-compose deploy` derives the application from the root node
 
-## Status
-
-Accepted
-
 ## Decision
 
 The deploy entrypoint is `prisma-compose deploy <entry>`, where `entry` is a module

@@ -1,0 +1,29 @@
+{
+  "name": "@prisma/example-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "echo 'nothing to build for this package itself — the modules build via turbo ^build, from the workspace deps below'",
+    "dev": "bun run scripts/dev.ts",
+    "typecheck": "tsc --noEmit",
+    "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-compose deploy module.ts ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
+    "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-compose destroy module.ts --production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.0-beta.92",
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0",
+    "@store/catalog": "workspace:0.1.0",
+    "@store/orders": "workspace:0.1.0",
+    "@store/promotions": "workspace:0.1.0",
+    "@store/storefront": "workspace:0.1.0",
+    "alchemy": "2.0.0-beta.59",
+    "arktype": "^2.2.3",
+    "effect": "4.0.0-beta.92"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "typescript": "^6.0.3"
+  }
+}

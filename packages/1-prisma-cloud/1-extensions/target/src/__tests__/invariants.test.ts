@@ -51,11 +51,17 @@ function builtEntryGraph(entryFileName: string): string {
 }
 
 describe('entry map: authoring + control + prisma-next + testing, no other runtime entry', () => {
-  test("package.json exports '.', './control', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
+  test("package.json exports '.', './connection', './control', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './control', './prisma-next', './testing']);
+    expect(codeEntries.sort()).toEqual([
+      '.',
+      './connection',
+      './control',
+      './prisma-next',
+      './testing',
+    ]);
   });
 });
 

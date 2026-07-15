@@ -35,6 +35,7 @@ const externalizeFramework = {
 // 3. the standalone programs, re-emitted from @internal/cron's dist where
 // scheduler-entrypoint was already fully inlined by that package's own build.
 const cronDist = '../../1-prisma-cloud/2-shared-modules/cron/dist';
+const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
 export default defineConfig([
   {
     ...baseConfig,
@@ -71,6 +72,47 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    ...baseConfig,
+    entry: { index: 'src/storage.ts' },
+    outDir: 'dist/storage',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    ...baseConfig,
+    dts: false,
+    entry: {
+      // Emitted as `service.mjs` — @prisma/compose/node's assemble() requires
+      // the service node's `build.module` basename to be `service.*`.
+      service: `${storageDist}/service.mjs`,
+      'storage-entrypoint': `${storageDist}/storage-entrypoint.mjs`,
+    },
+    outDir: 'dist/storage',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    // `bun` is a runtime builtin — keep it external in the re-emitted entrypoint.
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // The /storage/testing local stand-in — inlines @internal/storage/testing's
+    // engine; `bun` stays external (the store uses Bun's SQL + Bun.serve).
+    ...baseConfig,
+    entry: { testing: 'src/storage-testing.ts' },
+    outDir: 'dist/storage',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
     noExternal: [/^@internal\//],
     plugins: [externalizeFramework],
   },

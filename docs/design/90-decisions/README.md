@@ -6,13 +6,19 @@ This directory contains append-only decision records.
 
 Write an ADR when we “pick an answer” that future readers will need to understand and reference (even if the decision is provisional).
 
-Keep ADRs short:
+Keep ADRs short. The sections (see [the template](../99-process/templates/adr.md)):
 
-- Context
 - Decision
-- Rationale
+- Reasoning
 - Consequences
-- Alternatives
+- Alternatives considered
+- Related
+
+**No `Status` section.** A per-ADR "Proposed / Accepted" line goes stale and adds
+nothing — the record exists because we made the call. Supersession and
+deprecation are recorded where a reader actually looks: the superseding ADR
+names what it replaces (in its Decision/Related), and the Index below annotates
+the superseded entry. A retired ADR stays in place; the Index says so.
 
 ## Index
 

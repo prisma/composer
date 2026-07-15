@@ -1,9 +1,5 @@
 # ADR-0004: Paths resolve relative to the file that writes them
 
-## Status
-
-Accepted
-
 ## Decision
 
 Every path a build descriptor carries resolves relative to the module that

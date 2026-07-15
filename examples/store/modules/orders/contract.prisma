@@ -1,0 +1,13 @@
+// use prisma-next
+//
+// orders' data contract: one Order per purchase, snapshotting the product's
+// name and price at placement time.
+
+model Order {
+  id          String   @id @default(uuid(4))
+  productId   String
+  productName String
+  quantity    Int
+  totalCents  Int
+  placedAt    DateTime @default(now())
+}

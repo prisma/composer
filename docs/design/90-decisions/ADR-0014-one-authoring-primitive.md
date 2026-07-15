@@ -1,15 +1,5 @@
 # ADR-0014: One authoring primitive — the App is the outermost Module
 
-## Status
-
-Accepted, and largely superseded on names. This ADR originally chose the framework
-name, the package family, and the CLI name; those are superseded by
-[ADR-0026](ADR-0026-name-the-framework-prisma-compose.md) (the framework is
-**Prisma Compose**, with the packages and CLI renamed to match), and the unit noun by
-[ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) (**Module**). What stands
-is the **single-primitive model**: one authoring construct, no separate `app()`, and
-the App is the outermost Module.
-
 ## Decision
 
 There is exactly one authoring primitive, and no separate `app()` construct: **the

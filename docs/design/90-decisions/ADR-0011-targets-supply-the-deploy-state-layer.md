@@ -1,9 +1,5 @@
 # ADR-0011: Targets supply the deploy state layer
 
-## Status
-
-Accepted
-
 ## Decision
 
 `Target.state` is a required field: every target constructs the Alchemy state

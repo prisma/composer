@@ -1,13 +1,5 @@
 # ADR-0028: Organize packages into numbered domains and layers, enforced by dependency-cruiser
 
-## Status
-
-Accepted. Realizes the workspace-restructure consequence of
-[ADR-0027](ADR-0027-two-packages-compose-and-compose-prisma-cloud.md) by adopting
-Prisma Next's Domains → Layers → Planes organization (its Package-Layering doc and
-ADR 140), with one addition of our own: a public domain that makes the published
-surface a directory.
-
 ## Decision
 
 `packages/` is organized into three numbered **domains**:

@@ -1,9 +1,5 @@
 # ADR-0023: A Prisma App is one Project; a Stage is a Branch
 
-## Status
-
-Accepted
-
 ## Decision
 
 A Prisma App lowers to **one Prisma Cloud Project**. The Modules inside the app

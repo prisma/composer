@@ -27,6 +27,8 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Branch create has no idempotency — a duplicate gitName 409s, with no create-or-return](#branch-create-has-no-idempotency--a-duplicate-gitname-409s-with-no-create-or-return)
 - [A project-scoped compute-service create lands on the default branch — and collides with production](#a-project-scoped-compute-service-create-lands-on-the-default-branch--and-collides-with-production)
 - [First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations](#first-connection-to-a-freshly-provisioned-postgres-is-rejected-while-the-upstream-is-cold--breaks-deploy-time-migrations)
+- [Idle direct-connection close kills pooled node-postgres clients — first query after idle 500s with "Connection terminated unexpectedly"](#idle-direct-connection-close-kills-pooled-node-postgres-clients--first-query-after-idle-500s-with-connection-terminated-unexpectedly)
+- [Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero](#service-to-service-http-gets-econnreset-while-the-target-cold-starts-from-scale-to-zero)
 
 ---
 
@@ -329,3 +331,68 @@ await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 500
 - Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
 - Removal guard: the CI canary (`examples/scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) passes only while the rejection exists — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
+
+---
+
+## Idle direct-connection close kills pooled node-postgres clients — first query after idle 500s with "Connection terminated unexpectedly"
+
+**Filed upstream:** [PRO-216](https://linear.app/prisma-company/issue/PRO-216/idle-direct-connection-close-kills-pooled-node-postgres-clients-first) — _"Idle direct-connection close kills pooled node-postgres clients — first query after idle fails with 'Connection terminated unexpectedly'"_
+**Product:** Prisma Postgres idle-close × Prisma Compute scale-to-zero (the FT-5219 family, pooled-client variant)
+**Version:** `pg` 8.21.0 `Pool` (via `@prisma-next/postgres` 0.14.0); PPg direct connection; Prisma Compute (scale-to-zero)
+**First hit:** `examples/store` — the orders service after an idle spell; presented as the storefront rendering Next's error page
+**Cost:** ~1 hour — two separate "the demo URL is down" reports before the service logs were pulled
+
+**Symptom.** A service using a node-postgres `Pool` works right after deploy, then after sitting idle its first DB-backed request fails once with `Connection terminated unexpectedly` (surfaced here as an RPC 500; the consumer's SSR render then 500s). The next request works. No crash loop — just a reliable one-request failure after every idle spell.
+
+**Cause.** Prisma Postgres closes idle direct connections well under 30 s. A pool with a longer idle timeout (`idleTimeoutMillis: 30_000` here) keeps the dead socket checked in and hands it to the next query. Unlike FT-5219's persistent Bun.SQL client the process survives, and unlike FT-5226 the failure surfaces at `query()` time on an already-established connection — so a connect-time retry (`retryTransientConnect` wrapping `pool.connect()`) never engages. The pool's async idle-client `'error'` event is also unhandled by default, which turns the close into a process crash if no `uncaughtException` guard exists.
+
+**Workaround.** Keep the pool's idle timeout under the platform's idle-close window, and attach a pool error handler so the close is logged rather than fatal:
+
+```ts
+const pool = new pg.Pool({ connectionString, idleTimeoutMillis: 5_000 });
+pool.on("error", (err) => console.error("pg pool idle client error", err));
+```
+
+**Reproduction.**
+
+1. Deploy a Compute service holding a module-scope `pg.Pool` (default or 30 s `idleTimeoutMillis`) on a PPg direct connection, with a route that queries.
+2. Hit the route → 200. Let it idle ≥ 30 s.
+3. Hit again → one failure with `Connection terminated unexpectedly`; the following request → 200.
+
+**References.**
+
+- Fix in this repo: `resilientPool` in [`packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts`](packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts) (commit `0088520`)
+- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (same idle-close, persistent Bun.SQL client → 502 loop), [FT-5226](https://linear.app/prisma-company/issue/FT-5226) (same cold/idle family, deploy-time first connect)
+
+---
+
+## Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero
+
+**Filed upstream:** [PRO-217](https://linear.app/prisma-company/issue/PRO-217/service-to-service-http-gets-econnreset-while-the-target-cold-starts) — _"Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero"_
+**Product:** Prisma Compute (ingress / scale-to-zero cold start)
+**Version:** Prisma Compute, Bun `fetch` from a Next.js standalone SSR render; observed 2026-07-13
+**First hit:** `examples/store` — the storefront's SSR calls to the catalog and orders services' `*.ewr.prisma.build` endpoints
+**Cost:** folded into the idle-500 diagnosis above; intermittent enough to first read as "the in-app browser is flaky"
+
+**Symptom.** An HTTP request from one Compute service to another intermittently fails with `ECONNRESET` — Bun reports `The socket connection was closed unexpectedly` with the target service's URL as `path`. It happens on the first request(s) after the target has been idle; a retry moments later succeeds. When the caller is an SSR page fanning out to several services, one reset is enough to 500 the whole page render.
+
+**Cause (observed, mechanism presumed).** The target service had scaled to zero. Instead of the edge holding the connection until the VM finishes booting (which it does do on most cold hits — those requests just take seconds), the connection is sometimes closed mid-establishment during the cold-start window, surfacing as a socket reset to the caller. Warm targets never reset.
+
+**Workaround.** No principled client-side fix for non-idempotent calls (blind retry could double-execute a write). Mitigations:
+
+- retry only requests that never reached the server / are idempotent reads;
+- keep chatty targets warm — a scheduled ping (the `cron` shared module's 30 s trigger) masks the window for whatever it touches;
+- warm the whole app with one request before a demo.
+
+An always-on / min-instances option on Compute services would remove the window; none exists today.
+
+**Reproduction.**
+
+1. Deploy two Compute services, A calling B over HTTP on each request to A.
+2. Let B idle to scale-to-zero.
+3. Hit A repeatedly right as B cold-starts → occasional `ECONNRESET` from A's fetch to B; warm B never resets.
+
+**References.**
+
+- Observed in `storefront` runtime logs (`app logs --project store --app storefront`): `code: 'ECONNRESET', path: 'https://….ewr.prisma.build/rpc/listProducts'`
+- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family)

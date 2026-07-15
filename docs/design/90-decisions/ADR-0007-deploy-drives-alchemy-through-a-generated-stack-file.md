@@ -1,9 +1,5 @@
 # ADR-0007: Deploy drives Alchemy through a generated stack file
 
-## Status
-
-Accepted
-
 ## Decision
 
 `prisma-compose deploy` materializes its work as a small, human-readable stack

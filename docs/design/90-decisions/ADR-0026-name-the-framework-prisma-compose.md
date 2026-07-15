@@ -1,17 +1,5 @@
 # ADR-0026: Name the framework "Prisma Compose"; "Prisma App" names the artifact
 
-## Status
-
-Accepted; the package-family enumeration below is consolidated by
-[ADR-0027](ADR-0027-two-packages-compose-and-compose-prisma-cloud.md) — two
-published packages, with the per-capability names becoming subpaths or internals
-and `compose-alchemy` folding into `compose-prisma-cloud`. Supersedes the
-framework-name, package-family, and CLI decisions of
-[ADR-0014](ADR-0014-one-authoring-primitive.md). With
-[ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) having superseded the
-unit noun, ADR-0014 remains authoritative only for the single-primitive model — one
-authoring construct, no separate `app()`.
-
 ## Decision
 
 The framework is **Prisma Compose**. The thing you build and deploy with it is a

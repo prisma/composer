@@ -1,9 +1,5 @@
 # ADR-0013: Resources are provisioned by modules; dependencies are uniform contract-checked slots
 
-## Status
-
-Accepted
-
 ## Decision
 
 A service declares **dependencies** — one kind of slot, `DependencyEnd`,

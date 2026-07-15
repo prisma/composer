@@ -1,9 +1,5 @@
 # ADR-0008: The boot wrapper inlines everything except runtime built-ins
 
-## Status
-
-Accepted
-
 ## Decision
 
 When assembly bundles the service module into the boot wrapper, it inlines

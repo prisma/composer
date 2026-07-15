@@ -1,9 +1,5 @@
 # ADR-0022: Data deps carry a Prisma Next contract; deploys migrate to its ref
 
-## Status
-
-Proposed
-
 ## Decision
 
 A second data primitive joins bare `postgres()`: a Prisma Next-typed postgres

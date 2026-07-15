@@ -1,0 +1,33 @@
+{
+  "name": "@store/storefront",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/service.ts"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@prisma/compose": "workspace:0.1.0",
+    "@prisma/compose-prisma-cloud": "workspace:0.1.0",
+    "@store/catalog": "workspace:0.1.0",
+    "@store/orders": "workspace:0.1.0",
+    "arktype": "^2.2.3",
+    "next": "^16.2.9",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.13",
+    "@types/node": "^25.9.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

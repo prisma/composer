@@ -1,4 +1,4 @@
-/** Connection resilience helpers shared by the deploy lowerings and the pnPostgres runtime client (FT-5226); no heavy imports, so it's safe in both. */
+/** Connection resilience helpers for Prisma Postgres cold-starts (FT-5226); no heavy imports (no `effect`/`alchemy`/`pg`), so the deploy lowerings, the pnPostgres runtime client, and bun-runnable services (the storage store, via the pure `@internal/prisma-cloud/connection` subpath) all share one implementation. */
 
 /** Network-level socket failures node-postgres surfaces as `err.code`. */
 const TRANSIENT_CODES = new Set([

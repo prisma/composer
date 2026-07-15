@@ -1,0 +1,16 @@
+// use prisma-next
+//
+// catalog's data contract: the menu, and a single-row Special pointing at the
+// current special of the day (the promotions cron job advances it).
+
+model Product {
+  id          String @id
+  name        String
+  description String
+  priceCents  Int
+}
+
+model Special {
+  id        Int    @id
+  productId String
+}

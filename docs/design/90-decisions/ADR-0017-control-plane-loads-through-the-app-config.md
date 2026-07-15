@@ -1,9 +1,5 @@
 # ADR-0017: Control-plane code loads through the app's config file
 
-## Status
-
-Accepted
-
 ## Decision
 
 An application root carries a `prisma-compose.config.ts`. The config statically

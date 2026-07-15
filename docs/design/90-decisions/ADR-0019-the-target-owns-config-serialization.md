@@ -1,9 +1,5 @@
 # ADR-0019: The deploy target owns config serialization
 
-## Status
-
-Proposed
-
 ## Decision
 
 Turning a param's value into stored platform configuration — and back into a

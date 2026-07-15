@@ -10,5 +10,8 @@ export type { HttpClient } from './http.ts';
 export { http } from './http.ts';
 export type { PostgresConfig } from './postgres.ts';
 export { postgres, postgresContract } from './postgres.ts';
+export type { CredentialsConfig, CredentialsContract } from './s3-credentials.ts';
+export { credentialsContract, s3Credentials } from './s3-credentials.ts';
+export { s3StoreService } from './s3-store.ts';
 export { envSecret, secretName } from './secret.ts';
 export { configKey } from './serializer.ts';

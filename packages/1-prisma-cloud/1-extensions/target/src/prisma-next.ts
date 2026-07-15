@@ -148,7 +148,10 @@ function isPnPostgresContract(value: unknown): value is PnPostgresContract {
 function buildClient<C extends PnPostgresContract>(contract: C, url: string): Client<C> {
   return pnPostgresRuntime<PnContractOf<C>>({
     contractJson: contract.__cmp.contractJson,
-    pg: resilientPool(url),
+    // Explicit binding, NOT `pg: pool`: the bare form sniffs the pool with
+    // `instanceof`, which breaks whenever a bundle carries two copies of pg
+    // (the pool from one, the runtime's Pool class from the other).
+    binding: { kind: 'pgPool', pool: resilientPool(url) },
   });
 }
 
@@ -161,8 +164,17 @@ function resilientPool(url: string): pg.Pool {
   const pool = new pg.Pool({
     connectionString: normalizeSslMode(url),
     connectionTimeoutMillis: 20_000,
-    idleTimeoutMillis: 30_000,
+    // Prisma Postgres closes idle direct connections well under 30s
+    // (FT-5219). Discard idle clients first, or the first query after an
+    // idle spell grabs a dead socket and fails with "Connection terminated
+    // unexpectedly" — a 500, since it surfaces at query() time where
+    // retryTransientConnect (which wraps only connect()) can't help.
+    idleTimeoutMillis: 5_000,
   });
+  // The server closing an idle pooled client emits an async 'error' on the
+  // pool; unhandled, that crashes the process. Log it — the pool already
+  // discards the dead client and reconnects on the next acquire.
+  pool.on('error', (err) => console.error('pg pool idle client error', err));
   const acquire = pool.connect.bind(pool);
   pool.connect = blindCast<
     typeof pool.connect,

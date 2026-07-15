@@ -1,9 +1,5 @@
 # ADR-0009: Deploy state is hosted in the workspace, not in local files
 
-## Status
-
-Accepted
-
 ## Decision
 
 Deploy state — the provisioning engine's record of what exists in the cloud —
