@@ -90,7 +90,7 @@ const { prismaCloud } = await import('../control.ts');
 const { compute, envSecret, postgres, postgresContract, s3StoreService } = await import(
   '../index.ts'
 );
-const { module, secret } = await import('@internal/core');
+const { dependency, module, secret, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 
 const run = <A>(eff: Effect.Effect<A, unknown, unknown>): A =>
@@ -369,6 +369,55 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
       expect(result.outputs['port']).toBe(3000);
+    });
+  });
+
+  test('an optional connection param with no provisioned value writes NO env-var row; a provided one still does', async () => {
+    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      // A dependency shaped like rpc()'s post-slice-1 connection: a required
+      // url plus an optional serviceKey the deploy has not provisioned yet.
+      const authDep = dependency({
+        type: 'rpc',
+        connection: {
+          params: { url: string(), serviceKey: string({ optional: true }) },
+          hydrate: (v) => v,
+        },
+      });
+      const node = compute({
+        name: 'test-service',
+        deps: { auth: authDep },
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: 'file:///test/service.ts',
+          entry: 'server.js',
+        },
+      });
+      const ctx = { address: 'consumer', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const provisioned: LoweredNode = {
+        outputs: { serviceId: 'consumer-svc#cloud-id', projectId: 'shop-project#cloud-id' },
+      };
+      // buildConfig resolves url from the wired provider; serviceKey has no value yet.
+      const config = {
+        service: { port: 3000 },
+        inputs: { auth: { url: 'http://auth.internal', serviceKey: undefined } },
+      };
+      const before = recorded.envVar.length;
+
+      run<LoweredNode>(serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config));
+
+      const writes = recorded.envVar.slice(before).map(([, props]) => props);
+      // The provided url still writes its row...
+      expect(writes).toContainEqual({
+        projectId: 'shop-project#cloud-id',
+        key: 'COMPOSE_CONSUMER_AUTH_URL',
+        value: 'http://auth.internal',
+        class: 'production',
+      });
+      // ...but the unprovisioned serviceKey writes none — no "value: Required" at deploy.
+      const writtenKeys = writes.map((p) => (p as { key: string }).key);
+      expect(writtenKeys).not.toContain('COMPOSE_CONSUMER_AUTH_SERVICEKEY');
     });
   });
 

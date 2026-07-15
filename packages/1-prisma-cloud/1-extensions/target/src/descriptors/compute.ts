@@ -41,6 +41,10 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         for (const d of paramEntries(svc)) {
           const value =
             d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
+          // An unprovisioned optional connection param has no value yet — write
+          // no row (boot's coerce() reads a missing var as absent → undefined).
+          // Mirrors stash(), keeping writer and reader consistent.
+          if (value === undefined) continue;
           const key = configKey(address, d);
           records.push(
             yield* Prisma.EnvironmentVariable(`${key}-var`, {
