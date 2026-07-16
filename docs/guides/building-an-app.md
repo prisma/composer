@@ -320,6 +320,31 @@ Standard Schema. Params can have a `default` or be `optional`. Read them with
 Every service gets a reserved `port` param (default 3000); declaring your own
 `port` is an authoring error, caught immediately.
 
+### Binding a param at provision
+
+A `default` is the fallback, not the only source: the `provision()` call can
+bind the value, and the binding wins. A literal configures a service
+per application without touching its code; `envParam('NAME')` sources the
+value from a platform environment variable, per stage — the right channel for
+plain config that differs between production and a preview environment, like
+an app origin:
+
+```ts
+// A literal:
+provision(web, { params: { appOrigin: 'https://example.com' } });
+
+// A per-stage platform variable:
+import { envParam } from '@prisma/composer-prisma-cloud';
+provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
+```
+
+At boot the platform variable's value is handed to the param's schema as a
+raw string, so bind `envParam` to string params. Deploy preflight verifies
+the name exists for the target stage — filling it from the deploying shell's
+environment when absent, failing early with the name otherwise — and changing
+the platform value takes effect on the next deploy. It's still a param: read
+through `config()`, never redacted. Credentials belong in secrets, below.
+
 ## Secrets
 
 Credentials get their own channel, separate from params, with one rule:
@@ -387,8 +412,10 @@ The design record explains *why* the model is shaped this way:
 - [`module-composition.md`](../design/10-domains/module-composition.md) —
   boundaries, forwarding, nesting.
 - [`config-params.md`](../design/10-domains/config-params.md) — the config
-  round trip, and [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
-  for the secrets model.
+  round trip, [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
+  for the secrets model, and
+  [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
+  for provision-time binding and `envParam`.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.
 - [ADR-0005](../design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)

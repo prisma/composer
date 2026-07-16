@@ -92,9 +92,14 @@ prisma-composer destroy module.ts --stage "pr-$PR_NUMBER"   # on close
 ```
 
 One extra: if your app declares secrets (see
-[Building an app § Secrets](building-an-app.md#secrets)), their values are
-provisioned from the deploying shell's environment — so CI must export those
-variables too (e.g. `AUTH_SIGNING_SECRET`), alongside the two credentials.
+[Building an app § Secrets](building-an-app.md#secrets)) or binds params to
+platform variables with `envParam` (see
+[Building an app § Binding a param at provision](building-an-app.md#binding-a-param-at-provision)),
+their values are provisioned from the deploying shell's environment — so CI
+must export those variables too (e.g. `AUTH_SIGNING_SECRET`, `APP_ORIGIN`),
+alongside the two credentials. Each stage keeps its own values: preflight
+fills the target stage's scope, and a name absent from both the platform and
+the shell fails the deploy early, naming it.
 
 ## Production behavior
 

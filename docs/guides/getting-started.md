@@ -324,7 +324,9 @@ itself:
 1. Read the port from `service.config()` instead of `process.env.PORT`, and
    bind `0.0.0.0`.
 2. Replace every `process.env` read with a declared param (values you
-   configure), a secret (credentials — see
+   configure — per stage, if you bind it with `envParam`; see
+   [Building an app § Binding a param at provision](building-an-app.md#binding-a-param-at-provision)),
+   a secret (credentials — see
    [Building an app § Secrets](building-an-app.md#secrets)), or a dependency.
 3. If it talks to Postgres: declare `deps: { db: postgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the

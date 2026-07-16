@@ -46,7 +46,7 @@ Two packages, and only two, appear in your `package.json`:
 | Package | Provides |
 | --- | --- |
 | `@prisma/composer` | Core authoring: `module`, `secret`, params, `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, `/tsdown`, the `prisma-composer` CLI |
-| `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
+| `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
 
 ## Anatomy of a service
 
@@ -363,6 +363,29 @@ Read them with `service.config()` — never `load()`; deps and params are
 separate namespaces. Facets are `default` and `optional`. Every service has a
 reserved `port` param (default 3000); declaring your own `port` is an
 authoring error.
+
+**Binding at provision (ADR-0032).** A param's value doesn't have to be its
+authoring-time `default` — the `provision()` call can bind it, and the
+binding wins:
+
+```ts
+// A literal — per-application config without touching the service:
+provision(web, { params: { appOrigin: 'https://example.com' } });
+
+// A platform env var, per stage — plain config like an app origin that
+// differs between production and a preview stage. Not a secret, not a
+// literal you'd hardcode:
+import { envParam } from '@prisma/composer-prisma-cloud';
+provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
+```
+
+An `envParam` value is read at boot from the named platform variable and
+handed to the param's schema as a **raw string** — so bind it to `string()`
+params (a `number()` schema fails at boot). Deploy preflight checks the name
+exists for the target stage, fills it from the deploy shell when absent, and
+fails early naming it otherwise — same as secrets. Changing the platform
+value needs a redeploy to take effect. Unlike a secret it reads back through
+`config()`, unredacted; use `secret()`/`envSecret` for credentials.
 
 ## Secrets
 
