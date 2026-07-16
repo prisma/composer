@@ -6,6 +6,7 @@ import type {
   AssembleInput,
   Bundle,
   Lowering,
+  ProvisionerDescriptor,
   ServiceLowering,
 } from './deploy.ts';
 import type { Graph } from './graph.ts';
@@ -20,6 +21,8 @@ export interface ExtensionDescriptor {
   readonly id: string;
   /** ONE registry per extension, keyed by node ID. */
   readonly nodes: Record<string, NodeDescriptor>;
+  /** Param provisioners this extension supplies, keyed by need brand (ADR-0031). Core resolves a param's ProvisionNeed against the CONSUMER extension's map. */
+  readonly provisions?: ReadonlyMap<symbol, ProvisionerDescriptor>;
   /** Once-per-lowering hook — the application's shared infrastructure (e.g. prisma-cloud's Project). */
   readonly application?: ApplicationDescriptor;
   /** The extension's Alchemy providers — merged across all configured extensions (config order). */

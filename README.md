@@ -1,19 +1,48 @@
 # Prisma Composer
 
-**Prisma Composer** deploys multi-service TypeScript apps to Prisma Cloud
-from a description you write in TypeScript. You declare each service and what
-it depends on — other services, databases, schedules, secrets — compose them
-into a **Prisma App**, and `prisma-composer deploy` provisions all of it:
-Compute services, Prisma Postgres databases, the wiring between them. There
-is no infrastructure configuration to write or maintain.
+**The fastest, most reliable way to build an app with your agent.** Start from
+scratch and deploy the whole thing — services, databases, and the wiring
+between them — to Prisma Cloud in minutes.
 
-It earns its keep when an app is more than one piece. A lone server is easy
-to deploy anywhere; the work starts when the storefront needs the catalog's
-URL, the catalog needs its database's connection string, the cron job needs
-credentials, and every one of those has to be repeated per environment.
-Composer makes each of those edges a typed declaration and derives the rest.
+Prisma Composer is a TypeScript framework for apps made of more than one
+piece. You declare each service and what it depends on — other services,
+databases, schedules, secrets — compose them into a **Prisma App**, and
+`prisma-composer deploy` provisions all of it. There is no infrastructure
+configuration to write or maintain.
 
-Two rules shape everything:
+## Start with the skill
+
+Composer is built to be driven by an agent, so the first thing to do is give
+your agent the skill:
+
+```sh
+npx skills add prisma/composer --skill prisma-composer
+```
+
+That's the whole setup. Your agent now knows the entire API and arrives
+prepped with the **building blocks** it can snap together — ready-made
+Modules for scheduled jobs, blob storage, and event streams, alongside the
+ones you write. Ask it for what you want ("a Next.js storefront calling an
+orders API with its own Postgres, deployed to a staging stage") and let it
+compose.
+
+Three properties are why this works, rather than producing a plausible app
+that doesn't run:
+
+- **Modules snap together.** A capability arrives as a Module that owns its
+  own internals and exposes a typed port. Adding scheduled jobs or a blob
+  store is a couple of lines of composition — not an integration your agent
+  has to invent.
+- **Everything is typechecked.** A dependency wired to the wrong producer, a
+  missing RPC handler, a config value of the wrong shape — none of it
+  compiles. Your agent's mistakes get caught by `tsc` in seconds, not by a
+  broken deploy ten minutes later.
+- **Deploys are deterministic.** One command, no infrastructure config to
+  hallucinate, and re-running it converges instead of drifting.
+
+The same material, written for humans, is in the [guides](#getting-started).
+
+## Two rules shape everything
 
 - **Your code never reaches for its environment.** No `process.env`, no URLs.
   Every dependency arrives typed, through one call — which is also why any
@@ -119,15 +148,21 @@ Complete, deployable apps under [`examples/`](examples/):
 | [storage](examples/storage/) | The S3-backed blob store module |
 | [streams](examples/streams/) | Durable append-only event streams over storage |
 
-## For agents
+## Building blocks and extensions
 
-A condensed version of the guides ships as an installable agent skill:
+A **Module** is the unit of reuse: it owns its internals and exposes a typed
+port, so composing one is a couple of lines and never an integration you have
+to invent. Three ship inside `@prisma/composer-prisma-cloud` today — `cron`
+(scheduled jobs), `storage` (S3-backed blobs), and `streams` (durable event
+streams) — alongside the Modules you write yourself.
 
-```sh
-npx skills add prisma/composer --skill prisma-composer
-```
+An **extension** is a package that brings its own Modules, resources, or
+deploy target. The convention is an npm package named `prisma-composer-*` —
+that name is how you (and your agent) find one. The ecosystem is new: the
+first-party set above is the whole catalogue today, and it's growing.
 
-See [`skills/`](skills/).
+The agent-facing version of the guides lives in [`skills/`](skills/) and
+installs with `npx skills add prisma/composer --skill prisma-composer`.
 
 ## Design & internals
 

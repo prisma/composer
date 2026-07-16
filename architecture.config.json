@@ -151,6 +151,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/service-keys.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/prisma-next-migrate.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",

@@ -27,11 +27,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma-next/cli": "0.14.0",
-    "@prisma-next/contract": "0.14.0",
-    "@prisma-next/migration-tools": "0.14.0",
-    "@prisma-next/postgres": "0.14.0",
-    "@prisma-next/sql-contract": "0.14.0",
+    "@prisma-next/cli": "0.15.0",
+    "@prisma-next/config-loader": "0.15.0",
+    "@prisma-next/contract": "0.15.0",
+    "@prisma-next/migration-tools": "0.15.0",
+    "@prisma-next/postgres": "0.15.0",
+    "@prisma-next/sql-contract": "0.15.0",
     "@prisma/composer": "workspace:0.1.0",
     "@prisma/management-api-sdk": "^1.47.0",
     "@standard-schema/spec": "^1.1.0",

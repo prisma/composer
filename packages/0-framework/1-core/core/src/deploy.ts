@@ -8,7 +8,7 @@ import * as Layer from 'effect/Layer';
 import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from './app-config.ts';
 import type { Config } from './config.ts';
 import { type Graph, Load, type NodeId } from './graph.ts';
-import type { BuildAdapter, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
+import type { BuildAdapter, ModuleNode, ProvisionNeed, ResourceNode, ServiceNode } from './node.ts';
 
 /** The Layer shape every Alchemy state store must satisfy — what `LowerOptions.state` and `PrismaAppConfig.state` both traffic in. */
 export type AlchemyStateLayer = Layer.Layer<State, never, StackServices>;
@@ -20,6 +20,27 @@ export type AlchemyStateLayer = Layer.Layer<State, never, StackServices>;
  */
 export interface ApplicationDescriptor {
   provision(ctx: LowerContext): Effect.Effect<LoweredNode, unknown, unknown>;
+}
+
+/**
+ * One provisioned param need, resolved against the CONSUMER extension's
+ * `provisions` registry (ADR-0031). `edgeId` — `${consumerAddress}.${input}`
+ * — is the mint's stable resource key, so a provisioner's own resource ids
+ * derive from it and stay stable across redeploys.
+ */
+export interface ProvisionEdge {
+  readonly edgeId: string;
+  readonly consumerAddress: string;
+  readonly providerAddress: string;
+  readonly input: string;
+  /** Opaque; forwarded from the param's declared need. Core never reads its payload. */
+  readonly need: ProvisionNeed;
+}
+
+/** One extension-registered provisioner, keyed by a need's brand (ADR-0031). */
+export interface ProvisionerDescriptor {
+  /** Mints one stable value for one provisioned edge; yields the platform resource, returns an opaque ref core forwards into config. */
+  provision(edge: ProvisionEdge): Effect.Effect<unknown, unknown, unknown>;
 }
 
 /** The phased service SPI — the seam between the phases belongs to CORE. */
@@ -77,6 +98,8 @@ export interface LowerContext {
   readonly application: LoweredNode;
   /** Already-lowered deps (topo order). */
   readonly lowered: ReadonlyMap<NodeId, LoweredNode>;
+  /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
+  readonly provisioned: ReadonlyMap<string, unknown>;
 }
 
 /**
@@ -128,12 +151,19 @@ export class LowerError extends Error {
   }
 }
 
-/** Assembles a service's typed Config from its dependency edges' lowered outputs plus its own param defaults. */
+/**
+ * Assembles a service's typed Config from its dependency edges' lowered
+ * outputs plus its own param defaults. A param carrying a `provision` need
+ * (ADR-0031) sources its value from `provisioned` (keyed by edge id) instead
+ * of the producer's outputs — the framework mints it, the producer hands
+ * nothing over.
+ */
 export function buildConfig(
   node: ServiceNode,
   id: NodeId,
   graph: Graph,
   lowered: ReadonlyMap<NodeId, LoweredNode>,
+  provisioned: ReadonlyMap<string, unknown>,
 ): Config {
   const inputs: Record<string, Record<string, unknown>> = {};
 
@@ -143,8 +173,11 @@ export function buildConfig(
     );
     const producedOutputs = edge !== undefined ? (lowered.get(edge.from)?.outputs ?? {}) : {};
     const values: Record<string, unknown> = {};
-    for (const name of Object.keys(inputNode.connection.params)) {
-      values[name] = producedOutputs[name];
+    for (const [name, param] of Object.entries(inputNode.connection.params)) {
+      values[name] =
+        param.provision !== undefined
+          ? provisioned.get(`${id}.${inputName}`)
+          : producedOutputs[name];
     }
     inputs[inputName] = values;
   }
@@ -192,6 +225,42 @@ function unknownNodeTypeError(extension: ExtensionDescriptor, type: string): Low
   return new LowerError(
     `Extension "${extension.id}" has no descriptor for node type "${type}" ` +
       `(known: ${Object.keys(extension.nodes).join(', ')}).`,
+  );
+}
+
+/** A provisioned param's need brand isn't registered by the consumer's extension (ADR-0031). */
+function unknownProvisionerError(
+  extension: ExtensionDescriptor,
+  brand: symbol,
+  edgeId: string,
+): LowerError {
+  const known =
+    extension.provisions !== undefined && extension.provisions.size > 0
+      ? Array.from(extension.provisions.keys(), String).join(', ')
+      : '(none registered)';
+  return new LowerError(
+    `Extension "${extension.id}" has no provisioner for need "${String(brand)}" ` +
+      `(needed by edge "${edgeId}") (known: ${known}).`,
+  );
+}
+
+/** A provisioned edge whose consumer and provider nodes belong to different extensions (ADR-0031). */
+function crossExtensionProvisionError(edgeId: string): LowerError {
+  return new LowerError(
+    `Provisioned edge "${edgeId}" spans two extensions — cross-extension provisioned edges ` +
+      "aren't supported yet.",
+  );
+}
+
+/**
+ * More than one provisioned param on one connection (ADR-0031). One edge mints
+ * ONE value, keyed by edge id, so a second need on the same connection would
+ * silently receive the first's value under the first's brand.
+ */
+function multipleProvisionedParamsError(edgeId: string, names: readonly string[]): LowerError {
+  return new LowerError(
+    `Connection input "${edgeId}" declares more than one provisioned param ` +
+      `(${names.join(', ')}) — only one provisioned param per connection is supported.`,
   );
 }
 
@@ -258,6 +327,11 @@ export function lowering(
     const graph = Load(root, { id: opts.name });
     const extensions = yield* extensionsById(config);
     const lowered = new Map<NodeId, LoweredNode>();
+    // ADR-0031: every provisioned param value minted this lowering, keyed by
+    // edge id. Populated by the provision phase below (after the application
+    // hooks, before any node), then threaded read-only through every ctx and
+    // into buildConfig — the same declare-then-mutate idiom as `lowered`.
+    const provisioned = new Map<string, unknown>();
 
     // Each extension's application hook runs ONCE, before any node, in config
     // order — its outputs reach that extension's own nodes via ctx.application
@@ -275,8 +349,64 @@ export function lowering(
         opts,
         application: noApplication,
         lowered,
+        provisioned,
       };
       applications.set(descriptor.id, yield* descriptor.application.provision(appCtx));
+    }
+
+    // ADR-0031: resolve every provisioned param's need against its CONSUMER
+    // node's extension, mint the edge's value once, and store it — before any
+    // node is lowered, since a provider's own provision() may already need its
+    // inbound provisioned edges (e.g. RPC's accepted-key set).
+    for (const edge of graph.edges) {
+      if (edge.kind !== 'dependency') continue;
+      const consumer = graph.nodes.find((n) => n.id === edge.to)?.node;
+      if (consumer === undefined || consumer.kind !== 'service') continue;
+      const slot = consumer.inputs[edge.input];
+      if (slot === undefined) continue;
+      const provisionedParams = Object.entries(slot.connection.params).filter(
+        ([, param]) => param.provision !== undefined,
+      );
+      if (provisionedParams.length === 0) continue;
+
+      const edgeId = `${edge.to}.${edge.input}`;
+      // One edge mints ONE value (keyed by edgeId), and buildConfig hands it to
+      // every provisioned param on the connection — so a second need here would
+      // silently take the first's value under the first's brand. Fail instead.
+      if (provisionedParams.length > 1) {
+        return yield* Effect.fail(
+          multipleProvisionedParamsError(
+            edgeId,
+            provisionedParams.map(([name]) => name),
+          ),
+        );
+      }
+      const need = provisionedParams[0]?.[1].provision;
+      if (need === undefined) continue;
+
+      const provider = graph.nodes.find((n) => n.id === edge.from)?.node;
+      if (provider === undefined || (provider.kind !== 'service' && provider.kind !== 'resource')) {
+        continue; // a dependency edge's producer is always a provisioned resource/service
+      }
+      if (consumer.extension !== provider.extension) {
+        return yield* Effect.fail(crossExtensionProvisionError(edgeId));
+      }
+      const extension = extensions.get(consumer.extension);
+      if (extension === undefined) {
+        return yield* Effect.fail(unknownExtensionError(consumer.extension, edge.to));
+      }
+      const provisioner = extension.provisions?.get(need.brand);
+      if (provisioner === undefined) {
+        return yield* Effect.fail(unknownProvisionerError(extension, need.brand, edgeId));
+      }
+      const ref = yield* provisioner.provision({
+        edgeId,
+        consumerAddress: edge.to,
+        providerAddress: edge.from,
+        input: edge.input,
+        need,
+      });
+      provisioned.set(edgeId, ref);
     }
 
     for (const { id, node } of graph.nodes) {
@@ -295,6 +425,7 @@ export function lowering(
         opts,
         application: applications.get(node.extension) ?? noApplication,
         lowered,
+        provisioned,
       };
 
       const descriptor = yield* descriptorFor(extensions, node, id);
@@ -312,9 +443,12 @@ export function lowering(
       }
 
       const service = node as ServiceNode;
-      const provisioned = yield* descriptor.provision(ctx);
-      const typedConfig = buildConfig(service, id, graph, lowered);
-      const serialized = yield* descriptor.serialize(ctx, provisioned, typedConfig);
+      // Named distinctly from the outer `provisioned` map (ADR-0031's minted
+      // param values, keyed by edge id) — this is the per-node provision()
+      // result (e.g. the ComputeService a node is placed into).
+      const provisionedNode = yield* descriptor.provision(ctx);
+      const typedConfig = buildConfig(service, id, graph, lowered, provisioned);
+      const serialized = yield* descriptor.serialize(ctx, provisionedNode, typedConfig);
       const bundle = opts.bundles[id];
       if (bundle === undefined) {
         return yield* Effect.fail(missingBundleError(id));
@@ -323,7 +457,7 @@ export function lowering(
         assembled: { dir: bundle.dir, entry: bundle.entry },
         address: id,
       });
-      lowered.set(id, yield* descriptor.deploy(ctx, provisioned, artifact, serialized));
+      lowered.set(id, yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized));
     }
 
     return { outputs: {} };

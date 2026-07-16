@@ -11,7 +11,7 @@
  * `node:` import — the same discipline `control.ts` already follows by
  * delegating fs/tar to `@internal/lowering` (invariant 5).
  */
-import { loadConfig } from '@prisma-next/cli/config-loader';
+import { loadConfig } from '@prisma-next/config-loader';
 import { resolve } from 'pathe';
 
 /** The absolute migrations directory PN reads authored migration packages from. */

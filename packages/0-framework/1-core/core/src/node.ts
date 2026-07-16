@@ -67,6 +67,42 @@ export function isSecretSource(value: unknown): value is SecretSource {
   );
 }
 
+// A provisioning NEED rides its own brand, symmetric with SECRET_SOURCE
+// (ADR-0031): opaque to core, forwarded to whichever provisioner the
+// CONSUMER extension registers under `need.brand`, and never read here.
+const PROVISION_NEED: unique symbol = blindCast<never, 'unique-symbol brand for a provision need'>(
+  Symbol.for('prisma:provision-need'),
+);
+
+/** A param value the framework mints. Opaque to core: it forwards the payload to the resolved provisioner and never reads it (ADR-0031). */
+export interface ProvisionNeed<T = unknown> {
+  readonly [PROVISION_NEED]: true;
+  /** Selects the provisioner in an extension's `provisions` registry. */
+  readonly brand: symbol;
+  /** Provisioner-defined; core never reads it. */
+  readonly payload: T;
+}
+
+/** Builds an opaque provisioning need — the declaring package's own brand plus whatever payload its provisioner reads back. */
+export function provisionNeed<T = undefined>(brand: symbol, payload?: T): ProvisionNeed<T> {
+  return blindCast<
+    ProvisionNeed<T>,
+    "payload is optional so a zero-arg call (T=undefined) type-checks; the interface's payload field is always present"
+  >(Object.freeze({ [PROVISION_NEED]: true as const, brand, payload }));
+}
+
+/** True if `value` is a provisioning need (a `provisionNeed()` result). */
+export function isProvisionNeed(value: unknown): value is ProvisionNeed {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    blindCast<
+      Record<PropertyKey, unknown>,
+      'reading the provision-need brand off an unknown object'
+    >(value)[PROVISION_NEED] === true
+  );
+}
+
 /** Opaque `Contract<any, any>` bound shared by every node/port type that doesn't care which contract. */
 // biome-ignore lint/suspicious/noExplicitAny: the one alias for this bound — see doc comment.
 export type AnyContract = Contract<any, any>;

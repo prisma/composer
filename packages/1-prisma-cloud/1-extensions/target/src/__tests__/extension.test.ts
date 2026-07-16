@@ -10,9 +10,11 @@ import {
   secret,
   string,
 } from '@internal/core';
+import { RPC_ACCEPTED_KEYS_ENV } from '@internal/rpc';
 import { type } from 'arktype';
 import { compute, postgres, postgresContract } from '../index.ts';
 import { configKey, deserialize, deserializeSecrets, encode, secretKey } from '../serializer.ts';
+import { serviceKeyEnvName } from '../service-keys.ts';
 import { bootstrapService } from '../testing.ts';
 
 function scalarDeclaration(
@@ -408,6 +410,39 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
     expect(portAtBoot).toBe('3000');
+  });
+
+  test('run() re-stashes the address-scoped RPC accepted-keys var address-free (ADR-0030)', async () => {
+    const app = compute({ name: 'auth', deps: {}, build });
+    let seenAtBoot: string | undefined;
+    await withEnv(
+      {
+        [serviceKeyEnvName('auth')]: '["key-a","key-b"]',
+        COMPOSER_AUTH_PORT: '',
+        COMPOSER_PORT: '',
+        [RPC_ACCEPTED_KEYS_ENV]: '',
+      },
+      () =>
+        app.run('auth', async () => {
+          seenAtBoot = process.env[RPC_ACCEPTED_KEYS_ENV];
+        }),
+    );
+    expect(seenAtBoot).toBe('["key-a","key-b"]');
+  });
+
+  test('run() re-stashes nothing when no accepted-keys var was written for this address', async () => {
+    const app = compute({ name: 'plain', deps: {}, build });
+    let seenAtBoot: string | undefined;
+    await withEnv({ COMPOSER_PLAIN_PORT: '', COMPOSER_PORT: '', [RPC_ACCEPTED_KEYS_ENV]: '' }, () =>
+      app.run('plain', async () => {
+        seenAtBoot = process.env[RPC_ACCEPTED_KEYS_ENV];
+      }),
+    );
+    expect(seenAtBoot).toBe('');
+  });
+
+  test("serviceKeyEnvName('') is @internal/rpc's RPC_ACCEPTED_KEYS_ENV — writer and reader cannot drift", () => {
+    expect(serviceKeyEnvName('')).toBe(RPC_ACCEPTED_KEYS_ENV);
   });
 });
 

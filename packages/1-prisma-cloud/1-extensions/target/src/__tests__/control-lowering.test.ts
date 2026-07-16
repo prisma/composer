@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import type { Contract } from '@internal/core';
 import type { LowerContext, LoweredNode } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
@@ -27,6 +28,7 @@ const recorded: {
   svc: Array<[string, unknown]>;
   deploy: Array<[string, unknown]>;
   pkg: Array<[unknown]>;
+  serviceKey: Array<[string, unknown]>;
 } = {
   envVar: [],
   db: [],
@@ -35,11 +37,15 @@ const recorded: {
   svc: [],
   deploy: [],
   pkg: [],
+  serviceKey: [],
 };
 
 mock.module('alchemy/Output', () => ({
   ...RealOutput,
   map: (output: unknown, fn: (v: unknown) => unknown) => fn(output),
+  // Mirrors `map` above: every "output" here is already the resolved value a
+  // mock resource returned, so combining them is just collecting the array.
+  all: (...outs: unknown[]) => outs,
 }));
 
 mock.module('@internal/lowering', () => ({
@@ -48,6 +54,14 @@ mock.module('@internal/lowering', () => ({
   EnvironmentVariable: (id: string, props: { key: string }) => {
     recorded.envVar.push([id, props]);
     return Effect.succeed({ id: `${id}#cloud-id`, key: props.key });
+  },
+  // A real Alchemy Resource (needs the Stack service); stubbed so
+  // application.provision's mint runs purely. The returned "value" is
+  // derived from `id` (which itself carries the edge id), so distinct edges
+  // are distinguishable in assertions.
+  ServiceKey: (id: string, props: unknown) => {
+    recorded.serviceKey.push([id, props]);
+    return Effect.succeed({ value: `key-for-${id}` });
   },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
@@ -90,8 +104,9 @@ const { prismaCloud } = await import('../control.ts');
 const { compute, envSecret, postgres, postgresContract, s3StoreService } = await import(
   '../index.ts'
 );
-const { dependency, module, secret, string } = await import('@internal/core');
+const { dependency, module, provisionNeed, secret, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
+const { RPC_PEER_KEY } = await import('@internal/rpc');
 
 const run = <A>(eff: Effect.Effect<A, unknown, unknown>): A =>
   Effect.runSync(eff as Effect.Effect<A>);
@@ -146,7 +161,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       const before = recorded.envVar.length;
 
       const result = run<LoweredNode>(
-        applicationOf(target).provision({} as unknown as LowerContext),
+        applicationOf(target).provision({ graph: { edges: [] } } as unknown as LowerContext),
       );
 
       expect(result.outputs).toEqual({ projectId: 'shop-project-id' });
@@ -180,7 +195,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       const before = recorded.envVar.length;
 
       const result = run<LoweredNode>(
-        applicationOf(target).provision({} as unknown as LowerContext),
+        applicationOf(target).provision({ graph: { edges: [] } } as unknown as LowerContext),
       );
 
       expect(result.outputs).toEqual({ projectId: 'shop-project-id' });
@@ -329,7 +344,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'auth',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = {
         outputs: { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' },
       };
@@ -394,7 +414,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'consumer', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'consumer',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = {
         outputs: { serviceId: 'consumer-svc#cloud-id', projectId: 'shop-project#cloud-id' },
       };
@@ -444,8 +469,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           secrets: [
             { serviceAddress: 'ingest', slot: 'stripeKey', source: envSecret('STRIPE_SECRET_KEY') },
           ],
+          edges: [],
         };
-        const ctx = { address: 'ingest', node, graph } as unknown as LowerContext;
+        const ctx = {
+          address: 'ingest',
+          node,
+          graph,
+          application: { outputs: {} },
+        } as unknown as LowerContext;
         const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
         const config = { service: { port: 3000 }, inputs: {} };
         const before = recorded.envVar.length;
@@ -481,7 +512,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth3', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'auth3',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
       const config = { service: { port: 3000 }, inputs: {} };
       const before = recorded.envVar.length;
@@ -516,7 +552,12 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           entry: 'server.js',
         },
       });
-      const ctx = { address: 'auth', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'auth',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
       // A port other than the pack default: serialize must carry 8080 through,
       // not silently normalize it back to 3000.
@@ -604,7 +645,12 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = s3StoreService({ name: 'store', deps: {}, build });
-      const ctx = { address: 'store', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'store',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = {
         outputs: { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' },
       };
@@ -632,7 +678,12 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = s3StoreService({ name: 'store', deps: {}, build });
-      const ctx = { address: 'store', node, graph: { secrets: [] } } as unknown as LowerContext;
+      const ctx = {
+        address: 'store',
+        node,
+        graph: { secrets: [], edges: [] },
+        application: { outputs: {} },
+      } as unknown as LowerContext;
       const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
       const serialize = (config: unknown) =>
         run<LoweredNode>(
@@ -799,6 +850,135 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
           value: 'postgres://data-conn',
           class: 'production',
         });
+      },
+    );
+  });
+});
+
+describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (descriptors/compute.ts)', () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  // A fake RPC-shaped Contract (mirrors extension.test.ts's fakeContract) — not
+  // @internal/rpc. Proves the target reacts to the `serviceKey` param's
+  // provision need alone, never to "rpc" by name (ADR-0030's
+  // not-RPC-special-cased promise) — it still carries RPC_PEER_KEY as its
+  // brand, since that's the only brand this target's control.ts registers.
+  const fakeRpcContract: Contract<'rpc', Record<never, never>> = {
+    kind: 'rpc',
+    __cmp: {},
+    satisfies: () => true,
+  };
+  const rpcLikeDep = () =>
+    dependency({
+      type: 'rpc',
+      connection: {
+        params: {
+          url: string(),
+          serviceKey: string({ optional: true, provision: provisionNeed(RPC_PEER_KEY) }),
+        },
+        hydrate: (v) => v,
+      },
+    });
+
+  test("consumer's edge writes its own serviceKey var; the provider's writes the accepted set with that one key", async () => {
+    await withEnv(
+      { PRISMA_PROJECT_ID: 'shop-project#cloud-id', PRISMA_BRANCH_ID: undefined },
+      () => {
+        const target = prismaCloud({ workspaceId: 'ws_1' });
+        const root = module('shop', {}, ({ provision }) => {
+          const auth = provision(
+            compute({ name: 'auth', deps: {}, build, expose: { verify: fakeRpcContract } }),
+            { id: 'auth' },
+          );
+          provision(compute({ name: 'web', deps: { auth: rpcLikeDep() }, build }), {
+            id: 'web',
+            deps: { auth: auth.verify },
+          });
+          return {};
+        });
+        const before = { envVar: recorded.envVar.length, serviceKey: recorded.serviceKey.length };
+
+        run<LoweredNode>(
+          lowering(root, configFor(target), {
+            name: 'shop',
+            bundles: {
+              auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+              web: { dir: 'modules/web/dist/bundle', entry: 'server.js' },
+            },
+          }),
+        );
+
+        // One ServiceKey minted, its id carrying the edge id.
+        expect(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id)).toEqual([
+          'servicekey-web.auth',
+        ]);
+
+        const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
+        expect(writes).toContainEqual({
+          projectId: 'shop-project#cloud-id',
+          key: 'COMPOSER_WEB_AUTH_SERVICEKEY',
+          value: 'key-for-servicekey-web.auth',
+          class: 'production',
+        });
+        expect(writes).toContainEqual({
+          projectId: 'shop-project#cloud-id',
+          key: 'COMPOSER_AUTH_RPC_ACCEPTED_KEYS',
+          value: '["key-for-servicekey-web.auth"]',
+          class: 'production',
+        });
+      },
+    );
+  });
+
+  test('two consumers of one provider mint two distinct edge keys; the accepted set carries both', async () => {
+    await withEnv(
+      { PRISMA_PROJECT_ID: 'shop-project#cloud-id', PRISMA_BRANCH_ID: undefined },
+      () => {
+        const target = prismaCloud({ workspaceId: 'ws_1' });
+        const root = module('shop', {}, ({ provision }) => {
+          const auth = provision(
+            compute({ name: 'auth2', deps: {}, build, expose: { verify: fakeRpcContract } }),
+            { id: 'auth2' },
+          );
+          provision(compute({ name: 'web1', deps: { auth: rpcLikeDep() }, build }), {
+            id: 'web1',
+            deps: { auth: auth.verify },
+          });
+          provision(compute({ name: 'web2', deps: { auth: rpcLikeDep() }, build }), {
+            id: 'web2',
+            deps: { auth: auth.verify },
+          });
+          return {};
+        });
+        const before = recorded.envVar.length;
+
+        run<LoweredNode>(
+          lowering(root, configFor(target), {
+            name: 'shop',
+            bundles: {
+              auth2: { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
+              web1: { dir: 'modules/web1/dist/bundle', entry: 'server.js' },
+              web2: { dir: 'modules/web2/dist/bundle', entry: 'server.js' },
+            },
+          }),
+        );
+
+        const writes = recorded.envVar
+          .slice(before)
+          .map(([, props]) => props as { key: string; value: string });
+        const web1Key = writes.find((w) => w.key === 'COMPOSER_WEB1_AUTH_SERVICEKEY')?.value;
+        const web2Key = writes.find((w) => w.key === 'COMPOSER_WEB2_AUTH_SERVICEKEY')?.value;
+        expect(web1Key).toBeDefined();
+        expect(web2Key).toBeDefined();
+        expect(web1Key).not.toBe(web2Key);
+
+        const acceptedRaw = writes.find((w) => w.key === 'COMPOSER_AUTH2_RPC_ACCEPTED_KEYS')?.value;
+        if (acceptedRaw === undefined) throw new Error('expected an accepted-keys row');
+        expect(JSON.parse(acceptedRaw).sort()).toEqual([web1Key, web2Key].sort());
       },
     );
   });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { configOf, number, provisionManifest, string } from '../config.ts';
 import { Load } from '../graph.ts';
-import { dependency, module, secret, secretSource, service } from '../node.ts';
+import { dependency, module, provisionNeed, secret, secretSource, service } from '../node.ts';
 import { conn, scalarDeclaration } from './helpers.ts';
 
 const build = {
@@ -169,5 +169,44 @@ describe('provisionManifest', () => {
     );
 
     expect(provisionManifest(graph)).toEqual([]);
+  });
+});
+
+describe('provision need (ADR-0031) — opaque to core, carried through by string()/number()/param()', () => {
+  test('is absent by default — no key on the returned ConfigParam', () => {
+    expect(string()).not.toHaveProperty('provision');
+    expect(number()).not.toHaveProperty('provision');
+  });
+
+  test('string({ provision }) carries the need through to the ConfigParam', () => {
+    const need = provisionNeed(Symbol('test-need'));
+    const param = string({ optional: true, provision: need });
+
+    expect(param.provision).toBe(need);
+    expect(param.optional).toBe(true);
+  });
+
+  test('configOf never surfaces provision — it is not part of the enumerable ConfigDeclaration shape', () => {
+    const root = service({
+      name: 'test-service',
+      extension: 'test/pack',
+      type: 'fake/app',
+      inputs: {
+        auth: dependency({
+          name: 'auth',
+          type: 'fake/rpc',
+          connection: conn(
+            {
+              serviceKey: string({ optional: true, provision: provisionNeed(Symbol('test-need')) }),
+            },
+            () => ({}),
+          ),
+        }),
+      },
+      params: {},
+      build,
+    });
+
+    expect(JSON.stringify(configOf(root))).not.toContain('provision');
   });
 });

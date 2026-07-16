@@ -1,8 +1,37 @@
 # Getting started
 
-This guide takes you from an empty directory to a two-service app running on
-Prisma Cloud. Along the way you'll meet every core idea once: a contract, a
-service, a root module, a build, a deploy. At the end there's a section on
+## First: give your agent the skill
+
+Composer is built to be driven by an agent, and this is the whole setup:
+
+```sh
+npx skills add prisma/composer --skill prisma-composer
+```
+
+Your agent now knows the entire API and arrives prepped with the building
+blocks it can compose — the ready-made Modules for scheduled jobs, blob
+storage, and event streams, plus the ones you write. From there you describe
+what you want ("a Next.js storefront calling an orders API with its own
+Postgres, deployed to a staging stage") and it composes the app; you review
+TypeScript, not YAML.
+
+Do this even if you intend to write every line yourself. It costs one command,
+and it stops your agent inventing an API that doesn't exist the first time you
+ask it for help.
+
+It works because of three properties you'll see throughout this guide:
+capabilities arrive as **Modules** that snap together instead of integrations
+you assemble; **the compiler checks the wiring**, so a mistake fails `tsc` in
+seconds rather than a deploy ten minutes later; and **the deploy is
+deterministic** — one command, no infrastructure config, and re-running it
+converges instead of drifting.
+
+## The rest of this guide
+
+The point of what follows is that you can read what your agent writes. It
+takes you from an empty directory to a two-service app running on Prisma
+Cloud, meeting every core idea once: a contract, a service, a root module, a
+build, a deploy. At the end there's a section on
 [porting an app you already have](#porting-an-existing-app).
 
 The app is deliberately tiny — a `quotes` API and a public `gateway` that

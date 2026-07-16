@@ -16,10 +16,20 @@ import {
   lower,
   lowering,
   mergedProviders,
+  type ProvisionEdge,
+  type ProvisionerDescriptor,
   resolveStateLayer,
 } from '../deploy.ts';
 import { Load } from '../graph.ts';
-import { type BuildAdapter, type Deps, dependency, module, resource, service } from '../node.ts';
+import {
+  type BuildAdapter,
+  type Deps,
+  dependency,
+  module,
+  provisionNeed,
+  resource,
+  service,
+} from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
 
 const dbResource = () =>
@@ -97,13 +107,14 @@ type Call =
       readonly environment: unknown;
     };
 
-function fakeExtension() {
+function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor> } = {}) {
   const calls: Call[] = [];
   const descriptor: ExtensionDescriptor = {
     id: 'test/pack',
     providers: () => {
       throw new Error('providers() must not be called by lowering()');
     },
+    ...(opts.provisions !== undefined ? { provisions: opts.provisions } : {}),
     application: {
       provision: (ctx) => {
         calls.push({ phase: 'application', id: ctx.id });
@@ -187,7 +198,7 @@ describe('buildConfig', () => {
     const graph = Load(root);
     const lowered = new Map<string, LoweredNode>([['db', { outputs: { url: 'db://db' } }]]);
 
-    expect(buildConfig(auth, 'auth', graph, lowered)).toEqual({
+    expect(buildConfig(auth, 'auth', graph, lowered, new Map())).toEqual({
       service: { port: 3000 },
       inputs: { db: { url: 'db://db' } },
     });
@@ -202,9 +213,38 @@ describe('buildConfig', () => {
     });
     const graph = Load(root);
 
-    expect(buildConfig(auth, 'auth', graph, new Map())).toEqual({
+    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
       service: {},
       inputs: { db: { url: undefined } },
+    });
+  });
+
+  test("a param carrying a provision need sources its value from `provisioned` (keyed by edge id), not the producer's outputs", () => {
+    const BRAND = Symbol('test-provision-brand');
+    const tokenEnd = () =>
+      dependency({
+        name: 'auth',
+        type: 'fake/rpc',
+        connection: conn(
+          { token: string({ optional: true, provision: provisionNeed(BRAND) }) },
+          () => ({}),
+        ),
+      });
+    const consumer = app('fake/compute', { auth: tokenEnd() });
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(app('fake/compute', {}), { id: 'auth' });
+      h.provision(consumer, { id: 'consumer', deps: { auth: authRef } });
+      return {};
+    });
+    const graph = Load(root);
+    // The producer IS lowered (with some unrelated output), but a provisioned
+    // param must ignore it entirely — its value comes only from `provisioned`.
+    const lowered = new Map<string, LoweredNode>([['auth', { outputs: { token: 'wrong-value' } }]]);
+    const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
+
+    expect(buildConfig(consumer, 'consumer', graph, lowered, provisioned)).toEqual({
+      service: {},
+      inputs: { auth: { token: 'minted-value' } },
     });
   });
 });
@@ -653,6 +693,154 @@ describe('lowering a module root — one resource shared by two consumers', () =
     expect(billingSerialize).toMatchObject({
       config: { inputs: { billingDb: { url: 'db://db' } } },
     });
+  });
+});
+
+describe('provision phase (ADR-0031): resolving a provisioned param against the consumer extension', () => {
+  const PROVISION_BRAND = Symbol('test-provision-brand');
+
+  const tokenEnd = (brand: symbol = PROVISION_BRAND) =>
+    dependency({
+      name: 'auth',
+      type: 'fake/rpc',
+      connection: conn(
+        { token: string({ optional: true, provision: provisionNeed(brand) }) },
+        () => ({}),
+      ),
+    });
+
+  function fakeProvisioner(mint: (edge: ProvisionEdge) => unknown) {
+    const calls: ProvisionEdge[] = [];
+    const descriptor: ProvisionerDescriptor = {
+      provision: (edge) => {
+        calls.push(edge);
+        return Effect.succeed(mint(edge));
+      },
+    };
+    return { descriptor, calls };
+  }
+
+  const provisionBundles = {
+    name: 'shop',
+    bundles: {
+      auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+      consumer: { dir: 'modules/consumer/dist/bundle', entry: 'server.js' },
+    },
+  };
+
+  test("a resolved edge mints once and fills the consumer's param in buildConfig", () => {
+    const provisioner = fakeProvisioner((edge) => `minted:${edge.edgeId}`);
+    const { config, calls } = fakeExtension({
+      provisions: new Map([[PROVISION_BRAND, provisioner.descriptor]]),
+    });
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(app('fake/compute', {}), { id: 'auth' });
+      h.provision(app('fake/compute', { auth: tokenEnd() }), {
+        id: 'consumer',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+
+    run(lowering(root, config, provisionBundles));
+
+    expect(provisioner.calls).toHaveLength(1);
+    expect(provisioner.calls[0]).toMatchObject({
+      edgeId: 'consumer.auth',
+      consumerAddress: 'consumer',
+      providerAddress: 'auth',
+      input: 'auth',
+    });
+    expect(provisioner.calls[0]?.need.brand).toBe(PROVISION_BRAND);
+
+    const consumerSerialize = calls.find((c) => c.phase === 'serialize' && c.id === 'consumer');
+    expect(consumerSerialize).toMatchObject({
+      config: { inputs: { auth: { token: 'minted:consumer.auth' } } },
+    });
+  });
+
+  test('an unregistered brand fails the deploy with a LowerError naming the brand and the edge', () => {
+    const { config } = fakeExtension(); // no provisions map
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(app('fake/compute', {}), { id: 'auth' });
+      h.provision(app('fake/compute', { auth: tokenEnd() }), {
+        id: 'consumer',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+
+    const error = runError(lowering(root, config, provisionBundles));
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain(String(PROVISION_BRAND));
+  });
+
+  test('a provisioned edge spanning two extensions fails with a LowerError naming the edge', () => {
+    const provisioner = fakeProvisioner(() => 'unused');
+    const { config } = fakeExtension({
+      provisions: new Map([[PROVISION_BRAND, provisioner.descriptor]]),
+    });
+    const otherExtensionProducer = service({
+      name: 'auth',
+      extension: 'test/other-pack',
+      type: 'fake/compute',
+      inputs: {},
+      params: {},
+      build: defaultBuild,
+    });
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(otherExtensionProducer, { id: 'auth' });
+      h.provision(app('fake/compute', { auth: tokenEnd() }), {
+        id: 'consumer',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+
+    const error = runError(lowering(root, config, provisionBundles));
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain('cross-extension');
+    expect(provisioner.calls).toHaveLength(0);
+  });
+
+  test("a connection declaring two provisioned params fails with a LowerError naming both — one edge mints one value, so a second need would silently take the first's", () => {
+    const provisioner = fakeProvisioner(() => 'unused');
+    const { config } = fakeExtension({
+      provisions: new Map([[PROVISION_BRAND, provisioner.descriptor]]),
+    });
+    const twoNeedsEnd = () =>
+      dependency({
+        name: 'auth',
+        type: 'fake/rpc',
+        connection: conn(
+          {
+            token: string({ optional: true, provision: provisionNeed(PROVISION_BRAND) }),
+            secondToken: string({ optional: true, provision: provisionNeed(Symbol('other')) }),
+          },
+          () => ({}),
+        ),
+      });
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(app('fake/compute', {}), { id: 'auth' });
+      h.provision(app('fake/compute', { auth: twoNeedsEnd() }), {
+        id: 'consumer',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+
+    const error = runError(lowering(root, config, provisionBundles));
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('consumer.auth');
+    expect(error.message).toContain('token');
+    expect(error.message).toContain('secondToken');
+    // Nothing is minted — the deploy fails before any provisioner runs.
+    expect(provisioner.calls).toHaveLength(0);
   });
 });
 

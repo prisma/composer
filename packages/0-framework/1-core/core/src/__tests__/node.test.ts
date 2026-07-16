@@ -2,7 +2,16 @@ import { describe, expect, test } from 'bun:test';
 import { number, string } from '../config.ts';
 import type { Contract } from '../contract.ts';
 import { Load } from '../graph.ts';
-import { dependency, isNode, module, resource, secret, service } from '../node.ts';
+import {
+  dependency,
+  isNode,
+  isProvisionNeed,
+  module,
+  provisionNeed,
+  resource,
+  secret,
+  service,
+} from '../node.ts';
 import { conn, providerContract } from './helpers.ts';
 
 const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => ({
@@ -364,5 +373,27 @@ describe('module()', () => {
     const graph = Load(node);
     expect(ran).toBe(true);
     expect(graph.nodes.map((n) => n.id)).toEqual(['root']);
+  });
+});
+
+describe('provisionNeed() / isProvisionNeed() (ADR-0031)', () => {
+  test('provisionNeed builds a branded need; plain values and other brands are not one', () => {
+    expect(isProvisionNeed(provisionNeed(Symbol('test-need')))).toBe(true);
+    expect(isProvisionNeed({})).toBe(false);
+    expect(isProvisionNeed(undefined)).toBe(false);
+  });
+
+  test('the brand and payload round-trip untouched — core never reads or transforms the payload', () => {
+    const brand = Symbol('test-need');
+    const need = provisionNeed(brand, { arbitrary: 'shape' });
+
+    expect(need.brand).toBe(brand);
+    expect(need.payload).toEqual({ arbitrary: 'shape' });
+  });
+
+  test('payload defaults to undefined when omitted', () => {
+    const need = provisionNeed(Symbol('test-need'));
+
+    expect(need.payload).toBeUndefined();
   });
 });

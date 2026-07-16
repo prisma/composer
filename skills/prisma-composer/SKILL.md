@@ -4,15 +4,17 @@ description: >-
   How to write, test, and deploy an app with Prisma Composer
   (`@prisma/composer`): declare services with `compute()` and typed
   dependencies, define RPC contracts, compose Modules, read config and
-  secrets, use the shared cron/storage/streams modules, test with
+  secrets, compose the ready-made cron/storage/streams Modules, find
+  extensions (npm packages named `prisma-composer-*`), test with
   `mockService`/`bootstrapService`, and deploy with `prisma-composer deploy`
   (stages, destroy). Use when building a Prisma App, wiring a service
-  dependency, adding a Postgres database, writing tests for composed
-  services, or deploying/tearing down an environment. Triggers on
+  dependency, adding a Postgres database, adding scheduled jobs / blob
+  storage / event streams, writing tests for composed services, or
+  deploying/tearing down an environment. Triggers on
   "prisma composer", "@prisma/composer", "prisma app", "compute()",
   "service.load()", "module()", "contract()", "mockService",
   "bootstrapService", "prisma-composer deploy", "--stage",
-  "prisma-composer destroy".
+  "prisma-composer destroy", "prisma-composer-".
 ---
 
 # Writing apps with Prisma Composer
@@ -29,6 +31,15 @@ from exactly one place — the service node:
 The framework never bundles or transforms your code. You build your app
 (`tsdown`, `next build`); `prisma-composer deploy` assembles the built output
 and provisions it on Prisma Cloud (Compute + Prisma Postgres).
+
+Two things make building here fast and hard to get wrong — lean on both:
+
+- **Compose before you write.** Reach for an existing Module (below) before
+  implementing a capability yourself; wiring one in is a couple of lines.
+- **The compiler checks the wiring.** A dependency wired to the wrong
+  producer, a missing RPC handler, a config value of the wrong shape — all of
+  it fails `tsc`, not the deploy. Typecheck, then build, then deploy; don't
+  reach for the cloud to find out whether the app is correct.
 
 Two packages, and only two, appear in your `package.json`:
 
@@ -265,15 +276,25 @@ it an explicit `id`.
 A module can also declare boundary `deps` — inputs the parent wires exactly as
 it would wire a service's. The consumer never sees the module's internals.
 
-### Shared modules
+### The building blocks you can compose
 
-First-party Modules ship under `@prisma/composer-prisma-cloud`:
+Modules are the building blocks: provision one, wire its exposed port, and
+you're done — you never reimplement what a Module already owns. The
+first-party set ships inside `@prisma/composer-prisma-cloud`. It's small, and
+growing:
 
 | Import | What it provisions | Exposes |
 | --- | --- | --- |
 | `cron` from `/cron` | An always-on scheduler firing your schedule at your runner service | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
+
+**Finding more.** A Composer extension — a package that brings its own
+Modules, resources, or deploy target — is published on npm under the name
+`prisma-composer-*`. That name is the convention, so it's how you look for
+one. The ecosystem is new: today the blocks above plus the app Modules you
+write are the whole set, so don't reach for a `prisma-composer-*` package
+without checking that it actually exists on npm first.
 
 Cron end to end — the schedule is one source of truth; `serveSchedule` is
 exhaustive over its job ids at compile time:

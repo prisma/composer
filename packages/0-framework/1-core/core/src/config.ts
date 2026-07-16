@@ -12,7 +12,7 @@
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Graph, SecretBinding } from './graph-types.ts';
-import type { ServiceNode } from './node.ts';
+import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
  * A declared config param — pure data: a caller-owned Standard Schema
@@ -26,6 +26,13 @@ export interface ConfigParam<S extends StandardSchemaV1 = StandardSchemaV1> {
   readonly schema: S;
   readonly optional?: boolean;
   readonly default?: StandardSchemaV1.InferOutput<S>;
+  /**
+   * A framework-minted value (ADR-0031): core resolves `provision.brand`
+   * against the consumer extension's `provisions` registry and mints this
+   * param's value per dependency edge. Opaque — core forwards the need and
+   * never reads its payload.
+   */
+  readonly provision?: ProvisionNeed;
 }
 
 export type Params = Record<string, ConfigParam>;
@@ -175,6 +182,7 @@ const numberSchema = scalarSchema<number>(
 export interface ParamOptions<T> {
   readonly optional?: boolean;
   readonly default?: T;
+  readonly provision?: ProvisionNeed;
 }
 
 function withFacets<S extends StandardSchemaV1>(
@@ -185,6 +193,7 @@ function withFacets<S extends StandardSchemaV1>(
     schema,
     ...(opts.optional !== undefined ? { optional: opts.optional } : {}),
     ...(opts.default !== undefined ? { default: opts.default } : {}),
+    ...(opts.provision !== undefined ? { provision: opts.provision } : {}),
   };
 }
 

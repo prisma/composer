@@ -195,7 +195,11 @@ three characters (call a database `'database'`, not `'db'` — the wiring key
 on the service side can still be `db`), and ids must be unique within their
 module.
 
-## The modules that ship with the framework
+## The building blocks that ship with the framework
+
+These are the Modules you compose instead of building the capability
+yourself. Each owns its internals and hands you a typed port, so adding one
+is a couple of lines:
 
 | Import | What you get | Exposes |
 | --- | --- | --- |
@@ -243,6 +247,19 @@ provision(cron({ schedule, runner: promotionsService }), {
 [`examples/storage`](../../examples/storage/) and
 [`examples/streams`](../../examples/streams/) show the other two, including
 the streams module's secret binding.
+
+### Where new blocks come from
+
+An **extension** is a package that brings its own Modules, resources, or
+deploy target — the same mechanism `@prisma/composer-prisma-cloud` itself
+uses. The convention is an npm package named `prisma-composer-*`, which is
+how you and your agent find one; an extension is installed like any
+dependency and enters the deploy through the `extensions` array in
+`prisma-composer.config.ts`.
+
+The ecosystem is new. Today the three Modules above plus the ones you write
+are the whole set, so treat `prisma-composer-*` as the place to look rather
+than a catalogue that already has what you need.
 
 ## Config params
 
