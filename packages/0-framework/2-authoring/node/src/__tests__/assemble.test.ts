@@ -27,6 +27,27 @@ function moduleUrl(serviceDir: string): string {
   return pathToFileURL(path.join(serviceDir, 'src', 'service.ts')).href;
 }
 
+/**
+ * Installs a real, resolvable package into the service dir's own node_modules,
+ * so a bare specifier for it resolves the way it would in a real service
+ * package. Returns a marker string the built wrapper contains iff the package
+ * was inlined.
+ */
+function installFixturePackage(serviceDir: string, name: string): string {
+  const marker = `INLINED_MARKER_${name.replace(/[^a-z0-9]/gi, '_').toUpperCase()}`;
+  const pkgDir = path.join(serviceDir, 'node_modules', name);
+  fs.mkdirSync(pkgDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(pkgDir, 'package.json'),
+    JSON.stringify({ name, version: '1.0.0', type: 'module', main: 'index.js' }),
+  );
+  fs.writeFileSync(
+    path.join(pkgDir, 'index.js'),
+    `export const marker = ${JSON.stringify(marker)};\n`,
+  );
+  return marker;
+}
+
 afterEach(() => {
   while (tmpDirs.length > 0) {
     const dir = tmpDirs.pop();
@@ -154,5 +175,100 @@ describe('assemble()', () => {
     expect(result.entry).toBe('bundle/scheduler-entrypoint.js');
     expect(fs.existsSync(path.join(result.dir, 'main.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(result.dir, 'bundle', 'scheduler-entrypoint.js'))).toBe(true);
+  }, 20_000);
+
+  test('fails assembly when the service module imports something the wrapper cannot resolve — no main.mjs emitted', async () => {
+    // ADR-0008: the wrapper inlines every import except bun/bun:*/node:*. A
+    // wrapper build that can't resolve one of those imports must fail loudly
+    // rather than emit a wrapper that dies at boot.
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    const address = 'shop.storefront';
+    fs.mkdirSync(path.join(serviceDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, 'dist', 'server.js'), 'export default "app-entry";\n');
+    fs.writeFileSync(
+      path.join(serviceDir, 'src', 'service.ts'),
+      "import { thing } from 'totally-unresolvable-package-xyz';\nexport default { hello: thing };\n",
+    );
+
+    const workDir = path.join(cwd, '.prisma-composer', 'artifacts', address);
+
+    await expect(
+      assemble({
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: moduleUrl(serviceDir),
+          entry: '../dist/server.js',
+        },
+        address,
+        cwd,
+      }),
+    ).rejects.toThrow(/Could not resolve/);
+
+    expect(fs.existsSync(path.join(workDir, 'main.mjs'))).toBe(false);
+  }, 20_000);
+
+  test('the wrapper externalizes only runtime built-ins and inlines everything else (ADR-0008)', async () => {
+    // ADR-0008's core property, asserted against a real build: `bun`, `bun:*`
+    // and `node:*` resolve inside the deploy VM and must stay external;
+    // everything else must be inlined, because the artifact's node_modules
+    // holds only what the app's OWN build traced.
+    //
+    // `bunyan-ish` is the case that matters most here. A bare package whose
+    // name merely STARTS with "bun" is not a runtime module, so it must
+    // inline. Widening
+    // the external list to a prefix match (`['bun*']`) would silently
+    // externalize it — the build still succeeds and every other assertion here
+    // still holds, so this is the only one that catches that regression. It
+    // fails at boot, which is the exact bug this wrapper build exists to
+    // prevent.
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    const address = 'shop.storefront';
+    fs.mkdirSync(path.join(serviceDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, 'dist', 'server.js'), 'export default "app-entry";\n');
+
+    const bunPrefixedMarker = installFixturePackage(serviceDir, 'bunyan-ish');
+    const plainMarker = installFixturePackage(serviceDir, 'plain-dep');
+    fs.writeFileSync(
+      path.join(serviceDir, 'src', 'service.ts'),
+      [
+        "import { readFileSync } from 'node:fs';",
+        "import { SQL } from 'bun';",
+        "import { Database } from 'bun:sqlite';",
+        "import { marker as bunPrefixed } from 'bunyan-ish';",
+        "import { marker as plain } from 'plain-dep';",
+        'export default { readFileSync, SQL, Database, bunPrefixed, plain };',
+      ].join('\n'),
+    );
+
+    const result = await assemble({
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.js',
+      },
+      address,
+      cwd,
+    });
+
+    const wrapper = fs.readFileSync(path.join(result.dir, 'main.mjs'), 'utf8');
+    const importsExternally = (specifier: string): boolean =>
+      new RegExp(`from\\s*["']${specifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["']`).test(
+        wrapper,
+      );
+
+    // The runtime provides these — they must survive as real imports.
+    expect(importsExternally('node:fs')).toBe(true);
+    expect(importsExternally('bun')).toBe(true);
+    expect(importsExternally('bun:sqlite')).toBe(true);
+
+    // Everything else must be inlined: contents present, no bare import left.
+    expect(wrapper).toContain(bunPrefixedMarker);
+    expect(importsExternally('bunyan-ish')).toBe(false);
+    expect(wrapper).toContain(plainMarker);
+    expect(importsExternally('plain-dep')).toBe(false);
   }, 20_000);
 });

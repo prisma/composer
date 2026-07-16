@@ -36,6 +36,7 @@
     "c12": "^3.3.4",
     "clipanion": "^3.2.1",
     "effect": "4.0.0-beta.93",
+    "esbuild": "^0.28.1",
     "postgres": "^3.4.9",
     "@prisma/management-api-sdk": "^1.47.0",
     "tsdown": "^0.22.4"

@@ -3,7 +3,6 @@ import type { Graph, GraphNode, ServiceNode } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import type { Bundle } from '@internal/core/deploy';
 import { AssembleError } from './assemble-error.ts';
-import { INLINE_EVERYTHING_EXCEPT_RUNTIME_BUILTINS } from './wrapper-inline.ts';
 
 export interface AssembledServices {
   /** One bundle per provisioned service, keyed by the service's full hierarchical address (its graph id). */
@@ -48,7 +47,6 @@ function buildControlAssemble(
   }
   return control.assemble({
     build: node.build,
-    wrapperNoExternal: INLINE_EVERYTHING_EXCEPT_RUNTIME_BUILTINS,
     address,
     cwd,
   });

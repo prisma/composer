@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
-import { build } from 'tsdown';
+import { build } from 'esbuild';
 import type { NextjsBuildAdapter } from './index.ts';
 
 export type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -129,22 +129,16 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // ESM). run()'s `import("./bundle/<server>")` resolves from here.
   const serviceModule = fileURLToPath(buildDescriptor.module);
   await build({
-    entry: { main: serviceModule },
-    outDir: workDir,
+    entryPoints: { main: serviceModule },
+    outdir: workDir,
+    bundle: true,
     format: 'esm',
     platform: 'node',
-    external: ['bun'],
-    noExternal: [/^@prisma\//, ...(input.wrapperNoExternal ?? [])],
-    dts: false,
-    sourcemap: false,
-    clean: false,
-    // Do NOT auto-load this package's tsdown.config.ts: its `exports`
-    // management would rewrite this package's package.json to the throwaway
-    // bundle dir, corrupting resolution of @prisma/composer/nextjs afterward.
-    config: false,
+    external: ['bun', 'bun:*'],
+    outExtension: { '.js': '.mjs' },
   });
   if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
-    throw new Error(`tsdown produced no main.mjs in ${workDir}`);
+    throw new Error(`esbuild produced no main.mjs in ${workDir}`);
   }
 
   return {

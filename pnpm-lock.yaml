@@ -490,9 +490,9 @@ importers:
       '@internal/core':
         specifier: workspace:0.1.0
         version: link:../../1-core/core
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.1.0
@@ -503,6 +503,9 @@ importers:
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.5
+      tsdown:
+        specifier: ^0.22.4
+        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -512,9 +515,9 @@ importers:
       '@internal/core':
         specifier: workspace:0.1.0
         version: link:../../1-core/core
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.1.0
@@ -525,6 +528,9 @@ importers:
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.5
+      tsdown:
+        specifier: ^0.22.4
+        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -866,6 +872,9 @@ importers:
       effect:
         specifier: 4.0.0-beta.93
         version: 4.0.0-beta.93
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
       postgres:
         specifier: ^3.4.9
         version: 3.4.9

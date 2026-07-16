@@ -5,7 +5,7 @@
  * and adds the framework's boot wrapper — it never bundles or transforms the
  * app's code.
  *
- * The wrapper is a SEPARATE tsdown build of the service module (declarations
+ * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
  * working-dir root — a dictated name (object entry `{ main }`), not a
  * discovered one. run() and the app entry must be independent module instances
@@ -21,7 +21,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
-import { build } from 'tsdown';
+import { build } from 'esbuild';
 
 export type { AssembleInput, Bundle } from '@internal/core/deploy';
 
@@ -55,24 +55,16 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(workDir, { recursive: true });
 
   await build({
-    entry: { main: serviceModule },
-    outDir: workDir,
+    entryPoints: { main: serviceModule },
+    outdir: workDir,
+    bundle: true,
     format: 'esm',
     platform: 'node',
-    external: ['bun'],
-    noExternal: [/^@prisma\//, ...(input.wrapperNoExternal ?? [])],
-    dts: false,
-    sourcemap: false,
-    clean: false,
-    // Self-contained runtime bundle: do NOT auto-load a discovered
-    // `tsdown.config.ts`. This package's build config enables tsdown's
-    // `exports` management, which would rewrite THIS package's package.json
-    // `exports` to point at the throwaway bundle dir — corrupting resolution
-    // of `@prisma/composer/node` for everything that imports it afterward.
-    config: false,
+    external: ['bun', 'bun:*'],
+    outExtension: { '.js': '.mjs' },
   });
   if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
-    throw new Error(`tsdown produced no main.mjs in ${workDir}`);
+    throw new Error(`esbuild produced no main.mjs in ${workDir}`);
   }
 
   const entryFile = path.basename(entryPath);

@@ -47,7 +47,7 @@ describe('runtime-portability invariant: no package source may assume the bun ru
     expect(sources.length).toBeGreaterThan(0);
 
     // Import/require syntax only — a config array like `external: ['bun']`
-    // (tsdown's runtime-external list, e.g. in the assemble entries) is data,
+    // (esbuild's runtime-external list, e.g. in the assemble entries) is data,
     // not an import, and must not trip this.
     const importPattern = /(from\s+|import\s*\(\s*|require\s*\(\s*)["'](bun|bun:[^"']*)["']/;
     for (const { file, text } of sources) {
