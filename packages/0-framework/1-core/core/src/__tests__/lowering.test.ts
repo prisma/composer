@@ -305,7 +305,10 @@ describe('buildConfig — provision-time param binding', () => {
     });
     const graph = Load(root);
 
-    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({ service: {}, inputs: {} });
+    expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+      service: {},
+      inputs: {},
+    });
   });
 
   test('a ParamSource binding flows through to Config.service opaquely — buildConfig never validates it against the schema (the target resolves and validates at boot)', () => {
@@ -333,6 +336,30 @@ describe('buildConfig — provision-time param binding', () => {
 
     expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(LowerError);
     expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/"port"/);
+  });
+
+  test('a param claiming BOTH a provision need and a provision-time binding is a LowerError naming the param and both sources', () => {
+    const brand = Symbol.for('test:both-sources');
+    const auth = app('fake/compute', {}, { token: string({ provision: provisionNeed(brand) }) });
+    const asSource = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth', params: { token: paramSource('TOKEN_VAR') } });
+      return {};
+    });
+    const asLiteral = module('shop', {}, (h) => {
+      h.provision(auth, { id: 'auth', params: { token: 'literal-token' } });
+      return {};
+    });
+
+    const sourceGraph = Load(asSource);
+    expect(() => buildConfig(auth, 'auth', sourceGraph, new Map(), new Map())).toThrow(LowerError);
+    expect(() => buildConfig(auth, 'auth', sourceGraph, new Map(), new Map())).toThrow(
+      /"token".*two sources.*a param source.*test:both-sources/,
+    );
+
+    const literalGraph = Load(asLiteral);
+    expect(() => buildConfig(auth, 'auth', literalGraph, new Map(), new Map())).toThrow(
+      /"token".*two sources.*a literal value.*test:both-sources/,
+    );
   });
 });
 
