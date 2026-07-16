@@ -281,6 +281,7 @@ export interface ModuleNode<
   /** Declared param-forwarding slots (authored as `params`) — forwarded to internals via `ctx.params`, the same rail secrets ride on. */
   readonly paramSlots: PN;
   readonly expose: E;
+  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   body(ctx: ModuleContext<D, S, PN>): ModuleOutputs<E> | void;
 }
 
@@ -673,6 +674,7 @@ export function module<
 >(
   name: string,
   boundary: { deps?: D; secrets?: S; params?: PN; expose?: E },
+  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   body: (ctx: ModuleContext<D, S, PN>) => ModuleOutputs<E> | void,
 ): ModuleNode<D, E, S, PN>;
 /**
@@ -684,6 +686,7 @@ export function module(
   boundaryOrBody:
     | { deps?: Deps; secrets?: Secrets; params?: ParamNeeds; expose?: Expose }
     | ((ctx: ModuleContext<Deps>) => void),
+  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   maybeBody?: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void,
 ): ModuleNode {
   requireName(name, 'module');
@@ -693,6 +696,7 @@ export function module(
   const secretSlots = frozenShallowCopy(boundary.secrets ?? {});
   const paramSlots = frozenShallowCopy(boundary.params ?? {});
   const expose = frozenShallowCopy(boundary.expose ?? {});
+  // biome-ignore lint/suspicious/noConfusingVoidType: void accepts bodies with no return statement; undefined would reject them.
   const body: (ctx: ModuleContext<Deps>) => ModuleOutputs<Expose> | void = closedRoot
     ? (ctx) => {
         boundaryOrBody(ctx);
