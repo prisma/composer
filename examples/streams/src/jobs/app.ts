@@ -71,8 +71,12 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
   const append = async (req: Request): Promise<Response> => {
     await ensureStream();
     const event = await req.json();
-    // Not retried: a repeated append could double-write. ensureStream() above
-    // has already waited out a cold instance, so this call meets a warm one.
+    // Appends are not retried: without an idempotency key, a failed request is
+    // indistinguishable from one that applied, so retrying risks duplicate
+    // events (gotchas.md, PRO-217). The first append is shielded by the retried
+    // PUT above; a later one can still meet a cold service and surface 502 —
+    // the caller retries, because only it knows whether a duplicate is
+    // acceptable.
     const res = await fetch(base, json({ method: 'POST', body: JSON.stringify([event]) }));
     if (!res.ok) return new Response(`append failed: ${res.status}`, { status: 502 });
     return Response.json({ appended: event }, { status: 201 });
