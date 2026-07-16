@@ -35,7 +35,10 @@ function childEnv(): NodeJS.ProcessEnv {
     COMPOSER_STORE_ACCESSKEYID: 'local',
     COMPOSER_STORE_SECRETACCESSKEY: 'local-secret',
     COMPOSER_PORT: JSON.stringify(port),
-    COMPOSER_CREDENTIALS_APIKEY: API_KEY,
+    // The target lands the provisioned key address-scoped and compute's `run`
+    // re-stashes it address-free; this child boots the entrypoint directly, so
+    // it sets the address-free name the entrypoint reads.
+    COMPOSER_STREAMS_API_KEY: API_KEY,
     DS_ROOT: dsRoot,
     DS_HOST: '127.0.0.1',
     // Seal + upload fast so durability is observable within the test.

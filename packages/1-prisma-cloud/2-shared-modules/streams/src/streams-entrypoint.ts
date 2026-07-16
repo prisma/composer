@@ -4,14 +4,29 @@
 // recovery, bearer-key auth) is the production server, unmodified. Deployment
 // defaults follow open-chat's production streams app.
 import { existsSync } from 'node:fs';
+import { STREAMS_API_KEY_ENV } from '@internal/prisma-cloud';
 import { streamsService } from './streams-service.ts';
 
 const service = streamsService();
 
-const { store, credentials } = service.load();
+const { store } = service.load();
 const { port } = service.config();
 
-process.env['API_KEY'] = credentials.apiKey;
+// The bearer key is minted per streams module by the target's registered
+// provisioner and landed here (ADR-0031/ADR-0019); compute's `run` re-stashes
+// it address-free. It exists only if at least one consumer declared a
+// `durableStreams()` dependency — the need lives on that edge. No consumers
+// means no key, and the only thing this server could do without one is serve
+// every endpoint unauthenticated. Refuse to boot instead, naming the cause.
+const apiKey = process.env[STREAMS_API_KEY_ENV];
+if (apiKey === undefined || apiKey === '') {
+  throw new Error(
+    'streams: no bearer key was provisioned for this module — nothing declares a ' +
+      'durableStreams() dependency on it, so the key that authenticates its API was never ' +
+      "minted. Wire a consumer to the module's `streams` port, or remove the module.",
+  );
+}
+process.env['API_KEY'] = apiKey;
 process.env['PORT'] = String(port);
 // Bind beyond loopback so the Compute router can reach the server.
 process.env['DS_HOST'] ??= '0.0.0.0';

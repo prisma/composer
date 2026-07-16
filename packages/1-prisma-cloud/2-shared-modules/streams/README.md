@@ -3,10 +3,9 @@
 Durable append-only event streams as a Prisma Composer module. It wraps the
 production `@prisma/streams-server` runtime (npm, unmodified) as a Compute
 service behind a typed boundary: the module's `store` dependency takes a
-`storage()` module's port as its durable tier, the bearer key is minted at
-deploy inside the module, and it exposes a single `streams` port. Consumers
-get a `{ url, apiKey }` binding and speak the **Durable Streams HTTP
-protocol** directly.
+`storage()` module's port as its durable tier, and it exposes a single
+`streams` port. Consumers get a `{ url, apiKey }` binding — the key minted by
+the deploy — and speak the **Durable Streams HTTP protocol** directly.
 
 Ships as the `@prisma/composer-prisma-cloud/streams` subpath (like `/storage`).
 
@@ -35,24 +34,27 @@ surface:
 Offsets are **opaque cursors**, not numeric indices: take them from the
 `stream-next-offset` response header and pass them back verbatim.
 
-**Auth rides the binding.** The bearer key is a deploy-minted capability
-token (ADR-0030), not an ADR-0029 secret: the framework mints it once at
-deploy, keeps it stable in deploy state, and delivers it to consumers on the
-same rail as the URL — no secret slot to declare, nothing to bind at the
-root. Every endpoint, including `/health`, requires
-`Authorization: Bearer <key>`.
+**Auth rides the binding.** The bearer key is not an ADR-0029 secret (there
+is no external value to bind) and not a producer output. The `apiKey`
+connection param declares an [ADR-0031](../../../../docs/design/90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)
+**provisioning need**: the deploy target mints the value, keeps it stable in
+deploy state, and fills the param like any other input. Declaring a
+`durableStreams()` dependency is the whole of the wiring — there is no secret
+slot and nothing to bind at the root. Every endpoint, including `/health`,
+requires `Authorization: Bearer <key>`.
 
-One key per module instance: the upstream server authenticates a single
-`API_KEY`, so every consumer of a `streams()` instance holds the same key.
-Per-edge keys are minted per consumer→provider edge (ADR-0031's
-`ProvisionNeed`/`provisions` registry, shipped for RPC), which cannot apply
-until the upstream server accepts a key set. The migration path when it
-does: an accepted-key-set PR to `@prisma/streams-server` (mirroring what RPC's
-`serve()` gained), swap `durableStreams()`'s `apiKey` param to a
-`ProvisionNeed` with a registered streams provisioner whose provider-side
-landing feeds the accepted set, then delete the module-level mint
-([ADR-0031](../../../../docs/design/90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md);
-recorded in design-notes.md).
+Two consequences worth knowing:
+
+- **One key per streams module.** The provisioner mints per provider, not per
+  edge, because `@prisma/streams-server` authenticates a single `API_KEY` —
+  every consumer of one `streams()` instance holds the same value. Cardinality
+  is provisioner policy (ADR-0031), so per-edge keys are later a change of
+  that policy plus an accepted-set landing once the upstream server takes a
+  key set: no resource to add, no core change, nothing here to delete.
+- **No consumers, no key.** The need lives on the consumer's edge, so a
+  `streams()` module nothing depends on never gets a key minted, and its
+  server refuses to boot rather than serve unauthenticated. Wire a consumer,
+  or drop the module.
 
 ## Wiring
 
@@ -74,7 +76,8 @@ export default module('my-app', ({ provision }) => {
 ```
 
 ```ts
-// src/worker/service.ts — the consumer
+// src/worker/service.ts — the consumer. Declaring the dependency is what
+// causes the key to be minted; nothing names it.
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
 import { durableStreams } from '@prisma/composer-prisma-cloud/streams';
@@ -110,8 +113,9 @@ const next = await fetch(
 ```
 
 [`examples/streams`](../../../../examples/streams) is the worked example — the
-module deployed to Prisma Cloud with `storage()` as its tier, plus a local
-integration test and a deployed consumer smoke script.
+module deployed to Prisma Cloud with `storage()` as its tier and a `jobs`
+service consuming the binding, plus local integration tests and a deployed
+consumer smoke script.
 
 ## Local development
 

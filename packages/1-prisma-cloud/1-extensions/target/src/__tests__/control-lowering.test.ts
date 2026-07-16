@@ -101,18 +101,13 @@ mock.module('../pg-warm-resource.ts', () => ({
 }));
 
 const { prismaCloud } = await import('../control.ts');
-const {
-  compute,
-  envParam,
-  envSecret,
-  postgres,
-  postgresContract,
-  s3StoreService,
-  streamsCompute,
-} = await import('../index.ts');
+const { compute, envParam, envSecret, postgres, postgresContract, s3StoreService } = await import(
+  '../index.ts'
+);
 const { dependency, module, provisionNeed, secret, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/rpc');
+const { STREAMS_API_KEY } = await import('../streams-keys.ts');
 
 const run = <A>(eff: Effect.Effect<A, unknown, unknown>): A =>
   Effect.runSync(eff as Effect.Effect<A>);
@@ -886,114 +881,6 @@ describe('s3StoreService() authoring factory', () => {
   });
 });
 
-describe("prismaCloud().nodes['streams'] — the service descriptor surfacing the minted bearer key", () => {
-  const build = {
-    extension: '@prisma/composer/node',
-    type: 'node',
-    module: 'file:///test/service.ts',
-    entry: 'server.js',
-  };
-
-  test('serialize surfaces the wired bearer key alongside compute env writes', async () => {
-    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = streamsCompute({ name: 'streams', deps: {}, build });
-      const ctx = {
-        address: 'streams',
-        node,
-        graph: { secrets: [], edges: [] },
-      } as unknown as LowerContext;
-      const provisioned: LoweredNode = {
-        outputs: { serviceId: 'streams-svc#cloud-id', projectId: 'shop-project#cloud-id' },
-      };
-      // buildConfig would populate inputs.credentials from the wired bearer-key
-      // resource's lowered outputs.
-      const config = {
-        service: { port: 3000 },
-        inputs: { credentials: { apiKey: 'a'.repeat(48) } },
-      };
-
-      const result = run<LoweredNode>(
-        serviceDescriptorOf(target, 'streams').serialize(ctx, provisioned, config),
-      );
-
-      expect(result.outputs['apiKey']).toBe('a'.repeat(48));
-      // compute's own outputs survive.
-      expect(result.outputs['port']).toBe(3000);
-      expect(Array.isArray(result.outputs['environment'])).toBe(true);
-    });
-  });
-
-  test('serialize fails closed when the bearer key is unwired', async () => {
-    await withEnv({ PRISMA_BRANCH_ID: undefined }, () => {
-      const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = streamsCompute({ name: 'streams', deps: {}, build });
-      const ctx = {
-        address: 'streams',
-        node,
-        graph: { secrets: [], edges: [] },
-      } as unknown as LowerContext;
-      const provisioned: LoweredNode = { outputs: { projectId: 'shop-project#cloud-id' } };
-      expect(() =>
-        run<LoweredNode>(
-          serviceDescriptorOf(target, 'streams').serialize(ctx, provisioned, {
-            service: { port: 3000 },
-            inputs: {},
-          } as Parameters<ReturnType<typeof serviceDescriptorOf>['serialize']>[2]),
-        ),
-      ).toThrow(/must wire a 'credentials' dependency/);
-    });
-  });
-
-  test("deploy outputs carry url + apiKey for a consumer's durableStreams() slot", async () => {
-    const target = prismaCloud({ workspaceId: 'ws_1' });
-    const ctx = { id: 'streams' } as unknown as LowerContext;
-    const provisioned: LoweredNode = {
-      outputs: { serviceId: 'streams-svc#cloud-id', projectId: 'shop-project#cloud-id' },
-    };
-    const artifact = { path: '/tmp/streams.tar.gz', sha256: 'sha-streams' };
-    const serialized: LoweredNode = {
-      outputs: {
-        environment: [{ id: 'STREAMS_PORT-var#cloud-id', key: 'STREAMS_PORT' }],
-        apiKey: 'k'.repeat(48),
-      },
-    };
-
-    const result = run<LoweredNode>(
-      serviceDescriptorOf(target, 'streams').deploy(ctx, provisioned, artifact, serialized),
-    );
-
-    expect(result.outputs['apiKey']).toBe('k'.repeat(48));
-    expect(typeof result.outputs['url']).toBe('string');
-  });
-});
-
-describe('streamsCompute() authoring factory', () => {
-  const build = {
-    extension: '@prisma/composer/node',
-    type: 'node',
-    module: 'file:///test/service.ts',
-    entry: 'server.js',
-  };
-
-  test("routes to the 'streams' lowering but keeps compute's deps/params/expose/load", () => {
-    const node = streamsCompute({
-      name: 'streams',
-      deps: { db: postgres() },
-      build,
-      expose: { streams: postgresContract },
-    });
-    expect(node.type).toBe('streams');
-    expect(node.kind).toBe('service');
-    expect(Object.keys(node.inputs)).toEqual(['db']);
-    expect(node.expose).toEqual({ streams: postgresContract });
-    expect(typeof node.load).toBe('function');
-    expect(typeof node.config).toBe('function');
-    // The reserved compute param survives the type override.
-    expect(node.params.port).toBeDefined();
-  });
-});
-
 describe('sharing: one module-provisioned postgres, two compute consumers — through core lowering()', () => {
   test("ONE Database + Connection; both services' env writes carry its url under their own keys", async () => {
     await withEnv(
@@ -1259,6 +1146,121 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
           .slice(before)
           .map(([, props]) => (props as { key: string }).key);
         expect(writtenKeys).not.toContain('COMPOSER_STOREFRONT_RPC_ACCEPTED_KEYS');
+      },
+    );
+  });
+});
+
+describe("streams' provisioned bearer key — one value per PROVIDER, landed on the provider", () => {
+  const build = {
+    extension: '@prisma/composer/node',
+    type: 'node',
+    module: 'file:///test/service.ts',
+    entry: 'server.js',
+  };
+  // A fake streams-shaped Contract + dependency: the target reacts to the
+  // `apiKey` param's need brand alone, never to "streams" by name.
+  const fakeStreamsContract: Contract<'streams', Record<never, never>> = {
+    kind: 'streams',
+    __cmp: {},
+    satisfies: () => true,
+  };
+  const streamsLikeDep = () =>
+    dependency({
+      type: 'streams',
+      connection: {
+        params: { url: string(), apiKey: string({ provision: provisionNeed(STREAMS_API_KEY) }) },
+        hydrate: (v) => v,
+      },
+    });
+
+  test('two consumers of one streams module share ONE key; the provider lands that same key', async () => {
+    await withEnv(
+      { PRISMA_PROJECT_ID: 'shop-project#cloud-id', PRISMA_BRANCH_ID: undefined },
+      () => {
+        const target = prismaCloud({ workspaceId: 'ws_1' });
+        const root = module('shop', {}, ({ provision }) => {
+          const events = provision(
+            compute({ name: 'events', deps: {}, build, expose: { streams: fakeStreamsContract } }),
+            { id: 'events' },
+          );
+          provision(compute({ name: 'reader', deps: { events: streamsLikeDep() }, build }), {
+            id: 'reader',
+            deps: { events: events.streams },
+          });
+          provision(compute({ name: 'writer', deps: { events: streamsLikeDep() }, build }), {
+            id: 'writer',
+            deps: { events: events.streams },
+          });
+          return {};
+        });
+        const before = { envVar: recorded.envVar.length, serviceKey: recorded.serviceKey.length };
+
+        run<LoweredNode>(
+          lowering(root, configFor(target), {
+            name: 'shop',
+            bundles: {
+              events: { dir: 'modules/events/dist/bundle', entry: 'server.js' },
+              reader: { dir: 'modules/reader/dist/bundle', entry: 'server.js' },
+              writer: { dir: 'modules/writer/dist/bundle', entry: 'server.js' },
+            },
+          }),
+        );
+
+        // Both edges resolve to ONE resource id — the PROVIDER's address, not
+        // the edge's — so the mint is shared (upstream auths a single API_KEY).
+        expect([
+          ...new Set(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id)),
+        ]).toEqual(['streamskey-events']);
+
+        const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
+        const writtenValue = (envName: string): unknown =>
+          (
+            writes.find((w) => (w as { key: string }).key === envName) as
+              | { value?: unknown }
+              | undefined
+          )?.value;
+        expect(writtenValue('COMPOSER_READER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
+        expect(writtenValue('COMPOSER_WRITER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
+
+        // The provider's own landing: the same key, under the name the streams
+        // entrypoint reads (address-scoped; compute's run re-stashes it).
+        expect(writes).toContainEqual({
+          projectId: 'shop-project#cloud-id',
+          key: 'COMPOSER_EVENTS_STREAMS_API_KEY',
+          value: 'key-for-streamskey-events',
+          class: 'production',
+        });
+      },
+    );
+  });
+
+  test('a streams provider with no consumers mints nothing and lands no key', async () => {
+    await withEnv(
+      { PRISMA_PROJECT_ID: 'shop-project#cloud-id', PRISMA_BRANCH_ID: undefined },
+      () => {
+        const target = prismaCloud({ workspaceId: 'ws_1' });
+        const root = module('shop', {}, ({ provision }) => {
+          provision(
+            compute({ name: 'lonely', deps: {}, build, expose: { streams: fakeStreamsContract } }),
+            { id: 'lonely' },
+          );
+          return {};
+        });
+        const before = { envVar: recorded.envVar.length, serviceKey: recorded.serviceKey.length };
+
+        run<LoweredNode>(
+          lowering(root, configFor(target), {
+            name: 'shop',
+            bundles: { lonely: { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
+          }),
+        );
+
+        expect(recorded.serviceKey.slice(before.serviceKey)).toEqual([]);
+        const keys = recorded.envVar
+          .slice(before.envVar)
+          .map(([, props]) => (props as { key: string }).key);
+        expect(keys).not.toContain('COMPOSER_LONELY_STREAMS_API_KEY');
       },
     );
   });

@@ -11,19 +11,17 @@ import { prismaState } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/rpc';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { BearerKeyProvider } from './bearer-key-resource.ts';
-import { bearerKeyDescriptor } from './descriptors/bearer-key.ts';
 import { computeDescriptor } from './descriptors/compute.ts';
 import { postgresDescriptor } from './descriptors/postgres.ts';
 import { prismaNextDescriptor } from './descriptors/prisma-next.ts';
 import { s3CredentialsDescriptor } from './descriptors/s3-credentials.ts';
 import { s3StoreDescriptor } from './descriptors/s3-store.ts';
 import type { ResolvedCloudOptions } from './descriptors/shared.ts';
-import { streamsDescriptor } from './descriptors/streams.ts';
 import { PgWarmProvider } from './pg-warm-resource.ts';
 import { PnMigrationProvider } from './pn-migration-resource.ts';
 import { runPreflight } from './preflight.ts';
 import { S3CredentialsProvider } from './s3-credentials-resource.ts';
+import { STREAMS_API_KEY } from './streams-keys.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -38,6 +36,24 @@ const serviceKeyProvisioner: ProvisionerDescriptor = {
   provision: (edge) =>
     Effect.gen(function* () {
       const key = yield* Prisma.ServiceKey(`servicekey-${edge.edgeId}`, {});
+      return key.value;
+    }),
+};
+
+/**
+ * ADR-0031's registered provisioner for STREAMS_API_KEY — the same `ServiceKey`
+ * mint, keyed PER PROVIDER instead of per edge: the resource id is the
+ * provider's address, so every consumer edge of one streams module resolves to
+ * the same resource and therefore the same stable value. That is what
+ * `@prisma/streams-server` requires (it authenticates a single `API_KEY`), and
+ * cardinality is exactly what ADR-0031 leaves to the provisioner. Making it
+ * per-edge later is this id's shape plus an accepted-set landing — no new
+ * resource, no core change.
+ */
+const streamsApiKeyProvisioner: ProvisionerDescriptor = {
+  provision: (edge) =>
+    Effect.gen(function* () {
+      const key = yield* Prisma.ServiceKey(`streamskey-${edge.providerAddress}`, {});
       return key.value;
     }),
 };
@@ -109,7 +125,6 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
           PnMigrationProvider(),
           S3CredentialsProvider(),
           Prisma.ServiceKeyProvider(),
-          BearerKeyProvider(),
         ),
       ),
 
@@ -152,7 +167,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // ADR-0031: this extension's param provisioners, keyed by need brand.
     // Core resolves a provisioned param's `need.brand` against the CONSUMER
     // node's extension — the same registry this one is.
-    provisions: new Map([[RPC_PEER_KEY, serviceKeyProvisioner]]),
+    provisions: new Map<symbol, ProvisionerDescriptor>([
+      [RPC_PEER_KEY, serviceKeyProvisioner],
+      [STREAMS_API_KEY, streamsApiKeyProvisioner],
+    ]),
 
     nodes: {
       postgres: postgresDescriptor(o),
@@ -160,8 +178,6 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       compute: computeDescriptor(o),
       credentials: s3CredentialsDescriptor(o),
       's3-store': s3StoreDescriptor(o),
-      'bearer-key': bearerKeyDescriptor(o),
-      streams: streamsDescriptor(o),
     },
   };
 };

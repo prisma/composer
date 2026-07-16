@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'nothing to build for this package itself — @prisma/composer-prisma-cloud builds via turbo ^build'",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",
     "smoke:deployed": "bun scripts/smoke.ts",
@@ -19,6 +19,7 @@
     "@prisma/composer": "workspace:0.1.0",
     "@prisma/composer-prisma-cloud": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
+    "tsdown": "^0.22.3",
     "typescript": "^6.0.3"
   }
 }

@@ -38,26 +38,25 @@ protocol (ADR-0015):
 tail via `?live=sse` and `?live=long-poll`. No websockets — the server has
 none and the module adds none.
 
-**Auth rides the binding.** The bearer key is a deploy-minted capability
-token (ADR-0030), not an ADR-0029 secret: the module provisions a
-`bearer-key` resource, the framework mints its value once at deploy and
-keeps it stable in deploy state, and the `streams` node kind's extended
-deploy outputs deliver it to consumers alongside the URL. One key per
-module instance — the upstream server authenticates a single `API_KEY`.
-Per-edge keys (ADR-0031's `ProvisionNeed`/`provisions` registry, shipped for
-RPC) need the upstream server to accept a key set first; the recorded
-migration is: upstream accepted-key-set PR, swap `durableStreams()`'s
-`apiKey` param to a `ProvisionNeed` with a registered streams provisioner,
-delete the module-level mint (design-notes.md).
+**Auth rides the binding.** The bearer key is neither an ADR-0029 secret nor
+a producer output: the `apiKey` connection param declares an ADR-0031
+**provisioning need** (brand + provisioner live in `@internal/prisma-cloud`'s
+`streams-keys.ts` — the target sits below this module, so the brand is
+imported downward). The target mints one value PER PROVIDER (the upstream
+server authenticates a single `API_KEY`), keeps it stable in deploy state,
+fills every consumer's param with it, and lands the same value on the streams
+service itself. Per-edge keys are later a provisioner-cardinality change plus
+an accepted-set landing once upstream accepts a key set — no resource to add,
+no core change. A module with no consumers gets no key and refuses to boot.
 
 ## Config surface
 
 - **Typed params: none** (v1). The service keeps only the reserved `port`.
-- **Secrets: none.** The bearer key is the module-owned minted `credentials`
-  resource (`bearerKey({ name: 'credentials' })`), wired into the service as
-  a dependency and exported to the runtime as `API_KEY` with
-  `--auth-strategy api-key`. All endpoints including `/health` require
-  `Authorization: Bearer <key>` (verified acceptable on Compute by
+- **Secrets: none.** The bearer key is provisioned by the target for the
+  `durableStreams()` binding and landed on this service under a reserved
+  config key; the entrypoint reads it there and exports it to the runtime as
+  `API_KEY` with `--auth-strategy api-key`. All endpoints including `/health`
+  require `Authorization: Bearer <key>` (verified acceptable on Compute by
   open-chat's production deploy).
 - **Deps: `store: s3()`** on the module boundary — the storage module's
   port. The entrypoint maps the `S3Config` binding onto the server's

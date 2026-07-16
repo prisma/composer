@@ -157,22 +157,10 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/bearer-key.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/streams-keys.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
-    },
-    {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/streams-compute.ts",
-      "domain": "prisma-cloud",
-      "layer": "extensions",
-      "plane": "shared"
-    },
-    {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/bearer-key-resource.ts",
-      "domain": "prisma-cloud",
-      "layer": "extensions",
-      "plane": "control"
     },
     {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/prisma-next-migrate.ts",

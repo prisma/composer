@@ -126,16 +126,19 @@ binding; distinct per-edge keys need an upstream accepted-key-set change
 (mirroring what #89 slice 1 added to rpc's serve()) — candidate minimal
 upstream PR. Do this before S7 (open-chat port) consumes the module.
 
-**ADR-0031 comparison (2026-07-16, streams-minted-key rebase).** #93 landed
-ADR-0031 (provisioned param values as a `ProvisionNeed` resolved through the
-deploy target's `provisions` registry) while the streams re-shape was in
-review. Compared and kept the provider-scoped `BearerKey` design: core's
-provision semantics mint one value per consumer→provider EDGE, and
-`@prisma/streams-server` authenticates a single `API_KEY` — per-edge values
-cannot apply until the upstream server accepts a key set. Migration path when
-it does: (a) upstream accepted-key-set PR to `@prisma/streams-server`
-(mirroring what #89 added to rpc's `serve()`); (b) swap `durableStreams()`'s
-`apiKey` connection param to a `ProvisionNeed` with a registered streams
-provisioner whose provider-side landing feeds the server's accepted set;
-(c) delete `BearerKey` and the `streams` descriptor
-(ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md).
+**ADR-0031 adopted (2026-07-16, corrected).** An earlier note here claimed
+per-edge provisioning could not apply because `@prisma/streams-server`
+authenticates a single `API_KEY`. That over-claimed: ADR-0031 leaves
+cardinality to the provisioner, so a per-PROVIDER provisioner satisfies the
+single-key server perfectly well. The design session settled on adopting
+ADR-0031, and the deciding reason was **consistency**, not capability: a
+module must build on the framework's general internals rather than stand a
+second, module-shaped mechanism beside them — two ways to audit one concept
+is one too many. Shipped: `durableStreams()`'s `apiKey` param declares a need
+under a streams brand; the prisma-cloud target registers a per-provider
+provisioner (same `ServiceKey` mint as RPC, keyed on the provider's address)
+and lands the value on the streams service; the module owns no credential
+resource, and `BearerKey` + the `streams` descriptor are deleted. Future
+per-edge keys = flip the provisioner's cardinality and land an accepted set,
+once upstream takes a key set (ADR-0031-provisioned-param-values-are-a-need-
+resolved-through-a-target-registry.md).

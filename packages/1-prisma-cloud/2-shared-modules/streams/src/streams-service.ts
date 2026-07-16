@@ -1,22 +1,23 @@
 /**
- * The streams service node: a `compute` service routed to the `streams`
- * lowering (`streamsCompute` — the s3-store pattern), whose extended deploy
- * outputs surface the minted bearer key so a consumer's `durableStreams()`
- * binding resolves `{ url, apiKey }` by name. It declares the `store`
- * dependency (`s3()`, the storage module's port) and the `credentials`
- * dependency (`bearerKey()`, the module-minted key). The deploy bootstrap
- * runs the default-exported bare node; the real wiring arrives through
- * serialized config at runtime — exactly like `storage-service.ts`.
+ * The streams service node: a plain `compute` service — the contract binding's
+ * `url` is a producer output compute's deploy already carries, and its
+ * `apiKey` is minted by the target's registered provisioner (ADR-0031), so
+ * nothing is left for a bespoke lowering to extend. It declares the `store`
+ * dependency (`s3()`, the storage module's port) and the `streams` expose; the
+ * bearer key reaches this service through the target's provider landing, not
+ * through a dependency. The deploy bootstrap runs the default-exported bare
+ * node; the real wiring arrives through serialized config at runtime — exactly
+ * like `storage-service.ts`.
  */
 import node from '@internal/node';
-import { bearerKey, streamsCompute } from '@internal/prisma-cloud';
+import { compute } from '@internal/prisma-cloud';
 import { s3 } from '@internal/storage';
 import { streamsContract } from './contract.ts';
 
 export function streamsService() {
-  return streamsCompute({
+  return compute({
     name: 'streams',
-    deps: { store: s3(), credentials: bearerKey() },
+    deps: { store: s3() },
     build: node({
       module: new URL('./streams-service.mjs', import.meta.url).href,
       entry: './streams-entrypoint.mjs',

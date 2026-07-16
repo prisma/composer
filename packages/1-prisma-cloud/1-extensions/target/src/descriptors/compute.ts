@@ -15,6 +15,7 @@ import {
   secretPointerRows,
 } from '../serializer.ts';
 import { serviceKeyEdges, serviceKeyEnvName } from '../service-keys.ts';
+import { streamsApiKeyEdges, streamsApiKeyEnvName } from '../streams-keys.ts';
 import { DEFAULT_REGION, projectIdOf, type ResolvedCloudOptions, validateName } from './shared.ts';
 
 export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
@@ -125,6 +126,33 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
               projectId,
               key,
               value: acceptedJson,
+              class: cls,
+              ...branch,
+            }),
+          );
+        }
+
+        // Provider side, streams' need (ADR-0031): its provisioner mints ONE
+        // value per provider, so every inbound edge's ref is the same key —
+        // land the first under the name the streams entrypoint reads. Unlike
+        // RPC's accepted SET, the upstream server authenticates a single
+        // API_KEY, which is exactly why the provisioner is per-provider.
+        const inboundStreams = streamsApiKeyEdges(graph).filter(
+          (e) => e.providerAddress === address,
+        );
+        const streamsRef = inboundStreams
+          .map((e) => ctx.provisioned.get(e.edgeId))
+          .find((value) => value !== undefined);
+        if (streamsRef !== undefined) {
+          const key = streamsApiKeyEnvName(address);
+          records.push(
+            yield* Prisma.EnvironmentVariable(`${key}-var`, {
+              projectId,
+              key,
+              value: blindCast<
+                Output.Output<string>,
+                "the ref is keyed by an edge streamsApiKeyEdges matched on STREAMS_API_KEY, and control.ts's streamsApiKeyProvisioner is the sole registrant of that brand — it returns a ServiceKey resource's `value`, an Output<string>"
+              >(streamsRef),
               class: cls,
               ...branch,
             }),

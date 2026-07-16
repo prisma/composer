@@ -1,13 +1,13 @@
 /**
  * The `streams()` module Loads into a wired graph: its `store` boundary dep
- * forwards into the compute service, the module-owned minted `credentials`
- * resource wires into the service, and a consumer's `durableStreams()` slot
- * resolves to the service's `streams` port. Mirrors storage's module.test.ts.
+ * forwards into the compute service, and a consumer's `durableStreams()` slot
+ * resolves to the service's `streams` port carrying the provisioning need for
+ * the bearer key. Mirrors storage's module.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
 import node from '@internal/node';
-import { compute } from '@internal/prisma-cloud';
+import { compute, STREAMS_API_KEY } from '@internal/prisma-cloud';
 import { storage } from '@internal/storage';
 import { durableStreams } from '../contract.ts';
 import { streams } from '../streams-module.ts';
@@ -27,7 +27,7 @@ const root = () =>
   });
 
 describe('streams()', () => {
-  test('Loads the service (streams-routed compute) with the storage module wired as its durable tier', () => {
+  test('Loads the compute service with the storage module wired as its durable tier', () => {
     const graph = Load(root());
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     const typeOf = (id: string): string | undefined => {
@@ -35,7 +35,7 @@ describe('streams()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('streams.service')).toBe('streams');
+    expect(typeOf('streams.service')).toBe('compute');
     expect(graph.edges).toContainEqual({
       from: 'storage.service',
       to: 'streams.service',
@@ -44,20 +44,16 @@ describe('streams()', () => {
     });
   });
 
-  test('the module-minted bearer key wires into the service as its credentials dep', () => {
+  test("the consumer's apiKey param carries the streams provisioning need — nothing is wired for it", () => {
     const graph = Load(root());
-    const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
-    const credentials = byId.get('streams.credentials');
-    expect(credentials).toBeDefined();
-    expect(credentials !== undefined && 'type' in credentials ? credentials.type : undefined).toBe(
-      'bearer-key',
-    );
-    expect(graph.edges).toContainEqual({
-      from: 'streams.credentials',
-      to: 'streams.service',
-      input: 'credentials',
-      kind: 'dependency',
-    });
+    const consumerNode = graph.nodes.find((n) => n.id === 'consumer')?.node;
+    if (consumerNode === undefined || consumerNode.kind !== 'service') {
+      throw new Error('expected the consumer service');
+    }
+    const apiKey = consumerNode.inputs['events']?.connection.params['apiKey'];
+    expect(apiKey?.provision?.brand).toBe(STREAMS_API_KEY);
+    // The module owns no credentials resource — the key is the target's to mint.
+    expect(graph.nodes.map((n) => n.id)).not.toContain('streams.credentials');
   });
 
   test("a consumer's durableStreams() slot resolves to the module's streams port (the service)", () => {
@@ -86,6 +82,5 @@ describe('streams()', () => {
     });
     const graph = Load(named);
     expect(graph.nodes.map((n) => n.id)).toContain('events.service');
-    expect(graph.nodes.map((n) => n.id)).toContain('events.credentials');
   });
 });

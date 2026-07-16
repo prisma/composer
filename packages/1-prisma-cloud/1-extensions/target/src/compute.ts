@@ -14,6 +14,7 @@ import { hydrateSecrets, hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { deserialize, deserializeSecrets, stash, stashSecrets } from './serializer.ts';
 import { serviceKeyEnvName } from './service-keys.ts';
+import { streamsApiKeyEnvName } from './streams-keys.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
@@ -106,6 +107,10 @@ export const compute = <
       // per running instance, same as config/secrets above.
       const accepted = process.env[serviceKeyEnvName(address)];
       if (accepted !== undefined) process.env[serviceKeyEnvName('')] = accepted;
+      // Same re-stash for the streams module's provisioned bearer key
+      // (ADR-0031): its entrypoint reads STREAMS_API_KEY_ENV with no address.
+      const streamsKey = process.env[streamsApiKeyEnvName(address)];
+      if (streamsKey !== undefined) process.env[streamsApiKeyEnvName('')] = streamsKey;
       // Expose the resolved service port under the near-universal PORT convention,
       // so a framework-unaware server (Next.js's standalone server.js binds the
       // PORT env var) listens on the port Compute routes to — not its own default.
