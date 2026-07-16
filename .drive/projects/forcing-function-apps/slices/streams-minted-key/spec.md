@@ -12,8 +12,37 @@ predecessor slice: streams-composed-module (merged, PR #84).
 
 ## Chosen design
 
-Mirror storage's minted-credential machinery end to end (`s3Credentials` +
-`s3StoreDescriptor` are the templates):
+> **Amended 2026-07-16 (design session with Will, post-#93/ADR-0031).** The
+> original design below (BearerKey resource + `streams` descriptor + outputs
+> rail) was built before ADR-0031 landed and is superseded. ADR-0031's
+> provisioner explicitly owns per-edge vs per-provider cardinality, and the
+> zero-consumer case that seemed to require a module-owned resource is a
+> configuration error, not a scenario (a streams module with no consumers
+> serves nobody — the key exists only in deploy state). Settled design:
+>
+> - `durableStreams()`'s `apiKey` connection param carries a **ProvisionNeed**
+>   (streams-owned brand, mirroring `RPC_PEER_KEY`).
+> - The prisma-cloud target registers a **per-provider provisioner**: keyed on
+>   `providerAddress`, mint-once 48-hex, stable in deploy state (ADR-0031
+>   blesses per-provider as provisioner policy; `service-keys.ts` +
+>   `serviceKeyProvisioner` are the templates).
+> - The **provider landing** writes the minted value where the streams
+>   entrypoint reads its key (target-owned per ADR-0019); the server still
+>   receives `API_KEY`.
+> - **Zero consumers = no key = the server cannot boot**; prefer a loud
+>   deploy-time error over a boot loop if cheaply expressible.
+> - `BearerKey` resource + the `streams` descriptor are **deleted**;
+>   `streamsCompute` reverts to plain `compute()` if no extended outputs
+>   remain (url alone needs no override).
+> - `examples/streams` gains a small **consumer service** that exercises the
+>   binding in-deployment (append + read via `load()`'s `{ url, apiKey }`),
+>   which also removes the zero-consumer shape from the example.
+> - Future per-edge migration = provisioner-internal cardinality flip + the
+>   accepted-set landing, once upstream supports key sets.
+
+Original (superseded) design, kept for the record — mirror storage's
+minted-credential machinery end to end (`s3Credentials` + `s3StoreDescriptor`
+are the templates):
 
 - **Contract** (`@internal/streams/contract.ts`): `StreamsConfig` gains
   `readonly apiKey: string`; `durableStreams()` connection params become

@@ -33,3 +33,21 @@ ADR-0030 alignment narrative.
 
 **Completed when:** deploy + proofs + destroy recorded with counts; docs
 updated; PR open (no auto-merge armed).
+
+## D4 — Rework onto ADR-0031 (added 2026-07-16, spec amendment)
+
+**Outcome:** the key is provisioned through ADR-0031's registry — need on the
+`apiKey` param, per-provider provisioner in the target, provider landing for
+`API_KEY` — with BearerKey + the streams descriptor deleted, the example
+carrying a consumer service, and all local verification green again.
+
+**Builds on:** D1-D3's rebased branch; #93's service-keys machinery as
+template.
+**Hands to:** an ADR-0031-native branch for the final live re-proof + PR
+refresh.
+
+## D5 — Re-proof + PR refresh (after D4)
+
+**Outcome:** live deploy re-proven (consumer service exercises the binding
+in-deployment; conformance + smoke as before; destroy), PR body rewritten for
+the new mechanism, reviewer round green.
