@@ -1,0 +1,52 @@
+---
+description: "A change users can observe — a public export, a CLI flag, or behaviour they hit without touching their code — must update docs/guides/ AND skills/prisma-composer/SKILL.md in the SAME PR. The guides ARE the public website's content; the skill is installed into user repos. Internal-only changes need neither."
+alwaysApply: true
+---
+
+# A user-facing change lands in the guides and the skill
+
+Two surfaces ship out of this repo to people who don't read our code, and both
+go stale **silently** — nothing fails when they're wrong:
+
+- **`docs/guides/*.md`** — canonical for humans, and the website's actual
+  content: `website/` renders them into its bundle at build time
+  (`website/scripts/render-content.ts`), and `.github/workflows/deploy-docs.yml`
+  redeploys the site whenever `docs/guides/**` changes on main. Editing a guide
+  *is* shipping a site change; no generated file to commit.
+- **`skills/prisma-composer/SKILL.md`** — the agent-condensed mirror, installed
+  into other people's repos (`npx skills add`). An agent reading a stale skill
+  writes wrong code and blames the framework.
+
+**If your PR changes what a user can observe, update both in the same PR.**
+`docs/design/**` is for us; landing an ADR is not documenting.
+
+## What counts
+
+- A new / changed / removed export, param, facet, or type reachable from a
+  `packages/9-public/*` entry — anything an app author writes.
+- A CLI command, flag, or its output.
+- **Behaviour a user hits without changing a line of their code** — a new
+  default, failure mode, or status code. The most-missed case: RPC endpoints
+  began returning `401` to unwired callers, and for a while neither surface said
+  so, which reads as a broken deploy.
+- A testing seam (`mockService` / `bootstrapService`) or a constraint on it.
+- A platform gotcha a user will hit and misdiagnose.
+
+**Not:** internal refactors, `@internal/*` moves, tests, ADRs, design docs. If
+nothing an app author does or sees changes, skip both.
+
+## How
+
+- **The guides are canonical; the skill is the mirror.** Write the explanation
+  once in the guide, then teach an agent the same fact tersely. They must not
+  disagree.
+- **Document the consequence, not just the feature.** The line worth writing is
+  the one that stops a bug report — *why the thing they just tried returns
+  401* — not that a mechanism exists.
+- **Read `skills/README.md` before editing the skill.** It has its own binding
+  rules: verify every claim against a real export map / the CLI (if ripgrep
+  can't find it, it doesn't ship), stay self-contained (no link may resolve
+  outside `skills/prisma-composer/`), teach concepts not procedures.
+- A new guide needs no registration — `website/tests/content.test.ts` asserts
+  one rendered guide per `docs/guides/*.md` and that every in-site link
+  resolves, so a broken cross-link fails CI.
