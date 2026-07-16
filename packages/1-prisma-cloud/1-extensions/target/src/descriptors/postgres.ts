@@ -29,7 +29,14 @@ export function postgresDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       // Warm the DB so a consumer's first connect doesn't eat PPG's cold-start
       // (FT-5226). `warm.url` is the same url, so consumers depend on the warm.
       const warm = yield* PgWarm(`${id}-warm`, { url });
-      return { outputs: { url: warm.url } };
+      return {
+        outputs: { url: warm.url },
+        // ADR-0032: the database's id, and nothing else. This node's `url` is
+        // its connection string — a credential — so unlike a compute service's
+        // `url` it is never reported. Same field name, opposite sensitivity;
+        // that is why the descriptor decides and core does not.
+        report: { id: db.id },
+      };
     });
   return Object.assign(lowering, { kind: 'resource' as const });
 }

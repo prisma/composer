@@ -139,6 +139,16 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         });
         return {
           outputs: { url: deployment.deployedUrl, projectId: provisioned.outputs['projectId'] },
+          // ADR-0032. A compute service's address is public by construction —
+          // it is the endpoint callers hit — so it is the one thing worth
+          // reporting. The artifact hash and the service's environment stay
+          // out: the environment is where the secrets are. (kind/name/extension
+          // come from the graph, so core stamps those.)
+          report: {
+            id: provisioned.outputs['serviceId'],
+            url: deployment.deployedUrl,
+            projectId: provisioned.outputs['projectId'],
+          },
         };
       }),
   };

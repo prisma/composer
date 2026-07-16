@@ -103,11 +103,27 @@ export interface LowerContext {
 }
 
 /**
+ * What a node publishes about the entity it became (ADR-0032) — the fields its
+ * own descriptor decided are safe to print. Include-only: a field the
+ * descriptor does not name is never published, so a field nobody thought about
+ * cannot leak. This is why core never derives a report from `outputs` itself:
+ * one field name can be a public address on one node kind and a credential on
+ * another, and only the descriptor that produced it knows which it made.
+ */
+export type NodeReport = Readonly<Record<string, unknown>>;
+
+/**
  * What a lowering hands downstream — e.g. a deployed URL a later node's env
  * wiring consumes. The inter-node config-wiring hook for Connections.
  */
 export interface LoweredNode {
   readonly outputs: Readonly<Record<string, unknown>>;
+  /**
+   * Safe facts about the entity this node became, for the deploy's report
+   * (ADR-0032). Absent means the node publishes nothing — the deliberate
+   * default, since silence is a visible gap and a guess could be a credential.
+   */
+  readonly report?: NodeReport;
 }
 
 export interface LowerOptions {
@@ -332,6 +348,20 @@ export function lowering(
     // hooks, before any node), then threaded read-only through every ctx and
     // into buildConfig — the same declare-then-mutate idiom as `lowered`.
     const provisioned = new Map<string, unknown>();
+    // ADR-0032: what each node became, keyed by its address — the stack's
+    // outputs. Core stamps the identity it already owns from the graph; the
+    // descriptor adds the facts only it knows about the entity it made (its
+    // platform id, and an address when that address is public).
+    const reports: Record<NodeId, NodeReport> = {};
+    const recordReport = (id: NodeId, node: ServiceNode | ResourceNode, result: LoweredNode) => {
+      if (result.report === undefined) return;
+      reports[id] = {
+        kind: node.type,
+        extension: node.extension,
+        name: node.name,
+        ...result.report,
+      };
+    };
 
     // Each extension's application hook runs ONCE, before any node, in config
     // order — its outputs reach that extension's own nodes via ctx.application
@@ -431,7 +461,9 @@ export function lowering(
       const descriptor = yield* descriptorFor(extensions, node, id);
 
       if (descriptor.kind === 'resource') {
-        lowered.set(id, yield* descriptor(ctx));
+        const result = yield* descriptor(ctx);
+        lowered.set(id, result);
+        recordReport(id, node as ResourceNode, result);
         continue;
       }
       if (descriptor.kind !== 'service') {
@@ -457,10 +489,14 @@ export function lowering(
         assembled: { dir: bundle.dir, entry: bundle.entry },
         address: id,
       });
-      lowered.set(id, yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized));
+      const deployed = yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized);
+      lowered.set(id, deployed);
+      recordReport(id, service, deployed);
     }
 
-    return { outputs: {} };
+    // The stack's outputs ARE the report (ADR-0032): alchemy prints them, so a
+    // deploy says what each node became instead of ending in `{ outputs: {} }`.
+    return { outputs: reports };
   }) as Effect.Effect<LoweredNode, LowerError, unknown>;
 }
 

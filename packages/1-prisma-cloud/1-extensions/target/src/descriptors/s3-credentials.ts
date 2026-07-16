@@ -19,6 +19,11 @@ export function s3CredentialsDescriptor(_o: ResolvedCloudOptions): NodeDescripto
       const creds = yield* S3Credentials(`${id}-creds`, {});
       return {
         outputs: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+        // ADR-0032: an empty report — this node is listed by the identity core
+        // stamps, and adds nothing, because its entire output is the minted key
+        // pair. Note neither secret is called `url`: a rule written over field
+        // names would print both.
+        report: {},
       };
     });
   return Object.assign(lowering, { kind: 'resource' as const });

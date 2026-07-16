@@ -65,6 +65,11 @@ export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
             accessKeyId: serialized.outputs['accessKeyId'],
             secretAccessKey: serialized.outputs['secretAccessKey'],
           },
+          // ADR-0032: compute's report (the public endpoint) plus the bucket
+          // name. Deliberately NOT spread from `outputs`: this node is the case
+          // that breaks "a service's outputs are safe" — the two lines above it
+          // are the minted SigV4 pair.
+          report: { ...deployed.report, bucket: serialized.outputs['bucket'] },
         };
       }),
   };

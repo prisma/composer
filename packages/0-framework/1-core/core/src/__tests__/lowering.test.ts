@@ -939,3 +939,107 @@ describe('mergedProviders', () => {
     expect(mergedProviders(config)).toBeDefined();
   });
 });
+
+// ——— ADR-0032: the stack's outputs are a report of what each node became.
+// The fake extension here mirrors the real shape that makes the decision
+// necessary: every node's `outputs` carry a secret (a connection string, a
+// minted key), and only the fields the descriptor names in `report` are
+// published.
+function reportingExtension() {
+  const descriptor: ExtensionDescriptor = {
+    id: 'test/pack',
+    providers: () => {
+      throw new Error('providers() must not be called by lowering()');
+    },
+    application: { provision: () => Effect.succeed({ outputs: {} }) },
+    nodes: {
+      // Mirrors postgres: `url` in outputs IS the connection string, so the
+      // report carries identity only.
+      'fake/db': Object.assign(
+        (ctx: LowerContext) =>
+          Effect.succeed({
+            outputs: { url: `postgres://user:hunter2@host/${ctx.id}` },
+            report: { id: `db_${ctx.id}` },
+          }),
+        { kind: 'resource' as const },
+      ),
+      // A node that publishes nothing — the default for an extension that has
+      // not opted in.
+      'fake/quiet': Object.assign(
+        () => Effect.succeed({ outputs: { secretAccessKey: 'sk_live_quiet' } }),
+        { kind: 'resource' as const },
+      ),
+      // Mirrors s3-store: a SERVICE whose outputs carry a minted secret
+      // alongside its public url.
+      'fake/compute': {
+        kind: 'service' as const,
+        provision: () => Effect.succeed({ outputs: { serviceId: 'cps_1' } }),
+        serialize: () => Effect.succeed({ outputs: {} }),
+        package: () => Effect.succeed({ path: '/tmp/a.tar.gz', sha256: 'sha' }),
+        deploy: (_ctx, provisioned) =>
+          Effect.succeed({
+            outputs: { url: 'https://svc.example', secretAccessKey: 'sk_live_deploy' },
+            report: { id: provisioned.outputs['serviceId'], url: 'https://svc.example' },
+          }),
+      },
+    },
+  };
+  return {
+    extensions: [descriptor],
+    state: () => stateSentinel('config-default'),
+  } satisfies PrismaAppConfig;
+}
+
+describe('the deploy reports what each node became (ADR-0032)', () => {
+  const dbNode = () =>
+    resource({
+      name: 'database',
+      extension: 'test/pack',
+      provides: providerContract('fake/db', { url: '' }),
+    });
+  const quietNode = () =>
+    resource({
+      name: 'quiet',
+      extension: 'test/pack',
+      provides: providerContract('fake/quiet', {}),
+    });
+
+  const root = () =>
+    module('shop', {}, (h) => {
+      const db = h.provision(dbNode(), { id: 'db' });
+      h.provision(quietNode(), { id: 'quiet' });
+      h.provision(app('fake/compute', { db: dbEnd() }), { id: 'svc', deps: { db } });
+      return {};
+    });
+
+  test('keys every reported node by its address, and stamps the identity core owns', () => {
+    const result = run(lowering(root(), reportingExtension(), opts(svcBundles)));
+
+    expect(result.outputs).toEqual({
+      db: { kind: 'fake/db', extension: 'test/pack', name: 'database', id: 'db_db' },
+      svc: {
+        kind: 'fake/compute',
+        extension: 'test/pack',
+        name: 'test-service',
+        id: 'cps_1',
+        url: 'https://svc.example',
+      },
+    });
+  });
+
+  test('publishes only what the descriptor named — a secret in a node’s outputs never reaches the report', () => {
+    const result = run(lowering(root(), reportingExtension(), opts(svcBundles)));
+
+    // The db's `url` is its connection string and the service's outputs carry a
+    // minted key; both are wired downstream and neither is published.
+    expect(JSON.stringify(result.outputs)).not.toContain('hunter2');
+    expect(JSON.stringify(result.outputs)).not.toContain('sk_live_deploy');
+    expect(JSON.stringify(result.outputs)).not.toContain('sk_live_quiet');
+  });
+
+  test('a node whose descriptor reports nothing is absent, rather than guessed at', () => {
+    const result = run(lowering(root(), reportingExtension(), opts(svcBundles)));
+
+    expect(Object.keys(result.outputs).sort()).toEqual(['db', 'svc']);
+  });
+});

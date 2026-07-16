@@ -7,30 +7,36 @@ small description of the platform entity that node became. It is keyed by the
 node's graph id, which is already its deployment address — the same id the
 config keys and bundle ids ride.
 
-Each entry is produced by the **descriptor that owns the entity**, not by core.
-A descriptor gains a `report()` alongside `provision`/`serialize`/`package`/
-`deploy`, returning only what is safe to print. Core assembles the entries; it
-never reaches into a `LoweredNode` and decides for itself what to publish.
+The split is: **core stamps the identity it already owns from the graph** —
+`kind`, `extension`, `name` — and the **descriptor that owns the entity** adds
+the facts only it knows: the platform id, and an address when that address is
+public. A `LoweredNode`, what every lowering phase already returns, gains an
+optional `report` beside its `outputs`; the descriptor builds it where it has
+the resource in hand. Core never reaches into `outputs` and decides for itself
+what to publish. A node that reports nothing is simply absent; a node with
+nothing to add reports `{}` and is listed by its identity alone.
+
+The map is the stack's outputs, which Alchemy already prints — so a deploy that
+today ends in `{ outputs: {} }` says what it did instead.
 
 A compute service reports its public address; a database reports no connection
 information at all:
 
 ```jsonc
-// .prisma-composer/deployment.json — and the same value as the stack's outputs
 {
   "site": {
     "kind": "compute",
     "extension": "@prisma/composer-prisma-cloud",
-    "id": "cps_m2u4w6w93v8m1hkc8bdl4wzz",
     "name": "site",
+    "id": "cps_m2u4w6w93v8m1hkc8bdl4wzz",
     "url": "https://m2u4w6w93v8m1hkc8bdl4wzz.ewr.prisma.build"
   },
   "catalog.database": {
     "kind": "prisma-next",
     "extension": "@prisma/composer-prisma-cloud",
-    "id": "db_cmdye4tfpe2xiv84v75tqfsz",
-    "name": "database"
-    // no url: this node's connection string is a credential
+    "name": "database",
+    "id": "db_cmdye4tfpe2xiv84v75tqfsz"
+    // no url: this node's `url` is its connection string, a credential
   }
 }
 ```
@@ -70,6 +76,13 @@ suppress the endpoint. Only the descriptor knows which it produced, and
 `LoweredNode.outputs` is extension-defined and opaque to core by design — the
 core stays thin and target-specific knowledge stays in the pack.
 
+**Nor by node kind.** "A service's outputs are public, a resource's are not" is
+the obvious rule and it is also wrong: `s3-store` is a *service* whose `deploy`
+spreads `accessKeyId` and `secretAccessKey` into its outputs, and
+`s3-credentials` is a resource whose outputs are *only* a minted key pair —
+neither of them named `url`, so a field-name rule prints both. Every heuristic
+available to core is a heuristic about someone else's data.
+
 **An allowlist cannot leak what it never held.** Because the report is
 constructed rather than filtered, a mistake in it omits a field; it does not
 expose one. That matches how this codebase already treats sensitivity — carried
@@ -78,10 +91,14 @@ out of text at the edge (ADR-0029).
 
 ## Consequences
 
-- CI reads the URL from the deploy instead of re-deriving it. The docs site's
-  smoke check loses its `@prisma/management-api-sdk` dependency, its
-  project-name lookup, and the guard it needs today for two indistinguishable
-  `site` services.
+- A deploy now says where it published. The docs site's smoke check can drop its
+  `@prisma/management-api-sdk` dependency, its project-name lookup, and the
+  guard it needs today for two indistinguishable `site` services — but only
+  once the report is *machine*-readable. Alchemy prints the outputs for a
+  person; the CLI runs it with `stdio: 'inherit'` and never sees them. A
+  parseable surface (`.prisma-composer/deployment.json`, or `--json`) is a
+  follow-on, and it needs its own decision about who writes it: the stack, from
+  inside the alchemy child, or the CLI, by capturing what it currently streams.
 - `lower()`'s return value is published surface (`@prisma/composer/deploy`), so
   this changes a public type and the stack's printed outputs.
 - A new extension reports nothing until its descriptor opts in. A missing report

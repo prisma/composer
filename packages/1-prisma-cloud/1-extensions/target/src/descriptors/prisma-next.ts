@@ -59,7 +59,14 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         ...(node.targetRef !== undefined ? { refName: node.targetRef } : {}),
       });
 
-      return { outputs: { url: warm.url } };
+      return {
+        outputs: { url: warm.url },
+        // ADR-0032: the database's id, and nothing else — `url` here is its
+        // connection string, not a public address. The contract hash and
+        // migration ref stay out too; they say nothing a reader of the deploy
+        // needs.
+        report: { id: db.id },
+      };
     });
   return Object.assign(lowering, { kind: 'resource' as const });
 }
