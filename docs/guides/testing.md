@@ -82,10 +82,10 @@ Five things to know:
   process — bun test does this per file — and the server dies with it.
 - **The service's code is untouched.** If you find yourself editing
   `server.ts` to make it testable, something upstream is wrong.
-- **RPC auth is inert here.** Deployed RPC bindings carry an auto-provisioned
-  service key and `serve()` rejects callers without one — but nothing
-  provisions a key locally, so `serve()` passes every call through and you
-  never supply one in `inputs`. You're testing your handlers, not the wire.
+- **You don't need a service key.** A deployed RPC provider rejects callers
+  that don't present one, but only a deploy creates keys — so in a test
+  nothing checks, every call reaches your handler, and there's nothing to put
+  in `inputs`.
 
 **Next.js services need a third argument** — a boot function — because the
 built entry lives inside Next's standalone output. Resolve it with
