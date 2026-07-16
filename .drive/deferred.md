@@ -120,3 +120,19 @@
   deploy target, lowering unchanged.
 - **Factory name** — `pnPostgres` is a placeholder; Prisma Next → Prisma Data
   rename incoming at GA. Rename the factory when the product name lands.
+
+# Deploy log redaction — deferred (2026-07-16)
+
+- **Redact known secret values in deploy log output.** Separate from
+  [ADR-0032](../docs/design/90-decisions/ADR-0032-the-deploy-reports-what-each-node-became.md),
+  which makes the *node report* safe by construction (an allowlist projected by
+  each descriptor). This is the complementary net for the strings we do NOT
+  author: Alchemy progress lines, errors that echo a DSN, stack traces. Match
+  known secret values in stdout/stderr and mask them, as GitHub Actions does for
+  registered secrets. Known limits to design around, and why it can't be the
+  primary control: some credentials are minted mid-run (`s3Credentials` mints a
+  SigV4 pair), so the redactor must be updated as they appear or anything printed
+  first is unmasked; and values are transformed before printing (a password in a
+  DSN is percent-encoded, JSON escapes it again), so literal matching misses
+  encoded forms. Defense-in-depth only — never the thing a feature relies on to
+  be safe. Origin: operator design discussion 2026-07-16 (ADR-0032 shaping).
