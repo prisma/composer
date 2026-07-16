@@ -92,10 +92,12 @@ output. A per-binding key cannot: each consumer needs a *different* value, so it
 is not a provider output at all but a value scoped to the *edge*. The framework
 mints one key per RPC edge at deploy, wires that edge's key into the consumer's
 `serviceKey` connection parameter, and aggregates every inbound edge's key into
-the provider's accepted-set variable. This is the one genuinely new piece of
-wiring the decision requires; it is generic (a connection parameter marked
-"auto-provisioned per binding"), not RPC-specific, so the target provisions and
-serializes it without knowing what an RPC is.
+the provider's accepted-set variable. The `serviceKey` param declares this as a
+**provisioning need** ([ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)):
+an opaque, branded value core forwards to whichever provisioner the deploy target
+registers under that brand. So the mechanism is generic — core never learns what
+an RPC is, and the target's per-edge provisioner never learns it either; RPC only
+supplies the brand and the wire contract.
 
 ## Consequences
 
@@ -141,6 +143,8 @@ serializes it without knowing what an RPC is.
 
 ## Related
 
+- [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) —
+  the general provisioning-need/registry mechanism this key is the first use of.
 - [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secret slot this
   qualifies: a service key is a minted, deploy-state value, deliberately *not* a
   name-only secret.

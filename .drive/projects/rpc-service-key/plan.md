@@ -47,6 +47,18 @@ Turns the mechanism on end to end and proves it live.
   returns `ok` and an anonymous `curl` returns `401`; second redeploy is a no-op.
 - **DoD** — the spec's Definition of Done, in full.
 
+## Slice 3 — provisioner registry (refactor) — [slice-3 spec](slices/slice-3-provisioner-registry.md)
+
+Replaces slice 2's `ConfigParam.autoProvision` string facet with the opaque
+`ProvisionNeed` + target `provisions` registry of ADR-0031: core carries one
+opaque field and resolves the need's brand against the consumer extension's
+registry, failing loudly on an unregistered brand or a cross-extension edge.
+Behaviour identical; same live proof (plus: a redeploy of a slice-2 stack must
+no-op, proving resource ids are stable across the refactor). **Lands by amending
+PR #93** so the facet never ships on its own — the churn squashes away. Design:
+[ADR-0031](../../../docs/design/90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md),
+amended [ADR-0030](../../../docs/design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md).
+
 ## Sequencing / safety
 
 Slice 1 is fail-open when unconfigured, so merging it changes no running deploy.
