@@ -434,6 +434,7 @@ describe('run() — the full pipeline over fakes', () => {
           runAssembler: fakeAssembler,
           ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
+          deleteProject: async () => {},
         });
 
         expect(status).toBe(0);
@@ -458,6 +459,7 @@ describe('run() — the full pipeline over fakes', () => {
           runAssembler: fakeAssembler,
           ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
+          deleteProject: async () => {},
         });
 
         const printed = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -479,6 +481,7 @@ describe('run() — the full pipeline over fakes', () => {
           runAssembler: fakeAssembler,
           ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
+          deleteProject: async () => {},
         });
 
         expect(warnSpy).not.toHaveBeenCalled();
@@ -549,6 +552,7 @@ describe('run() — the full pipeline over fakes', () => {
           alchemyCalls.push(input);
           return 0;
         },
+        deleteProject: async () => {},
       });
 
       expect(status).toBe(0);
@@ -622,6 +626,7 @@ describe('run() — the full pipeline over fakes', () => {
         deleteBranch: async (input) => {
           deleteCalls.push(input);
         },
+        deleteProject: async () => {},
       });
 
       expect(status).toBe(0);
@@ -658,6 +663,85 @@ describe('run() — the full pipeline over fakes', () => {
         ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
         deleteBranch: async (input) => {
+          deleteCalls.push(input);
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(deleteCalls).toEqual([]);
+    });
+  });
+
+  describe('post-destroy Project cleanup (--production)', () => {
+    test('destroy --production, on a successful alchemy destroy, deletes the resolved Project', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const deleteCalls: { projectId: string }[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+        deleteProject: async (input) => {
+          deleteCalls.push(input);
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(deleteCalls).toEqual([{ projectId: 'proj-fake' }]);
+    });
+
+    test('destroy --stage staging never deletes a Project (only its Branch)', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const deleteCalls: { projectId: string }[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+        deleteBranch: async () => {},
+        deleteProject: async (input) => {
+          deleteCalls.push(input);
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(deleteCalls).toEqual([]);
+    });
+
+    test('destroy --production with a FAILED alchemy destroy does not delete the Project', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const deleteCalls: { projectId: string }[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 1,
+        deleteProject: async (input) => {
+          deleteCalls.push(input);
+        },
+      });
+
+      expect(status).toBe(1);
+      expect(deleteCalls).toEqual([]);
+    });
+
+    test('deploy never deletes a Project', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const deleteCalls: { projectId: string }[] = [];
+
+      const status = await run(['deploy', app.entryPath], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+        deleteProject: async (input) => {
           deleteCalls.push(input);
         },
       });

@@ -177,3 +177,18 @@ export const deleteBranch = (
       client.DELETE('/v1/branches/{branchId}', { params: { path: { branchId } } }),
     );
   });
+
+/**
+ * Deletes a Project. Tolerates a 404 (already gone). The API refuses with a
+ * 400 if the Project still has live dependencies (e.g. another stage's
+ * Branch/resources) — that surfaces as a `PrismaApiError`.
+ */
+export const deleteProject = (
+  projectId: string,
+): Effect.Effect<void, PrismaApiError, ManagementClient> =>
+  Effect.gen(function* () {
+    const client = yield* ManagementClient;
+    yield* callVoid(() =>
+      client.DELETE('/v1/projects/{id}', { params: { path: { id: projectId } } }),
+    );
+  });

@@ -81,6 +81,10 @@ removes the resources but the production Branch itself always survives.
 Destroy never creates: tearing down a stage that was never deployed fails
 with "nothing deployed" rather than provisioning one first.
 
+Destroying production also removes the app's Project once nothing is left in
+it, so hand-run stacks don't pile up as empty Projects in your workspace. If
+the Project still holds another stage's resources, it's left in place.
+
 ## CI
 
 Nothing is CI-specific — set the two variables as CI secrets, build, run the

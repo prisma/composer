@@ -1,7 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import type { ManagementApiClient } from '@internal/lowering';
 import { CliError } from '../cli-error.ts';
-import { deleteStageBranch, ensureContainers, validateStageName } from '../ensure-containers.ts';
+import {
+  deleteAppProject,
+  deleteStageBranch,
+  ensureContainers,
+  validateStageName,
+} from '../ensure-containers.ts';
 
 interface FakeProject {
   id: string;
@@ -24,6 +29,9 @@ interface FakeState {
   deleteBranchCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
   deleteBranchResponseStatus?: number;
+  deleteProjectCalls: string[];
+  /** Overrides the DELETE response status — defaults to a 204 success. */
+  deleteProjectResponseStatus?: number;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -32,6 +40,7 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   projectCreateCalls: 0,
   branchCreateCalls: 0,
   deleteBranchCalls: [],
+  deleteProjectCalls: [],
   ...overrides,
 });
 
@@ -111,6 +120,16 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       const branchId = init.params?.path?.['branchId'] ?? '';
       state.deleteBranchCalls.push(branchId);
       const status = state.deleteBranchResponseStatus ?? 204;
+      return Promise.resolve(
+        status >= 400
+          ? errorResponse(status)
+          : { data: undefined, error: undefined, response: new Response(null, { status }) },
+      );
+    }
+    if (path === '/v1/projects/{id}') {
+      const id = init.params?.path?.['id'] ?? '';
+      state.deleteProjectCalls.push(id);
+      const status = state.deleteProjectResponseStatus ?? 204;
       return Promise.resolve(
         status >= 400
           ? errorResponse(status)
@@ -325,5 +344,73 @@ describe('deleteStageBranch()', () => {
 
     expect(error).toBeInstanceOf(CliError);
     expect((error as CliError).message).toContain('Failed to delete the stage Branch');
+  });
+});
+
+describe('deleteAppProject()', () => {
+  test('missing PRISMA_SERVICE_TOKEN (no injected client) logs a warning and does not throw', async () => {
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(deleteAppProject({ projectId: 'proj-1', env: {} })).resolves.toBeUndefined();
+      expect(warnSpy.mock.calls.join(' ')).toContain('PRISMA_SERVICE_TOKEN');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  test('with an injected client, calls DELETE with the projectId', async () => {
+    const state = newFakeState();
+
+    await deleteAppProject({ projectId: 'proj-1' }, { client: fakeClient(state) });
+
+    expect(state.deleteProjectCalls).toEqual(['proj-1']);
+  });
+
+  test('success removes the project (logged), does not throw', async () => {
+    const state = newFakeState();
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(
+        deleteAppProject({ projectId: 'proj-1' }, { client: fakeClient(state) }),
+      ).resolves.toBeUndefined();
+      expect(logSpy.mock.calls.join(' ')).toContain('Removed the Project');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test('tolerates a 404 (already gone) without throwing', async () => {
+    const state = newFakeState({ deleteProjectResponseStatus: 404 });
+
+    await expect(
+      deleteAppProject({ projectId: 'proj-1' }, { client: fakeClient(state) }),
+    ).resolves.toBeUndefined();
+    expect(state.deleteProjectCalls).toEqual(['proj-1']);
+  });
+
+  test("a 400 (still has another stage's resources) keeps the project and does not throw", async () => {
+    const state = newFakeState({ deleteProjectResponseStatus: 400 });
+    const logSpy = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(
+        deleteAppProject({ projectId: 'proj-1' }, { client: fakeClient(state) }),
+      ).resolves.toBeUndefined();
+      expect(logSpy.mock.calls.join(' ')).toContain('Kept the Project');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  test('any other API error logs a warning and does not throw', async () => {
+    const state = newFakeState({ deleteProjectResponseStatus: 500 });
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(
+        deleteAppProject({ projectId: 'proj-1' }, { client: fakeClient(state) }),
+      ).resolves.toBeUndefined();
+      expect(warnSpy.mock.calls.join(' ')).toContain('Could not remove the Project');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

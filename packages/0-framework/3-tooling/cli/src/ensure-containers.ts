@@ -6,6 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   deleteBranch,
+  deleteProject,
   fromEnv,
   type ManagementApiClient,
   ManagementClient,
@@ -116,4 +117,46 @@ export async function deleteStageBranch(
       : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
   const outcome = await Effect.runPromise(provided);
   if (!outcome.ok) throw new CliError(outcome.message);
+}
+
+/**
+ * Best-effort cleanup after a successful `--production` destroy: removes
+ * the app's Project so hand-run stacks don't accumulate as empty Projects
+ * (they eventually hit the workspace's plan limit). Unlike `deleteStageBranch`,
+ * this never throws: the destroy itself already succeeded, and the API's own
+ * 400 ("still has dependencies") is the only check that matters — failing
+ * the command over a cleanup step would be worse than leaving a Project shell.
+ */
+export async function deleteAppProject(
+  input: { readonly projectId: string; readonly env?: NodeJS.ProcessEnv },
+  deps?: { readonly client?: ManagementApiClient },
+): Promise<void> {
+  const env = input.env ?? process.env;
+  if (deps?.client === undefined && (env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
+    console.warn(
+      `Skipped removing the Project (${input.projectId}): PRISMA_SERVICE_TOKEN is not set.`,
+    );
+    return;
+  }
+  const program = deleteProject(input.projectId).pipe(
+    Effect.map(() => ({ ok: true as const })),
+    Effect.catchTag('PrismaApiError', (e) => Effect.succeed({ ok: false as const, error: e })),
+  );
+  const provided =
+    deps?.client !== undefined
+      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
+      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
+
+  const outcome = await Effect.runPromise(provided);
+  if (outcome.ok) {
+    console.log(`Removed the Project (${input.projectId}) — nothing was left in it.`);
+    return;
+  }
+  if (outcome.error.status === 400) {
+    console.log(`Kept the Project (${input.projectId}) — it still has another stage's resources.`);
+    return;
+  }
+  console.warn(
+    `Could not remove the Project (${input.projectId}) after destroy: ${outcome.error.message}.`,
+  );
 }

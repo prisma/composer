@@ -12,6 +12,7 @@ import type { ResolvedContainer } from '@internal/lowering';
 import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
 import {
+  deleteAppProject,
   deleteStageBranch,
   type EnsureContainersInput,
   ensureContainers,
@@ -136,6 +137,7 @@ export interface RunDeps {
   readonly ensureContainers?: (input: EnsureContainersInput) => Promise<ResolvedContainer>;
   readonly alchemy?: (input: RunAlchemyInput) => number;
   readonly deleteBranch?: (input: { branchId: string }) => Promise<void>;
+  readonly deleteProject?: (input: { projectId: string }) => Promise<void>;
   /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). */
   readonly config?: PrismaAppConfig;
 }
@@ -298,6 +300,8 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     }
     if (args.command === 'destroy' && branchId !== undefined) {
       await (deps.deleteBranch ?? ((input) => deleteStageBranch(input)))({ branchId });
+    } else if (args.command === 'destroy') {
+      await (deps.deleteProject ?? ((input) => deleteAppProject(input)))({ projectId });
     }
     return status;
   } catch (error) {

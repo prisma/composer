@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import type { ManagementApiClient } from '../client.ts';
 import { ManagementClient } from '../client.ts';
-import { ContainerNotFoundError, deleteBranch, resolveContainer } from '../container.ts';
+import {
+  ContainerNotFoundError,
+  deleteBranch,
+  deleteProject,
+  resolveContainer,
+} from '../container.ts';
 import { PrismaApiError } from '../http.ts';
 
 interface FakeProject {
@@ -29,6 +34,9 @@ interface FakeState {
   deleteBranchCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
   deleteBranchResponseStatus?: number;
+  deleteProjectCalls: string[];
+  /** Overrides the DELETE response status — defaults to a 204 success. */
+  deleteProjectResponseStatus?: number;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -38,6 +46,7 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   branchCreateCalls: 0,
   raced: false,
   deleteBranchCalls: [],
+  deleteProjectCalls: [],
   ...overrides,
 });
 
@@ -130,6 +139,16 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       const branchId = init.params?.path?.['branchId'] ?? '';
       state.deleteBranchCalls.push(branchId);
       const status = state.deleteBranchResponseStatus ?? 204;
+      return Promise.resolve(
+        status >= 400
+          ? errorResponse(status)
+          : { data: undefined, error: undefined, response: new Response(null, { status }) },
+      );
+    }
+    if (path === '/v1/projects/{id}') {
+      const id = init.params?.path?.['id'] ?? '';
+      state.deleteProjectCalls.push(id);
+      const status = state.deleteProjectResponseStatus ?? 204;
       return Promise.resolve(
         status >= 400
           ? errorResponse(status)
@@ -430,5 +449,41 @@ describe('deleteBranch', () => {
 
     expect(error).toBeInstanceOf(PrismaApiError);
     expect((error as PrismaApiError).status).toBe(409);
+  });
+});
+
+describe('deleteProject', () => {
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = newFakeState();
+  });
+
+  const runDelete = (projectId: string) =>
+    Effect.runPromise(
+      deleteProject(projectId).pipe(Effect.provideService(ManagementClient, fakeClient(state))),
+    );
+
+  test('issues DELETE /v1/projects/{id}', async () => {
+    await runDelete('proj-1');
+
+    expect(state.deleteProjectCalls).toEqual(['proj-1']);
+  });
+
+  test('tolerates a 404 (already gone) without throwing', async () => {
+    state.deleteProjectResponseStatus = 404;
+
+    await runDelete('proj-1');
+
+    expect(state.deleteProjectCalls).toEqual(['proj-1']);
+  });
+
+  test('surfaces a non-404 error (e.g. still has dependencies) as PrismaApiError', async () => {
+    state.deleteProjectResponseStatus = 400;
+
+    const error: unknown = await runDelete('proj-1').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).status).toBe(400);
   });
 });

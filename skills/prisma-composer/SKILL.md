@@ -514,8 +514,11 @@ must be a valid git ref name; an invalid name is a hard error.
 Destroy always requires an explicit target — a bare `prisma-composer destroy`
 is an error, and `--stage` with `--production` is too. Destroying a stage
 deletes its Branch after removing its resources; the production Branch itself
-is never deleted, only the resources inside it. Destroy never creates
-anything: destroying a never-deployed stage fails rather than standing one up.
+is never deleted, only the resources inside it. Destroying production also
+deletes the Project itself once it's empty, so hand-run stacks don't leave
+behind empty Projects — but a Project still holding another stage's resources
+is kept. Destroy never creates anything: destroying a never-deployed stage
+fails rather than standing one up.
 
 ```sh
 turbo run build && prisma-composer deploy module.ts --stage pr-42
