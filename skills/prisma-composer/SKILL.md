@@ -537,7 +537,7 @@ storefront-auth
 ├─ auth
 │  └─ api   compute-service cps_abc123
 │           https://xyz.ewr.prisma.build
-├─ db       postgres-database pdb_def456
+├─ db       postgres-database db_def456
 └─ web      compute-service cps_ghi789
             https://uvw.ewr.prisma.build
 ```
