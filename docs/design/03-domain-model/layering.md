@@ -26,7 +26,9 @@ resource graph, which deploys to the cloud.
 - **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: ComputeService /
   ComputeVersion, Database (1:1 within an Environment), Stream, endpoint. Prisma
   Cloud is *one* target; another target's pack maps the same authoring nouns to
-  its own hosting primitives.
+  its own hosting primitives. The framework's deploy report calls a thing on
+  this plane a **Deployment entity** (`DeployedEntity`): its kind, platform id,
+  and — only when the target says it is publicly reachable — its URL.
 
 ## The mapping
 

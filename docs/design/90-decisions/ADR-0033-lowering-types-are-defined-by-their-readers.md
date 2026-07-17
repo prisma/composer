@@ -17,7 +17,7 @@ export interface ServiceLowering<P = unknown, S = unknown> {
   serialize(ctx: LowerContext, provisioned: P, config: Config): Effect.Effect<S, unknown, unknown>;
   package(ctx: LowerContext, input: PackageInput): Effect.Effect<Artifact, unknown, unknown>;
   deploy(ctx: LowerContext, provisioned: P, artifact: Artifact, serialized: S):
-    Effect.Effect<WiringOutputs, unknown, unknown>;
+    Effect.Effect<Outputs, unknown, unknown>;
 }
 
 // 2 — the extension's application hook hands its product to that extension's
@@ -28,7 +28,7 @@ readonly application: unknown;
 // 3 — one node hands values to the nodes wired downstream of it. Name-keyed and
 // unknown-valued: the consumer's connection declaration is the contract,
 // resolved by param name at runtime.
-export type WiringOutputs = Readonly<Record<string, unknown>>;
+export type Outputs = Readonly<Record<string, unknown>>;
 ```
 
 The **lowering loop is the only router**. It alone knows that `deploy`'s return
@@ -36,7 +36,7 @@ feeds `buildConfig` for dependent nodes. Descriptors do not know `buildConfig`
 exists. A future consumer of a descriptor's output must declare its own
 interface and appear as a visible routing edit in the loop.
 
-Two of these are decided here and implemented in later slices: the wiring
+Two of these are decided here and implemented in later slices: the connection
 contract becomes **enforced** — a producer that fails to supply a param the
 consumer's connection declares fails the deploy naming the edge (S2) — and
 **deployment results** become core-declared types the loop assembles at full
@@ -52,16 +52,17 @@ context (S3). Neither is implemented by this ADR.
    Same party writes and reads; core never looks inside. Forcing them through
    the shared record made descriptors cast to recover types they had produced
    themselves two phases earlier.
-2. **Inter-node wiring** — `deploy`'s return, stored in the `lowered` map, read
-   by `buildConfig` by param name. The only role core genuinely consumes.
+2. **A node's outputs for its dependents** — `deploy`'s return, stored in the
+   `lowered` map, read by `buildConfig` by param name. The only role core
+   genuinely consumes.
 3. **Reporting** — the reverted `NodeReport` (PR #101), possible only because a
    shared untyped record accepts a new field without any consumer's signature
    changing.
 
 A shared bag is a *producer-side* type: it describes what someone hands over,
 not what anyone needs. That is what let one type serve three consumers — and
-what let reporting data be added to the wiring contract without any reviewer
-seeing an interface change.
+what let reporting data be added to the type dependents' connections resolve
+against, without any reviewer seeing an interface change.
 
 ### The evidence: a type lie the bag hid indefinitely
 
@@ -127,15 +128,15 @@ from being wrong:
 | --- | --- | --- |
 | **Between a descriptor's phases** (`P`, `S`) | Precise types | The **compiler** — the same descriptor writes and reads them, so it can check both ends |
 | **Application hook → its extension's descriptors** (`ctx.application`) | Precise: `CloudApplication.projectId: string` | A **runtime guard** (`isCloudApplication`) — the value passes through core as `unknown`, so the compiler cannot follow it |
-| **A node → the nodes wired downstream of it** (`WiringOutputs`) | **Nothing** — the values are `unknown` | Nothing needed. `unknown` cannot lie |
+| **A node → the nodes wired downstream of it** (`Outputs`) | **Nothing** — the values are `unknown` | Nothing needed. `unknown` cannot lie |
 
 The third row is where the argument actually lands. `warm.url` (postgres) and
 `creds.accessKeyId` (s3-credentials) are *also* unresolved `Output<string>`s —
 exactly like `serviceId`. They were never mis-typed, and could not have been:
-they flow into `WiringOutputs`, which claims nothing about them. Core cannot
-know extension types, and which producer feeds which consumer is decided by the
-user's graph at runtime, so the wiring type says it does not know, and the
-value is resolved by name against the consumer's declared params instead.
+they flow into `Outputs`, which claims nothing about them. Core cannot know
+extension types, and which producer feeds which consumer is decided by the
+user's graph at runtime, so `Outputs` says it does not know, and the value is
+resolved by name against the consumer's declared params instead.
 
 **The bug could only ever have lived where a precise claim was made with no
 mechanism checking it.** The application hook's product is a precise claim too
@@ -194,7 +195,7 @@ against alchemy's in-memory state, not by reading the types:
   with the result (`src/Apply.ts:1205`); the runner's parameter is typed `In`,
   the resolved shape, while the call site takes
   `{ [k in keyof In]: Input<In[k]> }` (`src/Action.ts:39` and `:133`). Probed
-  two levels deep — `entries[].primitives[].id`, handed over as an
+  two levels deep — `entries[].entities[].id`, handed over as an
   `Output<string>`, arrived in the runner as a real `string`.
 - **Alchemy hashes the RESOLVED input and noops on an unchanged hash.** Plan
   resolves the input, then hashes that (`src/Plan.ts:1043-1044`), and an Action
@@ -276,7 +277,8 @@ ADR exists to remove.
 ## Alternatives considered
 
 - **`NodeReport` on `LoweredNode`** (PR #101) — rejected: reporting data on the
-  wiring contract, untyped, and meaningless on two of the three phases. This
+  type dependents' connections resolve against, untyped, and meaningless on
+  two of the three phases. This
   ADR supersedes that approach.
 - **A separate `describe()` SPI hook** — rejected: the resource handles live
   inside `deploy()`'s effect; `describe()` would need them handed back out,

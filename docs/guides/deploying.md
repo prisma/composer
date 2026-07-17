@@ -94,7 +94,7 @@ URL here is a secret, and nothing secret is reported here at all — an
 line for that reason.
 
 A node that deployed but published nothing reportable is still listed, marked
-`(no primitives reported)`, so a node is never silently missing from the tree.
+`(no entities reported)`, so a node is never silently missing from the tree.
 
 **If you're wondering where the JSON went:** deploys used to end with a raw
 `{ outputs: {} }` blob from the underlying deploy engine — always empty, never
@@ -143,7 +143,7 @@ preflight copies missing ones up on that first deploy. A name absent from
 both the platform and the shell fails the deploy early, naming the missing
 variable.
 
-## When a deploy stops on a wiring gap
+## When a deploy stops on a missing connection value
 
 A dependency's connection declares the values it needs, by name. The node on
 the other end of the wire has to supply them. When one doesn't, the deploy
@@ -151,8 +151,8 @@ stops and names the edge rather than standing the app up:
 
 ```
 Connection input "auth.db" declares param "url", but its producer "db" did not
-supply it — the producer's wiring outputs carry [host]. Add "url" to the
-producer's returned wiring outputs, or declare the param optional on the
+supply it — the producer's outputs carry [host]. Add "url" to the outputs the
+producer returns from its lowering, or declare the param optional on the
 connection.
 ```
 

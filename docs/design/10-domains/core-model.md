@@ -488,10 +488,18 @@ interface ServiceLowering<P = unknown, S = unknown> {
     Effect.Effect<Artifact, unknown, unknown>
   // deploy: ship the packaged artifact into the provisioned thing and run it
   // (version → upload → start → promote). Consumes `serialized`'s env records
-  // via the Deployment's environment prop (the edge). Returns the node's WIRING
-  // outputs — what dependent nodes' connection params resolve against.
+  // via the Deployment's environment prop (the edge). Returns the node's
+  // outputs — what dependent nodes' connection params resolve against — plus
+  // the entities it became on the deployment target, for the deploy report.
   deploy(ctx: LowerContext, provisioned: P, artifact: Artifact,
-         serialized: S): Effect.Effect<WiringOutputs, unknown, unknown>
+         serialized: S): Effect.Effect<LoweredResult, unknown, unknown>
+}
+
+// What a node's final lowering phase produces: outputs for dependents,
+// entities for the deploy report (ADR-0033).
+interface LoweredResult {
+  readonly outputs: Outputs
+  readonly entities: readonly Input<DeployedEntity>[]
 }
 
 // package input: the build adapter's assembled output plus the address. The
@@ -511,7 +519,7 @@ interface PackageInput {
 
 // One node's realization. Runs inside the Alchemy stack effect; yields the
 // pack's Alchemy resources. Core never looks inside.
-type Lowering = (ctx: LowerContext) => Effect.Effect<WiringOutputs, unknown, unknown>
+type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredResult, unknown, unknown>
 
 interface LowerContext {
   readonly id: NodeId
@@ -523,15 +531,16 @@ interface LowerContext {
   readonly application: unknown                         // the owning extension's application product;
                                                         // undefined when it declares no hook. Core never
                                                         // reads it; the extension narrows it (ADR-0033)
-  readonly lowered: ReadonlyMap<NodeId, WiringOutputs>  // already-lowered deps (topo order)
+  readonly lowered: ReadonlyMap<NodeId, Outputs>        // already-lowered deps (topo order)
 }
 
-// What a lowering hands downstream — e.g. a deployed URL a later node's env
-// wiring consumes. The inter-node config-wiring hook for Connections.
-// Name-keyed and unknown-valued of necessity: core cannot know extension types,
-// and which producer feeds which consumer is decided by the user's graph at
-// runtime. The consumer's connection declaration is the contract (ADR-0033).
-type WiringOutputs = Readonly<Record<string, unknown>>
+// The values a node provides to its dependents — e.g. a deployed URL a later
+// node's env consumes; what a consumer's declared connection params
+// resolve against. Name-keyed and unknown-valued of necessity: core cannot
+// know extension types, and which producer feeds which consumer is decided by
+// the user's graph at runtime. The connection declaration is the contract
+// (ADR-0033).
+type Outputs = Readonly<Record<string, unknown>>
 
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
