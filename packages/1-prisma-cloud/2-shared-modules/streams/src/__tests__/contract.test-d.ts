@@ -8,7 +8,10 @@ describe('durableStreams(contract)', () => {
   test('hydrates to one handle per declared stream name', () => {
     const jobLog = streamsContract({ jobs: streamDef(), audit: streamDef() });
     expectTypeOf(durableStreams(jobLog)).toEqualTypeOf<
-      DependencyEnd<{ readonly jobs: StreamHandle; readonly audit: StreamHandle }, typeof jobLog>
+      DependencyEnd<
+        { readonly jobs: StreamHandle; readonly audit: StreamHandle },
+        Contract<'streams', StreamDefs>
+      >
     >();
   });
 });

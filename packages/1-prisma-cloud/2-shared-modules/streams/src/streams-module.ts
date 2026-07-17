@@ -12,6 +12,7 @@ import type { Contract, DependencyEnd, ModuleNode } from '@internal/core';
 import { module } from '@internal/core';
 import type { S3Config, S3Contract } from '@internal/storage';
 import { s3 } from '@internal/storage';
+import type { StreamDefs } from './contract.ts';
 import { streamsProviderContract } from './contract.ts';
 import { streamsService } from './streams-service.ts';
 
@@ -19,7 +20,7 @@ export function streams(opts?: {
   name?: string;
 }): ModuleNode<
   { store: DependencyEnd<S3Config, S3Contract> },
-  { streams: Contract<'streams', never> },
+  { streams: Contract<'streams', StreamDefs> },
   Record<never, never>
 > {
   return module(

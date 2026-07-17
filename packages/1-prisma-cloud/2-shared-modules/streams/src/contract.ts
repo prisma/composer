@@ -27,7 +27,6 @@
  */
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
-import { blindCast } from '@internal/foundation/casts';
 import { streamsApiKeyNeed } from '@internal/prisma-cloud';
 import type { StreamHandle } from './client.ts';
 import { StreamsClient } from './client.ts';
@@ -74,24 +73,19 @@ export type StreamsContract<D extends StreamDefs = StreamDefs> = Contract<'strea
 
 /**
  * The `streams()` module's own exposed port: a general streams provider,
- * satisfied by kind alone. It carries no def map of its own — the module
- * doesn't know its eventual consumers' stream names, and different
- * consumers of the same module may each name different streams — so its
- * `__cmp` is typed `never` rather than any specific def map. `never` is the
- * one `Cmp` a `Contract<'streams', Cmp>` can carry that is structurally
- * assignable to every consumer's own, more specific `streamsContract(defs)`
- * requirement (a `Record<string, StreamDef>`, unlike `never`, is NOT
- * assignable to a narrower literal record type — TypeScript requires the
- * literal property, an index signature alone doesn't supply it). The
- * `blindCast` below is the honest way to say that: no value of type `never`
- * exists, and none is needed, because `satisfies` below never reads `__cmp`.
+ * satisfied by kind alone — the `postgresContract` pattern. The module
+ * cannot know its eventual consumers' stream names (different consumers of
+ * one module each name their own), and the server genuinely serves any
+ * stream, so what a consumer requires of its provider is only "is a streams
+ * provider". That is exactly what this wide type says, and the empty def
+ * map is a legitimate `StreamDefs` value — a placeholder nobody reads, like
+ * postgres's `{ url: '' }`. Consumers keep their literal handle typing from
+ * `durableStreams(contract)`'s generic parameter, which is independent of
+ * the wiring-compatibility type here.
  */
-export const streamsProviderContract: Contract<'streams', never> = Object.freeze({
+export const streamsProviderContract: Contract<'streams', StreamDefs> = Object.freeze({
   kind: 'streams',
-  __cmp: blindCast<
-    never,
-    'no consumer reads this __cmp — satisfies() below checks kind only — and never is the one Cmp that structurally satisfies every more specific streamsContract(defs) requirement'
-  >(undefined),
+  __cmp: {},
   satisfies: (required: Contract<'streams', unknown>) => required.kind === 'streams',
 });
 
@@ -113,7 +107,7 @@ const connectionParams = {
  */
 export function durableStreams<D extends StreamDefs>(
   contract: Contract<'streams', D>,
-): DependencyEnd<StreamHandles<D>, Contract<'streams', D>>;
+): DependencyEnd<StreamHandles<D>, Contract<'streams', StreamDefs>>;
 export function durableStreams(): DependencyEnd<StreamsClient, Contract<'streams', StreamDefs>>;
 export function durableStreams(contract?: Contract<'streams', StreamDefs>): unknown {
   return dependency({

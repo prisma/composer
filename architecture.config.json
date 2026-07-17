@@ -163,6 +163,18 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/provider-params.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/streams/src/client.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/provisioned-edges.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
