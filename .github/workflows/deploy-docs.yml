@@ -5,10 +5,20 @@ name: Deploy docs
 # the bundle at build time, so a docs/guides/ edit needs a redeploy to reach
 # the site.
 #
-# Credentials: repo secret CI_SITE_DEPLOY_TOKEN (the site's own deploy token,
-# separate from the E2E workflow's PRISMA_SERVICE_TOKEN) and repo variable
-# PRISMA_WORKSPACE_ID. The CLI reads the token from PRISMA_SERVICE_TOKEN, so
-# the secret is mapped onto that name below.
+# Credentials come in PAIRS — a token and the workspace it belongs to — and the
+# two pairs must never be mixed:
+#
+#   production site : CI_SITE_DEPLOY_TOKEN  + PROD_SITE_WORKSPACE_ID   <- this workflow
+#   CI / e2e        : PRISMA_SERVICE_TOKEN  + PRISMA_WORKSPACE_ID      <- e2e-deploy.yml
+#
+# This workflow originally paired the site's token with PRISMA_WORKSPACE_ID.
+# Every run then created a state project (the API puts it in the token's own
+# workspace regardless of the workspaceId asked for — PTL-1569), searched for it
+# in the workspace it had asked for, found nothing, and deployed a whole new copy
+# of the site: five production apps, five green runs.
+#
+# The CLI reads the token from PRISMA_SERVICE_TOKEN, so the secret is mapped onto
+# that name below; the workspace must be the one that token lives in.
 
 on:
   push:
@@ -36,7 +46,7 @@ jobs:
     timeout-minutes: 5
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.CI_SITE_DEPLOY_TOKEN }}
-      PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+      PRISMA_WORKSPACE_ID: ${{ vars.PROD_SITE_WORKSPACE_ID }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
