@@ -330,7 +330,7 @@ await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 500
 
 - Upstream: [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while)
 - Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
-- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) passes only while the rejection exists — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself
+- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect succeeds — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking)
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
 
 ---
@@ -391,7 +391,7 @@ The window is small and measurable. In `examples/streams`' Compute version logs,
 
 **But do not push this into application code.** Hand-rolling it per app costs every consumer a platform-specific backoff, cannot cover the non-idempotent calls (where this was actually observed to land), and hides the defect from the people who would fix it. The compensation lives ONCE, as policy in the streams client Composer ships (`createStreamsClient`'s `IDEMPOTENT_BACKOFF`): idempotent operations — create, read, tail — are retried with a bounded backoff; **appends are not retried** (no idempotency key upstream, so a failed append is indistinguishable from an applied one) and surface as a 502 naming the cause, keeping the platform behaviour visible where it cannot be safely absorbed. An app's first append after an idle spell may therefore still fail intermittently — the honest state of the platform. The cost this pushes onto tooling and users is filed as [PRO-219](https://linear.app/prisma-company/issue/PRO-219/scale-to-zero-cold-starts-force-platform-specific-retry-boilerplate); an always-on / min-instances option, or making the first-request behaviour consistent, would remove the window and the compensation with it. Neither exists today.
 
-**Removal guard.** The CI "Cold-start canary (PRO-217)" job (`scripts/cold-start-canary.ts`, in the E2E deploy workflow) touches freshly promoted instances each run and passes only while a close still occurs — when it reports all touches held, that is the signal to remove `createStreamsClient`'s `IDEMPOTENT_BACKOFF` (the PRO-219 compensation) and the canary itself, the same contract as FT-5226's cold-connect canary.
+**Removal guard.** The CI "Cold-start canary (PRO-217)" job (`scripts/cold-start-canary.ts`, in the E2E deploy workflow) touches freshly promoted instances each run and fails only when every touch held (an inconclusive run passes with a warning annotation) — that failure is the signal to remove `createStreamsClient`'s `IDEMPOTENT_BACKOFF` (the PRO-219 compensation) and the canary itself, the same contract as FT-5226's cold-connect canary.
 
 **Reproduction.**
 
