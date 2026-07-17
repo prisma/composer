@@ -151,6 +151,6 @@ medium is fixed by the framework.
 - [`ADR-0018`](ADR-0018-config-params-carry-a-caller-owned-schema.md) — the
   schema-typed param whose values this serializes.
 - [`ADR-0017`](ADR-0017-control-plane-loads-through-the-app-config.md) — the
-  extension control plane; a target's serialization is part of its control.
+  extension control plane; a target's serialization is part of its control plane.
 - [`../10-domains/config-params.md`](../10-domains/config-params.md) — the full
   pipeline from declaration to platform storage and back.
