@@ -12,32 +12,17 @@ import type {
 } from '@internal/core';
 import { hydrateSecrets, hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import {
   deserialize,
   deserializeSecrets,
-  type ProviderParamEntry,
   stash,
   stashProviderParams,
   stashSecrets,
 } from './serializer.ts';
-import { RPC_ACCEPTED_KEYS_PARAM } from './service-keys.ts';
-import { STREAMS_API_KEY_PARAM } from './streams-keys.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
-
-/**
- * Every reserved provider param this target ships (ADR-0031): the boot-side
- * declarations (name + schema) `control.ts` also registers, one per brand,
- * each in its own brand-owned module (`service-keys.ts`, `streams-keys.ts`)
- * so writer and reader import the same constant rather than naming the same
- * var twice. Adding a brand's reserved param here is this file's one
- * necessary edit — `run()` itself stays generic over the list.
- */
-const RESERVED_PROVIDER_PARAMS: readonly ProviderParamEntry[] = [
-  RPC_ACCEPTED_KEYS_PARAM,
-  STREAMS_API_KEY_PARAM,
-];
 
 /**
  * A Prisma Compute service — declarations only (deps + params + build + the

@@ -163,7 +163,10 @@ const PROVISIONERS: ReadonlyMap<symbol, ProvisionerDescriptor> = new Map([
   [STREAMS_API_KEY, streamsApiKeyProvisioner],
 ]);
 
-const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam> = new Map([
+// Exported so `__tests__/provider-params.test.ts` can assert this registry
+// names the same params as the boot-side `RESERVED_PROVIDER_PARAMS`
+// (`provider-params.ts`) — the two lists must never drift apart.
+export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam> = new Map([
   [RPC_PEER_KEY, rpcAcceptedKeysParam],
   [STREAMS_API_KEY, streamsApiKeyParam],
 ]);
