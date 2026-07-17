@@ -28,9 +28,10 @@ from exactly one place — the service node:
 - `service.config()` — config params (validated, typed values)
 - `service.secrets()` — secret values (redacting `SecretBox`es)
 
-The framework never bundles or transforms your code. You build your app
-(`tsdown`, `next build`); `prisma-composer deploy` assembles the built output
-and provisions it on Prisma Cloud (Compute + Prisma Postgres).
+The framework never bundles or transforms your code. You build your app with
+whatever bundler you like (`bun build`, `next build`); `prisma-composer deploy`
+assembles the built output and provisions it on Prisma Cloud (Compute + Prisma
+Postgres).
 
 Two things make building here fast and hard to get wrong — lean on both:
 
@@ -45,7 +46,7 @@ Two packages, and only two, appear in your `package.json`:
 
 | Package | Provides |
 | --- | --- |
-| `@prisma/composer` | Core authoring: `module`, `secret`, params, `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, `/tsdown`, the `prisma-composer` CLI |
+| `@prisma/composer` | Core authoring: `module`, `secret`, params, `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
 | `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
 
 ## Anatomy of a service
@@ -193,18 +194,19 @@ and `secrets` (bind secret needs — see § Secrets).
 ## Builds are yours
 
 The framework assembles only what you built — users build, the framework
-assembles. For a plain server process, build each entry
-self-contained with the shipped tsdown preset:
+assembles. For a plain server process, `entry` must point at a single
+self-contained ESM file: everything inlined except runtime built-ins (`bun`,
+`bun:*`, `node:*`), which the deploy VM provides. Deploy copies that one file
+and never ships `node_modules`, so anything left un-inlined fails at boot. Use
+any bundler that does that — with bun:
 
-```ts
-// tsdown.config.ts
-import { prismaTsDownConfig } from '@prisma/composer/tsdown';
-export default prismaTsDownConfig({ entry: { server: 'src/server.ts' }, outDir: 'dist' });
+```sh
+bun build src/server.ts --target=bun --outfile dist/server.mjs
 ```
 
-Two services in one package means two separate builds into separate `outDir`s
-— not one multi-entry build, which would split shared code into a chunk
-neither dist contains. For Next.js, `next build` with `output: 'standalone'`
+Two services in one package means two separate builds, one per entry — not one
+multi-entry build, which would split shared code into a chunk neither output
+contains. For Next.js, `next build` with `output: 'standalone'`
 is the whole build; `nextjs({ module, appDir })` tells the deploy where the
 app root is.
 

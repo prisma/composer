@@ -4,8 +4,8 @@
  * Serves the real `workerContract` (so its handler map is type-checked
  * against the same contract the real worker exposes) and records which
  * methods were called, so the test can assert the cron pipeline actually
- * reached the target. Not a build entry, so tsdown never bundles it into the
- * deployed artifact.
+ * reached the target. Not a build entry, so it never reaches the deployed
+ * artifact.
  *
  * A fresh call log per test needs a fresh handler, so this exports a factory
  * rather than a single served instance (contrast auth's `fake.ts`, whose

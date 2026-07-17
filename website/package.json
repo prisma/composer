@@ -6,7 +6,7 @@
   "scripts": {
     "render": "bun run scripts/render-content.ts",
     "verify:deployed": "bun run scripts/verify-deployed.ts",
-    "build": "pnpm run render && tsdown",
+    "build": "pnpm run render && rm -rf dist && bun build src/server.ts --target=bun --outfile dist/server.mjs",
     "typecheck": "pnpm run render && tsc --noEmit",
     "test": "pnpm run render && bun test tests",
     "dev": "pnpm run render && bun run src/server.ts",
@@ -26,7 +26,6 @@
     "@types/markdown-it": "^14.1.2",
     "markdown-it": "^14.1.0",
     "shiki": "^1.29.2",
-    "tsdown": "^0.22.4",
     "typescript": "^6.0.3"
   }
 }

@@ -18,7 +18,6 @@
     "./node/control": "./dist/node-control.mjs",
     "./nextjs": "./dist/nextjs.mjs",
     "./nextjs/control": "./dist/nextjs-control.mjs",
-    "./tsdown": "./dist/tsdown.mjs",
     "./package.json": "./package.json"
   },
   "files": [
@@ -38,8 +37,7 @@
     "effect": "4.0.0-beta.93",
     "esbuild": "^0.28.1",
     "postgres": "^3.4.9",
-    "@prisma/management-api-sdk": "^1.47.0",
-    "tsdown": "^0.22.4"
+    "@prisma/management-api-sdk": "^1.47.0"
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.1.0",
@@ -52,6 +50,7 @@
     "@internal/rpc": "workspace:0.1.0",
     "@internal/tsdown-config": "workspace:0.1.0",
     "@types/node": "^25.9.3",
+    "tsdown": "^0.22.4",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",

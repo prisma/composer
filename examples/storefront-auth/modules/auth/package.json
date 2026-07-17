@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "bun run scripts/dev.ts",
-    "build": "tsdown",
+    "build": "rm -rf dist && bun build src/server.ts --target=bun --outfile dist/server.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -24,7 +24,6 @@
     "@prisma/composer": "workspace:0.1.0",
     "@prisma/composer-prisma-cloud": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
-    "tsdown": "^0.22.4",
     "typescript": "^6.0.3"
   }
 }

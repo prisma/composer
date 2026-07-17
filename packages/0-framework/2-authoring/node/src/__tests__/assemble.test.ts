@@ -147,7 +147,8 @@ describe('assemble()', () => {
   test('assembles a build whose module basename is not "service" (cron scheduler shape) to main.mjs', async () => {
     // The cron scheduler's build.module is "scheduler-service.mjs", not
     // "service.ts" — a filename-discovery approach (readdir + regex on
-    // "service.*") would miss it; the tsdown object entry doesn't care.
+    // "service.*") would miss it; an object entry keys the output by name
+    // rather than by the input's basename, so it doesn't care.
     const serviceDir = makeServiceDir();
     const cwd = makeCwd();
     const address = 'jobs.scheduler';

@@ -20,7 +20,6 @@ export default defineConfig([
       'node-control': 'src/node-control.ts',
       nextjs: 'src/nextjs.ts',
       'nextjs-control': 'src/nextjs-control.ts',
-      tsdown: 'src/tsdown.ts',
     },
     exports: false,
     clean: true,

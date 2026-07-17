@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf dist && bun build src/worker/server.ts --target=bun --outfile dist/worker/server.mjs && bun build src/runner/server.ts --target=bun --outfile dist/runner/server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",
     "dev:worker": "bun run src/worker/server.ts",
@@ -23,7 +23,6 @@
   "devDependencies": {
     "@prisma/composer": "workspace:0.1.0",
     "@types/bun": "^1.3.13",
-    "tsdown": "^0.22.4",
     "typescript": "^6.0.3"
   }
 }

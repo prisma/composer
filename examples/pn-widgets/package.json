@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsdown",
+    "build": "rm -rf dist && bun build src/server.ts --target=bun --outfile dist/server.mjs",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-pn-widgets... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${PN_WIDGETS_STACK_NAME:+--name \"$PN_WIDGETS_STACK_NAME\"} )",
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${PN_WIDGETS_STACK_NAME:+--name \"$PN_WIDGETS_STACK_NAME\"} )"
@@ -20,7 +20,6 @@
     "@prisma/composer": "workspace:0.1.0",
     "@prisma/management-api-sdk": "^1.47.0",
     "@types/bun": "^1.3.13",
-    "tsdown": "^0.22.4",
     "typescript": "^6.0.3"
   }
 }

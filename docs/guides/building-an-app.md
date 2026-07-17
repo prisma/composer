@@ -418,16 +418,17 @@ The framework never bundles your code — it assembles what your build
 produced, byte for byte. Two build adapters ship:
 
 **`node` — any plain server process.** Point `entry` at a self-contained ESM
-file. The shipped tsdown preset produces exactly that (everything inlined
-except runtime built-ins):
+file: everything inlined except runtime built-ins (`bun`, `bun:*`, `node:*`),
+which the deploy VM provides. Deploy copies that one file and never ships
+`node_modules`, so anything left un-inlined fails at boot. Any bundler that
+does that works — with bun:
 
-```ts
-import { prismaTsDownConfig } from '@prisma/composer/tsdown';
-export default prismaTsDownConfig({ entry: { server: 'src/server.ts' }, outDir: 'dist' });
+```sh
+bun build src/server.ts --target=bun --outfile dist/server.mjs
 ```
 
-Building two services from one package? Two separate builds into two
-`outDir`s, so shared code lands in both.
+Building two services from one package? Two separate builds, one per entry,
+so shared code lands in both.
 
 **`nextjs` — a Next.js app.** `next build` with `output: 'standalone'` is the
 whole build; the adapter just needs to know where the app lives:

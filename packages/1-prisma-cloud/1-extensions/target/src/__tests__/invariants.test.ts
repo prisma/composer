@@ -159,7 +159,7 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
     // Control-plane code (this extension's control.ts, and transitively
     // prisma-alchemy/alchemy/effect) is imported ONLY by prisma-composer.config.ts.
     // A control import reachable from the authoring barrel would get followed
-    // and inlined by the wrapper's own bundler (tsdown/rolldown), dragging
+    // and inlined by the wrapper's own bundler (esbuild), dragging
     // deploy-only tooling into the runtime artifact.
     const importPattern =
       /(?:import|export)\s+[^'"]*?from\s*["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)|import\s*["']([^"']+)["']/g;

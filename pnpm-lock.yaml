@@ -63,9 +63,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -82,9 +79,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -113,9 +107,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -141,9 +132,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -209,9 +197,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -240,9 +225,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -265,9 +247,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -367,9 +346,6 @@ importers:
       '@types/bun':
         specifier: ^1.3.13
         version: 1.3.14
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -878,9 +854,6 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
     devDependencies:
       '@internal/assemble':
         specifier: workspace:0.1.0
@@ -912,6 +885,9 @@ importers:
       '@types/node':
         specifier: ^25.9.3
         version: 25.9.5
+      tsdown:
+        specifier: ^0.22.4
+        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -1052,9 +1028,6 @@ importers:
       shiki:
         specifier: ^1.29.2
         version: 1.29.2
-      tsdown:
-        specifier: ^0.22.4
-        version: 0.22.4(typescript@6.0.3)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
