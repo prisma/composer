@@ -103,13 +103,13 @@
       "plane": "control"
     },
     {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/index.ts",
+      "glob": "packages/0-framework/2-authoring/nextjs/src/exports/index.ts",
       "domain": "framework",
       "layer": "authoring",
       "plane": "shared"
     },
     {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/control.ts",
+      "glob": "packages/0-framework/2-authoring/nextjs/src/exports/control.ts",
       "domain": "framework",
       "layer": "authoring",
       "plane": "control"

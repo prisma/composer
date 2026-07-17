@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import nextjs from '../index.ts';
+import nextjs from '../exports/index.ts';
 
 describe('nextjs({ module, appDir })', () => {
   test('returns a plain { extension, type, module, appDir, entry } build adapter descriptor', () => {

@@ -86,7 +86,7 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
     const out = await Bun.build({
       entrypoints: [
         path.join(pkgDir, '..', '..', '2-authoring', 'node', 'src', 'exports', 'index.ts'),
-        path.join(pkgDir, '..', '..', '2-authoring', 'nextjs', 'src', 'index.ts'),
+        path.join(pkgDir, '..', '..', '2-authoring', 'nextjs', 'src', 'exports', 'index.ts'),
       ],
       target: 'bun',
     });

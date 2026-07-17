@@ -43,7 +43,7 @@ function reachableImports(entry: string): Map<string, string[]> {
 
 describe('firewall: the authoring entry never reaches a control entry', () => {
   test('no module reachable from src/index.ts imports a /control entry', () => {
-    const reachable = reachableImports(path.join(srcDir, 'index.ts'));
+    const reachable = reachableImports(path.join(srcDir, 'exports', 'index.ts'));
     expect(reachable.size).toBeGreaterThan(0);
 
     for (const [file, specs] of reachable) {
