@@ -206,9 +206,26 @@ bun build src/server.ts --target=bun --outfile dist/server.mjs
 
 Two services in one package means two separate builds, one per entry — not one
 multi-entry build, which would split shared code into a chunk neither output
-contains. For Next.js, `next build` with `output: 'standalone'`
-is the whole build; `nextjs({ module, appDir })` tells the deploy where the
-app root is.
+contains.
+
+If the build emits a directory rather than one file — a server plus the client
+bundle, CSS and images it serves, as Bun's HTML import produces — name the
+directory with `dir` and the booting file inside it with `entry`:
+
+```ts
+build: node({ module: import.meta.url, dir: '../dist/server', entry: 'server.js' })
+```
+
+`dir` resolves relative to the service module; `entry` resolves inside `dir`
+and may be nested. Deploy copies the tree verbatim and boots the named file,
+so the server must resolve its siblings against `import.meta.url`, not the
+working directory. Nothing is inferred, and two rules bite: the tree must
+contain no symlinks (the packager rejects them — assembly fails and names the
+link), and `entry` must be a file inside `dir` (`../` is an error, not an
+escape). Omit `dir` for the single-file form.
+
+For Next.js, `next build` with `output: 'standalone'` is the whole build;
+`nextjs({ module, appDir })` tells the deploy where the app root is.
 
 Always build before deploying — `prisma-composer deploy` does not build for
 you.
