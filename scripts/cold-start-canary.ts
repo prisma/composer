@@ -14,10 +14,11 @@
  * the edge held the connection through the boot; a 502 naming a socket close
  * is PRO-217.
  *
- * Judged like the FT-5226 canary (see cold-start-canary-classify.ts): any
- * close → exit 0, bug still present; all held → exit 1, the signal to remove
- * createStreamsClient's IDEMPOTENT_BACKOFF (PRO-219) and this canary — as
- * evidence, not proof, the bug being intermittent.
+ * A REQUIRED check (see cold-start-canary-classify.ts): any close → exit 0,
+ * bug still present (today's normal); ALL held → exit 1, the forcing signal
+ * to remove createStreamsClient's IDEMPOTENT_BACKOFF (PRO-219) and this
+ * canary; anything inconclusive → exit 0 with a CI warning annotation, so a
+ * deploy flake never blocks unrelated PRs.
  */
 import { execSync } from 'node:child_process';
 import * as os from 'node:os';
@@ -210,4 +211,12 @@ for (let i = 0; i < SAMPLES; i++) {
 
 const result = classifyColdStartRun(touches);
 console.log(result.message);
-process.exitCode = result.pass ? 0 : 1;
+if (result.verdict === 'inconclusive') {
+  // A GitHub Actions warning annotation: loud on the run page without
+  // failing a required check over a deploy flake. Newlines must be %0A.
+  const detail = touches.map((touch, i) => `sample #${i}: ${touch}`).join('; ');
+  console.log(
+    `::warning title=Cold-start canary (PRO-217) inconclusive::${result.message} [${detail}]`,
+  );
+}
+process.exitCode = result.verdict === 'bug-gone' ? 1 : 0;

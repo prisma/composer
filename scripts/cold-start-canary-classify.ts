@@ -44,31 +44,36 @@ export function classifyColdStartTouch(status: number, body: string): ColdStartT
   return 'other';
 }
 
+/**
+ * The three exits a REQUIRED check needs (the job fails only on the
+ * conclusive forcing signal):
+ * - `bug-present` → exit 0 (a close occurred; today's normal),
+ * - `bug-gone` → exit 1 (all held — the workaround exists with no problem;
+ *   the actionable removal message is the point of the failure),
+ * - `inconclusive` → exit 0 plus a CI warning annotation (loud, not blocking
+ *   every PR on a deploy flake; a human should look).
+ */
+export type ColdStartVerdict = 'bug-present' | 'bug-gone' | 'inconclusive';
+
 export interface ColdStartResult {
-  readonly pass: boolean;
+  readonly verdict: ColdStartVerdict;
   readonly message: string;
 }
 
 /**
- * Aggregates N first touches with the FT-5226 canary's unanimity rule:
- * - any close → PASS (PRO-217 still present — one close proves it),
- * - all N held → FAIL: the close looks gone; remove the PRO-219 workaround
- *   (createStreamsClient's IDEMPOTENT_BACKOFF) and this canary. N holds are
- *   EVIDENCE, not proof — the bug is intermittent — which is exactly why the
- *   failure message says to investigate, not just delete.
- * - otherwise → FAIL inconclusive (odd statuses, no close, not all held) —
- *   a human should look before touching the workaround.
+ * Aggregates N first touches with the FT-5226 canary's unanimity rule; see
+ * {@link ColdStartVerdict} for what each verdict makes the job do.
  */
 export function classifyColdStartRun(touches: readonly ColdStartTouch[]): ColdStartResult {
   const n = touches.length;
-  if (n === 0) return { pass: false, message: 'Canary made no touches — broken.' };
+  if (n === 0) return { verdict: 'inconclusive', message: 'Canary made no touches — broken.' };
   const count = (t: ColdStartTouch) => touches.filter((x) => x === t).length;
   const closed = count('closed');
   const held = count('held');
 
   if (closed > 0) {
     return {
-      pass: true,
+      verdict: 'bug-present',
       message:
         `Cold-start close still present (${closed}/${n} first touches closed, ${held} held) — ` +
         'PRO-217 not fixed; keep the PRO-219 backoff in createStreamsClient.',
@@ -76,18 +81,22 @@ export function classifyColdStartRun(touches: readonly ColdStartTouch[]): ColdSt
   }
   if (held === n) {
     return {
-      pass: false,
+      verdict: 'bug-gone',
       message:
-        `All ${n} first touches against fresh instances were held to success — the PRO-217 ` +
-        'close may be fixed (evidence, not proof: it is intermittent). If this stays clean, ' +
-        "remove createStreamsClient's IDEMPOTENT_BACKOFF (the PRO-219 compensation, " +
-        'packages/1-prisma-cloud/2-shared-modules/streams/src/client.ts) and this canary.',
+        `All ${n} first touches against fresh instances were held to success — the platform no ` +
+        'longer shows the PRO-217 close, so the workaround exists with no problem. To fix this ' +
+        'build (you are seeing it because the cleanup is now due, not because of your change): ' +
+        '1) delete IDEMPOTENT_BACKOFF and its uses in createStreamsClient ' +
+        '(packages/1-prisma-cloud/2-shared-modules/streams/src/client.ts); ' +
+        '2) remove scripts/cold-start-canary.ts, scripts/cold-start-canary-classify.ts (+ its ' +
+        'test) and the "Cold-start canary (PRO-217)" job in .github/workflows/e2e-deploy.yml; ' +
+        "3) drop the removal-guard paragraph from gotchas.md's PRO-217 entry; 4) close PRO-219.",
     };
   }
   return {
-    pass: false,
+    verdict: 'inconclusive',
     message:
       `Inconclusive across ${n} touches (${held} held, ${count('other')} other, 0 closes) — ` +
-      'a slow boot, an app error, or a broken canary. Investigate before touching the workaround.',
+      'a slow boot, an app error, or a broken canary. A human should look; not blocking.',
   };
 }

@@ -59,40 +59,54 @@ export function classifyColdConnectSample(error: unknown): ColdConnectSample {
   return 'other';
 }
 
+/**
+ * The three exits a REQUIRED check needs (the job fails only on the
+ * conclusive forcing signal): `bug-present` → exit 0; `bug-gone` → exit 1
+ * (all clean — remove the workaround); `inconclusive` → exit 0 plus a CI
+ * warning annotation.
+ */
+export type ColdConnectVerdict = 'bug-present' | 'bug-gone' | 'inconclusive';
+
 export interface ColdConnectResult {
-  readonly pass: boolean;
+  readonly verdict: ColdConnectVerdict;
   readonly message: string;
 }
 
 /**
  * Aggregates N cold-connect samples with UNANIMITY, so one flaky connect can't
- * flip the verdict:
- * - any active rejection → PASS (bug present — a single rejection proves it),
- * - all N succeeded → FAIL (FT-5226 looks gone; remove the workaround),
- * - otherwise (timeouts / odd errors, no rejection but not all-success) → FAIL
- *   inconclusive (slow cold start, or a broken canary — a human should look).
+ * flip the verdict; see {@link ColdConnectVerdict} for what each verdict makes
+ * the job do.
  */
 export function classifyColdConnectRun(samples: readonly ColdConnectSample[]): ColdConnectResult {
   const n = samples.length;
-  if (n === 0) return { pass: false, message: 'Canary took no samples — broken.' };
+  if (n === 0) return { verdict: 'inconclusive', message: 'Canary took no samples — broken.' };
   const count = (s: ColdConnectSample) => samples.filter((x) => x === s).length;
   const rejected = count('rejected');
   const success = count('success');
 
   if (rejected > 0) {
     return {
-      pass: true,
+      verdict: 'bug-present',
       message: `Cold-connect rejection still present (${rejected}/${n} rejected) — FT-5226 not fixed; keep withConnectionRetry.`,
     };
   }
   if (success === n) {
     return {
-      pass: false,
-      message: `All ${n} cold connects succeeded — PPG cold-connect rejection is gone (FT-5226 fixed?). Remove withConnectionRetry and this canary.`,
+      verdict: 'bug-gone',
+      message:
+        `All ${n} cold connects succeeded — PPg no longer rejects a fresh database's first ` +
+        'connect, so the workaround exists with no problem. To fix this build (you are seeing ' +
+        'it because the cleanup is now due, not because of your change): 1) remove ' +
+        'withConnectionRetry and its uses ' +
+        '(packages/1-prisma-cloud/1-extensions/target/src/pg-connection.ts); 2) remove ' +
+        'scripts/cold-connect-canary.ts, scripts/cold-connect-canary-classify.ts (+ its test) ' +
+        'and the "Cold-connect canary (FT-5226)" job in .github/workflows/e2e-deploy.yml; ' +
+        "3) drop the removal-guard line from gotchas.md's FT-5226 entry; 4) close FT-5226's " +
+        'follow-up if one is open.',
     };
   }
   return {
-    pass: false,
-    message: `Inconclusive across ${n} samples (${success} ok, ${count('timeout')} timeout, ${count('other')} other, 0 active rejections) — FT-5226 may be fixed via a slow cold start, or the canary/credentials are broken. Investigate before removing the workaround.`,
+    verdict: 'inconclusive',
+    message: `Inconclusive across ${n} samples (${success} ok, ${count('timeout')} timeout, ${count('other')} other, 0 active rejections) — FT-5226 may be fixed via a slow cold start, or the canary/credentials are broken. A human should look; not blocking.`,
   };
 }

@@ -61,32 +61,36 @@ describe('classifyColdConnectSample', () => {
   });
 });
 
-describe('classifyColdConnectRun (unanimity)', () => {
+describe("classifyColdConnectRun (unanimity, with a REQUIRED check's three exits)", () => {
   const run = (...s: ColdConnectSample[]) => classifyColdConnectRun(s);
 
-  it('ANY rejection → PASS, even amid successes (a single rejection proves the bug)', () => {
+  it('ANY rejection → bug-present (exit 0), even amid successes (a single rejection proves the bug)', () => {
     const result = run('success', 'success', 'rejected', 'success', 'success');
-    assert.equal(result.pass, true);
+    assert.equal(result.verdict, 'bug-present');
     assert.match(result.message, /still present \(1\/5 rejected\)/);
   });
 
-  it('ALL successes → FAIL with the remove-the-workaround signal', () => {
+  it('ALL successes → bug-gone (exit 1 — the forcing signal), actionable for a cold reader', () => {
     const result = run('success', 'success', 'success', 'success', 'success');
-    assert.equal(result.pass, false);
-    assert.match(result.message, /FT-5226 fixed/);
+    assert.equal(result.verdict, 'bug-gone');
+    assert.match(result.message, /not because of your change/);
+    assert.match(result.message, /withConnectionRetry/);
+    assert.match(result.message, /pg-connection\.ts/);
+    assert.match(result.message, /cold-connect-canary\.ts/);
+    assert.match(result.message, /e2e-deploy\.yml/);
   });
 
-  it('no rejections but not all-success (timeouts) → FAIL inconclusive, not "fixed"', () => {
+  it('no rejections but not all-success (timeouts) → inconclusive (exit 0 + warning), not "fixed"', () => {
     const result = run('success', 'timeout', 'success', 'timeout', 'success');
-    assert.equal(result.pass, false);
-    assert.match(result.message, /Inconclusive/);
+    assert.equal(result.verdict, 'inconclusive');
+    assert.match(result.message, /not blocking/);
   });
 
   it('a lone success does not flip a rejecting run to "fixed"', () => {
-    assert.equal(run('rejected', 'rejected', 'success').pass, true);
+    assert.equal(run('rejected', 'rejected', 'success').verdict, 'bug-present');
   });
 
-  it('zero samples → FAIL (broken canary)', () => {
-    assert.equal(classifyColdConnectRun([]).pass, false);
+  it('zero samples → inconclusive (broken canary; warn, do not block)', () => {
+    assert.equal(classifyColdConnectRun([]).verdict, 'inconclusive');
   });
 });

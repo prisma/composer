@@ -39,31 +39,35 @@ describe('classifyColdStartTouch', () => {
   });
 });
 
-describe('classifyColdStartRun', () => {
+describe('classifyColdStartRun (the three-exit mapping of a REQUIRED check)', () => {
   const run = (...touches: ColdStartTouch[]) => classifyColdStartRun(touches);
 
-  it('no touches → broken canary (fail)', () => {
-    assert.equal(run().pass, false);
+  it('no touches → inconclusive (broken canary; warn, do not block)', () => {
+    assert.equal(run().verdict, 'inconclusive');
   });
 
-  it('one close among holds → PASS, bug still present', () => {
+  it("one close among holds → bug-present (exit 0; today's normal)", () => {
     const result = run('held', 'closed', 'held', 'held');
-    assert.equal(result.pass, true);
+    assert.equal(result.verdict, 'bug-present');
     assert.match(result.message, /1\/4 first touches closed/);
     assert.match(result.message, /PRO-217 not fixed/);
   });
 
-  it('all held → FAIL, the remove-the-workaround signal names the compensation and the canary', () => {
+  it('all held → bug-gone (exit 1 — the forcing signal), actionable for a cold reader', () => {
     const result = run('held', 'held', 'held', 'held');
-    assert.equal(result.pass, false);
-    assert.match(result.message, /evidence, not proof/);
+    assert.equal(result.verdict, 'bug-gone');
+    assert.match(result.message, /not because of your change/);
     assert.match(result.message, /IDEMPOTENT_BACKOFF/);
-    assert.match(result.message, /this canary/);
+    assert.match(result.message, /streams\/src\/client\.ts/);
+    assert.match(result.message, /cold-start-canary\.ts/);
+    assert.match(result.message, /e2e-deploy\.yml/);
+    assert.match(result.message, /gotchas\.md/);
+    assert.match(result.message, /PRO-219/);
   });
 
-  it('no closes but not all held → FAIL inconclusive, a human should look', () => {
+  it('no closes but not all held → inconclusive (exit 0 + warning), a human should look', () => {
     const result = run('held', 'other', 'held');
-    assert.equal(result.pass, false);
-    assert.match(result.message, /Inconclusive/);
+    assert.equal(result.verdict, 'inconclusive');
+    assert.match(result.message, /not blocking/);
   });
 });
