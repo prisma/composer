@@ -37,6 +37,84 @@ afterAll(async () => {
   rmSync(dataRoot, { recursive: true, force: true });
 });
 
+describe("the append contract's sharp edges (a counting proxy in front of the stand-in)", () => {
+  // The wire client's DEFAULT behavior is the hazard these tests pin: its
+  // shared backoff retries any non-4xx failure indefinitely — on every
+  // method, appends included — and its default batching coalesces concurrent
+  // appends into shared POSTs. A 4xx-based test cannot pin the first
+  // property (Electric throws 4xx before the retry branch at ANY
+  // maxRetries), so these drive a 503 and concurrency through a proxy that
+  // counts what actually reached the wire.
+  const startCountingProxy = (
+    target: string,
+    interceptPost?: (n: number) => Response | undefined,
+  ) => {
+    let posts = 0;
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (req) => {
+        if (req.method === 'POST') {
+          posts++;
+          const intercepted = interceptPost?.(posts);
+          if (intercepted !== undefined) return intercepted;
+          // A little latency so concurrent appends overlap in flight — the
+          // window Electric's batching coalesces in.
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
+        const url = new URL(req.url);
+        return fetch(`${target}${url.pathname}${url.search}`, {
+          method: req.method,
+          headers: req.headers,
+          ...(req.method === 'POST' || req.method === 'PUT' ? { body: await req.text() } : {}),
+        });
+      },
+    });
+    return {
+      url: `http://127.0.0.1:${server.port}`,
+      posts: () => posts,
+      stop: () => server.stop(true),
+    };
+  };
+
+  test('a 503 on an append REJECTS after exactly ONE POST — appends enter no retry branch', async () => {
+    // 503 is IN Electric's HTTP_RETRY_STATUS_CODES: with its default
+    // maxRetries (Infinity) this append would be silently re-POSTed until
+    // the proxy stopped failing. NO_RETRY_BACKOFF is what makes it throw
+    // instead — remove it and this test goes red (the append resolves on
+    // the proxy's second POST, and two POSTs arrive).
+    const proxy = startCountingProxy(server.exports.http.url, (n) =>
+      n === 1 ? new Response('cold', { status: 503 }) : undefined,
+    );
+    try {
+      const flaky = createStreamsClient({ url: proxy.url, apiKey: 'unused' });
+      await flaky.create('retry-pin');
+      expect(flaky.append('retry-pin', { n: 1 })).rejects.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 300)); // a retry would land here
+      expect(proxy.posts()).toBe(1);
+    } finally {
+      proxy.stop();
+    }
+  }, 15_000);
+
+  test('N concurrent appends are N POSTs — never coalesced into shared requests', async () => {
+    // With Electric's default batching, appends 2..5 would buffer behind the
+    // in-flight first and drain as ONE shared POST (2 total): a failure
+    // would then be ambiguous across several callers' events. batching:
+    // false is what makes one append one POST — remove it and this goes red.
+    const proxy = startCountingProxy(server.exports.http.url);
+    try {
+      const counted = createStreamsClient({ url: proxy.url, apiKey: 'unused' });
+      await counted.create('batch-pin');
+      await Promise.all(Array.from({ length: 5 }, (_, i) => counted.append('batch-pin', { n: i })));
+      expect(proxy.posts()).toBe(5);
+      const readBack = await counted.read('batch-pin');
+      expect(readBack.events).toHaveLength(5);
+    } finally {
+      proxy.stop();
+    }
+  }, 15_000);
+});
+
 describe('createStreamsClient (against the local stand-in)', () => {
   test('create is ensure-style: a second create of the same stream succeeds', async () => {
     await client.create('log');

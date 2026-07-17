@@ -65,9 +65,12 @@ const JSON_CONTENT_TYPE = 'application/json';
 /**
  * PRO-219: a scale-to-zero streams service can reset the first connection
  * while its instance boots (~3.5–8s observed), so IDEMPOTENT operations ride
- * it out with a bounded backoff. The wire client only retries thrown network
- * errors and 429/503 — a real protocol error (401, 404, 409) surfaces on the
- * first try. Appends never get this (see `append`).
+ * it out with a bounded backoff. The wire client retries any failure except
+ * a 4xx other than 429 — thrown network errors and 5xx statuses included —
+ * so a real protocol error (401, 404, 409) surfaces on the first try. The
+ * bound is ATTEMPTS, not wall-clock: each wait is jittered up to the current
+ * delay, and a server Retry-After acts as a per-wait floor (capped upstream
+ * at 1h). Appends never get any of this (see `append`).
  */
 const IDEMPOTENT_BACKOFF = {
   ...BackoffDefaults,
