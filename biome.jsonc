@@ -20,6 +20,7 @@
       "!**/.prisma",
       "!**/.alchemy",
       "!**/*.d.ts",
+      "!**/routeTree.gen.ts",
       "!**/fixtures/**/emitted",
       "!**/examples/**/migrations",
       "!examples/pn-widgets/contract.json",

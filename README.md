@@ -130,7 +130,7 @@ have.
 
 | Guide | Covers |
 | --- | --- |
-| [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
+| [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node, TanStack Start, or Next.js app |
 | [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma Next-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
 | [Deploying and operating](docs/guides/deploying.md) | Stages, destroy, CI, how apps behave in production |
@@ -142,6 +142,7 @@ Complete, deployable apps under [`examples/`](examples/):
 | Example | Demonstrates |
 | --- | --- |
 | [pn-widgets](examples/pn-widgets/) | The minimal app: one service + one Prisma Next-typed Postgres |
+| [tanstack-start](examples/tanstack-start/) | TanStack Start SSR and static assets from Nitro's multi-file output |
 | [storefront-auth](examples/storefront-auth/) | Next.js frontend + API service, a reusable Module owning its database, secrets |
 | [store](examples/store/) | Four modules, typed databases with migrations, the shared cron module |
 | [cron](examples/cron/) | Scheduled jobs: `defineSchedule` + `serveSchedule` + the cron module |

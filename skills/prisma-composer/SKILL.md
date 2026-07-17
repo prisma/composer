@@ -224,6 +224,22 @@ contain no symlinks (the packager rejects them — assembly fails and names the
 link), and `entry` must be a file inside `dir` (`../` is an error, not an
 escape). Omit `dir` for the single-file form.
 
+TanStack Start's Nitro `node-server` build uses this directory form. Preserve
+the complete output — the server entry imports sibling chunks and serves
+client/public assets from the same tree:
+
+```ts
+build: node({
+  module: import.meta.url,
+  dir: '../.output',
+  entry: 'server/index.mjs',
+})
+```
+
+Run `vite build` first and register `nodeBuild()` in the deploy config. Never
+point the single-file form at `.output/server/index.mjs`; that drops the rest
+of Nitro's runnable output.
+
 For Next.js, `next build` with `output: 'standalone'` is the whole build;
 `nextjs({ module, appDir })` tells the deploy where the app root is.
 

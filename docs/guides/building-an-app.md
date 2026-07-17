@@ -455,6 +455,27 @@ ships. Two things to know:
 
 Without `dir` you get the single-file form above, unchanged.
 
+**TanStack Start — a Nitro directory build.** TanStack Start's Nitro
+`node-server` build is the directory form: `.output/server/index.mjs` imports
+sibling server chunks and serves the client and public assets in the same
+`.output` tree. Name both paths explicitly:
+
+```ts
+build: node({
+  module: import.meta.url,
+  dir: '../.output',
+  entry: 'server/index.mjs',
+})
+```
+
+Run `vite build` before deploy and register `nodeBuild()` in
+`prisma-composer.config.ts`. Do not use the single-file form for the server
+entry: copying only `server/index.mjs` leaves its imported siblings and public
+assets behind. Composer does not rebuild or interpret Nitro output; it copies
+the named `.output` tree verbatim and boots the named entry. The complete,
+tested shape is in
+[`examples/tanstack-start`](../../examples/tanstack-start/).
+
 **`nextjs` — a Next.js app.** `next build` with `output: 'standalone'` is the
 whole build; the adapter just needs to know where the app lives:
 

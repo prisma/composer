@@ -62,6 +62,9 @@ skills-lock.json
 .next/
 next-env.d.ts
 
+# TanStack Start / Nitro build output
+.output/
+
 # Deploy working dir — assembled artifacts staged per graph address (ADR-0005)
 .prisma-composer/
 wip/

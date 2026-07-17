@@ -350,6 +350,23 @@ your built server file, then make three changes to the server itself:
 Your build must produce a self-contained entry file — keep your own build if
 it already does.
 
+**A TanStack Start app.** Keep its Nitro `node-server` build and use the
+`node` adapter's directory form. Point `dir` at `.output` and `entry` at
+`server/index.mjs` inside it:
+
+```ts
+build: node({
+  module: import.meta.url,
+  dir: '../.output',
+  entry: 'server/index.mjs',
+})
+```
+
+Composer copies the complete Nitro output, including server chunks, the
+client bundle, and `public/`, then boots the entry you named. Run `vite build`
+before deploy and include `nodeBuild()` in the deploy config. See the complete
+[`examples/tanstack-start`](../../examples/tanstack-start/) app.
+
 **A Next.js app.** Use the `nextjs` build adapter instead of `node`; `next
 build` with `output: 'standalone'` is the whole build:
 
