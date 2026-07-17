@@ -5,7 +5,12 @@
 **Outcome:** a throwaway stack (scratch, not committed) proves: an
 `Action` whose input references a fresh resource's attribute plans and
 runs on a first deploy; the nonce forces re-run on an unchanged redeploy;
-the runner receives resolved values. Probe torn down after.
+the runner receives resolved values. It must also settle the two typing
+questions the spec's edge-case table names: that `In`'s **mutable** arrays
+map correctly through `Input<>` (a `readonly T[]` does not satisfy its
+array branch), and that nested `Output<string>` fields inside
+`entries[].primitives[]` are accepted at the call site and arrive
+**resolved** in the runner. Probe torn down after.
 **Builds on:** S1 merged.
 **Hands to:** D2 — the mechanism confirmed, or a STOP → discussion-mode
 signal per the spec's edge-case table.

@@ -15,6 +15,18 @@ this file keeps the full reasoning and the dead ends.
 
 ## The corrected execution model (verified, alchemy 2.0.0-beta.59)
 
+> **Citation drift, corrected 2026-07-17.** S1-D3 re-derived every line
+> number below against the installed source rather than trusting this file,
+> and most had drifted a few lines. **ADR-0033 carries the corrected
+> citations and is the authority**; the ones in this section are indicative.
+> Corrections: `Deploy.ts:25-30`; `Apply.ts:191-193` (short-circuit);
+> `Apply.ts:198` + `:203` (evaluate, then `setOutput`); `Resource.ts:275-283`
+> (unchanged); and the status-change emit exists at **two** sites —
+> `Apply.ts:415-421` (per-resource `report()`) and `Apply.ts:184-185`
+> (terminal flush) — where this file cited only the first. The *facts* below
+> all re-verified; only the line numbers moved. Lesson for S2/S3: cite
+> against the installed source at write time, not against this file.
+
 The design initially assumed each `yield*` in a descriptor returns after
 alchemy applies that resource, resolved values in hand. **Wrong.** Verified
 against alchemy source:

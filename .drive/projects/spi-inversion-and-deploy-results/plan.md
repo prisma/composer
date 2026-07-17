@@ -84,6 +84,19 @@ mechanism on a fresh stack. Close PR #101 with a supersession comment.
 - **Stack:** S1 → (S2 ∥ S3). S2 and S3 touch different parts of the loop
   and can run in parallel once S1 merges.
 
+## Open items
+
+- **`core-model.md`'s model section is stale beyond this project's reach**
+  (surfaced by S1-D3, deliberately not fixed there). It still describes a
+  `Target` with separate `resources`/`services` maps; the code has
+  `ExtensionDescriptor` with a single `nodes` registry (ADR-0017/0031).
+  S1-D3 transcribed only the SPI signatures it owned — correctly, since
+  fixing the surrounding model is its own change with its own review.
+  **Not a finding; needs a follow-up ticket.** (`Record<string, ServiceLowering>`
+  at ~line 447 is *not* part of this: it stays correct under the new
+  generics, storing at the `unknown` defaults — the erasure ADR-0033
+  describes.)
+
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in [spec.md](spec.md)
