@@ -271,67 +271,67 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/deploy.ts",
+      "glob": "packages/9-public/composer/src/exports/deploy.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/config.ts",
+      "glob": "packages/9-public/composer/src/exports/config.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/node-control.ts",
+      "glob": "packages/9-public/composer/src/exports/node-control.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/nextjs-control.ts",
+      "glob": "packages/9-public/composer/src/exports/nextjs-control.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/index.ts",
+      "glob": "packages/9-public/composer/src/exports/index.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/testing.ts",
+      "glob": "packages/9-public/composer/src/exports/testing.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/casts.ts",
+      "glob": "packages/9-public/composer/src/exports/casts.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/assertions.ts",
+      "glob": "packages/9-public/composer/src/exports/assertions.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/rpc.ts",
+      "glob": "packages/9-public/composer/src/exports/rpc.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/node.ts",
+      "glob": "packages/9-public/composer/src/exports/node.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/nextjs.ts",
+      "glob": "packages/9-public/composer/src/exports/nextjs.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
