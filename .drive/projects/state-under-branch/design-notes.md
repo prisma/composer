@@ -429,6 +429,59 @@ what was asked and why; nothing is outstanding with the PDP team.
   unaffected: `DELETE /v1/branches/{branchId}` genuinely refuses a Branch with
   live members (`Database.branchId` is `onDelete: Restrict`).
 
+## The latency cost, measured (CI, 2026-07-17)
+
+The design listed "first-deploy-of-stage latency for provisioning it" as an
+unquantified cost. Measured on the passing CI run:
+
+```
+12:44:30.8  prisma-composer deploy starts
+12:44:37.1  hosted state: provisioned state database …     ← 6.3s, whole bootstrap
+12:44:57.4  Done: 20 succeeded                             ← 27s, whole deploy
+```
+
+**6.3 seconds** for the entire state bootstrap on a stage's first deploy —
+resolve the Branch, list candidates, create the database, mint a connection,
+migrate the schema, take the lock. Not the minute-plus I claimed. `pn-widgets`
+end to end: **89s on this branch vs 92s on main**. There is no measurable
+regression; the branch is marginally faster, which is noise.
+
+**How I got this wrong, because the mistake is instructive.** Two e2e runs
+timed out at exactly 3m22s. I read "52 seconds" as the state-database
+provisioning time — it was the time from *job* start, which is checkout,
+install and build, work both branches do identically. The deploy command hadn't
+even started. I then built a causal story on that number ("two databases
+provisioned end to end, roughly a minute each"), wrote it into ADR-0033's
+consequences, raised the CI budget from 3 to 8 minutes to accommodate it, and
+told the operator the decision had a per-preview latency cost. All of it false.
+
+What actually happened: **a platform degradation window**. Three different
+branches died between 12:18 and 12:26 — `spi-inversion` (failure), this branch
+(timeout), `streams-minted-key` (failure) — and every run from 12:37 onward
+succeeded, including this one. My two timeouts sat inside that window. The
+timeouts were environmental and had nothing to do with this change.
+
+The commit built on that story (`1e41f0e`) was dropped rather than reverted, so
+the false claim never enters the ADR's record. The CI budget stays at 3
+minutes, which the measurements say is correct.
+
+**The lesson is the same one this project has now taught four times**, twice
+against me: I asserted a cause from a number I hadn't checked the provenance
+of. The implementer caught it on the endpoint contract, the reviewer caught it
+on atomicity, and here CI caught it by passing. The pattern to break: when a
+number supports a story, find out what the number measures *before* writing the
+story down.
+
+## The e2e budget is marginal — a real issue, separate from this change
+
+Worth filing on its own honest evidence rather than smuggled in here: the 3
+minute e2e budget has little headroom (the storefront-auth job took 119s of its
+180s on a healthy run), so a slow platform window fails multiple branches at
+once rather than running slow. That is a pre-existing flakiness question about
+CI budgets and platform variance. It deserves its own change, with the
+degradation-window data above as the argument — not a rationale invented to fit
+a misdiagnosis.
+
 ## What the live run taught us that the tests could not (D3, 2026-07-17)
 
 All four Project-DoD conditions passed against the real workspace, and it was
