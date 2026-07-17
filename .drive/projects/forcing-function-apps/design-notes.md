@@ -142,3 +142,29 @@ resource, and `BearerKey` + the `streams` descriptor are deleted. Future
 per-edge keys = flip the provisioner's cardinality and land an accepted set,
 once upstream takes a key set (ADR-0031-provisioned-param-values-are-a-need-
 resolved-through-a-target-registry.md).
+
+## Streams client lib — the home for compensatory machinery (2026-07-17, direction from Will; upstream check pending)
+
+The examples/streams walkthrough established that the example hand-rolls a
+Durable Streams protocol client (URL layout, bearer scheme, JSON-array
+appends, offset conventions, long-poll dance) — machinery every consumer
+would re-write and that belongs in neither userspace nor the binding.
+`@durable-streams/client` (npm, 0.2.x, matches server 0.1.11) is the
+protocol's own client: supports per-poll `headers` (built for auth tokens),
+`live: long-poll | sse`, pluggable fetch.
+
+Direction: wrap it in a Composer-shipped streams client lib. That lib —
+platform-aware by definition — is the legitimate home for the compensatory
+machinery that was rightly deleted from the example (D12): auth from the
+`{ url, apiKey }` binding, live tail defaulting to long-poll while PRO-218
+stands, cold-start retry for idempotent calls only (never appends — no
+idempotency key upstream; the D8-D12 evidence and reasoning carry over).
+ADR-0015 intact: the binding stays config; the client lib is an app-side
+dependency the app chooses, like aws-sdk for storage.
+
+Open until Will's upstream check returns: what @durable-streams/client
+already covers vs what we compensate (it may retry / it may grow auth
+natively); what belongs upstream (prisma/streams or the client) vs in our
+wrapper; where ours ships (likely a composer-prisma-cloud subpath) and its
+name; whether the example swap lands with the lib slice. Blocked on that
+check; examples/streams stays plain-fetch in #92 meanwhile.
