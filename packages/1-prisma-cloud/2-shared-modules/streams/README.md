@@ -4,23 +4,50 @@ Durable append-only event streams as a Prisma Composer module. It wraps the
 production `@prisma/streams-server` runtime (npm, unmodified) as a Compute
 service behind a typed boundary: the module's `store` dependency takes a
 `storage()` module's port as its durable tier, and it exposes a single
-`streams` port. A consumer's `durableStreams()` dependency hydrates to a
-ready **`StreamsClient`** — like RPC's generated client, no app hand-rolls
-the protocol; the wire binding underneath is `{ url, apiKey }`, the key
-minted by the deploy.
+`streams` port. A consumer names the streams it uses with
+`streamsContract(defs)`, and its `durableStreams(contract)` dependency
+hydrates to one ready **`StreamHandle`** per declared name — like RPC's
+generated client, no app hand-rolls the protocol, and no app carries a
+stream-lifecycle constant: the handle owns creating the stream on first use
+and healing a 404 by re-creating and retrying once. The wire binding
+underneath is `{ url, apiKey }`, the key minted by the deploy.
 
 Ships as the `@prisma/composer-prisma-cloud/streams` subpath (like `/storage`).
 
 ## Contract scope
 
-Hydration hands a consumer the client:
+A contract names its streams:
+
+```ts
+const jobLog = streamsContract({
+  jobs: streamDef(),   // untyped in this slice — events type as `unknown`
+  audit: streamDef(),
+});
+```
+
+Hydration hands a consumer one handle per declared name:
+
+```ts
+interface StreamHandle {
+  append(event): Promise<void>; // one JSON event; NEVER retried beyond the 404 heal below
+  read<T>(opts?): Promise<{ events: T[]; nextOffset: string }>;
+  tail<T>(opts?): Promise<{ events: T[]; nextOffset: string; timedOut: boolean }>;
+}
+```
+
+No `create` — a handle creates its stream on first use, memoized, and heals a
+404 (the stream vanished from the durable tier) by dropping that memo,
+re-creating, and retrying the failed operation once. That heal is safe even
+for an append: a 404 is generated INSTEAD OF a write at every layer, so it
+proves nothing was applied.
+
+For dynamic stream names (e.g. per-tenant streams), call `durableStreams()`
+with no contract — the `postgres()` parity, same lifecycle ownership, the
+name is data rather than a wiring-time declaration:
 
 ```ts
 interface StreamsClient {
-  create(name, opts?): Promise<void>; // ensure-style: an existing stream is success
-  append(name, event): Promise<void>; // one JSON event; NEVER retried (no idempotency key)
-  read<T>(name, opts?): Promise<{ events: T[]; nextOffset: string }>;
-  tail<T>(name, opts?): Promise<{ events: T[]; nextOffset: string; timedOut: boolean }>;
+  stream(name: string): StreamHandle;
 }
 ```
 
@@ -85,14 +112,16 @@ export default module('my-app', ({ provision }) => {
 
 ```ts
 // src/worker/service.ts — the consumer. Declaring the dependency is what
-// causes the key to be minted; nothing names it.
+// causes the key to be minted; nothing names it a second time.
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
-import { durableStreams } from '@prisma/composer-prisma-cloud/streams';
+import { durableStreams, streamDef, streamsContract } from '@prisma/composer-prisma-cloud/streams';
+
+const jobLog = streamsContract({ jobs: streamDef() });
 
 export default compute({
   name: 'worker',
-  deps: { streams: durableStreams() },
+  deps: { streams: durableStreams(jobLog) },
   build: node({ module: import.meta.url, entry: '../../dist/worker/server.mjs' }),
 });
 ```
@@ -101,21 +130,21 @@ export default compute({
 // src/worker/server.ts — append, then wait for what follows
 import service from './service.ts';
 
-const { streams } = service.load(); // StreamsClient, ready to call
+const { streams } = service.load(); // { jobs: StreamHandle }, ready to call
 
-await streams.create('jobs');
-await streams.append('jobs', { kind: 'created' });
-const { events, nextOffset } = await streams.read('jobs');
-const next = await streams.tail('jobs'); // resolves on the next event (or timedOut)
+await streams.jobs.append({ kind: 'created' });
+const { events, nextOffset } = await streams.jobs.read();
+const next = await streams.jobs.tail(); // resolves on the next event (or timedOut)
 ```
 
 For local development and tests, build the same client against the stand-in
 (no deployed binding, no auth):
 
 ```ts
-import { createStreamsClient } from '@prisma/composer-prisma-cloud/streams';
+import { StreamsClient } from '@prisma/composer-prisma-cloud/streams';
 
-const client = createStreamsClient({ url: standIn.url, apiKey: 'unused' });
+const client = new StreamsClient({ url: standIn.url, apiKey: 'unused' });
+const jobs = client.stream('jobs'); // a StreamHandle, same surface as the hydrated binding
 ```
 
 [`examples/streams`](../../../../examples/streams) is the worked example — the
@@ -149,6 +178,6 @@ response completes. An open `?live=sse` tail therefore never delivers through
 a deployment's public URL — the client sees zero bytes and the edge returns a
 504 after ~60s — while the same request works locally and against the
 stand-in. `?live=long-poll` completes per response and delivers live events
-end to end through the ingress, so `StreamsClient.tail` long-polls. The
+end to end through the ingress, so `StreamHandle.tail` long-polls. The
 deployed conformance harness keeps the SSE tests, so they flip green when the
 platform supports streaming responses.

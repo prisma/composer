@@ -1,15 +1,15 @@
 /**
  * The jobs app's integration test: the app driven through the hydrated-style
- * client (`createStreamsClient` pointed at the local stand-in — exactly what
- * `load()` hands the deployed service) — append → read-back, a live long-poll
- * tail, and error mapping. The stand-in needs no auth, so the key is a
- * placeholder.
+ * handle (`StreamsClient` pointed at the local stand-in, `.stream('jobs')` —
+ * exactly what `load()` hands the deployed service) — append → read-back, a
+ * live long-poll tail, and error mapping. The stand-in needs no auth, so the
+ * key is a placeholder.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStreamsClient } from '@prisma/composer-prisma-cloud/streams';
+import { StreamsClient } from '@prisma/composer-prisma-cloud/streams';
 import {
   type LocalStreamsServer,
   startLocalStreamsServer,
@@ -33,9 +33,11 @@ beforeAll(async () => {
   prevDataRoot = process.env['DS_LOCAL_DATA_ROOT'];
   process.env['DS_LOCAL_DATA_ROOT'] = dataRoot;
   server = await startLocalStreamsServer({ name: 'jobs-example-test', port: 0 });
-  app = createJobsApp(
-    createStreamsClient({ url: server.exports.http.url, apiKey: 'local-stand-in-needs-no-auth' }),
-  );
+  const client = new StreamsClient({
+    url: server.exports.http.url,
+    apiKey: 'local-stand-in-needs-no-auth',
+  });
+  app = createJobsApp(client.stream('jobs'));
 });
 
 afterAll(async () => {
@@ -89,7 +91,8 @@ describe('jobs app vs an upstream that says no', () => {
       return new Response('nope', { status: 401 });
     });
     try {
-      const app = createJobsApp(createStreamsClient({ url: proxy.url, apiKey: 'wrong-key' }));
+      const client = new StreamsClient({ url: proxy.url, apiKey: 'wrong-key' });
+      const app = createJobsApp(client.stream('jobs'));
       const res = await app(new Request('http://app/jobs'));
       expect(res.status).toBe(502); // this app's "my upstream said no", not a 500
       expect(calls).toBe(1); // called once — a real protocol error is never retried
@@ -127,21 +130,6 @@ describe('jobs app (against the local streams stand-in)', () => {
     expect(body.timedOut).toBe(false);
     expect(body.events).toEqual([{ kind: 'finished', id: 1 }]);
   }, 15_000);
-
-  test('a stream lost from the durable tier heals: the app re-creates and the append lands', async () => {
-    await app(post({ kind: 'before-loss' }));
-    // Delete the stream out from under the app's memoized create (the
-    // stand-in needs no auth). A fresh streams instance restoring an older
-    // store is the deployed shape of the same loss.
-    const del = await fetch(`${server.exports.http.url}/v1/stream/jobs`, { method: 'DELETE' });
-    expect(del.ok).toBe(true);
-
-    const res = await app(post({ kind: 'after-loss' }));
-    expect(res.status).toBe(201);
-    const read = await app(new Request('http://app/jobs'));
-    const body = (await read.json()) as { events: { kind: string }[] };
-    expect(body.events.map((e) => e.kind)).toEqual(['after-loss']);
-  });
 
   test('an unknown route is 404 and /health is served', async () => {
     expect((await app(new Request('http://app/nope'))).status).toBe(404);

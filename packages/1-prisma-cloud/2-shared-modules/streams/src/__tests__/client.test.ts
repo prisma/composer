@@ -1,17 +1,18 @@
 /**
- * The streams client against the local stand-in: every method a consumer's
- * hydrated binding exposes, driven over the real protocol — create (and its
- * ensure semantics on a second create), JSON append framing, read from the
- * beginning and from an opaque mid-stream cursor, and a long-poll tail that
- * delivers an event appended after it opened (and times out cleanly when
- * nothing arrives). The stand-in has no auth, so the bearer header the client
- * always sends is simply ignored.
+ * The streams client against the local stand-in: every operation a
+ * consumer's hydrated handle exposes, driven over the real protocol —
+ * ensure-create memoized across repeated operations, JSON append framing,
+ * read from the beginning and from an opaque mid-stream cursor, a long-poll
+ * tail that delivers an event appended after it opened (and times out
+ * cleanly when nothing arrives), and the 404 heal that re-creates a stream
+ * deleted out from under a handle. The stand-in has no auth, so the bearer
+ * header the client always sends is simply ignored.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStreamsClient, type StreamsClient } from '../client.ts';
+import { StreamsClient } from '../client.ts';
 import { type LocalStreamsServer, startLocalStreamsServer } from '../testing.ts';
 
 let server: LocalStreamsServer;
@@ -24,7 +25,7 @@ beforeAll(async () => {
   prevDataRoot = process.env['DS_LOCAL_DATA_ROOT'];
   process.env['DS_LOCAL_DATA_ROOT'] = dataRoot;
   server = await startLocalStreamsServer({ name: 'streams-client-test', port: 0 });
-  client = createStreamsClient({
+  client = new StreamsClient({
     url: server.exports.http.url,
     apiKey: 'local-stand-in-needs-no-auth',
   });
@@ -37,6 +38,43 @@ afterAll(async () => {
   rmSync(dataRoot, { recursive: true, force: true });
 });
 
+/**
+ * A proxy in front of the stand-in that counts requests of one HTTP method,
+ * optionally intercepting the Nth match — used to pin behavior a mock of
+ * the wire client itself couldn't prove (what actually reached the wire).
+ */
+const startCountingProxy = (
+  target: string,
+  opts: { method?: string; intercept?: (n: number) => Response | undefined } = {},
+) => {
+  const method = opts.method ?? 'POST';
+  let count = 0;
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (req) => {
+      if (req.method === method) {
+        count++;
+        const intercepted = opts.intercept?.(count);
+        if (intercepted !== undefined) return intercepted;
+        // A little latency so concurrent requests overlap in flight — the
+        // window Electric's batching coalesces in.
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      const url = new URL(req.url);
+      return fetch(`${target}${url.pathname}${url.search}`, {
+        method: req.method,
+        headers: req.headers,
+        ...(req.method === 'POST' || req.method === 'PUT' ? { body: await req.text() } : {}),
+      });
+    },
+  });
+  return {
+    url: `http://127.0.0.1:${server.port}`,
+    count: () => count,
+    stop: () => server.stop(true),
+  };
+};
+
 describe("the append contract's sharp edges (a counting proxy in front of the stand-in)", () => {
   // The wire client's DEFAULT behavior is the hazard these tests pin: its
   // shared backoff retries any non-4xx failure indefinitely — on every
@@ -45,52 +83,21 @@ describe("the append contract's sharp edges (a counting proxy in front of the st
   // property (Electric throws 4xx before the retry branch at ANY
   // maxRetries), so these drive a 503 and concurrency through a proxy that
   // counts what actually reached the wire.
-  const startCountingProxy = (
-    target: string,
-    interceptPost?: (n: number) => Response | undefined,
-  ) => {
-    let posts = 0;
-    const server = Bun.serve({
-      port: 0,
-      fetch: async (req) => {
-        if (req.method === 'POST') {
-          posts++;
-          const intercepted = interceptPost?.(posts);
-          if (intercepted !== undefined) return intercepted;
-          // A little latency so concurrent appends overlap in flight — the
-          // window Electric's batching coalesces in.
-          await new Promise((resolve) => setTimeout(resolve, 40));
-        }
-        const url = new URL(req.url);
-        return fetch(`${target}${url.pathname}${url.search}`, {
-          method: req.method,
-          headers: req.headers,
-          ...(req.method === 'POST' || req.method === 'PUT' ? { body: await req.text() } : {}),
-        });
-      },
-    });
-    return {
-      url: `http://127.0.0.1:${server.port}`,
-      posts: () => posts,
-      stop: () => server.stop(true),
-    };
-  };
-
   test('a 503 on an append REJECTS after exactly ONE POST — appends enter no retry branch', async () => {
     // 503 is IN Electric's HTTP_RETRY_STATUS_CODES: with its default
     // maxRetries (Infinity) this append would be silently re-POSTed until
     // the proxy stopped failing. NO_RETRY_BACKOFF is what makes it throw
     // instead — remove it and this test goes red (the append resolves on
-    // the proxy's second POST, and two POSTs arrive).
-    const proxy = startCountingProxy(server.exports.http.url, (n) =>
-      n === 1 ? new Response('cold', { status: 503 }) : undefined,
-    );
+    // the proxy's second POST, and two POSTs arrive). A 503 is not the
+    // handle's 404 heal target either, so no retry comes from that path.
+    const proxy = startCountingProxy(server.exports.http.url, {
+      intercept: (n) => (n === 1 ? new Response('cold', { status: 503 }) : undefined),
+    });
     try {
-      const flaky = createStreamsClient({ url: proxy.url, apiKey: 'unused' });
-      await flaky.create('retry-pin');
-      expect(flaky.append('retry-pin', { n: 1 })).rejects.toThrow();
+      const flaky = new StreamsClient({ url: proxy.url, apiKey: 'unused' });
+      expect(flaky.stream('retry-pin').append({ n: 1 })).rejects.toThrow();
       await new Promise((resolve) => setTimeout(resolve, 300)); // a retry would land here
-      expect(proxy.posts()).toBe(1);
+      expect(proxy.count()).toBe(1);
     } finally {
       proxy.stop();
     }
@@ -103,11 +110,11 @@ describe("the append contract's sharp edges (a counting proxy in front of the st
     // false is what makes one append one POST — remove it and this goes red.
     const proxy = startCountingProxy(server.exports.http.url);
     try {
-      const counted = createStreamsClient({ url: proxy.url, apiKey: 'unused' });
-      await counted.create('batch-pin');
-      await Promise.all(Array.from({ length: 5 }, (_, i) => counted.append('batch-pin', { n: i })));
-      expect(proxy.posts()).toBe(5);
-      const readBack = await counted.read('batch-pin');
+      const counted = new StreamsClient({ url: proxy.url, apiKey: 'unused' });
+      const handle = counted.stream('batch-pin');
+      await Promise.all(Array.from({ length: 5 }, (_, i) => handle.append({ n: i })));
+      expect(proxy.count()).toBe(5);
+      const readBack = await handle.read();
       expect(readBack.events).toHaveLength(5);
     } finally {
       proxy.stop();
@@ -115,34 +122,57 @@ describe("the append contract's sharp edges (a counting proxy in front of the st
   }, 15_000);
 });
 
-describe('createStreamsClient (against the local stand-in)', () => {
-  test('create is ensure-style: a second create of the same stream succeeds', async () => {
-    await client.create('log');
-    await client.create('log');
+describe('StreamHandle ensure-create (against a counting proxy)', () => {
+  test('repeated operations on the same handle issue exactly one create', async () => {
+    // Every operation calls the handle's ensure-create first; the memo is
+    // what collapses three calls into one PUT — remove it and this goes red
+    // (three PUTs, one per operation).
+    const proxy = startCountingProxy(server.exports.http.url, { method: 'PUT' });
+    try {
+      const client = new StreamsClient({ url: proxy.url, apiKey: 'unused' });
+      const handle = client.stream('memo-pin');
+      await handle.append({ n: 1 });
+      await handle.append({ n: 2 });
+      await handle.read();
+      expect(proxy.count()).toBe(1);
+    } finally {
+      proxy.stop();
+    }
+  }, 15_000);
+});
+
+describe('StreamHandle (against the local stand-in)', () => {
+  test('using a handle is sufficient to create its stream — no explicit create call', async () => {
+    // The accepted consequence of ensure-create: a handle nothing ever
+    // explicitly created still works, reading back an empty log rather than
+    // 404ing.
+    const result = await client.stream('never-explicitly-created').read();
+    expect(result.events).toEqual([]);
   });
 
   test('append then read round-trips events, and a mid-stream cursor resumes correctly', async () => {
-    await client.append('log', { n: 1 });
+    const log = client.stream('log');
+    await log.append({ n: 1 });
 
-    const first = await client.read('log');
+    const first = await log.read();
     expect(first.events).toEqual([{ n: 1 }]);
     expect(first.nextOffset).not.toBe('');
 
-    await client.append('log', { n: 2 });
-    await client.append('log', { n: 3 });
+    await log.append({ n: 2 });
+    await log.append({ n: 3 });
 
-    const all = await client.read('log');
+    const all = await log.read();
     expect(all.events).toEqual([{ n: 1 }, { n: 2 }, { n: 3 }]);
 
-    const rest = await client.read('log', { offset: first.nextOffset });
+    const rest = await log.read({ offset: first.nextOffset });
     expect(rest.events).toEqual([{ n: 2 }, { n: 3 }]);
   });
 
   test('tail delivers an event appended after it opened', async () => {
-    await client.create('live');
-    const tail = client.tail('live', { timeoutMs: 10_000 });
+    const live = client.stream('live');
+    const tail = live.tail({ timeoutMs: 10_000 });
     await new Promise((resolve) => setTimeout(resolve, 300));
-    await client.append('live', { kind: 'ping' });
+    await live.append({ kind: 'ping' });
 
     const result = await tail;
     expect(result.timedOut).toBe(false);
@@ -150,13 +180,26 @@ describe('createStreamsClient (against the local stand-in)', () => {
   }, 15_000);
 
   test('tail times out cleanly when nothing arrives', async () => {
-    await client.create('quiet');
-    const result = await client.tail('quiet', { timeoutMs: 1_000 });
+    const quiet = client.stream('quiet');
+    const result = await quiet.tail({ timeoutMs: 1_000 });
     expect(result.timedOut).toBe(true);
     expect(result.events).toEqual([]);
   }, 10_000);
 
-  test('a real protocol error surfaces immediately (read of a missing stream)', async () => {
-    expect(client.read('never-created')).rejects.toThrow();
+  test('a stream lost from the durable tier heals: the handle re-creates and the append lands', async () => {
+    const handle = client.stream('heals');
+    await handle.append({ kind: 'before-loss' });
+    // Delete the stream out from under the handle's memoized create (the
+    // stand-in needs no auth). A fresh streams instance restoring an older
+    // store is the deployed shape of the same loss.
+    const del = await fetch(`${server.exports.http.url}/v1/stream/heals`, { method: 'DELETE' });
+    expect(del.ok).toBe(true);
+
+    // The append 404s (the stream is gone), which the handle heals by
+    // dropping its memo, re-creating, and retrying this append once — remove
+    // the heal body and this test goes red (the append rejects).
+    await handle.append({ kind: 'after-loss' });
+    const read = await handle.read<{ kind: string }>();
+    expect(read.events.map((e) => e.kind)).toEqual(['after-loss']);
   });
 });

@@ -30,11 +30,18 @@ interface StreamsConfig {
 }
 ```
 
-`streamsContract` (`kind: 'streams'`) with `durableStreams()` as the consumer
-dependency factory. The wire binding is the endpoint URL plus the minted
-bearer key (ADR-0015); hydration hands the consumer a `StreamsClient`
-(create/append/read/tail — wrapping `@durable-streams/client`), so no app
-hand-rolls the protocol:
+`streamsContract(defs)` (`kind: 'streams'`) names the streams a consumer
+transports — `streamsContract({ jobs: streamDef() })` — with
+`durableStreams(contract)` as the consumer dependency factory; bare
+`durableStreams()` (no contract) is retained for dynamic stream names. The
+wire binding is the endpoint URL plus the minted bearer key (ADR-0015);
+hydration hands a `durableStreams(contract)` consumer one `StreamHandle` per
+declared name (append/read/tail — wrapping `@durable-streams/client`), and
+hands a bare `durableStreams()` consumer a `StreamsClient` whose surface is
+`stream(name)`, returning the same kind of handle. The handle owns the
+stream's lifecycle: it creates the stream on first use (memoized) and heals
+a 404 by re-creating and retrying the failed operation once — no app code
+names a stream lifecycle event. Protocol surface:
 `PUT/POST/GET/HEAD/DELETE /v1/stream/{name}`, reads from an `offset`, live
 tail via `?live=sse` and `?live=long-poll`. No websockets — the server has
 none and the module adds none.

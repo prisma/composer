@@ -1,9 +1,10 @@
 /**
  * A tiny job-log app that uses the streams module as its event log. The
- * `StreamsClient` arrives hydrated from the `durableStreams()` binding — URL,
- * bearer auth, append framing, offsets, and the long-poll dance are all the
- * client's business (like RPC's generated client), so what remains here is
- * app logic: routes, the stream name, and error mapping.
+ * `StreamHandle` arrives hydrated from the `durableStreams(jobLog)` binding —
+ * URL, bearer auth, append framing, offsets, the long-poll dance, the
+ * stream's name, its create-on-first-use, and its 404 heal are all the
+ * handle's business (like RPC's generated client), so what remains here is
+ * app logic: routes and error mapping.
  *
  *   POST /jobs        append one event; body is the event JSON
  *   GET  /jobs        read the whole log back (optionally from ?offset=…)
@@ -13,64 +14,30 @@
  * runs behind `Bun.serve` in the deployed service and inside the integration
  * test with no server.
  */
-import { isStreamNotFound, type StreamsClient } from '@prisma/composer-prisma-cloud/streams';
+import type { StreamHandle } from '@prisma/composer-prisma-cloud/streams';
 
-const STREAM = 'jobs';
-
-export function createJobsApp(events: StreamsClient): (req: Request) => Promise<Response> {
-  let created: Promise<void> | undefined;
-  // Once per instance; the client's create is ensure-style, so a racing
-  // second instance is harmless.
-  const ensureStream = (): Promise<void> => {
-    if (created === undefined) {
-      created = events.create(STREAM).catch((error: unknown) => {
-        created = undefined;
-        throw error;
-      });
-    }
-    return created;
-  };
-
-  // Ensure-then-run, healing a vanished stream: the memo says "created", but
-  // the durable tier is the truth — if an operation 404s, the stream is gone
-  // (a 404'd request provably applied nothing, so re-running is safe even for
-  // an append), so re-create and retry once.
-  const withStream = async <T>(op: () => Promise<T>): Promise<T> => {
-    await ensureStream();
-    try {
-      return await op();
-    } catch (error) {
-      if (!isStreamNotFound(error)) throw error;
-      created = undefined;
-      await ensureStream();
-      return op();
-    }
-  };
-
+export function createJobsApp(jobs: StreamHandle): (req: Request) => Promise<Response> {
   const append = async (req: Request): Promise<Response> => {
     const event = await req.json();
-    // The client never retries appends (no idempotency key upstream — a
-    // failed request is indistinguishable from one that applied). The caller
-    // retries, because only it knows whether a duplicate is acceptable.
-    await withStream(() => events.append(STREAM, event));
+    // The handle never retries an append beyond its own proven-safe 404 heal
+    // (no idempotency key upstream — a failed request is indistinguishable
+    // from one that applied). The caller retries, because only it knows
+    // whether a duplicate is acceptable.
+    await jobs.append(event);
     return Response.json({ appended: event }, { status: 201 });
   };
 
   const read = async (url: URL): Promise<Response> => {
     const offset = url.searchParams.get('offset') ?? undefined;
-    const result = await withStream(() =>
-      events.read(STREAM, offset !== undefined ? { offset } : undefined),
-    );
+    const result = await jobs.read(offset !== undefined ? { offset } : undefined);
     return Response.json({ events: result.events, nextOffset: result.nextOffset });
   };
 
   const tail = async (url: URL): Promise<Response> => {
     const timeout = url.searchParams.get('timeout');
-    const result = await withStream(() =>
-      events.tail(STREAM, {
-        ...(timeout !== null ? { timeoutMs: Number(timeout) * 1000 } : {}),
-      }),
-    );
+    const result = await jobs.tail({
+      ...(timeout !== null ? { timeoutMs: Number(timeout) * 1000 } : {}),
+    });
     return Response.json({ events: result.events, timedOut: result.timedOut });
   };
 

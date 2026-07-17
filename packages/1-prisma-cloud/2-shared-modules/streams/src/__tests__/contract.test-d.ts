@@ -1,13 +1,22 @@
-import type { DependencyEnd } from '@internal/core';
+import type { Contract, DependencyEnd } from '@internal/core';
 import { describe, expectTypeOf, test } from 'vitest';
-import type { StreamsClient } from '../client.ts';
-import type { StreamsConfig, streamsContract } from '../contract.ts';
-import { durableStreams } from '../contract.ts';
+import type { StreamHandle, StreamsClient } from '../client.ts';
+import type { StreamDefs, StreamsConfig } from '../contract.ts';
+import { durableStreams, streamDef, streamsContract } from '../contract.ts';
 
-describe('durableStreams()', () => {
-  test('is a DependencyEnd hydrating to a StreamsClient against streamsContract', () => {
+describe('durableStreams(contract)', () => {
+  test('hydrates to one handle per declared stream name', () => {
+    const jobLog = streamsContract({ jobs: streamDef(), audit: streamDef() });
+    expectTypeOf(durableStreams(jobLog)).toEqualTypeOf<
+      DependencyEnd<{ readonly jobs: StreamHandle; readonly audit: StreamHandle }, typeof jobLog>
+    >();
+  });
+});
+
+describe('durableStreams() (bare)', () => {
+  test('is a DependencyEnd hydrating to a StreamsClient for dynamic stream names', () => {
     expectTypeOf(durableStreams()).toEqualTypeOf<
-      DependencyEnd<StreamsClient, typeof streamsContract>
+      DependencyEnd<StreamsClient, Contract<'streams', StreamDefs>>
     >();
   });
 

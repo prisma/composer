@@ -12,7 +12,7 @@
 import node from '@internal/node';
 import { compute } from '@internal/prisma-cloud';
 import { s3 } from '@internal/storage';
-import { streamsContract } from './contract.ts';
+import { streamsProviderContract } from './contract.ts';
 
 export function streamsService() {
   return compute({
@@ -22,7 +22,7 @@ export function streamsService() {
       module: new URL('./streams-service.mjs', import.meta.url).href,
       entry: './streams-entrypoint.mjs',
     }),
-    expose: { streams: streamsContract },
+    expose: { streams: streamsProviderContract },
   });
 }
 

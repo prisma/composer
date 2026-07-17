@@ -34,6 +34,7 @@
   "dependencies": {
     "@durable-streams/client": "0.2.1",
     "@internal/core": "workspace:0.1.0",
+    "@internal/foundation": "workspace:0.1.0",
     "@internal/node": "workspace:0.1.0",
     "@internal/prisma-cloud": "workspace:0.1.0",
     "@internal/storage": "workspace:0.1.0",
