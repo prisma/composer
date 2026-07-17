@@ -88,6 +88,7 @@
         "./packages/9-public/composer-prisma-cloud/src/cron.ts"
       ],
       "@prisma/composer-prisma-cloud": ["./packages/9-public/composer-prisma-cloud/src/index.ts"],
+      "@prisma/composer/report": ["./packages/9-public/composer/src/report.ts"],
       "@prisma/composer": ["./packages/9-public/composer/src/index.ts"]
     }
   }
