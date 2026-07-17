@@ -4,6 +4,7 @@ import { CliError } from '../cli-error.ts';
 import {
   deleteAppProject,
   deleteStageBranch,
+  deleteStageStateDatabase,
   ensureContainers,
   validateStageName,
 } from '../ensure-containers.ts';
@@ -19,11 +20,14 @@ interface FakeBranch {
   id: string;
   gitName: string;
   createdAt: string;
+  isDefault?: boolean;
 }
 
 interface FakeState {
   projects: FakeProject[];
   branches: Record<string, FakeBranch[]>;
+  /** Answers the flat `GET /v1/databases` — empty unless a test puts one there. */
+  databases: { id: string; name: string; isDefault: boolean; createdAt: string }[];
   projectCreateCalls: number;
   branchCreateCalls: number;
   deleteBranchCalls: string[];
@@ -37,6 +41,7 @@ interface FakeState {
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   projects: [],
   branches: {},
+  databases: [],
   projectCreateCalls: 0,
   branchCreateCalls: 0,
   deleteBranchCalls: [],
@@ -79,6 +84,11 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       const data = gitName === undefined ? all : all.filter((b) => b.gitName === gitName);
       return Promise.resolve(
         okResponse({ data, pagination: { nextCursor: null, hasMore: false } }),
+      );
+    }
+    if (path === '/v1/databases') {
+      return Promise.resolve(
+        okResponse({ data: state.databases, pagination: { nextCursor: null, hasMore: false } }),
       );
     }
     throw new Error(`fakeClient: unexpected GET ${path}`);
@@ -308,6 +318,38 @@ describe('ensureContainers()', () => {
 
     expect(error).toBeInstanceOf(CliError);
     expect((error as CliError).message).toContain('Nothing deployed for storefront —');
+  });
+});
+
+describe('deleteStageStateDatabase()', () => {
+  test('missing PRISMA_SERVICE_TOKEN (no injected client) is a CliError', async () => {
+    await expect(
+      deleteStageStateDatabase({ projectId: 'proj-1', branchId: 'br-1', env: {} }),
+    ).rejects.toThrow(/PRISMA_SERVICE_TOKEN/);
+  });
+
+  test('a branch with no state database on it succeeds, so a repeated destroy is a no-op', async () => {
+    const state = newFakeState();
+
+    await expect(
+      deleteStageStateDatabase(
+        { projectId: 'proj-1', branchId: 'br-1' },
+        { client: fakeClient(state) },
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  test('a Management API failure becomes a CliError naming the step', async () => {
+    // No default branch on the project, and no branchId given — the lookup fails.
+    const state = newFakeState();
+
+    const error: unknown = await deleteStageStateDatabase(
+      { projectId: 'proj-1' },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect((error as CliError).message).toContain('Failed to delete the deploy-state database');
   });
 });
 

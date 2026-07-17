@@ -14,6 +14,7 @@ import {
   type ResolvedContainer,
   resolveContainer,
 } from '@internal/lowering';
+import { deleteStateDatabase } from '@internal/lowering/state';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { CliError } from './cli-error.ts';
@@ -87,6 +88,45 @@ export async function ensureContainers(
   const outcome = await Effect.runPromise(provided);
   if (!outcome.ok) throw new CliError(outcome.message);
   return outcome.container;
+}
+
+/**
+ * Removes the stage's deploy-state database after a successful `alchemy
+ * destroy` (ADR-0033). Runs before the Branch/Project delete: alchemy reads
+ * state to know what to remove, so the store must outlive every resource it
+ * describes, and the Branch delete is refused while the database is still a
+ * live member.
+ */
+export async function deleteStageStateDatabase(
+  input: {
+    readonly projectId: string;
+    readonly branchId?: string;
+    readonly env?: NodeJS.ProcessEnv;
+  },
+  deps?: { readonly client?: ManagementApiClient },
+): Promise<void> {
+  const env = input.env ?? process.env;
+  if (deps?.client === undefined && (env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
+    throw new CliError('environment variable PRISMA_SERVICE_TOKEN is required.');
+  }
+  const program = deleteStateDatabase({
+    projectId: input.projectId,
+    ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
+  }).pipe(
+    Effect.map(() => ({ ok: true as const })),
+    Effect.catchTag('PrismaApiError', (e) =>
+      Effect.succeed({
+        ok: false as const,
+        message: `Failed to delete the deploy-state database: ${e.message}.`,
+      }),
+    ),
+  );
+  const provided =
+    deps?.client !== undefined
+      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
+      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
+  const outcome = await Effect.runPromise(provided);
+  if (!outcome.ok) throw new CliError(outcome.message);
 }
 
 /**

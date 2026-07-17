@@ -226,7 +226,7 @@ import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control'
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],
-  state: () => prismaState(), // workspace-hosted deploy state, shared by every deployer
+  state: () => prismaState(), // deploy state, in its own database on the stage's branch
 });
 ```
 

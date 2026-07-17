@@ -481,6 +481,7 @@ describe('run() — the full pipeline over fakes', () => {
           runAssembler: fakeAssembler,
           ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
+          deleteStateDatabase: async () => {},
           deleteProject: async () => {},
         });
 
@@ -552,6 +553,7 @@ describe('run() — the full pipeline over fakes', () => {
           alchemyCalls.push(input);
           return 0;
         },
+        deleteStateDatabase: async () => {},
         deleteProject: async () => {},
       });
 
@@ -583,6 +585,7 @@ describe('run() — the full pipeline over fakes', () => {
           alchemyCalls.push(input);
           return 0;
         },
+        deleteStateDatabase: async () => {},
         deleteBranch: async () => {},
       });
 
@@ -604,6 +607,7 @@ describe('run() — the full pipeline over fakes', () => {
         runAssembler: fakeAssembler,
         ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
+        deleteStateDatabase: async () => {},
         deleteBranch: async (input) => {
           deleteCalls.push(input);
         },
@@ -623,6 +627,7 @@ describe('run() — the full pipeline over fakes', () => {
         runAssembler: fakeAssembler,
         ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
+        deleteStateDatabase: async () => {},
         deleteBranch: async (input) => {
           deleteCalls.push(input);
         },
@@ -683,6 +688,7 @@ describe('run() — the full pipeline over fakes', () => {
         runAssembler: fakeAssembler,
         ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
+        deleteStateDatabase: async () => {},
         deleteProject: async (input) => {
           deleteCalls.push(input);
         },
@@ -702,6 +708,7 @@ describe('run() — the full pipeline over fakes', () => {
         runAssembler: fakeAssembler,
         ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
+        deleteStateDatabase: async () => {},
         deleteBranch: async () => {},
         deleteProject: async (input) => {
           deleteCalls.push(input);
@@ -748,6 +755,150 @@ describe('run() — the full pipeline over fakes', () => {
 
       expect(status).toBe(0);
       expect(deleteCalls).toEqual([]);
+    });
+  });
+
+  describe('removing the deploy-state database after a destroy (ADR-0033)', () => {
+    test('destroy --stage staging removes the state database before the Branch', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const order: string[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => {
+          order.push('alchemy');
+          return 0;
+        },
+        deleteStateDatabase: async (input) => {
+          order.push(`state:${input.projectId}/${input.branchId}`);
+        },
+        deleteBranch: async () => {
+          order.push('branch');
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(order).toEqual(['alchemy', 'state:proj-fake/branch-staging', 'branch']);
+    });
+
+    test('destroy --production removes the state database before the Project, naming no branch', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const order: string[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => {
+          order.push('alchemy');
+          return 0;
+        },
+        deleteStateDatabase: async (input) => {
+          order.push(`state:${input.projectId}/${input.branchId ?? 'default'}`);
+        },
+        deleteProject: async () => {
+          order.push('project');
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(order).toEqual(['alchemy', 'state:proj-fake/default', 'project']);
+    });
+
+    test('a named stage whose state database cannot be removed fails, and its Branch is left alone', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let branchDeleted = false;
+
+      await expect(
+        run(['destroy', app.entryPath, '--stage', 'staging'], {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          ensureContainers: fakeEnsureContainers,
+          alchemy: () => 0,
+          deleteStateDatabase: async () => {
+            throw new CliError('Failed to delete the deploy-state database: boom.');
+          },
+          deleteBranch: async () => {
+            branchDeleted = true;
+          },
+        }),
+      ).rejects.toThrow(/deploy-state database/);
+
+      expect(branchDeleted).toBe(false);
+    });
+
+    test('production whose state database cannot be removed warns and still removes the Project', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+      fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+      let projectDeleted = false;
+
+      try {
+        const status = await run(['destroy', app.entryPath, '--production'], {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          ensureContainers: fakeEnsureContainers,
+          alchemy: () => 0,
+          deleteStateDatabase: async () => {
+            throw new CliError('Failed to delete the deploy-state database: boom.');
+          },
+          deleteProject: async () => {
+            projectDeleted = true;
+          },
+        });
+
+        expect(status).toBe(0);
+        expect(projectDeleted).toBe(true);
+        expect(warnSpy.mock.calls.flat().join(' ')).toMatch(/deploy-state database/);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    test('a FAILED alchemy destroy removes no state database', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let stateDeleted = false;
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 1,
+        deleteStateDatabase: async () => {
+          stateDeleted = true;
+        },
+        deleteBranch: async () => {},
+      });
+
+      expect(status).toBe(1);
+      expect(stateDeleted).toBe(false);
+    });
+
+    test('deploy never removes a state database', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let stateDeleted = false;
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+        deleteStateDatabase: async () => {
+          stateDeleted = true;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(stateDeleted).toBe(false);
     });
   });
 });

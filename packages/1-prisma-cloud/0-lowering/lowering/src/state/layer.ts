@@ -15,42 +15,45 @@ import { guardStateService, makePrismaStateService } from './service.ts';
 
 /**
  * The hosted Alchemy state store. On layer init (scoped, once per stack
- * run): find-or-create the workspace's `prisma-composer-state` project, mint a
- * fresh connection to its default database, migrate the schema, and
- * acquire the (stack, stage) advisory lock — see `bootstrap.ts` and
- * `lock.ts`. The Management API plumbing (`ManagementClient`,
- * `PrismaCredentials`) is provided internally, so the returned layer's
- * only requirements are the ones alchemy itself already provides to every
- * state store (`StackServices`).
+ * run): resolve the stage's Branch, find-or-create its `prisma-composer-state`
+ * database, mint a fresh connection, migrate the schema, and acquire the
+ * (stack, stage) advisory lock — see `bootstrap.ts` and `lock.ts`. The
+ * Management API plumbing (`ManagementClient`, `PrismaCredentials`) is
+ * provided internally, so the returned layer's only requirements are the
+ * ones alchemy itself already provides to every state store
+ * (`StackServices`).
  *
  * Any bootstrap/lock/migration failure is wrapped into an operator-facing
- * `HostedStateBootstrapError` (naming the workspace and the step that
+ * `HostedStateBootstrapError` (naming the Project/Branch and the step that
  * failed, never the raw driver/API error — see `errors.ts`) before dying the
  * layer (loud, immediate, unrecoverable) rather than surfacing as a typed
  * error — matching core's `LowerOptions.state: Layer.Layer<State, never,
  * StackServices>` contract and alchemy's own convention (e.g. a missing
  * state store is `Effect.die` in `Stack.make`).
  */
-export const prismaState = (
-  opts: {
-    /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
-    workspaceId?: string;
-  } = {},
-): Layer.Layer<State, never, StackServices> => {
-  const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'];
-  if (workspaceId === undefined || workspaceId.length === 0) {
-    throw new Error('prismaState(): environment variable PRISMA_WORKSPACE_ID is required.');
+export const prismaState = (): Layer.Layer<State, never, StackServices> => {
+  const projectId = process.env['PRISMA_PROJECT_ID'];
+  if (projectId === undefined || projectId.length === 0) {
+    throw new Error(
+      'prismaState(): environment variable PRISMA_PROJECT_ID is required (the CLI sets it — ' +
+        'deploy via `prisma-composer deploy`).',
+    );
   }
+  const branchIdEnv = process.env['PRISMA_BRANCH_ID'];
+  const branchId = branchIdEnv === undefined || branchIdEnv.length === 0 ? undefined : branchIdEnv;
+
   return Layer.effect(
     State,
     Effect.gen(function* () {
       const stack = yield* Stack;
+      const target = branchId === undefined ? projectId : `${projectId}/${branchId}`;
       const bootstrapError = (step: string) => (cause: unknown) =>
-        hostedStateBootstrapError(workspaceId, step, cause);
+        hostedStateBootstrapError(target, step, cause);
 
-      const { connectionString } = yield* bootstrapStateConnection(workspaceId).pipe(
+      const bootstrapInput = branchId === undefined ? { projectId } : { projectId, branchId };
+      const { connectionString } = yield* bootstrapStateConnection(bootstrapInput).pipe(
         Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
-        Effect.mapError(bootstrapError('finding/creating the prisma-composer-state project')),
+        Effect.mapError(bootstrapError('resolving the state database on the stage branch')),
       );
 
       // The pool reconnects on demand for ordinary (non-reserved) queries —
