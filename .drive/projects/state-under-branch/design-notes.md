@@ -83,18 +83,51 @@ included.
    the default stage — but the platform lands those resources on the implicit
    default Branch. ADR-0024's *addressing* model is unchanged; its "lives at
    the Project level" wording gets a correction note (S1).
-3. **Database create accepts branch + inherited region.**
-   `POST /v1/projects/{projectId}/databases` accepts optional
-   `branchId`/`branchGitName` (mutually exclusive) and
-   `region: "inherit"` = "use the project default database region"; `region`
-   defaults to `us-east-1` (`services/management-api/routes/v1/databases.ts:397-537`).
-   Composer's own `Database` provider today creates then attaches via
-   `PATCH /v1/databases/{databaseId}` `{ branchId }`
+3. **Two different database endpoints exist, and only the flat one speaks
+   Branch.** Corrected 2026-07-17 after the implementer caught the original
+   claim here being wrong — it attributed the flat endpoint's parameters to
+   the project-scoped one.
+   - **Project-scoped** `…/v1/projects/{projectId}/databases`
+     (`services/management-api/routes/v1/projects/databases.ts`): `GET` takes
+     `{ cursor, limit }` **only** — no branch filter. `POST` takes
+     `name`/`region`/`isDefault`/`source` and has **no `branchId` field**; its
+     response even hard-codes `branchId: null`, which is a reporting bug, not
+     the truth (see fact 3a).
+   - **Flat** `…/v1/databases` (`services/management-api/routes/v1/databases.ts`):
+     `GET` accepts `projectId` + `branchId`/`branchGitName` filters (mutually
+     exclusive) and returns `branchId` and `createdAt` per row. `POST`
+     (`FlatCreateDatabaseInputSchema`, ~:394) accepts `projectId`, `name`,
+     `region` (including `"inherit"` = the project's default database region),
+     `isDefault`, and `branchId`/`branchGitName` — **everything needed, in one
+     call**.
+   - **Use the flat endpoint for both discovery and creation.** See § Bootstrap
+     step 3 for why the client-side create-then-`PATCH` two-step is rejected.
+   - **The flat create is not atomic** (corrected 2026-07-17, second time this
+     endpoint has caught us out — found by the reviewer). It is a *server-side*
+     create-then-attach: `services/management-api/routes/v1/databases.ts:574`
+     calls `createPrismaPostgresDatabase` **without** `branchId` (so by fact 3a
+     the row is born on the default Branch), then `:629` calls
+     `attachResourceToBranch` to move it and returns an HTTP error if that
+     fails. The route's authors document the window themselves at `:526-530`
+     and narrow it with a Branch pre-check at `:531-540`. Narrowed, not closed.
+     What this buys over the client-side two-step is still decisive — one
+     request instead of two, the Branch validated before the row exists, and no
+     client-crash window between the two calls — but "atomic" was never true
+     and must not be claimed.
+3a. **A database created without a `branchId` lands on the default Branch —
+   it is never branchless.** `createPrismaPostgresDatabase`
+   (`packages/interactors/src/database.ts:1010-1027`) calls
+   `getOrCreateDefaultBranch(tx, { projectId })` inside the create transaction
+   and connects `branch: { connect: { id: branchId } }`. This is the database
+   half of fact 1, verified directly rather than inferred from the
+   compute-service path — and it is what makes the two-step create hazardous.
+4. **Composer's own `Database` provider uses the project-scoped create then
+   attaches** via `PATCH /v1/databases/{databaseId}` `{ branchId }`
    ([Database.ts:56-77](../../../packages/1-prisma-cloud/0-lowering/lowering/src/postgres/Database.ts)).
-4. **Database list is branch-filterable and branch-attributed.**
-   `GET /v1/projects/{projectId}/databases` accepts `branchId` /
-   `branchGitName` query filters and each row carries `branchId`
-   (`services/management-api/routes/v1/databases.ts:227-371`).
+   That pattern predates this design; the state store deliberately does not
+   copy it (§ Bootstrap step 3). Whether the provider itself should move to
+   the flat single-call endpoint is a separate question — recorded under
+   Follow-ups, not fixed here.
 5. **Branch deletion via the Management API refuses live members.**
    `DELETE /v1/branches/{branchId}` "refuses if the Branch still has live
    members or is the production/default Branch"
@@ -132,7 +165,8 @@ All in `packages/1-prisma-cloud/0-lowering/lowering/src/state/` unless noted.
 | `bootstrap.ts` `verifyOwnership`, `OwnershipVerdict`, `mintConnection`, `cleanupAgedConnections`, `listAllConnections`, `deleteConnection` | ownership marker check; fresh connection per run; aged-connection GC | **Retained**, re-pointed at the per-branch database |
 | `schema.ts` (`migratePrismaState`, `STATE_META_MARKER`, tables `alchemy_resource_state`/`alchemy_stack_output`/`prisma_app_state_meta`) | idempotent DDL + marker | **Unchanged.** The `stack`/`stage` key columns become redundant inside a per-stage DB; keeping them means zero store-code changes and zero migration risk. Do not remove them. |
 | `lock.ts` (ADR-0010 session advisory lock keyed `hash(stack, stage)`) | serializes deploys per app+stage on the shared store | **Unchanged.** Key is redundant inside a per-stage DB; harmless. New emergent property recorded in ADR: deleting the state DB severs the lock connection, so an in-flight deploy of that stage fails its lease check within the trust window — platform teardown doubles as a kill switch. |
-| `service.ts`, `errors.ts`, `transient.ts` | store CRUD, error wrapping | **Unchanged** |
+| `service.ts`, `transient.ts` | store CRUD, transient store | **Unchanged** |
+| `errors.ts` | `hostedStateBootstrapError(workspaceId, step, cause)` | **One rename** (amended 2026-07-17): the error's only identifying field is `workspaceId`, and there is no workspace at this layer anymore. Carrying the project id in a field called `workspaceId` produces the operator-facing line "hosted-state bootstrap failed for workspace prj_x/br_y", which is simply false. Rename the field to `target` and pass `projectId` (or `projectId/branchId` for a named stage). The "unchanged" list protects the store's *behaviour*; it was never a licence to print a wrong noun. |
 | `layer.ts` `prismaState()` | requires `PRISMA_WORKSPACE_ID`; bootstrap by workspace | Requires `PRISMA_PROJECT_ID`; optional `PRISMA_BRANCH_ID` (§ Bootstrap). `workspaceId` option and its env fallback are deleted. |
 | CLI `main.ts` destroy tail (steps after alchemy exit 0) | `deleteStageBranch` (named stage) / `deleteAppProject` (production) | New step **before** each: delete the stage's state database (§ Destroy ordering) |
 | `ensure-containers.ts` | resolve/delete containers | gains `deleteStateDatabase` wiring (the implementation lives in lowering; see § Destroy ordering) |
@@ -173,24 +207,47 @@ Algorithm, in order:
      "role production". If none exists, fail with a `PrismaApiError`-wrapped
      message: `` `project ${projectId} has no default Branch — the platform guarantees every live Project owns one; contact support.` ``
      Do not create a Branch here under any circumstances.
-2. **List candidates.** `GET /v1/projects/{projectId}/databases` with query
-   `branchId: <resolved>` (paged, as `listAllDatabases` pages today), filtered
-   to `name === STATE_DATABASE_NAME` and `isDefault === false`.
-3. **Zero candidates → create.**
-   `POST /v1/projects/{projectId}/databases` with body
-   `{ name: STATE_DATABASE_NAME, region: 'inherit', branchId: <resolved> }`.
-   If the generated `@prisma/management-api-sdk` types do not admit `branchId`
-   or `region: 'inherit'` in that body yet, use the same two-step the
-   `Database` provider uses today: create with
-   `{ name, region: 'inherit' }` then
-   `PATCH /v1/databases/{databaseId}` `{ branchId: <resolved> }` — and if
-   `'inherit'` is also not in the SDK's region union, regenerate/update the SDK
-   dependency rather than hard-coding a region; hard-coding a region literal is
-   forbidden. Then mint a connection (§ below) and return — a brand-new
-   database needs no ownership check (only this run can have touched it;
-   `migratePrismaState` writes the marker on first use). Log (to stderr, and
-   without bare create/update verbs — the e2e noop assertion greps deploy
-   output for them):
+2. **List candidates.** `GET /v1/databases` (the **flat** endpoint — the
+   project-scoped one has no branch filter, fact 3) with query
+   `{ projectId, branchId: <resolved> }`, paged, filtered to
+   `name === STATE_DATABASE_NAME` and `isDefault === false`.
+3. **Zero candidates → create, in one call.**
+   `POST /v1/databases` (the **flat** endpoint) with body
+   `{ projectId, name: STATE_DATABASE_NAME, region: 'inherit', branchId: <resolved> }`.
+   Never hard-code a region literal; if `'inherit'` is missing from the
+   generated SDK's region union, update the SDK dependency and say so.
+
+   **The client-side create-then-`PATCH` two-step is rejected** (amended
+   2026-07-17). The project-scoped create has no `branchId` field, so a
+   database made that way is born on the **default Branch** (fact 3a) and only
+   moves on the follow-up `PATCH`. Two calls means two failure points plus a
+   client-crash window between them.
+
+   **What the flat endpoint actually buys, stated honestly** (corrected
+   2026-07-17 after the reviewer read the route): not atomicity — it is a
+   server-side create-then-attach with the same shape (fact 3). It buys one
+   request instead of two, a Branch validated *before* the row exists, and no
+   window in which our own process can die between create and attach. The
+   window narrows to "the platform's attach failed after its create
+   succeeded"; it does not vanish.
+
+   **The residual, and why it is acceptable.** A failed attach strands a
+   database named `prisma-composer-state` — empty, never migrated,
+   `isDefault: false` — on the project's default Branch. Follow it through:
+   a later *production* bootstrap resolves that same default Branch and lists
+   it as a candidate. If production already has a real store, that store is
+   older, wins the oldest-first tiebreak, and the stray is ignored. If
+   production has no store yet, the stray verifies as `empty` and is adopted —
+   which is **correct**: an empty state database on production's own Branch is
+   exactly what production's bootstrap would have created. Either way there is
+   no corruption and no wrong adoption. The real cost is junk: one stranded
+   database per failed attach, each holding a quota slot (§ Resolved questions,
+   OQ-1). That is worth accepting for a failure that requires the platform's
+   own attach to fail after its own pre-check passed.
+
+   Then mint a connection (§ below) and return — a brand-new database needs no
+   ownership check (only this run can have touched it; `migratePrismaState`
+   writes the marker on first use). Log to stderr using this wording:
    `` `hosted state: provisioned state database ${databaseId} on branch ${branchId} (project ${projectId})` ``.
 4. **One or more candidates → verify, oldest first.** Sort by `createdAt`
    ascending (add `createdAt` to the summary selection; the list response
@@ -316,7 +373,8 @@ the deploying guide's upgrade note (S1).
 | --- | --- | --- |
 | CLI `destroy --stage` | alchemy destroy (reads state) → delete state DB → delete Branch | Correct; every crash window retry-converges |
 | CLI `destroy --production` | alchemy destroy → delete state DB (warn-only) → best-effort project delete | Correct; project shell only if state delete failed, with a warning naming it |
-| Console branch delete / webhook branch delete (successor project) | platform enumerates Branch children; state DB deleted like any non-default database; cron backstop for stragglers | Correct by construction; no Composer involvement; severed lock kills in-flight deploys within the lease window |
+| **Webhook branch delete** (successor project) and the **idle-preview reclaim cron** — both call `tearDownBranchByGitName` | soft-deletes the Branch row directly (bypassing the guarded delete), then enumerates and deletes apps, versions, non-default databases (incl. state), and non-production `ConfigVariable`s; cron backstop for stragglers | **Correct by construction** — verified live 2026-07-17. No Composer involvement; severed lock kills in-flight deploys within the lease window. This is the row the containment argument rests on. |
+| **Console branch delete** — calls the guarded `deleteBranch` | `branch.repository.prisma.ts:122-131`'s `updateMany` requires `databases: { none: {} }` and `apps: { none: { deletedAt: null } }` | **Refuses (409 "Branch has live members")** — corrected 2026-07-17; the original row wrongly claimed this path cascades. Our state database is a database, so a deployed stage refuses here where a compute-only stage previously would not. Safe (nothing is orphaned), not silent, and the remedy is `destroy --stage`. But "delete the preview from Console" is not a working teardown for a Composer stage, and the ADR now says so. |
 | Console project delete | refuses while deployments active; deletes all tenants incl. every state DB | Correct by construction |
 | Workspace delete | cascades projects | Correct |
 | User manually deletes a state DB | resources orphaned from state; next deploy provisions fresh empty state and re-creates resources (duplicates/conflicts possible) | Same exposure class as today's deletable state project, smaller blast radius (one stage). Accepted; platform ask filed for a framework-owned/protected flag (platform-ask.md) |
@@ -371,6 +429,75 @@ what was asked and why; nothing is outstanding with the PDP team.
   unaffected: `DELETE /v1/branches/{branchId}` genuinely refuses a Branch with
   live members (`Database.branchId` is `onDelete: Restrict`).
 
+## What the live run taught us that the tests could not (D3, 2026-07-17)
+
+All four Project-DoD conditions passed against the real workspace, and it was
+left clean. Three findings the unit tests could never have produced:
+
+1. **There are two platform Branch-delete paths, not one** — see the teardown
+   matrix. This corrected a wrong row in an already-approved ADR. The claim
+   "platform-side teardown cleans state up" is true of the cascading path
+   (webhook, reclaim cron) and false of the guarded one (Console), which
+   refuses instead. Found only because the live run tried the Console's path
+   and got a 409.
+2. **A Branch's configuration and its state must die together.** Deleting a
+   Branch's children by hand — resources and state, but not its preview-class
+   `ConfigVariable`s — leaves variables whose `branchId` points at a deleted
+   Branch, and the next deploy of that stage **fails**: it finds a reserved
+   `COMPOSER_*` variable untracked in its (fresh) state and refuses to
+   overwrite it. That refusal is correct — it is the guard doing its job — and
+   the real cascading teardown deletes the config vars, so no platform or CLI
+   path reaches this state. Only manual API surgery does. Recorded because the
+   coupling is invisible until you break it.
+3. **A failed deploy strands its containers.** `ensureContainers` runs *before*
+   preflight, so a deploy that fails preflight (e.g. a missing `envParam`) has
+   already created the Project, Branch, and default database. This is ordering,
+   not luck, and it predates this slice — but it means "a failed deploy costs
+   nothing" is false, and the quota arithmetic in § Resolved questions (OQ-1)
+   should assume failed attempts leave residue until someone cleans it.
+
+Also observed and worth keeping: the documented convergence window is real. A
+`destroy --production` against a project that never had a production deploy
+provisions a state database purely so it can destroy over empty state and
+delete it seconds later. Correct, and cheap; noted so nobody reads it as a bug.
+
+## Known limit of the test suite (recorded, accepted)
+
+The residual accepted in § Bootstrap step 3 — the platform's attach failing
+after its own create succeeded, stranding an empty database on the default
+Branch — **cannot be regression-tested as the fake stands.** The fake models
+`POST /v1/databases` as one step, because from the client's side it *is* one
+call; the two-step is the platform's business. So no test reaches the
+failed-attach outcome. That is the right shape for a fake of a client-visible
+API, and inventing a two-phase fake to chase a failure mode we cannot trigger
+from the client would be modelling the platform's internals in our suite.
+Recorded because the gap is real and someone should know it exists before
+assuming green tests cover this path. If the residual ever needs pinning, the
+fake would have to model create-then-attach with an injectable attach failure.
+
+## Follow-ups (out of scope here, worth their own change)
+
+- **`postgres/Database.ts` has the same stray-database window this slice
+  rejected for the state store.** The user-facing database provider creates
+  through the project-scoped endpoint and then attaches with
+  `PATCH /v1/databases/{databaseId}` `{ branchId }`. By fact 3a the database is
+  born on the project's **default** Branch, so a failed `PATCH` on a named-stage
+  deploy strands a user database on production's Branch. The flat
+  `POST /v1/databases` would create it attached in one call. Not fixed here:
+  resource lowering is explicitly out of this slice's scope, and the fix wants
+  its own tests and its own review.
+- **`errors.ts`'s error carries one identifying field.** After the `target`
+  rename it is honest, but a bootstrap failure still cannot say *which* of
+  project/branch/database it was resolving beyond the step string. Fine for
+  now; worth revisiting if operators report confusion.
+- **`scripts/ci-cleanup-utils.ts` protects the wrong thing after cutover.** It
+  exempts a *project* named `prisma-composer-state` from CI cleanup. That
+  project is the retired workspace store; the live store is now a database
+  inside each app's own project. The exemption is harmless but guards a ghost,
+  and CI cleanup that deletes app projects will now take their state databases
+  with them — which is correct and is the whole point, but nobody has looked
+  at whether CI cleanup ordering assumes otherwise. Worth one pass.
+
 ## Key decisions log
 
 1. **Containment model** (operator, 2026-07-17): one branch holds its own
@@ -387,6 +514,23 @@ what was asked and why; nothing is outstanding with the PDP team.
 5. **No migration code; manual cutover** (operator-ratified 2026-07-17).
 6. **GitHub App integration explicitly out of scope**, recorded as the
    successor project in [plan.md](plan.md) § Successor project.
+7. **The state database is created in one call against the flat
+   `POST /v1/databases`, never a client-side create-then-`PATCH`**
+   (orchestrator, 2026-07-17, after the implementer surfaced the endpoint
+   error; **reason corrected the same day** after the reviewer read the route).
+   The decision stands; the first justification for it did not. I claimed the
+   flat endpoint "attaches at birth and closes the window entirely" — it does
+   not. It is a server-side create-then-attach with a Branch pre-check, so the
+   window narrows rather than closing. The decision survives on what is
+   actually true: one request instead of two, the Branch validated before the
+   row exists, no client-crash window, and a residual failure that costs a
+   stranded empty database (a quota slot) rather than any corruption — see
+   § Bootstrap step 3. **Lesson worth carrying:** I asserted atomicity from an
+   endpoint's *input shape* without reading its body. Twice now this one
+   endpoint has punished reading the schema instead of the implementation.
+8. **`errors.ts`'s `workspaceId` field is renamed to `target`** (orchestrator,
+   2026-07-17). Pinning a file unchanged does not license printing a false
+   noun at an operator.
 
 ## References
 

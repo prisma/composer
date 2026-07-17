@@ -49,8 +49,11 @@ documented); any lowering/provider change; anything in § Successor project.
 (From the design discussion — knowledge the implementer's grep would not
 surface.)
 
-- The e2e noop assertion greps deploy output for bare create/update verbs —
-  bootstrap/teardown log wording must follow design-notes' exact phrasings.
+- ~~The e2e noop assertion greps deploy output for bare create/update verbs.~~
+  **False — it no longer exists** (deleted with the `makerkit-hello` example;
+  nothing in `.github/`, `scripts/`, `test/`, or `examples/` greps for this).
+  Follow design-notes' log phrasings anyway, because they read well and match
+  the surrounding code — but do not repeat the claim that a check enforces it.
 - PDP allows duplicate names; a user database named `prisma-composer-state`
   on the same branch must be skipped on adopt and left alone on delete
   (squatter verdict), never adopted by name, never deleted by name.

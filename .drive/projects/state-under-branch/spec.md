@@ -56,9 +56,13 @@ containment guarantee for webhook-driven teardown and credential scoping.
 - **Retry convergence:** every crash window in deploy bootstrap and in the
   destroy tail must converge on command re-run (documented per-window in
   design-notes § Destroy ordering).
-- **Output-wording constraint:** state bootstrap/teardown log lines must not
-  contain bare create/update verbs (the e2e noop assertion greps for them);
-  follow the existing "provisioned"/"using"/"removed" vocabulary.
+- **Output wording:** state bootstrap/teardown log lines follow the existing
+  "provisioned"/"using"/"removed" vocabulary. (An earlier draft justified this
+  with an end-to-end noop assertion that greps deploy output for bare
+  create/update verbs. That assertion was deleted along with the
+  `makerkit-hello` example and no longer exists anywhere in the repo — the
+  vocabulary stays because it reads well and matches the surrounding code, not
+  because a check enforces it.)
 
 # Project-DoD
 
