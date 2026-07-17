@@ -6,10 +6,10 @@ import * as Prisma from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { isPnPostgresResourceNode } from '../exports/prisma-next.ts';
 import { PgWarm } from '../pg-warm-resource.ts';
 import { resolveMigrationsDir } from '../pn-config.ts';
 import { PnMigration } from '../pn-migration-resource.ts';
-import { isPnPostgresResourceNode } from '../prisma-next.ts';
 import { resolveTargetRef } from '../prisma-next-migrate.ts';
 import { DEFAULT_REGION, projectIdOf, type ResolvedCloudOptions, validateName } from './shared.ts';
 

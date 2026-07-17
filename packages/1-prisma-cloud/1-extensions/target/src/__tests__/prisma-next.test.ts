@@ -14,8 +14,8 @@ import { describe, expect, test } from 'bun:test';
 import type { Contract, ResourceNode } from '@internal/core';
 import { isNode, Load, module, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import { isPnPostgresResourceNode, pnContract, pnPostgres } from '../exports/prisma-next.ts';
 import { postgres } from '../postgres.ts';
-import { isPnPostgresResourceNode, pnContract, pnPostgres } from '../prisma-next.ts';
 import type { Contract as GadgetContract } from './fixtures/gadget-contract/emitted/contract.d.ts';
 import gadgetContractJson from './fixtures/gadget-contract/emitted/contract.json' with {
   type: 'json',

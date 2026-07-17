@@ -20,8 +20,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createPostgresControlClient } from '@prisma-next/postgres/control';
 import type { Char } from '@prisma-next/target-postgres/codec-types';
-import type { Client } from '../prisma-next.ts';
-import { pnContract, pnPostgres } from '../prisma-next.ts';
+import type { Client } from '../exports/prisma-next.ts';
+import { pnContract, pnPostgres } from '../exports/prisma-next.ts';
 import type { Contract as WidgetContract } from './fixtures/widget-contract/emitted/contract.d.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
   type: 'json',

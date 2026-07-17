@@ -9,7 +9,7 @@
  */
 
 import type { Config, Deps, Expose, Params, RunnableServiceNode } from '@internal/core';
-import { stash } from './serializer.ts';
+import { stash } from '../serializer.ts';
 
 /** What `bootstrapService` hands back: a live, driveable instance of the booted entry. */
 export interface BootstrappedService {

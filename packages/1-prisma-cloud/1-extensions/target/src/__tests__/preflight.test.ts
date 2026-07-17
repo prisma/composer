@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { Load, module, secret, string } from '@internal/core';
 import type { ManagementApiClient } from '@internal/lowering';
-import { compute } from '../index.ts';
+import { compute } from '../exports/index.ts';
 import { envParam } from '../param.ts';
 import { runPreflight } from '../preflight.ts';
 import { envSecret } from '../secret.ts';

@@ -1,4 +1,4 @@
-import { compute, postgres } from '../../index.ts';
+import { compute, postgres } from '../../exports/index.ts';
 
 // Importing this module must run nothing (invariant 3): constructing nodes is
 // pure, and the postgres() dependency carries no user code — its binding is

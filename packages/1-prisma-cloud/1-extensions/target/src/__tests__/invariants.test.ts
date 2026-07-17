@@ -103,7 +103,7 @@ describe('invariant 4: environment touches are confined to the config serializer
 
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
       { file: 'compute.ts', count: 3 },
-      { file: 'control.ts', count: 4 },
+      { file: 'exports/control.ts', count: 4 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 7 },
     ]);
@@ -173,7 +173,7 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
     };
 
     const seen = new Map<string, string[]>();
-    const queue = [path.join(srcDir, 'index.ts')];
+    const queue = [path.join(srcDir, 'exports', 'index.ts')];
     while (queue.length > 0) {
       const file = queue.pop();
       if (file === undefined || seen.has(file)) continue;
@@ -216,7 +216,7 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     };
 
     const seen = new Map<string, string[]>();
-    const queue = [path.join(srcDir, 'index.ts')];
+    const queue = [path.join(srcDir, 'exports', 'index.ts')];
     while (queue.length > 0) {
       const file = queue.pop();
       if (file === undefined || seen.has(file)) continue;

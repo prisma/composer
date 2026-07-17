@@ -19,7 +19,7 @@ import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import pg from 'pg';
-import { normalizeSslMode, withConnectionRetry } from './pg-connection.ts';
+import { normalizeSslMode, withConnectionRetry } from './exports/pg-connection.ts';
 
 export interface PgWarmProps {
   /** The live DB connection string (an Alchemy Output at wiring time, resolved at apply). */

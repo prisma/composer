@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { prismaCloud } from '../control.ts';
+import { prismaCloud } from '../exports/control.ts';
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
 async function withEnv<T>(values: Record<string, string | undefined>, fn: () => T): Promise<T> {

@@ -17,7 +17,7 @@ import {
   normalizeSslMode,
   retryTransientConnect,
   withConnectionRetry,
-} from '../pg-connection.ts';
+} from '../exports/pg-connection.ts';
 
 const noSleep = async (): Promise<void> => {};
 

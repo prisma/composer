@@ -13,14 +13,14 @@
 import type { BuildAdapter, DependencyEnd, Hydrated, ModuleBuilder } from '@internal/core';
 import { service } from '@internal/core';
 import { expectTypeOf, test } from 'vitest';
-import { postgres } from '../postgres.ts';
 import {
   type Client,
   type PnPostgresContract,
   type PnPostgresResourceNode,
   pnContract,
   pnPostgres,
-} from '../prisma-next.ts';
+} from '../exports/prisma-next.ts';
+import { postgres } from '../postgres.ts';
 import type { Contract as GadgetContract } from './fixtures/gadget-contract/emitted/contract.d.ts';
 import type { Contract as WidgetContract } from './fixtures/widget-contract/emitted/contract.d.ts';
 

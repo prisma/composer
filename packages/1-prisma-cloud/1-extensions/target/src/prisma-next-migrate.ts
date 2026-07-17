@@ -38,7 +38,7 @@ import {
   spaceRefsDirectory,
 } from '@prisma-next/migration-tools/spaces';
 import { createPostgresControlClient } from '@prisma-next/postgres/control';
-import { normalizeSslMode, withConnectionRetry } from './pg-connection.ts';
+import { normalizeSslMode, withConnectionRetry } from './exports/pg-connection.ts';
 
 /** Which authored path the migration step took. */
 export type PnMigrationAction = 'noop' | 'init' | 'migrate';

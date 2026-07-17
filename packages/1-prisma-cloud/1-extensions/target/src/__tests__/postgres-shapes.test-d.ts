@@ -10,7 +10,7 @@
  */
 import type { DependencyEnd, Hydrated, ResourceNode } from '@internal/core';
 import { expectTypeOf, test } from 'vitest';
-import { postgres, type postgresContract } from '../index.ts';
+import { postgres, type postgresContract } from '../exports/index.ts';
 import type { PostgresConfig } from '../postgres.ts';
 
 const identity = postgres({ name: 'db' });

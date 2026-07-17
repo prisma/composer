@@ -4,26 +4,11 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": {
-      "types": "./dist/index.d.mts",
-      "default": "./dist/index.mjs"
-    },
-    "./control": {
-      "types": "./dist/control.d.mts",
-      "default": "./dist/control.mjs"
-    },
-    "./prisma-next": {
-      "types": "./dist/prisma-next.d.mts",
-      "default": "./dist/prisma-next.mjs"
-    },
-    "./testing": {
-      "types": "./dist/testing.d.mts",
-      "default": "./dist/testing.mjs"
-    },
-    "./connection": {
-      "types": "./dist/pg-connection.d.mts",
-      "default": "./dist/pg-connection.mjs"
-    },
+    ".": "./dist/index.mjs",
+    "./connection": "./dist/connection.mjs",
+    "./control": "./dist/control.mjs",
+    "./prisma-next": "./dist/prisma-next.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {

@@ -133,7 +133,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/control.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/control.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"
@@ -175,7 +175,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/index.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/index.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -193,7 +193,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/prisma-next.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -205,7 +205,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pg-connection.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/pg-connection.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -217,7 +217,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/testing.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/testing.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"

@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type ConfigParam, param, string } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { compute } from '../index.ts';
+import { compute } from '../exports/index.ts';
 import {
   configKey,
   decodeParamPointer,

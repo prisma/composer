@@ -12,10 +12,10 @@ import {
 } from '@internal/core';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/rpc';
 import { type } from 'arktype';
-import { compute, postgres, postgresContract } from '../index.ts';
+import { compute, postgres, postgresContract } from '../exports/index.ts';
+import { bootstrapService } from '../exports/testing.ts';
 import { configKey, deserialize, deserializeSecrets, encode, secretKey } from '../serializer.ts';
 import { serviceKeyEnvName } from '../service-keys.ts';
-import { bootstrapService } from '../testing.ts';
 
 function scalarDeclaration(
   owner: ConfigDeclaration['owner'],
