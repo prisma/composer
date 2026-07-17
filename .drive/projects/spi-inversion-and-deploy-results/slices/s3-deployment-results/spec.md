@@ -114,12 +114,29 @@ readonly report?: (results: readonly DeploymentResult[]) => void;
     accepts their unresolved fields. The nonce defeats the input-hash noop
     so the report runs on unchanged redeploys.
 
-    **Declare `In`'s arrays MUTABLE** (`ReportEntry[]`,
-    `DeployedPrimitive[]`), not `readonly`. `Input<T>`'s array branch tests
-    `T extends any[]`, which a `readonly T[]` does not satisfy — it would
-    fall through to the object branch and map over array members rather
-    than elements. D1's probe verifies this; if `readonly` turns out to
-    work, prefer it and say so.
+    **Declare `In`'s arrays `readonly`** (`readonly ReportEntry[]`,
+    `readonly DeployedPrimitive[]`), matching `LoweredResult` /
+    `DeploymentResult` and the codebase's `readonly`-throughout style.
+
+    **Amended 2026-07-17 (D1 probe — the earlier pin was wrong).** The spec
+    previously required mutable arrays, reasoning that `Input<T>`'s array
+    branch tests `T extends any[]`, which `readonly T[]` fails, so it would
+    fall to the object branch and map over array *members* (`length`, `map`)
+    rather than elements. **The premise is right; the conclusion is wrong.**
+    It does fall to the object branch — but that branch is
+    `{ [K in keyof T]: Input<T[K]> }`, a *homomorphic* mapped type over a
+    naked type parameter, and TypeScript special-cases those over arrays: it
+    maps over **elements**, preserves array-ness, and preserves the
+    `readonly` modifier. It never touches `length`/`map`/`filter`.
+
+    Probed, and probed for *teeth* rather than mere compilation: both forms
+    accept a nested `Output<string>`, both reject `id: 42`, and both reject
+    an excess key at the same nested position. `Input<readonly P[]>` stays
+    array-like and stays readonly (assigning it to `P[]` is correctly
+    rejected — which also rules out a collapse to `any`).
+
+    Same shape as S1's `serviceId` defect: **a claim derived by reading
+    types instead of compiling them.**
   - **Runner**: receives the resolved input; closes over `graph` and
     `opts`; joins via the pure helper below; calls `opts.report(results)`;
     returns `undefined`.
@@ -226,6 +243,27 @@ This is another reason the reported primitives come from the descriptor
 naming them deliberately (`ReportedPrimitive`), resolved by apply, rather
 than from anything scraped out of `WiringOutputs`.
 
+## ADR-0033's alchemy appendix gets S3's verified facts
+
+ADR-0033's appendix exists so S2/S3 build on recorded facts rather than
+re-deriving them. S3 establishes four more, all probe-verified in D1 —
+**append them** (don't restate the seam design; the ADR's decision is
+unchanged):
+
+1. An `Action` whose input references a not-yet-created resource **plans**
+   and **runs during apply**, after the resources it references.
+2. Its runner receives **resolved** values, arbitrarily deep —
+   `entries[].primitives[].id` arrives as a real `string`.
+3. Alchemy persists the **resolved** input snapshot and hashes *that*
+   (`State/ActionState.ts`), noop-ing the action when the hash is unchanged.
+   A nonce evaluated at stack-effect time therefore defeats the noop.
+4. `Input<T>` maps `readonly T[]` correctly — the object branch is
+   homomorphic over a naked type parameter, so elements are mapped and both
+   array-ness and `readonly` survive.
+
+Cite against installed source at write time, not against these notes —
+S1-D3 found most of `design-notes.md`'s line numbers had drifted.
+
 ## Docs debt — S3 owns its own
 
 `.agents/rules/user-facing-surface-changes.mdc` is `alwaysApply: true`.
@@ -276,7 +314,9 @@ zeroes actions on destroy — nothing renders, correct).
 | Graph nodes in action input | FORBIDDEN — plan-time `hashInput` serializes the resolved input; nodes carry functions/Standard Schemas. Addresses + primitives only; the join uses the closure. |
 | Output ordering vs alchemy's TUI | The action runs inside the apply session, so the summary may print before alchemy's final status flush. Verify visually in D4; if interleaving is ugly, accepted for this slice and recorded as an upstream ask — do NOT reach for stdout piping. |
 | Plan-time `resolveInput` on first deploy | Action inputs referencing not-yet-created resources must still plan (alchemy's own feature contract for actions). D1 includes a probe verifying an action with resource-referencing input plans+runs on a fresh stack; if it fails, STOP → discussion mode (spec amendment), do not improvise a fallback. |
-| `Input<T>` vs `readonly` arrays | `Input<T>`'s array branch tests `T extends any[]`; a `readonly T[]` fails it and falls through to the object branch. Hence `In`'s arrays are declared mutable. D1's probe must confirm both that the mutable form maps correctly AND that nested `Output<string>` fields inside `entries[].primitives[]` are accepted at the call site and arrive **resolved** in the runner. This is the S3 analogue of the `serviceId` defect S1-D2 caught — verify it, don't assume it. |
+| `Input<T>` vs `readonly` arrays | **Settled by D1's probe: `readonly` works — use it.** `readonly T[]` does fall to `Input<T>`'s object branch, but that branch is homomorphic over a naked type parameter, which TypeScript special-cases over arrays: elements are mapped, array-ness and `readonly` survive. Verified to still reject `id: 42` and excess nested keys. The earlier mutable-array pin was wrong. |
+| Deep `Input<>` resolution at runtime | **Settled by D1's probe.** A nested `Output<string>` at `entries[].primitives[].id` — two levels deep — arrives in the runner as a real `string`. This is the claim the whole `ReportedPrimitive`/`DeployedPrimitive` split rests on, and it holds at runtime, not merely at the type level. |
+| Nonce vs the action's input-hash noop | **Settled by D1's probe, with a control.** Fresh deploy → ran. Unchanged redeploy + new nonce → ran. Unchanged redeploy + **same** nonce → **did not run**. The third case is what proves the noop is real and the nonce is precisely what defeats it. Alchemy persists the **resolved** input snapshot and hashes that (`State/ActionState.ts`), which is why a `Date.now()` evaluated at stack-effect time is sufficient. |
 | `lowering()` unit tests | Sync tests run without `report` and never touch alchemy context; the report path is covered by `joinDeployment` (pure), renderer (pure), generate-stack snapshots, and D4's live deploy. |
 
 ## Slice-DoD
