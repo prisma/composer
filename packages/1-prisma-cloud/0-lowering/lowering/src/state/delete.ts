@@ -1,13 +1,13 @@
 import * as Effect from 'effect/Effect';
 import { type ManagementApiClient, ManagementClient } from '../client.ts';
+import type { ResolvedContainer } from '../container.ts';
 import { callVoid, type PrismaApiError } from '../http.ts';
 import { type OwnershipVerifier, verifyOwnership } from './bootstrap.ts';
 import {
+  createConnection,
   listStateDatabaseCandidates,
-  mintConnection,
   resolveBranchId,
   STATE_DATABASE_NAME,
-  type StateTarget,
 } from './discovery.ts';
 
 const deleteDatabase = (
@@ -29,26 +29,26 @@ const deleteDatabase = (
  * none succeeds, which is what makes a retried destroy a no-op.
  */
 export const deleteStateDatabase = (
-  target: StateTarget,
+  container: ResolvedContainer,
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
-  deleteStateDatabaseWith(target, verifyOwnership);
+  deleteStateDatabaseWith(container, verifyOwnership);
 
 /**
- * Test seam: identical to {@link deleteStateDatabase} but with the ownership
- * verifier injectable, so the tests can stub ownership decisions against fake
- * DSNs without opening a real Postgres connection to them.
+ * Identical to {@link deleteStateDatabase}, except the ownership check is a
+ * parameter so tests can supply a fake instead of opening a real Postgres
+ * connection.
  */
 export const deleteStateDatabaseWith = (
-  target: StateTarget,
+  container: ResolvedContainer,
   verify: OwnershipVerifier,
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
-    const branchId = yield* resolveBranchId(client, target);
-    const candidates = yield* listStateDatabaseCandidates(client, target.projectId, branchId);
+    const branchId = yield* resolveBranchId(client, container);
+    const candidates = yield* listStateDatabaseCandidates(client, container.projectId, branchId);
 
     for (const candidate of candidates) {
-      const connectionString = yield* mintConnection(client, candidate.id);
+      const connectionString = yield* createConnection(client, candidate.id);
       const verdict = yield* verify(connectionString);
       if (verdict.kind === 'squatter') {
         console.warn(

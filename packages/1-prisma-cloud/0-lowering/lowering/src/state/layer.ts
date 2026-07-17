@@ -16,7 +16,7 @@ import { guardStateService, makePrismaStateService } from './service.ts';
 /**
  * The hosted Alchemy state store. On layer init (scoped, once per stack
  * run): resolve the stage's Branch, find-or-create its `prisma-composer-state`
- * database, mint a fresh connection, migrate the schema, and acquire the
+ * database, create a fresh connection, migrate the schema, and acquire the
  * (stack, stage) advisory lock — see `bootstrap.ts` and `lock.ts`. The
  * Management API plumbing (`ManagementClient`, `PrismaCredentials`) is
  * provided internally, so the returned layer's only requirements are the
@@ -46,9 +46,9 @@ export const prismaState = (): Layer.Layer<State, never, StackServices> => {
     State,
     Effect.gen(function* () {
       const stack = yield* Stack;
-      const target = branchId === undefined ? projectId : `${projectId}/${branchId}`;
+      const container = branchId === undefined ? projectId : `${projectId}/${branchId}`;
       const bootstrapError = (step: string) => (cause: unknown) =>
-        hostedStateBootstrapError(target, step, cause);
+        hostedStateBootstrapError(container, step, cause);
 
       const bootstrapInput = branchId === undefined ? { projectId } : { projectId, branchId };
       const { connectionString } = yield* bootstrapStateConnection(bootstrapInput).pipe(

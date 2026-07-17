@@ -21,6 +21,7 @@ import { PgWarmProvider } from './pg-warm-resource.ts';
 import { PnMigrationProvider } from './pn-migration-resource.ts';
 import { runPreflight } from './preflight.ts';
 import { S3CredentialsProvider } from './s3-credentials-resource.ts';
+import { runTeardown } from './teardown.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -113,6 +114,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
     preflight: (input) => runPreflight(input),
+
+    // Destroy-time cleanup (ADR-0033): remove the stage's deploy-state
+    // database, once alchemy destroy has finished reading it and before the
+    // CLI removes the Branch/Project.
+    teardown: (input) => runTeardown(input),
 
     // Runs once per lowering, before any service: references the CLI-ensured
     // Project, with the poison DATABASE_URL variables written immediately so

@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { ManagementClient } from '../../client.ts';
+import type { ResolvedContainer } from '../../container.ts';
 import {
   bootstrapStateConnection,
   bootstrapStateConnectionWith,
   type OwnershipVerifier,
 } from '../bootstrap.ts';
-import type { StateTarget } from '../discovery.ts';
 import {
   DEFAULT_BRANCH_ID,
   type FakeState,
@@ -26,10 +26,10 @@ const neverCalled = (): OwnershipVerifier => () => {
 const run = (
   state: FakeState,
   verify: OwnershipVerifier,
-  target: StateTarget = { projectId: PROJECT_ID },
+  container: ResolvedContainer = { projectId: PROJECT_ID },
 ) =>
   Effect.runPromise(
-    bootstrapStateConnectionWith(target, verify).pipe(
+    bootstrapStateConnectionWith(container, verify).pipe(
       Effect.provideService(ManagementClient, fakeClient(state)),
     ),
   );
@@ -215,7 +215,7 @@ describe('bootstrapStateConnection', () => {
 
 describe('bootstrapStateConnection (public entry point)', () => {
   test('wires the real verifyOwnership — typechecked here, not run (that would touch a real Postgres)', () => {
-    const typed: (target: StateTarget) => ReturnType<typeof bootstrapStateConnection> =
+    const typed: (container: ResolvedContainer) => ReturnType<typeof bootstrapStateConnection> =
       bootstrapStateConnection;
     expect(typed).toBe(bootstrapStateConnection);
   });

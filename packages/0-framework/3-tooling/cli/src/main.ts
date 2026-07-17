@@ -14,7 +14,6 @@ import { CliError } from './cli-error.ts';
 import {
   deleteAppProject,
   deleteStageBranch,
-  deleteStageStateDatabase,
   type EnsureContainersInput,
   ensureContainers,
 } from './ensure-containers.ts';
@@ -137,7 +136,6 @@ export interface RunDeps {
   readonly runAssembler?: RunAssembler;
   readonly ensureContainers?: (input: EnsureContainersInput) => Promise<ResolvedContainer>;
   readonly alchemy?: (input: RunAlchemyInput) => number;
-  readonly deleteStateDatabase?: (input: { projectId: string; branchId?: string }) => Promise<void>;
   readonly deleteBranch?: (input: { branchId: string }) => Promise<void>;
   readonly deleteProject?: (input: { projectId: string }) => Promise<void>;
   /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). */
@@ -300,30 +298,27 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       );
       return status;
     }
-    // The state store is deleted last among this stage's members and before
-    // its container: alchemy has just read it to drive the destroy above, and
-    // the platform refuses to delete a Branch that still has live members.
+    // 9.5 Teardown (destroy only): each extension removes infrastructure it
+    // owns outside the stack — the destroy above may still have been reading
+    // it, and the containers below may refuse to go while it exists. What that
+    // infrastructure is, and whether losing it should fail the command, is the
+    // extension's business, not this module's.
+    if (args.command === 'destroy') {
+      for (const extension of config.extensions) {
+        if (extension.teardown === undefined) continue;
+        try {
+          await extension.teardown({ projectId, branchId, stage });
+        } catch (error) {
+          throw error instanceof CliError
+            ? error
+            : new CliError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
     if (args.command === 'destroy' && branchId !== undefined) {
-      await (deps.deleteStateDatabase ?? ((input) => deleteStageStateDatabase(input)))({
-        projectId,
-        branchId,
-      });
       await (deps.deleteBranch ?? ((input) => deleteStageBranch(input)))({ branchId });
     } else if (args.command === 'destroy') {
-      // Production's state delete only tidies up (nothing blocks the Project
-      // delete on it), so it inherits deleteAppProject's best-effort stance —
-      // failing the command over a cleanup step would be worse.
-      try {
-        await (deps.deleteStateDatabase ?? ((input) => deleteStageStateDatabase(input)))({
-          projectId,
-        });
-      } catch (error) {
-        console.warn(
-          `Could not remove production's deploy-state database: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
       await (deps.deleteProject ?? ((input) => deleteAppProject(input)))({ projectId });
     }
     return status;

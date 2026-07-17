@@ -1,19 +1,14 @@
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { ManagementApiClient } from '../client.ts';
+import type { ResolvedContainer } from '../container.ts';
 import { call, PrismaApiError } from '../http.ts';
 
 /** The framework-owned database a stage's deploy state lives in — a child of that stage's Branch (ADR-0033). */
 export const STATE_DATABASE_NAME = 'prisma-composer-state';
 
-/** Every connection minted against a state database carries this prefix — see `cleanupAgedConnections`. */
+/** Every connection created against a state database carries this prefix — see `cleanupAgedConnections`. */
 export const CONNECTION_NAME_PREFIX = 'prisma-composer-state-';
-
-/** Which stage's state database to act on. A named stage passes its `branchId`; production omits it, and its state lives on the Project's default Branch. */
-export interface StateTarget {
-  readonly projectId: string;
-  readonly branchId?: string;
-}
 
 interface BranchSummary {
   readonly id: string;
@@ -71,13 +66,14 @@ const resolveDefaultBranchId = (
     );
   });
 
+/** A named stage carries its `branchId`; production omits it, and its state lives on the Project's default Branch. */
 export const resolveBranchId = (
   client: ManagementApiClient,
-  target: StateTarget,
+  container: ResolvedContainer,
 ): Effect.Effect<string, PrismaApiError> =>
-  target.branchId !== undefined
-    ? Effect.succeed(target.branchId)
-    : resolveDefaultBranchId(client, target.projectId);
+  container.branchId !== undefined
+    ? Effect.succeed(container.branchId)
+    : resolveDefaultBranchId(client, container.projectId);
 
 /**
  * Every database on this Branch. Uses the flat `GET /v1/databases`, which
@@ -124,16 +120,16 @@ export const listStateDatabaseCandidates = (
   );
 
 /**
- * Mints a fresh Postgres connection and reads its connection string. Reads
+ * Creates a fresh Postgres connection and reads its connection string. Reads
  * `endpoints.direct.connectionString` only — never `endpoints.pooled`, and
  * never the deprecated top-level `connectionString`/`url` (PRO-212), neither
  * of which the platform guarantees.
  *
  * The connection string is returned only when the connection is created and
- * cannot be read back afterwards, which is why every run mints a fresh
+ * cannot be read back afterwards, which is why every run creates a fresh
  * connection instead of reusing one.
  */
-export const mintConnection = (
+export const createConnection = (
   client: ManagementApiClient,
   databaseId: string,
 ): Effect.Effect<Redacted.Redacted<string>, PrismaApiError> =>

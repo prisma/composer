@@ -2,15 +2,15 @@ import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import postgres from 'postgres';
 import { type ManagementApiClient, ManagementClient } from '../client.ts';
+import type { ResolvedContainer } from '../container.ts';
 import { call, callVoid, PrismaApiError } from '../http.ts';
 import {
   CONNECTION_NAME_PREFIX,
+  createConnection,
   type DatabaseSummary,
   listStateDatabaseCandidates,
-  mintConnection,
   resolveBranchId,
   STATE_DATABASE_NAME,
-  type StateTarget,
 } from './discovery.ts';
 import { STATE_META_MARKER } from './schema.ts';
 
@@ -90,7 +90,7 @@ const deleteConnection = (
   callVoid(() => client.DELETE('/v1/connections/{id}', { params: { path: { id: connectionId } } }));
 
 /**
- * Every deploy mints a fresh connection (`mintConnection`) and nothing ever
+ * Every deploy creates a fresh connection (`createConnection`) and nothing ever
  * closes it, so the state database otherwise accumulates one connection
  * resource per run without bound. Best-effort, never blocks bootstrap: lists
  * this database's connections, deletes the ones matching our naming pattern
@@ -202,7 +202,7 @@ const resolveStateDatabase = (
 
     if (candidates.length === 0) {
       const database = yield* createStateDatabase(client, projectId, branchId);
-      const connectionString = yield* mintConnection(client, database.id);
+      const connectionString = yield* createConnection(client, database.id);
       console.error(
         `hosted state: provisioned state database ${database.id} on branch ${branchId} (project ${projectId})`,
       );
@@ -211,7 +211,7 @@ const resolveStateDatabase = (
 
     const rejected: string[] = [];
     for (const candidate of candidates) {
-      const connectionString = yield* mintConnection(client, candidate.id);
+      const connectionString = yield* createConnection(client, candidate.id);
       const verdict = yield* verify(connectionString);
       if (verdict.kind === 'squatter') {
         rejected.push(`${candidate.id} (foreign tables: ${verdict.tables.join(', ')})`);
@@ -237,34 +237,33 @@ const resolveStateDatabase = (
 
 /**
  * Resolves the stage's Branch, find-or-creates its `prisma-composer-state`
- * database, and mints a fresh connection — the automatic bootstrap every
+ * database, and creates a fresh connection — the automatic bootstrap every
  * deploy runs once, needing nothing beyond the service token and the
  * Project/Branch ids the CLI already resolved.
  */
 export const bootstrapStateConnection = (
-  target: StateTarget,
+  container: ResolvedContainer,
 ): Effect.Effect<StateConnection, PrismaApiError, ManagementClient> =>
-  bootstrapStateConnectionWith(target, verifyOwnership);
+  bootstrapStateConnectionWith(container, verifyOwnership);
 
 /**
- * Test seam: identical to {@link bootstrapStateConnection} but with the
- * ownership verifier injectable, so `bootstrap.test.ts` can stub ownership
- * decisions against its fake DSNs without opening a real Postgres
- * connection to them.
+ * Identical to {@link bootstrapStateConnection}, except the ownership check is
+ * a parameter so `bootstrap.test.ts` can supply a fake instead of opening a
+ * real Postgres connection.
  */
 export const bootstrapStateConnectionWith = (
-  target: StateTarget,
+  container: ResolvedContainer,
   verify: OwnershipVerifier,
 ): Effect.Effect<StateConnection, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
-    const branchId = yield* resolveBranchId(client, target);
+    const branchId = yield* resolveBranchId(client, container);
     const { database, connectionString } = yield* resolveStateDatabase(
       client,
-      target.projectId,
+      container.projectId,
       branchId,
       verify,
     );
     yield* cleanupAgedConnections(client, database.id);
-    return { projectId: target.projectId, databaseId: database.id, connectionString };
+    return { projectId: container.projectId, databaseId: database.id, connectionString };
   });
