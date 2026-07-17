@@ -118,6 +118,16 @@ mechanism on a fresh stack. Close PR #101 with a supersession comment.
 
 ## Open items
 
+- **`buildConfig`'s `edge === undefined` branch is defensive against
+  something the authoring API already prevents** (surfaced by S2-D1). A
+  service declaring an input cannot be provisioned without wiring it — it
+  does not type-check — so the branch is only reachable by mutating the
+  graph after `Load`. Not acted on in S2: defensive coding in core's loop is
+  cheap and the pinned guard is correct either way. Worth revisiting if
+  someone audits core for dead branches; the question is whether `Load`
+  should assert the invariant the type system implies, which would let the
+  branch go.
+
 - **`core-model.md`'s model section is stale beyond this project's reach**
   (surfaced by S1-D3, deliberately not fixed there). It still describes a
   `Target` with separate `resources`/`services` maps; the code has

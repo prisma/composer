@@ -85,6 +85,34 @@ this slice with the failure named in the PR body).
 | s3-store's D4a↔D4b check | Its own serialize-time error stays — it guards `config` fields, not wiring presence; no overlap, no removal. |
 | Optional connection params in existing modules | `coerce()`'s missing-var-as-absent contract (compute.ts serialize comment) is exactly the exempted path — unchanged. |
 
+## Two facts D1 established (2026-07-17) — carry into the PR narrative
+
+**1. The old behaviour was written down as a test, and this slice deletes
+that assertion.** `lowering.test.ts` carried
+*"a param the graph declares but the lowered outputs never produced
+resolves to undefined"* — `db` wired, producer supplying nothing, `url`
+declared required, asserting `{ url: undefined }`. That is precisely the
+silent failure S2 retires, so DoD case 1 is that test **inverted**, and it
+replaces rather than joins it.
+
+This is the right call and the operator has confirmed the behaviour change
+— but the diff will show a deleted assertion, and a reviewer must see that
+as *the point*, not an oversight. Note the honest reading: the old
+behaviour was characterized, not designed. The test recorded what
+`buildConfig` did; nothing argued it was correct that a missing producer
+output should reach a booting service as `undefined`.
+
+**2. `buildConfig`'s `edge === undefined` branch is unreachable through
+authoring.** `h.provision(auth, { id: 'auth' })` on a service declaring a
+`db` input does not type-check — the authoring API requires declared inputs
+be wired. So the branch is defensive only; D1's case 4 reaches it by
+dropping the edge after `Load`, with a comment saying so.
+
+**Ruling: implement the pinned condition as written.** `edge !== undefined`
+inside the per-param check is correct either way, and defensive coding in
+core's loop is cheap. The observation is recorded, not acted on — see the
+project plan's § Open items.
+
 ## Slice-DoD
 
 New `lowering.test.ts` cases, all green:
