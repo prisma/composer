@@ -1,6 +1,5 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
-import { blindCast } from '@internal/foundation/casts';
 import type * as Prisma from '@internal/lowering';
 
 /**
@@ -34,11 +33,28 @@ export function validateName(value: string, source: string): void {
   }
 }
 
-/** The application/provisioned hook's `projectId` output — `LoweredNode.outputs` is typed `unknown`, so this is the one asserted read. */
-export const projectIdOf = (hook: {
-  readonly outputs: Readonly<Record<string, unknown>>;
-}): string =>
-  blindCast<
-    string,
-    'the projectId output is a provisioning string ref the application hook produced; LoweredNode.outputs is typed unknown'
-  >(hook.outputs['projectId']);
+/** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
+export interface CloudApplication {
+  readonly projectId: string;
+}
+
+export function isCloudApplication(value: unknown): value is CloudApplication {
+  // `in` narrows without a cast — TS carries the key through to the read.
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'projectId' in value &&
+    typeof value.projectId === 'string'
+  );
+}
+
+/** Narrows ctx.application at the extension seam; throws naming the seam when the hook didn't run. */
+export function projectIdOf(application: unknown): string {
+  if (!isCloudApplication(application)) {
+    throw new Error(
+      "prisma-cloud: ctx.application is not this extension's application product — " +
+        'the prismaCloud() application hook must run before any node lowers.',
+    );
+  }
+  return application.projectId;
+}
