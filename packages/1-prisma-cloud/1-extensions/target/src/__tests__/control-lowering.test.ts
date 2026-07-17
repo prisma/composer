@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { Contract } from '@internal/core';
-import type { LowerContext, WiringOutputs } from '@internal/core/deploy';
+import type { LowerContext, LoweredResult, WiringOutputs } from '@internal/core/deploy';
 // Import the REAL modules the mocks below stub, so each mock can spread them.
 // This matters beyond convenience: `bun test` runs every test file in ONE
 // process and `mock.module` is process-global. When the real module is already
@@ -19,6 +19,7 @@ import type { S3StoreSerialized } from '../descriptors/s3-store.ts';
 // projectIdOf in statically doesn't drag the mocked runtime module in early.
 import { type CloudApplication, projectIdOf } from '../descriptors/shared.ts';
 import * as RealPgWarm from '../pg-warm-resource.ts';
+import * as RealS3Credentials from '../s3-credentials-resource.ts';
 
 // Stub the provider layer AND alchemy/Output so the compute target's data
 // flow (id derivation, props threading, outputs shape) runs purely — no
@@ -34,6 +35,7 @@ const recorded: {
   deploy: Array<[string, unknown]>;
   pkg: Array<[unknown]>;
   serviceKey: Array<[string, unknown]>;
+  creds: Array<[string, unknown]>;
 } = {
   envVar: [],
   db: [],
@@ -43,6 +45,7 @@ const recorded: {
   deploy: [],
   pkg: [],
   serviceKey: [],
+  creds: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -103,6 +106,18 @@ mock.module('../pg-warm-resource.ts', () => ({
     return Effect.succeed({ url: props.url });
   },
   PgWarmProvider: () => ({ stub: 'pg-warm-provider' }),
+}));
+
+// S3Credentials is a real Alchemy Resource (needs the Stack service); stub it
+// so the credentials lowering's data flow runs purely. The real provider mints
+// a random pair — fixed values here so assertions can name them.
+mock.module('../s3-credentials-resource.ts', () => ({
+  ...RealS3Credentials,
+  S3Credentials: (id: string, props: unknown) => {
+    recorded.creds.push([id, props]);
+    return Effect.succeed({ accessKeyId: 'AKIA-STUB', secretAccessKey: 'secret-stub' });
+  },
+  S3CredentialsProvider: () => ({ stub: 's3-credentials-provider' }),
 }));
 
 const { prismaCloud } = await import('../control.ts');
@@ -309,9 +324,13 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
         application: { projectId: 'shop-project#cloud-id' },
       } as unknown as LowerContext;
 
-      const result = run<WiringOutputs>(resourceDescriptorOf(target, 'postgres')(ctx));
+      const result = run<LoweredResult>(resourceDescriptorOf(target, 'postgres')(ctx));
 
-      expect(result).toEqual({ url: 'postgres://data-conn' });
+      expect(result.wiring).toEqual({ url: 'postgres://data-conn' });
+      // The primitive carries NO `url`: a connection string is not a public
+      // endpoint. The wiring above still carries one — same key, opposite
+      // meaning, which is exactly why only the descriptor can decide.
+      expect(result.primitives).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
       expect(recorded.db).toEqual([
         ['data-db', { projectId: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
       ]);
@@ -344,6 +363,24 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
         ],
       ]);
     });
+  });
+});
+
+describe("prismaCloud().nodes['credentials'] — the resource descriptor", () => {
+  test('reports NO primitives — a minted keypair is secret material, and a primitive is built to be printed', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const ctx = { id: 'creds' } as unknown as LowerContext;
+
+    const result = run<LoweredResult>(resourceDescriptorOf(target, 'credentials')(ctx));
+
+    // The pair reaches consumers through the WIRING — that is what it is for.
+    expect(result.wiring).toEqual({
+      accessKeyId: 'AKIA-STUB',
+      secretAccessKey: 'secret-stub',
+    });
+    // It must never reach a primitive. Primitives get rendered to a terminal
+    // and are the one channel with nothing publishable to say here.
+    expect(result.primitives).toEqual([]);
   });
 });
 
@@ -769,7 +806,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       port: 8080,
     };
 
-    const result = run<WiringOutputs>(
+    const result = run<LoweredResult>(
       serviceDescriptorOf(target, 'compute').deploy(ctx, provisioned, artifact, serialized),
     );
 
@@ -785,10 +822,19 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         },
       ],
     ]);
-    expect(result).toEqual({
+    expect(result.wiring).toEqual({
       url: 'https://auth-deploy.example',
       projectId: 'shop-project#cloud-id',
     });
+    // compute publishes its URL deliberately — a Compute service's deployed
+    // endpoint IS public, and this descriptor is the only party that knows it.
+    expect(result.primitives).toEqual([
+      {
+        kind: 'compute-service',
+        id: 'auth-svc#cloud-id',
+        url: 'https://auth-deploy.example',
+      },
+    ]);
   });
 });
 
@@ -878,18 +924,29 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
       secretAccessKey: 'sekret',
     };
 
-    const result = run<WiringOutputs>(
+    const result = run<LoweredResult>(
       serviceDescriptorOf(target, 's3-store').deploy(ctx, provisioned, artifact, serialized),
     );
 
     // The four S3Config fields a consumer's s3() slot resolves by name, plus url.
-    expect(result).toEqual({
+    expect(result.wiring).toEqual({
       url: 'https://store-deploy.example',
       projectId: 'shop-project#cloud-id',
       bucket: 'streams',
       accessKeyId: 'AKIA123',
       secretAccessKey: 'sekret',
     });
+    // The primitives are compute's, passed through untouched — an s3-store IS
+    // a compute service and became nothing else. Note what is NOT here: the
+    // credentials ride in the wiring (the consumer needs them) but never reach
+    // a primitive, which exists to be printed to a terminal.
+    expect(result.primitives).toEqual([
+      {
+        kind: 'compute-service',
+        id: 'store-svc#cloud-id',
+        url: 'https://store-deploy.example',
+      },
+    ]);
   });
 
   test('provision + package delegate to compute unchanged', () => {

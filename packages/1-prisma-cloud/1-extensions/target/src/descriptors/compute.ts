@@ -189,7 +189,20 @@ export function computeDescriptor(
           // param, resolved by serialize) — not a hardcoded constant.
           port: serialized.port,
         });
-        return { url: deployment.deployedUrl, projectId: provisioned.projectId };
+        // `url` IS published here: a Compute service's deployed URL is a
+        // public endpoint, and this descriptor is the only party that knows
+        // that. Both fields are still unresolved Output references at this
+        // point — apply resolves them before the report's runner sees them.
+        return {
+          wiring: { url: deployment.deployedUrl, projectId: provisioned.projectId },
+          primitives: [
+            {
+              kind: 'compute-service',
+              id: provisioned.serviceId,
+              url: deployment.deployedUrl,
+            },
+          ],
+        };
       }),
   } satisfies { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized>;
 }

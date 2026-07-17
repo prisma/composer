@@ -29,7 +29,14 @@ export function postgresDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       // Warm the DB so a consumer's first connect doesn't eat PPG's cold-start
       // (FT-5226). `warm.url` is the same url, so consumers depend on the warm.
       const warm = yield* PgWarm(`${id}-warm`, { url });
-      return { url: warm.url };
+      // No `url` primitive: a Postgres connection string is not a public
+      // endpoint. `url` on a primitive means publicly reachable BECAUSE the
+      // descriptor said so — core has no rule that could infer it, and the
+      // same key means the opposite thing here as it does on compute.
+      return {
+        wiring: { url: warm.url },
+        primitives: [{ kind: 'postgres-database', id: db.id }],
+      };
     });
   return Object.assign(lowering, { kind: 'resource' as const });
 }

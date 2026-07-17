@@ -71,11 +71,19 @@ export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
     deploy: (ctx, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const deployed = yield* base.deploy(ctx, provisioned, artifact, serialized);
+        // Compute's primitives pass through untouched — an s3-store IS a
+        // compute service, and it became nothing else. Only the WIRING gains
+        // the four S3Config fields a consumer's s3() slot resolves by name.
+        // Spreading `deployed` and overriding `wiring` (rather than rebuilding
+        // the result) is what keeps the primitives' pass-through exact.
         return {
           ...deployed,
-          bucket: serialized.bucket,
-          accessKeyId: serialized.accessKeyId,
-          secretAccessKey: serialized.secretAccessKey,
+          wiring: {
+            ...deployed.wiring,
+            bucket: serialized.bucket,
+            accessKeyId: serialized.accessKeyId,
+            secretAccessKey: serialized.secretAccessKey,
+          },
         };
       }),
   } satisfies { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, S3StoreSerialized>;
