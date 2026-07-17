@@ -371,13 +371,17 @@ pool.on("error", (err) => console.error("pg pool idle client error", err));
 
 **Filed upstream:** [PRO-217](https://linear.app/prisma-company/issue/PRO-217/service-to-service-http-gets-econnreset-while-the-target-cold-starts) — _"Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero"_
 **Product:** Prisma Compute (ingress / scale-to-zero cold start)
-**Version:** Prisma Compute, Bun `fetch` from a Next.js standalone SSR render; observed 2026-07-13
-**First hit:** `examples/store` — the storefront's SSR calls to the catalog and orders services' `*.ewr.prisma.build` endpoints
-**Cost:** folded into the idle-500 diagnosis above; intermittent enough to first read as "the in-app browser is flaky"
+**Version:** Prisma Compute, Bun `fetch` — from a Next.js standalone SSR render (observed 2026-07-13) and from a plain Bun service (observed 2026-07-16)
+**First hit:** `examples/store` — the storefront's SSR calls to the catalog and orders services' `*.ewr.prisma.build` endpoints. Hit again in `examples/streams`, where the `jobs` service calls the streams module.
+**Cost:** folded into the idle-500 diagnosis above; intermittent enough to first read as "the in-app browser is flaky". Later cost a round of misdiagnosis in `examples/streams`: a bare status code cannot tell an app's own 502 from the edge's, so the reset was mistaken for a too-short retry budget until response bodies were captured.
 
 **Symptom.** An HTTP request from one Compute service to another intermittently fails with `ECONNRESET` — Bun reports `The socket connection was closed unexpectedly` with the target service's URL as `path`. It happens on the first request(s) after the target has been idle; a retry moments later succeeds. When the caller is an SSR page fanning out to several services, one reset is enough to 500 the whole page render.
 
+The failure is a **thrown socket error, and only that**: it surfaces fast (~400 ms on the first touch after an idle spell — far quicker than the target's own boot), and across every cold hit captured in `examples/streams` the edge never once answered `502`/`503`/`504`. Code written to retry a cold-start *status* is therefore guarding a face of this bug that has not been observed; the reset is the whole of it. It lands on whatever call happens to be first, idempotent or not — in `examples/streams` on both the stream-creating `PUT` and, on a later request whose `PUT` was already memoized, the non-idempotent append.
+
 **Cause (observed, mechanism presumed).** The target service had scaled to zero. Instead of the edge holding the connection until the VM finishes booting (which it does do on most cold hits — those requests just take seconds), the connection is sometimes closed mid-establishment during the cold-start window, surfacing as a socket reset to the caller. Warm targets never reset.
+
+The window is small and measurable. In `examples/streams`' Compute version logs, `spark: starting bun with entrypoint: bootstrap.js` → the server's own "listening" line is **~3.5 s** for a service restoring little state and **~8 s** for one restoring more from its object store. That is how long the edge must hold — and when it does hold, the caller simply waits: a first request against a deliberately fresh instance returned `201` in 3.7 s with no error. The bug is not the wait; it is that the hold is unreliable.
 
 **Workaround.** No principled client-side fix for non-idempotent calls (blind retry could double-execute a write). Mitigations:
 
@@ -385,7 +389,7 @@ pool.on("error", (err) => console.error("pg pool idle client error", err));
 - keep chatty targets warm — a scheduled ping (the `cron` shared module's 30 s trigger) masks the window for whatever it touches;
 - warm the whole app with one request before a demo.
 
-An always-on / min-instances option on Compute services would remove the window; none exists today.
+**But do not push this into application code as a matter of course.** Retrying costs every consumer of every Compute service a hand-rolled, platform-specific backoff; it cannot cover the non-idempotent calls, which is where this was actually observed to land; and it hides the defect from the people who would otherwise fix it. `examples/streams` carries no such retry deliberately — it calls the streams service with a plain `fetch` and lets a failure surface as a 502 naming its cause, so the platform behaviour stays visible. The consequence is that its first request after an idle spell may intermittently fail, which is the honest state of the platform today. The userspace-boilerplate cost is filed as [PRO-219](https://linear.app/prisma-company/issue/PRO-219/scale-to-zero-cold-starts-force-platform-specific-retry-boilerplate); an always-on / min-instances option, or a reliable hold, would remove the window and the boilerplate with it. Neither exists today.
 
 **Reproduction.**
 
@@ -393,10 +397,14 @@ An always-on / min-instances option on Compute services would remove the window;
 2. Let B idle to scale-to-zero.
 3. Hit A repeatedly right as B cold-starts → occasional `ECONNRESET` from A's fetch to B; warm B never resets.
 
+Idling is an unreliable trigger — a service left alone for 6 minutes (and another for ~30) still answered warm in under 700 ms, so the scale-to-zero threshold is longer than a convenient wait. To land in the boot window on demand, promote a fresh version of B (create → upload → start → promote) and call A the moment it reports `running`; capture the response **body**, not just the status, or A's own 502 is indistinguishable from the edge's.
+
 **References.**
 
 - Observed in `storefront` runtime logs (`app logs --project store --app storefront`): `code: 'ECONNRESET', path: 'https://….ewr.prisma.build/rpc/listProducts'`
-- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family)
+- Observed again from `examples/streams`' `jobs` service: `streams unreachable: Error: The socket connection was closed unexpectedly`, returned in 404 ms
+- Product ask: [PRO-219](https://linear.app/prisma-company/issue/PRO-219/scale-to-zero-cold-starts-force-platform-specific-retry-boilerplate) — the userspace retry boilerplate this forces on every consumer
+- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family), [PRO-218](https://linear.app/prisma-company/issue/PRO-218/compute-ingress-buffers-streaming-responses-sse-cannot-deliver-edge) (the same ingress, streaming-response face)
 
 ---
 

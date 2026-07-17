@@ -12,53 +12,20 @@
  * `createJobsApp` returns a plain `Request → Response` handler so the same app
  * runs behind `Bun.serve` in the deployed service and inside the integration
  * test with no server.
+ *
+ * It calls the streams service with a plain `fetch` and carries no retry,
+ * backoff, or platform-specific handling — deliberately. A Compute service
+ * scales to zero, and the first call after an idle spell can have its
+ * connection closed while the instance boots, so a request here can fail where
+ * a warm one would not (gotchas.md, PRO-217/PRO-219). That is the platform's
+ * behaviour to fix, not something every app should hand-roll around: an
+ * example that absorbed it would teach the boilerplate and hide the gap. The
+ * handler below surfaces such a failure as a 502 naming its cause, which is
+ * ordinary hygiene, and stops there.
  */
 import type { StreamsConfig } from '@prisma/composer-prisma-cloud/streams';
 
 const STREAM = 'jobs';
-
-/** Edge statuses that mean "the service isn't up yet", not "your request was wrong". */
-const COLD_START_STATUS = new Set([502, 503, 504]);
-
-/**
- * The streams service scales to zero, so the first call after an idle spell
- * meets an instance that is still booting: the connection can reset
- * mid-establish, or the edge answers 502 while it comes up (Prisma Compute,
- * PRO-217 in gotchas.md).
- *
- * The 30s budget is measured, not folklore: the streams entrypoint takes
- * ~3.5s from VM start to listening on a small object store and ~8s on a
- * larger one (Compute version logs), so this covers the observed worst case
- * with room and still gives up rather than hanging on a dependency that is
- * genuinely down. The framework's own cold-start retry allows 60s for the
- * same class of problem on Postgres (FT-5226).
- */
-const COLD_START_BUDGET_MS = 30_000;
-const FIRST_BACKOFF_MS = 250;
-const MAX_BACKOFF_MS = 8_000;
-
-/**
- * Retries a call that is safe to repeat until the budget runs out. Only the
- * cold-start class is retried — a real failure (401, a malformed request)
- * must surface on the first try.
- */
-async function fetchIdempotent(url: string, init?: RequestInit): Promise<Response> {
-  const deadline = Date.now() + COLD_START_BUDGET_MS;
-  let backoff = FIRST_BACKOFF_MS;
-  let lastError: unknown;
-  for (;;) {
-    try {
-      const res = await fetch(url, init);
-      if (!COLD_START_STATUS.has(res.status)) return res;
-      lastError = new Error(`streams is cold: ${res.status}`);
-    } catch (error) {
-      lastError = error; // the socket closed while the instance was starting
-    }
-    if (Date.now() + backoff >= deadline) throw lastError;
-    await new Promise((resolve) => setTimeout(resolve, backoff));
-    backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
-  }
-}
 
 export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<Response> {
   const base = `${config.url.replace(/\/$/, '')}/v1/stream/${STREAM}`;
@@ -73,10 +40,9 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
 
   let created: Promise<void> | undefined;
   // The stream is created once per instance; PUT is idempotent, so a racing
-  // second instance re-creating it is harmless — and it is this first touch
-  // that rides out a cold streams service for every call behind it.
+  // second instance re-creating it is harmless.
   const ensureStream = (): Promise<void> => {
-    created ??= fetchIdempotent(base, json({ method: 'PUT' })).then((res) => {
+    created ??= fetch(base, json({ method: 'PUT' })).then((res) => {
       if (!res.ok && res.status !== 409) {
         created = undefined;
         throw new Error(`could not create the stream: ${res.status}`);
@@ -88,12 +54,10 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
   const append = async (req: Request): Promise<Response> => {
     await ensureStream();
     const event = await req.json();
-    // Appends are not retried: without an idempotency key, a failed request is
-    // indistinguishable from one that applied, so retrying risks duplicate
-    // events (gotchas.md, PRO-217). The first append is shielded by the retried
-    // PUT above; a later one can still meet a cold service and surface 502 —
-    // the caller retries, because only it knows whether a duplicate is
-    // acceptable.
+    // Not retried, and nothing here retries anything: without an idempotency
+    // key a failed request is indistinguishable from one that applied, so a
+    // retry risks duplicate events. The caller retries, because only it knows
+    // whether a duplicate is acceptable.
     const res = await fetch(base, json({ method: 'POST', body: JSON.stringify([event]) }));
     if (!res.ok) return new Response(`append failed: ${res.status}`, { status: 502 });
     return Response.json({ appended: event }, { status: 201 });
@@ -101,7 +65,7 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
 
   const read = async (): Promise<Response> => {
     await ensureStream();
-    const res = await fetchIdempotent(`${base}?offset=-1&format=json`, authed());
+    const res = await fetch(`${base}?offset=-1&format=json`, authed());
     if (!res.ok) return new Response(`read failed: ${res.status}`, { status: 502 });
     return Response.json({
       events: await res.json(),
@@ -115,9 +79,9 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
   const tail = async (url: URL): Promise<Response> => {
     await ensureStream();
     const timeout = url.searchParams.get('timeout') ?? '20s';
-    const head = await fetchIdempotent(`${base}?offset=-1&format=json`, authed());
+    const head = await fetch(`${base}?offset=-1&format=json`, authed());
     const offset = head.headers.get('stream-next-offset');
-    const res = await fetchIdempotent(
+    const res = await fetch(
       `${base}?offset=${offset}&format=json&live=long-poll&timeout=${timeout}`,
       authed(),
     );
@@ -143,9 +107,9 @@ export function createJobsApp(config: StreamsConfig): (req: Request) => Promise<
     try {
       return await route(req, new URL(req.url));
     } catch (error) {
-      // A dependency that stayed unreachable past the retries is this app's
-      // upstream problem, not the caller's mistake: say so as 502 rather than
-      // letting the throw become an opaque 500.
+      // An unreachable dependency is this app's upstream problem, not the
+      // caller's mistake: say so as 502, naming the cause, rather than letting
+      // the throw become an opaque 500.
       console.error('jobs: request failed', error);
       return new Response(`streams unreachable: ${String(error)}`, { status: 502 });
     }

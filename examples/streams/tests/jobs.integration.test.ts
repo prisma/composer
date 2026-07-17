@@ -46,7 +46,7 @@ afterAll(async () => {
   rmSync(dataRoot, { recursive: true, force: true });
 });
 
-describe('jobs app vs a cold streams service', () => {
+describe('jobs app vs an upstream that says no', () => {
   let coldServer: LocalStreamsServer;
   let coldRoot: string;
 
@@ -64,16 +64,14 @@ describe('jobs app vs a cold streams service', () => {
     rmSync(coldRoot, { recursive: true, force: true });
   });
 
-  // The real platform behaviour (PRO-217): a scale-to-zero service refuses or
-  // 502s the first touch while it boots. Modelled by a proxy in front of the
-  // real stand-in that fails once, so the retry is exercised end to end through
-  // the app rather than asserted against a mock of itself.
+  // A stub in front of the real stand-in, so the app's own error handling is
+  // exercised end to end rather than asserted against a mock of itself.
   const startFlakyProxy = (target: string, fail: () => Response | undefined) => {
     const server = Bun.serve({
       port: 0,
       fetch: async (req) => {
-        const cold = fail();
-        if (cold !== undefined) return cold;
+        const refused = fail();
+        if (refused !== undefined) return refused;
         const url = new URL(req.url);
         return fetch(`${target}${url.pathname}${url.search}`, {
           method: req.method,
@@ -85,22 +83,7 @@ describe('jobs app vs a cold streams service', () => {
     return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) };
   };
 
-  test('rides out a cold 503 on the first touch and still serves the request', async () => {
-    let calls = 0;
-    const proxy = startFlakyProxy(coldServer.exports.http.url, () =>
-      ++calls === 1 ? new Response('cold', { status: 503 }) : undefined,
-    );
-    try {
-      const app = createJobsApp({ url: proxy.url, apiKey: 'local-stand-in-needs-no-auth' });
-      const res = await app(post({ kind: 'survived-a-cold-start' }));
-      expect(res.status).toBe(201);
-      expect(calls).toBeGreaterThan(1); // the first call really did fail
-    } finally {
-      proxy.stop();
-    }
-  }, 15_000);
-
-  test('a real failure is NOT retried away — a 401 surfaces as the upstream error it is', async () => {
+  test('an upstream 401 surfaces as a 502 naming the cause, not an opaque 500', async () => {
     let calls = 0;
     const proxy = startFlakyProxy(coldServer.exports.http.url, () => {
       calls++;
@@ -110,7 +93,7 @@ describe('jobs app vs a cold streams service', () => {
       const app = createJobsApp({ url: proxy.url, apiKey: 'wrong-key' });
       const res = await app(new Request('http://app/jobs'));
       expect(res.status).toBe(502); // this app's "my upstream said no", not a 500
-      expect(calls).toBe(1); // tried once, not four times
+      expect(calls).toBe(1); // called once — the app retries nothing
     } finally {
       proxy.stop();
     }
