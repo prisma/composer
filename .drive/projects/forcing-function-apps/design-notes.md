@@ -180,3 +180,14 @@ pipeline — deleting `restashAddressFree` and the raw env scrapes it fed;
 untyped retained as the `postgres()` parity), `durableStreams(contract)`
 hydrates to per-stream handles that own ensure-create and the proven-safe
 404 heal, so no stream lifecycle code remains in userspace.
+
+## Halt + audit of the as-built streams binding (2026-07-17, Will's order)
+
+Will halted execution on discovering the `never`-typed provider contract.
+Full as-built audit in [streams-binding-audit.md](streams-binding-audit.md):
+the checking model moment by moment, the `never` hole and a probe-proven
+honest replacement (wide `required`, `__cmp: {}`), the behavior changes that
+shipped inside Part B's refactor (implicit create, read-creates, contentType
+dropped), the complete unenforced-invariant inventory (T1–T9), deviations
+from the design doc, and decisions R1–R6 awaiting his ruling. No further
+dispatches until he rules.
