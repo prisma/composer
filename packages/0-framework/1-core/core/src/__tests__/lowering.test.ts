@@ -18,11 +18,11 @@ import {
   lower,
   lowering,
   mergedProviders,
+  type Outputs,
   type ProvisionEdge,
   type ProvisionerDescriptor,
   resolveStateLayer,
   type ServiceLowering,
-  type WiringOutputs,
 } from '../deploy.ts';
 import { Load } from '../graph.ts';
 import {
@@ -145,8 +145,8 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
         (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
           calls.push({ phase: 'resource', id: ctx.id, type: ctx.node.type });
           return Effect.succeed({
-            wiring: { url: `db://${ctx.id}` },
-            primitives: [{ kind: 'fake-db', id: `${ctx.id}#db` }],
+            outputs: { url: `db://${ctx.id}` },
+            entities: [{ kind: 'fake-db', id: `${ctx.id}#db` }],
           });
         },
         { kind: 'resource' as const },
@@ -190,8 +190,8 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
             environment: serialized.environment,
           });
           return Effect.succeed({
-            wiring: { url: `https://${ctx.id}.example`, projectId: provisioned.projectId },
-            primitives: [
+            outputs: { url: `https://${ctx.id}.example`, projectId: provisioned.projectId },
+            entities: [
               { kind: 'fake-compute', id: provisioned.serviceId, url: `https://${ctx.id}.example` },
             ],
           });
@@ -220,7 +220,7 @@ describe('buildConfig', () => {
       return {};
     });
     const graph = Load(root);
-    const lowered = new Map<string, WiringOutputs>([['db', { url: 'db://db' }]]);
+    const lowered = new Map<string, Outputs>([['db', { url: 'db://db' }]]);
 
     expect(buildConfig(auth, 'auth', graph, lowered, new Map())).toEqual({
       service: { port: 3000 },
@@ -228,9 +228,9 @@ describe('buildConfig', () => {
     });
   });
 
-  // ——— The wiring contract (S2). The consumer's connection declaration IS the
+  // ——— The connection contract (S2). The consumer's connection declaration IS the
   // contract (ADR-0033): core resolves each declared param by name against the
-  // producer's wiring outputs. A producer that under-delivers used to hand the
+  // producer's outputs. A producer that under-delivers used to hand the
   // consumer a silent `undefined`, which serialized into its environment and
   // failed at the consumer's boot — far from the mistake. It now fails the
   // deploy, naming the edge.
@@ -243,9 +243,9 @@ describe('buildConfig', () => {
       return {};
     });
     const graph = Load(root);
-    // The producer lowered, but its wiring outputs carry no `url` — the exact
+    // The producer lowered, but its outputs carry no `url` — the exact
     // param `dbEnd()`'s connection declares and does not mark optional.
-    const lowered = new Map<string, WiringOutputs>([['db', { host: 'db.internal' }]]);
+    const lowered = new Map<string, Outputs>([['db', { host: 'db.internal' }]]);
 
     const build = () => buildConfig(auth, 'auth', graph, lowered, new Map());
 
@@ -335,7 +335,7 @@ describe('buildConfig', () => {
     const graph = Load(root);
     // The producer IS lowered (with some unrelated output), but a provisioned
     // param must ignore it entirely — its value comes only from `provisioned`.
-    const lowered = new Map<string, WiringOutputs>([['auth', { token: 'wrong-value' }]]);
+    const lowered = new Map<string, Outputs>([['auth', { token: 'wrong-value' }]]);
     const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
 
     expect(buildConfig(consumer, 'consumer', graph, lowered, provisioned)).toEqual({
@@ -344,7 +344,7 @@ describe('buildConfig', () => {
     });
   });
 
-  test('a REQUIRED provisioned param is exempt from the wiring contract — the mint supplies it, the producer hands nothing over (ADR-0031)', () => {
+  test('a REQUIRED provisioned param is exempt from the connection contract — the mint supplies it, the producer hands nothing over (ADR-0031)', () => {
     const BRAND = Symbol('test-provision-brand');
     // Deliberately NOT optional: this pins that the provision branch is exempt
     // on its own, rather than incidentally passing because it was optional.
@@ -1087,7 +1087,7 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
 });
 
 describe('joinDeployment', () => {
-  // The Action's input carries addresses + plain primitives only — never graph
+  // The Action's input carries addresses + plain entities only — never graph
   // nodes, because the plan hashes the resolved input and a node holds
   // functions and Standard Schemas. This join is what puts the node back,
   // reading it from the graph the runner holds by closure.
@@ -1103,8 +1103,8 @@ describe('joinDeployment', () => {
   test('puts each entry back together with its graph node, preserving entry order', () => {
     const graph = twoNodeGraph();
     const entries = [
-      { address: 'db', primitives: [{ kind: 'fake-db', id: 'db#1' }] },
-      { address: 'auth', primitives: [{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }] },
+      { address: 'db', entities: [{ kind: 'fake-db', id: 'db#1' }] },
+      { address: 'auth', entities: [{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }] },
     ];
 
     const results = joinDeployment(graph, entries);
@@ -1113,16 +1113,14 @@ describe('joinDeployment', () => {
     expect(results.map((r) => r.address)).toEqual(['db', 'auth']);
     expect(results[0]?.node.name).toBe('db');
     expect(results[1]?.node.name).toBe('test-service');
-    expect(results[1]?.primitives).toEqual([
-      { kind: 'fake-compute', id: 'svc#1', url: 'https://a' },
-    ]);
+    expect(results[1]?.entities).toEqual([{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }]);
   });
 
   test('skips an address the graph no longer holds — entries are data, the graph is truth', () => {
     const graph = twoNodeGraph();
     const entries = [
-      { address: 'db', primitives: [] },
-      { address: 'ghost', primitives: [{ kind: 'fake-compute', id: 'gone#1' }] },
+      { address: 'db', entities: [] },
+      { address: 'ghost', entities: [{ kind: 'fake-compute', id: 'gone#1' }] },
     ];
 
     const results = joinDeployment(graph, entries);
@@ -1130,13 +1128,13 @@ describe('joinDeployment', () => {
     expect(results.map((r) => r.address)).toEqual(['db']);
   });
 
-  test('a node that reported no primitives still yields a result — it deployed, it just published nothing', () => {
+  test('a node that reported no entities still yields a result — it deployed, it just published nothing', () => {
     const graph = twoNodeGraph();
 
-    const results = joinDeployment(graph, [{ address: 'auth', primitives: [] }]);
+    const results = joinDeployment(graph, [{ address: 'auth', entities: [] }]);
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.primitives).toEqual([]);
+    expect(results[0]?.entities).toEqual([]);
   });
 
   test('no entries yields no results', () => {

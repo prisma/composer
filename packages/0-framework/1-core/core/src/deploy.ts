@@ -77,7 +77,7 @@ export interface ServiceLowering<P = unknown, S = unknown> {
    * on redeploy.
    */
   package(ctx: LowerContext, input: PackageInput): Effect.Effect<Artifact, unknown, unknown>;
-  /** Ships the packaged artifact into the provisioned thing and runs it. Returns the node's wiring outputs for dependents, plus the platform primitives it became. */
+  /** Ships the packaged artifact into the provisioned thing and runs it. Returns the node's outputs for dependents, plus the entities it became on the deployment target. */
   deploy(
     ctx: LowerContext,
     provisioned: P,
@@ -115,27 +115,33 @@ export interface LowerContext {
    */
   readonly application: unknown;
   /** Already-lowered deps (topo order). */
-  readonly lowered: ReadonlyMap<NodeId, WiringOutputs>;
+  readonly lowered: ReadonlyMap<NodeId, Outputs>;
   /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
   readonly provisioned: ReadonlyMap<string, unknown>;
 }
 
 /**
- * A node's inter-node wiring outputs — the values downstream nodes' declared
+ * The values a node provides to its dependents — what a consumer's declared
  * connection params resolve against (buildConfig reads them by param name).
  * Name-keyed and unknown-valued of necessity: core cannot know extension
  * types, and which producer feeds which consumer is decided by the user's
  * graph at runtime. The connection declaration is the contract.
  */
-export type WiringOutputs = Readonly<Record<string, unknown>>;
+export type Outputs = Readonly<Record<string, unknown>>;
 
 /**
- * One platform thing a node became, RESOLVED — what the report consumer sees.
- * The descriptor names it; core never infers meaning from it. `url` is present
- * ONLY when the descriptor declares the address publicly reachable — a
- * connection string is never a `url`.
+ * One thing a node became on the deployment target, RESOLVED — what the report
+ * consumer sees. The descriptor names it; core never infers meaning from it.
+ * `url` is present ONLY when the descriptor declares the address publicly
+ * reachable — a connection string is never a `url`.
+ *
+ * A descriptor constructing one holds `svc.id` / `deployment.deployedUrl` —
+ * `Output<T>` references, not values, because the stack effect runs before
+ * Alchemy applies anything. So construction sites traffic in
+ * `Input<DeployedEntity>` (Alchemy's own idiom for "this shape, fields possibly
+ * unresolved"); apply resolves it before any reader sees it.
  */
-export interface DeployedPrimitive {
+export interface DeployedEntity {
   readonly kind: string;
   readonly id: string;
   readonly url?: string;
@@ -143,36 +149,33 @@ export interface DeployedPrimitive {
 }
 
 /**
- * What a descriptor RETURNS: the same shape, but every field may still be an
- * unresolved reference, because the stack effect runs before Alchemy applies
- * anything — a descriptor holds `svc.id` / `deployment.deployedUrl`, which are
- * `Output<T>`, not `T`. Alchemy's `Input<T>` mapping is deep and recursive, so
- * this is exactly what the Action's input position accepts, and apply resolves
- * it before the runner sees it.
- */
-export type ReportedPrimitive = Input<DeployedPrimitive>;
-
-/**
- * What a node's final lowering phase produces: wiring for dependents,
- * primitives for reporting.
+ * What a node's final lowering phase produces: outputs for dependents,
+ * entities for reporting.
  *
- * `primitives` is REQUIRED, not optional. "This node became no reportable
- * platform primitive" is a claim, and an optional field lets a descriptor make
- * it by saying nothing at all — no error, no type complaint, no failing test.
- * That is the shared bag's sin in miniature (ADR-0033): a claim made
- * anonymously, with nothing recording that a claim was made. `[]` costs one
- * token and puts the assertion on the record where a reviewer can see it.
+ * `entities` is REQUIRED, not optional. "This node became nothing reportable
+ * on the deployment target" is a claim, and an optional field lets a
+ * descriptor make it by saying nothing at all — no error, no type complaint,
+ * no failing test. That is the shared bag's sin in miniature (ADR-0033): a
+ * claim made anonymously, with nothing recording that a claim was made. `[]`
+ * costs one token and puts the assertion on the record where a reviewer can
+ * see it.
  */
 export interface LoweredResult {
-  readonly wiring: WiringOutputs;
-  readonly primitives: readonly ReportedPrimitive[];
+  readonly outputs: Outputs;
+  readonly entities: readonly Input<DeployedEntity>[];
 }
 
-/** What one graph node became — the deploy subsystem's own result type. In-process only (it holds the node itself, so it never crosses the stack boundary). */
-export interface DeploymentResult {
+/** What one graph node became — in-process only (it holds the node itself, so it never crosses the stack boundary). */
+export interface DeployedNode {
   readonly address: string;
   readonly node: ServiceNode | ResourceNode;
-  readonly primitives: readonly DeployedPrimitive[];
+  readonly entities: readonly DeployedEntity[];
+}
+
+/** The result of the Deploy operation: the app and every node it deployed, in topo order. */
+export interface DeploymentResult {
+  readonly app: string;
+  readonly nodes: readonly DeployedNode[];
 }
 
 export interface LowerOptions {
@@ -185,12 +188,13 @@ export interface LowerOptions {
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
   /**
-   * Invoked once per deploy, during apply, with every node's resolved results
-   * in topo order. Presentation belongs to the caller (the CLI wires its
-   * renderer here); core never formats. Absent means no report is assembled
-   * and no Action is declared at all.
+   * Invoked once per deploy, during apply, with the Deploy operation's result
+   * — the app and every node it deployed, resolved, in topo order.
+   * Presentation belongs to the caller (the CLI wires its renderer here);
+   * core never formats. Absent means no report is assembled and no Action is
+   * declared at all.
    */
-  readonly report?: (results: readonly DeploymentResult[]) => void;
+  readonly report?: (result: DeploymentResult) => void;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -288,7 +292,7 @@ function resolveParam(
  * `resolveParam` (provision-time binding, then default, then loud
  * unbound-required failure).
  *
- * This is also where the wiring contract is enforced: a producer that fails to
+ * This is also where the connection contract is enforced: a producer that fails to
  * supply a required param its consumer's connection declares fails the deploy
  * here, naming the edge, rather than reaching the consumer as `undefined`.
  */
@@ -296,7 +300,7 @@ export function buildConfig(
   node: ServiceNode,
   id: NodeId,
   graph: Graph,
-  lowered: ReadonlyMap<NodeId, WiringOutputs>,
+  lowered: ReadonlyMap<NodeId, Outputs>,
   provisioned: ReadonlyMap<string, unknown>,
 ): Config {
   const inputs: Record<string, Record<string, unknown>> = {};
@@ -309,14 +313,14 @@ export function buildConfig(
     const values: Record<string, unknown> = {};
     for (const [name, param] of Object.entries(inputNode.connection.params)) {
       // ADR-0031: the framework mints this value; the producer hands nothing
-      // over, so the wiring contract below doesn't apply to it.
+      // over, so the connection contract below doesn't apply to it.
       if (param.provision !== undefined) {
         values[name] = provisioned.get(`${id}.${inputName}`);
         continue;
       }
 
       const value = producedOutputs[name];
-      // The wiring contract: the consumer's connection declaration says what it
+      // The connection contract: the consumer's connection declaration says what it
       // needs, and the producer must supply it (ADR-0033). Under-delivery used
       // to reach the consumer as a silent `undefined`, serialized into its
       // environment and failing at ITS boot — far from the mistake.
@@ -335,9 +339,9 @@ export function buildConfig(
       if (value === undefined && param.optional !== true && edge !== undefined) {
         throw new LowerError(
           `Connection input "${id}.${inputName}" declares param "${name}", but its producer ` +
-            `"${edge.from}" did not supply it — the producer's wiring outputs carry ` +
+            `"${edge.from}" did not supply it — the producer's outputs carry ` +
             `[${Object.keys(producedOutputs).join(', ') || 'nothing'}]. Add "${name}" to the ` +
-            `producer's returned wiring outputs, or declare the param optional on the connection.`,
+            'outputs the producer returns from its lowering, or declare the param optional on the connection.',
         );
       }
       values[name] = value;
@@ -362,7 +366,7 @@ export function buildConfig(
  * deploy report, run inside the Action with apply's resolved values.
  *
  * The entries cross Alchemy's action-input boundary, so they carry addresses
- * and plain primitives only; the graph is held by closure on this side. That
+ * and plain entities only; the graph is held by closure on this side. That
  * split is why this join exists at all, and it is what keeps functions and
  * Standard Schemas (which a node carries, and which the plan's input hash
  * would have to serialize) out of the input.
@@ -372,16 +376,16 @@ export function buildConfig(
  */
 export function joinDeployment(
   graph: Graph,
-  entries: readonly { address: string; primitives: readonly DeployedPrimitive[] }[],
-): readonly DeploymentResult[] {
-  const results: DeploymentResult[] = [];
+  entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
+): readonly DeployedNode[] {
+  const nodes: DeployedNode[] = [];
   for (const entry of entries) {
     const found = graph.nodes.find((n) => n.id === entry.address);
     const node = found?.node;
     if (node === undefined || (node.kind !== 'service' && node.kind !== 'resource')) continue;
-    results.push({ address: entry.address, node, primitives: entry.primitives });
+    nodes.push({ address: entry.address, node, entities: entry.entities });
   }
-  return results;
+  return nodes;
 }
 
 function missingBundleError(id: NodeId): LowerError {
@@ -510,14 +514,15 @@ export function mergedProviders(config: PrismaAppConfig): Layer.Layer<never> {
 
 /**
  * The deployment-report Action's input, declared in RESOLVED terms — this is
- * what the runner receives. The call site passes `ReportedPrimitive`s, whose
- * fields may still be `Output` references; alchemy's deep `Input<>` mapping on
- * the input position accepts them and apply resolves them before the runner
- * runs. Addresses and primitives only — never graph nodes (see joinDeployment).
+ * what the runner receives. The call site passes `Input<DeployedEntity>`s,
+ * whose fields may still be `Output` references; alchemy's deep `Input<>`
+ * mapping on the input position accepts them and apply resolves them before
+ * the runner runs. Addresses and entities only — never graph nodes (see
+ * joinDeployment).
  */
 interface ReportEntry {
   readonly address: string;
-  readonly primitives: readonly DeployedPrimitive[];
+  readonly entities: readonly DeployedEntity[];
 }
 interface ReportInput {
   readonly nonce: number;
@@ -536,12 +541,12 @@ export function lowering(
   return Effect.gen(function* () {
     const graph = Load(root, { id: opts.name });
     const extensions = yield* extensionsById(config);
-    const lowered = new Map<NodeId, WiringOutputs>();
-    // Each node's reported primitives, in topo order — the loop is the only
+    const lowered = new Map<NodeId, Outputs>();
+    // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
     // unconditionally (it is a cheap array); only the Action below is
     // conditional.
-    const entries: { address: string; primitives: readonly ReportedPrimitive[] }[] = [];
+    const entries: { address: string; entities: readonly Input<DeployedEntity>[] }[] = [];
     // ADR-0031: every provisioned param value minted this lowering, keyed by
     // edge id. Populated by the provision phase below (after the application
     // hooks, before any node), then threaded read-only through every ctx and
@@ -646,8 +651,8 @@ export function lowering(
 
       if (descriptor.kind === 'resource') {
         const result = yield* descriptor(ctx);
-        lowered.set(id, result.wiring);
-        entries.push({ address: id, primitives: result.primitives });
+        lowered.set(id, result.outputs);
+        entries.push({ address: id, entities: result.entities });
         continue;
       }
       if (descriptor.kind !== 'service') {
@@ -674,8 +679,8 @@ export function lowering(
         address: id,
       });
       const result = yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized);
-      lowered.set(id, result.wiring);
-      entries.push({ address: id, primitives: result.primitives });
+      lowered.set(id, result.outputs);
+      entries.push({ address: id, entities: result.entities });
     }
 
     // The report is assembled ONLY when a caller asked for one. This
@@ -692,7 +697,7 @@ export function lowering(
           // strings here. The graph rides in on the closure, never in the
           // input: the plan hashes the resolved input, and a node carries
           // functions and Standard Schemas.
-          report(joinDeployment(graph, input.entries));
+          report({ app: opts.name, nodes: joinDeployment(graph, input.entries) });
         }),
       );
       // `Date.now()` forces the report to run on an otherwise unchanged
