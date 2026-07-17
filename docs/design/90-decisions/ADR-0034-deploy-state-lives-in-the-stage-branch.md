@@ -105,6 +105,14 @@ across the workspace.
   Marking it protected/framework-owned is a platform capability we do not
   have — the same standing limitation as ADR-0009's name-squatting note, at
   smaller blast radius (one stage, not the whole workspace).
+- **That database costs a quota slot, not money.** The platform's plan limit on
+  databases is workspace-wide, counting every database in every project, so
+  each stage's state store consumes one — against a cap of 50 on the free plan
+  and 1000 on the paid plans. Nothing bills per database: Postgres bills on
+  storage (GiB-hours) and queries, and a store holding a few rows of JSON that
+  is read only during deploys rounds to nothing on both. The constraint that
+  can actually bite is a free-plan workspace running many concurrent preview
+  stages, where the app's own databases compete for the same 50 slots.
 - **The lock is unchanged and better scoped.** ADR-0010's per-`(stack,
   stage)` advisory lock now lives inside a per-stage store, so its key is
   redundant — kept anyway, because removing it buys nothing. Cross-stage and

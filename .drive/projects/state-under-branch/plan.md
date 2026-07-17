@@ -2,10 +2,17 @@
 
 ## Summary
 
-Two slices, strictly sequenced: the ADR supersession lands first (repo rule —
-principles bind until an ADR supersedes them; code contradicting ADR-0009 may
-not merge before ADR-0033 exists), then the implementation. The binding design
-both slices execute is [design-notes.md](design-notes.md).
+**One slice** — ADR-0033 and its implementation in one PR
+([#113](https://github.com/prisma/composer/pull/113)). The binding design it
+executes is [design-notes.md](design-notes.md).
+
+This started as two strictly-sequenced slices (ADR first, then code) on the
+reasoning that principles bind until an ADR supersedes them. That was wrong:
+it produces a docs-only PR, which delivers nothing on its own and costs a
+review cycle to say so. Operator direction, 2026-07-17: *"Don't separate docs
+and implementation. A docs PR on its own is useless."* The ADR half is already
+written, reviewed, and approved on #113; the implementation lands on the same
+branch before it merges.
 
 **Spec:** [spec.md](spec.md) · **Design notes:** [design-notes.md](design-notes.md)
 
@@ -18,47 +25,46 @@ planning. Tracker project:
 
 ## External dependencies
 
-- **PDP team answers** — OQ-1 (per-stage DB quota/billing) and OQ-2
-  (project-delete dependency contract), design-notes § Open questions.
-  Operator is asking; OQ-2 blocks only S2's production-destroy sign-off leg,
-  nothing else. Neither blocks S1.
-- **`@prisma/management-api-sdk` types** — S2 needs `branchId` +
+- ~~**PDP team answers**~~ — both resolved from source 2026-07-17, no ask
+  outstanding; see design-notes § Resolved questions. Quota is a real
+  constraint (a state DB per stage takes one of the workspace's 50 free /
+  1000 paid database slots); billing is negligible (no per-database fee).
+  Project deletion is blocked only by active compute deployments — never by
+  Branches or databases.
+- **`@prisma/management-api-sdk` types** — the implementation needs `branchId` +
   `region: 'inherit'` admitted on database create (or falls back to the
   documented create-then-PATCH; a stale region union requires an SDK update,
   never a hard-coded region). Verified against the live API source; only the
   generated types may lag.
 
-## Slices
+## The slice — State under Branch (TML-3049, PR #113)
 
-### S1 — ADR-0033 + documentation corrections — IN REVIEW (TML-3049)
+Two halves of one PR, in this order on the branch.
 
-Author ADR-0033 ("Deploy state lives in the stage's Branch") from
-design-notes; mark ADR-0009 superseded; add the consequence note to ADR-0010
-(lock scoped within the per-stage DB; severed-lock kill-switch property;
-redundant key retained) and the correction note to ADR-0024 (resources land on
-the platform's implicit default Branch; addressing model unchanged); add the
-upgrade/cutover note to `docs/guides/deploying.md`; update
-`docs/design/10-domains/deploy-cli.md`'s state section and the ADR index.
-Docs-only PR.
+### Half 1 — ADR-0033 + documentation corrections — DONE, APPROVED
 
-- **Builds on:** nothing (design settled).
-- **Hands to:** S2 — the recorded decision that makes the implementation
-  principle-compliant, plus the exact teardown-matrix and ordering-rule text
-  the code comments and tests cite.
+ADR-0033 ("Deploy state lives in the stage's Branch"); ADR-0009 marked
+superseded; the consequence note on ADR-0010 (lock scoped within the per-stage
+DB; severed-lock kill-switch property; redundant key retained) and the
+correction note on ADR-0024 (resources land on the platform's implicit default
+Branch; addressing model unchanged); the cutover note in
+`docs/guides/deploying.md`; `docs/design/10-domains/deploy-cli.md`'s state
+section and the ADR index. The staleness sweep also reached ADR-0011,
+ADR-0023, ADR-0030, `layering.md`, and `alchemy-lowering.md`.
 
-### S2 — Per-branch state bootstrap + destroy ordering
+### Half 2 — Per-branch state bootstrap + destroy ordering
 
 Implement design-notes § The design, exhaustively: bootstrap rework in
 `packages/1-prisma-cloud/0-lowering/lowering/src/state/`, `prismaState()` env
 contract change, `deleteStateDatabase`, and the CLI destroy-tail ordering in
-`packages/0-framework/3-tooling/cli/src/main.ts`. Tests reworked/added per the
-slice spec. One PR.
+`packages/0-framework/3-tooling/cli/src/main.ts`. Tests reworked/added per
+[slices/per-branch-state/spec.md](slices/per-branch-state/spec.md).
 
-- **Builds on:** S1 (merged ADR-0033).
+- **Builds on:** half 1, already on the branch.
 - **Hands to:** project close-out; the successor project's precondition
   (project-scoped state) is now true.
 
-Sequencing: S1 → S2. Nothing parallelizable — S2 may not merge before S1.
+Nothing here merges until both halves are on #113 and green.
 
 ## Successor project (recorded, not started): Compute GitHub App integration
 

@@ -56,8 +56,15 @@ Two forces that did not exist when ADR-0009 was written now push the other way:
 
 ## Verified platform facts
 
-Everything below was read from source on 2026-07-17. pdp-control-plane at
-`~/Projects/prisma/pdp-control-plane` (main, `9a8c69a31` era).
+Everything below was read from source on 2026-07-17. **Read the checkout in
+this worktree (`./pdp-control-plane`, at `e79d07bd8`), not
+`~/Projects/prisma/pdp-control-plane`** — the home checkout is older
+(`b44a38615`) and already diverges: `deleteProject` has moved to its own file
+and the offer-limit enforcement has flipped to Prisma Next. Facts 1–6 below
+were originally taken from the home checkout and have since been re-verified
+against the worktree copy; `resolveDefaultOrPinnedBranchId` (fact 1, the one
+the whole design rests on) is byte-identical in both, invariant comment
+included.
 
 1. **Resources always belong to a Branch.** `POST /v1/compute-services` and
    `POST /v1/projects/{projectId}/databases` resolve an omitted `branchId` to
@@ -316,18 +323,53 @@ the deploying guide's upgrade note (S1).
 | Branch/Project deleted while a deploy is in flight | teardown deletes state DB → lock lease check fails within its trust window → deploy halts | Bounded, accepted; full policy work belongs to the successor project |
 | Resources provisioned outside Prisma Cloud (future non-platform extensions) | platform teardown deletes the state DB — the only record of external resources | **Documented limitation** in the ADR: platform-side teardown covers platform resources only; graphs with non-platform resources must be destroyed via the CLI |
 
-### Open questions (external, non-blocking for S1; blocking noted for S2)
+### Resolved questions (answered from source 2026-07-17; no PDP ask needed)
 
-- **OQ-1 (PDP, non-blocking):** quota/billing treatment of one extra (empty)
-  database per stage, including ephemeral PR stages. Affects cost narrative,
-  not the design.
-- **OQ-2 (PDP, blocking for S2 sign-off only in the production-destroy leg):**
-  confirm `DELETE /v1/projects/{id}`'s dependency check tolerates the implicit
-  default Branch + auto-provisioned default database (today's observed
-  `deleteAppProject` success implies yes) and states which children count as
-  dependencies. If an empty default Branch turns out to block, the fix lands
-  in `deleteAppProject` (delete the default Branch first or change the call),
-  not in this design's shape.
+Both were answered by reading the newer pdp-control-plane checkout in this
+worktree (`e79d07bd8`). `assets/pdp-asks.md` is retained only as the record of
+what was asked and why; nothing is outstanding with the PDP team.
+
+- **OQ-1 — quota: real; billing: negligible.**
+  - *Quota:* the plan's `createDatabase` offer is a **workspace-wide database
+    cap**, counted as `prisma.database.count({ where: { project: {
+    organizationId: workspaceId } } })` — every database in every project of
+    the workspace, so each stage's state database consumes one slot. Limits:
+    **50** (free — `FREE_PLAN_DATABASE_LIMIT`), **1000** (starter/pro/business/
+    enterprise — `PAID_PLAN_DATABASE_LIMIT_DEFAULT`), 5000 (partner entry);
+    `packages/billing/src/domain/limits/constants.ts`, enforced in
+    `services/management-api/models/helpers/offerLimitHelpers.ts`.
+  - *Billing:* `createDatabase` carries a **limit but never a price** in any
+    plan — there is no per-database fee or floor. Postgres bills on usage:
+    storage in GiB-hours ($0.00278/GiB-hour beyond 720 GiB-hours ≈ 1 GiB for a
+    30-day month) and queries ($0.0018 beyond 100k/cycle). A state database
+    holding a few rows of JSON, queried only during deploys, rounds to
+    nothing.
+  - *Conclusion:* the cost of a per-stage state database is **a quota slot, not
+    money**. Relevant only to a free-plan workspace running many concurrent PR
+    stages (50 databases total, and the app's own databases compete for the
+    same pool). Worth a line in the ADR's consequences, not a design change.
+- **OQ-2 — only active compute deployments block project deletion.**
+  `deleteProject` (`packages/interactors/src/project/deleteProject.ts`) checks
+  auth, calls `guardNoActiveDeployments(projectId)`, syncs Stripe usage,
+  **deletes every one of the project's database tenants itself**, then calls
+  `projectRepository.deleteWithGuard`, which re-checks for a live `Deployment`
+  (ComputeVersion) on any of the project's Apps, soft-deletes the Apps, and
+  hard-deletes the Project row (children cascade). **Neither Branches nor
+  databases — default or not — ever block it**; the schema comment on
+  `App.branchId` says so outright ("Project hard-delete now cascades through
+  ComputeService so branch membership does not block it"). The 400 that
+  `deleteAppProject` relies on comes from *another stage's live compute
+  versions*, which is exactly the semantic it wants.
+
+  **This corrects an earlier claim of mine** ("the production state DB is
+  always a dependency, so empty projects would accumulate") — false. A project
+  delete would take the state database with it. The production state-delete
+  step therefore stays, but for a different reason: when the project delete is
+  *refused* because another stage is live, production's state database would
+  otherwise outlive production and hold a quota slot. It is tidiness plus
+  quota, not a precondition. The named-stage step **is** a precondition and is
+  unaffected: `DELETE /v1/branches/{branchId}` genuinely refuses a Branch with
+  live members (`Database.branchId` is `onDelete: Restrict`).
 
 ## Key decisions log
 
