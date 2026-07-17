@@ -277,6 +277,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/9-public/composer/src/report.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
       "glob": "packages/9-public/composer/src/config.ts",
       "domain": "public",
       "layer": "public",
@@ -381,28 +387,48 @@
       "reason": "0-framework is the innermost domain and imports nothing but external dependencies"
     },
     "prisma-cloud": {
-      "mayImportFrom": ["framework"],
+      "mayImportFrom": [
+        "framework"
+      ],
       "reason": "1-prisma-cloud may import 0-framework"
     },
     "public": {
-      "mayImportFrom": ["framework", "prisma-cloud"],
+      "mayImportFrom": [
+        "framework",
+        "prisma-cloud"
+      ],
       "reason": "9-public assembles both domains; nothing imports it (sink)"
     }
   },
   "planeRules": {
     "shared": {
-      "allow": ["shared"],
-      "forbid": ["control", "execution"],
+      "allow": [
+        "shared"
+      ],
+      "forbid": [
+        "control",
+        "execution"
+      ],
       "exceptions": []
     },
     "control": {
-      "allow": ["shared", "control"],
-      "forbid": ["execution"],
+      "allow": [
+        "shared",
+        "control"
+      ],
+      "forbid": [
+        "execution"
+      ],
       "exceptions": []
     },
     "execution": {
-      "allow": ["shared", "execution"],
-      "forbid": ["control"],
+      "allow": [
+        "shared",
+        "execution"
+      ],
+      "forbid": [
+        "control"
+      ],
       "exceptions": []
     }
   },
@@ -414,8 +440,19 @@
     }
   ],
   "layerOrder": {
-    "framework": ["foundation", "core", "authoring", "tooling"],
-    "prisma-cloud": ["lowering", "extensions", "modules"],
-    "public": ["public"]
+    "framework": [
+      "foundation",
+      "core",
+      "authoring",
+      "tooling"
+    ],
+    "prisma-cloud": [
+      "lowering",
+      "extensions",
+      "modules"
+    ],
+    "public": [
+      "public"
+    ]
   }
 }

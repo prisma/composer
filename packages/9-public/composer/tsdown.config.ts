@@ -12,6 +12,7 @@ export default defineConfig([
       index: 'src/index.ts',
       config: 'src/config.ts',
       deploy: 'src/deploy.ts',
+      report: 'src/report.ts',
       testing: 'src/testing.ts',
       casts: 'src/casts.ts',
       assertions: 'src/assertions.ts',

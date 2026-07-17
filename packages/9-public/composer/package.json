@@ -2,7 +2,7 @@
   "name": "@prisma/composer",
   "version": "0.1.0",
   "type": "module",
-  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, the prisma-composer CLI, and the rpc/node/nextjs authoring surfaces.",
+  "description": "Prisma Composer \u2014 build a Prisma App by composing Modules. Core authoring, deploy pipeline, the prisma-composer CLI, and the rpc/node/nextjs authoring surfaces.",
   "bin": {
     "prisma-composer": "./dist/bin.mjs"
   },
@@ -18,6 +18,7 @@
     "./node/control": "./dist/node-control.mjs",
     "./nextjs": "./dist/nextjs.mjs",
     "./nextjs/control": "./dist/nextjs-control.mjs",
+    "./report": "./dist/report.mjs",
     "./package.json": "./package.json"
   },
   "files": [

@@ -36,6 +36,21 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
+  test('wires the deploy report through, so the renderer runs in the alchemy child where the resolved results are', () => {
+    const content = renderStackFile({
+      entryPath: '/repo/app/module.ts',
+      cwd: '/repo/app',
+      configPath: '/repo/app/prisma-composer.config.ts',
+      name: 'storefront-auth',
+      assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
+    });
+
+    expect(content).toContain("import { deploymentReport } from '@prisma/composer/report';");
+    // The SAME name already rendered into `name:` — the tree's root label.
+    expect(content).toContain('report: deploymentReport("storefront-auth"),');
+    expect(content).toContain('name: "storefront-auth"');
+  });
+
   test('a config discovered ABOVE the app dir renders with the deeper relative path', () => {
     const content = renderStackFile({
       entryPath: '/repo/apps/shop/module.ts',

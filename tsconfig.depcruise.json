@@ -19,6 +19,9 @@
       "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/index.ts"],
       "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/index.ts"],
       "@internal/cli/bin": ["./packages/0-framework/3-tooling/cli/src/bin.ts"],
+      "@internal/cli/report": [
+        "./packages/0-framework/3-tooling/cli/src/render-deployment.ts"
+      ],
       "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/index.ts"],
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/postgres/index.ts"
