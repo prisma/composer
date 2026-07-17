@@ -101,6 +101,22 @@ announce its own failure is not a check.** The dispatch that built a control
 to prove `lint:deps` fires accepted `pnpm lint`'s silence without turning the
 same suspicion on it.
 
+**The reviewer's sharpening, which is the version to keep:** a gate that
+reports by *printing on success* is silent in **two different worlds** —
+not-reached, and reached-but-failed — and those must never be conflated. The
+shape of the command, not the diligence of the operator, is what makes the
+two indistinguishable.
+
+**And the unifying generalization, from both halves of this dispatch: the
+check you ran wasn't the check you thought you ran.** The `&&` swallow ran a
+gate whose output channel only existed on success. My `--stdin-file-path`
+adjudication asked biome to judge *content* when the real gate judges *a file
+at a path* — and biome's config resolution keys on the path, so the stdin form
+can disagree, and disagree in the **permissive** direction. The only test that
+settles a gate dispute is running the gate the way CI runs it. This bit twice
+in one dispatch, in both directions (an agent's false green, and my false
+refutation of a true finding).
+
 **My own verification was also unsound**, and worth recording: checking main's
 files via `--stdin-file-path` reported them dirty too, which would have let me
 dismiss a true finding. Stdin mode doesn't resolve the same config. Swapping
