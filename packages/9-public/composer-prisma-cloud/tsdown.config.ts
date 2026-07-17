@@ -41,10 +41,10 @@ export default defineConfig([
   {
     ...baseConfig,
     entry: {
-      index: 'src/index.ts',
-      control: 'src/control.ts',
-      'prisma-next': 'src/prisma-next.ts',
-      testing: 'src/testing.ts',
+      index: 'src/exports/index.ts',
+      control: 'src/exports/control.ts',
+      'prisma-next': 'src/exports/prisma-next.ts',
+      testing: 'src/exports/testing.ts',
     },
     exports: false,
     clean: true,
@@ -54,7 +54,7 @@ export default defineConfig([
   },
   {
     ...baseConfig,
-    entry: { index: 'src/cron.ts' },
+    entry: { index: 'src/exports/cron.ts' },
     outDir: 'dist/cron',
     exports: false,
     clean: false,
@@ -78,7 +78,7 @@ export default defineConfig([
   },
   {
     ...baseConfig,
-    entry: { index: 'src/storage.ts' },
+    entry: { index: 'src/exports/storage.ts' },
     outDir: 'dist/storage',
     exports: false,
     clean: false,
@@ -106,7 +106,7 @@ export default defineConfig([
     // The /storage/testing local stand-in — inlines @internal/storage/testing's
     // engine; `bun` stays external (the store uses Bun's SQL + Bun.serve).
     ...baseConfig,
-    entry: { testing: 'src/storage-testing.ts' },
+    entry: { testing: 'src/exports/storage-testing.ts' },
     outDir: 'dist/storage',
     exports: false,
     clean: false,
@@ -117,7 +117,7 @@ export default defineConfig([
   },
   {
     ...baseConfig,
-    entry: { index: 'src/streams.ts' },
+    entry: { index: 'src/exports/streams.ts' },
     outDir: 'dist/streams',
     exports: false,
     clean: false,
@@ -147,7 +147,7 @@ export default defineConfig([
     // The /streams/testing local stand-in (@prisma/streams-local, already
     // inlined by @internal/streams' own build).
     ...baseConfig,
-    entry: { testing: 'src/streams-testing.ts' },
+    entry: { testing: 'src/exports/streams-testing.ts' },
     outDir: 'dist/streams',
     exports: false,
     clean: false,

@@ -337,31 +337,31 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/control.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/control.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/index.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/index.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/prisma-next.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/prisma-next.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/testing.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/testing.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/cron.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/cron.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"
