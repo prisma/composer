@@ -173,11 +173,12 @@ destroy something that was never deployed").
   now shared by `ContainerDescriptor<I>`. Anyone editing the CLI's
   ensure/locate/remove loop is extending the set of code the *loop*, not the
   type system, must keep correct.
-- **The stale docs and the deleted `ensure-containers.ts` are gone together.**
-  Nothing outside `container.ts` and `container-transport.ts` mentions
-  `PRISMA_PROJECT_ID`/`PRISMA_BRANCH_ID`, `ensureContainers`, or a bare
-  `state: () => …` factory — verified by a repo-wide sweep as part of the
-  slice that shipped this decision.
+- **The old identifiers are gone from the codebase, not just relocated.**
+  `PRISMA_PROJECT_ID`, `PRISMA_BRANCH_ID`, `ensureContainers`, and a bare
+  `state: () => …` factory appear nowhere in the shipped source or docs —
+  not even in `container.ts` or `container-transport.ts` — verified by a
+  repo-wide sweep as part of the slice that shipped this decision. They
+  survive only in this ADR's own account of what it replaced.
 
 ## Alternatives considered
 
