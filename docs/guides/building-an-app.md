@@ -47,8 +47,9 @@ export const authContract = contract({
 
 On the producer, `serve()` turns the service's `expose` into a fetch handler.
 The handler map must cover every method — a missing or wrong-shaped handler
-doesn't compile. Each handler receives the validated input (and the service's
-own loaded deps as a second argument):
+doesn't compile. Each handler receives the validated input, the service's own
+loaded deps as a second argument, and an optional third argument carrying the
+call's idempotency key (see below — most handlers ignore it):
 
 ```ts
 const handler = serve(service, {
@@ -87,6 +88,25 @@ run it locally.
 **Locally and in tests, nothing changes.** Only a deploy creates keys, so a
 service you run in a terminal, a fake, and `bootstrapService` all accept every
 call, and there's no key for you to supply.
+
+### Calls retry safely for you
+
+You don't do anything for this either. A provider that has scaled to zero has
+to boot before it answers, and a first call can be dropped mid-connection
+while it does. The client absorbs that: every call carries an **idempotency
+key**, a dropped call is retried with a backoff, and the provider runs one
+call per key — a retry that arrives after the first already ran gets the first
+answer back instead of running your handler twice. So `await auth.verify(...)`
+just works across a cold start, and it works whether or not the call changes
+state. You write nothing; the key is on the request and the deduplication is
+in `serve()`.
+
+The one visible edge, again from `curl`: a request without an `Idempotency-Key`
+header is answered with `400`. The generated client always sends one, so this
+only bites a hand-rolled request. If a handler needs a stronger guarantee than
+one instance's memory — surviving a crash mid-call — its optional third
+argument carries the same key, to write into its own transaction; most
+handlers never need it.
 
 Two limits worth knowing:
 

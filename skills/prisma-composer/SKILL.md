@@ -157,6 +157,18 @@ deployed `/rpc/<method>` to check it works** — an unwired caller always gets
 `401`, which looks like a broken deploy and isn't. Debug through a consumer,
 or locally.
 
+**Calls carry an idempotency key and retry safely for you.** Every call the
+generated client makes carries an `Idempotency-Key`; a call dropped while the
+target cold-starts is retried with a backoff, and `serve()` runs one call per
+key — a retry that arrives after the first completed replays that answer
+instead of re-running the handler. So every method is safely retryable and no
+contract declares anything about it (do not add an "is this idempotent" flag —
+the framework does not have one). Two consequences for you: a handler may take
+an **optional third argument** `(input, deps, ctx)` and read `ctx.idempotencyKey`
+if it needs exactly-once beyond one instance's memory (most don't); and a
+request without the header is answered `400`, so any hand-rolled probe must
+send one — another reason not to `curl` these endpoints.
+
 | | |
 | --- | --- |
 | Locally / in tests | nothing is provisioned, so `serve()` passes every call through — never supply a key in `inputs` |
