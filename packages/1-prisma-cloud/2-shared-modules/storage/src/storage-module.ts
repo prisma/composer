@@ -9,7 +9,7 @@ import type { ModuleNode } from '@internal/core';
 import { module } from '@internal/core';
 import { postgres, s3Credentials } from '@internal/prisma-cloud';
 import { s3Contract } from './contract.ts';
-import { storageService } from './exports/storage-service.ts';
+import { storageService } from './storage-service.ts';
 
 export function storage(opts?: {
   name?: string;

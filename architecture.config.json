@@ -337,6 +337,18 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/execution/**",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/storage-service.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/exports/storage-service.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
