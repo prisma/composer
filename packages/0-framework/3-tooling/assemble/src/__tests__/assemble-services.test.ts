@@ -14,8 +14,11 @@ const fakeRun = async (node: ServiceNode) => ({
 
 const emptyConfig: PrismaAppConfig = {
   extensions: [],
-  state: () => {
-    throw new Error('state() must not be called by assembleServices()');
+  state: {
+    extension: 'test/pack',
+    create: () => {
+      throw new Error('state.create() must not be called by assembleServices()');
+    },
   },
 };
 

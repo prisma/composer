@@ -4,6 +4,7 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
 import { number, string } from '../config.ts';
+import { containerEnvVarName } from '../container-transport.ts';
 import type { ExtensionDescriptor, PrismaAppConfig } from '../exports/app-config.ts';
 import {
   type AlchemyStateLayer,
@@ -120,7 +121,7 @@ type Call =
 // ins for a real extension's descriptor-owned provision/serialize products.
 interface FakeProvisioned {
   readonly serviceId: string;
-  readonly projectId: string;
+  readonly resourceRef: string;
 }
 interface FakeSerialized {
   readonly environment: ReadonlyArray<{ input: string; name: string; value: unknown }>;
@@ -137,7 +138,7 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
     application: {
       provision: (ctx) => {
         calls.push({ phase: 'application', id: ctx.id });
-        return Effect.succeed({ projectId: `${ctx.id}#project` });
+        return Effect.succeed({ resourceRef: `${ctx.id}#project` });
       },
     },
     nodes: {
@@ -158,10 +159,10 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
           // ctx.application is `unknown` by design — core never reads the
           // application hook's product. A real extension narrows it with its
           // own type guard; this fake asserts its own hook's shape.
-          const application = ctx.application as { projectId: string };
+          const application = ctx.application as { resourceRef: string };
           return Effect.succeed({
             serviceId: `${ctx.id}#svc`,
-            projectId: application.projectId,
+            resourceRef: application.resourceRef,
           });
         },
         serialize: (ctx, _provisioned, config) => {
@@ -190,7 +191,7 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
             environment: serialized.environment,
           });
           return Effect.succeed({
-            outputs: { url: `https://${ctx.id}.example`, projectId: provisioned.projectId },
+            outputs: { url: `https://${ctx.id}.example`, resourceRef: provisioned.resourceRef },
             entities: [
               { kind: 'fake-compute', id: provisioned.serviceId, url: `https://${ctx.id}.example` },
             ],
@@ -201,7 +202,7 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
   };
   const config: PrismaAppConfig = {
     extensions: [descriptor],
-    state: () => stateSentinel('config-default'),
+    state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
   };
   return { descriptor, config, calls };
 }
@@ -1162,7 +1163,7 @@ describe('lower()', () => {
     const { descriptor } = fakeExtension();
     const config: PrismaAppConfig = {
       extensions: [{ ...descriptor, providers: () => Layer.empty }],
-      state: () => stateSentinel('config-default'),
+      state: { extension: descriptor.id, create: () => stateSentinel('config-default') },
     };
     const root = singleServiceModule('fake/compute', {});
 
@@ -1203,6 +1204,119 @@ describe('lowering a nested module — dotted addresses (H1: module-composition)
   });
 });
 
+describe('container threading through lowering() (the parent→child transport read side)', () => {
+  // A minimal ContainerInstance the fake extension's own deserialize
+  // produces — core's claim on it is only `input` + `serialize()`.
+  class FakeContainerInstance {
+    constructor(readonly input: { appName: string; stage: string | undefined }) {}
+    serialize(): string {
+      return JSON.stringify(this.input);
+    }
+  }
+
+  function fakeExtensionWithContainer() {
+    const seen: unknown[] = [];
+    const descriptor: ExtensionDescriptor = {
+      id: 'test/container-pack',
+      container: {
+        ensure: () => {
+          throw new Error('ensure() must not run inside lowering()');
+        },
+        locate: () => {
+          throw new Error('locate() must not run inside lowering()');
+        },
+        remove: () => {
+          throw new Error('remove() must not run inside lowering()');
+        },
+        deserialize: (serialized) => new FakeContainerInstance(JSON.parse(serialized)),
+      },
+      application: {
+        provision: (ctx) => {
+          seen.push({ phase: 'application', container: ctx.container });
+          return Effect.succeed(undefined);
+        },
+      },
+      nodes: {
+        'fake/db': Object.assign(
+          (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
+            seen.push({ phase: 'resource', container: ctx.container });
+            return Effect.succeed({ outputs: {}, entities: [] });
+          },
+          { kind: 'resource' as const },
+        ),
+      },
+    };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
+    };
+    return { descriptor, config, seen };
+  }
+
+  const withEnv = <T>(values: Record<string, string | undefined>, fn: () => T): T => {
+    const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
+    for (const [k, v] of Object.entries(values)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      return fn();
+    } finally {
+      for (const [k, v] of previous) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+
+  const dbModule = () =>
+    module('shop', {}, (h) => {
+      h.provision(
+        resource({
+          name: 'db',
+          extension: 'test/container-pack',
+          provides: providerContract('fake/db', { url: '' }),
+        }),
+        { id: 'db' },
+      );
+      return {};
+    });
+
+  test("a stub extension's application and resource contexts observe ctx.container as the deserialized instance", () => {
+    const { descriptor, config, seen } = fakeExtensionWithContainer();
+    const instanceInput = { appName: 'shop', stage: undefined };
+
+    withEnv({ [containerEnvVarName(descriptor.id)]: JSON.stringify(instanceInput) }, () => {
+      run(lowering(dbModule(), config, opts()));
+    });
+
+    expect(seen).toEqual([
+      { phase: 'application', container: new FakeContainerInstance(instanceInput) },
+      { phase: 'resource', container: new FakeContainerInstance(instanceInput) },
+    ]);
+  });
+
+  test('the same extension with its transport var unset sees ctx.container as undefined', () => {
+    const { config, seen } = fakeExtensionWithContainer();
+
+    run(lowering(dbModule(), config, opts()));
+
+    expect(seen).toEqual([
+      { phase: 'application', container: undefined },
+      { phase: 'resource', container: undefined },
+    ]);
+  });
+
+  test('an extension declaring no container descriptor at all sees ctx.application still threaded (unaffected by container wiring)', () => {
+    const { config, calls } = fakeExtension();
+    const root = singleServiceWithDbModule();
+
+    run(lowering(root, config, opts(svcBundles)));
+
+    expect(calls.filter((c) => c.phase === 'application')).toHaveLength(1);
+  });
+});
+
 describe('resolveStateLayer', () => {
   // Sentinel objects, not real Alchemy Layers — resolveStateLayer is a pure
   // selector, so identity comparison against sentinels proves precedence
@@ -1212,18 +1326,60 @@ describe('resolveStateLayer', () => {
     const { descriptor } = fakeExtension();
     const config: PrismaAppConfig = {
       extensions: [descriptor],
-      state: () => stateSentinel('config'),
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
     };
 
-    expect(resolveStateLayer(opts({ state: optsState }), config)).toBe(optsState);
+    expect(resolveStateLayer(opts({ state: optsState }), config, new Map())).toBe(optsState);
   });
 
   test("the config's state is used when opts.state is absent — PrismaAppConfig.state is required", () => {
     const configState = stateSentinel('config');
     const { descriptor } = fakeExtension();
-    const config: PrismaAppConfig = { extensions: [descriptor], state: () => configState };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: { extension: descriptor.id, create: () => configState },
+    };
 
-    expect(resolveStateLayer(opts(), config)).toBe(configState);
+    expect(resolveStateLayer(opts(), config, new Map())).toBe(configState);
+  });
+
+  test("the config's state.create receives its own extension's resolved container", () => {
+    const { descriptor } = fakeExtension();
+    const seen: Array<unknown> = [];
+    const sentinelContainer = { input: { appName: 'a', stage: undefined }, serialize: () => 'x' };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: {
+        extension: descriptor.id,
+        create: (container) => {
+          seen.push(container);
+          return stateSentinel('config');
+        },
+      },
+    };
+
+    resolveStateLayer(opts(), config, new Map([[descriptor.id, sentinelContainer]]));
+
+    expect(seen).toEqual([sentinelContainer]);
+  });
+
+  test('an extension without a resolved container passes undefined to state.create', () => {
+    const { descriptor } = fakeExtension();
+    const seen: Array<unknown> = [];
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: {
+        extension: descriptor.id,
+        create: (container) => {
+          seen.push(container);
+          return stateSentinel('config');
+        },
+      },
+    };
+
+    resolveStateLayer(opts(), config, new Map());
+
+    expect(seen).toEqual([undefined]);
   });
 });
 
@@ -1233,7 +1389,7 @@ describe('mergedProviders', () => {
     const { providers: _dropped, ...bare } = descriptor;
     const config: PrismaAppConfig = {
       extensions: [bare],
-      state: () => stateSentinel('config'),
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
     };
 
     expect(mergedProviders(config)).toBe(Layer.empty);
@@ -1243,7 +1399,7 @@ describe('mergedProviders', () => {
     const { descriptor } = fakeExtension();
     const config: PrismaAppConfig = {
       extensions: [{ ...descriptor, providers: () => Layer.empty }],
-      state: () => stateSentinel('config'),
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
     };
 
     expect(mergedProviders(config)).toBeDefined();

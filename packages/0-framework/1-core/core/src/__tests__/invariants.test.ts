@@ -25,7 +25,7 @@ function shippedSources(): { file: string; text: string }[] {
 const leanTokens = [
   'alchemy',
   'effect',
-  '@internal/lowering',
+  ['@internal', 'lowering'].join('/'), // no cross-domain package leaks into core's authoring bundle
   'new SQL(',
   'ProviderCollection',
   'from "bun"',
@@ -102,15 +102,18 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
   });
 });
 
-describe('invariant 4: core contains zero environment reads', () => {
-  test("the process-env token appears nowhere in core's src", () => {
+describe('invariant 4: core touches the environment only to read back the container transport it wrote', () => {
+  test("the process-env token appears only in exports/deploy.ts (deserializeContainers(config, process.env), read-back for the parent→child container transport core itself owns — never a target's own vars)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
     const token = ['process', 'env'].join('.');
-    for (const { file, text } of sources) {
-      expect({ file, count: text.split(token).length - 1 }).toEqual({ file, count: 0 });
-    }
+    const hits = sources.flatMap(({ file, text }) => {
+      const count = text.split(token).length - 1;
+      return count > 0 ? [{ file, count }] : [];
+    });
+
+    expect(hits).toEqual([{ file: 'exports/deploy.ts', count: 2 }]);
   });
 });
 

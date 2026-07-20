@@ -6,6 +6,7 @@ import type { State } from 'alchemy/State/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type { Config, ConfigParam } from '../config.ts';
+import { deserializeContainers } from '../container-transport.ts';
 import { type Graph, Load, type NodeId } from '../graph.ts';
 import {
   type BuildAdapter,
@@ -15,7 +16,12 @@ import {
   type ResourceNode,
   type ServiceNode,
 } from '../node.ts';
-import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from './app-config.ts';
+import type {
+  ContainerInstance,
+  ExtensionDescriptor,
+  NodeDescriptor,
+  PrismaAppConfig,
+} from './app-config.ts';
 
 /** The Layer shape every Alchemy state store must satisfy — what `LowerOptions.state` and `PrismaAppConfig.state` both traffic in. */
 export type AlchemyStateLayer = Layer.Layer<State, never, StackServices>;
@@ -114,6 +120,13 @@ export interface LowerContext {
    * it with its own type guard.
    */
   readonly application: unknown;
+  /**
+   * The owning extension's resolved container, deserialized from the
+   * framework transport; core never reads it — the extension narrows it
+   * with its own type guard. `undefined` when the extension declares no
+   * container descriptor.
+   */
+  readonly container: ContainerInstance | undefined;
   /** Already-lowered deps (topo order). */
   readonly lowered: ReadonlyMap<NodeId, Outputs>;
   /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
@@ -492,11 +505,17 @@ function descriptorFor(
 
 /**
  * The state-layer precedence a deploy resolves to: an explicit opts.state
- * always wins; failing that, the config's own (required) state. A pure
- * function so the precedence is testable without booting Alchemy.
+ * always wins; failing that, the config's own (required) state descriptor,
+ * created with its owning extension's resolved container (`undefined` when
+ * that extension declared none). A pure function so the precedence is
+ * testable without booting Alchemy.
  */
-export function resolveStateLayer(opts: LowerOptions, config: PrismaAppConfig): AlchemyStateLayer {
-  return opts.state ?? config.state();
+export function resolveStateLayer(
+  opts: LowerOptions,
+  config: PrismaAppConfig,
+  containers: ReadonlyMap<string, ContainerInstance>,
+): AlchemyStateLayer {
+  return opts.state ?? config.state.create(containers.get(config.state.extension));
 }
 
 /**
@@ -541,6 +560,10 @@ export function lowering(
   return Effect.gen(function* () {
     const graph = Load(root, { id: opts.name });
     const extensions = yield* extensionsById(config);
+    // Each extension's own resolved container, deserialized once from the
+    // framework transport (the CLI parent wrote it; this is the alchemy
+    // child) — read-only for the rest of this lowering.
+    const containers = deserializeContainers(config.extensions, process.env);
     const lowered = new Map<NodeId, Outputs>();
     // Each node's reported entities, in topo order — the loop is the only
     // party that holds both the node's identity and what it became. Collected
@@ -567,6 +590,7 @@ export function lowering(
         graph,
         opts,
         application: undefined,
+        container: containers.get(descriptor.id),
         lowered,
         provisioned,
       };
@@ -643,6 +667,7 @@ export function lowering(
         graph,
         opts,
         application: applications.get(node.extension),
+        container: containers.get(node.extension),
         lowered,
         provisioned,
       };
@@ -721,10 +746,11 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
+  const containers = deserializeContainers(config.extensions, process.env);
 
   return Alchemy.Stack(
     opts.name,
-    { providers: mergedProviders(config), state: resolveStateLayer(opts, config) },
+    { providers: mergedProviders(config), state: resolveStateLayer(opts, config, containers) },
     stackEffect,
   );
 }

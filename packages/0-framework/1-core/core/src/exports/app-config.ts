@@ -1,5 +1,6 @@
 /** The `prisma-composer.config.ts` surface (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
 import type * as Layer from 'effect/Layer';
+import type { ContainerDescriptor, ContainerInstance } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
 import type {
   AlchemyStateLayer,
@@ -10,6 +11,17 @@ import type {
   ProvisionerDescriptor,
   ServiceLowering,
 } from './deploy.ts';
+
+export type {
+  ContainerDescriptor,
+  ContainerInstance,
+  LocateContainerInput,
+} from '../container-transport.ts';
+export {
+  containerEnv,
+  containerEnvVarName,
+  deserializeContainers,
+} from '../container-transport.ts';
 
 /**
  * One extension's control-plane registry: everything the deploy pipeline may
@@ -44,26 +56,40 @@ export interface ExtensionDescriptor {
    * fail the command handles that itself. Async: it talks to the platform.
    */
   readonly teardown?: (input: TeardownInput) => Promise<void>;
+  /**
+   * The extension's container lifecycle, when its platform has containers.
+   * The CLI resolves containers after assembly and before any stack file
+   * or Alchemy run (deploy ensures, destroy locates); the product crosses
+   * to the alchemy child via its own serialize/deserialize.
+   */
+  readonly container?: ContainerDescriptor;
+}
+
+/**
+ * The deploy's one state store, naming its owning extension so core can
+ * inject that extension's resolved container (amends ADR-0011/0017).
+ */
+export interface StateDescriptor {
+  /** The owning extension's id — matched against `ExtensionDescriptor.id`. */
+  readonly extension: string;
+  /** Build the state layer. `container` is the owning extension's resolved instance; `undefined` when it declared no container descriptor. */
+  create(container: ContainerInstance | undefined): AlchemyStateLayer;
 }
 
 /** The resolved deploy context handed to an extension's `preflight` hook. */
 export interface PreflightInput {
   /** The loaded application graph — the manifest of prerequisites is read from it (`provisionManifest`). */
   readonly graph: Graph;
-  /** The resolved Prisma Cloud Project id. */
-  readonly projectId: string;
-  /** The resolved Branch id for a named stage; `undefined` for the default (production) stage. */
-  readonly branchId: string | undefined;
+  /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
+  readonly container: ContainerInstance | undefined;
   /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
   readonly stage: string | undefined;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */
 export interface TeardownInput {
-  /** The resolved Prisma Cloud Project id. */
-  readonly projectId: string;
-  /** The resolved Branch id for a named stage; `undefined` for the default (production) stage. */
-  readonly branchId: string | undefined;
+  /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
+  readonly container: ContainerInstance | undefined;
   /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
   readonly stage: string | undefined;
 }
@@ -85,7 +111,7 @@ export type NodeDescriptor =
  */
 export interface PrismaAppConfig {
   readonly extensions: ExtensionDescriptor[];
-  readonly state: () => AlchemyStateLayer;
+  readonly state: StateDescriptor;
 }
 
 /** Typed identity — exists so `prisma-composer.config.ts` gets checked against PrismaAppConfig where it is written. */
