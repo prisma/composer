@@ -13,7 +13,7 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.93",
+    "@effect/platform-bun": "4.0.0-beta.97",
     "@prisma/composer": "workspace:0.1.0",
     "@prisma/composer-prisma-cloud": "workspace:0.1.0",
     "alchemy": "2.0.0-beta.59",
