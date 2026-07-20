@@ -35,12 +35,31 @@ export interface ExtensionDescriptor {
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
    */
   readonly preflight?: (input: PreflightInput) => Promise<void>;
+  /**
+   * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
+   * succeeds and BEFORE the stage's Project/Branch are removed. A target uses
+   * it to remove infrastructure it owns outside the stack (e.g. the deploy
+   * state store, which the destroy above was still reading). Throwing aborts
+   * the destroy before the containers go; a target that would rather warn than
+   * fail the command handles that itself. Async: it talks to the platform.
+   */
+  readonly teardown?: (input: TeardownInput) => Promise<void>;
 }
 
 /** The resolved deploy context handed to an extension's `preflight` hook. */
 export interface PreflightInput {
   /** The loaded application graph — the manifest of prerequisites is read from it (`provisionManifest`). */
   readonly graph: Graph;
+  /** The resolved Prisma Cloud Project id. */
+  readonly projectId: string;
+  /** The resolved Branch id for a named stage; `undefined` for the default (production) stage. */
+  readonly branchId: string | undefined;
+  /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
+  readonly stage: string | undefined;
+}
+
+/** The resolved destroy context handed to an extension's `teardown` hook. */
+export interface TeardownInput {
   /** The resolved Prisma Cloud Project id. */
   readonly projectId: string;
   /** The resolved Branch id for a named stage; `undefined` for the default (production) stage. */

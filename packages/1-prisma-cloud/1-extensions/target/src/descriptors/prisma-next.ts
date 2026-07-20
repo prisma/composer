@@ -59,7 +59,12 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         ...(node.targetRef !== undefined ? { refName: node.targetRef } : {}),
       });
 
-      return { outputs: { url: warm.url } };
+      // No `url` entity field — same reason as postgres: a connection string is
+      // not a public endpoint, and only the descriptor can know that.
+      return {
+        outputs: { url: warm.url },
+        entities: [{ kind: 'postgres-database', id: db.id }],
+      };
     });
   return Object.assign(lowering, { kind: 'resource' as const });
 }

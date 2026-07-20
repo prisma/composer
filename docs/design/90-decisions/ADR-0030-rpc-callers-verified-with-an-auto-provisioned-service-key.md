@@ -26,7 +26,7 @@ connection parameter on the RPC dependency (`serviceKey`, alongside `url`),
 serialized to a reserved `COMPOSER_*` environment variable and hydrated into the
 client through the framework's host shim — the developer's code never reads the
 environment (see the *No globals* principle). Its value is minted at deploy and
-kept in the workspace-hosted deploy state store, so it is stable across
+kept in the hosted deploy state store, so it is stable across
 redeploys and never appears in the Prisma Cloud project's own variable list.
 
 ## Reasoning
@@ -60,10 +60,11 @@ different in kind. It is not a credential protecting data at rest; it is a
 per-deployment capability token whose only job is to separate a wired peer from
 an anonymous caller over an already-encrypted channel. That lower bar lets the
 framework do the thing ADR-0029 forbids for secrets: **mint the value itself and
-keep it in deploy state.** The deploy state store is the workspace-hosted
-`prisma-composer-state` project (ADR-0009) — not the user-facing Prisma Cloud
-project — so the value stays out of the surface a developer reads, and "transient
-state for this deployment" is exactly what it is.
+keep it in deploy state.** The deploy state store is the framework-owned
+`prisma-composer-state` database in the stage's Branch (ADR-0034) — not a
+resource a developer declares or reads — so the value stays out of the surface
+a developer works with, and "transient state for this deployment" is exactly
+what it is.
 
 **Why the env-var rail, not the artifact.** The value has to reach both running
 instances. A Compute version takes its environment from the project's config
@@ -148,8 +149,8 @@ supplies the brand and the wire contract.
 - [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) — the secret slot this
   qualifies: a service key is a minted, deploy-state value, deliberately *not* a
   name-only secret.
-- [ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md) — the
-  workspace-hosted state store the key's value lives in.
+- [ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md) — the
+  per-stage hosted state store the key's value lives in.
 - [ADR-0015](ADR-0015-dependencies-resolve-to-bindings-clients-are-app-side.md) —
   the binding the key rides on, alongside the URL.
 - [ADR-0019](ADR-0019-the-target-owns-config-serialization.md) — the target owns

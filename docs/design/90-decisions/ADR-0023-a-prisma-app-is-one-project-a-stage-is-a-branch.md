@@ -97,6 +97,6 @@ down the environment that wrote it.
 
 - [ADR-0024](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
   — how a deploy names a stage and resolves it to this Project + Branch.
-- [ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md) — deploy state
-  hosted in the workspace; its keys map to (Project, Branch).
+- [ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md) — deploy state
+  hosted per stage in the Branch this mapping defines.
 - `docs/design/03-domain-model/glossary.md` — Stage → Environment.

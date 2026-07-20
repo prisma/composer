@@ -10,16 +10,19 @@ import {
   type Artifact,
   type Bundle,
   buildConfig,
+  joinDeployment,
   type LowerContext,
   LowerError,
-  type LoweredNode,
+  type LoweredResult,
   type LowerOptions,
   lower,
   lowering,
   mergedProviders,
+  type Outputs,
   type ProvisionEdge,
   type ProvisionerDescriptor,
   resolveStateLayer,
+  type ServiceLowering,
 } from '../exports/deploy.ts';
 import { Load } from '../graph.ts';
 import {
@@ -113,6 +116,16 @@ type Call =
       readonly environment: unknown;
     };
 
+// The fake 'fake/compute' descriptor's own intra-node handoff types — stand-
+// ins for a real extension's descriptor-owned provision/serialize products.
+interface FakeProvisioned {
+  readonly serviceId: string;
+  readonly projectId: string;
+}
+interface FakeSerialized {
+  readonly environment: ReadonlyArray<{ input: string; name: string; value: unknown }>;
+}
+
 function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor> } = {}) {
   const calls: Call[] = [];
   const descriptor: ExtensionDescriptor = {
@@ -124,14 +137,17 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
     application: {
       provision: (ctx) => {
         calls.push({ phase: 'application', id: ctx.id });
-        return Effect.succeed({ outputs: { projectId: `${ctx.id}#project` } });
+        return Effect.succeed({ projectId: `${ctx.id}#project` });
       },
     },
     nodes: {
       'fake/db': Object.assign(
-        (ctx: LowerContext) => {
+        (ctx: LowerContext): Effect.Effect<LoweredResult, unknown, unknown> => {
           calls.push({ phase: 'resource', id: ctx.id, type: ctx.node.type });
-          return Effect.succeed({ outputs: { url: `db://${ctx.id}` } });
+          return Effect.succeed({
+            outputs: { url: `db://${ctx.id}` },
+            entities: [{ kind: 'fake-db', id: `${ctx.id}#db` }],
+          });
         },
         { kind: 'resource' as const },
       ),
@@ -139,11 +155,13 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
         kind: 'service' as const,
         provision: (ctx) => {
           calls.push({ phase: 'provision', id: ctx.id, address: ctx.address });
+          // ctx.application is `unknown` by design — core never reads the
+          // application hook's product. A real extension narrows it with its
+          // own type guard; this fake asserts its own hook's shape.
+          const application = ctx.application as { projectId: string };
           return Effect.succeed({
-            outputs: {
-              serviceId: `${ctx.id}#svc`,
-              projectId: ctx.application.outputs['projectId'],
-            },
+            serviceId: `${ctx.id}#svc`,
+            projectId: application.projectId,
           });
         },
         serialize: (ctx, _provisioned, config) => {
@@ -153,7 +171,7 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
           const records = Object.entries(config.inputs).flatMap(([input, values]) =>
             Object.entries(values).map(([name, value]) => ({ input, name, value })),
           );
-          return Effect.succeed({ outputs: { environment: records } });
+          return Effect.succeed({ environment: records });
         },
         package: (ctx, input) => {
           calls.push({
@@ -169,16 +187,16 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
             phase: 'deploy',
             id: ctx.id,
             artifact,
-            environment: serialized.outputs['environment'],
+            environment: serialized.environment,
           });
           return Effect.succeed({
-            outputs: {
-              url: `https://${ctx.id}.example`,
-              projectId: provisioned.outputs['projectId'],
-            },
+            outputs: { url: `https://${ctx.id}.example`, projectId: provisioned.projectId },
+            entities: [
+              { kind: 'fake-compute', id: provisioned.serviceId, url: `https://${ctx.id}.example` },
+            ],
           });
         },
-      },
+      } satisfies { readonly kind: 'service' } & ServiceLowering<FakeProvisioned, FakeSerialized>,
     },
   };
   const config: PrismaAppConfig = {
@@ -188,10 +206,10 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
   return { descriptor, config, calls };
 }
 
-const run = (eff: ReturnType<typeof lowering>): LoweredNode =>
-  Effect.runSync(eff as Effect.Effect<LoweredNode, LowerError>);
+const run = (eff: ReturnType<typeof lowering>): undefined =>
+  Effect.runSync(eff as Effect.Effect<undefined, LowerError>);
 const runError = (eff: ReturnType<typeof lowering>): LowerError =>
-  Effect.runSync(Effect.flip(eff as Effect.Effect<LoweredNode, LowerError>));
+  Effect.runSync(Effect.flip(eff as Effect.Effect<undefined, LowerError>));
 
 describe('buildConfig', () => {
   test("matches a dependency input's params by name to the wired producer's lowered outputs, via its dependency edge", () => {
@@ -202,7 +220,7 @@ describe('buildConfig', () => {
       return {};
     });
     const graph = Load(root);
-    const lowered = new Map<string, LoweredNode>([['db', { outputs: { url: 'db://db' } }]]);
+    const lowered = new Map<string, Outputs>([['db', { url: 'db://db' }]]);
 
     expect(buildConfig(auth, 'auth', graph, lowered, new Map())).toEqual({
       service: { port: 3000 },
@@ -210,7 +228,35 @@ describe('buildConfig', () => {
     });
   });
 
-  test('a param the graph declares but the lowered outputs never produced resolves to undefined', () => {
+  // ——— The connection contract (S2). The consumer's connection declaration IS the
+  // contract (ADR-0033): core resolves each declared param by name against the
+  // producer's outputs. A producer that under-delivers used to hand the
+  // consumer a silent `undefined`, which serialized into its environment and
+  // failed at the consumer's boot — far from the mistake. It now fails the
+  // deploy, naming the edge.
+
+  test('a producer that omits a declared required param fails the deploy, naming the edge, the param, the producer, and what the producer DID supply', () => {
+    const auth = app('fake/compute', { db: dbEnd() });
+    const root = module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      h.provision(auth, { id: 'auth', deps: { db } });
+      return {};
+    });
+    const graph = Load(root);
+    // The producer lowered, but its outputs carry no `url` — the exact
+    // param `dbEnd()`'s connection declares and does not mark optional.
+    const lowered = new Map<string, Outputs>([['db', { host: 'db.internal' }]]);
+
+    const build = () => buildConfig(auth, 'auth', graph, lowered, new Map());
+
+    expect(build).toThrow(LowerError);
+    expect(build).toThrow(/"auth\.db"/); // the edge id
+    expect(build).toThrow(/"url"/); // the param
+    expect(build).toThrow(/"db"/); // the producer
+    expect(build).toThrow(/host/); // the producer's actual key list
+  });
+
+  test('a producer supplying nothing at all names an empty key list, not a confusing blank', () => {
     const auth = app('fake/compute', { db: dbEnd() });
     const root = module('shop', {}, (h) => {
       const db = h.provision(dbResource(), { id: 'db' });
@@ -219,7 +265,51 @@ describe('buildConfig', () => {
     });
     const graph = Load(root);
 
+    // `lowered` empty: the producer is wired but produced no outputs.
+    expect(() => buildConfig(auth, 'auth', graph, new Map(), new Map())).toThrow(/nothing/);
+  });
+
+  test('a declared param the consumer marked optional is exempt — absent stays undefined, no error', () => {
+    const optionalDbEnd = () =>
+      dependency({
+        name: 'db',
+        type: 'fake/db',
+        connection: conn({ url: string({ optional: true }) }, () => ({})),
+        required: providerContract('fake/db', { url: '' }),
+      });
+    const auth = app('fake/compute', { db: optionalDbEnd() });
+    const root = module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      h.provision(auth, { id: 'auth', deps: { db } });
+      return {};
+    });
+    const graph = Load(root);
+
+    // The consumer said absent is legal, so the producer under-delivering is
+    // not a contract breach — boot's coerce() reads a missing var as absent.
     expect(buildConfig(auth, 'auth', graph, new Map(), new Map())).toEqual({
+      service: {},
+      inputs: { db: { url: undefined } },
+    });
+  });
+
+  test('an unwired input (no dependency edge) keeps resolving to undefined — the guard only judges a producer that exists', () => {
+    const auth = app('fake/compute', { db: dbEnd() });
+    const root = module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      h.provision(auth, { id: 'auth', deps: { db } });
+      return {};
+    });
+    // The authoring API will not let a declared input go unwired —
+    // `h.provision(auth, { id: 'auth' })` does not type-check — so `db` is
+    // wired here and its edge then dropped. That reaches buildConfig's
+    // `edge === undefined` branch, which is defensive rather than authorable.
+    // With no edge there is no producer to hold to the contract, so the guard
+    // must stay out of it: an unwired input is a graph-construction concern.
+    const graph = Load(root);
+    const withoutEdges = { ...graph, edges: graph.edges.filter((e) => e.kind !== 'dependency') };
+
+    expect(buildConfig(auth, 'auth', withoutEdges, new Map(), new Map())).toEqual({
       service: {},
       inputs: { db: { url: undefined } },
     });
@@ -245,10 +335,37 @@ describe('buildConfig', () => {
     const graph = Load(root);
     // The producer IS lowered (with some unrelated output), but a provisioned
     // param must ignore it entirely — its value comes only from `provisioned`.
-    const lowered = new Map<string, LoweredNode>([['auth', { outputs: { token: 'wrong-value' } }]]);
+    const lowered = new Map<string, Outputs>([['auth', { token: 'wrong-value' }]]);
     const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
 
     expect(buildConfig(consumer, 'consumer', graph, lowered, provisioned)).toEqual({
+      service: {},
+      inputs: { auth: { token: 'minted-value' } },
+    });
+  });
+
+  test('a REQUIRED provisioned param is exempt from the connection contract — the mint supplies it, the producer hands nothing over (ADR-0031)', () => {
+    const BRAND = Symbol('test-provision-brand');
+    // Deliberately NOT optional: this pins that the provision branch is exempt
+    // on its own, rather than incidentally passing because it was optional.
+    const tokenEnd = () =>
+      dependency({
+        name: 'auth',
+        type: 'fake/rpc',
+        connection: conn({ token: string({ provision: provisionNeed(BRAND) }) }, () => ({})),
+      });
+    const consumer = app('fake/compute', { auth: tokenEnd() });
+    const root = module('shop', {}, (h) => {
+      const authRef = h.provision(app('fake/compute', {}), { id: 'auth' });
+      h.provision(consumer, { id: 'consumer', deps: { auth: authRef } });
+      return {};
+    });
+    const graph = Load(root);
+    // The producer supplies NOTHING — which for a non-provisioned required
+    // param would now be a LowerError. Here the mint is the source.
+    const provisioned = new Map<string, unknown>([['consumer.auth', 'minted-value']]);
+
+    expect(buildConfig(consumer, 'consumer', graph, new Map(), provisioned)).toEqual({
       service: {},
       inputs: { auth: { token: 'minted-value' } },
     });
@@ -401,7 +518,18 @@ describe('lowering a module root — a single service', () => {
     ]);
     // The root is always a module — its own lowering has no outputs yet
     // (boundary ports are future work); see the two-service suite below.
-    expect(result).toEqual({ outputs: {} });
+    expect(result).toBeUndefined();
+  });
+
+  test('the lowering effect resolves to undefined — S1 kills the stack-output dump for good', () => {
+    const { config } = fakeExtension();
+    const root = singleServiceModule('fake/compute');
+
+    const result = Effect.runSync(
+      lowering(root, config, opts(svcBundles)) as Effect.Effect<undefined, LowerError>,
+    );
+
+    expect(result).toBe(undefined);
   });
 
   test('a module-provisioned resource lowers before the service that consumes it', () => {
@@ -477,7 +605,7 @@ describe('lowering a module root — a single service', () => {
 
     const result = run(lowering(root, config, opts(svcBundles)));
 
-    expect(result).toEqual({ outputs: {} });
+    expect(result).toBeUndefined();
   });
 
   test('missing a bundle for a single-service module is a LowerError naming it', () => {
@@ -739,7 +867,7 @@ describe('lowering a module root — a provisioned resource and two connected se
       }),
     );
 
-    expect(result).toEqual({ outputs: {} });
+    expect(result).toBeUndefined();
   });
 
   test('fails with LowerError naming the type and the known types on an unknown resource type', () => {
@@ -958,6 +1086,74 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
   });
 });
 
+describe('joinDeployment', () => {
+  // The Action's input carries addresses + plain entities only — never graph
+  // nodes, because the plan hashes the resolved input and a node holds
+  // functions and Standard Schemas. This join is what puts the node back,
+  // reading it from the graph the runner holds by closure.
+  const twoNodeGraph = () => {
+    const root = module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      h.provision(app('fake/compute', { db: dbEnd() }), { id: 'auth', deps: { db } });
+      return {};
+    });
+    return Load(root);
+  };
+
+  test('puts each entry back together with its graph node, preserving entry order', () => {
+    const graph = twoNodeGraph();
+    const entries = [
+      { address: 'db', entities: [{ kind: 'fake-db', id: 'db#1' }] },
+      { address: 'auth', entities: [{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }] },
+    ];
+
+    const results = joinDeployment(graph, entries);
+
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r.address)).toEqual(['db', 'auth']);
+    expect(results[0]?.node.name).toBe('db');
+    expect(results[1]?.node.name).toBe('test-service');
+    expect(results[1]?.entities).toEqual([{ kind: 'fake-compute', id: 'svc#1', url: 'https://a' }]);
+  });
+
+  test('skips an address the graph no longer holds — entries are data, the graph is truth', () => {
+    const graph = twoNodeGraph();
+    const entries = [
+      { address: 'db', entities: [] },
+      { address: 'ghost', entities: [{ kind: 'fake-compute', id: 'gone#1' }] },
+    ];
+
+    const results = joinDeployment(graph, entries);
+
+    expect(results.map((r) => r.address)).toEqual(['db']);
+  });
+
+  test('a node that reported no entities still yields a result — it deployed, it just published nothing', () => {
+    const graph = twoNodeGraph();
+
+    const results = joinDeployment(graph, [{ address: 'auth', entities: [] }]);
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.entities).toEqual([]);
+  });
+
+  test('no entries yields no results', () => {
+    expect(joinDeployment(twoNodeGraph(), [])).toEqual([]);
+  });
+});
+
+describe('lowering() — the report path', () => {
+  test('without opts.report, lowering declares no action and stays sync-runnable', () => {
+    const { config } = fakeExtension();
+    const root = singleServiceWithDbModule();
+
+    // The assertion IS that this runs synchronously: constructing the Action
+    // would drag alchemy's Stack context into the requirements and runSync
+    // would die. `run()` is Effect.runSync.
+    expect(run(lowering(root, config, opts(svcBundles)))).toBeUndefined();
+  });
+});
+
 describe('lower()', () => {
   test('builds an Alchemy Stack wrapping the same lowering', () => {
     // Unlike lowering(), lower() DOES merge the extensions' providers eagerly
@@ -1003,7 +1199,7 @@ describe('lowering a nested module — dotted addresses (H1: module-composition)
       ),
     );
 
-    expect(result).toEqual({ outputs: {} });
+    expect(result).toBeUndefined();
   });
 });
 

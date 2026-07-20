@@ -1,12 +1,12 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy. */
 
 import { isParamSource, type ServiceNode } from '@internal/core';
-import type { NodeDescriptor } from '@internal/core/config';
-import { blindCast } from '@internal/foundation/casts';
+import type { ServiceLowering } from '@internal/core/deploy';
 import * as Prisma from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import { paramBindingFor, paramName } from '../param.ts';
+import { provisionedEdges } from '../provisioned-edges.ts';
 import {
   configKey,
   encode,
@@ -14,10 +14,37 @@ import {
   paramEntries,
   secretPointerRows,
 } from '../serializer.ts';
-import { serviceKeyEdges, serviceKeyEnvName } from '../service-keys.ts';
 import { DEFAULT_REGION, projectIdOf, type ResolvedCloudOptions, validateName } from './shared.ts';
 
-export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+/**
+ * compute's provision → serialize/deploy handoff. `serviceId` is an
+ * `Output<string>`, not a `string`: the whole stack effect runs before Alchemy
+ * applies anything, so a yielded resource's attributes are lazy references
+ * that only resolve at apply time. It reaches `Deployment`'s
+ * `computeServiceId` unchanged — that prop takes `Input<string>`, which
+ * accepts the reference. `projectId` really is a `string`: it comes from the
+ * CLI's environment, not from a resource attribute.
+ */
+export interface ComputeProvisioned {
+  readonly serviceId: Output.Output<string>;
+  readonly projectId: string;
+}
+
+/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, and the resolved port it routes to. */
+export interface ComputeSerialized {
+  readonly environment: readonly Prisma.EnvironmentVariable[];
+  readonly port: number;
+}
+
+/**
+ * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
+ * registry in control.ts erases it on assignment anyway (method bivariance),
+ * but s3-store composes over these hooks and needs their P/S to stay visible.
+ * Annotating this `NodeDescriptor` would force s3-store to cast them back.
+ */
+export function computeDescriptor(
+  o: ResolvedCloudOptions,
+): { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized> {
   return {
     kind: 'service' as const,
     // The service as a PLACE inside the application's Project: the App,
@@ -25,15 +52,14 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
     provision: ({ id, application }) =>
       Effect.gen(function* () {
         validateName(id, 'service name (from provision id)');
+        const projectId = projectIdOf(application);
         const svc = yield* Prisma.ComputeService(`${id}-svc`, {
-          projectId: projectIdOf(application),
+          projectId,
           name: id,
           region: o.region ?? DEFAULT_REGION,
           ...(o.branchId !== undefined ? { branchId: o.branchId } : {}),
         });
-        return {
-          outputs: { serviceId: svc.id, projectId: application.outputs['projectId'] },
-        };
+        return { serviceId: svc.id, projectId };
       }),
 
     // Two channels of rows: PARAMS (service-own literals JSON-encoded; dependency
@@ -45,7 +71,7 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         const { address, node, graph } = ctx;
         const cls = o.branchId ? ('preview' as const) : ('production' as const);
         const branch = o.branchId !== undefined ? { branchId: o.branchId } : {};
-        const projectId = projectIdOf(provisioned);
+        const projectId = provisioned.projectId;
         const svc = node as ServiceNode;
         const records = [];
 
@@ -94,46 +120,57 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         // fills a provisioned param like any other, so there is no
         // consumer-side special case left to write here.
 
-        // Provider side: a service that serves anything gets an accepted-keys
-        // var, even with zero wired consumers — otherwise an unprovisioned
-        // var reads as "no enforcement" (serve.ts's pass-through state) and a
-        // zero-consumer RPC provider would accept every caller. A pure
-        // consumer (no `expose`) never serves, so it gets no such var.
+        // Provider side (ADR-0031). Driven by the PROVIDER, not by its edges:
+        // every registered reserved provider param is asked, even when this
+        // service has no inbound edge for that brand, because "no edges" and
+        // "no var" are not the same thing — an absent var reads as "never
+        // provisioned" (local dev, tests), so a deployed provider with zero
+        // wired consumers must still be able to emit a deny-everything value.
+        // Whether an empty set means deny-all or emit-nothing is that param's
+        // own call, so it decides and may return undefined to write no row at
+        // all. Compute never names a brand — it looks one up.
+        //
+        // The check is main's and stays: a service that exposes nothing can
+        // never be any binding's provider, so it gets no provider param rows.
         if (svc.expose !== undefined && Object.keys(svc.expose).length > 0) {
-          const inbound = serviceKeyEdges(graph).filter((e) => e.providerAddress === address);
-          // `ctx.provisioned` is typed `unknown` — core forwards a provisioner's
-          // ref without inspecting it. The filter only drops absent edges; the
-          // shape of what survives is asserted, not checked.
-          const keyOuts = inbound
-            .map((e) => ctx.provisioned.get(e.edgeId))
-            .filter((value) => value !== undefined)
-            .map((value) =>
-              blindCast<
-                Output.Output<string>,
-                "these refs are keyed by an edge serviceKeyEdges matched on RPC_PEER_KEY, and control.ts's serviceKeyProvisioner is the sole registrant of that brand — it returns a ServiceKey resource's `value`, an Output<string>"
-              >(value),
+          const refsByBrand = new Map<symbol, unknown[]>();
+          for (const edge of provisionedEdges(graph)) {
+            if (edge.providerAddress !== address) continue;
+            const ref = ctx.provisioned.get(edge.edgeId);
+            if (ref === undefined) continue;
+            const refs = refsByBrand.get(edge.brand) ?? [];
+            refs.push(ref);
+            refsByBrand.set(edge.brand, refs);
+          }
+          for (const [brand, entry] of o.providerParams) {
+            const raw = entry.value(refsByBrand.get(brand) ?? []);
+            if (raw === undefined) continue;
+            const key = configKey(address, { owner: 'service', name: entry.name });
+            // The value may still be an unresolved deploy-time Output (a
+            // minted key isn't known until Alchemy applies it) or already a
+            // plain value (e.g. a zero-refs deny-all literal) — either way it
+            // is JSON-encoded through the same `encode` a declared param's
+            // own literal takes, never a brand-invented format.
+            const value = Output.isOutput(raw)
+              ? Output.map(raw, (v) => encode('service', v))
+              : encode('service', raw);
+            records.push(
+              yield* Prisma.EnvironmentVariable(`${key}-var`, {
+                projectId,
+                key,
+                value,
+                class: cls,
+                ...branch,
+              }),
             );
-          // Zero consumers: no refs to resolve, so write the literal "[]"
-          // directly rather than calling Output.all() with no arguments.
-          const acceptedJson =
-            keyOuts.length > 0
-              ? Output.map(Output.all(...keyOuts), (vals) => JSON.stringify(vals))
-              : JSON.stringify([]);
-          const key = serviceKeyEnvName(address);
-          records.push(
-            yield* Prisma.EnvironmentVariable(`${key}-var`, {
-              projectId,
-              key,
-              value: acceptedJson,
-              class: cls,
-              ...branch,
-            }),
-          );
+          }
         }
 
-        // Carries the resolved port to deploy() via serialize's outputs; falls back to 3000 if unset.
+        // Carries the resolved port to deploy(); falls back to 3000 if unset.
+        // This is the only place the raw, untyped config is read, so it is the
+        // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
-        return { outputs: { environment: records, port } };
+        return { environment: records, port };
       }),
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
@@ -152,17 +189,28 @@ export function computeDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
-          computeServiceId: provisioned.outputs['serviceId'] as string,
+          computeServiceId: provisioned.serviceId,
           artifactPath: artifact.path,
           artifactHash: artifact.sha256,
-          environment: serialized.outputs['environment'] as readonly Prisma.EnvironmentVariable[],
+          environment: serialized.environment,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
-          port: typeof serialized.outputs['port'] === 'number' ? serialized.outputs['port'] : 3000,
+          port: serialized.port,
         });
+        // `url` IS published here: a Compute service's deployed URL is a
+        // public endpoint, and this descriptor is the only party that knows
+        // that. Both fields are still unresolved Output references at this
+        // point — apply resolves them before the report's runner sees them.
         return {
-          outputs: { url: deployment.deployedUrl, projectId: provisioned.outputs['projectId'] },
+          outputs: { url: deployment.deployedUrl, projectId: provisioned.projectId },
+          entities: [
+            {
+              kind: 'compute-service',
+              id: provisioned.serviceId,
+              url: deployment.deployedUrl,
+            },
+          ],
         };
       }),
-  };
+  } satisfies { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized>;
 }

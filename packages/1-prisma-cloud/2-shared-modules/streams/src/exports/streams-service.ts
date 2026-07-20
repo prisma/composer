@@ -1,27 +1,28 @@
 /**
- * The streams service node: a plain `compute` service (no lowering extension —
- * the contract binding is `{ url }`, which compute's deploy outputs already
- * carry). It declares the `store` dependency (`s3()`, the storage module's
- * port), the `apiKey` secret slot, and the `streams` expose. The deploy
- * bootstrap runs the default-exported bare node; the real wiring arrives
- * through serialized config at runtime — exactly like `storage-service.ts`.
+ * The streams service node: a plain `compute` service — the contract binding's
+ * `url` is a producer output compute's deploy already carries, and its
+ * `apiKey` is minted by the target's registered provisioner (ADR-0031), so
+ * nothing is left for a bespoke lowering to extend. It declares the `store`
+ * dependency (`s3()`, the storage module's port) and the `streams` expose; the
+ * bearer key reaches this service through the target's reserved provider
+ * param, not through a dependency. The deploy bootstrap runs the
+ * default-exported bare node; the real wiring arrives through serialized
+ * config at runtime — exactly like `storage-service.ts`.
  */
-import { secret } from '@internal/core';
 import node from '@internal/node';
 import { compute } from '@internal/prisma-cloud';
 import { s3 } from '@internal/storage';
-import { streamsContract } from '../contract.ts';
+import { streamsProviderContract } from '../contract.ts';
 
 export function streamsService() {
   return compute({
     name: 'streams',
     deps: { store: s3() },
-    secrets: { apiKey: secret() },
     build: node({
       module: new URL('./streams-service.mjs', import.meta.url).href,
       entry: './streams-entrypoint.mjs',
     }),
-    expose: { streams: streamsContract },
+    expose: { streams: streamsProviderContract },
   });
 }
 

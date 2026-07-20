@@ -5,10 +5,12 @@
  * with no retry. FT-5226 is intermittent (the edge proxy rejects a cold DB's
  * first connect while its upstream warms, but a fast connect occasionally slips
  * through), so a single connect can't tell "fixed" from "got lucky once". The
- * run is judged unanimously (see classifyColdConnectRun): any active rejection
- * → PASS (bug still present); ALL samples succeeding → FAIL, the signal to
- * remove `withConnectionRetry` (packages/compose-cloud/src/pg-connection.ts) and
- * this canary.
+ * run is judged unanimously (see classifyColdConnectRun) with a REQUIRED
+ * check's exits: any active rejection → exit 0 (bug still present); ALL
+ * samples succeeding → exit 1, the forcing signal to remove
+ * `withConnectionRetry` (packages/1-prisma-cloud/1-extensions/target/src/
+ * pg-connection.ts) and this canary; inconclusive → exit 0 with a CI warning
+ * annotation, so a flake never blocks unrelated PRs.
  */
 import pg from 'pg';
 import { deleteProjectDeep, type HttpCall, type ProjectRef } from './ci-cleanup-utils.ts';
@@ -139,7 +141,13 @@ try {
 
   const result = classifyColdConnectRun(samples);
   console.log(result.message);
-  process.exitCode = result.pass ? 0 : 1;
+  if (result.verdict === 'inconclusive') {
+    const detail = samples.map((sample, i) => `sample #${i}: ${sample}`).join('; ');
+    console.log(
+      `::warning title=Cold-connect canary (FT-5226) inconclusive::${result.message} [${detail}]`,
+    );
+  }
+  process.exitCode = result.verdict === 'bug-gone' ? 1 : 0;
 } finally {
   if (project) {
     console.log(`Deleting project "${project.name}" (${project.id})…`);

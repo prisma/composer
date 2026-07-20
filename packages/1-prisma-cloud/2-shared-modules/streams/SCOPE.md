@@ -26,29 +26,47 @@ root module
 ```ts
 interface StreamsConfig {
   readonly url: string;
+  readonly apiKey: string;
 }
 ```
 
-`streamsContract` (`kind: 'streams'`) with `durableStreams()` as the consumer
-dependency factory. The binding is the endpoint URL only; consumers build
-their own HTTP client against the Durable Streams protocol (ADR-0015):
+`streamsContract(defs)` (`kind: 'streams'`) names the streams a consumer
+transports — `streamsContract({ jobs: streamDef() })` — with
+`durableStreams(contract)` as the consumer dependency factory; bare
+`durableStreams()` (no contract) is retained for dynamic stream names. The
+wire binding is the endpoint URL plus the minted bearer key (ADR-0015);
+hydration hands a `durableStreams(contract)` consumer one `StreamHandle` per
+declared name (append/read/tail — wrapping `@durable-streams/client`), and
+hands a bare `durableStreams()` consumer a `StreamsClient` whose surface is
+`stream(name)`, returning the same kind of handle. The handle owns the
+stream's lifecycle: it creates the stream on first use (memoized) and heals
+a 404 by re-creating and retrying the failed operation once — no app code
+names a stream lifecycle event. Protocol surface:
 `PUT/POST/GET/HEAD/DELETE /v1/stream/{name}`, reads from an `offset`, live
 tail via `?live=sse` and `?live=long-poll`. No websockets — the server has
 none and the module adds none.
 
-**Auth is not in the binding.** The bearer key is a `secret()` slot on the
-module boundary; a consumer that calls the service declares its own secret
-slot and the root binds both to the same platform variable. Secret values
-never travel through framework config (ADR-0029), so the binding cannot
-carry the key.
+**Auth rides the binding.** The bearer key is neither an ADR-0029 secret nor
+a producer output: the `apiKey` connection param declares an ADR-0031
+**provisioning need** (brand + provisioner live in `@internal/prisma-cloud`'s
+`streams-keys.ts` — the target sits below this module, so the brand is
+imported downward). The target mints one value PER PROVIDER (the upstream
+server authenticates a single `API_KEY`), keeps it stable in deploy state,
+fills every consumer's param with it, and stores the same value on the streams
+service itself as a reserved provider param. Per-edge keys are later a
+provisioner-cardinality change plus an accepted-set provider param once
+upstream accepts a key set — no resource to add, no core change. A module
+with no consumers gets no key and refuses to boot.
 
 ## Config surface
 
 - **Typed params: none** (v1). The service keeps only the reserved `port`.
-- **Secrets: `apiKey`** — forwarded to the service, exported to the runtime
-  as `API_KEY` with `--auth-strategy api-key`. All endpoints including
-  `/health` require `Authorization: Bearer <key>` (verified acceptable on
-  Compute by open-chat's production deploy).
+- **Secrets: none.** The bearer key is provisioned by the target for the
+  `durableStreams()` binding and written to this service under a reserved
+  config key; the entrypoint reads it there and exports it to the runtime as
+  `API_KEY` with `--auth-strategy api-key`. All endpoints including `/health`
+  require `Authorization: Bearer <key>` (verified acceptable on Compute by
+  open-chat's production deploy).
 - **Deps: `store: s3()`** on the module boundary — the storage module's
   port. The entrypoint maps the `S3Config` binding onto the server's
   `DURABLE_STREAMS_R2_{BUCKET,ENDPOINT,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` env

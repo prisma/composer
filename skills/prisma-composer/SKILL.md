@@ -206,9 +206,26 @@ bun build src/server.ts --target=bun --outfile dist/server.mjs
 
 Two services in one package means two separate builds, one per entry — not one
 multi-entry build, which would split shared code into a chunk neither output
-contains. For Next.js, `next build` with `output: 'standalone'`
-is the whole build; `nextjs({ module, appDir })` tells the deploy where the
-app root is.
+contains.
+
+If the build emits a directory rather than one file — a server plus the client
+bundle, CSS and images it serves, as Bun's HTML import produces — name the
+directory with `dir` and the booting file inside it with `entry`:
+
+```ts
+build: node({ module: import.meta.url, dir: '../dist/server', entry: 'server.js' })
+```
+
+`dir` resolves relative to the service module; `entry` resolves inside `dir`
+and may be nested. Deploy copies the tree verbatim and boots the named file,
+so the server must resolve its siblings against `import.meta.url`, not the
+working directory. Nothing is inferred, and two rules bite: the tree must
+contain no symlinks (the packager rejects them — assembly fails and names the
+link), and `entry` must be a file inside `dir` (`../` is an error, not an
+escape). Omit `dir` for the single-file form.
+
+For Next.js, `next build` with `output: 'standalone'` is the whole build;
+`nextjs({ module, appDir })` tells the deploy where the app root is.
 
 Always build before deploying — `prisma-composer deploy` does not build for
 you.
@@ -226,7 +243,7 @@ import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control'
 
 export default defineConfig({
   extensions: [prismaCloud(), nodeBuild()],
-  state: () => prismaState(), // workspace-hosted deploy state, shared by every deployer
+  state: () => prismaState(), // deploy state, in its own database on the stage's branch
 });
 ```
 
@@ -525,6 +542,58 @@ fails rather than standing one up.
 ```sh
 turbo run build && prisma-composer deploy module.ts --stage pr-42
 ```
+
+### What a deploy prints
+
+A deploy ends by printing the app's own topology — authored names, the
+platform resource each became, and public URLs. The tree is the module
+structure (`auth.api` is the `api` service inside the `auth` module):
+
+```
+storefront-auth
+├─ auth
+│  └─ api   compute-service cps_abc123
+│           https://xyz.ewr.prisma.build
+├─ db       postgres-database db_def456
+└─ web      compute-service cps_ghi789
+            https://uvw.ewr.prisma.build
+```
+
+Read ids out of this rather than telling the user to go hunting in the
+Console. A URL appears only where the address is genuinely public — a compute
+service prints one, a database never does (it has a connection string, not a
+public endpoint), and a node whose product is secret material (an
+`s3-credentials` keypair) reports no resource line at all. A node that
+published nothing reportable still appears, marked `(no entities reported)`.
+
+Older deploys ended with a raw `{ outputs: {} }` blob from the deploy engine —
+always empty, never about the app. It is gone; nothing configured it and
+nothing consumed it.
+
+### The connection contract is checked at deploy
+
+A connection declares the values it needs by name, and the producer on the
+other end must supply them. A producer that omits one fails the deploy, naming
+the edge, the param, and what the producer did supply:
+
+```
+Connection input "auth.db" declares param "url", but its producer "db" did not
+supply it — the producer's outputs carry [host].
+```
+
+Fix it at whichever end is wrong: add the name to the outputs the producer
+returns from its lowering, or mark the param `optional` on the connection if absent is
+genuinely legal (the consumer then reads `undefined`).
+
+This is a deploy-time refusal, not a broken deploy — and it can appear on an
+app whose code didn't change. The gap used to pass silently: the value reached
+the consumer as `undefined`, went into its environment, and crashed *that*
+service at boot, blaming the reader instead of the supplier. Don't route around
+it by making the param optional unless absent really is valid; that reinstates
+the silent `undefined`.
+
+Only reachable if you authored the connection or the extension on one side —
+every shipped block supplies what it declares.
 
 ## Production pitfalls
 

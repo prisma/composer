@@ -9,17 +9,18 @@ export const toStateStoreError = (cause: unknown): StateStoreError =>
 
 /**
  * An operator-facing failure from the hosted-state bootstrap pipeline
- * (project/database discovery, connection mint, schema migration, or lock
+ * (branch/database discovery, connection creation, schema migration, or lock
  * acquisition) — what a deployer actually sees, instead of a raw Effect
  * defect.
  */
 export class HostedStateBootstrapError extends Data.TaggedError('HostedStateBootstrapError')<{
-  readonly workspaceId: string;
+  /** The container the state store lives in: a Project id, or `projectId/branchId` for a named stage. */
+  readonly container: string;
   readonly step: string;
   readonly reason: string;
 }> {
   override get message(): string {
-    return `hosted-state bootstrap failed for workspace ${this.workspaceId}: ${this.step} — ${this.reason}`;
+    return `hosted-state bootstrap failed in ${this.container}: ${this.step} — ${this.reason}`;
   }
 }
 
@@ -31,12 +32,12 @@ export class HostedStateBootstrapError extends Data.TaggedError('HostedStateBoot
  * into the operator-facing error.
  */
 export const hostedStateBootstrapError = (
-  workspaceId: string,
+  container: string,
   step: string,
   cause: unknown,
 ): HostedStateBootstrapError =>
   new HostedStateBootstrapError({
-    workspaceId,
+    container,
     step,
     reason: cause instanceof Error ? cause.message : String(cause),
   });

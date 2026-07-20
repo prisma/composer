@@ -9,15 +9,30 @@
  */
 
 import type { NodeDescriptor } from '@internal/core/config';
+import type { ServiceLowering } from '@internal/core/deploy';
 import * as Effect from 'effect/Effect';
-import { computeDescriptor } from './compute.ts';
+import { type ComputeProvisioned, type ComputeSerialized, computeDescriptor } from './compute.ts';
 import type { ResolvedCloudOptions } from './shared.ts';
 
+/**
+ * s3-store's serialize → deploy handoff: compute's, plus the four
+ * consumer-facing S3Config fields. Extending `ComputeSerialized` is legitimate
+ * because this descriptor COMPOSES compute's own hooks — same party, not an
+ * unrelated consumer reaching for a shared bag. The three added fields are
+ * `unknown` because that is what they honestly are: they come out of the
+ * untyped `Config`, whose values core cannot type.
+ */
+export interface S3StoreSerialized extends ComputeSerialized {
+  readonly bucket: unknown;
+  readonly accessKeyId: unknown;
+  readonly secretAccessKey: unknown;
+}
+
 export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+  // No `base.kind !== 'service'` check any more: computeDescriptor's return
+  // type says `kind: 'service'`, so the discriminant is a compile-time fact
+  // rather than something to re-test at runtime.
   const base = computeDescriptor(o);
-  if (base.kind !== 'service') {
-    throw new Error('computeDescriptor must be a service descriptor');
-  }
 
   return {
     kind: 'service' as const,
@@ -46,26 +61,30 @@ export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
           );
         }
         return {
-          outputs: {
-            ...serialized.outputs,
-            bucket,
-            accessKeyId: credentials['accessKeyId'],
-            secretAccessKey: credentials['secretAccessKey'],
-          },
+          ...serialized,
+          bucket,
+          accessKeyId: credentials['accessKeyId'],
+          secretAccessKey: credentials['secretAccessKey'],
         };
       }),
 
     deploy: (ctx, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const deployed = yield* base.deploy(ctx, provisioned, artifact, serialized);
+        // Compute's entities pass through untouched — an s3-store IS a
+        // compute service, and it became nothing else. Only the OUTPUTS gain
+        // the four S3Config fields a consumer's s3() slot resolves by name.
+        // Spreading `deployed` and overriding `outputs` (rather than rebuilding
+        // the result) is what keeps the entities' pass-through exact.
         return {
+          ...deployed,
           outputs: {
             ...deployed.outputs,
-            bucket: serialized.outputs['bucket'],
-            accessKeyId: serialized.outputs['accessKeyId'],
-            secretAccessKey: serialized.outputs['secretAccessKey'],
+            bucket: serialized.bucket,
+            accessKeyId: serialized.accessKeyId,
+            secretAccessKey: serialized.secretAccessKey,
           },
         };
       }),
-  };
+  } satisfies { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, S3StoreSerialized>;
 }

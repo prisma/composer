@@ -2,8 +2,8 @@
 
 ## Decision
 
-A deploy acquires a Postgres session advisory lock on the hosted state
-database ([ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md)),
+A deploy acquires a Postgres session advisory lock on the stage's hosted
+state database ([ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md)),
 keyed by the application being deployed (its stack name and stage), and holds
 it on a dedicated connection for the whole run. A second deploy of the same
 application fails immediately with an error naming what is locked; it never
@@ -94,6 +94,13 @@ operation's latency.
 - There is no queueing affordance yet. If waiting turns out to be the common
   want, a `--wait` flag can layer over the same lock without changing its
   semantics.
+- The store is per-stage
+  ([ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md)), so the
+  `(stack, stage)` key is redundant within any one database — kept anyway,
+  since removing it buys nothing — and deleting a stage's state database
+  severs the lock's session: an in-flight deploy of a stage being torn down
+  fails its lease check within the trust window instead of continuing to
+  provision into a deleted container.
 
 ## Alternatives considered
 
@@ -114,7 +121,9 @@ operation's latency.
 
 ## Related
 
-- [`ADR-0009`](ADR-0009-deploy-state-is-hosted-in-the-workspace.md) — the
-  shared store that makes the concurrent case real.
+- [`ADR-0034`](ADR-0034-deploy-state-lives-in-the-stage-branch.md) — the
+  per-stage hosted store this lock lives in (superseding
+  [`ADR-0009`](ADR-0009-deploy-state-is-hosted-in-the-workspace.md), whose
+  shared store made the concurrent case real).
 - [`../03-domain-model/layering.md`](../03-domain-model/layering.md) — where
   state and its guarantees sit in the provisioning plane.

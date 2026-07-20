@@ -4,8 +4,9 @@
 
 `Target.state` is a required field: every target constructs the Alchemy state
 layer its deploys use, and core resolves `opts.state ?? target.state()` with
-no fallback of its own. The Prisma Cloud target supplies the workspace-hosted
-store; a caller can still pin a specific layer per stack (CI, tests, air-gapped
+no fallback of its own. The Prisma Cloud target supplies the branch-hosted
+store ([ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md)); a
+caller can still pin a specific layer per stack (CI, tests, air-gapped
 work) through `opts.state`, which always wins.
 
 ## Reasoning

@@ -17,7 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServiceNode } from '@internal/core';
-import type { PrismaAppConfig } from '@internal/core/config';
+import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import type { ResolvedContainer } from '@internal/lowering';
 import { CliError } from '../cli-error.ts';
 import type { EnsureContainersInput } from '../ensure-containers.ts';
@@ -52,7 +52,7 @@ const originalCwd = process.cwd();
  * only validates coverage; the service SPI runs inside the (faked) alchemy
  * stack, and the build assemble is substituted by the runAssembler seam.
  */
-function fakeConfig(): PrismaAppConfig {
+function fakeConfig(hooks: Partial<Pick<ExtensionDescriptor, 'teardown'>> = {}): PrismaAppConfig {
   const unused = () => {
     throw new Error('descriptor body must not run inside run() — only coverage is checked');
   };
@@ -69,6 +69,7 @@ function fakeConfig(): PrismaAppConfig {
             deploy: unused,
           },
         },
+        ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
@@ -749,6 +750,159 @@ describe('run() — the full pipeline over fakes', () => {
 
       expect(status).toBe(0);
       expect(deleteCalls).toEqual([]);
+    });
+  });
+
+  describe('the extension teardown hook on destroy', () => {
+    test('destroy --stage staging runs teardown after alchemy and before the Branch goes', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const order: string[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({
+          teardown: async (input) => {
+            order.push(`teardown:${input.projectId}/${input.branchId}/${input.stage}`);
+          },
+        }),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => {
+          order.push('alchemy');
+          return 0;
+        },
+        deleteBranch: async () => {
+          order.push('branch');
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(order).toEqual(['alchemy', 'teardown:proj-fake/branch-staging/staging', 'branch']);
+    });
+
+    test('destroy --production runs teardown before the Project goes, naming no branch', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const order: string[] = [];
+
+      const status = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig({
+          teardown: async (input) => {
+            order.push(`teardown:${input.projectId}/${input.branchId ?? 'none'}`);
+          },
+        }),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => {
+          order.push('alchemy');
+          return 0;
+        },
+        deleteProject: async () => {
+          order.push('project');
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(order).toEqual(['alchemy', 'teardown:proj-fake/none', 'project']);
+    });
+
+    test('a throwing teardown aborts the destroy and the container is left alone', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let branchDeleted = false;
+
+      await expect(
+        run(['destroy', app.entryPath, '--stage', 'staging'], {
+          config: fakeConfig({
+            teardown: async () => {
+              throw new Error('teardown said no');
+            },
+          }),
+          runAssembler: fakeAssembler,
+          ensureContainers: fakeEnsureContainers,
+          alchemy: () => 0,
+          deleteBranch: async () => {
+            branchDeleted = true;
+          },
+        }),
+      ).rejects.toThrow(/teardown said no/);
+
+      expect(branchDeleted).toBe(false);
+    });
+
+    test('a teardown failure surfaces as a CliError', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+
+      await expect(
+        run(['destroy', app.entryPath, '--stage', 'staging'], {
+          config: fakeConfig({
+            teardown: async () => {
+              throw new Error('teardown said no');
+            },
+          }),
+          runAssembler: fakeAssembler,
+          ensureContainers: fakeEnsureContainers,
+          alchemy: () => 0,
+          deleteBranch: async () => {},
+        }),
+      ).rejects.toBeInstanceOf(CliError);
+    });
+
+    test('a FAILED alchemy destroy runs no teardown', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let torndown = false;
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({
+          teardown: async () => {
+            torndown = true;
+          },
+        }),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 1,
+        deleteBranch: async () => {},
+      });
+
+      expect(status).toBe(1);
+      expect(torndown).toBe(false);
+    });
+
+    test('deploy never runs teardown', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let torndown = false;
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({
+          teardown: async () => {
+            torndown = true;
+          },
+        }),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+      });
+
+      expect(status).toBe(0);
+      expect(torndown).toBe(false);
+    });
+
+    test('an extension without a teardown hook is skipped, and the destroy completes', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        ensureContainers: fakeEnsureContainers,
+        alchemy: () => 0,
+        deleteBranch: async () => {},
+      });
+
+      expect(status).toBe(0);
     });
   });
 });

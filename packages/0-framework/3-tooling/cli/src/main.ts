@@ -298,6 +298,24 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       );
       return status;
     }
+    // 9.5 Teardown (destroy only): each extension removes infrastructure it
+    // owns outside the stack — the destroy above may still have been reading
+    // it, and the containers below may refuse to go while it exists. What that
+    // infrastructure is, and whether losing it should fail the command, is the
+    // extension's business, not this module's.
+    if (args.command === 'destroy') {
+      for (const extension of config.extensions) {
+        if (extension.teardown === undefined) continue;
+        try {
+          await extension.teardown({ projectId, branchId, stage });
+        } catch (error) {
+          throw error instanceof CliError
+            ? error
+            : new CliError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
+
     if (args.command === 'destroy' && branchId !== undefined) {
       await (deps.deleteBranch ?? ((input) => deleteStageBranch(input)))({ branchId });
     } else if (args.command === 'destroy') {

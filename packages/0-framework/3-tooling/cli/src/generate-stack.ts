@@ -44,6 +44,14 @@ function renderOptions(input: StackFileInput): string {
   }
   lines.push('  },');
 
+  // Presentation is the CLI's, but it has to run where the result is: the
+  // report is invoked inside apply, in the alchemy child, which is this file's
+  // process — not the CLI's. Passing the hook through the generated file is
+  // what lets core stay presentation-free while the renderer still sees
+  // resolved values (ADR-0033). The callback takes the DeploymentResult
+  // directly — the app name rides inside it, so nothing else is threaded here.
+  lines.push('  report: deploymentReport,');
+
   return lines.join('\n');
 }
 
@@ -60,6 +68,7 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 import { lower } from '@prisma/composer/deploy';
+import { deploymentReport } from '@prisma/composer/report';
 import config from ${quote(configImport)};
 import app from ${quote(appImport)};
 

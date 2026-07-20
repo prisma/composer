@@ -430,6 +430,31 @@ bun build src/server.ts --target=bun --outfile dist/server.mjs
 Building two services from one package? Two separate builds, one per entry,
 so shared code lands in both.
 
+If your build emits a **directory** instead — a server plus the client bundle,
+CSS and images it serves at runtime, as Bun's HTML import produces — name the
+directory with `dir` and the file that boots inside it with `entry`:
+
+```ts
+build: node({ module: import.meta.url, dir: '../dist/server', entry: 'server.js' })
+```
+
+`dir` resolves relative to your service module, like `entry` does; `entry`
+then resolves inside `dir`, and may be nested (`server/start.js`). Deploy
+copies the whole tree verbatim and boots the file you named, so the server
+finds its siblings exactly where the build left them — resolve them against
+`import.meta.url`, not the working directory.
+
+Nothing is guessed: you name the directory and the entry, and that is what
+ships. Two things to know:
+
+- The tree must contain no symlinks — the platform's packager rejects them, so
+  assembly fails early and names the link rather than shipping a broken
+  artifact. Have your build emit real files.
+- `entry` must be a file inside `dir`. Pointing it outside with `../` is an
+  error, not an escape hatch — only `dir` is copied.
+
+Without `dir` you get the single-file form above, unchanged.
+
 **`nextjs` — a Next.js app.** `next build` with `output: 'standalone'` is the
 whole build; the adapter just needs to know where the app lives:
 

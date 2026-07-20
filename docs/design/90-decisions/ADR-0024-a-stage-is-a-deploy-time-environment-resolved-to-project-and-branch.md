@@ -29,7 +29,10 @@ The CLI resolves and ensures the two **containers** — the app's Project and th
 stage's Branch — before Alchemy runs; Alchemy provisions only the resources
 *within* them. The default stage (no `--stage`) is the production environment
 and lives at the Project level: phase 1 ensures only the Project, and no Branch
-is created.
+is created. That is an addressing statement, not a physical one: the platform
+attaches every resource to a Branch, and a create call without a `branchId`
+lands on the Project's **implicit default Branch** (every live Project owns
+one). The framework never creates or names that Branch.
 
 ## Rationale
 
@@ -85,7 +88,10 @@ derived from Branch presence, never from a role lookup.
   silently normalizing them.
 - **The default stage is the Project level.** No Branch is created and no
   Branch id threads through lowering. On a named stage, every resource the
-  target provisions carries the Branch id.
+  target provisions carries the Branch id. Resources provisioned without one
+  are attached by the platform to the Project's implicit default Branch; the
+  only framework code that resolves that Branch is the state layer
+  ([ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md)), read-only.
 - **Destroy names its target explicitly.** `prisma-composer destroy` requires
   `--stage <name>` or `--production`; a bare destroy is an error, so an omitted
   or mistyped stage can never silently tear down production. Destroying a named
@@ -116,8 +122,8 @@ derived from Branch presence, never from a role lookup.
 
 - [ADR-0023](ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) —
   App = one Project, Stage = Branch; the mapping this decision operationalizes.
-- [ADR-0009](ADR-0009-deploy-state-is-hosted-in-the-workspace.md) — the
-  workspace-hosted deploy state this keying lands in.
+- [ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md) — the
+  per-branch hosted deploy state this keying lands in.
 - [ADR-0003](ADR-0003-deploy-derives-everything-from-the-root-node.md) — deploy
   derives everything from the root node; app name → Project extends it.
 - `docs/design/03-domain-model/glossary.md` — Stage → Environment.

@@ -5,6 +5,16 @@
  *
  *   CONFORMANCE_TEST_URL=https://… STREAMS_API_KEY=… \
  *     pnpm vitest run -c vitest.conformance.deployed.config.ts
+ *
+ * STREAMS_API_KEY carries the deploy-minted bearer key — the harness-only
+ * route is reading it from deploy state, where it is stable. Pass the bare
+ * key: if you copied it out of the Compute console's
+ * `COMPOSER_<ADDR>_STREAMS_API_KEY` var, strip the surrounding quotes first —
+ * the stored row is JSON-encoded (ADR-0031).
+ *
+ * The suite is pinned to exact 0.2.3: later versions (0.3.x) test features
+ * @prisma/streams-server 0.1.11 does not ship, so a floating range fails
+ * conformance for reasons unrelated to this module.
  */
 import { runConformanceTests } from '@durable-streams/server-conformance-tests';
 

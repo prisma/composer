@@ -198,6 +198,8 @@ aggregate via the marker/ledger.
 
 The three layers the framework spans: what you write (the framework), how it's wired and
 provisioned (Alchemy/Effect), what runs (Prisma Cloud). See `layering.md`.
+The deploy report calls a thing on the hosting plane a **Deployment entity**
+(`DeployedEntity`).
 
 ### Lowering
 

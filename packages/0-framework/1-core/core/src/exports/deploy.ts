@@ -1,6 +1,6 @@
 /** Routes each graph node to its extension descriptor (by node.extension/type) and runs provision → serialize → package → deploy in dependency order. */
 
-import type { StackServices } from 'alchemy';
+import type { Input, StackServices } from 'alchemy';
 import * as Alchemy from 'alchemy';
 import type { State } from 'alchemy/State/State';
 import * as Effect from 'effect/Effect';
@@ -26,7 +26,7 @@ export type AlchemyStateLayer = Layer.Layer<State, never, StackServices>;
  * SPI calls via LowerContext.application.
  */
 export interface ApplicationDescriptor {
-  provision(ctx: LowerContext): Effect.Effect<LoweredNode, unknown, unknown>;
+  provision(ctx: LowerContext): Effect.Effect<unknown, unknown, unknown>;
 }
 
 /**
@@ -50,33 +50,40 @@ export interface ProvisionerDescriptor {
   provision(edge: ProvisionEdge): Effect.Effect<unknown, unknown, unknown>;
 }
 
-/** The phased service SPI — the seam between the phases belongs to CORE. */
-export interface ServiceLowering {
+/**
+ * The phased service SPI. `P` and `S` are the descriptor's OWN intra-node
+ * handoff types — provision's product consumed by serialize/deploy, and
+ * serialize's product consumed by deploy. Core threads them through without
+ * inspection; only the descriptor that writes them reads them.
+ *
+ * Method syntax (not property-arrow) is required: the heterogeneous
+ * descriptor registry (`NodeDescriptor`) assigns concrete descriptors to
+ * this interface's `unknown` defaults through TypeScript's method
+ * bivariance — a property-arrow form is checked contravariantly and breaks
+ * that assignment.
+ */
+export interface ServiceLowering<P = unknown, S = unknown> {
   /** Makes the platform-specific thing that will host the service — identity-bearing infrastructure only, no code runs. */
-  provision(ctx: LowerContext): Effect.Effect<LoweredNode, unknown, unknown>;
+  provision(ctx: LowerContext): Effect.Effect<P, unknown, unknown>;
   /**
    * Encodes the typed Config into the service's runtime environment. Boot-side
    * deserialize reverses it through the same serializer. Returns the env-var
    * records so `deploy` can reference them.
    */
-  serialize(
-    ctx: LowerContext,
-    provisioned: LoweredNode,
-    config: Config,
-  ): Effect.Effect<LoweredNode, unknown, unknown>;
+  serialize(ctx: LowerContext, provisioned: P, config: Config): Effect.Effect<S, unknown, unknown>;
   /**
    * Prints the bootstrap and assembles the deployable artifact from the
    * app-built bundle. Must be byte-deterministic: an unchanged service noops
    * on redeploy.
    */
   package(ctx: LowerContext, input: PackageInput): Effect.Effect<Artifact, unknown, unknown>;
-  /** Ships the packaged artifact into the provisioned thing and runs it. Returns the trustworthy URL. */
+  /** Ships the packaged artifact into the provisioned thing and runs it. Returns the node's outputs for dependents, plus the entities it became on the deployment target. */
   deploy(
     ctx: LowerContext,
-    provisioned: LoweredNode,
+    provisioned: P,
     artifact: Artifact,
-    serialized: LoweredNode,
-  ): Effect.Effect<LoweredNode, unknown, unknown>;
+    serialized: S,
+  ): Effect.Effect<LoweredResult, unknown, unknown>;
 }
 
 /** Input to an extension's package() step: the built bundle and the node's graph address. */
@@ -88,7 +95,7 @@ export interface PackageInput {
 }
 
 /** One node's realization. Runs inside the Alchemy stack effect. */
-export type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredNode, unknown, unknown>;
+export type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredResult, unknown, unknown>;
 
 export interface LowerContext {
   readonly id: NodeId;
@@ -101,20 +108,74 @@ export interface LowerContext {
   readonly node: ServiceNode | ResourceNode;
   readonly graph: Graph;
   readonly opts: LowerOptions;
-  /** The owning extension's application hook outputs (`{ outputs: {} }` when it declares none). */
-  readonly application: LoweredNode;
+  /**
+   * The owning extension's application hook product; `undefined` when the
+   * extension declares no hook. Core never reads it; the extension narrows
+   * it with its own type guard.
+   */
+  readonly application: unknown;
   /** Already-lowered deps (topo order). */
-  readonly lowered: ReadonlyMap<NodeId, LoweredNode>;
+  readonly lowered: ReadonlyMap<NodeId, Outputs>;
   /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
   readonly provisioned: ReadonlyMap<string, unknown>;
 }
 
 /**
- * What a lowering hands downstream — e.g. a deployed URL a later node's env
- * wiring consumes. The inter-node config-wiring hook for Connections.
+ * The values a node provides to its dependents — what a consumer's declared
+ * connection params resolve against (buildConfig reads them by param name).
+ * Name-keyed and unknown-valued of necessity: core cannot know extension
+ * types, and which producer feeds which consumer is decided by the user's
+ * graph at runtime. The connection declaration is the contract.
  */
-export interface LoweredNode {
-  readonly outputs: Readonly<Record<string, unknown>>;
+export type Outputs = Readonly<Record<string, unknown>>;
+
+/**
+ * One thing a node became on the deployment target, RESOLVED — what the report
+ * consumer sees. The descriptor names it; core never infers meaning from it.
+ * `url` is present ONLY when the descriptor declares the address publicly
+ * reachable — a connection string is never a `url`.
+ *
+ * A descriptor constructing one holds `svc.id` / `deployment.deployedUrl` —
+ * `Output<T>` references, not values, because the stack effect runs before
+ * Alchemy applies anything. So construction sites traffic in
+ * `Input<DeployedEntity>` (Alchemy's own idiom for "this shape, fields possibly
+ * unresolved"); apply resolves it before any reader sees it.
+ */
+export interface DeployedEntity {
+  readonly kind: string;
+  readonly id: string;
+  readonly url?: string;
+  readonly details?: Readonly<Record<string, string>>;
+}
+
+/**
+ * What a node's final lowering phase produces: outputs for dependents,
+ * entities for reporting.
+ *
+ * `entities` is REQUIRED, not optional. "This node became nothing reportable
+ * on the deployment target" is a claim, and an optional field lets a
+ * descriptor make it by saying nothing at all — no error, no type complaint,
+ * no failing test. That is the shared bag's sin in miniature (ADR-0033): a
+ * claim made anonymously, with nothing recording that a claim was made. `[]`
+ * costs one token and puts the assertion on the record where a reviewer can
+ * see it.
+ */
+export interface LoweredResult {
+  readonly outputs: Outputs;
+  readonly entities: readonly Input<DeployedEntity>[];
+}
+
+/** What one graph node became — in-process only (it holds the node itself, so it never crosses the stack boundary). */
+export interface DeployedNode {
+  readonly address: string;
+  readonly node: ServiceNode | ResourceNode;
+  readonly entities: readonly DeployedEntity[];
+}
+
+/** The result of the Deploy operation: the app and every node it deployed, in topo order. */
+export interface DeploymentResult {
+  readonly app: string;
+  readonly nodes: readonly DeployedNode[];
 }
 
 export interface LowerOptions {
@@ -126,6 +187,14 @@ export interface LowerOptions {
   readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
+  /**
+   * Invoked once per deploy, during apply, with the Deploy operation's result
+   * — the app and every node it deployed, resolved, in topo order.
+   * Presentation belongs to the caller (the CLI wires its renderer here);
+   * core never formats. Absent means no report is assembled and no Action is
+   * declared at all.
+   */
+  readonly report?: (result: DeploymentResult) => void;
 }
 
 /** A build descriptor's normalized output: the produced bundle dir plus the app's runnable entry within it. */
@@ -222,12 +291,16 @@ function resolveParam(
  * it, the producer hands nothing over. The service's own params resolve via
  * `resolveParam` (provision-time binding, then default, then loud
  * unbound-required failure).
+ *
+ * This is also where the connection contract is enforced: a producer that fails to
+ * supply a required param its consumer's connection declares fails the deploy
+ * here, naming the edge, rather than reaching the consumer as `undefined`.
  */
 export function buildConfig(
   node: ServiceNode,
   id: NodeId,
   graph: Graph,
-  lowered: ReadonlyMap<NodeId, LoweredNode>,
+  lowered: ReadonlyMap<NodeId, Outputs>,
   provisioned: ReadonlyMap<string, unknown>,
 ): Config {
   const inputs: Record<string, Record<string, unknown>> = {};
@@ -236,13 +309,42 @@ export function buildConfig(
     const edge = graph.edges.find(
       (e) => e.to === id && e.input === inputName && e.kind === 'dependency',
     );
-    const producedOutputs = edge !== undefined ? (lowered.get(edge.from)?.outputs ?? {}) : {};
+    const producedOutputs = edge !== undefined ? (lowered.get(edge.from) ?? {}) : {};
     const values: Record<string, unknown> = {};
     for (const [name, param] of Object.entries(inputNode.connection.params)) {
-      values[name] =
-        param.provision !== undefined
-          ? provisioned.get(`${id}.${inputName}`)
-          : producedOutputs[name];
+      // ADR-0031: the framework mints this value; the producer hands nothing
+      // over, so the connection contract below doesn't apply to it.
+      if (param.provision !== undefined) {
+        values[name] = provisioned.get(`${id}.${inputName}`);
+        continue;
+      }
+
+      const value = producedOutputs[name];
+      // The connection contract: the consumer's connection declaration says what it
+      // needs, and the producer must supply it (ADR-0033). Under-delivery used
+      // to reach the consumer as a silent `undefined`, serialized into its
+      // environment and failing at ITS boot — far from the mistake.
+      //
+      // PRESENCE ONLY — deliberately not schema-validated, and it cannot be.
+      // At lowering time these values are routinely alchemy `Output` proxies
+      // (e.g. `deployment.deployedUrl`): lazy symbolic references that only
+      // resolve when Alchemy applies the stack, which is strictly after this
+      // whole effect runs. No Standard Schema can validate one. Checking that
+      // a value EXISTS is the most that can honestly be checked here.
+      //
+      // `=== undefined` (not `name in producedOutputs`): a producer explicitly
+      // writing `undefined` has supplied nothing, matching resolveParam.
+      // `edge === undefined` is left alone — with no producer there is nobody
+      // to hold to the contract; an unwired input is a graph concern.
+      if (value === undefined && param.optional !== true && edge !== undefined) {
+        throw new LowerError(
+          `Connection input "${id}.${inputName}" declares param "${name}", but its producer ` +
+            `"${edge.from}" did not supply it — the producer's outputs carry ` +
+            `[${Object.keys(producedOutputs).join(', ') || 'nothing'}]. Add "${name}" to the ` +
+            'outputs the producer returns from its lowering, or declare the param optional on the connection.',
+        );
+      }
+      values[name] = value;
     }
     inputs[inputName] = values;
   }
@@ -257,6 +359,33 @@ export function buildConfig(
   }
 
   return { service, inputs };
+}
+
+/**
+ * Joins resolved report entries back to their graph nodes — the last step of a
+ * deploy report, run inside the Action with apply's resolved values.
+ *
+ * The entries cross Alchemy's action-input boundary, so they carry addresses
+ * and plain entities only; the graph is held by closure on this side. That
+ * split is why this join exists at all, and it is what keeps functions and
+ * Standard Schemas (which a node carries, and which the plan's input hash
+ * would have to serialize) out of the input.
+ *
+ * Skips an address the graph no longer holds: entries are data, the graph is
+ * truth.
+ */
+export function joinDeployment(
+  graph: Graph,
+  entries: readonly { address: string; entities: readonly DeployedEntity[] }[],
+): readonly DeployedNode[] {
+  const nodes: DeployedNode[] = [];
+  for (const entry of entries) {
+    const found = graph.nodes.find((n) => n.id === entry.address);
+    const node = found?.node;
+    if (node === undefined || (node.kind !== 'service' && node.kind !== 'resource')) continue;
+    nodes.push({ address: entry.address, node, entities: entry.entities });
+  }
+  return nodes;
 }
 
 function missingBundleError(id: NodeId): LowerError {
@@ -384,6 +513,23 @@ export function mergedProviders(config: PrismaAppConfig): Layer.Layer<never> {
 }
 
 /**
+ * The deployment-report Action's input, declared in RESOLVED terms — this is
+ * what the runner receives. The call site passes `Input<DeployedEntity>`s,
+ * whose fields may still be `Output` references; alchemy's deep `Input<>`
+ * mapping on the input position accepts them and apply resolves them before
+ * the runner runs. Addresses and entities only — never graph nodes (see
+ * joinDeployment).
+ */
+interface ReportEntry {
+  readonly address: string;
+  readonly entities: readonly DeployedEntity[];
+}
+interface ReportInput {
+  readonly nonce: number;
+  readonly entries: readonly ReportEntry[];
+}
+
+/**
  * Composable form for mixed stacks: hand-wired Alchemy resources alongside Prisma App nodes in one stack effect.
  * Fails with LowerError or whatever an extension's lowering raises — the error type is open.
  */
@@ -391,11 +537,16 @@ export function lowering(
   root: ModuleNode,
   config: PrismaAppConfig,
   opts: LowerOptions,
-): Effect.Effect<LoweredNode, LowerError, unknown> {
+): Effect.Effect<undefined, LowerError, unknown> {
   return Effect.gen(function* () {
     const graph = Load(root, { id: opts.name });
     const extensions = yield* extensionsById(config);
-    const lowered = new Map<NodeId, LoweredNode>();
+    const lowered = new Map<NodeId, Outputs>();
+    // Each node's reported entities, in topo order — the loop is the only
+    // party that holds both the node's identity and what it became. Collected
+    // unconditionally (it is a cheap array); only the Action below is
+    // conditional.
+    const entries: { address: string; entities: readonly Input<DeployedEntity>[] }[] = [];
     // ADR-0031: every provisioned param value minted this lowering, keyed by
     // edge id. Populated by the provision phase below (after the application
     // hooks, before any node), then threaded read-only through every ctx and
@@ -405,8 +556,7 @@ export function lowering(
     // Each extension's application hook runs ONCE, before any node, in config
     // order — its outputs reach that extension's own nodes via ctx.application
     // (the same threading the one-target model had).
-    const noApplication: LoweredNode = { outputs: {} };
-    const applications = new Map<string, LoweredNode>();
+    const applications = new Map<string, unknown>();
     for (const descriptor of config.extensions) {
       if (descriptor.application === undefined) continue;
       const appCtx: LowerContext = {
@@ -416,7 +566,7 @@ export function lowering(
         node: graph.root.node as never,
         graph,
         opts,
-        application: noApplication,
+        application: undefined,
         lowered,
         provisioned,
       };
@@ -492,7 +642,7 @@ export function lowering(
         node: node as ServiceNode | ResourceNode,
         graph,
         opts,
-        application: applications.get(node.extension) ?? noApplication,
+        application: applications.get(node.extension),
         lowered,
         provisioned,
       };
@@ -500,7 +650,9 @@ export function lowering(
       const descriptor = yield* descriptorFor(extensions, node, id);
 
       if (descriptor.kind === 'resource') {
-        lowered.set(id, yield* descriptor(ctx));
+        const result = yield* descriptor(ctx);
+        lowered.set(id, result.outputs);
+        entries.push({ address: id, entities: result.entities });
         continue;
       }
       if (descriptor.kind !== 'service') {
@@ -526,11 +678,38 @@ export function lowering(
         assembled: { dir: bundle.dir, entry: bundle.entry },
         address: id,
       });
-      lowered.set(id, yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized));
+      const result = yield* descriptor.deploy(ctx, provisionedNode, artifact, serialized);
+      lowered.set(id, result.outputs);
+      entries.push({ address: id, entities: result.entities });
     }
 
-    return { outputs: {} };
-  }) as Effect.Effect<LoweredNode, LowerError, unknown>;
+    // The report is assembled ONLY when a caller asked for one. This
+    // conditionality is required, not an optimization: without it every
+    // `lowering()` call would declare an Action and drag alchemy's Stack
+    // context into core's sync unit tests.
+    if (opts.report !== undefined) {
+      const report = opts.report;
+      const ReportAction = Alchemy.Action('composer-deployment-report', (input: ReportInput) =>
+        Effect.sync(() => {
+          // `input` arrives RESOLVED — apply evaluates the action's input
+          // against its tracker before invoking the runner, so the ids and
+          // URLs the descriptors handed over as Output references are real
+          // strings here. The graph rides in on the closure, never in the
+          // input: the plan hashes the resolved input, and a node carries
+          // functions and Standard Schemas.
+          report({ app: opts.name, nodes: joinDeployment(graph, input.entries) });
+        }),
+      );
+      // `Date.now()` forces the report to run on an otherwise unchanged
+      // redeploy: alchemy noops an action whose resolved input hashes to what
+      // the last run persisted. A nonce is legitimate here because this input
+      // triggers a report — it is not artifact input, which determinism rules
+      // govern.
+      yield* ReportAction({ nonce: Date.now(), entries });
+    }
+
+    return undefined;
+  }) as Effect.Effect<undefined, LowerError, unknown>;
 }
 
 /**
@@ -541,10 +720,7 @@ export function lowering(
 export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions) {
   // A LowerError at deploy is fatal; orDie moves it off the error channel to
   // match what Alchemy.Stack accepts.
-  const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<
-    LoweredNode,
-    never
-  >;
+  const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
 
   return Alchemy.Stack(
     opts.name,

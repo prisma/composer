@@ -1,5 +1,10 @@
 # ADR-0009: Deploy state is hosted in the workspace, not in local files
 
+> Superseded by
+> [ADR-0034](ADR-0034-deploy-state-lives-in-the-stage-branch.md): state is
+> still hosted, but lives in a framework-owned database in each stage's
+> Branch, not in a workspace-level project.
+
 ## Decision
 
 Deploy state — the provisioning engine's record of what exists in the cloud —

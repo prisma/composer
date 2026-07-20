@@ -1,13 +1,13 @@
 /**
  * The `streams()` module Loads into a wired graph: its `store` boundary dep
- * forwards into the compute service, its `apiKey` secret slot binds through,
- * and a consumer's `durableStreams()` slot resolves to the service's
- * `streams` port. Mirrors storage's module.test.ts.
+ * forwards into the compute service, and a consumer's `durableStreams()` slot
+ * resolves to the service's `streams` port carrying the provisioning need for
+ * the bearer key. Mirrors storage's module.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
-import { Load, module, secretSource } from '@internal/core';
+import { Load, module } from '@internal/core';
 import node from '@internal/node';
-import { compute } from '@internal/prisma-cloud';
+import { compute, STREAMS_API_KEY } from '@internal/prisma-cloud';
 import { storage } from '@internal/storage';
 import { durableStreams } from '../contract.ts';
 import { streams } from '../streams-module.ts';
@@ -21,7 +21,6 @@ const root = () =>
     const events = provision(streams(), {
       id: 'streams',
       deps: { store: store.store },
-      secrets: { apiKey: secretSource('STREAMS_API_KEY') },
     });
     provision(consumer(), { id: 'consumer', deps: { events: events.streams } });
     return {};
@@ -45,6 +44,18 @@ describe('streams()', () => {
     });
   });
 
+  test("the consumer's apiKey param carries the streams provisioning need — nothing is wired for it", () => {
+    const graph = Load(root());
+    const consumerNode = graph.nodes.find((n) => n.id === 'consumer')?.node;
+    if (consumerNode === undefined || consumerNode.kind !== 'service') {
+      throw new Error('expected the consumer service');
+    }
+    const apiKey = consumerNode.inputs['events']?.connection.params['apiKey'];
+    expect(apiKey?.provision?.brand).toBe(STREAMS_API_KEY);
+    // The module owns no credentials resource — the key is the target's to mint.
+    expect(graph.nodes.map((n) => n.id)).not.toContain('streams.credentials');
+  });
+
   test("a consumer's durableStreams() slot resolves to the module's streams port (the service)", () => {
     const graph = Load(root());
     expect(graph.edges).toContainEqual({
@@ -55,11 +66,9 @@ describe('streams()', () => {
     });
   });
 
-  test('the apiKey secret binds to the service at its full address', () => {
+  test('no secret slot remains anywhere in the graph', () => {
     const graph = Load(root());
-    expect(graph.secrets).toContainEqual(
-      expect.objectContaining({ serviceAddress: 'streams.service', slot: 'apiKey' }),
-    );
+    expect(graph.secrets).toEqual([]);
   });
 
   test('opts.name customizes the module', () => {
@@ -68,7 +77,6 @@ describe('streams()', () => {
       provision(streams({ name: 'events' }), {
         id: 'events',
         deps: { store: store.store },
-        secrets: { apiKey: secretSource('STREAMS_API_KEY') },
       });
       return {};
     });

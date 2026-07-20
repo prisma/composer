@@ -6,6 +6,10 @@
  * and confirm an unauthenticated request is rejected.
  *
  *   STREAMS_URL=https://… STREAMS_API_KEY=… bun scripts/smoke.ts
+ *
+ * STREAMS_API_KEY is the bare bearer key — if you copied it out of the
+ * Compute console's `COMPOSER_<ADDR>_STREAMS_API_KEY` var, strip the
+ * surrounding quotes first: the stored row is JSON-encoded (ADR-0031).
  */
 import { blindCast } from '@prisma/composer/casts';
 

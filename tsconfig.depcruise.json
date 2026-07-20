@@ -3,77 +3,109 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@internal/foundation/casts": ["./packages/0-framework/0-foundation/foundation/src/casts.ts"],
+      "@internal/foundation/casts": [
+        "./packages/0-framework/0-foundation/foundation/src/exports/casts.ts"
+      ],
       "@internal/foundation/assertions": [
-        "./packages/0-framework/0-foundation/foundation/src/assertions.ts"
+        "./packages/0-framework/0-foundation/foundation/src/exports/assertions.ts"
+      ],
+      "@internal/foundation/secret": [
+        "./packages/0-framework/0-foundation/foundation/src/exports/secret.ts"
       ],
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
-      "@internal/core/config": ["./packages/0-framework/1-core/core/src/app-config.ts"],
-      "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/deploy.ts"],
-      "@internal/core/testing": ["./packages/0-framework/1-core/core/src/testing.ts"],
-      "@internal/core": ["./packages/0-framework/1-core/core/src/index.ts"],
-      "@internal/rpc": ["./packages/0-framework/2-authoring/rpc/src/index.ts"],
-      "@internal/node/control": ["./packages/0-framework/2-authoring/node/src/control.ts"],
-      "@internal/node": ["./packages/0-framework/2-authoring/node/src/index.ts"],
-      "@internal/nextjs/control": ["./packages/0-framework/2-authoring/nextjs/src/control.ts"],
-      "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/index.ts"],
-      "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/index.ts"],
+      "@internal/core/config": ["./packages/0-framework/1-core/core/src/exports/app-config.ts"],
+      "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/exports/deploy.ts"],
+      "@internal/core/testing": ["./packages/0-framework/1-core/core/src/exports/testing.ts"],
+      "@internal/core": ["./packages/0-framework/1-core/core/src/exports/index.ts"],
+      "@internal/rpc": ["./packages/0-framework/2-authoring/rpc/src/exports/index.ts"],
+      "@internal/node/control": ["./packages/0-framework/2-authoring/node/src/exports/control.ts"],
+      "@internal/node": ["./packages/0-framework/2-authoring/node/src/exports/index.ts"],
+      "@internal/nextjs/control": [
+        "./packages/0-framework/2-authoring/nextjs/src/exports/control.ts"
+      ],
+      "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/exports/index.ts"],
+      "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/exports/index.ts"],
       "@internal/cli/bin": ["./packages/0-framework/3-tooling/cli/src/bin.ts"],
-      "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/index.ts"],
+      "@internal/cli/report": [
+        "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
+      ],
+      "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/exports/index.ts"],
       "@internal/lowering/postgres": [
-        "./packages/1-prisma-cloud/0-lowering/lowering/src/postgres/index.ts"
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"
       ],
       "@internal/lowering/compute": [
-        "./packages/1-prisma-cloud/0-lowering/lowering/src/compute/index.ts"
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/compute.ts"
       ],
       "@internal/lowering/state": [
-        "./packages/1-prisma-cloud/0-lowering/lowering/src/state/index.ts"
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/state.ts"
       ],
-      "@internal/lowering": ["./packages/1-prisma-cloud/0-lowering/lowering/src/index.ts"],
+      "@internal/lowering": ["./packages/1-prisma-cloud/0-lowering/lowering/src/exports/index.ts"],
       "@internal/prisma-cloud/control": [
-        "./packages/1-prisma-cloud/1-extensions/target/src/control.ts"
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/control.ts"
       ],
       "@internal/prisma-cloud/prisma-next": [
-        "./packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts"
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/prisma-next.ts"
       ],
       "@internal/prisma-cloud/testing": [
-        "./packages/1-prisma-cloud/1-extensions/target/src/testing.ts"
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/testing.ts"
       ],
-      "@internal/prisma-cloud": ["./packages/1-prisma-cloud/1-extensions/target/src/index.ts"],
+      "@internal/prisma-cloud/connection": [
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/pg-connection.ts"
+      ],
+      "@internal/prisma-cloud": [
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/index.ts"
+      ],
+      "@internal/storage/testing": [
+        "./packages/1-prisma-cloud/2-shared-modules/storage/src/exports/testing.ts"
+      ],
+      "@internal/storage": [
+        "./packages/1-prisma-cloud/2-shared-modules/storage/src/exports/index.ts"
+      ],
+      "@internal/streams/testing": [
+        "./packages/1-prisma-cloud/2-shared-modules/streams/src/exports/testing.ts"
+      ],
+      "@internal/streams": [
+        "./packages/1-prisma-cloud/2-shared-modules/streams/src/exports/index.ts"
+      ],
       "@internal/cron/scheduler-service": [
-        "./packages/1-prisma-cloud/2-shared-modules/cron/src/scheduler-service.ts"
+        "./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/scheduler-service.ts"
       ],
       "@internal/cron/scheduler-entrypoint": [
-        "./packages/1-prisma-cloud/2-shared-modules/cron/src/scheduler-entrypoint.ts"
+        "./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/scheduler-entrypoint.ts"
       ],
-      "@internal/cron": ["./packages/1-prisma-cloud/2-shared-modules/cron/src/index.ts"],
-      "@prisma/composer/config": ["./packages/9-public/composer/src/config.ts"],
-      "@prisma/composer/deploy": ["./packages/9-public/composer/src/deploy.ts"],
-      "@prisma/composer/testing": ["./packages/9-public/composer/src/testing.ts"],
-      "@prisma/composer/casts": ["./packages/9-public/composer/src/casts.ts"],
-      "@prisma/composer/assertions": ["./packages/9-public/composer/src/assertions.ts"],
-      "@prisma/composer/rpc": ["./packages/9-public/composer/src/rpc.ts"],
-      "@prisma/composer/node/control": ["./packages/9-public/composer/src/node-control.ts"],
-      "@prisma/composer/node": ["./packages/9-public/composer/src/node.ts"],
-      "@prisma/composer/nextjs/control": ["./packages/9-public/composer/src/nextjs-control.ts"],
-      "@prisma/composer/nextjs": ["./packages/9-public/composer/src/nextjs.ts"],
+      "@internal/cron": ["./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/index.ts"],
+      "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
+      "@prisma/composer/deploy": ["./packages/9-public/composer/src/exports/deploy.ts"],
+      "@prisma/composer/testing": ["./packages/9-public/composer/src/exports/testing.ts"],
+      "@prisma/composer/casts": ["./packages/9-public/composer/src/exports/casts.ts"],
+      "@prisma/composer/assertions": ["./packages/9-public/composer/src/exports/assertions.ts"],
+      "@prisma/composer/rpc": ["./packages/9-public/composer/src/exports/rpc.ts"],
+      "@prisma/composer/node/control": ["./packages/9-public/composer/src/exports/node-control.ts"],
+      "@prisma/composer/node": ["./packages/9-public/composer/src/exports/node.ts"],
+      "@prisma/composer/nextjs/control": [
+        "./packages/9-public/composer/src/exports/nextjs-control.ts"
+      ],
+      "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
       "@prisma/composer-prisma-cloud/control": [
-        "./packages/9-public/composer-prisma-cloud/src/control.ts"
+        "./packages/9-public/composer-prisma-cloud/src/exports/control.ts"
       ],
       "@prisma/composer-prisma-cloud/prisma-next": [
-        "./packages/9-public/composer-prisma-cloud/src/prisma-next.ts"
+        "./packages/9-public/composer-prisma-cloud/src/exports/prisma-next.ts"
       ],
       "@prisma/composer-prisma-cloud/testing": [
-        "./packages/9-public/composer-prisma-cloud/src/testing.ts"
+        "./packages/9-public/composer-prisma-cloud/src/exports/testing.ts"
       ],
       "@prisma/composer-prisma-cloud/cron/scheduler-entrypoint": [
-        "./packages/1-prisma-cloud/2-shared-modules/cron/src/scheduler-entrypoint.ts"
+        "./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/scheduler-entrypoint.ts"
       ],
       "@prisma/composer-prisma-cloud/cron": [
-        "./packages/9-public/composer-prisma-cloud/src/cron.ts"
+        "./packages/9-public/composer-prisma-cloud/src/exports/cron.ts"
       ],
-      "@prisma/composer-prisma-cloud": ["./packages/9-public/composer-prisma-cloud/src/index.ts"],
-      "@prisma/composer": ["./packages/9-public/composer/src/index.ts"]
+      "@prisma/composer-prisma-cloud": [
+        "./packages/9-public/composer-prisma-cloud/src/exports/index.ts"
+      ],
+      "@prisma/composer/report": ["./packages/9-public/composer/src/exports/report.ts"],
+      "@prisma/composer": ["./packages/9-public/composer/src/exports/index.ts"]
     }
   }
 }

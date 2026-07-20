@@ -14,7 +14,7 @@ workspace package decides what it exercises.
 - **Import from source** (`../foo.ts`, `./foo.ts`) — not from the package's own
   identifier. Importing your own package by name (`@prisma/composer`) resolves to its
   built `dist/`, which is stale relative to the source you are editing.
-- **Public entrypoints live under `src/exports/`** ([ADR-0033](../../docs/design/90-decisions/ADR-0033-public-entrypoints-live-in-src-exports.md)),
+- **Public entrypoints live under `src/exports/`** ([ADR-0035](../../docs/design/90-decisions/ADR-0035-public-entrypoints-live-in-src-exports.md)),
   so a within-package test imports an entrypoint as `../exports/<name>.ts` and an
   internal module as `../<name>.ts`. This applies to dynamic `await import('…')`
   and hardcoded filesystem paths too, not just static imports.

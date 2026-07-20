@@ -4,15 +4,49 @@
 // recovery, bearer-key auth) is the production server, unmodified. Deployment
 // defaults follow open-chat's production streams app.
 import { existsSync } from 'node:fs';
+import { STREAMS_API_KEY_ENV } from '@internal/prisma-cloud';
 import { streamsService } from './streams-service.ts';
 
 const service = streamsService();
 
 const { store } = service.load();
-const { apiKey } = service.secrets();
 const { port } = service.config();
 
-process.env['API_KEY'] = apiKey.expose();
+// The bearer key is minted per streams module by the target's registered
+// provisioner and stashed here as a reserved provider param (ADR-0031/
+// ADR-0019); compute's `run` validates and re-stashes it address-free. It
+// exists only if at least one consumer declared a `durableStreams()`
+// dependency — the need lives on that edge. No consumers means no key, and
+// the only thing this server could do without one is serve every endpoint
+// unauthenticated. Refuse to boot instead, naming the cause.
+const raw = process.env[STREAMS_API_KEY_ENV];
+if (raw === undefined || raw === '') {
+  throw new Error(
+    'streams: no bearer key was provisioned for this module — nothing declares a ' +
+      'durableStreams() dependency on it, so the key that authenticates its API was never ' +
+      "minted. Wire a consumer to the module's `streams` port, or remove the module.",
+  );
+}
+// The reserved provider param is JSON-encoded, the same wire format any
+// service-own literal param takes (ADR-0031) — decode it back to the bearer
+// string. Re-checks the decoded shape after parsing, the same way rpc's
+// serve() does after its own JSON.parse (serve.ts's acceptedKeys()): a
+// malformed or wrongly-shaped stored value fails with the friendly message
+// above, not a bare SyntaxError.
+let parsed: unknown;
+try {
+  parsed = JSON.parse(raw);
+} catch {
+  parsed = undefined;
+}
+if (typeof parsed !== 'string' || parsed.length === 0) {
+  throw new Error(
+    'streams: the provisioned bearer key is not a valid JSON-encoded string — the deploy wrote ' +
+      'something this entrypoint cannot read back. Redeploy to re-mint the key.',
+  );
+}
+const apiKey = parsed;
+process.env['API_KEY'] = apiKey;
 process.env['PORT'] = String(port);
 // Bind beyond loopback so the Compute router can reach the server.
 process.env['DS_HOST'] ??= '0.0.0.0';

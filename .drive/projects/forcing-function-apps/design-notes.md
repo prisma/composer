@@ -102,3 +102,92 @@ cutover, streams integration shape, secrets backing, dev-loop architecture.
 - [prisma/datahub](https://github.com/prisma/datahub),
   [prisma/open-chat](https://github.com/prisma/open-chat),
   [prisma/streams](https://github.com/prisma/streams)
+
+## Streams consumer auth — settled by ADR-0030 (2026-07-15)
+
+The streams slice shipped with a root-bound `secret()` bearer key and a
+`{ url }`-only binding: consumers declare their own secret slot and the root
+binds both to one platform variable. Flagged in review as the first
+authenticated module contract — the two slots are connected only by
+convention (nothing checks they name the same variable; a mismatch deploys
+green and 401s at runtime).
+
+PR #89 (ADR-0030, rpc-service-key project) settles the pattern framework-wide:
+wired-peer auth uses a **framework-minted service key carried on the binding's
+own config rail** (like the URL), kept in deploy state — explicitly not an
+ADR-0029 secret, which is reserved for user-supplied external values.
+
+**Follow-up (blocked on #89 slice 2 — the ServiceKey resource + generic
+per-edge value channel):** re-shape streams to match — drop the module's
+`apiKey` secret slot, mint the key at deploy, binding becomes
+`{ url, apiKey }`. Constraint: `@prisma/streams-server` auth is single-key
+(`API_KEY`), so v1 is one minted key per module instance delivered on every
+binding; distinct per-edge keys need an upstream accepted-key-set change
+(mirroring what #89 slice 1 added to rpc's serve()) — candidate minimal
+upstream PR. Do this before S7 (open-chat port) consumes the module.
+
+**ADR-0031 adopted (2026-07-16, corrected).** An earlier note here claimed
+per-edge provisioning could not apply because `@prisma/streams-server`
+authenticates a single `API_KEY`. That over-claimed: ADR-0031 leaves
+cardinality to the provisioner, so a per-PROVIDER provisioner satisfies the
+single-key server perfectly well. The design session settled on adopting
+ADR-0031, and the deciding reason was **consistency**, not capability: a
+module must build on the framework's general internals rather than stand a
+second, module-shaped mechanism beside them — two ways to audit one concept
+is one too many. Shipped: `durableStreams()`'s `apiKey` param declares a need
+under a streams brand; the prisma-cloud target registers a per-provider
+provisioner (same `ServiceKey` mint as RPC, keyed on the provider's address)
+and lands the value on the streams service; the module owns no credential
+resource, and `BearerKey` + the `streams` descriptor are deleted. Future
+per-edge keys = flip the provisioner's cardinality and land an accepted set,
+once upstream takes a key set (ADR-0031-provisioned-param-values-are-a-need-
+resolved-through-a-target-registry.md).
+
+## Streams client lib — the home for compensatory machinery (2026-07-17, direction from Will; upstream check pending)
+
+The examples/streams walkthrough established that the example hand-rolls a
+Durable Streams protocol client (URL layout, bearer scheme, JSON-array
+appends, offset conventions, long-poll dance) — machinery every consumer
+would re-write and that belongs in neither userspace nor the binding.
+`@durable-streams/client` (npm, 0.2.x, matches server 0.1.11) is the
+protocol's own client: supports per-poll `headers` (built for auth tokens),
+`live: long-poll | sse`, pluggable fetch.
+
+Direction: wrap it in a Composer-shipped streams client lib. That lib —
+platform-aware by definition — is the legitimate home for the compensatory
+machinery that was rightly deleted from the example (D12): auth from the
+`{ url, apiKey }` binding, live tail defaulting to long-poll while PRO-218
+stands, cold-start retry for idempotent calls only (never appends — no
+idempotency key upstream; the D8-D12 evidence and reasoning carry over).
+ADR-0015 intact: the binding stays config; the client lib is an app-side
+dependency the app chooses, like aws-sdk for storage.
+
+Open until Will's upstream check returns: what @durable-streams/client
+already covers vs what we compensate (it may retry / it may grow auth
+natively); what belongs upstream (prisma/streams or the client) vs in our
+wrapper; where ours ships (likely a composer-prisma-cloud subpath) and its
+name; whether the example swap lands with the lib slice. Blocked on that
+check; examples/streams stays plain-fetch in #92 meanwhile.
+
+## Streams binding redesign + provider params (2026-07-17, from Will's #92 review)
+
+Recorded exhaustively in [streams-binding-design.md](streams-binding-design.md),
+per Will's direction, before any slice spec/plan. Two parts: (A) provider-side
+minted values (rpc accepted keys, streams API key) become target-owned reserved
+params — declared, schema-validated, carried by the normal serialize/stash
+pipeline — deleting `restashAddressFree` and the raw env scrapes it fed;
+(B) the streams contract names its streams (optional per-stream event schema,
+untyped retained as the `postgres()` parity), `durableStreams(contract)`
+hydrates to per-stream handles that own ensure-create and the proven-safe
+404 heal, so no stream lifecycle code remains in userspace.
+
+## Halt + audit of the as-built streams binding (2026-07-17, Will's order)
+
+Will halted execution on discovering the `never`-typed provider contract.
+Full as-built audit in [streams-binding-audit.md](streams-binding-audit.md):
+the checking model moment by moment, the `never` hole and a probe-proven
+honest replacement (wide `required`, `__cmp: {}`), the behavior changes that
+shipped inside Part B's refactor (implicit create, read-creates, contentType
+dropped), the complete unenforced-invariant inventory (T1–T9), deviations
+from the design doc, and decisions R1–R6 awaiting his ruling. No further
+dispatches until he rules.

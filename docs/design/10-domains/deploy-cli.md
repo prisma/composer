@@ -115,12 +115,22 @@ targets **production**, at the Project level; `--stage <name>` targets a
   parent — *before* the ids exist — and again in the alchemy child, where they
   are set. So an extension's constructor must tolerate the ids being absent;
   only its lowering hooks (which run in the child) may require them.
+- **State rides the Branch.** Each stage's deploy state lives in a
+  framework-owned `prisma-composer-state` database attached to the stage's
+  Branch — production's on the Project's implicit default Branch
+  ([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)).
+  The state layer bootstraps it from the threaded ids; the default Branch is
+  resolved read-only (`isDefault`), never created.
 - **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or
   `--production`; a bare `destroy` is an error, so an omitted or mistyped
   stage can never silently tear down production. `destroy` resolves
   find-only (no container is ever created); after `alchemy destroy` removes
-  a named stage's resources, the CLI soft-deletes its Branch. The production
-  Branch is never deleted.
+  a named stage's resources, the CLI removes the stage's state database
+  (ownership-verified, never by name alone) and then soft-deletes its Branch.
+  The production Branch is never deleted; destroying production removes the
+  production state database before the best-effort Project removal. State is
+  deleted **last among the stage's members and before its container**: destroy
+  reads state, and the platform refuses to delete a Branch with live members.
 
 See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 (App = one Project, Stage = Branch) and

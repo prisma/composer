@@ -8,7 +8,7 @@ alwaysApply: false
 
 The public surface of a package is exactly the files under `src/exports/` — one
 file per published subpath. Everything else under `src/` is internal. See
-[ADR-0033](../../docs/design/90-decisions/ADR-0033-public-entrypoints-live-in-src-exports.md).
+[ADR-0035](../../docs/design/90-decisions/ADR-0035-public-entrypoints-live-in-src-exports.md).
 
 ## Rules
 

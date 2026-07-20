@@ -294,6 +294,58 @@ export const stashSecrets = (node: ServiceNode, address: string): void => {
   }
 };
 
+// ——— Reserved provider params (ADR-0031): a provider-side minted value —
+// the rpc accepted-key set, the streams API key — is a named, schema-carrying
+// declaration owned by the target, exactly like a service's own param, but
+// never part of `node.params`: nothing here reaches `config()`. Deploy writes
+// its row the same way a service-own literal param does (JSON, through
+// `encode`); boot validates and re-stashes it the same way `stash` does for a
+// declared param. The difference from a declared param is only where the
+// declaration comes from — the target's own registrations
+// (`descriptors/shared.ts`'s `ProviderParam`), not the node the app authored.
+
+/**
+ * One reserved provider param's declaration: the boot-relevant half (name +
+ * schema) of a `ProviderParam` — the half the target's runtime side needs,
+ * without the deploy-only `value(refs)` function control.ts adds on top.
+ *
+ * `brand` is the ADR-0031 need brand this param answers for (e.g.
+ * `RPC_PEER_KEY`, `STREAMS_API_KEY`). control.ts's `PROVIDER_PARAMS` is built
+ * by mapping over the boot-side list of these entries (`provider-params.ts`'s
+ * `RESERVED_PROVIDER_PARAMS`) and looking up each brand's `value(refs)` by
+ * this field — so a param can exist on the deploy side only if it already
+ * exists here.
+ */
+export interface ProviderParamEntry {
+  readonly name: string;
+  readonly schema: StandardSchemaV1;
+  readonly brand: symbol;
+}
+
+/**
+ * Boot: for each reserved provider param, read its address-scoped row through
+ * the same `coerce` a declared param uses (JSON-decode, schema-validate), and
+ * re-emit it address-free — `stash`'s counterpart for this separate
+ * declaration space. A param is declared optional here unconditionally: an
+ * absent row means "never provisioned" (local dev, tests, a provider with no
+ * registered value for this deploy), never a boot failure, so nothing is
+ * stashed and the runtime reader that owns this slot falls back to its own
+ * pass-through behavior.
+ */
+export function stashProviderParams(entries: readonly ProviderParamEntry[], address: string): void {
+  for (const entry of entries) {
+    const d: ParamEntry = {
+      owner: 'service',
+      name: entry.name,
+      param: { schema: entry.schema, optional: true },
+    };
+    const key = configKey(address, d);
+    const value = coerce(process.env[key], d, key);
+    if (value === undefined) continue;
+    process.env[configKey('', d)] = encode('service', value);
+  }
+}
+
 /** Synchronous Standard Schema validation — see the matching note in core's `config.ts`. */
 function standardValidateSync<S extends StandardSchemaV1>(
   schema: S,

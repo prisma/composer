@@ -26,7 +26,9 @@ resource graph, which deploys to the cloud.
 - **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: ComputeService /
   ComputeVersion, Database (1:1 within an Environment), Stream, endpoint. Prisma
   Cloud is *one* target; another target's pack maps the same authoring nouns to
-  its own hosting primitives.
+  its own hosting primitives. The framework's deploy report calls a thing on
+  this plane a **Deployment entity** (`DeployedEntity`): its kind, platform id,
+  and — only when the target says it is publicly reachable — its URL.
 
 ## The mapping
 
@@ -121,31 +123,35 @@ reproduce-in-the-emulator goal (see `../00-purpose/goals.md`).
 Provisioning runs through **Alchemy's engine**, invoked from the client or a
 privileged CD environment (see claim 3). The engine keeps a **state store** —
 the source of truth for what's provisioned. State sits on a spectrum from
-local, to workspace-hosted, to eventually platform-run:
+local, to branch-hosted, to eventually platform-run:
 
 - **Local** — Alchemy's local or Cloudflare-backed state. Fine for a solo
   developer; nothing else needs to see it.
-- **Workspace-hosted** — a `StateService` implementation
-  (`@internal/lowering/state`) backed by a Prisma Postgres database in a
-  workspace-scoped project, native to the Workspace → Project → Environment
-  hierarchy (Pulumi/Terraform-Cloud-style hosted state, without the
-  BYO-state bootstrap). Bootstrap is automatic: the Management API finds or
-  creates the store's project and its default database on first use, so a
-  deployer needs nothing beyond the service token and workspace id it already
-  has. Concurrency is a per-`(stack, stage)` advisory lock, so two deployers
-  can never race the same stack. `prismaCloud()` supplies this as the default
-  deploy state for every service and Module; an explicit state layer always
-  overrides it. This is framework-owned operational infrastructure, not a
-  user-topology Resource — ambient per project, never declared by a Module
-  (which also sidesteps the chicken-and-egg of provisioning the store
-  itself). Like hosted-state backends generally, it also holds state for the
-  user's BYO resources in other clouds.
+- **Branch-hosted** — a `StateService` implementation
+  (`@internal/lowering/state`) backed by a framework-owned Prisma Postgres
+  database in each stage's Branch of the app's own Project (ADR-0034),
+  native to the Workspace → Project → Branch hierarchy
+  (Pulumi/Terraform-Cloud-style hosted state, without the BYO-state
+  bootstrap). Bootstrap is automatic: the Management API finds or creates
+  the stage's state database from the container ids the CLI already
+  resolves, so a deployer needs nothing beyond the service token and
+  workspace id it already has, and the state's lifetime is the
+  environment's — deleting the Branch or Project deletes it. Concurrency is
+  a per-`(stack, stage)` advisory lock, so two deployers can never race the
+  same stack. `prismaCloud()` supplies this as the default deploy state for
+  every service and Module; an explicit state layer always overrides it.
+  This is framework-owned operational infrastructure, not a user-topology
+  Resource — ambient per stage, never declared by a Module (the containers
+  it lives in are created before the engine runs, which sidesteps the
+  chicken-and-egg of provisioning the store itself). Like hosted-state
+  backends generally, it also holds state for the user's BYO resources in
+  other clouds.
 - **Server-side runs** — the platform executes the apply loop itself
-  (git-push-style deploys). Once state is workspace-hosted, moving the engine
+  (git-push-style deploys). Once state is platform-hosted, moving the engine
   server-side is incremental — the same evolution Pulumi/Terraform Cloud
   followed. This step's platform surface is implementing Alchemy's own HTTP
   `StateApi` (bearer auth → workspace RBAC) as a Management API endpoint; once
-  it exists, the workspace-hosted store's visible project disappears and the
+  it exists, the branch-hosted store's visible databases disappear and the
   platform can answer "what's provisioned in this project" natively (the
   platform side of the inspectable-topology goal).
 

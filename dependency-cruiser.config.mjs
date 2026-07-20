@@ -16,6 +16,7 @@
  */
 
 import config from './architecture.config.json' with { type: 'json' };
+import { normalizeGlob } from './scripts/architecture-coverage.mjs';
 
 const {
   packages: packageConfigs,
@@ -24,28 +25,6 @@ const {
   crossDomainExceptions,
   crossDomainRules,
 } = config;
-
-const normalizeGlob = (glob) => {
-  const DOUBLE_WILDCARD = '__DOUBLE_WILDCARD__';
-  const SINGLE_WILDCARD = '__SINGLE_WILDCARD__';
-  const hasWildcard = glob.includes('*');
-  const lastPathSegment = glob.split('/').pop() ?? '';
-  const isFileLikePattern = !hasWildcard && lastPathSegment.includes('.');
-
-  let pattern = glob
-    .replace(/\*\*/g, DOUBLE_WILDCARD)
-    .replace(/\*/g, SINGLE_WILDCARD)
-    .replaceAll(DOUBLE_WILDCARD, '.*')
-    .replaceAll(SINGLE_WILDCARD, '[^/]*');
-
-  if (isFileLikePattern) {
-    return `^${pattern}$`;
-  }
-  if (!hasWildcard && !pattern.endsWith('/')) {
-    pattern += '/.*';
-  }
-  return `^${pattern}`;
-};
 
 const moduleGroupMap = new Map();
 
@@ -233,8 +212,9 @@ export default {
         'node_modules',
         '^packages/.*\\.test\\.',
         '^packages/.*\\.test-d\\.',
+        '^packages/.*\\.vitest\\.',
         '^packages/.*__tests__',
-        'vitest\\.config',
+        'vitest\\..*config',
         'tsdown\\.config',
         'next\\.config',
         '\\.d\\.ts$',

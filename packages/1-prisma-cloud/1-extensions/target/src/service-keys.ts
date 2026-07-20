@@ -1,53 +1,31 @@
 /**
- * ADR-0030's per-binding service keys: the ONE enumeration of faceted RPC
- * edges and the ONE accepted-keys env-var name — shared by control.ts (which
- * registers the provisioner that mints them; see its `serviceKeyProvisioner`)
- * and descriptors/compute.ts (serializes the provider's accepted set, in
- * `serialize`) so minting and wiring can never drift apart. Reacts only to
- * the `serviceKey` connection param's `provision.brand` — never to "rpc" by
- * name, keeping the target's not-RPC-special-cased promise.
+ * RPC's reserved provider param (ADR-0030/ADR-0031): the declaration —
+ * name + schema + brand — for the accepted-keys set a provider stores, shared
+ * by `control.ts` (which registers the deploy-side `value(refs)` that mints
+ * and aggregates it — see its `rpcAcceptedKeysValue`) and `compute.ts` (which
+ * validates and stashes it at boot), so writer and reader cannot drift.
+ * Finding the edges themselves is `provisioned-edges.ts`'s generic,
+ * brand-blind scan — RPC is not special-cased anywhere in this target.
  *
- * This module is also reachable from the RUNTIME/authoring side (compute.ts,
- * re-exported through index.ts) — it must never import `@internal/lowering`
- * or `effect`, or those tokens leak into a user service's bundle (the
- * provisioner itself lives in control.ts, the control-plane-only entry).
+ * This module is reachable from the RUNTIME/authoring side — it must never
+ * import `@internal/lowering` or `effect`, or those tokens leak into a user
+ * service's bundle (the deploy-side `value(refs)` lives in control.ts, the
+ * control-plane-only entry).
  */
-import type { Graph } from '@internal/core';
 import { RPC_PEER_KEY } from '@internal/rpc';
-import { configKey } from './serializer.ts';
+import { type } from 'arktype';
+import type { ProviderParamEntry } from './serializer.ts';
 
-/** One faceted dependency edge: a consumer's input whose `serviceKey` param carries RPC's provisioning need. */
-export interface ServiceKeyEdge {
-  /** `${consumerAddress}.${input}` — the mint id and `ctx.provisioned`'s key. */
-  readonly edgeId: string;
-  readonly consumerAddress: string;
-  readonly input: string;
-  readonly providerAddress: string;
-}
-
-/** Every faceted RPC edge in the graph — scans each dependency edge's consumer-side input for the need. */
-export function serviceKeyEdges(graph: Graph): readonly ServiceKeyEdge[] {
-  const edges: ServiceKeyEdge[] = [];
-
-  for (const edge of graph.edges) {
-    if (edge.kind !== 'dependency') continue;
-    const consumer = graph.nodes.find((n) => n.id === edge.to)?.node;
-    if (consumer === undefined || consumer.kind !== 'service') continue;
-    const slot = consumer.inputs[edge.input];
-    if (slot === undefined) continue;
-    if (slot.connection.params['serviceKey']?.provision?.brand !== RPC_PEER_KEY) continue;
-
-    edges.push({
-      edgeId: `${edge.to}.${edge.input}`,
-      consumerAddress: edge.to,
-      input: edge.input,
-      providerAddress: edge.from,
-    });
-  }
-
-  return edges;
-}
-
-/** The reserved accepted-keys env var: COMPOSER_<addr>_RPC_ACCEPTED_KEYS ("" ↦ @internal/rpc's RPC_ACCEPTED_KEYS_ENV). */
-export const serviceKeyEnvName = (address: string): string =>
-  configKey(address, { owner: 'service', name: 'RPC_ACCEPTED_KEYS' });
+/**
+ * The reserved provider param for RPC's accepted-keys set: the var name is
+ * `RPC_ACCEPTED_KEYS`, derived through `configKey` at both ends
+ * (`configKey(address, …)` at deploy, `configKey('', …)` at boot — the
+ * address-free form is `@internal/rpc`'s `RPC_ACCEPTED_KEYS_ENV`). `brand` is
+ * `RPC_PEER_KEY`, the same brand `perBindingToken()`'s need carries — control.ts
+ * looks its `value(refs)` up by this field.
+ */
+export const RPC_ACCEPTED_KEYS_PARAM: ProviderParamEntry = {
+  name: 'RPC_ACCEPTED_KEYS',
+  schema: type('string[]'),
+  brand: RPC_PEER_KEY,
+};

@@ -12,8 +12,14 @@ import type {
 } from '@internal/core';
 import { hydrateSecrets, hydrateSync, number, service } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
-import { deserialize, deserializeSecrets, stash, stashSecrets } from './serializer.ts';
-import { serviceKeyEnvName } from './service-keys.ts';
+import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
+import {
+  deserialize,
+  deserializeSecrets,
+  stash,
+  stashProviderParams,
+  stashSecrets,
+} from './serializer.ts';
 
 const reservedParams = { port: number({ default: 3000 }) } as const;
 type ReservedParams = typeof reservedParams;
@@ -98,14 +104,14 @@ export const compute = <
     async run(address: string, boot: () => Promise<unknown>) {
       const config = deserialize(node, address);
       stash(node, config);
+      // ADR-0031's provider-side sibling of the param re-stash above — the
+      // reader is serve()'s accepted keys or the streams entrypoint's
+      // API_KEY. An absent row stays absent (never provisioned); a present
+      // one is schema-checked exactly like a declared param before it moves.
+      stashProviderParams(RESERVED_PROVIDER_PARAMS, address);
       // Re-emit the secret POINTERS address-free too, so secrets() double-looks-up
       // the same way with no address (the value stays only in its platform var).
       stashSecrets(node, address);
-      // ADR-0030: re-stash the address-scoped accepted-keys var address-free —
-      // serve() (RPC_ACCEPTED_KEYS_ENV) reads it with no address, one service
-      // per running instance, same as config/secrets above.
-      const accepted = process.env[serviceKeyEnvName(address)];
-      if (accepted !== undefined) process.env[serviceKeyEnvName('')] = accepted;
       // Expose the resolved service port under the near-universal PORT convention,
       // so a framework-unaware server (Next.js's standalone server.js binds the
       // PORT env var) listens on the port Compute routes to — not its own default.

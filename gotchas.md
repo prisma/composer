@@ -331,7 +331,7 @@ await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 500
 
 - Upstream: [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while)
 - Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
-- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) passes only while the rejection exists — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself
+- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect succeeds — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking)
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
 
 ---
@@ -372,13 +372,19 @@ pool.on("error", (err) => console.error("pg pool idle client error", err));
 
 **Filed upstream:** [PRO-217](https://linear.app/prisma-company/issue/PRO-217/service-to-service-http-gets-econnreset-while-the-target-cold-starts) — _"Service-to-service HTTP gets ECONNRESET while the target cold-starts from scale-to-zero"_
 **Product:** Prisma Compute (ingress / scale-to-zero cold start)
-**Version:** Prisma Compute, Bun `fetch` from a Next.js standalone SSR render; observed 2026-07-13
-**First hit:** `examples/store` — the storefront's SSR calls to the catalog and orders services' `*.ewr.prisma.build` endpoints
-**Cost:** folded into the idle-500 diagnosis above; intermittent enough to first read as "the in-app browser is flaky"
+**Version:** Prisma Compute, Bun `fetch` — from a Next.js standalone SSR render (observed 2026-07-13) and from a plain Bun service (observed 2026-07-16)
+**First hit:** `examples/store` — the storefront's SSR calls to the catalog and orders services' `*.ewr.prisma.build` endpoints. Hit again in `examples/streams`, where the `jobs` service calls the streams module.
+**Cost:** folded into the idle-500 diagnosis above; intermittent enough to first read as "the in-app browser is flaky". Later cost a round of misdiagnosis in `examples/streams`: a bare status code cannot tell an app's own 502 from the edge's, so the reset was mistaken for a too-short retry budget until response bodies were captured.
 
 **Symptom.** An HTTP request from one Compute service to another intermittently fails with `ECONNRESET` — Bun reports `The socket connection was closed unexpectedly` with the target service's URL as `path`. It happens on the first request(s) after the target has been idle; a retry moments later succeeds. When the caller is an SSR page fanning out to several services, one reset is enough to 500 the whole page render.
 
+The failure is a **thrown socket error, and only that**: it surfaces fast (~400 ms on the first touch after an idle spell — far quicker than the target's own boot), and across every cold hit captured in `examples/streams` the edge never once answered `502`/`503`/`504`. Code written to retry a cold-start *status* is therefore guarding a face of this bug that has not been observed; the reset is the whole of it. It lands on whatever call happens to be first, idempotent or not — in `examples/streams` on both the stream-creating `PUT` and, on a later request whose `PUT` was already memoized, the non-idempotent append.
+
 **Cause (observed, mechanism presumed).** The target service had scaled to zero. Instead of the edge holding the connection until the VM finishes booting (which it does do on most cold hits — those requests just take seconds), the connection is sometimes closed mid-establishment during the cold-start window, surfacing as a socket reset to the caller. Warm targets never reset.
+
+The window is measurable, and much wider than first recorded. In `examples/streams`' Compute logs, `spark: starting bun with entrypoint: bootstrap.js` → the server's own "listening" line was first measured at **~3.5 s** for a service restoring little state and **~8 s** for one restoring more from its object store. Later sampling (2026-07-17, two independent operators) measured boots of **3.3 s, 10.4 s, 11.6 s, 12.8 s, 21.9 s** — so treat **~3 s to ~22 s** as the real range, not 3.5–8 s. That is the window a first request falls into. Usually the request simply blocks for it and succeeds — a first request against a deliberately fresh instance returned `201` in 3.7 s with no error. The bug is not the wait; it is that the same first request sometimes gets the ~400 ms socket close instead, and nothing on the caller's side predicts which.
+
+**Boot length tracks how long the service was left alone, and the close only shows up in the long boots.** Promoting fresh versions back-to-back (samples ~4 s apart) yields atypically short **~1 s** boots, and across 20 such touches the edge held every time. Spacing the same trigger 60 s apart yields the 3–22 s boots above, and the close reproduces readily (3 of 5 touches in one probe; 4 of 4 first touches in another). A test that redeploys in a tight loop is therefore measuring a window the bug does not live in — and will conclude, wrongly, that the bug is gone. This cost the cold-start canary two rounds; see its removal guard below.
 
 **Workaround.** No principled client-side fix for non-idempotent calls (blind retry could double-execute a write). Mitigations:
 
@@ -386,7 +392,9 @@ pool.on("error", (err) => console.error("pg pool idle client error", err));
 - keep chatty targets warm — a scheduled ping (the `cron` shared module's 30 s trigger) masks the window for whatever it touches;
 - warm the whole app with one request before a demo.
 
-An always-on / min-instances option on Compute services would remove the window; none exists today.
+**But do not push this into application code.** Hand-rolling it per app costs every consumer a platform-specific backoff, cannot cover the non-idempotent calls (where this was actually observed to land), and hides the defect from the people who would fix it. The compensation lives ONCE, as policy in the streams client Composer ships (the `IDEMPOTENT_BACKOFF` policy in `client.ts`'s `StreamsClient`): idempotent operations — create, read, tail — are retried with a bounded backoff; **appends are not retried** (no idempotency key upstream, so a failed append is indistinguishable from an applied one) and surface as a 502 naming the cause, keeping the platform behaviour visible where it cannot be safely absorbed. An app's first append after an idle spell may therefore still fail intermittently — the honest state of the platform. The cost this pushes onto tooling and users is filed as [PRO-219](https://linear.app/prisma-company/issue/PRO-219/scale-to-zero-cold-starts-force-platform-specific-retry-boilerplate); an always-on / min-instances option, or making the first-request behaviour consistent, would remove the window and the compensation with it. Neither exists today.
+
+**Removal guard.** The CI "Cold-start canary (PRO-217)" job (`scripts/cold-start-canary.ts`, in the E2E deploy workflow) touches freshly promoted instances each run, 60 s apart, and confirms from the deployment's own boot log that each touch was sent before the server's "listening" line — a touch that cannot be placed on one side of the boot counts for nothing rather than being guessed. It fails only when enough touches reached a genuine cold start **and** every one of them held; because this bug is intermittent, "every touch held" in a small run is the expected outcome of a run that is too small, so the job requires 14 confirmed cold-start holds before it will claim the bug is gone (at a conservative 20% close rate, 0.8^14 ≈ 4.4% — the chance of being fooled by luck). An inconclusive run passes with a warning annotation. That failure is the signal to remove the streams client's `IDEMPOTENT_BACKOFF` (the PRO-219 compensation) and the canary itself, the same contract as FT-5226's cold-connect canary.
 
 **Reproduction.**
 
@@ -394,10 +402,18 @@ An always-on / min-instances option on Compute services would remove the window;
 2. Let B idle to scale-to-zero.
 3. Hit A repeatedly right as B cold-starts → occasional `ECONNRESET` from A's fetch to B; warm B never resets.
 
+Idling is an unreliable trigger — a service left alone for 6 minutes (and another for ~30) still answered warm in under 700 ms, so the scale-to-zero threshold is longer than a convenient wait. Stopping the deployment does not work either: `POST /v1/deployments/{id}/stop` returns 204, the app then serves a plain `404` and stays down until something explicitly calls `start` — it never revives on a request, so it cannot produce a cold start at all.
+
+What does work: promote a fresh version of B (create → upload → start → **race the promote call itself**, retrying immediately on its "not running yet" 409) and touch A the instant promote succeeds. Do **not** wait for the version to report `running` first — `running` flips within ~1 s of `start`, well before the app is listening, so by the time a poll loop and a promote call have run, the boot is already over and the touch lands on a warm instance. That mistake is what made the canary report the bug fixed while it was live.
+
+Two more requirements for a trustworthy probe. **Leave ~60 s between samples** — back-to-back promotions produce ~1 s boots the close does not appear in (see above). And **confirm coldness from the deployment's own log** (`/v1/deployments/{id}/logs?from_start=true`, read from the start) rather than inferring it from latency: a touch counts only if it was sent before the server's own "listening" line. Note that comparison crosses clocks — the touch is timestamped on the runner, "listening" by the app on the VM — so require a margin (the canary uses 2 s) comfortably larger than plausible skew, and treat anything closer as unknown. Capture the response **body**, not just the status, or A's own 502 is indistinguishable from the edge's.
+
 **References.**
 
 - Observed in `storefront` runtime logs (`app logs --project store --app storefront`): `code: 'ECONNRESET', path: 'https://….ewr.prisma.build/rpc/listProducts'`
-- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family)
+- Observed again from `examples/streams`' `jobs` service: `streams unreachable: Error: The socket connection was closed unexpectedly`, returned in 404 ms
+- Product ask: [PRO-219](https://linear.app/prisma-company/issue/PRO-219/scale-to-zero-cold-starts-force-platform-specific-retry-boilerplate) — the userspace retry boilerplate this forces on every consumer
+- Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) / FT-5226 (the DB faces of the same scale-to-zero/cold family), [PRO-218](https://linear.app/prisma-company/issue/PRO-218/compute-ingress-buffers-streaming-responses-sse-cannot-deliver-edge) (the same ingress, streaming-response face)
 
 ---
 

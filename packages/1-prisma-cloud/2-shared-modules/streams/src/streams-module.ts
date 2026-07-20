@@ -3,35 +3,36 @@
  * a Compute service behind a typed boundary. The durable tier arrives as a
  * dependency — wire a `storage()` module's `store` port into the `store` slot
  * (the first module-depends-on-module consumer of storage). The bearer key is
- * a forwardable `secret()` slot the root binds (ADR-0029). Exposes a single
- * `streams` port (`streamsContract`).
+ * neither wired nor owned by the module: a consumer's `durableStreams()`
+ * binding declares it as a provisioning need, and the target mints one value
+ * per streams module (ADR-0031) and stores it on this service. Exposes a
+ * single `streams` port (`streamsContract`).
  */
-import type { DependencyEnd, ModuleNode, SecretNeed } from '@internal/core';
-import { module, secret } from '@internal/core';
+import type { Contract, DependencyEnd, ModuleNode } from '@internal/core';
+import { module } from '@internal/core';
 import type { S3Config, S3Contract } from '@internal/storage';
 import { s3 } from '@internal/storage';
-import { streamsContract } from './contract.ts';
+import type { StreamDefs } from './contract.ts';
+import { streamsProviderContract } from './contract.ts';
 import { streamsService } from './exports/streams-service.ts';
 
 export function streams(opts?: {
   name?: string;
 }): ModuleNode<
   { store: DependencyEnd<S3Config, S3Contract> },
-  { streams: typeof streamsContract },
-  { apiKey: SecretNeed }
+  { streams: Contract<'streams', StreamDefs> },
+  Record<never, never>
 > {
   return module(
     opts?.name ?? 'streams',
     {
       deps: { store: s3() },
-      secrets: { apiKey: secret() },
-      expose: { streams: streamsContract },
+      expose: { streams: streamsProviderContract },
     },
-    ({ inputs, secrets, provision }) => {
+    ({ inputs, provision }) => {
       const service = provision(streamsService(), {
         id: 'service',
         deps: { store: inputs.store },
-        secrets: { apiKey: secrets.apiKey },
       });
       return { streams: service.streams };
     },

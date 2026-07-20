@@ -13,4 +13,7 @@ export default {
   '{packages,examples,test}/**/*.{ts,tsx}': () => 'pnpm lint:deps',
   'architecture.config.json': () => 'pnpm lint:deps',
   'dependency-cruiser.config.mjs': () => 'pnpm lint:deps',
+  // Dropping a `paths` entry makes the cruiser resolve that import to built
+  // dist, which is excluded — the edge vanishes and no rule fires on it.
+  'tsconfig.depcruise.json': () => 'pnpm lint:deps',
 };

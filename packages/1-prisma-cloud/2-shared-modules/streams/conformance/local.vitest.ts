@@ -2,6 +2,10 @@
  * The Durable Streams conformance suite against the local stand-in — proves
  * the module's local-dev path speaks the same protocol as the deployed
  * server. Mirrors the server repo's conformance.local.vitest.ts.
+ *
+ * The suite is pinned to exact 0.2.3: later versions (0.3.x) test features
+ * @prisma/streams-server 0.1.11 does not ship, so a floating range fails
+ * conformance for reasons unrelated to this module.
  */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';

@@ -87,17 +87,19 @@ named stage, its Branch (found by `gitName`, created if absent); `ensure:
 false` makes it find-only, for `destroy`. It reuses the same Management API
 client and the same adopt-oldest / tolerate-a-racing-409 idiom the state
 store's own bootstrap uses
-([ADR-0009](../90-decisions/ADR-0009-deploy-state-is-hosted-in-the-workspace.md))
-— the two resolve different things (deploy containers vs. the state store's
-own project) through the same client and idiom. `deleteBranch` soft-deletes
-a stage's Branch once `destroy` has removed its members.
+([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md))
+— the two resolve different things (deploy containers vs. the stage's state
+database) through the same client and idiom. Once `destroy` has removed a
+stage's members, the CLI removes the stage's state database
+(ownership-verified) and `deleteBranch` then soft-deletes its Branch.
 
 Deploy state keeps its existing shape — keyed per Alchemy `--stage`
-(ADR-0009) — unchanged by this: under stage-as-branch, **the Project is the
+(ADR-0034) — unchanged by this: under stage-as-branch, **the Project is the
 stack and the Branch is the stage**
 ([ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)),
-so a stage's effective identity is the pair (Project, Branch). The state
-store's location and internal logic are untouched.
+so a stage's effective identity is the pair (Project, Branch), and the
+stage's state database lives inside that same Branch. The store's internal
+logic is untouched.
 
 ## The mapping, both directions
 

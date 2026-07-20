@@ -451,18 +451,24 @@ interface Target {
 
 // The application's shared infrastructure: on Prisma Cloud, the one Project
 // (the config namespace and lifecycle boundary) plus the poison DATABASE_URL
-// variables. Its outputs (projectId) reach every later SPI call via
-// LowerContext.application.
+// variables. Its product (e.g. { projectId }) reaches every later SPI call of
+// the SAME extension via LowerContext.application. Core declares it `unknown`
+// and never reads it — the extension narrows with its own guard (ADR-0033).
 interface ApplicationLowering {
-  provision(ctx: LowerContext): Effect.Effect<LoweredNode, unknown, unknown>
+  provision(ctx: LowerContext): Effect.Effect<unknown, unknown, unknown>
 }
 
-// The phased service SPI — the seam between the phases belongs to CORE.
-interface ServiceLowering {
+// The phased service SPI. P and S are the DESCRIPTOR's own handoff types —
+// provision's product consumed by serialize/deploy, and serialize's product
+// consumed by deploy. Core threads them through without inspection; only the
+// descriptor that writes them reads them (ADR-0033). Method syntax is required:
+// the heterogeneous registry assigns through TypeScript's method bivariance.
+interface ServiceLowering<P = unknown, S = unknown> {
   // provision: make the target-specific thing that will host the service —
   // identity-bearing infrastructure only (the App), inside the application's
-  // Project (ctx.application); no code runs.
-  provision(ctx: LowerContext): Effect.Effect<LoweredNode, unknown, unknown>
+  // Project (ctx.application); no code runs. P may hold unresolved Output<T>
+  // references — the whole stack effect runs before Alchemy applies anything.
+  provision(ctx: LowerContext): Effect.Effect<P, unknown, unknown>
   // serialize: encode the typed Config core built into the service's runtime
   // environment (on Prisma Cloud: EnvironmentVariables on the project), keyed by
   // the deployment address. The pack owns the encoding; run()'s deserialize
@@ -470,8 +476,8 @@ interface ServiceLowering {
   // Leaf values are provisioning refs → the env writes depend on the
   // resources/producer (the ordering edges). Returns the env-var records so
   // `deploy` can reference them (the environment edge — see alchemy-lowering.md).
-  serialize(ctx: LowerContext, provisioned: LoweredNode, config: Config):
-    Effect.Effect<LoweredNode, unknown, unknown>
+  serialize(ctx: LowerContext, provisioned: P, config: Config):
+    Effect.Effect<S, unknown, unknown>
   // package: assemble the deployable artifact from the build adapter's normalized
   // bundle dir and print the bootstrap (address + the boot import baked in). The
   // envelope is target vocabulary and the pack's business (Compute: bootstrap.js +
@@ -482,9 +488,18 @@ interface ServiceLowering {
     Effect.Effect<Artifact, unknown, unknown>
   // deploy: ship the packaged artifact into the provisioned thing and run it
   // (version → upload → start → promote). Consumes `serialized`'s env records
-  // via the Deployment's environment prop (the edge). Returns the trustworthy URL.
-  deploy(ctx: LowerContext, provisioned: LoweredNode, artifact: Artifact,
-         serialized: LoweredNode): Effect.Effect<LoweredNode, unknown, unknown>
+  // via the Deployment's environment prop (the edge). Returns the node's
+  // outputs — what dependent nodes' connection params resolve against — plus
+  // the entities it became on the deployment target, for the deploy report.
+  deploy(ctx: LowerContext, provisioned: P, artifact: Artifact,
+         serialized: S): Effect.Effect<LoweredResult, unknown, unknown>
+}
+
+// What a node's final lowering phase produces: outputs for dependents,
+// entities for the deploy report (ADR-0033).
+interface LoweredResult {
+  readonly outputs: Outputs
+  readonly entities: readonly Input<DeployedEntity>[]
 }
 
 // package input: the build adapter's assembled output plus the address. The
@@ -504,7 +519,7 @@ interface PackageInput {
 
 // One node's realization. Runs inside the Alchemy stack effect; yields the
 // pack's Alchemy resources. Core never looks inside.
-type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredNode, unknown, unknown>
+type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredResult, unknown, unknown>
 
 interface LowerContext {
   readonly id: NodeId
@@ -513,13 +528,19 @@ interface LowerContext {
   readonly node: ServiceNode | ResourceNode
   readonly graph: Graph
   readonly opts: LowerOptions
-  readonly application: LoweredNode                     // the application provision's outputs
-  readonly lowered: ReadonlyMap<NodeId, LoweredNode>    // already-lowered deps (topo order)
+  readonly application: unknown                         // the owning extension's application product;
+                                                        // undefined when it declares no hook. Core never
+                                                        // reads it; the extension narrows it (ADR-0033)
+  readonly lowered: ReadonlyMap<NodeId, Outputs>        // already-lowered deps (topo order)
 }
 
-// What a lowering hands downstream — e.g. a deployed URL a later node's env
-// wiring consumes. The inter-node config-wiring hook for Connections.
-interface LoweredNode { readonly outputs: Readonly<Record<string, unknown>> }
+// The values a node provides to its dependents — e.g. a deployed URL a later
+// node's env consumes; what a consumer's declared connection params
+// resolve against. Name-keyed and unknown-valued of necessity: core cannot
+// know extension types, and which producer feeds which consumer is decided by
+// the user's graph at runtime. The connection declaration is the contract
+// (ADR-0033).
+type Outputs = Readonly<Record<string, unknown>>
 
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
@@ -545,13 +566,15 @@ class LowerError extends Error {}
 
 // Composable form — for MIXED topologies: framework-authored nodes beside
 // hand-wired Alchemy resources in one stack. Runs the same Load → route walk
-// inside the caller's stack effect and returns the root's LoweredNode, whose
-// outputs (e.g. the deployed URL) hand-wired resources may consume.
+// inside the caller's stack effect. Resolves to `undefined`: the root module
+// has no outputs of its own (boundary ports are future work), and returning
+// nothing keeps Alchemy from printing and persisting a stack-output dump —
+// Apply.apply short-circuits on a falsy plan output (ADR-0033).
 // Error channel: LowerError from routing, PLUS whatever a pack lowering fails
 // with (their error type is open) — a mixed-stack caller treats failures as
 // deploy-fatal or inspects; it must not assume LowerError is the only inhabitant.
 function lowering(root: ModuleNode, target: Target, opts: LowerOptions):
-  Effect.Effect<LoweredNode, LowerError, unknown>
+  Effect.Effect<undefined, LowerError, unknown>
 ```
 
 `lower()` is nothing but the whole-stack wrapper:

@@ -14,6 +14,13 @@ export default defineConfig([
     entry: { index: 'src/exports/index.ts', 'streams-service': 'src/exports/streams-service.ts' },
     exports: false,
     clean: true,
+    // The wire client (@durable-streams/client, pinned 0.2.1 — the version
+    // @prisma/streams-server 0.1.11's own repo pairs with) is inlined so
+    // neither this dist nor the umbrella grows a runtime dependency; it is
+    // pure fetch-based JS (~90 kB + fastq/fetch-event-source), no node:/bun
+    // tokens, so the authoring barrel stays pure.
+    skipNodeModulesBundle: false,
+    noExternal: [/^@durable-streams\//, /^@microsoft\//, /^fastq/, /^reusify/],
   },
   {
     ...baseConfig,
@@ -22,7 +29,16 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\//, /^arktype/, /^@standard-schema\//],
+    noExternal: [
+      /^@internal\//,
+      /^@prisma\//,
+      /^arktype/,
+      /^@standard-schema\//,
+      /^@durable-streams\//,
+      /^@microsoft\//,
+      /^fastq/,
+      /^reusify/,
+    ],
     // assemble() copies the entrypoint out with no siblings; the server's
     // dynamic-import chain must not split into chunks.
     outputOptions: { inlineDynamicImports: true },
@@ -34,6 +50,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\//],
+    noExternal: [/^@internal\//, /^@prisma\//, /^fastq/, /^reusify/],
   },
 ]);
