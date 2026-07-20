@@ -1307,13 +1307,28 @@ describe('container threading through lowering() (the parent→child transport r
     ]);
   });
 
-  test('an extension declaring no container descriptor at all sees ctx.application still threaded (unaffected by container wiring)', () => {
-    const { config, calls } = fakeExtension();
-    const root = singleServiceWithDbModule();
+  test('an extension declaring no container descriptor at all sees ctx.container as undefined', () => {
+    const seen: unknown[] = [];
+    const descriptor: ExtensionDescriptor = {
+      id: 'test/no-container-pack',
+      // No `container` field.
+      application: {
+        provision: (ctx) => {
+          seen.push(ctx.container);
+          return Effect.succeed(undefined);
+        },
+      },
+      nodes: {},
+    };
+    const config: PrismaAppConfig = {
+      extensions: [descriptor],
+      state: { extension: descriptor.id, create: () => stateSentinel('config') },
+    };
+    const root = module('shop', {}, () => ({}));
 
-    run(lowering(root, config, opts(svcBundles)));
+    run(lowering(root, config, opts()));
 
-    expect(calls.filter((c) => c.phase === 'application')).toHaveLength(1);
+    expect(seen).toEqual([undefined]);
   });
 });
 
