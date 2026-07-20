@@ -73,7 +73,7 @@ export const DeploymentProvider = () =>
                   }),
                 ),
           ),
-          Effect.retry(Schedule.both(Schedule.spaced('2 seconds'), Schedule.during('2 minutes'))),
+          Effect.retry(Schedule.max([Schedule.spaced('2 seconds'), Schedule.during('2 minutes')])),
         );
 
       return {

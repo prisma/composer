@@ -85,10 +85,10 @@ describe('delete retry wiring (Effect.retry({ schedule, while }))', () => {
       return yield* Effect.fail(deleteNotSafeError);
     });
 
-    const shortCappedSchedule = Schedule.both(
+    const shortCappedSchedule = Schedule.max([
       Schedule.spaced('1 millis'),
       Schedule.during('20 millis'),
-    );
+    ]);
 
     const outcome = await Effect.runPromiseExit(
       alwaysNotSafe.pipe(

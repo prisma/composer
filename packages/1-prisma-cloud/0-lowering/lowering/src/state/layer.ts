@@ -72,7 +72,7 @@ export const prismaState = (): Layer.Layer<State, never, StackServices> => {
       // workspace) can refuse connections for a while after the Management
       // API returns it, so retry the window out before failing.
       yield* migratePrismaState(sql).pipe(
-        Effect.retry(Schedule.both(Schedule.spaced('5 seconds'), Schedule.during('2 minutes'))),
+        Effect.retry(Schedule.max([Schedule.spaced('5 seconds'), Schedule.during('2 minutes')])),
         Effect.mapError(bootstrapError('schema migration')),
       );
 
