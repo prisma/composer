@@ -4,9 +4,14 @@
 
 Every package's public surface is exactly the files under `src/exports/`. One
 file there is one published subpath; everything else under `src/` is internal
-implementation. A package's `tsdown.config.ts` lists only `src/exports/*` as
-entries, using **object entries with explicit names** — the entry name is both
-the export subpath key and the flat `dist/` filename:
+implementation. An exports file holds **nothing but re-exports** — no
+functions, classes, constants, or type declarations — and no implementation
+module may import from `exports/`. The surface points at the implementation; it
+never holds it, and implementation never depends on it.
+
+A package's `tsdown.config.ts` lists only `src/exports/*` as entries, using
+**object entries with explicit names** — the entry name is both the export
+subpath key and the flat `dist/` filename:
 
 ```text
 packages/0-framework/1-core/core/
@@ -102,13 +107,33 @@ published API contract), not on a dts limitation.
   real invariant a mover must hold is: **entry filenames and `package.json#exports`
   stay byte-identical; internal content-hashed chunk names may churn.**
 
-- **Internal code may import "up" into `src/exports/`.** This is a relocation, not
-  a restructure: some `src/exports/` files (e.g. the target's `pg-connection.ts`,
-  `prisma-next.ts`) are the implementation home, and internal modules import them
-  from `src/exports/`. That inverts the purer shape where shared implementation
-  lives in `src/core/**` and `exports/` only re-exports. Both are plane-clean and
-  the current form is intentional; moving implementation into `src/core/**` is a
-  possible future refactor, not a requirement.
+- **An exports file is a surface, not a home.** It contains only re-export
+  statements and comments. Everything else — every function, class, constant and
+  type declaration — lives in an implementation module outside `exports/`, and
+  **no implementation module imports from `exports/`**. Tests are the one
+  exemption: a test or fixture that imports the public surface is consuming it as
+  a consumer would, which is what the repo's test-import rule asks for, and probe
+  fixtures such as core's `probe-core-authoring.ts` exist precisely to bundle the
+  public barrel and assert what it drags in.
+
+- **Implementation is placed by plane, because the globs cannot overlap.**
+  Shared implementation sits at the package root (`src/<name>.ts`),
+  control-plane implementation in `src/control/**`, execution-plane
+  implementation in `src/execution/**`. This is forced, not stylistic: `core`,
+  `cron` and `streams` classify their roots with a single `src/*.ts → shared`
+  glob, so a control- or execution-plane module placed at the root would be
+  classified `shared`, and adding a per-file override for it would overlap the
+  `src/*.ts` glob — which, with no glob precedence, puts that file in two plane
+  groups. A subdirectory is the only placement that stays non-overlapping.
+  Packages whose root is genuinely mixed-plane (`target`, `storage`) keep one
+  glob per root file instead.
+
+- **This is stricter than the pattern it adapts.** Prisma Next's own
+  `adapter-postgres/src/exports/column-types.ts` carries about 185 lines of
+  implementation. We took the stricter rule deliberately: an exports file that
+  can hold implementation eventually does, and then internal modules import it,
+  and the published surface quietly becomes something the package's own
+  internals depend on — which is the inversion this rule exists to prevent.
 
 - **Plane globs stay per-file and non-overlapping.**
   [ADR-0028](ADR-0028-numbered-domains-and-layers-enforced-by-dependency-cruiser.md)
@@ -150,9 +175,12 @@ published API contract), not on a dts limitation.
   fallback overlaps every specific glob and breaks plane enforcement. Rejected —
   globs must be non-overlapping.
 
-- **Restructure internals into `src/core/**` (Prisma Next's shape) as part of this
-  move.** Cleaner separation, but a much larger diff than a relocation and not
-  needed for the public-surface goal. Deferred as a possible future refactor.
+- **Collect internals under `src/core/**`, as Prisma Next does.** We separate
+  implementation from surface the same way, but name the directories after the
+  planes the cruiser already enforces (`src/control/**`, `src/execution/**`,
+  root for shared) rather than adding a `core/` level. That keeps one vocabulary
+  — ADR-0017's planes — instead of two, and it is what makes the globs
+  non-overlapping.
 
 ## Related
 

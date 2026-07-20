@@ -12,8 +12,21 @@ file per published subpath. Everything else under `src/` is internal. See
 
 ## Rules
 
-- **Only `src/exports/*` is public.** Internal implementation stays at the `src/`
-  root (or subdirs). Never add a public subpath by pointing tsdown at a root file.
+- **Only `src/exports/*` is public.** Never add a public subpath by pointing
+  tsdown at a root file.
+- **An exports file holds ONLY re-exports and comments.** No functions, classes,
+  constants, or type declarations — those are implementation and belong outside
+  `exports/`. It is a surface, not a home.
+- **No implementation module may import from `exports/`.** If an internal module
+  needs something, it imports the implementation directly. Tests are exempt: a
+  test or fixture importing the public surface is consuming it as a consumer
+  would (see [test-import-patterns](./test-import-patterns.mdc)), which is what
+  probe fixtures are for.
+- **Put implementation where its plane's glob already points:** shared at the
+  package root (`src/<name>.ts`), control in `src/control/**`, execution in
+  `src/execution/**`. Root-collapsed packages classify `src/*.ts` as `shared`, so
+  a control or execution module at the root would be misclassified, and a
+  per-file override would overlap that glob — which puts the file in two planes.
 - **tsdown `entry` lists only `src/exports/*` files, as OBJECT entries with
   explicit names.** The name is the subpath and the flat `dist/` filename:
   `index` → `.` → `dist/index.mjs`; `control` → `./control` → `dist/control.mjs`.
@@ -26,14 +39,26 @@ file per published subpath. Everything else under `src/` is internal. See
 
 ## Adding a subpath
 
-1. Add `src/exports/<name>.ts`.
-2. Add the object entry `{ <name>: 'src/exports/<name>.ts' }` to the package's
+1. Write the implementation outside `exports/`, placed by its plane (above).
+2. Add `src/exports/<name>.ts` re-exporting it — see the shim shapes below.
+3. Add the object entry `{ <name>: 'src/exports/<name>.ts' }` to the package's
    `tsdown.config.ts`.
-3. Build; commit the regenerated `package.json#exports` (do not hand-edit it).
-4. Declare its plane in `architecture.config.json` with a **non-overlapping**
-   per-file glob (`src/exports/<name>.ts → <plane>`). There is no `src/**`
-   fallback — dependency-cruiser has no glob precedence, so overlapping globs put
-   a file in two planes and break enforcement.
+4. Build; commit the regenerated `package.json#exports` (do not hand-edit it).
+5. Declare the plane of BOTH the shim and the implementation in
+   `architecture.config.json`, with **non-overlapping** globs. There is no
+   `src/**` fallback — dependency-cruiser has no glob precedence, so overlapping
+   globs put a file in two planes and break enforcement.
+
+## Writing the shim — check the implementation first
+
+- Normal case: `export * from '../<name>.ts';`
+- **The module has a `default` export** (service nodes do): `export *` does NOT
+  carry it. Re-export it explicitly:
+  `export { thing } from '../x.ts'; export { default } from '../x.ts';`
+- **The module is a program with no exports** (the `*-entrypoint` files): there
+  is nothing to re-export, so the shim imports it for effect —
+  `import '../execution/<name>.ts';`. Safe because these packages do not declare
+  `sideEffects: false`; if one ever does, the import would be dropped.
 
 ## Exceptions that keep `exports: false` + a hand-maintained map
 
