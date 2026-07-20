@@ -208,3 +208,28 @@ cross-instance residual window is documented and accepted, not closed.
 The bounded retry becomes permanent protocol semantics — the PRO-217 canary
 retires itself when the platform heals, never the retry or the keys.
 Slice: [slices/rpc-cold-start/](slices/rpc-cold-start/spec.md).
+
+### Amendment (2026-07-17, later): rename, scope citation, absorbed fixes
+
+The kind was renamed to service-rpc (#131, ADR-0036) while this slice was in
+flight; the branch is rebased and all paths follow the new package and the
+`src/exports/` entrypoint convention (ADR-0035). Two corrections from Will:
+
+- The accepted residual is no longer justified by "same network" — that
+  framing contradicts `connection-contracts.md` § Purpose and scope, which
+  defines internal as membership of the application's topology and puts
+  cross-target, cross-network edges explicitly in scope, with robustness
+  calibrated per edge against the named failure modes of the targets
+  carrying it. The slice now names its concrete failure (PRO-217's close
+  during connection establishment, before any handler runs) and names the
+  residual it does not close (a retry reaching a different instance than the
+  one that applied the call), whose escalation path is the handler's own
+  durable control via `ctx.idempotencyKey`.
+- Three fixes promised when #114 was declined touch the same files this
+  slice rewrites, so they are absorbed rather than left to collide: a
+  request body size limit, masking handler exception messages instead of
+  returning them to callers, and dropping the client's redundant second
+  validation of responses.
+
+ADR-0037 is the number for the keyed protocol (0033–0036 taken); it ships
+with the implementation in this slice's PR, never as a docs-only change.
