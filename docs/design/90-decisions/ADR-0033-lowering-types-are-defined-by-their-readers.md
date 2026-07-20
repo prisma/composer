@@ -300,5 +300,3 @@ ADR exists to remove.
 - [ADR-0031](ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — provisioner refs are opaque by design.
 - alchemy `2.0.0-beta.59`: `src/Deploy.ts`, `src/Resource.ts`, `src/Apply.ts`; `lib/Resource.d.ts`.
 - Composer PR #101 — the superseded `NodeReport` attempt.
-</content>
-</invoke>

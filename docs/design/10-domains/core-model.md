@@ -47,36 +47,44 @@ glossary's Lowering — live in `/deploy`):
 | Plane | What it covers | Home today |
 | --- | --- | --- |
 | **authoring** | write the model — node factories, model types, build-adapter descriptors | `.` (usually reached through a pack's vocabulary) |
-| **control** | load / interrogate / mutate the model at build time — `Load`, `configOf`, the topology view | also `.` — see below |
-| **deploy** | convert the model to Alchemy for deployment — `lower()`, `lowering()`, `Target`; assemble the artifact (build adapters' deploy side) | `/deploy`, each adapter's `/assemble` |
+| **control** | the deploy-time face of an extension — its `ExtensionDescriptor` (node registry, provisioners, application hook, providers, preflight, teardown); plus core's `Load`, `configOf`, the topology view | each extension's `/control`; core's own stay on `.` |
+| **deploy** | convert the model to Alchemy for deployment — `lower()`, `lowering()`, the SPI types; assemble the artifact | `/deploy`; assemblers ride in each extension's `/control` registry |
 | **execution** | run it — the node's `run`/`load`, core's `hydrate` | rides on the node (pack authoring entry) |
 
-**`/control` is reserved as the settled design direction**: today the control
-surface is two pure, lean functions, too little to justify its own entry — but
-the moment it grows (the queryable-topology emit, config-declaration tooling, graph
-transforms when Modules arrive), it carves out of `.` into `@prisma/composer/control`.
-The boundary is decided; only the carve is deferred.
+**`/control` is a shipped entry, not a reservation** (ADR-0017): every extension
+exposes one, and it is where its heavy deploy-time code lives —
+`@prisma/composer-prisma-cloud/control` exports `prismaCloud()`,
+`@prisma/composer/node/control` exports `nodeBuild()`. Only
+`prisma-composer.config.ts` imports those entries, and only the CLI loads that
+file, so nothing an app's own import graph reaches can pull control-plane code
+into the runtime artifact. Core's own control-plane surface (`Load`, `configOf`)
+is small and pure and still sits on `.`; the config *types* (`defineConfig`,
+`ExtensionDescriptor`) live on `@prisma/composer/config`.
 
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
 | `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
-| `@prisma/composer/deploy` | `lower()`, `lowering()`, `Target` types, `Bundle`/`AssembleInput` (the assembler seam's contract, defined once here) | `alchemy`, `effect` |
+| `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types `prisma-composer.config.ts` is checked against (ADR-0017) | nothing (types + one identity function) |
+| `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
 | `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `postgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `postgresContract`, `http()` | `@prisma/composer` only |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
 | `@prisma/composer-prisma-cloud/storage` | S3-compatible object storage as a module (S3 wire protocol on Compute + Postgres `bytea`; see [`README`](../../../packages/1-prisma-cloud/2-shared-modules/storage/README.md)) — `storage()`, `s3()` + `s3Contract`/`S3Config`, `storageService`; `/storage/testing` adds the `createPgStore` + `startStorageServer` local stand-in | `@prisma/composer` + `app-node` + `@prisma/composer-prisma-cloud` |
-| `@prisma/composer-prisma-cloud/target` | `prismaCloud()` | `@internal/lowering`, `alchemy`, `effect` |
-| `@prisma/composer/node` · `@prisma/composer/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `pack` | `@prisma/composer` only |
-| `@prisma/composer/node/assemble` · `@prisma/composer/nextjs/assemble` | the deploy-side assembler (called by `package`) | `node:fs`/framework tooling — deploy machine only |
-| `@internal/assemble` | `assembleServices()` — routes each service to its adapter's `/assemble` via `${build.pack}/assemble` (entry-anchored), the wrapper-inlining policy, `AssembleError` | `node:fs`/`node:module` — deploy machine only; consumed by `@internal/cli` and the future programmatic deploy API |
+| `@prisma/composer-prisma-cloud/control` | `prismaCloud()` — the extension descriptor the config lists | `@internal/lowering`, `alchemy`, `effect` |
+| `@prisma/composer/node` · `@prisma/composer/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `extension` | `@prisma/composer` only |
+| `@prisma/composer/node/control` · `@prisma/composer/nextjs/control` | `nodeBuild()` · `nextjsBuild()` — an `ExtensionDescriptor` whose `nodes` registry holds the deploy-side assembler under `{ kind: "build" }` | `node:fs`/framework tooling — deploy machine only |
+| `@internal/assemble` | `assembleServices()` — looks each service's `build` descriptor up in the configured extensions' registries, the wrapper-inlining policy, `AssembleError` | `node:fs`/`node:module` — deploy machine only; consumed by `@internal/cli` and the future programmatic deploy API |
 
-A build adapter splits exactly like a target pack: a **lean authoring descriptor**
-that the service module carries (pure data — `{ kind, pack, module, entry }`,
-`pack` being the adapter's own package name, baked in by its factory), and a
-**heavy deploy-side assembler** invoked once at deploy on the build machine,
-resolved from `pack` (`${build.pack}/assemble`) the same entry-anchored way a
-target pack's `/target` is. The descriptor rides into every bundle that
-imports `service.ts`; the assembler never does.
+A build adapter splits exactly like any other extension: a **lean authoring
+descriptor** that the service module carries (pure data — `{ extension, type,
+module, entry }`, `extension` being the adapter's own package name, baked in by
+its factory), and a **heavy deploy-side assembler** invoked once at deploy on the
+build machine. The two are joined by the same mechanism every other node uses:
+the assembler is a `{ kind: "build" }` entry in the adapter's own `/control`
+registry, found by the descriptor's `(extension, type)` pair. There is no
+`${build.extension}/assemble` specifier and no path resolution — the config's
+static imports are the only way control-plane code is reached (ADR-0017). The descriptor
+rides into every bundle that imports `service.ts`; the assembler never does.
 
 `@prisma/composer-prisma-cloud/cron` is a **subpath**, not its own package: Prisma Cloud's common Modules each get one entry point under `@prisma/composer-prisma-cloud` (`/cron` today, more later), so an app that never imports `/cron` never bundles it (tree-shakable by subpath). A Module's runnable entries (`scheduler-service.mjs`, `scheduler-entrypoint.mjs`) ship as self-contained dist files that only its own build descriptors reference by path — never imported by the subpath's own authoring barrel.
 
@@ -94,13 +102,17 @@ Who imports what, end to end:
 - the **user's entrypoint** (`server.ts`, or a Next page) imports the service
   module and calls `service.load()` for typed deps. The app author writes AND
   bundles this file (their bundler, or `next build`) — the framework never touches it;
-- the **deploy entry is the app module itself** — there is no config file
-  (ADR-0003). `prisma-composer deploy <entry>` imports it, infers the target pack from
-  the nodes, and constructs the target from the environment via the pack's
-  `/target` `fromEnv()` — the only place the heavy target import happens — then
-  calls `@prisma/composer/deploy`'s `lower()` internally. The app author writes no
-  stack file and no config file — `prisma-composer deploy` generates one at
-  `.prisma-composer/alchemy.run.ts` per run and drives it; see
+- the **deploy entry is the app module itself**: everything about the
+  *application* is still derived from the root node (ADR-0003).
+  `prisma-composer deploy <entry>` imports it and calls
+  `@prisma/composer/deploy`'s `lower()` internally;
+- the **`prisma-composer.config.ts`** at the app root carries the two things the
+  graph cannot yield — the **extension list** and the **state store** (ADR-0017).
+  The CLI finds it by walking up from the deploy entry and loads it with c12. It
+  is the only importer of the `/control` entries where heavy code lives, and app
+  code never imports it, which is what keeps that code out of the artifact. The
+  app author still writes no *stack* file — `prisma-composer deploy` generates one
+  at `.prisma-composer/alchemy.run.ts` per run and drives it; see
   [`deploy-cli.md`](deploy-cli.md).
 
 At deploy, the build adapter's assembler produces a **normalized bundle dir**: the
@@ -128,7 +140,7 @@ SPI and never see the graph, never sequence anything, never call another tool.
 
 | Path | Where it executes | Core does (the actor) | Pack / adapter tools used |
 | --- | --- | --- | --- |
-| **provision** | deploy machine, via Alchemy | provision the application once (Project + poison vars), then walk the DAG realizing each service's host | `Target.application.provision`, then `ServiceLowering.provision` → identity (App) |
+| **provision** | deploy machine, via Alchemy | provision the application once (Project + poison vars), then walk the DAG realizing each service's host | `ExtensionDescriptor.application.provision`, then `ServiceLowering.provision` → identity (App) |
 | **deploy** | deploy machine, via Alchemy | build each service's typed `Config`, have the pack encode it *first*, assemble via the build adapter, then ship the build | `ServiceLowering.serialize`, the **build adapter's `assemble`**, then `package` + `deploy` |
 | **run** | inside the bundle, in the VM | provide `hydrate` (typed `Config` → each dependency's binding); the node's `run` resolves + stashes config and boots the entry, the node's `load` hydrates on demand | the node's `run` / `load`, each connection's `hydrate` |
 
@@ -181,14 +193,17 @@ interface NodeBase {
 // ModuleNode is deliberately NOT a NodeBase: it has no routing `type` — it is
 // transparent wiring, not a routable thing (see § Nodes).
 
-// Shared base for pack-authored nodes (service + resource): the pack's package
-// name, e.g. "@prisma/composer-prisma-cloud" — deploy tooling reads it off the graph
-// to resolve `${pack}/target` (ADR-0003). DependencyEnd stays pack-less.
-// Deploy tooling routes on the (pack, type) pair: `pack` selects the target,
-// `type` selects that target's lowering-table entry within it — `type` never
-// carries a pack prefix itself.
-interface PackAuthoredNode extends NodeBase {
-  readonly pack: string
+// Shared base for extension-authored nodes (service + resource): the authoring
+// extension's package name, e.g. "@prisma/composer-prisma-cloud". Deploy tooling
+// reads it off the graph and matches it against each configured
+// ExtensionDescriptor's `id` (ADR-0017) — it is a registry KEY, never a module
+// specifier to import. DependencyEnd stays extension-less. Routing is on the
+// (extension, type) pair: `extension` selects the descriptor, `type` selects the
+// entry in its `nodes` registry — `type` never carries a package prefix itself.
+// (A doc device: the real ResourceNode/ServiceNode declare these fields inline
+// rather than sharing a base interface.)
+interface ExtensionAuthoredNode extends NodeBase {
+  readonly extension: string
 }
 
 // ——— Configuration model (core owns structure; the pack owns encoding) ———
@@ -246,11 +261,13 @@ interface Config {
 // absolute or machine path. `module` is the one sanctioned exception: deploy-time
 // metadata only, and bundlers preserve it as an expression, so it re-evaluates
 // inside the deploy artifact instead of baking in a dev-machine path. The heavy
-// ASSEMBLER (fs, framework tooling) is resolved from `pack` (`${pack}/assemble`,
-// entry-anchored) at deploy and never ships in a bundle (§ Lowering, § Extension).
+// ASSEMBLER (fs, framework tooling) is a `{ kind: "build" }` entry in this
+// adapter's own /control registry (ADR-0017), found by the (extension, type)
+// pair below — never a computed `${extension}/assemble` import — and never ships
+// in a bundle (§ Lowering, § Extension).
 interface BuildAdapter {
-  readonly kind: string                        // "node" · "nextjs" — the resolved module's own discriminant
-  readonly pack: string                        // the adapter's package name, e.g. "@prisma/composer/node" — baked in by node()/nextjs(); resolves `${pack}/assemble`
+  readonly extension: string                   // the adapter's package name, e.g. "@prisma/composer/node" — baked in by node()/nextjs(); the registry key at deploy
+  readonly type: string                        // "node" · "nextjs" — the build descriptor's id within that extension's `nodes`
   readonly module: string                      // the authoring module's import.meta.url — the anchor every other path resolves against
   readonly entry: string                       // built runnable, resolved relative to dirname(module) (e.g. "../dist/server.js")
 }
@@ -264,7 +281,7 @@ interface BuildAdapter {
 // (its single port); the routing `type` is DERIVED as `provides.kind`, so a
 // slot requiring that contract is satisfied — at compile time and at Load —
 // through exactly the machinery a service port uses.
-interface ResourceNode<C extends Contract<any, any> = Contract<any, any>> extends PackAuthoredNode {
+interface ResourceNode<C extends Contract<any, any> = Contract<any, any>> extends ExtensionAuthoredNode {
   readonly kind: "resource"
   readonly type: C["kind"]
   readonly provides: C
@@ -277,7 +294,7 @@ interface ResourceNode<C extends Contract<any, any> = Contract<any, any>> extend
 // factory returns a runnable/loadable subclass that adds `run`/`load` (§ Runtime).
 // No `url`/anchor field here — the service's build adapter carries its own
 // authoring module (BuildAdapter.module, ADR-0004).
-interface ServiceNode<D extends Deps = Deps, P extends Params = Params> extends PackAuthoredNode {
+interface ServiceNode<D extends Deps = Deps, P extends Params = Params> extends ExtensionAuthoredNode {
   readonly kind: "service"
   readonly inputs: D
   readonly params: P                           // service-level config (e.g. port) — no special "context" concept
@@ -350,7 +367,7 @@ validate, and freeze. This is the whole "framework provides / pack wraps" contra
 // @prisma/composer
 function resource<C extends Contract<any, any>>(def: {
   name: string
-  pack: string
+  extension: string
   provides: C                      // the routing `type` is derived as provides.kind
 }): ResourceNode<C>
 
@@ -429,33 +446,69 @@ serialized-artifact emit step builds on this later.
 
 ## Lowering (`@prisma/composer/deploy`)
 
-The router. Core's only job at deploy: Load, then look up each node's `type` in the
-target's lowering table and run what it finds, deps before dependents.
+The router. Core's only job at deploy: Load, then look up each node's
+`(extension, type)` pair in the app config's extension registries and run what it
+finds, deps before dependents.
 
 ```ts
 import type { Layer } from "effect"
 import type { Effect } from "effect"
 
-// What a target pack's /target entry produces — data + per-type SPI functions.
-// The pack is never the actor: these are tools core invokes at moments core
-// chooses; none sees the graph, sequences anything, or calls another.
-interface Target {
-  readonly name: string
-  providers(): Layer.Layer<never>                       // the pack's Alchemy providers
-  readonly application: ApplicationLowering             // once per lowering, before anything else
-  readonly resources: Record<string, Lowering>          // resource type id → one-shot lowering
-  readonly services: Record<string, ServiceLowering>    // service type id → phased SPI
-  readonly state: () => AlchemyStateLayer               // the target's default state backend — every target
-                                                        // supplies one; explicit opts.state always wins
+// The config file's default export (ADR-0017). `prisma-composer.config.ts` sits at
+// the app root and STATICALLY imports each extension's /control entry, so the
+// framework never builds a module specifier, never resolves a path, and never
+// imports by a computed name. Only the CLI loads it — app code never does, which
+// is what keeps control-plane code out of the runtime artifact.
+interface PrismaAppConfig {
+  readonly extensions: ExtensionDescriptor[]
+  readonly state: () => AlchemyStateLayer               // the ONE state store per deploy — explicit,
+                                                        // platform-agnostic, never defaulted by an extension
 }
+function defineConfig(config: PrismaAppConfig): PrismaAppConfig   // in @prisma/composer/config
+
+// One extension's control-plane registry: everything the deploy pipeline may look
+// up for a node whose `extension` field names this package. The extension is never
+// the actor — these are tools core invokes at moments core chooses; none sees the
+// graph, sequences anything, or calls another.
+interface ExtensionDescriptor {
+  readonly id: string                                   // the package name a node's `extension` is matched against
+  readonly nodes: Record<string, NodeDescriptor>        // ONE registry, keyed by the within-extension node id
+  readonly provisions?: ReadonlyMap<symbol, ProvisionerDescriptor>   // param provisioners by need brand (ADR-0031)
+  readonly application?: ApplicationDescriptor          // once per lowering, before any of this extension's nodes
+  readonly providers?: () => Layer.Layer<never>         // merged across configured extensions, in config order
+  readonly preflight?: (input: PreflightInput) => Promise<void>      // platform prerequisites; throws to abort (ADR-0029)
+  readonly teardown?: (input: TeardownInput) => Promise<void>        // destroy-time cleanup of infrastructure the
+                                                                     // extension owns OUTSIDE the stack (e.g. the deploy
+                                                                     // state store `alchemy destroy` was still reading).
+                                                                     // Runs after destroy succeeds, before the stage's
+                                                                     // Project/Branch go; throwing aborts (ADR-0034)
+}
+
+// What ONE registry entry can do. The `kind` discriminant is checked at every
+// lookup against what the site needs — a resource node found under a `service`
+// descriptor is an error naming (extension, type, expected kind). One registry,
+// not a resources/services split: a build adapter is an extension like any other
+// and registers its assembler here too.
+type NodeDescriptor =
+  | ({ readonly kind: "resource" } & Lowering)          // one-shot lowering
+  | ({ readonly kind: "service" } & ServiceLowering)    // the phased SPI
+  | { readonly kind: "build"; assemble(input: AssembleInput): Promise<Bundle> }
 
 // The application's shared infrastructure: on Prisma Cloud, the one Project
 // (the config namespace and lifecycle boundary) plus the poison DATABASE_URL
 // variables. Its product (e.g. { projectId }) reaches every later SPI call of
 // the SAME extension via LowerContext.application. Core declares it `unknown`
 // and never reads it — the extension narrows with its own guard (ADR-0033).
-interface ApplicationLowering {
+interface ApplicationDescriptor {
   provision(ctx: LowerContext): Effect.Effect<unknown, unknown, unknown>
+}
+
+// Mints one framework-provisioned param value for one dependency edge (ADR-0031).
+// Core looks the need's brand up in the CONSUMER extension's `provisions` map,
+// forwards the opaque need, and never reads its payload; a need no configured
+// extension satisfies fails the deploy naming the brand and the edge.
+interface ProvisionerDescriptor {
+  provision(edge: ProvisionEdge): Effect.Effect<unknown, unknown, unknown>
 }
 
 // The phased service SPI. P and S are the DESCRIPTOR's own handoff types —
@@ -518,7 +571,7 @@ interface PackageInput {
 }
 
 // One node's realization. Runs inside the Alchemy stack effect; yields the
-// pack's Alchemy resources. Core never looks inside.
+// extension's Alchemy resources. Core never looks inside.
 type Lowering = (ctx: LowerContext) => Effect.Effect<LoweredResult, unknown, unknown>
 
 interface LowerContext {
@@ -532,6 +585,8 @@ interface LowerContext {
                                                         // undefined when it declares no hook. Core never
                                                         // reads it; the extension narrows it (ADR-0033)
   readonly lowered: ReadonlyMap<NodeId, Outputs>        // already-lowered deps (topo order)
+  readonly provisioned: ReadonlyMap<string, unknown>    // every framework-minted param value this lowering,
+                                                        // keyed by edge id (ADR-0031); opaque to core
 }
 
 // The values a node provides to its dependents — e.g. a deployed URL a later
@@ -542,6 +597,37 @@ interface LowerContext {
 // (ADR-0033).
 type Outputs = Readonly<Record<string, unknown>>
 
+// One thing a node became on the deployment target, RESOLVED — what a report
+// consumer sees. The descriptor NAMES it; core never infers meaning from it.
+// `url` is present only when the descriptor declares the address publicly
+// reachable — a connection string is never a `url` (no core-level rule is safe:
+// `url` on compute is an endpoint, on postgres it would be a DSN). A descriptor
+// constructing one holds `deployment.deployedUrl` — an Output<T>, not a T,
+// because the stack effect runs before Alchemy applies — so construction sites
+// traffic in `Input<DeployedEntity>` (LoweredResult.entities above); apply
+// resolves them before any reader sees them.
+interface DeployedEntity {
+  readonly kind: string
+  readonly id: string
+  readonly url?: string
+  readonly details?: Readonly<Record<string, string>>
+}
+
+// What one graph node became — assembled by the loop at full context, RESOLVED.
+// In-process only: it holds the node itself, so it never crosses the stack boundary.
+interface DeployedNode {
+  readonly address: string
+  readonly node: ServiceNode | ResourceNode
+  readonly entities: readonly DeployedEntity[]
+}
+
+// The result of the whole Deploy operation: the app and every node it deployed,
+// topo-ordered — what LowerOptions.report receives.
+interface DeploymentResult {
+  readonly app: string
+  readonly nodes: readonly DeployedNode[]
+}
+
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
   // `prisma-composer deploy` runs each service's build-adapter assembler and writes
@@ -551,17 +637,22 @@ interface LowerOptions {
   // § Lowering) supplies these itself.
   readonly bundles: Record<string, Bundle>
   readonly stage?: string
-  readonly state?: AlchemyStateLayer                     // explicit override — wins over the target's own
-                                                         // default (Target.state)
+  readonly state?: AlchemyStateLayer                     // explicit override — wins over the config's
+                                                         // own state store (PrismaAppConfig.state)
+  // Invoked once per deploy, during apply, with the Deploy operation's RESOLVED
+  // result (app + every node, topo order). Presentation belongs to the caller
+  // (the CLI wires its renderer here); core never formats. Absent means no report
+  // is assembled and no Action is declared at all.
+  readonly report?: (result: DeploymentResult) => void
 }
 interface Bundle { readonly dir: string; readonly entry: string }          // the ONE assembled-bundle shape (assembler product; defined once, here)
 interface Artifact { readonly path: string; readonly sha256: string }       // package()'s product
 
-// Load → route each node through target.lower[node.type] → an Alchemy Stack
-// (the default export the alchemy CLI consumes). Unknown type → LowerError
-// naming the type and the target's known types. root must be a module — a bare
-// service is not independently deployable.
-function lower(root: ModuleNode, target: Target, opts: LowerOptions): AlchemyStack
+// Load → route each node through its extension's nodes[node.type] → an Alchemy
+// Stack (the default export the alchemy CLI consumes). An unknown (extension,
+// type) pair → LowerError naming both and the known ids. root must be a module —
+// a bare service is not independently deployable.
+function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions): AlchemyStack
 class LowerError extends Error {}
 
 // Composable form — for MIXED topologies: framework-authored nodes beside
@@ -570,41 +661,44 @@ class LowerError extends Error {}
 // has no outputs of its own (boundary ports are future work), and returning
 // nothing keeps Alchemy from printing and persisting a stack-output dump —
 // Apply.apply short-circuits on a falsy plan output (ADR-0033).
-// Error channel: LowerError from routing, PLUS whatever a pack lowering fails
-// with (their error type is open) — a mixed-stack caller treats failures as
+// Error channel: LowerError from routing, PLUS whatever an extension's lowering
+// fails with (their error type is open) — a mixed-stack caller treats failures as
 // deploy-fatal or inspects; it must not assume LowerError is the only inhabitant.
-function lowering(root: ModuleNode, target: Target, opts: LowerOptions):
+function lowering(root: ModuleNode, config: PrismaAppConfig, opts: LowerOptions):
   Effect.Effect<undefined, LowerError, unknown>
 ```
 
 `lower()` is nothing but the whole-stack wrapper:
-`Alchemy.Stack(opts.name, { providers: target.providers(), state: opts.state ?? target.state() }, lowering(root, target, opts))`
-— Alchemy requires a state layer; every target supplies its own default (prisma-cloud
-defaults to a Prisma-hosted store), and an explicit `opts.state` always wins. Two
-type-level notes the wrapper carries (both commented at the single site): a
-`LowerError` is fatal at deploy (`Effect.orDie`), and the effect's requirements
-channel is narrowed to what `Alchemy.Stack` accepts — `lowering()` itself stays
-`unknown`-requirements for composability.
-In the mixed case the hand-written stack supplies providers itself (including the
-target's, via `target.providers()`), yields a `lowering(…)` per framework-authored
-service, and wires its own resources around the returned `outputs`.
+`Alchemy.Stack(opts.name, { providers: mergedProviders(config), state: opts.state ?? config.state() }, lowering(root, config, opts))`
+— Alchemy requires a state layer; the config supplies the deploy's one state store
+and an explicit `opts.state` always wins. Providers are **every configured
+extension's** `providers()` merged in config-array order, with no
+used-extensions-only filtering (ADR-0017's pinned-providers rule); an extension
+that declares none is skipped. Two type-level notes the wrapper carries (both
+commented at the single site): a `LowerError` is fatal at deploy (`Effect.orDie`),
+and the effect's requirements channel is narrowed to what `Alchemy.Stack` accepts
+— `lowering()` itself stays `unknown`-requirements for composability.
+In the mixed case the hand-written stack supplies providers itself, yields a
+`lowering(…)` per framework-authored service, and wires its own resources around
+the nodes it composes.
 
-**Core's deploy-path sequencing** — the control flow no pack can misorder.
-First, `application.provision` runs once (the Project, with the poison
-`DATABASE_URL` variables). Then walk the graph in topological order (the module
-body's provision order; the dependency DAG Load validated). Each module-provisioned
-**resource** lowers exactly once via `Target.resources` (e.g. one Database +
-Connection — outputs carry the url), no matter how many services consume it;
-dependency-slot nodes are edges only and never lower. Then for each service:
+**Core's deploy-path sequencing** — the control flow no extension can misorder.
+First, each extension's `application.provision` runs once (the Project reference,
+with the poison `DATABASE_URL` variables). Then walk the graph in topological
+order (the module body's provision order; the dependency DAG Load validated). Each
+module-provisioned **resource** lowers exactly once via its extension's
+`nodes[type]` `{ kind: "resource" }` entry (e.g. one Database + Connection — its
+`outputs` carry the url), no matter how many services consume it; dependency-slot
+nodes are edges only and never lower. Then for each service:
 
 1. `provision` — the service now has identity (its App).
 2. core **builds the typed `Config`** — each input's declared params matched by
-   name to its producer's lowered outputs through the one `dependency` edge:
-   whatever the module wired in — a resource's lowered outputs (shared by every
-   consumer wired to it) or a producer service's deploy outputs (the producer,
-   earlier in topo order, is already fully deployed — its URL is real, not the
-   create-time placeholder) — plus service-param defaults. Leaf values are
-   provisioning refs, not strings.
+   name to its producer's `outputs` through the one `dependency` edge:
+   whatever the module wired in — a resource's outputs (shared by every consumer
+   wired to it) or a producer service's deploy outputs (the producer, earlier in
+   topo order, is already fully deployed — its URL is real, not the create-time
+   placeholder) — plus service-param defaults. Leaf values are provisioning refs,
+   not strings.
 3. `serialize(config)` — the pack encodes that typed Config into the service's
    runtime environment (Prisma Cloud: one env write per leaf, keyed by the
    pack's own naming from the address, value = the ref). Never the platform default.
@@ -784,7 +878,7 @@ export const postgresContract: Contract<"postgres", PostgresConfig> = Object.fre
 export function postgres(opts: { name: string }): ResourceNode<typeof postgresContract>
 export function postgres(): DependencyEnd<PostgresConfig, typeof postgresContract>
 export function postgres(opts?: { name: string }): unknown {
-  if (opts?.name !== undefined) return resource({ name: opts.name, pack: "@prisma/composer-prisma-cloud", provides: postgresContract })
+  if (opts?.name !== undefined) return resource({ name: opts.name, extension: "@prisma/composer-prisma-cloud", provides: postgresContract })
   return dependency({
     type: "postgres",
     connection: { params: { url: string() }, hydrate: (v) => v },
@@ -817,11 +911,12 @@ const computeParams = { port: number({ default: 3000 }) }
 // code that serves. run() is the only environment reader in the pack; load()
 // hydrates from the stash run() left.
 export const compute = <D extends Deps>(def: {
+  name: string
   deps: D
   build: BuildAdapter
 }): RunnableServiceNode<D, typeof computeParams> => {
   const node = service({
-    pack: "@prisma/composer-prisma-cloud", type: "compute", inputs: def.deps, params: computeParams, build: def.build,
+    name: def.name, extension: "@prisma/composer-prisma-cloud", type: "compute", inputs: def.deps, params: computeParams, build: def.build,
   })
   let loaded: Loaded<D, typeof computeParams> | undefined   // per-process memo for load()
   return Object.freeze({
@@ -858,135 +953,162 @@ const deserialize = (shape: readonly ConfigDeclaration[], address: string): Conf
 const stash = (shape: readonly ConfigDeclaration[], config: Config): void => { /* re-emit under address-free keys, the medium the framework's forks inherit */ }
 ```
 
-Target entry — the lowering table (the only place `prisma-alchemy` is imported):
+Control entry (`@prisma/composer-prisma-cloud/control`) — the extension
+descriptor `prisma-composer.config.ts` lists, and the only place `@internal/lowering`
+is imported. Each node kind's hooks live in their own descriptor file; the
+descriptor stitches them into one `nodes` registry:
 
 ```ts
 import * as Effect from "effect/Effect"
 import * as Prisma from "@internal/lowering"
-import type { Target } from "@prisma/composer/deploy"
+import type { ExtensionDescriptor } from "@prisma/composer/config"
 
 export interface PrismaCloudOptions {
-  workspaceId: string
-  region?: Prisma.ComputeRegion   // the pack imports prisma-alchemy freely — use its union
+  workspaceId?: string             // defaults to PRISMA_WORKSPACE_ID
+  region?: Prisma.ComputeRegion    // the pack imports prisma-alchemy freely — use its union
 }
 
-export const prismaCloud = (o: PrismaCloudOptions): Target => ({
-  name: "prisma-cloud",
-  // One commented cast: prisma-alchemy's providers() satisfies Stack's provider
-  // requirements at runtime but not structurally (pre-existing upstream typings
-  // gap; same error exists untypechecked in the hand-written examples). The cast
-  // lives here in the pack — never in core — until fixed in prisma-alchemy.
-  providers: () => Prisma.providers() as unknown as Layer.Layer<never>,
+// The application's own product, typed by THIS extension because it is the only
+// reader (ADR-0033). Core hands ctx.application over as `unknown`; the guard
+// below narrows it back — nothing in core ever reads `projectId`.
+interface CloudApplication { readonly projectId: string }
+const projectIdOf = (application: unknown): string => {
+  if (typeof application !== "object" || application === null || !("projectId" in application))
+    throw new Error("prisma-cloud: the application hook must run before any node lowers")
+  return (application as CloudApplication).projectId
+}
 
-  // Runs ONCE per lowering, before any service: the application's Project, with
-  // the poison DATABASE_URL/DATABASE_URL_POOLED variables written immediately so
-  // nothing can ever rely on the platform default.
-  application: {
-    provision: ({ opts }) =>
-      Effect.gen(function* () {
-        const project = yield* Prisma.Project(`${opts.name}-project`, {
-          workspaceId: o.workspaceId, name: opts.name,
-        })
-        for (const key of ["DATABASE_URL", "DATABASE_URL_POOLED"]) {
-          yield* Prisma.EnvironmentVariable(`${key}-poison`, {
-            projectId: project.id, key, value: "-", class: "production",  // "-": the API rejects "" (verified at the deploy proof)
-          })
-        }
-        return { outputs: { projectId: project.id } }
-      }),
-  },
+export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
+  const o = resolveOptions(opts)   // reads PRISMA_WORKSPACE_ID/REGION/PROJECT_ID; fails fast, naming the var
+  return {
+    id: "@prisma/composer-prisma-cloud",   // what a node's `extension` field is matched against
 
-  resources: {
-    // One Database per module-provisioned postgres resource — `id` is the module
-    // provision id (e.g. "db"), so a resource shared by several services is
-    // created exactly once.
-    postgres: ({ id, application }) =>
-      Effect.gen(function* () {
-        const db = yield* Prisma.Database(`${id}-db`, {
-          projectId: application.outputs.projectId, name: id,
-        })
-        // The Connection's DSN is under endpoints.direct.connectionString — the
-        // top-level `url` is an API self-link (PRO-212).
-        const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id })
-        return { outputs: { url: conn.endpoints.direct.connectionString } }
-      }),
-  },
+    // Merged across every configured extension in config order (a commented cast
+    // bridges prisma-alchemy's provider collection to Stack's Layer — an upstream
+    // typings gap, kept in the pack, never in core).
+    providers: () => Prisma.providers() as unknown as Layer.Layer<never>,
 
-  services: {
-    compute: {
-      // The service as a PLACE inside the application's Project: the App,
-      // identity-bearing only, no code runs.
-      provision: ({ id, application }) =>
+    // Deploy-time prerequisite check (ADR-0029): the CLI runs it once, after the
+    // Project/Branch are resolved and before any stack file or Alchemy — it
+    // verifies every secret the provision manifest needs exists, throwing to abort.
+    preflight: (input) => runPreflight(input),
+
+    // Runs ONCE per lowering, before any node — REFERENCES the CLI-ensured Project
+    // (it no longer creates one) and writes the poison DATABASE_URL variables so
+    // nothing can rely on the platform default. Its product reaches this
+    // extension's own nodes via ctx.application.
+    application: {
+      provision: () =>
         Effect.gen(function* () {
-          const svc = yield* Prisma.ComputeService(`${id}-svc`, {
-            projectId: application.outputs.projectId,
-            name: id, region: o.region ?? "us-east-1",
-          })
-          return { outputs: { serviceId: svc.id, projectId: application.outputs.projectId } }
-        }),
-
-      // Encode the typed Config into the runtime environment — one env var per
-      // leaf, keyed by the SAME serializer run() reads with at boot. Values are
-      // the provisioning refs core built the Config from, so each env var depends
-      // on its resource/producer — the ordering edges. The platform default is
-      // never written.
-      serialize: ({ address, node }, provisioned, config) =>
-        Effect.gen(function* () {
-          const records = []
-          for (const d of configOf(node)) {
-            const value = d.owner === "service" ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name]
-            records.push(yield* Prisma.EnvironmentVariable(`${configKey(address, d)}-var`, {
-              projectId: provisioned.outputs.projectId,
-              key: configKey(address, d),
-              value: typeof value === "number" ? String(value) : (value as never),
-              class: "production",
-            }))
+          const projectId = o.projectId    // set by the CLI in the deploy env; required
+          for (const key of ["DATABASE_URL", "DATABASE_URL_POOLED"]) {
+            yield* Prisma.EnvironmentVariable(`${key}-poison`, {
+              projectId, key, value: "-", class: "production",  // "-": the API rejects "" (verified at the deploy proof)
+            })
           }
-          // The listen port the app binds is the service's own `port` param
-          // (already encoded above); carry it to deploy() through serialize's
-          // outputs, the phase that already holds the typed Config.
-          const port = typeof config.service.port === "number" ? config.service.port : 3000
-          return { outputs: { environment: records, port } }   // → deploy's environment prop and Deployment.port (the edges)
-        }),
-
-      // Print the bootstrap (address + boot import baked in) and assemble the
-      // deployable artifact from the build adapter's normalized bundle dir:
-      // bootstrap.js + compute.manifest.json beside the app's entry + wrapper,
-      // deterministic tar.gz. The whole envelope is the pack's — target vocabulary.
-      package: ({ id }, { assembled, address }) =>
-        Effect.gen(function* () {
-          // bootstrap.js: `import main from "./main.js"; await main.run(${JSON.stringify(address)}, () => import(${JSON.stringify(assembled.entry)}))`
-          return { path: `…/${id}.tar.gz`, sha256: "…" }
-        }),
-
-      // A specific BUILD into the place: version → upload → start → promote. The
-      // environment prop references serialize's env-var records, so the version
-      // depends on them (the edge that kills PRO-211). deployedUrl is read
-      // post-promote — the create-time domain is a placeholder (PRO-200).
-      deploy: ({ id }, provisioned, artifact, serialized) =>
-        Effect.gen(function* () {
-          const deploy = yield* Prisma.Deployment(`${id}-deploy`, {
-            computeServiceId: provisioned.outputs.serviceId,
-            artifactPath: artifact.path,
-            artifactHash: artifact.sha256,
-            environment: serialized.outputs.environment,
-            // Route to the port the app actually binds (resolved by serialize),
-            // not a hardcoded constant.
-            port: typeof serialized.outputs.port === "number" ? serialized.outputs.port : 3000,
-          })
-          return { outputs: { url: deploy.deployedUrl, projectId: provisioned.outputs.projectId } }
+          return { projectId } satisfies CloudApplication
         }),
     },
-  },
-})
+
+    // ADR-0031: this extension's param provisioners, keyed by need brand. Core
+    // resolves a provisioned param's need against the CONSUMER's extension — this
+    // one — and mints one value per dependency edge.
+    provisions: new Map([[RPC_PEER_KEY, serviceKeyProvisioner]]),
+
+    // ONE registry, keyed by within-extension node id. `kind` is checked at every
+    // lookup; a build adapter is an extension's node too (its /control adds one).
+    nodes: {
+      // A resource's descriptor IS the lowering function, tagged kind:"resource"
+      // (Object.assign — a resource lowers once). Returns a LoweredResult: OUTPUTS
+      // for dependents (resolved by param name), plus the ENTITIES it became on the
+      // deployment target. No `url` entity — a connection string is not a public
+      // endpoint, and only this descriptor could know that (ADR-0033). `id` is the
+      // module provision id (e.g. "db"), so a resource shared by several consumers
+      // is created exactly once.
+      postgres: Object.assign(
+        ({ id, application }) =>
+          Effect.gen(function* () {
+            const db = yield* Prisma.Database(`${id}-db`, { projectId: projectIdOf(application), name: id })
+            const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id })
+            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.connectionString })  // FT-5226 cold-start
+            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.id }] }
+          }),
+        { kind: "resource" as const },
+      ),
+
+      // The phased service SPI (kind: "service"). P = ComputeProvisioned, S =
+      // ComputeSerialized — each is the descriptor's OWN handoff type, read only
+      // here; core threads them through as `unknown` (ADR-0033).
+      compute: {
+        kind: "service",
+
+        // The service as a PLACE inside the Project: the App, identity only.
+        // serviceId is an Output<string> (an unresolved ref) — the honest type,
+        // since the whole stack effect runs before Alchemy applies. projectId is a
+        // real string (from the CLI env, not a resource attribute).
+        provision: ({ id, application }) =>
+          Effect.gen(function* () {
+            const svc = yield* Prisma.ComputeService(`${id}-svc`, {
+              projectId: projectIdOf(application), name: id, region: o.region ?? "us-east-1",
+            })
+            return { serviceId: svc.id, projectId: projectIdOf(application) }  // : ComputeProvisioned
+          }),
+
+        // Encode the typed Config into the runtime environment — one env var per
+        // leaf, keyed by the SAME serializer run() reads with at boot. Values are
+        // the provisioning refs core built the Config from, so each env var depends
+        // on its resource/producer (the ordering edges). Returns the records deploy
+        // must depend on, plus the resolved listen port.
+        serialize: ({ address, node }, provisioned, config) =>
+          Effect.gen(function* () {
+            const records = []
+            for (const d of configOf(node)) {
+              const value = d.owner === "service" ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name]
+              if (value === undefined) continue
+              records.push(yield* Prisma.EnvironmentVariable(`${configKey(address, d)}-var`, {
+                projectId: provisioned.projectId, key: configKey(address, d),
+                value: encode(d.owner, value), class: "production",
+              }))
+            }
+            const port = typeof config.service.port === "number" ? config.service.port : 3000
+            return { environment: records, port }   // : ComputeSerialized → deploy's edges
+          }),
+
+        // Print the bootstrap (address + boot import baked in) and assemble the
+        // deployable artifact from the build adapter's normalized bundle dir:
+        // bootstrap.js + compute.manifest.json beside the app's entry + wrapper,
+        // deterministic tar.gz. The whole envelope is the pack's — target vocabulary.
+        package: ({ id }, { assembled, address }) =>
+          Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address })),
+
+        // version → upload → start → promote. The environment prop references
+        // serialize's records, so the version depends on them (the edge that kills
+        // PRO-211). Returns a LoweredResult: `url` IS published here — a Compute
+        // service's deployed URL is a public endpoint, and this descriptor is the
+        // only party that knows it. Both fields are still Output refs until apply.
+        deploy: ({ id }, provisioned, artifact, serialized) =>
+          Effect.gen(function* () {
+            const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
+              computeServiceId: provisioned.serviceId,   // Input<string> accepts the Output ref — no cast
+              artifactPath: artifact.path, artifactHash: artifact.sha256,
+              environment: serialized.environment, port: serialized.port,
+            })
+            return {
+              outputs: { url: deployment.deployedUrl, projectId: provisioned.projectId },
+              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.deployedUrl }],
+            }
+          }),
+      },
+    },
+  }
+}
 ```
 
 There is **no public runtime entry**: the boot loop rides on the node itself
 (`compute()` returns the runnable subclass; `.run(address, boot)` + `.load()` are
 the whole thing), so the wrapper bundle carries the runtime with a single copy of
 core and the bootstrap needs nothing but `./main.js` and a dynamic import of the
-app's entry. (A missing client factory is impossible by construction —
-the dependency shapes of `postgres()` require `client` at compile time.)
+app's entry.
 
 ## The build adapter — worked instances
 
@@ -998,26 +1120,25 @@ framework wrapper, and reports the runtime entry path.
 ```ts
 // @prisma/composer/node — the authoring descriptor (lean; rides in service.ts). `entry`
 // resolves relative to dirname(module) — exactly like an import specifier.
-// `pack` is baked in by this factory, not passed by the caller — the same
-// uniform rule a node's own `pack` follows (ADR-0003).
+// `extension` + `type` are baked in by this factory, not passed by the caller —
+// together they are the control-plane registry key (ADR-0017).
 export default (opts: { module: string; entry: string }): BuildAdapter =>
-  ({ kind: "node", pack: "@prisma/composer/node", module: opts.module, entry: opts.entry })
+  ({ extension: "@prisma/composer/node", type: "node", module: opts.module, entry: opts.entry })
 
 // @prisma/composer/nextjs — carries an extra `appDir` (the Next app's root, the
 // standalone layout root), also resolved relative to dirname(module). `entry`
 // is a bare filename inside the standalone output dir.
 export default (opts: { module: string; appDir: string; entry: string }): NextjsBuildAdapter =>
-  ({ kind: "nextjs", pack: "@prisma/composer/nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
+  ({ extension: "@prisma/composer/nextjs", type: "nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
 
-// @internal/assemble — routes each service to its adapter's `/assemble` via
-// `${build.pack}/assemble` (entry-anchored, same resolver the pack CLI seam
-// uses for `${pack}/target`) — never a hardcoded kind→package map.
-// @prisma/composer-<adapter>/assemble — the deploy-side assembler (heavy; deploy machine)
-// Produces the normalized bundle dir + the runtime entry path for the bootstrap.
+// @internal/assemble — looks each service's `build` descriptor up in the
+// configured extensions' registries by its (extension, type) pair and runs the
+// `{ kind: "build" }` entry it finds — never a hardcoded kind→package map, never a
+// computed import. The assembler itself is registered in the adapter's /control
+// entry (@prisma/composer/node/control), heavy, deploy-machine only:
+type Assembler =
+  { assemble(input: AssembleInput): Promise<Bundle> }  // { build } → { dir, entry } — the shared contract, defined once in /deploy
 // No serviceDir/serviceModule input: the descriptor's own `module` is the anchor.
-interface Assembler {
-  assemble(input: AssembleInput): Promise<Bundle>  // { build } → { dir, entry } — @prisma/composer/deploy's shared seam contract
-}
 ```
 
 `node`'s assembler is trivial: place the app's built entry and the framework's wrapper
@@ -1077,14 +1198,14 @@ const sql = new SQL({ url: db.url })             // module-scoped: one pool per 
 Bun.serve({ port, hostname: "0.0.0.0",
   fetch: async () => Response.json(await sql`select 1 as ok`) })
 
-// There is no deploy config file (ADR-0003). The app builds itself first
-// (its own bundler produces dist/server.js), then:
+// The app builds itself first (its own bundler produces dist/server.js), then:
 //
 //   prisma-composer deploy src/module.ts
 //
-// The CLI infers the target pack from the nodes, constructs it from the
-// environment (the pack's /target fromEnv() reads PRISMA_WORKSPACE_ID), runs
-// each service's assembly, and drives Alchemy — no bundle map, no stack file.
+// The application is derived from the module root (ADR-0003); the extension list
+// and state store come from prisma-composer.config.ts at the app root (ADR-0017),
+// whose /control entries the CLI loads. It runs each service's assembly and drives
+// Alchemy — no bundle map, no hand-written stack file.
 ```
 
 `service.load()` is typed end to end by the chain `postgres()` →
@@ -1171,8 +1292,8 @@ producer from a resource — one mechanism.
    `@prisma/composer-prisma-cloud`, and a build-adapter descriptor (authoring entries
    only) contains no `alchemy`/`effect`/`prisma-alchemy`/`new SQL(`/`node:fs`
    tokens — the import-split guard test, extended to the pack and the adapters'
-   descriptor entries. The adapters' `/assemble` entries are deploy-only and
-   exempt.
+   descriptor entries. Every extension's `/control` entry is loaded only by the
+   config and is deploy-only, so it is exempt (ADR-0017).
 3. **Importing runs nothing**: constructing nodes is pure; only the node's
    `run`/`load` and the alchemy CLI execute anything. This reaches the artifact:
    the service module is a pure declaration, the framework's wrapper is inert on
@@ -1186,7 +1307,7 @@ producer from a resource — one mechanism.
 5. **No runtime coupling**: neither core nor a target pack nor a build-adapter
    descriptor imports Bun or Node APIs — even type-only — in its shipped surface
    (the [runtime-agnostic principle](../01-principles/architectural-principles.md)).
-   Drivers and server APIs enter only from app files; the adapters' `/assemble`
+   Drivers and server APIs enter only from app files; the adapters' `/control`
    entries may use `node:fs` (deploy machine only); the import-guard test extends
    to `"bun"`/`node:` tokens for every execution-plane entry.
 
@@ -1194,11 +1315,12 @@ producer from a resource — one mechanism.
 
 - **Build-adapter ecosystem** — `node` and `nextjs` are the first two; the
   descriptor/assembler split is the seam for community adapters (Nuxt, TanStack
-  Start, a cron access-pattern, a static site). Each is a package; nothing in
-  core, the target pack, `@internal/assemble`, or the CLI changes to add one —
-  the assembler seam resolves `${build.pack}/assemble` from the descriptor
-  itself (deploy-cli.md § Contracts), the same way the pack CLI seam resolves
-  `${pack}/target`.
+  Start, a cron access-pattern, a static site). Each is a package the app lists in
+  its `prisma-composer.config.ts`; nothing in core, the prisma-cloud extension,
+  `@internal/assemble`, or the CLI changes to add one — the assembler is a
+  `{ kind: "build" }` entry in the adapter's own `/control` registry, found by the
+  build descriptor's `(extension, type)` pair (ADR-0017), exactly like every other
+  node kind.
 - **Framework-hosted DI is `load()`** — the Next page pulls its typed deps via
   `service.load()`, the same mechanism the Hono entry uses. No separate `use()`
   accessor is needed; the earlier framework-DI gap is closed by `load()`.
