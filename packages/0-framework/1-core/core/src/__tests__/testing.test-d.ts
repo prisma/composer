@@ -7,9 +7,9 @@
  */
 import { expectTypeOf, test } from 'vitest';
 import { number, string } from '../config.ts';
-import { mockService } from '../exports/testing.ts';
 import type { BuildAdapter, RunnableServiceNode } from '../node.ts';
 import { dependency, service } from '../node.ts';
+import { mockService } from '../testing.ts';
 import { conn } from './helpers.ts';
 
 const build: BuildAdapter = {

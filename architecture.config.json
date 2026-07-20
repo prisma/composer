@@ -13,6 +13,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/0-framework/1-core/core/src/control/**",
+      "domain": "framework",
+      "layer": "core",
+      "plane": "control"
+    },
+    {
       "glob": "packages/0-framework/1-core/core/src/exports/deploy.ts",
       "domain": "framework",
       "layer": "core",
