@@ -31,16 +31,11 @@ import { guardStateService, makePrismaStateService } from './service.ts';
  * StackServices>` contract and alchemy's own convention (e.g. a missing
  * state store is `Effect.die` in `Stack.make`).
  */
-export const prismaState = (): Layer.Layer<State, never, StackServices> => {
-  const projectId = process.env['PRISMA_PROJECT_ID'];
-  if (projectId === undefined || projectId.length === 0) {
-    throw new Error(
-      'prismaState(): environment variable PRISMA_PROJECT_ID is required (the CLI sets it — ' +
-        'deploy via `prisma-composer deploy`).',
-    );
-  }
-  const branchIdEnv = process.env['PRISMA_BRANCH_ID'];
-  const branchId = branchIdEnv === undefined || branchIdEnv.length === 0 ? undefined : branchIdEnv;
+export const prismaStateLayer = (ids: {
+  readonly projectId: string;
+  readonly branchId?: string;
+}): Layer.Layer<State, never, StackServices> => {
+  const { projectId, branchId } = ids;
 
   return Layer.effect(
     State,
