@@ -24,6 +24,7 @@ import {
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { prismaCloudContainerOf } from './container.ts';
 import { isEnvParamSource, paramName } from './param.ts';
 import { secretName } from './secret.ts';
 
@@ -113,17 +114,18 @@ async function existsOnPlatform(
  */
 async function fillMissing(
   client: ManagementApiClient,
-  input: PreflightInput,
+  projectId: string,
+  branchId: string | undefined,
   key: string,
   value: string,
 ): Promise<void> {
   const res = await client.POST('/v1/environment-variables', {
     body: {
-      projectId: input.projectId,
-      class: classFor(input.branchId),
+      projectId,
+      class: classFor(branchId),
       key,
       value,
-      ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
+      ...(branchId !== undefined ? { branchId } : {}),
     },
   });
   if (res.error !== undefined && res.response.status !== 409) {
@@ -151,11 +153,15 @@ const fillFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
   );
 
-function missingError(missing: readonly MissingBinding[], input: PreflightInput): Error {
+function missingError(
+  missing: readonly MissingBinding[],
+  branchId: string | undefined,
+  stage: string | undefined,
+): Error {
   const scope =
-    input.branchId === undefined
+    branchId === undefined
       ? 'the production class (project-level template)'
-      : `the preview class of stage "${input.stage ?? input.branchId}" (branch override or template)`;
+      : `the preview class of stage "${stage ?? branchId}" (branch override or template)`;
   const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
   return new Error(
     `Deploy preflight failed — ${missing.length} env var(s) (secret or env-sourced param) are not ` +
@@ -187,6 +193,8 @@ export async function runPreflight(
   input: PreflightInput,
   deps?: { readonly client?: ManagementApiClient },
 ): Promise<void> {
+  const { projectId, branchId } = prismaCloudContainerOf(input.container);
+
   // One check per platform NAME (many slots/services, secret or param, may
   // bind the same one). Every wired secret is required — the forwarding model
   // has no optional slot; a param binding is only checked when it is
@@ -206,13 +214,13 @@ export async function runPreflight(
   const client = deps?.client ?? (await managementClient());
   const missing: MissingBinding[] = [];
   for (const meta of names.values()) {
-    if (await existsOnPlatform(client, input.projectId, input.branchId, meta.name)) continue;
+    if (await existsOnPlatform(client, projectId, branchId, meta.name)) continue;
     const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
-      await fillMissing(client, input, meta.name, shellValue);
+      await fillMissing(client, projectId, branchId, meta.name, shellValue);
       continue;
     }
     missing.push(meta);
   }
-  if (missing.length > 0) throw missingError(missing, input);
+  if (missing.length > 0) throw missingError(missing, branchId, input.stage);
 }

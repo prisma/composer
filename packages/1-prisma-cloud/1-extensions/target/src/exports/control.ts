@@ -3,16 +3,21 @@
  * @internal/lowering is imported; loaded only by `prisma-composer.config.ts`.
  */
 
-import type { ExtensionDescriptor } from '@internal/core/config';
+import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config';
 import type { ProvisionerDescriptor } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import * as Prisma from '@internal/lowering';
 /** The Prisma Cloud–hosted deploy state store; its implementation lives in @internal/lowering. */
-import { prismaState } from '@internal/lowering/state';
+import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import {
+  containerDescriptor,
+  PRISMA_CLOUD_EXTENSION_ID,
+  prismaCloudContainerOf,
+} from '../container.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/postgres.ts';
 import { prismaNextDescriptor } from '../descriptors/prisma-next.ts';
@@ -129,7 +134,14 @@ const streamsApiKeyValue: ProviderParam['value'] = (refs) => {
   });
 };
 
-export { prismaState };
+/** The user-facing state descriptor: `state: prismaState()` in `prisma-composer.config.ts` (ADR-0017). */
+export const prismaState = (): StateDescriptor => ({
+  extension: PRISMA_CLOUD_EXTENSION_ID,
+  create: (container) => {
+    const { projectId, branchId } = prismaCloudContainerOf(container);
+    return prismaStateLayer(branchId !== undefined ? { projectId, branchId } : { projectId });
+  },
+});
 
 export interface PrismaCloudOptions {
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
@@ -220,8 +232,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam> = buildProvider
 
 /**
  * Resolves the factory's env-or-option inputs, failing fast with the exact
- * variable name. `projectId`/`branchId` aren't required here — `prismaCloud()`
- * also runs in the CLI parent, before they're set; the required check lives in `application.provision`.
+ * variable name.
  */
 function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'];
@@ -229,22 +240,13 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
     throw new Error('prismaCloud(): environment variable PRISMA_WORKSPACE_ID is required.');
   }
 
-  const projectId = process.env['PRISMA_PROJECT_ID'] || undefined;
-  const branchId = process.env['PRISMA_BRANCH_ID'] || undefined;
-
   if (opts.region !== undefined) {
-    return {
-      workspaceId,
-      region: opts.region,
-      projectId,
-      branchId,
-      providerParams: PROVIDER_PARAMS,
-    };
+    return { workspaceId, region: opts.region, providerParams: PROVIDER_PARAMS };
   }
 
   const region = process.env['PRISMA_REGION'];
   if (region === undefined || region.length === 0) {
-    return { workspaceId, projectId, branchId, providerParams: PROVIDER_PARAMS };
+    return { workspaceId, providerParams: PROVIDER_PARAMS };
   }
   if (!isComputeRegion(region)) {
     throw new Error(
@@ -252,7 +254,7 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
         `(expected one of: ${Prisma.COMPUTE_REGIONS.join(', ')}).`,
     );
   }
-  return { workspaceId, region, projectId, branchId, providerParams: PROVIDER_PARAMS };
+  return { workspaceId, region, providerParams: PROVIDER_PARAMS };
 }
 
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
@@ -260,7 +262,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   const o = resolveOptions(opts);
 
   return {
-    id: '@prisma/composer-prisma-cloud',
+    id: PRISMA_CLOUD_EXTENSION_ID,
+
+    container: containerDescriptor(),
 
     providers: () =>
       asProvidersLayer(
@@ -289,14 +293,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // are no longer minted here (ADR-0031): core's provision phase invokes
     // `provisions` below, graph-wide, before any service lowers.
     application: {
-      provision: () =>
+      provision: (ctx) =>
         Effect.gen(function* () {
-          const projectId = o.projectId;
-          if (projectId === undefined || projectId.length === 0) {
-            throw new Error(
-              'prismaCloud(): environment variable PRISMA_PROJECT_ID is required (the CLI sets it — deploy via `prisma-composer deploy`).',
-            );
-          }
+          const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
           for (const key of ['DATABASE_URL', 'DATABASE_URL_POOLED']) {
             yield* Prisma.EnvironmentVariable(`${key}-poison`, {
               projectId,
@@ -305,12 +304,12 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
               // "String must contain at least 1 character" (verified at the R4
               // deploy proof). Any garbage value fails a real connect loudly.
               value: '-',
-              class: o.branchId ? 'preview' : 'production',
-              ...(o.branchId !== undefined ? { branchId: o.branchId } : {}),
+              class: branchId ? 'preview' : 'production',
+              ...(branchId !== undefined ? { branchId } : {}),
             });
           }
 
-          return { projectId, branchId: o.branchId } satisfies CloudApplication;
+          return { projectId, branchId } satisfies CloudApplication;
         }),
     },
 

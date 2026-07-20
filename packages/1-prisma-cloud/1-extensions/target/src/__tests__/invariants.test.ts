@@ -90,8 +90,8 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
   });
 });
 
-describe('invariant 4: environment touches are confined to the config serializer and the control factory', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash, secret double-lookup+stash, env-sourced param double-lookup), control.ts's prismaCloud(), preflight.ts (shell token + fill-missing lookup), teardown.ts (shell token), and compute.ts (exposes the resolved port as PORT) (the extension factory's env read, ADR-0017 — PRISMA_WORKSPACE_ID + optional PRISMA_REGION; ADR-0019 — PRISMA_PROJECT_ID + optional PRISMA_BRANCH_ID)", () => {
+describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
+  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash, secret double-lookup+stash, env-sourced param double-lookup), control.ts's prismaCloud() (ADR-0017 — PRISMA_WORKSPACE_ID + optional PRISMA_REGION; the CLI-fed deploy identity now arrives via ctx.container, never env), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0019's container lifecycle), preflight.ts (shell token + fill-missing lookup), teardown.ts (shell token), and compute.ts (exposes the resolved port as PORT)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -103,7 +103,8 @@ describe('invariant 4: environment touches are confined to the config serializer
 
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
       { file: 'compute.ts', count: 1 },
-      { file: 'exports/control.ts', count: 4 },
+      { file: 'container.ts', count: 3 },
+      { file: 'exports/control.ts', count: 2 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 9 },
       { file: 'teardown.ts', count: 1 },

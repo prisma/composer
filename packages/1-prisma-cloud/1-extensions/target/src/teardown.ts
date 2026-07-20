@@ -22,6 +22,7 @@ import {
 } from '@internal/lowering/state';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { prismaCloudContainerOf } from './container.ts';
 
 const tokenRequiredError = (): Error =>
   new Error('environment variable PRISMA_SERVICE_TOKEN is required for destroy teardown.');
@@ -54,14 +55,15 @@ export async function runTeardown(
   input: TeardownInput,
   deps?: { readonly client?: ManagementApiClient; readonly verify?: OwnershipVerifier },
 ): Promise<void> {
-  const isNamedStage = input.branchId !== undefined;
+  const { projectId, branchId } = prismaCloudContainerOf(input.container);
+  const isNamedStage = branchId !== undefined;
   try {
     const client = deps?.client ?? (await managementClient());
     await Effect.runPromise(
       deleteStateDatabaseWith(
         {
-          projectId: input.projectId,
-          ...(input.branchId !== undefined ? { branchId: input.branchId } : {}),
+          projectId,
+          ...(branchId !== undefined ? { branchId } : {}),
         },
         deps?.verify ?? verifyOwnership,
       ).pipe(Effect.provideService(ManagementClient, client)),

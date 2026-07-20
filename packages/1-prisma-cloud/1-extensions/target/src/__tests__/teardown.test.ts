@@ -2,10 +2,15 @@ import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { ManagementApiClient } from '@internal/lowering';
 import type { OwnershipVerifier } from '@internal/lowering/state';
 import * as Effect from 'effect/Effect';
+import { PrismaCloudContainer } from '../container.ts';
 import { runTeardown } from '../teardown.ts';
 
 /** Every candidate verifies as ours — the real verifier would open a Postgres connection. */
 const ours: OwnershipVerifier = () => Effect.succeed({ kind: 'ours' });
+
+/** A resolved container matching `input.container` after the boundary move — teardown narrows it with `prismaCloudContainerOf`. */
+const fakeContainer = (projectId: string, branchId: string | undefined) =>
+  new PrismaCloudContainer({ appName: 'app', stage: undefined }, projectId, branchId);
 
 interface FakeDatabase {
   id: string;
@@ -106,7 +111,7 @@ describe('runTeardown', () => {
     state.databases.push(stateDatabase('db-stage', 'br-stage'));
 
     await runTeardown(
-      { projectId: 'proj-1', branchId: 'br-stage', stage: 'staging' },
+      { container: fakeContainer('proj-1', 'br-stage'), stage: 'staging' },
       { client: fakeClient(state), verify: ours },
     );
 
@@ -117,7 +122,7 @@ describe('runTeardown', () => {
     state.databases.push(stateDatabase('db-prod', 'br-default'));
 
     await runTeardown(
-      { projectId: 'proj-1', branchId: undefined, stage: undefined },
+      { container: fakeContainer('proj-1', undefined), stage: undefined },
       { client: fakeClient(state), verify: ours },
     );
 
@@ -130,7 +135,7 @@ describe('runTeardown', () => {
 
     await expect(
       runTeardown(
-        { projectId: 'proj-1', branchId: 'br-stage', stage: 'staging' },
+        { container: fakeContainer('proj-1', 'br-stage'), stage: 'staging' },
         { client: fakeClient(state), verify: ours },
       ),
     ).rejects.toThrow(/deploy-state database/);
@@ -144,7 +149,7 @@ describe('runTeardown', () => {
     try {
       await expect(
         runTeardown(
-          { projectId: 'proj-1', branchId: undefined, stage: undefined },
+          { container: fakeContainer('proj-1', undefined), stage: undefined },
           { client: fakeClient(state), verify: ours },
         ),
       ).resolves.toBeUndefined();
@@ -157,7 +162,7 @@ describe('runTeardown', () => {
 
   test('finding no state database succeeds, so a repeated destroy is a no-op', async () => {
     await runTeardown(
-      { projectId: 'proj-1', branchId: 'br-stage', stage: 'staging' },
+      { container: fakeContainer('proj-1', 'br-stage'), stage: 'staging' },
       { client: fakeClient(state), verify: ours },
     );
 
