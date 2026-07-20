@@ -17,7 +17,9 @@
       "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/exports/deploy.ts"],
       "@internal/core/testing": ["./packages/0-framework/1-core/core/src/exports/testing.ts"],
       "@internal/core": ["./packages/0-framework/1-core/core/src/exports/index.ts"],
-      "@internal/service-rpc": ["./packages/0-framework/2-authoring/service-rpc/src/exports/index.ts"],
+      "@internal/service-rpc": [
+        "./packages/0-framework/2-authoring/service-rpc/src/exports/index.ts"
+      ],
       "@internal/node/control": ["./packages/0-framework/2-authoring/node/src/exports/control.ts"],
       "@internal/node": ["./packages/0-framework/2-authoring/node/src/exports/index.ts"],
       "@internal/nextjs/control": [
