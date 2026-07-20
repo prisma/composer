@@ -37,7 +37,7 @@ const VALID_CONFIG_SOURCE = `export default {
   extensions: [
     { id: 'fixture-extension', nodes: { compute: { kind: 'service' } } },
   ],
-  state: () => ({ fixture: 'state' }),
+  state: { extension: 'fixture-extension', create: () => ({ fixture: 'state' }) },
 };
 `;
 
@@ -88,7 +88,8 @@ describe('loadAppConfig() — real c12 evaluation', () => {
     expect(loaded.path).toBe(configPath);
     expect(loaded.config.extensions).toHaveLength(1);
     expect(loaded.config.extensions[0]?.id).toBe('fixture-extension');
-    expect(typeof loaded.config.state).toBe('function');
+    expect(loaded.config.state.extension).toBe('fixture-extension');
+    expect(typeof loaded.config.state.create).toBe('function');
   });
 
   test('a config file whose factory throws (e.g. missing env) propagates that error', async () => {
@@ -137,7 +138,7 @@ describe('validateConfigShape() — field-by-field CliErrors', () => {
             { id: '@x/y', nodes: {} },
             { id: '@x/y', nodes: {} },
           ],
-          state: () => ({}),
+          state: { extension: 'fixture-extension', create: () => ({}) },
         },
         configPath,
       ),
@@ -147,6 +148,15 @@ describe('validateConfigShape() — field-by-field CliErrors', () => {
   test('a missing `state` is a CliError naming the field and the shape', () => {
     expect(() =>
       validateConfigShape({ extensions: [{ id: '@x/y', nodes: {} }] }, configPath),
-    ).toThrow(/`state` must be a function/);
+    ).toThrow(/`state` must be a state descriptor/);
+  });
+
+  test('a `state` that is a bare function (the old shape) is a CliError naming the field and the shape', () => {
+    expect(() =>
+      validateConfigShape(
+        { extensions: [{ id: '@x/y', nodes: {} }], state: () => ({}) },
+        configPath,
+      ),
+    ).toThrow(/`state` must be a state descriptor/);
   });
 });

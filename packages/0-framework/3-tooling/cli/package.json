@@ -18,7 +18,6 @@
     "@internal/assemble": "workspace:0.1.0",
     "@internal/core": "workspace:0.1.0",
     "@internal/foundation": "workspace:0.1.0",
-    "@internal/lowering": "workspace:0.1.0",
     "c12": "^3.3.4",
     "clipanion": "^3.2.1"
   },

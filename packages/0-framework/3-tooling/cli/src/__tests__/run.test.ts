@@ -2,9 +2,12 @@
  * Drives main.ts's run() end to end with fakes at the module seams the CLI
  * already exposes (RunDeps): a fake config (no c12 evaluation), a fake
  * assembler (no real wrapper build), and a fake alchemy runner (no real
- * process). The entry module, the `prisma-composer.config.ts` file (discovery is
- * real — the generated stack file imports the real path), and the generated
- * stack file are all real — written to a temp dir.
+ * process). Container lifecycle is stubbed via the fake config's own
+ * extension `container` descriptor — run() no longer has a dedicated
+ * container seam; every extension supplies its own. The entry module, the
+ * `prisma-composer.config.ts` file (discovery is real — the generated stack
+ * file imports the real path), and the generated stack file are all real —
+ * written to a temp dir.
  *
  * `.prisma-composer/` lands in the process's own cwd (ADR-0004's rewrite — tool
  * state lives where you run the tool), so each test chdir's into the fixture
@@ -17,18 +20,69 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ServiceNode } from '@internal/core';
-import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
-import type { ResolvedContainer } from '@internal/lowering';
+import type {
+  ContainerDescriptor,
+  ContainerInstance,
+  ExtensionDescriptor,
+  LocateContainerInput,
+  PrismaAppConfig,
+} from '@internal/core/config';
+import { containerEnvVarName } from '@internal/core/config';
 import { CliError } from '../cli-error.ts';
-import type { EnsureContainersInput } from '../ensure-containers.ts';
 import { run } from '../main.ts';
 import type { RunAlchemyInput } from '../run-alchemy.ts';
 
-/** A fake `ensureContainers` — no real Management API calls, no env requirements. */
-const fakeEnsureContainers = async (input: EnsureContainersInput): Promise<ResolvedContainer> => ({
-  projectId: 'proj-fake',
-  ...(input.stage !== undefined ? { branchId: `branch-${input.stage}` } : {}),
-});
+interface FakeContainer extends ContainerInstance {
+  readonly containerRef: string;
+  readonly containerScope: string | undefined;
+}
+
+function makeFakeContainer(input: LocateContainerInput): FakeContainer {
+  const containerScope = input.stage !== undefined ? `branch-${input.stage}` : undefined;
+  return {
+    input,
+    containerRef: 'proj-fake',
+    containerScope,
+    serialize: () => JSON.stringify({ input, containerRef: 'proj-fake', containerScope }),
+  };
+}
+
+interface ContainerCall {
+  readonly op: 'ensure' | 'locate' | 'remove';
+  readonly input: LocateContainerInput;
+}
+
+/** A fake `container` descriptor — no real Management API calls, no env requirements. */
+function fakeContainerDescriptor(
+  opts: {
+    readonly calls?: ContainerCall[];
+    readonly notFound?: boolean;
+    readonly onRemove?: (instance: FakeContainer) => void | Promise<void>;
+  } = {},
+): ContainerDescriptor {
+  const calls = opts.calls ?? [];
+  return {
+    ensure: async (input) => {
+      calls.push({ op: 'ensure', input });
+      return makeFakeContainer(input);
+    },
+    locate: async (input) => {
+      calls.push({ op: 'locate', input });
+      if (opts.notFound === true) return undefined;
+      return makeFakeContainer(input);
+    },
+    remove: async (instance) => {
+      calls.push({ op: 'remove', input: instance.input });
+      await opts.onRemove?.(instance as FakeContainer);
+    },
+    deserialize: (serialized) => {
+      const parsed = JSON.parse(serialized) as { input: LocateContainerInput };
+      return makeFakeContainer(parsed.input);
+    },
+  };
+}
+
+const CONTAINER_VAR = containerEnvVarName('fixture-extension');
 
 const coreIndex = path.resolve(
   import.meta.dir,
@@ -52,7 +106,10 @@ const originalCwd = process.cwd();
  * only validates coverage; the service SPI runs inside the (faked) alchemy
  * stack, and the build assemble is substituted by the runAssembler seam.
  */
-function fakeConfig(hooks: Partial<Pick<ExtensionDescriptor, 'teardown'>> = {}): PrismaAppConfig {
+function fakeConfig(
+  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight'>> = {},
+  containerOpts: Parameters<typeof fakeContainerDescriptor>[0] = {},
+): PrismaAppConfig {
   const unused = () => {
     throw new Error('descriptor body must not run inside run() — only coverage is checked');
   };
@@ -69,11 +126,16 @@ function fakeConfig(hooks: Partial<Pick<ExtensionDescriptor, 'teardown'>> = {}):
             deploy: unused,
           },
         },
+        container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
+        ...(hooks.preflight !== undefined ? { preflight: hooks.preflight } : {}),
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
-    state: unused,
+    state: {
+      extension: 'fixture-extension',
+      create: unused,
+    },
   };
 }
 
@@ -140,7 +202,7 @@ afterEach(() => {
 });
 
 describe('run() — the full pipeline over fakes', () => {
-  test('a successful deploy generates the stack file and invokes alchemy against it', async () => {
+  test('a successful deploy generates the stack file and invokes alchemy with the resolved container env', async () => {
     const app = makeAppDir('hello-run');
     process.chdir(app.dir);
     const calls: RunAlchemyInput[] = [];
@@ -148,7 +210,6 @@ describe('run() — the full pipeline over fakes', () => {
     const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
       config: fakeConfig(),
       runAssembler: fakeAssembler,
-      ensureContainers: fakeEnsureContainers,
       alchemy: (input) => {
         calls.push(input);
         return 0;
@@ -156,16 +217,20 @@ describe('run() — the full pipeline over fakes', () => {
     });
 
     expect(status).toBe(0);
-    expect(calls).toEqual([
-      {
-        command: 'deploy',
-        stackFileRelativePath: path.join('.prisma-composer', 'alchemy.run.ts'),
-        cwd: app.dir,
-        stage: 'ci-7',
-        projectId: 'proj-fake',
-        branchId: 'branch-ci-7',
-      },
-    ]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      command: 'deploy',
+      stackFileRelativePath: path.join('.prisma-composer', 'alchemy.run.ts'),
+      cwd: app.dir,
+      stage: 'ci-7',
+    });
+    const serialized = calls[0]?.containerEnv[CONTAINER_VAR];
+    expect(serialized).toBeDefined();
+    expect(JSON.parse(serialized ?? '')).toMatchObject({
+      input: { appName: 'hello-run', stage: 'ci-7' },
+      containerRef: 'proj-fake',
+      containerScope: 'branch-ci-7',
+    });
 
     const stackPath = path.join(app.dir, '.prisma-composer', 'alchemy.run.ts');
     const content = fs.readFileSync(stackPath, 'utf8');
@@ -178,19 +243,15 @@ describe('run() — the full pipeline over fakes', () => {
     );
   });
 
-  test('ensureContainers is called with the resolved appName + stage, and the default stage forwards no branchId', async () => {
+  test('the container descriptor is called with the resolved appName + stage, and the default stage has no containerScope', async () => {
     const app = makeAppDir('hello-default-stage');
     process.chdir(app.dir);
-    const ensureCalls: EnsureContainersInput[] = [];
+    const containerCalls: ContainerCall[] = [];
     const alchemyCalls: RunAlchemyInput[] = [];
 
     const status = await run(['deploy', app.entryPath], {
-      config: fakeConfig(),
+      config: fakeConfig({}, { calls: containerCalls }),
       runAssembler: fakeAssembler,
-      ensureContainers: async (input) => {
-        ensureCalls.push(input);
-        return fakeEnsureContainers(input);
-      },
       alchemy: (input) => {
         alchemyCalls.push(input);
         return 0;
@@ -198,12 +259,13 @@ describe('run() — the full pipeline over fakes', () => {
     });
 
     expect(status).toBe(0);
-    expect(ensureCalls).toEqual([
-      { command: 'deploy', appName: 'hello-default-stage', stage: undefined },
+    expect(containerCalls).toEqual([
+      { op: 'ensure', input: { appName: 'hello-default-stage', stage: undefined } },
     ]);
     expect(alchemyCalls).toHaveLength(1);
-    expect(alchemyCalls[0]?.projectId).toBe('proj-fake');
-    expect(alchemyCalls[0]).not.toHaveProperty('branchId');
+    const serialized = JSON.parse(alchemyCalls[0]?.containerEnv[CONTAINER_VAR] ?? '{}');
+    expect(serialized.containerRef).toBe('proj-fake');
+    expect(serialized.containerScope).toBeUndefined();
   });
 
   test('a missing prisma-composer.config.ts is a CliError naming the filename and the required export', async () => {
@@ -281,47 +343,37 @@ describe('run() — the full pipeline over fakes', () => {
     ).rejects.toThrow(/name it at authoring, or pass --name/);
   });
 
-  test('invokes each extension preflight with the resolved context, before alchemy runs', async () => {
+  test('invokes each extension preflight with the resolved container, before alchemy runs', async () => {
     const app = makeAppDir('hello-preflight');
     process.chdir(app.dir);
     const preflightCalls: Array<{
-      projectId: string;
-      branchId: string | undefined;
+      containerRef: string;
+      containerScope: string | undefined;
       stage: string | undefined;
       nodeCount: number;
     }> = [];
-    const config = fakeConfig();
-    const withPreflight: PrismaAppConfig = {
-      ...config,
-      extensions: config.extensions.map((e) =>
-        e.id === 'fixture-extension'
-          ? {
-              ...e,
-              preflight: async (input) => {
-                preflightCalls.push({
-                  projectId: input.projectId,
-                  branchId: input.branchId,
-                  stage: input.stage,
-                  nodeCount: input.graph.nodes.length,
-                });
-              },
-            }
-          : e,
-      ),
-    };
 
     const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
-      config: withPreflight,
+      config: fakeConfig({
+        preflight: async (input) => {
+          const container = input.container as FakeContainer | undefined;
+          preflightCalls.push({
+            containerRef: container?.containerRef ?? '',
+            containerScope: container?.containerScope,
+            stage: input.stage,
+            nodeCount: input.graph.nodes.length,
+          });
+        },
+      }),
       runAssembler: fakeAssembler,
-      ensureContainers: fakeEnsureContainers,
       alchemy: () => 0,
     });
 
     expect(status).toBe(0);
     expect(preflightCalls).toHaveLength(1);
     expect(preflightCalls[0]).toMatchObject({
-      projectId: 'proj-fake',
-      branchId: 'branch-ci-7',
+      containerRef: 'proj-fake',
+      containerScope: 'branch-ci-7',
       stage: 'ci-7',
     });
     expect(preflightCalls[0]!.nodeCount).toBeGreaterThan(0);
@@ -330,26 +382,15 @@ describe('run() — the full pipeline over fakes', () => {
   test('a preflight failure aborts as a CliError before any stack file is written or alchemy runs', async () => {
     const app = makeAppDir('hello-preflight-fail');
     process.chdir(app.dir);
-    const config = fakeConfig();
     let alchemyRan = false;
-    const withFailingPreflight: PrismaAppConfig = {
-      ...config,
-      extensions: config.extensions.map((e) =>
-        e.id === 'fixture-extension'
-          ? {
-              ...e,
-              preflight: async () => {
-                throw new Error('SECRET_X is not provisioned');
-              },
-            }
-          : e,
-      ),
-    };
 
     const error: unknown = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
-      config: withFailingPreflight,
+      config: fakeConfig({
+        preflight: async () => {
+          throw new Error('SECRET_X is not provisioned');
+        },
+      }),
       runAssembler: fakeAssembler,
-      ensureContainers: fakeEnsureContainers,
       alchemy: () => {
         alchemyRan = true;
         return 0;
@@ -371,7 +412,6 @@ describe('run() — the full pipeline over fakes', () => {
       const status = await run(['deploy', app.entryPath], {
         config: fakeConfig(),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 42,
       });
 
@@ -387,6 +427,8 @@ describe('run() — the full pipeline over fakes', () => {
   test('a destroy blocked by missing built output explains that destroy needs the build too', async () => {
     const app = makeAppDir();
     process.chdir(app.dir);
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
     const failingAssembler = async () => {
       throw new Error('no built entry at /some/dist/server.js — run this app’s own build first');
     };
@@ -394,7 +436,6 @@ describe('run() — the full pipeline over fakes', () => {
     const error: unknown = await run(['destroy', app.entryPath, '--production'], {
       config: fakeConfig(),
       runAssembler: failingAssembler,
-      ensureContainers: fakeEnsureContainers,
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
@@ -415,7 +456,6 @@ describe('run() — the full pipeline over fakes', () => {
     const error: unknown = await run(['deploy', app.entryPath], {
       config: fakeConfig(),
       runAssembler: failingAssembler,
-      ensureContainers: fakeEnsureContainers,
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
@@ -434,9 +474,7 @@ describe('run() — the full pipeline over fakes', () => {
         const status = await run(['destroy', app.entryPath, '--production'], {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
-          deleteProject: async () => {},
         });
 
         expect(status).toBe(0);
@@ -459,9 +497,7 @@ describe('run() — the full pipeline over fakes', () => {
         await run(['destroy', app.entryPath, '--production'], {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
-          deleteProject: async () => {},
         });
 
         const printed = warnSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -481,9 +517,7 @@ describe('run() — the full pipeline over fakes', () => {
         await run(['destroy', app.entryPath, '--production'], {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
-          deleteProject: async () => {},
         });
 
         expect(warnSpy).not.toHaveBeenCalled();
@@ -500,7 +534,6 @@ describe('run() — the full pipeline over fakes', () => {
         await run(['deploy', app.entryPath], {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
         });
 
@@ -535,299 +568,265 @@ describe('run() — the full pipeline over fakes', () => {
       );
     });
 
-    test('destroy --production resolves the project-level environment (no branchId) via the ensureContainers seam', async () => {
+    test('an invalid --stage is a CliError from validateStageName, before any container call', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const containerCalls: ContainerCall[] = [];
+
+      const error: unknown = await run(['deploy', app.entryPath, '--stage', 'foo bar'], {
+        config: fakeConfig({}, { calls: containerCalls }),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toContain('Invalid --stage');
+      expect(containerCalls).toEqual([]);
+    });
+
+    test('destroy --production resolves the project-level environment (no containerScope) via the container descriptor', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
       fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-      const ensureCalls: EnsureContainersInput[] = [];
+      const containerCalls: ContainerCall[] = [];
       const alchemyCalls: RunAlchemyInput[] = [];
 
       const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig(),
+        config: fakeConfig({}, { calls: containerCalls }),
         runAssembler: fakeAssembler,
-        ensureContainers: async (input) => {
-          ensureCalls.push(input);
-          return fakeEnsureContainers(input);
-        },
         alchemy: (input) => {
           alchemyCalls.push(input);
           return 0;
         },
-        deleteProject: async () => {},
       });
 
       expect(status).toBe(0);
-      expect(ensureCalls).toEqual([
-        { command: 'destroy', appName: 'fixture-app', stage: undefined },
-      ]);
+      // locate resolves the container; a successful destroy then removes it —
+      // both against the same {appName, stage: undefined} input.
+      expect(containerCalls.map((c) => c.op)).toEqual(['locate', 'remove']);
+      expect(containerCalls[0]?.input).toEqual({ appName: 'fixture-app', stage: undefined });
       expect(alchemyCalls).toHaveLength(1);
       expect(alchemyCalls[0]?.stage).toBeUndefined();
-      expect(alchemyCalls[0]).not.toHaveProperty('branchId');
+      const serialized = JSON.parse(alchemyCalls[0]?.containerEnv[CONTAINER_VAR] ?? '{}');
+      expect(serialized.containerScope).toBeUndefined();
     });
 
-    test('destroy --stage staging resolves the branch path via the ensureContainers seam', async () => {
+    test('destroy --stage staging resolves the branch path via the container descriptor', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
       fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
-      const ensureCalls: EnsureContainersInput[] = [];
+      const containerCalls: ContainerCall[] = [];
       const alchemyCalls: RunAlchemyInput[] = [];
 
       const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig(),
+        config: fakeConfig({}, { calls: containerCalls }),
         runAssembler: fakeAssembler,
-        ensureContainers: async (input) => {
-          ensureCalls.push(input);
-          return fakeEnsureContainers(input);
-        },
         alchemy: (input) => {
           alchemyCalls.push(input);
           return 0;
         },
-        deleteBranch: async () => {},
       });
 
       expect(status).toBe(0);
-      expect(ensureCalls[0]?.stage).toBe('staging');
+      expect(containerCalls[0]).toEqual({
+        op: 'locate',
+        input: { appName: 'fixture-app', stage: 'staging' },
+      });
       expect(alchemyCalls[0]?.stage).toBe('staging');
-      expect(alchemyCalls[0]?.branchId).toBe('branch-staging');
+      const serialized = JSON.parse(alchemyCalls[0]?.containerEnv[CONTAINER_VAR] ?? '{}');
+      expect(serialized.containerScope).toBe('branch-staging');
+    });
+
+    test('destroy against nothing deployed is a CliError naming the app and stage, from `locate` returning undefined', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+
+      const error: unknown = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({}, { notFound: true }),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toBe(
+        'Nothing deployed for fixture-app/staging — deploy it first.',
+      );
+    });
+
+    test('destroy against nothing deployed for the default stage names no stage suffix', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+
+      const error: unknown = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig({}, { notFound: true }),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toBe(
+        'Nothing deployed for fixture-app — deploy it first.',
+      );
     });
   });
 
-  describe('post-destroy Branch soft-delete (spec §10)', () => {
-    test('destroy --stage staging, on a successful alchemy destroy, deletes the resolved Branch', async () => {
+  describe('container removal after destroy (spec §10)', () => {
+    test('destroy --stage staging, on a successful alchemy destroy, removes the resolved container after teardown', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
-      const deleteCalls: { branchId: string }[] = [];
+      const order: string[] = [];
+      const containerCalls: ContainerCall[] = [];
 
       const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig(),
+        config: fakeConfig(
+          { teardown: async () => void order.push('teardown') },
+          {
+            calls: containerCalls,
+            onRemove: () => void order.push('remove'),
+          },
+        ),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
-        alchemy: () => 0,
-        deleteBranch: async (input) => {
-          deleteCalls.push(input);
+        alchemy: () => {
+          order.push('alchemy');
+          return 0;
         },
       });
 
       expect(status).toBe(0);
-      expect(deleteCalls).toEqual([{ branchId: 'branch-staging' }]);
+      expect(order).toEqual(['alchemy', 'teardown', 'remove']);
+      expect(containerCalls.map((c) => c.op)).toEqual(['locate', 'remove']);
     });
 
-    test('destroy --production never deletes a Branch (there is none)', async () => {
+    test('destroy --production removes the resolved container (its own Project)', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
-      const deleteCalls: { branchId: string }[] = [];
+      const containerCalls: ContainerCall[] = [];
 
       const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig(),
+        config: fakeConfig({}, { calls: containerCalls }),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
-        deleteBranch: async (input) => {
-          deleteCalls.push(input);
-        },
-        deleteProject: async () => {},
       });
 
       expect(status).toBe(0);
-      expect(deleteCalls).toEqual([]);
+      expect(containerCalls.map((c) => c.op)).toEqual(['locate', 'remove']);
     });
 
-    test('destroy --stage staging with a FAILED alchemy destroy does not delete the Branch', async () => {
+    test('a FAILED alchemy destroy runs no removal', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
-      const deleteCalls: { branchId: string }[] = [];
+      const containerCalls: ContainerCall[] = [];
 
       const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig(),
+        config: fakeConfig({}, { calls: containerCalls }),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 1,
-        deleteBranch: async (input) => {
-          deleteCalls.push(input);
-        },
       });
 
       expect(status).toBe(1);
-      expect(deleteCalls).toEqual([]);
+      expect(containerCalls.map((c) => c.op)).toEqual(['locate']);
     });
 
-    test('deploy never deletes a Branch', async () => {
+    test('deploy never removes a container', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
-      const deleteCalls: { branchId: string }[] = [];
+      const containerCalls: ContainerCall[] = [];
 
       const status = await run(['deploy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig(),
+        config: fakeConfig({}, { calls: containerCalls }),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
-        deleteBranch: async (input) => {
-          deleteCalls.push(input);
-        },
       });
 
       expect(status).toBe(0);
-      expect(deleteCalls).toEqual([]);
-    });
-  });
-
-  describe('post-destroy Project cleanup (--production)', () => {
-    test('destroy --production, on a successful alchemy destroy, deletes the resolved Project', async () => {
-      const app = makeAppDir();
-      process.chdir(app.dir);
-      const deleteCalls: { projectId: string }[] = [];
-
-      const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
-        alchemy: () => 0,
-        deleteProject: async (input) => {
-          deleteCalls.push(input);
-        },
-      });
-
-      expect(status).toBe(0);
-      expect(deleteCalls).toEqual([{ projectId: 'proj-fake' }]);
-    });
-
-    test('destroy --stage staging never deletes a Project (only its Branch)', async () => {
-      const app = makeAppDir();
-      process.chdir(app.dir);
-      const deleteCalls: { projectId: string }[] = [];
-
-      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
-        alchemy: () => 0,
-        deleteBranch: async () => {},
-        deleteProject: async (input) => {
-          deleteCalls.push(input);
-        },
-      });
-
-      expect(status).toBe(0);
-      expect(deleteCalls).toEqual([]);
-    });
-
-    test('destroy --production with a FAILED alchemy destroy does not delete the Project', async () => {
-      const app = makeAppDir();
-      process.chdir(app.dir);
-      const deleteCalls: { projectId: string }[] = [];
-
-      const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
-        alchemy: () => 1,
-        deleteProject: async (input) => {
-          deleteCalls.push(input);
-        },
-      });
-
-      expect(status).toBe(1);
-      expect(deleteCalls).toEqual([]);
-    });
-
-    test('deploy never deletes a Project', async () => {
-      const app = makeAppDir();
-      process.chdir(app.dir);
-      const deleteCalls: { projectId: string }[] = [];
-
-      const status = await run(['deploy', app.entryPath], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
-        alchemy: () => 0,
-        deleteProject: async (input) => {
-          deleteCalls.push(input);
-        },
-      });
-
-      expect(status).toBe(0);
-      expect(deleteCalls).toEqual([]);
+      expect(containerCalls.map((c) => c.op)).toEqual(['ensure']);
     });
   });
 
   describe('the extension teardown hook on destroy', () => {
-    test('destroy --stage staging runs teardown after alchemy and before the Branch goes', async () => {
+    test('destroy --stage staging runs teardown after alchemy and before the container is removed', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       const order: string[] = [];
 
       const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
-        config: fakeConfig({
-          teardown: async (input) => {
-            order.push(`teardown:${input.projectId}/${input.branchId}/${input.stage}`);
+        config: fakeConfig(
+          {
+            teardown: async (input) => {
+              const container = input.container as FakeContainer | undefined;
+              order.push(
+                `teardown:${container?.containerRef}/${container?.containerScope}/${input.stage}`,
+              );
+            },
           },
-        }),
+          { onRemove: () => void order.push('remove') },
+        ),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => {
           order.push('alchemy');
           return 0;
         },
-        deleteBranch: async () => {
-          order.push('branch');
-        },
       });
 
       expect(status).toBe(0);
-      expect(order).toEqual(['alchemy', 'teardown:proj-fake/branch-staging/staging', 'branch']);
+      expect(order).toEqual(['alchemy', 'teardown:proj-fake/branch-staging/staging', 'remove']);
     });
 
-    test('destroy --production runs teardown before the Project goes, naming no branch', async () => {
+    test('destroy --production runs teardown before the container is removed, naming no branch', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       const order: string[] = [];
 
       const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig({
-          teardown: async (input) => {
-            order.push(`teardown:${input.projectId}/${input.branchId ?? 'none'}`);
+        config: fakeConfig(
+          {
+            teardown: async (input) => {
+              const container = input.container as FakeContainer | undefined;
+              order.push(
+                `teardown:${container?.containerRef}/${container?.containerScope ?? 'none'}`,
+              );
+            },
           },
-        }),
+          { onRemove: () => void order.push('remove') },
+        ),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => {
           order.push('alchemy');
           return 0;
         },
-        deleteProject: async () => {
-          order.push('project');
-        },
       });
 
       expect(status).toBe(0);
-      expect(order).toEqual(['alchemy', 'teardown:proj-fake/none', 'project']);
+      expect(order).toEqual(['alchemy', 'teardown:proj-fake/none', 'remove']);
     });
 
     test('a throwing teardown aborts the destroy and the container is left alone', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
-      let branchDeleted = false;
+      let removed = false;
 
       await expect(
         run(['destroy', app.entryPath, '--stage', 'staging'], {
-          config: fakeConfig({
-            teardown: async () => {
-              throw new Error('teardown said no');
+          config: fakeConfig(
+            {
+              teardown: async () => {
+                throw new Error('teardown said no');
+              },
             },
-          }),
+            {
+              onRemove: () => {
+                removed = true;
+              },
+            },
+          ),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
-          deleteBranch: async () => {
-            branchDeleted = true;
-          },
         }),
       ).rejects.toThrow(/teardown said no/);
 
-      expect(branchDeleted).toBe(false);
+      expect(removed).toBe(false);
     });
 
     test('a teardown failure surfaces as a CliError', async () => {
@@ -842,9 +841,7 @@ describe('run() — the full pipeline over fakes', () => {
             },
           }),
           runAssembler: fakeAssembler,
-          ensureContainers: fakeEnsureContainers,
           alchemy: () => 0,
-          deleteBranch: async () => {},
         }),
       ).rejects.toBeInstanceOf(CliError);
     });
@@ -861,9 +858,7 @@ describe('run() — the full pipeline over fakes', () => {
           },
         }),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 1,
-        deleteBranch: async () => {},
       });
 
       expect(status).toBe(1);
@@ -882,7 +877,6 @@ describe('run() — the full pipeline over fakes', () => {
           },
         }),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
       });
 
@@ -897,9 +891,7 @@ describe('run() — the full pipeline over fakes', () => {
       const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
         config: fakeConfig(),
         runAssembler: fakeAssembler,
-        ensureContainers: fakeEnsureContainers,
         alchemy: () => 0,
-        deleteBranch: async () => {},
       });
 
       expect(status).toBe(0);

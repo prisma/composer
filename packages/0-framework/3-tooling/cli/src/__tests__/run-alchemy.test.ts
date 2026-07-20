@@ -70,8 +70,7 @@ describe('runAlchemy()', () => {
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
       stage: 'ci-42',
-      projectId: 'proj-1',
-      branchId: 'br-1',
+      containerEnv: {},
       env: { ...process.env, CAPTURE_FILE: captureFile },
     });
 
@@ -107,7 +106,7 @@ describe('runAlchemy()', () => {
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
       stage: undefined,
-      projectId: 'proj-1',
+      containerEnv: {},
       env: { ...process.env, CAPTURE_FILE: captureFile },
     });
 
@@ -115,7 +114,7 @@ describe('runAlchemy()', () => {
     expect(captured.argv).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes']);
   });
 
-  test('sets PRISMA_PROJECT_ID on the child env, and PRISMA_BRANCH_ID only for a named branch', () => {
+  test('merges containerEnv over the base env on the child — one var per extension, content-blind', () => {
     const dir = makeTmpDir();
     const binDir = path.join(dir, 'node_modules', '.bin');
     fs.mkdirSync(binDir, { recursive: true });
@@ -126,8 +125,8 @@ describe('runAlchemy()', () => {
         '#!/usr/bin/env node',
         'const fs = require("node:fs");',
         'fs.writeFileSync(process.env.CAPTURE_FILE, JSON.stringify({',
-        '  PRISMA_PROJECT_ID: process.env.PRISMA_PROJECT_ID ?? null,',
-        '  PRISMA_BRANCH_ID: process.env.PRISMA_BRANCH_ID ?? null,',
+        '  BASE_VAR: process.env.BASE_VAR ?? null,',
+        '  PRISMA_COMPOSER_CONTAINER_FOO: process.env.PRISMA_COMPOSER_CONTAINER_FOO ?? null,',
         '}));',
       ].join('\n'),
       { mode: 0o755 },
@@ -138,24 +137,44 @@ describe('runAlchemy()', () => {
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
       stage: 'staging',
-      projectId: 'proj-1',
-      branchId: 'br-1',
-      env: { ...process.env, CAPTURE_FILE: captureFile },
+      containerEnv: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
+      env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
     });
 
-    const named = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
-    expect(named).toEqual({ PRISMA_PROJECT_ID: 'proj-1', PRISMA_BRANCH_ID: 'br-1' });
+    const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
+    expect(captured).toEqual({
+      BASE_VAR: 'base',
+      PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance',
+    });
+  });
+
+  test('an empty containerEnv leaves the base env untouched', () => {
+    const dir = makeTmpDir();
+    const binDir = path.join(dir, 'node_modules', '.bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const captureFile = path.join(dir, 'capture.json');
+    fs.writeFileSync(
+      path.join(binDir, 'alchemy'),
+      [
+        '#!/usr/bin/env node',
+        'const fs = require("node:fs");',
+        'fs.writeFileSync(process.env.CAPTURE_FILE, JSON.stringify({',
+        '  BASE_VAR: process.env.BASE_VAR ?? null,',
+        '}));',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
 
     runAlchemy({
       command: 'deploy',
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
       stage: undefined,
-      projectId: 'proj-1',
-      env: { ...process.env, CAPTURE_FILE: captureFile },
+      containerEnv: {},
+      env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
     });
 
-    const defaultStage = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
-    expect(defaultStage).toEqual({ PRISMA_PROJECT_ID: 'proj-1', PRISMA_BRANCH_ID: null });
+    const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
+    expect(captured).toEqual({ BASE_VAR: 'base' });
   });
 });

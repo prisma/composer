@@ -96,11 +96,13 @@ export function validateConfigShape(loaded: unknown, configPath: string): Prisma
     seen.add(id);
   }
 
-  if (typeof loaded['state'] !== 'function') {
-    throw fieldError(
-      'state',
-      'must be a function returning the deploy state layer (e.g. () => prismaState())',
-    );
+  const state = loaded['state'];
+  if (
+    !isRecord(state) ||
+    typeof state['extension'] !== 'string' ||
+    typeof state['create'] !== 'function'
+  ) {
+    throw fieldError('state', 'must be a state descriptor (e.g. prismaState())');
   }
 
   return blindCast<

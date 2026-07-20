@@ -7,21 +7,16 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { assembleServices, type RunAssembler } from '@internal/assemble';
 import { Load } from '@internal/core';
-import type { PrismaAppConfig } from '@internal/core/config';
-import type { ResolvedContainer } from '@internal/lowering';
+import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import { containerEnv } from '@internal/core/config';
 import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
-import {
-  deleteAppProject,
-  deleteStageBranch,
-  type EnsureContainersInput,
-  ensureContainers,
-} from './ensure-containers.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
 import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
 import { loadEntry } from './load-entry.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
+import { validateStageName } from './validate-stage.ts';
 
 const BINARY_NAME = 'prisma-composer';
 
@@ -134,11 +129,8 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 export interface RunDeps {
   /** Substituted into assembleServices — see @internal/assemble's RunAssembler. */
   readonly runAssembler?: RunAssembler;
-  readonly ensureContainers?: (input: EnsureContainersInput) => Promise<ResolvedContainer>;
   readonly alchemy?: (input: RunAlchemyInput) => number;
-  readonly deleteBranch?: (input: { branchId: string }) => Promise<void>;
-  readonly deleteProject?: (input: { projectId: string }) => Promise<void>;
-  /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). */
+  /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). Container lifecycle is stubbed via each extension's own `container` descriptor on this config. */
   readonly config?: PrismaAppConfig;
 }
 
@@ -191,6 +183,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     throw error;
   }
   const stage = effectiveStage(args);
+  if (stage !== undefined) validateStageName(stage);
   const cwd = process.cwd();
 
   // 0. destroy-only guardrail — first, ahead of every other step, so it
@@ -244,15 +237,31 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     throw error;
   }
 
-  // 7. Resolve the app's Project + (named stage) Branch via the Management
-  // API — deploy creates-if-absent, destroy finds only — after assembly
-  // succeeds, so a deploy that cannot assemble never creates anything in
-  // Prisma Cloud.
-  const { projectId, branchId } = await (deps.ensureContainers ?? ensureContainers)({
-    command: args.command,
-    appName: name,
-    stage,
-  });
+  // 7. Resolve each extension's own container (e.g. Prisma Cloud's Project +
+  // named-stage Branch) via its own descriptor — deploy ensures (creates if
+  // absent), destroy locates only — after assembly succeeds, so a deploy
+  // that cannot assemble never creates anything on any platform.
+  const containers = new Map<string, ContainerInstance>();
+  for (const extension of config.extensions) {
+    if (extension.container === undefined) continue;
+    try {
+      if (args.command === 'deploy') {
+        containers.set(extension.id, await extension.container.ensure({ appName: name, stage }));
+      } else {
+        const instance = await extension.container.locate({ appName: name, stage });
+        if (instance === undefined) {
+          throw new CliError(
+            `Nothing deployed for ${name}${stage !== undefined ? `/${stage}` : ''} — deploy it first.`,
+          );
+        }
+        containers.set(extension.id, instance);
+      }
+    } catch (error) {
+      throw error instanceof CliError
+        ? error
+        : new CliError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   // 7.5 Preflight (deploy only): each extension verifies its platform
   // prerequisites — e.g. that every secret env var in the provision manifest
@@ -262,7 +271,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     for (const extension of config.extensions) {
       if (extension.preflight === undefined) continue;
       try {
-        await extension.preflight({ graph, projectId, branchId, stage });
+        await extension.preflight({ graph, container: containers.get(extension.id), stage });
       } catch (error) {
         throw error instanceof CliError
           ? error
@@ -287,8 +296,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
       cwd,
       stage,
-      projectId,
-      ...(branchId !== undefined ? { branchId } : {}),
+      containerEnv: containerEnv(containers),
     });
     if (status !== 0) {
       console.error(`\nGenerated stack file: ${stackPath}`);
@@ -307,7 +315,24 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       for (const extension of config.extensions) {
         if (extension.teardown === undefined) continue;
         try {
-          await extension.teardown({ projectId, branchId, stage });
+          await extension.teardown({ container: containers.get(extension.id), stage });
+        } catch (error) {
+          throw error instanceof CliError
+            ? error
+            : new CliError(error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      // 9.75 Container removal (destroy only, after every teardown): the CLI's
+      // two-loop order — all teardowns, then all removes — is what structurally
+      // preserves ADR-0034's guarantee that a stage's state database is deleted
+      // before its Branch (a Branch with an attached database refuses deletion).
+      for (const extension of config.extensions) {
+        if (extension.container === undefined) continue;
+        const instance = containers.get(extension.id);
+        if (instance === undefined) continue;
+        try {
+          await extension.container.remove(instance);
         } catch (error) {
           throw error instanceof CliError
             ? error
@@ -316,11 +341,6 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       }
     }
 
-    if (args.command === 'destroy' && branchId !== undefined) {
-      await (deps.deleteBranch ?? ((input) => deleteStageBranch(input)))({ branchId });
-    } else if (args.command === 'destroy') {
-      await (deps.deleteProject ?? ((input) => deleteAppProject(input)))({ projectId });
-    }
     return status;
   } catch (error) {
     console.error(`\nGenerated stack file: ${stackPath}`);
