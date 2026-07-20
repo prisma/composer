@@ -133,3 +133,38 @@ jobs:
           verify-command: bun "${{ github.workspace }}/scripts/cold-start-canary.ts"
           destroy-label: 'streams-canary '
           sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary
+
+  rpc-cold-start-canary:
+    name: RPC cold-start canary (PRO-217)
+    runs-on: ubuntu-latest
+    # After the streams face's canary, for the same quota-serialization reason
+    # as the rest of this chain — only one real-cloud deploy round runs at a
+    # time. Fails when the ingress no longer closes first-touch connections to
+    # a booting service-RPC provider — the signal to retire this canary (never
+    # the Idempotency-Key protocol or the bounded retry in service-rpc, which
+    # are permanent protocol semantics for this kind, not a PRO-217
+    # compensation). The bug being PRESENT is today's normal and passes.
+    #
+    # This face has no warmup phase and no durability wait (unlike the streams
+    # canary): the script itself is the caller, and auth.service keeps no
+    # local state to restore between samples, so its own budget is at most as
+    # large as cold-start-canary.ts's. NOT required until Will adds it.
+    needs: cold-start-canary
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+      PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+      AUTH_SIGNING_SECRET: sk_test_ci_storefront_auth
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/deploy-verify-destroy
+        with:
+          working-directory: examples/storefront-auth
+          build-filter: '@prisma/example-storefront-auth...'
+          stack-name: storefront-auth-rpc-canary-ci-${{ github.run_id }}
+          verify-command: bun "${{ github.workspace }}/scripts/rpc-cold-start-canary.ts"
+          destroy-label: 'storefront-auth-rpc-canary '
+          sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary storefront-auth-rpc-canary

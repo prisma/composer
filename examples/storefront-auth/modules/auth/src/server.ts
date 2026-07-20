@@ -56,3 +56,16 @@ export default handler;
 // Bind all interfaces — Compute routes external HTTP to the VM, so a
 // loopback-only listener would be unreachable.
 Bun.serve({ port, hostname: '0.0.0.0', fetch: handler });
+// The RPC cold-start canary (scripts/rpc-cold-start-canary.ts) reads this
+// line out of the deployment's boot log to prove a touch was sent before the
+// server could answer anything — the same technique
+// scripts/cold-start-canary.ts already relies on for the streams module.
+// Bun.serve binds synchronously, so logging immediately after it returns
+// marks the moment this service is actually ready to accept connections.
+// The timestamp is stamped here, in-process, rather than left to the
+// platform: unlike @prisma/streams-server (which patches console.log to
+// prepend one), Compute's log relay passes plain app stdout through
+// unmodified — verified live, an unstamped line arrives with no timestamp
+// at all — so a line with no timestamp of its own would be unusable
+// evidence for classifyBootEvidence's cross-clock comparison.
+console.log(`[${new Date().toISOString()}] [INFO] auth server listening on 0.0.0.0:${port}`);
