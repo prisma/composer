@@ -96,8 +96,8 @@ while (Date.now() < deadline) {
     }
     console.log(`Round trip OK — PUT then GET /blobs/${testKey} returned the expected body.`);
 
-    // Leave the bucket empty: the destroy phase deletes the bucket itself,
-    // and the Management API rejects deleting a non-empty bucket.
+    // Not required for destroy (bucket deletion cascades to its contents),
+    // but exercising DELETE keeps the verify a full CRUD round trip.
     const delRes = await fetch(`${url}/blobs/${testKey}`, {
       method: 'DELETE',
       signal: AbortSignal.timeout(30_000),
