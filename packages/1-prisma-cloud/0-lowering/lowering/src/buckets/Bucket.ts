@@ -54,9 +54,8 @@ export const BucketProvider = () =>
           return { id: created.data.id, name: created.data.name };
         }),
         delete: Effect.fn(function* ({ output }) {
-          // Deleting a non-empty bucket currently returns a 500 from the
-          // Management API (known control-plane limitation). The error surfaces
-          // with a clear message from the API rather than being swallowed here.
+          // Deletion cascades server-side: the Management API deletes the
+          // bucket together with its objects and any remaining keys.
           yield* callVoid(() =>
             client.DELETE('/v1/buckets/{bucketId}', {
               params: { path: { bucketId: output.id } },
