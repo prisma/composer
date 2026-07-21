@@ -167,6 +167,19 @@ local fake instead of the real provider — a `Bun.serve` fake HTTP endpoint
 for Resend, a minimal loopback SMTP responder for SMTP (see
 `delivery-resend.test.ts`/`delivery-smtp.test.ts`).
 
+## Manual resend check (not run in CI)
+
+A one-off, by-hand verification that a real send actually delivers — not
+part of the test suite or the deploy smoke, since it needs a real Resend
+account:
+
+1. Set the stage's `EMAIL_DELIVERY_MODE` to `resend`, `EMAIL_FROM` to an
+   address on a domain verified with Resend, and `EMAIL_DELIVERY_CREDENTIAL`
+   to a real Resend API key.
+2. Send one template to a real inbox you control.
+3. Confirm the message arrives, and that the outbox row for it reads
+   `status: 'sent'` with a non-null `providerMessageId`.
+
 ## Non-goals (v1)
 
 Attachments, cc/bcc size limits beyond the contract's, per-send `from`

@@ -13,3 +13,4 @@ export {
   emailSender,
 } from '../contract.ts';
 export { email } from '../email-module.ts';
+export { emailService } from './email-service.ts';

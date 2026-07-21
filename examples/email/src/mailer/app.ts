@@ -17,6 +17,10 @@
  * `createEmailApp` returns a plain handler so the same app runs behind
  * `Bun.serve` in the deployed service and inside the integration test with
  * no server (mirrors the storage example's `createBlobApp`).
+ *
+ * This surface is deliberately unauthenticated, for the smoke's simplicity
+ * — a real app must protect anything that can read the outbox (`GET
+ * /emails` especially), since stored bodies contain live links.
  */
 
 import type { Client } from '@prisma/composer/service-rpc';
