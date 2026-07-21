@@ -15,6 +15,7 @@
     "rules:sync": "node scripts/sync-agent-rules.mjs",
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
+    "bump-minor": "node scripts/bump-minor.ts",
     "test": "turbo run test",
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
     "test:conformance:local": "pnpm --filter @internal/streams test:conformance:local",

@@ -94,8 +94,9 @@ publish trigger** — there is no separate dispatch step for a normal release.
 ## Procedure: cut the next minor
 
 1. From a clean `main`, run **`pnpm bump-minor`** in a fresh branch. It reads the root
-   version at `HEAD`, computes the next minor (`0.1.0` → `0.2.0`), and stamps every
-   workspace `package.json`.
+   version at `HEAD`, computes the next minor (`0.1.0` → `0.2.0`), stamps every
+   workspace `package.json`, and regenerates `pnpm-lock.yaml` (CI installs with
+   `--frozen-lockfile`, so a bump committed without the lockfile fails every job).
 2. Open a PR titled `chore(release): v<version>`. CI runs normally.
 3. **Merge it.** The push to `main` changes the root version, so the `Publish to npm`
    workflow recognises a release bump, publishes every package at `<version>` under
