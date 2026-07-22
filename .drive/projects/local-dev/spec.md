@@ -652,8 +652,10 @@ friction #3's shape) and independently useful.
   reusing the walk/validation from `artifact.ts`'s conventions), plus the
   standard wrapper bundling exactly as `node()`'s control does (the wrapper
   `main.mjs` is what `bootstrap.js` imports). Returns
-  `{ dir: <workDir>/bundle, entry, watch: [<the resolved input dir>] }`
-  (§ 3's `Bundle.watch`).
+  `{ dir: <workDir>, entry: bundle/<entry>, watch: [<the resolved input dir>] }`
+  — the same Bundle shape `node()` produces (the wrapper `main.mjs` sits at
+  the workdir root so the packaged bootstrap can import it; `entry` points
+  into the copied tree). (§ 3's `Bundle.watch`.)
 - No filename guessing, no tree walking beyond the verbatim copy: the author
   states the directory and the entry (ADR-0005; the friction #3
   recommendation, verbatim).
