@@ -34,7 +34,8 @@ import type {
   PutResult,
 } from './store.ts';
 
-const DEFAULT_MAX_KEYS = 1000;
+/** `list`'s default page size when the caller passes no `maxKeys` — exported so tests can pin it directly instead of inferring it from a large fixture. */
+export const DEFAULT_MAX_KEYS = 1000;
 const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 const TMP_DIR_NAME = '.tmp';
 const META_DIR_NAME = '.meta';

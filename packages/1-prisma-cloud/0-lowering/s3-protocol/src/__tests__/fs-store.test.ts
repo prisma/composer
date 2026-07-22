@@ -11,7 +11,7 @@ import { createHash, randomBytes as nodeRandomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fsStore } from '../fs-store.ts';
+import { DEFAULT_MAX_KEYS, fsStore } from '../fs-store.ts';
 import type { ObjectStore } from '../store.ts';
 
 const TEXT = new TextEncoder();
@@ -183,9 +183,18 @@ describe('list', () => {
     expect(page2.isTruncated).toBe(false);
   });
 
-  test('maxKeys defaults to 1000', async () => {
-    const res = await store.list(BUCKET, { prefix: 's/' });
-    expect(res.isTruncated).toBe(false);
+  test('maxKeys defaults to DEFAULT_MAX_KEYS (1000), not merely "big enough for this fixture"', async () => {
+    expect(DEFAULT_MAX_KEYS).toBe(1000);
+
+    const implicit = await store.list(BUCKET, { prefix: 's/' });
+    expect(implicit.keys).toEqual(['s/a', 's/b', 's/c']);
+    expect(implicit.isTruncated).toBe(false);
+
+    // Passing the constant explicitly must behave identically to omitting
+    // it — proving the default really is DEFAULT_MAX_KEYS, not some other
+    // value that merely happens to exceed this fixture's 3 keys.
+    const explicit = await store.list(BUCKET, { prefix: 's/', maxKeys: DEFAULT_MAX_KEYS });
+    expect(explicit).toEqual(implicit);
   });
 
   test('list never descends into .tmp or .meta', async () => {
