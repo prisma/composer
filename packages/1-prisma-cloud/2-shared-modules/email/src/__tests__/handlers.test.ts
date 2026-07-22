@@ -24,6 +24,18 @@ function fakeDelivery(result: DeliveryResult): Delivery & { readonly calls: Emai
   };
 }
 
+/** A `Delivery` that rejects instead of resolving to `{ ok: false }` — the unhandled-rejection case. */
+function throwingDelivery(error: Error): Delivery & { readonly calls: EmailRow[] } {
+  const calls: EmailRow[] = [];
+  return {
+    calls,
+    deliver: async (row) => {
+      calls.push(row);
+      throw error;
+    },
+  };
+}
+
 function baseInput() {
   return {
     templateId: 'welcome',
@@ -100,6 +112,18 @@ describe('send: real modes', () => {
     const stored = await store.getById(result.id);
     expect(stored?.attempts).toBe(3);
   });
+
+  test('a rejected (thrown) deliver() is caught and recorded as a failed row, never left unhandled', async () => {
+    const delivery = throwingDelivery(new Error('boom: network reset'));
+    const { handlers, store } = makeHandlers({ deliveryMode: 'resend', delivery });
+    const result = await handlers.send(baseInput());
+    expect(result.status).toBe('failed');
+    expect(result.error).toBe('boom: network reset');
+
+    const stored = await store.getById(result.id);
+    expect(stored?.status).toBe('failed');
+    expect(stored?.error).toBe('boom: network reset');
+  });
 });
 
 describe('send: dedup on conflict', () => {
@@ -122,6 +146,25 @@ describe('send: dedup on conflict', () => {
     const first = await handlers.send(input);
     const second = await handlers.send(input);
     expect(second).toEqual(first);
+  });
+
+  test('a dedup retry after a deliver() throw returns the now-failed row, never a stale queued one', async () => {
+    const delivery = throwingDelivery(new Error('boom'));
+    const { handlers, store } = makeHandlers({ deliveryMode: 'resend', delivery });
+    const input = baseInput();
+
+    const first = await handlers.send(input);
+    expect(first.status).toBe('failed');
+
+    delivery.calls.length = 0; // clear the first call's record
+    const second = await handlers.send({ ...input, subject: 'a different payload, same key' });
+
+    expect(second.status).toBe('failed');
+    expect(second).toEqual(first);
+    expect(delivery.calls).toHaveLength(0); // dedup: no re-attempt, not even after a strand
+
+    const stored = await store.getById(first.id);
+    expect(stored?.status).toBe('failed');
   });
 });
 

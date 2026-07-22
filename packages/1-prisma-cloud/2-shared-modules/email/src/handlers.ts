@@ -6,7 +6,7 @@
  * (`deliveryMode`, `from`) already constructed, so it stays testable without
  * a running service.
  */
-import type { Delivery } from './delivery.ts';
+import type { Delivery, DeliveryResult } from './delivery.ts';
 import {
   decodeCursor,
   type EmailRow,
@@ -141,7 +141,17 @@ export function createHandlers(config: HandlersConfig): EmailHandlers {
       return toSendResult(outcome.row);
     }
 
-    const result = await delivery.deliver(outcome.row);
+    // A thrown/rejected deliver() is normalized to a failed result rather
+    // than left unhandled — otherwise the row would strand at "queued"
+    // forever, and a later dedup retry would keep returning that stale row
+    // without ever attempting delivery again (no redelivery mechanism in v1).
+    const result = await delivery.deliver(outcome.row).catch(
+      (caught: unknown): DeliveryResult => ({
+        ok: false,
+        error: caught instanceof Error ? caught.message : String(caught),
+        attempts: 1,
+      }),
+    );
     const updated = await store.updateDelivery(
       outcome.row.id,
       result.ok

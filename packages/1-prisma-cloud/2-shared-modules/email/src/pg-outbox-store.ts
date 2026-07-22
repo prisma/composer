@@ -117,22 +117,18 @@ class PgOutboxStore implements OutboxStore {
   }
 
   async updateDelivery(id: string, update: DeliveryUpdate): Promise<EmailRow> {
-    const rows =
-      update.status === 'sent'
-        ? await this.sql<PgEmailRow[]>`
-            update emails set
-              status = 'sent', provider_message_id = ${update.providerMessageId},
-              error = null, attempts = attempts + ${update.attempts},
-              updated_at = date_trunc('milliseconds', now())
-            where id = ${id}
-            returning *`
-        : await this.sql<PgEmailRow[]>`
-            update emails set
-              status = 'failed', provider_message_id = null,
-              error = ${update.error}, attempts = attempts + ${update.attempts},
-              updated_at = date_trunc('milliseconds', now())
-            where id = ${id}
-            returning *`;
+    // One parameterized query for both outcomes — sent/failed differ only in
+    // which of providerMessageId/error carries a value, so branching on
+    // status here would risk a future field change landing on only one path.
+    const providerMessageId = update.status === 'sent' ? update.providerMessageId : null;
+    const error = update.status === 'failed' ? update.error : null;
+    const rows = await this.sql<PgEmailRow[]>`
+      update emails set
+        status = ${update.status}, provider_message_id = ${providerMessageId},
+        error = ${error}, attempts = attempts + ${update.attempts},
+        updated_at = date_trunc('milliseconds', now())
+      where id = ${id}
+      returning *`;
     const row = rows[0];
     if (row === undefined) {
       throw new Error(`outbox updateDelivery: no row found for id ${id}`);
