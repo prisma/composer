@@ -32,6 +32,14 @@ export interface DeploymentProps {
    * see docs/design/05-prisma-cloud/alchemy-lowering.md).
    */
   environment?: readonly EnvironmentVariable[];
+  /**
+   * The node's deployment address (local-dev spec § 4). This hosted provider
+   * never reads it — the Management API needs no address, only `computeServiceId`.
+   * It exists so the LOCAL Deployment provider (`@internal/lowering/dev`) can
+   * key the Compute emulator's env materialization without importing anything
+   * target-specific.
+   */
+  serviceAddress?: string;
 }
 
 export interface DeploymentAttributes {

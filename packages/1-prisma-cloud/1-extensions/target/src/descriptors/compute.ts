@@ -45,6 +45,8 @@ export interface ComputeProvisioned {
 export interface ComputeSerialized {
   readonly environment: readonly Prisma.EnvironmentVariable[];
   readonly port: number;
+  /** The node's deployment address — threaded into `Deployment`'s `serviceAddress` (local-dev spec § 4). */
+  readonly address: string;
 }
 
 /**
@@ -54,7 +56,7 @@ export interface ComputeSerialized {
  * Annotating this `NodeDescriptor` would force s3-store to cast them back.
  */
 export function computeDescriptor(
-  o: ResolvedCloudOptions,
+  o: () => ResolvedCloudOptions,
 ): { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized> {
   return {
     kind: 'service' as const,
@@ -68,7 +70,7 @@ export function computeDescriptor(
         const svc = yield* Prisma.ComputeService(`${id}-svc`, {
           projectId,
           name: id,
-          region: o.region ?? DEFAULT_REGION,
+          region: o().region ?? DEFAULT_REGION,
           ...(branchId !== undefined ? { branchId } : {}),
         });
         return { serviceId: svc.id, projectId, endpointDomain: svc.endpointDomain };
@@ -163,7 +165,7 @@ export function computeDescriptor(
             refsByBrand.set(edge.brand, refs);
           }
         }
-        for (const [brand, entry] of o.providerParams) {
+        for (const [brand, entry] of o().providerParams) {
           const raw =
             'valueForService' in entry
               ? entry.valueForService(provisioned, address)
@@ -196,7 +198,7 @@ export function computeDescriptor(
         // This is the only place the raw, untyped config is read, so it is the
         // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
-        return { environment: records, port };
+        return { environment: records, port, address };
       }),
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
@@ -222,6 +224,8 @@ export function computeDescriptor(
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           port: serialized.port,
+          // Local-dev only (local-dev spec § 4) — the hosted provider ignores it.
+          serviceAddress: serialized.address,
         });
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
