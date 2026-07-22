@@ -1,6 +1,5 @@
 import type { Deps, Expose, Params } from '@internal/core';
-import { blindCast } from '@internal/foundation/casts';
-import { compute } from './compute.ts';
+import { ComputeService, compute } from './compute.ts';
 
 /**
  * The storage service authoring factory — a `compute` service routed to the
@@ -13,6 +12,13 @@ import { compute } from './compute.ts';
  * return type is compute's exactly (including the reserved `port` param). The
  * storage module (D4b) calls this with its `db`/`credentials` deps, a `bucket`
  * param, and `expose: { store: s3Contract }`.
+ *
+ * `compute()`'s result is a `ComputeService` instance — its run/load/config/
+ * secrets/origin methods live on the class prototype, not as the instance's
+ * own properties, so a plain object spread (`{ ...node }`) would silently
+ * drop them. Building a fresh `ComputeService` from the same data fields
+ * (which `{ ...node }` DOES copy — they're the node's own enumerable
+ * properties) with `type` overridden keeps every method intact.
  */
 export function s3StoreService<
   D extends Deps,
@@ -20,10 +26,7 @@ export function s3StoreService<
   E extends Expose = Record<never, never>,
 >(def: Parameters<typeof compute<D, P, E>>[0]): ReturnType<typeof compute<D, P, E>> {
   const node = compute<D, P, E>(def);
-  return Object.freeze(
-    blindCast<
-      ReturnType<typeof compute<D, P, E>>,
-      "the spread copies compute's runnable (brand, deps/params/build/expose, run/load/config) and overrides only the routing type"
-    >({ ...node, type: 's3-store' }),
-  );
+  const instance = new ComputeService<D, P, E, Record<never, never>>({ ...node, type: 's3-store' });
+  Object.freeze(instance);
+  return instance;
 }

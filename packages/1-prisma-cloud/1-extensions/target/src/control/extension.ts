@@ -28,7 +28,9 @@ import type {
   CloudApplication,
   ProviderParam,
   ResolvedCloudOptions,
+  ServiceProviderParam,
 } from '../descriptors/shared.ts';
+import { SELF_ORIGIN } from '../origin-key.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
 import { runPreflight } from '../preflight.ts';
@@ -135,6 +137,26 @@ const streamsApiKeyValue: ProviderParam['value'] = (refs) => {
   });
 };
 
+/**
+ * Origin's deploy-side value function (service-derived): the provisioned
+ * service's own `endpointDomain`, verbatim — `https://…`, no trailing slash,
+ * no normalization. Every compute service gets this row, exposing or not.
+ * The undefined guard is a deploy-time invariant check, not a policy: the
+ * Management API always reports an endpoint domain post-PRO-200, so a missing
+ * one means the platform predates the fix — fail the deploy loudly rather
+ * than write a row origin() would trust. The raw string is JSON-encoded by
+ * the descriptor's generic loop, like every other reserved provider param.
+ */
+const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, address) =>
+  Output.map(provisioned.endpointDomain, (v) => {
+    if (v === undefined) {
+      throw new Error(
+        `ComputeService for "${address}" reported no endpointDomain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
+      );
+    }
+    return v;
+  });
+
 /** The user-facing state descriptor: `state: prismaState()` in `prisma-composer.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
@@ -173,7 +195,8 @@ function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<nev
  * param up by brand.
  *
  * `__tests__/provider-params.test.ts` asserts this map's brands are exactly
- * `PROVIDER_PARAMS`'s brands: a brand minted here with no provider param
+ * `PROVIDER_PARAMS`'s edge-derived brands (a service-derived param like the
+ * origin mints nothing, so it has no provisioner): a brand minted here with no provider param
  * below would leave the value it mints written to consumers while no
  * provider ever stores an accepted-keys row for it — `serve()` (or the
  * equivalent runtime reader) then sees an absent var and passes every caller
@@ -185,7 +208,17 @@ const PROVISIONERS: ReadonlyMap<symbol, ProvisionerDescriptor> = new Map([
 ]);
 
 /**
- * Every brand's deploy-side `value(refs)` — the only per-brand thing this
+ * One brand's deploy-side value registration: edge-derived (`value(refs)`,
+ * fed by the provider's inbound edges) or service-derived
+ * (`valueForService(provisioned, address)`, fed by the service's own
+ * provisioned attributes).
+ */
+export type ProviderParamValue =
+  | Pick<ProviderParam, 'value'>
+  | Pick<ServiceProviderParam, 'valueForService'>;
+
+/**
+ * Every brand's deploy-side value function — the only per-brand thing this
  * file still holds directly. `PROVIDER_PARAMS` below is built by mapping
  * `RESERVED_PROVIDER_PARAMS` (`provider-params.ts`, the boot-side list) onto
  * this map, so a param can exist on the deploy side only if it already
@@ -193,15 +226,19 @@ const PROVISIONERS: ReadonlyMap<symbol, ProvisionerDescriptor> = new Map([
  * which reserved provider params exist at all, closing the drift the old
  * name-comparison test only detected after the fact.
  */
-const PROVIDER_PARAM_VALUES: ReadonlyMap<symbol, ProviderParam['value']> = new Map([
-  [RPC_PEER_KEY, rpcAcceptedKeysValue],
-  [STREAMS_API_KEY, streamsApiKeyValue],
+const PROVIDER_PARAM_VALUES: ReadonlyMap<symbol, ProviderParamValue> = new Map<
+  symbol,
+  ProviderParamValue
+>([
+  [RPC_PEER_KEY, { value: rpcAcceptedKeysValue }],
+  [STREAMS_API_KEY, { value: streamsApiKeyValue }],
+  [SELF_ORIGIN, { valueForService: selfOriginValue }],
 ]);
 
 /**
  * Builds the deploy-side registry from the boot-side list, keyed by brand —
- * throws if a boot-side entry has no registered deploy-side `value(refs)`, so
- * `RESERVED_PROVIDER_PARAMS` stays the single source of which reserved
+ * throws if a boot-side entry has no registered deploy-side value function,
+ * so `RESERVED_PROVIDER_PARAMS` stays the single source of which reserved
  * provider params exist: deploy can no longer write a row boot never
  * stashes. Exported (rather than inlined into `PROVIDER_PARAMS` below) so
  * `__tests__/provider-params.test.ts` can drive it directly with a
@@ -209,10 +246,10 @@ const PROVIDER_PARAM_VALUES: ReadonlyMap<symbol, ProviderParam['value']> = new M
  */
 export function buildProviderParams(
   entries: readonly ProviderParamEntry[],
-  values: ReadonlyMap<symbol, ProviderParam['value']>,
-): ReadonlyMap<symbol, ProviderParam> {
-  return new Map<symbol, ProviderParam>(
-    entries.map((entry): [symbol, ProviderParam] => {
+  values: ReadonlyMap<symbol, ProviderParamValue>,
+): ReadonlyMap<symbol, ProviderParam | ServiceProviderParam> {
+  return new Map<symbol, ProviderParam | ServiceProviderParam>(
+    entries.map((entry): [symbol, ProviderParam | ServiceProviderParam] => {
       const value = values.get(entry.brand);
       if (value === undefined) {
         throw new Error(
@@ -221,15 +258,13 @@ export function buildProviderParams(
             'in RESERVED_PROVIDER_PARAMS must have one.',
         );
       }
-      return [entry.brand, { ...entry, value }];
+      return [entry.brand, { ...entry, ...value }];
     }),
   );
 }
 
-export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam> = buildProviderParams(
-  RESERVED_PROVIDER_PARAMS,
-  PROVIDER_PARAM_VALUES,
-);
+export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProviderParam> =
+  buildProviderParams(RESERVED_PROVIDER_PARAMS, PROVIDER_PARAM_VALUES);
 
 /**
  * Resolves the factory's env-or-option inputs, failing fast with the exact

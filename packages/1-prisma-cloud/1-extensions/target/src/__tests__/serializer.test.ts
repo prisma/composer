@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type ConfigParam, param, string } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { compute } from '../exports/index.ts';
+import { ORIGIN_PARAM } from '../origin-key.ts';
 import {
   configKey,
   decodeParamPointer,
@@ -14,6 +15,8 @@ import {
   encode,
   encodeParamPointer,
   isParamPointerRow,
+  readOrigin,
+  stashProviderParams,
 } from '../serializer.ts';
 
 const build = {
@@ -127,6 +130,42 @@ describe('deserialize — env-sourced param boot resolution', () => {
     await withEnv({ [key]: encode('service', 'https://literal.example.com') }, () => {
       const config = deserialize(svc(), address);
       expect(config.service['appOrigin']).toBe('https://literal.example.com');
+    });
+  });
+});
+
+describe('the framework-resolved origin row rides stashProviderParams; readOrigin reads it back', () => {
+  const addressKey = configKey('web', { owner: 'service', name: 'ORIGIN' });
+  const freeKey = configKey('', { owner: 'service', name: 'ORIGIN' });
+
+  test('stashProviderParams re-emits the address-scoped ORIGIN row address-free when present — the boot half of the round-trip', async () => {
+    await withEnv(
+      { [addressKey]: encode('service', 'https://web.example.com'), [freeKey]: undefined },
+      () => {
+        stashProviderParams([ORIGIN_PARAM], 'web');
+        expect(process.env[freeKey]).toBe(encode('service', 'https://web.example.com'));
+      },
+    );
+  });
+
+  test('stashProviderParams writes nothing for ORIGIN when the address-scoped row is absent', async () => {
+    await withEnv({ [addressKey]: undefined, [freeKey]: undefined }, () => {
+      stashProviderParams([ORIGIN_PARAM], 'web');
+      expect(process.env[freeKey]).toBeUndefined();
+    });
+  });
+
+  test('readOrigin throws the pinned message when COMPOSER_ORIGIN is unset', async () => {
+    await withEnv({ [freeKey]: undefined }, () => {
+      expect(() => readOrigin()).toThrow(
+        "this service's origin is not available (env COMPOSER_ORIGIN is unset) — a deployed environment writes it automatically; a local harness must supply it like any other config value (set COMPOSER_ORIGIN to the JSON-encoded origin URL).",
+      );
+    });
+  });
+
+  test('readOrigin returns the decoded string when COMPOSER_ORIGIN is set — the idiom a local harness supplies it by', async () => {
+    await withEnv({ [freeKey]: encode('service', 'https://web.example.com') }, () => {
+      expect(readOrigin()).toBe('https://web.example.com');
     });
   });
 });

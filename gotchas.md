@@ -53,6 +53,8 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 **Workaround.** Ignore the create response's `serviceEndpointDomain`. After promote, re-`GET /v1/compute-services/{id}` and use _that_ `serviceEndpointDomain`. Our Alchemy provider's `Deployment` re-reads the service post-promote and returns it as `deployedUrl`.
 
+**Fixed upstream** ([pdp-control-plane#4650](https://github.com/prisma/pdp-control-plane/pull/4650), merged 2026-07-22): the pre-promote `serviceEndpointDomain` is now composed from the service's actual region and documented as a contract — it names the domain the service will serve on once promoted. The post-promote re-read stays correct (a stored Foundry-assigned domain is returned verbatim), but is no longer the only trustworthy source; ADR-0039's `origin()` relies on the create-time value.
+
 **Reproduction.**
 
 1. Create a compute service with `regionId: us-east-1`; note `serviceEndpointDomain` (`.cdg.`).

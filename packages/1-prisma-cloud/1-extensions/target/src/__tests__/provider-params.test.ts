@@ -16,7 +16,7 @@ describe('control.ts derives PROVIDER_PARAMS from provider-params.ts, not the ot
     // Only FAKE_BRAND_A has a registered value() — the shape deploy would be
     // in if a brand were added to RESERVED_PROVIDER_PARAMS (the boot-side
     // list) without a matching registration in control.ts.
-    const values = new Map([[FAKE_BRAND_A, () => 'a-value']]);
+    const values = new Map([[FAKE_BRAND_A, { value: () => 'a-value' }]]);
 
     expect(() => buildProviderParams(entries, values)).toThrow(/FAKE_B/);
     expect(() => buildProviderParams(entries, values)).toThrow(
@@ -30,15 +30,23 @@ describe('control.ts derives PROVIDER_PARAMS from provider-params.ts, not the ot
       { name: 'FAKE_B', schema: type('string'), brand: FAKE_BRAND_B },
     ];
     const values = new Map([
-      [FAKE_BRAND_A, () => 'a-value'],
-      [FAKE_BRAND_B, () => 'b-value'],
+      [FAKE_BRAND_A, { value: () => 'a-value' }],
+      [FAKE_BRAND_B, { valueForService: () => 'b-value' }],
     ]);
 
     const built = buildProviderParams(entries, values);
     expect([...built.keys()]).toEqual([FAKE_BRAND_A, FAKE_BRAND_B]);
-    expect(built.get(FAKE_BRAND_A)?.name).toBe('FAKE_A');
-    expect(built.get(FAKE_BRAND_A)?.value([])).toBe('a-value');
-    expect(built.get(FAKE_BRAND_B)?.value([])).toBe('b-value');
+    const a = built.get(FAKE_BRAND_A);
+    const b = built.get(FAKE_BRAND_B);
+    expect(a?.name).toBe('FAKE_A');
+    // Each registration kind carries through as its own kind: A stays
+    // edge-derived, B stays service-derived.
+    expect(a !== undefined && 'value' in a ? a.value([]) : undefined).toBe('a-value');
+    expect(
+      b !== undefined && 'valueForService' in b
+        ? b.valueForService({ endpointDomain: undefined as never }, 'addr')
+        : undefined,
+    ).toBe('b-value');
   });
 
   test('the real registry: every param control.ts writes for deploy is exactly a param provider-params.ts lists for boot', () => {
@@ -67,7 +75,12 @@ describe("control.ts's PROVISIONERS and PROVIDER_PARAMS cover the same brands", 
   test('every brand in provisions (the minting registry) has a matching reserved provider param, and vice versa', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const provisionerBrands = [...(target.provisions?.keys() ?? [])];
-    const paramBrands = [...PROVIDER_PARAMS.keys()];
+    // A service-derived param (valueForService) mints nothing — its value
+    // comes from the service's own provisioned attributes, not from a
+    // per-edge provisioner — so only edge-derived params are compared here.
+    const paramBrands = [...PROVIDER_PARAMS.entries()]
+      .filter(([, entry]) => !('valueForService' in entry))
+      .map(([brand]) => brand);
 
     expect(new Set(provisionerBrands)).toEqual(new Set(paramBrands));
     expect(provisionerBrands.length).toBeGreaterThan(0);

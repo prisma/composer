@@ -151,6 +151,32 @@ describe('compute()', () => {
       }),
     ).toThrow(/secret slot "token" collides with a param of the same name/);
   });
+
+  test('rejects a param named "origin" — collides with the framework-written origin row', () => {
+    expect(() =>
+      compute({
+        name: 'test-service',
+        deps: {},
+        params: { origin: string() },
+        build,
+      }),
+    ).toThrow(
+      /compute\(\): param "origin" collides with the framework-written origin row — rename the param\./,
+    );
+  });
+
+  test('rejects a secret slot named "origin" — collides with the framework-written origin row', () => {
+    expect(() =>
+      compute({
+        name: 'test-service',
+        deps: {},
+        secrets: { origin: secret() },
+        build,
+      }),
+    ).toThrow(
+      /compute\(\): secret "origin" collides with the framework-written origin row — rename the secret\./,
+    );
+  });
 });
 
 describe('compute({ expose })', () => {
@@ -655,6 +681,28 @@ describe('compute().load()', () => {
       expect(first).toBe(second);
       expect(first).toEqual({ db: { url: 'postgres://z' } });
       expect(app.config()).toEqual({ port: 3000 });
+    });
+  });
+});
+
+describe('compute().origin()', () => {
+  const ORIGIN_KEY = configKey('', { owner: 'service', name: 'ORIGIN' });
+
+  test('returns the origin a harness supplies by setting COMPOSER_ORIGIN, JSON-encoded', async () => {
+    const app = compute({ name: 'web', deps: {}, build });
+
+    await withEnv({ [ORIGIN_KEY]: '"https://web.example.com"' }, () => {
+      expect(app.origin()).toBe('https://web.example.com');
+    });
+  });
+
+  test('memoizes — a later env mutation does not change the returned value', async () => {
+    const app = compute({ name: 'web', deps: {}, build });
+
+    await withEnv({ [ORIGIN_KEY]: '"https://first.example.com"' }, () => {
+      expect(app.origin()).toBe('https://first.example.com');
+      process.env[ORIGIN_KEY] = '"https://second.example.com"';
+      expect(app.origin()).toBe('https://first.example.com');
     });
   });
 });

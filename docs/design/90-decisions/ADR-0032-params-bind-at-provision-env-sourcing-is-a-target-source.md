@@ -40,7 +40,10 @@ A module boundary forwards a param binding down to a child through a nameless
 of a value: its authoring-time `default`. That made per-stage, per-application
 configuration — the canonical example is an application origin URL that differs
 between production and a preview stage — impossible to express without editing
-the service's own source. Binding at `provision()` puts the value where the
+the service's own source. (Narrowed by ADR-0039: that example holds only for
+an origin the operator genuinely knows, such as a custom domain they
+provisioned. A service's own *platform-assigned* origin is never operator
+input — the target resolves it and exposes it as `ComputeService.origin()`.) Binding at `provision()` puts the value where the
 composition decision is made: the module declares *what* it needs (a schema),
 the application decides *what it is worth* (a literal) or *where it comes from*
 (a source). A binding beats the param's `default`; the `default` remains the
