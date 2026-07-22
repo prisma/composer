@@ -13,7 +13,6 @@
  * in the CLI parent, so it builds its own Management API client from env — the
  * same credential path `container.ts`'s `ensure`/`locate` use.
  */
-import { paramManifest, provisionManifest } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
@@ -25,8 +24,7 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
-import { isEnvParamSource, paramName } from './param.ts';
-import { secretName } from './secret.ts';
+import { collectPreflightNames } from './preflight-names.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -198,16 +196,13 @@ export async function runPreflight(
   // One check per platform NAME (many slots/services, secret or param, may
   // bind the same one). Every wired secret is required — the forwarding model
   // has no optional slot; a param binding is only checked when it is
-  // env-sourced — a literal-bound param never touches the platform.
+  // env-sourced — a literal-bound param never touches the platform. Deploy
+  // treats the two lists identically (unlike dev preflight), so they're
+  // merged here, secrets first (matching the pre-extraction dedup order).
+  const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
-  for (const binding of provisionManifest(input.graph)) {
-    const name = secretName(binding);
-    if (!names.has(name)) names.set(name, { name, serviceAddress: binding.serviceAddress });
-  }
-  for (const binding of paramManifest(input.graph)) {
-    if (!isEnvParamSource(binding.binding)) continue;
-    const name = paramName(binding);
-    if (!names.has(name)) names.set(name, { name, serviceAddress: binding.serviceAddress });
+  for (const meta of [...collected.secrets, ...collected.envParams]) {
+    if (!names.has(meta.name)) names.set(meta.name, meta);
   }
   if (names.size === 0) return;
 
