@@ -7,6 +7,7 @@ import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config
 import type { ProvisionerDescriptor } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import * as Prisma from '@internal/lowering';
+import { devProviders } from '@internal/lowering/dev';
 /** The Prisma Cloud–hosted deploy state store; its implementation lives in @internal/lowering. */
 import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
@@ -30,6 +31,11 @@ import type {
   ResolvedCloudOptions,
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
+import { devAttach } from '../dev/attach.ts';
+import { devContainerDescriptor } from '../dev/container.ts';
+import { runDevEmulators } from '../dev/emulators.ts';
+import { runDevPreflight } from '../dev/preflight.ts';
+import { runDevTeardown } from '../dev/teardown.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
@@ -267,14 +273,18 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
   buildProviderParams(RESERVED_PROVIDER_PARAMS, PROVIDER_PARAM_VALUES);
 
 /**
- * Resolves the factory's env-or-option inputs, failing fast with the exact
- * variable name.
+ * Resolves the factory's env-or-option inputs. Deliberately does NOT require
+ * `PRISMA_WORKSPACE_ID`: nothing in this file reads `ResolvedCloudOptions.workspaceId`
+ * downstream — it exists only so a caller MAY pin an explicit workspace, and
+ * the real workspace check for a real deploy lives where the value actually
+ * matters, `container.ts`'s `ensureContainer`/`locateContainer`. Region
+ * validation stays eager-on-call (a garbage `PRISMA_REGION` still fails
+ * loudly), but an ABSENT one resolves to `undefined` without touching
+ * anything else — required for `prisma-composer dev`, which never sets
+ * `PRISMA_REGION` and must not fail on its absence (local-dev spec § 5).
  */
 function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
-  const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'];
-  if (workspaceId === undefined || workspaceId.length === 0) {
-    throw new Error('prismaCloud(): environment variable PRISMA_WORKSPACE_ID is required.');
-  }
+  const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
     return { workspaceId, region: opts.region, providerParams: PROVIDER_PARAMS };
@@ -293,9 +303,25 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   return { workspaceId, region, providerParams: PROVIDER_PARAMS };
 }
 
+/**
+ * A memoized thunk over `resolveOptions` — evaluated at FIRST LOWERING USE
+ * (inside a node descriptor's `provision`/`serialize`), never at `prismaCloud()`
+ * construction. The node descriptors take this thunk, not a resolved value
+ * (local-dev spec § 5): `prismaCloud()` itself must construct with no
+ * environment present, since it also builds the `dev` descriptor, which must
+ * never require `PRISMA_WORKSPACE_ID`/`PRISMA_REGION`/`PRISMA_SERVICE_TOKEN`.
+ */
+function lazyOptions(opts: PrismaCloudOptions): () => ResolvedCloudOptions {
+  let cached: ResolvedCloudOptions | undefined;
+  return () => {
+    cached ??= resolveOptions(opts);
+    return cached;
+  };
+}
+
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  const o = resolveOptions(opts);
+  const o = lazyOptions(opts);
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -364,6 +390,24 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // provides.kind), and a real bucket provides the 's3' contract — so the
       // bucket descriptor registers under 's3', not 'bucket'.
       s3: bucketDescriptor(o),
+    },
+
+    dev: {
+      container: devContainerDescriptor(),
+      providers: (input) =>
+        asProvidersLayer(
+          Layer.mergeAll(
+            devProviders(input),
+            PgWarmProvider(),
+            PnMigrationProvider(),
+            S3CredentialsProvider(),
+            Prisma.ServiceKeyProvider(),
+          ),
+        ),
+      preflight: (input) => runDevPreflight(input),
+      emulators: (input) => runDevEmulators(input),
+      attach: (input) => devAttach(input),
+      teardown: (input) => runDevTeardown(input),
     },
   };
 };

@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import type { LowerContext } from '@internal/core/deploy';
+import * as Effect from 'effect/Effect';
 import { prismaCloud } from '../exports/control.ts';
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
@@ -18,9 +20,28 @@ async function withEnv<T>(values: Record<string, string | undefined>, fn: () => 
   }
 }
 
-describe('prismaCloud() — env read + validation at construction (config evaluation)', () => {
-  test('builds a descriptor from PRISMA_WORKSPACE_ID alone', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: undefined }, () => {
+const SCRUBBED = {
+  PRISMA_WORKSPACE_ID: undefined,
+  PRISMA_REGION: undefined,
+  PRISMA_SERVICE_TOKEN: undefined,
+};
+
+/** Minimal `LowerContext` for driving one node descriptor's `provision` in isolation. */
+function computeCtx(): LowerContext {
+  return {
+    id: 'auth',
+    application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+  } as unknown as LowerContext;
+}
+
+/** The throw under test happens before any yield, so no Alchemy context is ever needed — collapse E/R for `runSync` like `control-lowering.test.ts`'s `run` helper does. */
+function runSync<A>(eff: Effect.Effect<unknown, unknown, unknown>): A {
+  return Effect.runSync(eff as Effect.Effect<A>);
+}
+
+describe('prismaCloud() — constructs with NO environment present (local-dev spec § 5)', () => {
+  test('succeeds in a fully scrubbed environment — no PRISMA_* var is required at construction', async () => {
+    await withEnv(SCRUBBED, () => {
       const descriptor = prismaCloud();
       expect(descriptor.id).toBe('@prisma/composer-prisma-cloud');
       expect(Object.keys(descriptor.nodes).sort()).toEqual([
@@ -31,34 +52,19 @@ describe('prismaCloud() — env read + validation at construction (config evalua
         's3',
         's3-store',
       ]);
+      // The dev descriptor is present unconditionally — an extension without
+      // one is not dev-capable, and this one always is (ADR-0041).
+      expect(descriptor.dev).toBeDefined();
     });
   });
 
-  test('an explicit workspaceId option wins — no env needed', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: undefined, PRISMA_REGION: undefined }, () => {
+  test('an explicit workspaceId option still works — no env needed either way', async () => {
+    await withEnv(SCRUBBED, () => {
       expect(() => prismaCloud({ workspaceId: 'ws-explicit' })).not.toThrow();
     });
   });
 
-  test('accepts a known PRISMA_REGION', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'eu-west-3' }, () => {
-      expect(() => prismaCloud()).not.toThrow();
-    });
-  });
-
-  test('throws naming PRISMA_WORKSPACE_ID when it is missing', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: undefined, PRISMA_REGION: undefined }, () => {
-      expect(() => prismaCloud()).toThrow(/PRISMA_WORKSPACE_ID/);
-    });
-  });
-
-  test('throws naming the bad value when PRISMA_REGION is not a known region', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'mars-1' }, () => {
-      expect(() => prismaCloud()).toThrow(/PRISMA_REGION="mars-1"/);
-    });
-  });
-
-  test('the descriptor carries the registry kinds the router checks', async () => {
+  test('builds a descriptor from PRISMA_WORKSPACE_ID alone', async () => {
     await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: undefined }, () => {
       const descriptor = prismaCloud();
       expect(descriptor.nodes['postgres']?.kind).toBe('resource');
@@ -68,6 +74,21 @@ describe('prismaCloud() — env read + validation at construction (config evalua
       expect(descriptor.nodes['s3']?.kind).toBe('resource');
       expect(descriptor.application).toBeDefined();
       expect(descriptor.providers).toBeDefined();
+    });
+  });
+});
+
+describe('prismaCloud() — region resolution is deferred to first lowering use, not construction', () => {
+  test('a bad PRISMA_REGION does not fail construction — only an actual lowering', async () => {
+    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'mars-1' }, () => {
+      expect(() => prismaCloud()).not.toThrow();
+
+      const descriptor = prismaCloud();
+      const compute = descriptor.nodes['compute'];
+      if (compute === undefined || compute.kind !== 'service') {
+        throw new Error('expected a service descriptor for "compute"');
+      }
+      expect(() => runSync(compute.provision(computeCtx()))).toThrow(/PRISMA_REGION="mars-1"/);
     });
   });
 });

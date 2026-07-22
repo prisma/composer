@@ -1655,7 +1655,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       // The three-brand options can't ride the shared registry, so erase the
       // precise descriptor to the registry's own type — the same assignment
       // control.ts makes when it registers the real one.
-      const descriptor: NodeDescriptor = computeDescriptor(o);
+      const descriptor: NodeDescriptor = computeDescriptor(() => o);
       if (descriptor.kind !== 'service') throw new Error('expected a service descriptor');
       run<MockedSerialized>(descriptor.serialize(ctx, provisioned, config));
 

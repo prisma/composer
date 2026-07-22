@@ -67,8 +67,13 @@ function invalidPayloadError(reason: string): Error {
   );
 }
 
-/** Reconstructs a `PrismaCloudContainer` from `serialize()`'s JSON output — real narrowing, no casts. */
-function deserialize(serialized: string): PrismaCloudContainer {
+/**
+ * Reconstructs a `PrismaCloudContainer` from `serialize()`'s JSON output —
+ * real narrowing, no casts. Exported so `dev/container.ts`'s
+ * `devContainerDescriptor` can reuse it verbatim (local-dev spec § 5) — the
+ * dev and deploy container descriptors deserialize the identical wire shape.
+ */
+export function deserialize(serialized: string): PrismaCloudContainer {
   let parsed: unknown;
   try {
     parsed = JSON.parse(serialized);

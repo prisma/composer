@@ -28,7 +28,7 @@ export interface S3StoreSerialized extends ComputeSerialized {
   readonly secretAccessKey: unknown;
 }
 
-export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+export function s3StoreDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   // No `base.kind !== 'service'` check any more: computeDescriptor's return
   // type says `kind: 'service'`, so the discriminant is a compile-time fact
   // rather than something to re-test at runtime.

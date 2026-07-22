@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@internal/core": "workspace:0.2.0",
+    "@internal/dev-emulators": "workspace:0.2.0",
     "@internal/foundation": "workspace:0.2.0",
     "@internal/lowering": "workspace:0.2.0",
     "@internal/node": "workspace:0.2.0",

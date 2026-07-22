@@ -20,7 +20,7 @@ import {
  * carrier, and its attributes (endpoint, bucketName, accessKeyId,
  * secretAccessKey) become the four S3Config outputs consumers resolve by name.
  */
-export function bucketDescriptor(_o: ResolvedCloudOptions): NodeDescriptor {
+export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');

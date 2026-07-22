@@ -20,7 +20,7 @@ import {
  * module provision id, so a resource shared by several consumers is created
  * exactly once.
  */
-export function postgresDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
@@ -28,7 +28,7 @@ export function postgresDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       const db = yield* Prisma.Database(`${id}-db`, {
         projectId: projectIdOf(application),
         name: id,
-        region: o.region ?? DEFAULT_REGION,
+        region: o().region ?? DEFAULT_REGION,
         ...(branchId !== undefined ? { branchId } : {}),
       });
       const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id });
