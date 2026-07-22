@@ -125,8 +125,12 @@ plus the shared daemon layer and typed loopback clients.
 
 #### `daemon.ts` — the shared daemon layer
 
-- Registry: `~/.prisma-composer/emulators/<name>.json` —
+- Registry: `<registryRoot>/<name>.json` —
   `{ "pid": number, "port": number, "version": string, "logPath": string }`.
+  `registryRoot` defaults to `path.join(os.homedir(), '.prisma-composer',
+  'emulators')`; `ensureDaemon`/`stopDaemon` accept an optional
+  `{ registryRoot }` override whose ONLY caller is tests (isolation — a test
+  never touches the real home directory). Production code never passes it.
 - `ensureDaemon(name: 'compute' | 'buckets'): Promise<{ url: string }>`:
   1. Entry resolution: `fileURLToPath(import.meta.resolve(
      '@internal/dev-emulators/<name>-main'))`. Health path per daemon:
