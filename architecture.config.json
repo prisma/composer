@@ -115,6 +115,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/1-prisma-cloud/0-lowering/s3-protocol/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/control/**",
       "domain": "prisma-cloud",
       "layer": "extensions",

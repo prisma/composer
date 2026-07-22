@@ -703,6 +703,30 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/1-prisma-cloud/0-lowering/s3-protocol:
+    devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1085.0
+        version: 3.1087.0
+      '@aws-sdk/s3-request-presigner':
+        specifier: ^3.1085.0
+        version: 3.1087.0
+      '@internal/tsdown-config':
+        specifier: workspace:0.2.0
+        version: link:../../../0-framework/0-foundation/tsdown-config
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.5
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/1-prisma-cloud/1-extensions/target:
     dependencies:
       '@internal/core':
