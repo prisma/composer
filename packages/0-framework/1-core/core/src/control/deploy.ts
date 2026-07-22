@@ -1,6 +1,5 @@
 /** Routes each graph node to its extension descriptor (by node.extension/type) and runs provision → serialize → package → deploy in dependency order. */
 
-import * as path from 'node:path';
 import type { Input, StackServices } from 'alchemy';
 import * as Alchemy from 'alchemy';
 import type { State } from 'alchemy/State/State';
@@ -778,7 +777,10 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   const containers = deserializeContainers(config.extensions, process.env);
   const providers =
     opts.dev === true
-      ? mergedDevProviders(config, containers, path.join(process.cwd(), DEV_DIR))
+      ? // No `node:path` import (invariant 5 — core stays runtime-agnostic):
+        // dev is POSIX-only (the spec's own Windows note), so a plain
+        // `/`-join is exact here, not an approximation.
+        mergedDevProviders(config, containers, `${process.cwd()}/${DEV_DIR}`)
       : mergedProviders(config);
 
   return Alchemy.Stack(
