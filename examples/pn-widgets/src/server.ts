@@ -9,7 +9,7 @@
 
 import service from './service.ts';
 
-const { db } = service.load(); // db: the typed Prisma Next client (ADR-0022)
+const { db } = service.load(); // db: { url, client } — the Prisma Next binding (ADR-0040)
 const { port } = service.config();
 
 // A Prisma Postgres direct connection is dropped when it idles / the service
@@ -21,8 +21,8 @@ process.on('unhandledRejection', (err) => console.error('unhandledRejection', er
 const handler = async (): Promise<Response> => {
   try {
     const label = `widget-${Date.now()}`;
-    const created = await db.orm.public.Widget.create({ label });
-    const all = await db.orm.public.Widget.all();
+    const created = await db.client.orm.public.Widget.create({ label });
+    const all = await db.client.orm.public.Widget.all();
     return Response.json({ ok: true, label: created.label, count: all.length });
   } catch (err) {
     console.error('widget round trip failed', err);

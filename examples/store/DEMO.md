@@ -25,8 +25,8 @@ catalog owns its own Postgres — a **Prisma Next-typed** one. Three pieces:
 - [src/service.ts](modules/catalog/src/service.ts): the service declares
   `deps: { db: pnPostgres(catalogData) }` and what it exposes; that's the
   whole declaration.
-- [src/server.ts](modules/catalog/src/server.ts): `load()` hands it the typed
-  client — `db.orm.public.Product.where({ id }).first()`. No SQL strings, no
+- [src/server.ts](modules/catalog/src/server.ts): `load()` hands it the `{ url, client }`
+  binding — `db.client.orm.public.Product.where({ id }).first()`. No SQL strings, no
   row mappers, and the same contract types the resource end (the deploy
   refuses to wire a service against a database with a different contract).
 

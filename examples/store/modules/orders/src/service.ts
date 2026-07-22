@@ -6,9 +6,9 @@ import { catalogContract } from '@store/catalog/contract';
 import { ordersContract } from './contract.ts';
 import { ordersData } from './data.ts';
 
-// Two dependencies, two kinds: `db` hydrates to the Prisma Next typed client
-// (ADR-0022); `catalog` hydrates to a typed client of another module's rpc
-// contract.
+// Two dependencies, two kinds: `db` hydrates to the { url, client } Prisma
+// Next binding (ADR-0040); `catalog` hydrates to a typed client of another
+// module's rpc contract.
 export default compute({
   name: 'orders',
   deps: {

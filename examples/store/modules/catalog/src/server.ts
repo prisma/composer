@@ -2,8 +2,8 @@ import { serve } from '@prisma/composer/service-rpc';
 import type { Product } from './contract.ts';
 import service from './service.ts';
 
-// load() hydrates `db` into the typed Prisma Next client (ADR-0022) — no SQL,
-// no row mapping; queries are typed by contract.prisma's emitted contract.
+// load() hydrates `db` into the { url, client } Prisma Next binding (ADR-0040)
+// — no SQL, no row mapping; queries are typed by contract.prisma's emitted contract.
 const { db } = service.load();
 const { port } = service.config();
 
@@ -38,32 +38,32 @@ const SEED: Product[] = [
 // Idempotent boot seed. The schema itself is NOT created here — the deploy's
 // migration step applied migrations/ before this service ever started.
 for (const p of SEED) {
-  await db.orm.public.Product.upsert({ create: p, update: {} });
+  await db.client.orm.public.Product.upsert({ create: p, update: {} });
 }
-await db.orm.public.Special.upsert({ create: { id: 1, productId: SEED[0].id }, update: {} });
+await db.client.orm.public.Special.upsert({ create: { id: 1, productId: SEED[0].id }, update: {} });
 
 const handler = serve(service, {
   rpc: {
     listProducts: async () => ({
-      products: await db.orm.public.Product.orderBy((p) => p.name.asc()).all(),
+      products: await db.client.orm.public.Product.orderBy((p) => p.name.asc()).all(),
     }),
     getProduct: async ({ id }) => ({
-      product: (await db.orm.public.Product.where({ id }).first()) ?? null,
+      product: (await db.client.orm.public.Product.where({ id }).first()) ?? null,
     }),
     getSpecial: async () => {
-      const special = await db.orm.public.Special.where({ id: 1 }).first();
+      const special = await db.client.orm.public.Special.where({ id: 1 }).first();
       if (!special) return { product: null };
-      const product = await db.orm.public.Product.where({ id: special.productId }).first();
+      const product = await db.client.orm.public.Product.where({ id: special.productId }).first();
       return { product: product ?? null };
     },
     rotateSpecial: async () => {
-      const products = await db.orm.public.Product.orderBy((p) => p.name.asc()).all();
+      const products = await db.client.orm.public.Product.orderBy((p) => p.name.asc()).all();
       if (products.length === 0) return { product: null };
 
-      const special = await db.orm.public.Special.where({ id: 1 }).first();
+      const special = await db.client.orm.public.Special.where({ id: 1 }).first();
       const currentIdx = products.findIndex((p) => p.id === special?.productId);
       const next = products[(currentIdx + 1) % products.length];
-      await db.orm.public.Special.upsert({
+      await db.client.orm.public.Special.upsert({
         create: { id: 1, productId: next.id },
         update: { productId: next.id },
       });

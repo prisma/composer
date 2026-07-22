@@ -20,7 +20,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createPostgresControlClient } from '@prisma-next/postgres/control';
 import type { Char } from '@prisma-next/target-postgres/codec-types';
-import type { Client } from '../exports/prisma-next.ts';
+import type { PnPostgresBinding } from '../exports/prisma-next.ts';
 import { pnContract, pnPostgres } from '../exports/prisma-next.ts';
 import type { Contract as WidgetContract } from './fixtures/widget-contract/emitted/contract.d.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
@@ -48,10 +48,11 @@ describe.skipIf(pg === undefined)('pnPostgres hydrate — live round trip', () =
 
   // The wrapped, branded contract — the exact value both the resource and the
   // dependency reference. Typing it as WidgetContract makes the hydrated
-  // client `Client<WidgetContract>`, so the round-trip below is type-checked.
+  // binding's client `Client<WidgetContract>`, so the round-trip below is
+  // type-checked.
   const contract = pnContract<WidgetContract>(widgetContractJson);
   let migrationsDir: string;
-  let db: Client<typeof contract>;
+  let db: PnPostgresBinding<typeof contract>;
   // An owned database (not the shared `postgres`/`public`) so dbInit applies
   // onto an empty schema and the fixed-id insert can't collide with a prior run.
   let testDb: TestDatabase;
@@ -75,13 +76,13 @@ describe.skipIf(pg === undefined)('pnPostgres hydrate — live round trip', () =
     expect(result.ok).toBe(true);
     await control.close();
 
-    // Construct the client exactly as a service would: through the dependency
+    // Hydrate the binding exactly as a service would: through the dependency
     // end's hydrate, given only the DB url.
     db = await pnPostgres(contract).connection.hydrate({ url });
   });
 
   afterAll(async () => {
-    await db?.close().catch(() => {});
+    await db?.client.close().catch(() => {});
     await testDb?.drop().catch(() => {});
     pg.stop();
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
@@ -93,17 +94,17 @@ describe.skipIf(pg === undefined)('pnPostgres hydrate — live round trip', () =
     // is contract-typed: a plain string does not compile as the id.
     const id = '11111111-1111-1111-1111-111111111111' as Char<36>;
 
-    const created = await db.orm.public.Widget.create({ id, name: 'gizmo' });
+    const created = await db.client.orm.public.Widget.create({ id, name: 'gizmo' });
     // Typed result: the ORM row is the contract's Widget shape. Accessing
-    // `.id`/`.name` compiles only because hydrate returned Client<WidgetContract>.
+    // `.id`/`.name` compiles only because the binding's client is Client<WidgetContract>.
     expect(created.id).toBe(id);
     expect(created.name).toBe('gizmo');
 
-    const one = await db.orm.public.Widget.where({ id }).first();
+    const one = await db.client.orm.public.Widget.where({ id }).first();
     expect(one).not.toBeNull();
     expect(one?.name).toBe('gizmo');
 
-    const all = await db.orm.public.Widget.all();
+    const all = await db.client.orm.public.Widget.all();
     expect(all).toHaveLength(1);
     expect(all[0]?.id).toBe(id);
   });

@@ -178,15 +178,22 @@ describe('the config path rides through provisioning (brand intact)', () => {
   });
 });
 
-describe('hydrate — no live database required (lazy pool)', () => {
-  test('constructs a Prisma Next client from a fake url without connecting', async () => {
+describe('hydrate — the { url, client } binding (ADR-0040), no live database required', () => {
+  const url = 'postgres://user:pass@localhost:5432/does-not-exist';
+
+  test('the binding carries the wire url and is frozen', async () => {
     const widget = pnContract<WidgetContract>(widgetContractJson);
-    const dep = pnPostgres(widget);
+    const binding = await pnPostgres(widget).connection.hydrate({ url });
 
-    const client = await dep.connection.hydrate({
-      url: 'postgres://user:pass@localhost:5432/does-not-exist',
-    });
+    expect(binding.url).toBe(url);
+    expect(Object.isFrozen(binding)).toBe(true);
+  });
 
+  test('first client access constructs the Prisma Next client without connecting', async () => {
+    const widget = pnContract<WidgetContract>(widgetContractJson);
+    const binding = await pnPostgres(widget).connection.hydrate({ url });
+
+    const client = binding.client;
     // The PostgresClient surface — constructed synchronously; nothing here
     // implies a connection was opened (pool.connect() only happens on first
     // query/`.runtime()`/`.connect()` call, none of which this test makes).
@@ -197,10 +204,28 @@ describe('hydrate — no live database required (lazy pool)', () => {
     expect(typeof client.close).toBe('function');
   });
 
-  test('hydrate does no schema verification — it just builds the client', () => {
+  test('the client is memoized — repeated accesses return the same reference', async () => {
+    const widget = pnContract<WidgetContract>(widgetContractJson);
+    const binding = await pnPostgres(widget).connection.hydrate({ url });
+
+    expect(binding.client).toBe(binding.client);
+  });
+
+  test('a contract the runtime rejects fails at first client access, not at hydrate or url', async () => {
+    // The runtime validates contractJson eagerly at client construction, so
+    // this malformed contract is the proof of laziness: hydrate and `url`
+    // succeeding means neither constructed the client — only the `client`
+    // access does, and the failure surfaces there (ADR-0040).
+    const malformed = pnContract<WidgetContract>({ not: 'a prisma-next contract' });
+    const binding = await pnPostgres(malformed).connection.hydrate({ url });
+
+    expect(binding.url).toBe(url);
+    expect(() => binding.client).toThrow();
+  });
+
+  test('hydrate does no schema verification — it just builds the binding', () => {
     // There is no runtime marker check (ADR-0022): schema correctness is a
-    // deploy-time job. Constructing the client can't be crashed by a marker
-    // mismatch because hydrate sets no `verifyMarker` and reads no database.
+    // deploy-time job. Hydrate sets no `verifyMarker` and reads no database.
     const widget = pnContract<WidgetContract>(widgetContractJson);
     const dep = pnPostgres(widget);
 

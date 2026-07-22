@@ -1,8 +1,8 @@
 import { serve } from '@prisma/composer/service-rpc';
 import service from './service.ts';
 
-// load() hydrates both deps: `db` is the Prisma Next typed client (ADR-0022),
-// `catalog` a typed client of catalogContract — both plain async calls.
+// load() hydrates both deps: `db` is the { url, client } Prisma Next binding
+// (ADR-0040), `catalog` a typed client of catalogContract — both plain async calls.
 const { db, catalog } = service.load();
 const { port } = service.config();
 
@@ -18,7 +18,7 @@ const handler = serve(service, {
       const { product } = await catalog.getProduct({ id: productId });
       if (product === null || quantity < 1) return { order: null };
 
-      const row = await db.orm.public.Order.create({
+      const row = await db.client.orm.public.Order.create({
         productId: product.id,
         productName: product.name,
         quantity,
@@ -27,7 +27,7 @@ const handler = serve(service, {
       return { order: { ...row, placedAt: new Date(row.placedAt).toISOString() } };
     },
     listOrders: async () => {
-      const rows = await db.orm.public.Order.orderBy((o) => o.placedAt.desc())
+      const rows = await db.client.orm.public.Order.orderBy((o) => o.placedAt.desc())
         .take(20)
         .all();
       return {
