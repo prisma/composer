@@ -57,7 +57,14 @@ export function createEmailApp(
     if (user === undefined) return c.text('unknown or expired token', 404);
 
     user.verified = true;
-    const sent = await email.welcome({ to: user.email, data: { name: user.name } });
+    // The token doubles as the welcome send's idempotencyKey — a repeated
+    // /verify call (double-click, link-scanner prefetch, refresh) dedups to
+    // the original send instead of mailing the welcome email twice.
+    const sent = await email.welcome({
+      to: user.email,
+      data: { name: user.name },
+      idempotencyKey: token,
+    });
     return c.json({ verified: true, id: sent.id });
   });
 

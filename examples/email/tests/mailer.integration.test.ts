@@ -80,6 +80,27 @@ describe('mailer example app (against the local email stand-in)', () => {
     expect(res.status).toBe(404);
   });
 
+  test('repeating /verify (e.g. a link-scanner prefetch) dedups to the original welcome send', async () => {
+    const signupRes = await app(
+      new Request('http://mailer/signup', {
+        method: 'POST',
+        body: JSON.stringify({ email: 'repeat@example.com', name: 'Grace' }),
+      }),
+    );
+    const { id: verificationId } = (await signupRes.json()) as { id: string };
+    const storedRes = await app(new Request(`http://mailer/emails/${verificationId}`));
+    const stored = (await storedRes.json()) as { html: string };
+    const link = stored.html.match(/href="([^"]+)"/)?.[1];
+    if (link === undefined) throw new Error('verification email body carried no link');
+
+    const first = await app(new Request(link));
+    const firstBody = (await first.json()) as { id: string };
+    const second = await app(new Request(link));
+    const secondBody = (await second.json()) as { id: string };
+
+    expect(secondBody.id).toBe(firstBody.id);
+  });
+
   test('GET /emails/:id for an unknown id is 404', async () => {
     const res = await app(new Request('http://mailer/emails/does-not-exist'));
     expect(res.status).toBe(404);

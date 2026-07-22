@@ -42,6 +42,9 @@ const asId = (value: unknown, what: string): string => {
   return value;
 };
 
+/** Every check's fetch shares this bound — a hung deployed service fails the run instead of blocking indefinitely. */
+const FETCH_TIMEOUT_MS = 30_000;
+
 const project = rows(await get('/projects?limit=100')).find((p) => p['name'] === stack);
 if (project === undefined) throw new Error(`no project named "${stack}" in the workspace`);
 const projectId = asId(project['id'], 'project.id');
@@ -89,7 +92,7 @@ async function waitUntilUp(): Promise<void> {
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(30_000) });
+      const res = await fetch(`${baseUrl}/`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (res.status > 0) return;
     } catch (error) {
       lastError = error;
@@ -112,6 +115,7 @@ async function main(): Promise<void> {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: marker, name: 'Smoke Test' }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     assert(res.status === 201, `expected 201, got ${res.status}`);
     const body = blindCast<{ id: string }, 'the mailer responds with the verification send’s id'>(
@@ -123,7 +127,9 @@ async function main(): Promise<void> {
   await check(
     'GET /emails/:id reads the stored verification body back and carries the rendered link',
     async () => {
-      const res = await fetch(`${baseUrl}/emails/${verificationId}`);
+      const res = await fetch(`${baseUrl}/emails/${verificationId}`, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       assert(res.status === 200, `expected 200, got ${res.status}`);
       const email = blindCast<
         { templateId: string; status: string; html: string },
@@ -146,7 +152,7 @@ async function main(): Promise<void> {
   await check(
     'following the rendered link (GET /verify) marks the user verified and sends the welcome email',
     async () => {
-      const res = await fetch(verifyLink);
+      const res = await fetch(verifyLink, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       assert(res.status === 200, `expected 200, got ${res.status}`);
       const body = blindCast<
         { verified: boolean; id: string },
@@ -158,7 +164,9 @@ async function main(): Promise<void> {
   );
 
   await check('GET /emails/:id reads the welcome email back through the outbox port', async () => {
-    const res = await fetch(`${baseUrl}/emails/${welcomeId}`);
+    const res = await fetch(`${baseUrl}/emails/${welcomeId}`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     assert(res.status === 200, `expected 200, got ${res.status}`);
     const email = blindCast<
       { templateId: string; subject: string; status: string },
