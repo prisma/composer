@@ -29,11 +29,7 @@ import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
 import type { NodeBuildAdapter } from '../node.ts';
-import {
-  assertOutsideWorkDir,
-  buildWrapper,
-  resolveDir as resolveDirShared,
-} from './assemble-shared.ts';
+import { assertOutsideWorkDir, buildWrapper, resolveDir } from './assemble-shared.ts';
 
 export type { AssembleInput, Bundle } from '@internal/core/deploy';
 
@@ -87,12 +83,12 @@ function resolveFile(entrySpec: string, moduleDir: string): BuiltRunnable {
  * followed — only `dir` is ever copied. Validation and the symlink hard error
  * are shared with the `dir()` adapter (`./assemble-shared.ts`).
  */
-async function resolveDir(
+async function resolveDirRunnable(
   dirSpec: string,
   entrySpec: string,
   moduleDir: string,
 ): Promise<BuiltRunnable> {
-  const resolved = await resolveDirShared(dirSpec, entrySpec, moduleDir);
+  const resolved = await resolveDir(dirSpec, entrySpec, moduleDir);
   return {
     source: resolved.dirPath,
     sourceField: 'dir',
@@ -115,7 +111,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const runnable =
     buildDescriptor.dir === undefined
       ? resolveFile(buildDescriptor.entry, moduleDir)
-      : await resolveDir(buildDescriptor.dir, buildDescriptor.entry, moduleDir);
+      : await resolveDirRunnable(buildDescriptor.dir, buildDescriptor.entry, moduleDir);
 
   const workDir = path.join(input.cwd, '.prisma-composer', 'artifacts', input.address);
   assertOutsideWorkDir(runnable.source, runnable.sourceField, workDir);
