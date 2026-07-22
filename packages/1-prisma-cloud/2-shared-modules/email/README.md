@@ -62,16 +62,28 @@ export default module('app', ({ provision }) => {
 ```
 
 ```ts
-// consumer service — templates declare the client's shape
+// consumer service — templates declare the client's shape. Interpolated
+// values are HTML-escaped before going into markup — `render` runs on
+// whatever data the caller supplies, so treat it as untrusted the same way
+// you would any other template.
 import { defineTemplates, emailSender } from '@prisma/composer-prisma-cloud/email';
 import { type } from 'arktype';
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const templates = defineTemplates({
   verification: {
     data: type({ link: 'string' }),
     render: ({ link }) => ({
       subject: 'Verify your email',
-      html: `<p><a href="${link}">Verify</a></p>`,
+      html: `<p><a href="${escapeHtml(link)}">Verify</a></p>`,
       text: `Verify: ${link}`,
     }),
   },
