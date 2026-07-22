@@ -564,13 +564,15 @@ plumbing, not usage.)* The consumer's surface:
 The `welcome` template remains declared (two templates exercise
 `defineTemplates`' shape) and is sent on successful verification. Tests:
 
-1. Local: against `startLocalEmailServer` — send both templates, list,
-   get by id, dedup on repeated idempotency key.
+1. Local: against `startLocalEmailServer` — the full signup loop: signup →
+   read the stored verification email by id → extract the rendered link →
+   follow it → verified → welcome email stored. (Dedup stays a module-test
+   concern, not an example test.)
 2. Deploy smoke (the `examples/smoke` harness pattern, creds via the
    gitignored root `.env`): deploy with `EMAIL_DELIVERY_MODE=none` and junk
-   credential; send; read the email back through the outbox port; assert
-   `stored` and body round-trip. This proves the preview-stage story end to
-   end without a Resend account.
+   credential; run the same signup loop against the deployed app. This
+   proves the preview-stage story — including the rendered link working —
+   end to end without a Resend account.
 3. Optional manual (documented, not CI): flip the stage to `resend` with a
    real key and send to a real address.
 
