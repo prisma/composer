@@ -1,7 +1,8 @@
 /**
  * `pnPostgres()` is the `prisma-next` kind's single entry, overloaded: a
- * resource end takes `{ name, contract }`; a dependency end hydrates the
- * contract into a typed Prisma Next client (ADR-0022). No runtime schema check.
+ * resource end takes `{ name, contract }`; a dependency end hydrates to a
+ * `{ url, client }` binding whose typed client is built lazily (ADR-0022,
+ * ADR-0040). No runtime schema check.
  */
 
 import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@internal/core';
@@ -38,8 +39,18 @@ export type PnPostgresContract<C extends AnyPnContract = AnyPnContract> = Contra
 /** Recovers the emitted contract type `C` a `prisma-next` Contract carries. */
 export type PnContractOf<Ct> = Ct extends PnPostgresContract<infer C> ? C : never;
 
-/** The typed client a consumer's `pnPostgres(contract)` dependency hydrates to. */
+/** The typed Prisma Next client, reachable as `binding.client` on a `pnPostgres(contract)` dependency. */
 export type Client<Ct> = PostgresClient<PnContractOf<Ct>>;
+
+/**
+ * The binding a consumer's `pnPostgres(contract)` dependency hydrates to
+ * (ADR-0040): the raw connection URL, plus the typed client — constructed on
+ * first access, memoized thereafter.
+ */
+export interface PnPostgresBinding<Ct> {
+  readonly url: string;
+  readonly client: Client<Ct>;
+}
 
 /**
  * The `prisma-next` resource node: a core Resource node plus `config`, the
@@ -105,10 +116,12 @@ export function pnPostgres<C extends PnPostgresContract>(opts: {
 }): PnPostgresResourceNode<C>;
 /**
  * `pnPostgres(contract)` — a service's dependency on a Prisma Next-typed
- * Postgres. Its binding is the typed Prisma Next client, constructed by the
- * framework in hydrate from the contract plus the injected connection URL.
+ * Postgres. Its binding carries the raw connection URL and the typed Prisma
+ * Next client, built lazily on first `client` access (ADR-0040).
  */
-export function pnPostgres<C extends PnPostgresContract>(contract: C): DependencyEnd<Client<C>, C>;
+export function pnPostgres<C extends PnPostgresContract>(
+  contract: C,
+): DependencyEnd<PnPostgresBinding<C>, C>;
 export function pnPostgres(
   arg:
     | { name: string; contract: PnPostgresContract; config: string; targetRef?: string }
@@ -122,7 +135,7 @@ export function pnPostgres(
     type: 'prisma-next',
     connection: {
       params: { url: string() },
-      hydrate: ({ url }) => buildClient(contract, url),
+      hydrate: ({ url }) => bindLazyClient(contract, url),
     },
     required: contract,
   });
@@ -137,6 +150,26 @@ function isPnPostgresContract(value: unknown): value is PnPostgresContract {
     '__cmp' in value &&
     'satisfies' in value
   );
+}
+
+/**
+ * The hydrated binding: `url` as delivered, `client` built by `buildClient`
+ * on first access. Construction stays out of hydrate because the runtime
+ * validates `contractJson` eagerly — deferring it keeps a bad contract from
+ * poisoning `load()` and spares URL-only consumers the cost (ADR-0040).
+ */
+function bindLazyClient<C extends PnPostgresContract>(
+  contract: C,
+  url: string,
+): PnPostgresBinding<C> {
+  let client: Client<C> | undefined;
+  return Object.freeze({
+    url,
+    get client(): Client<C> {
+      client ??= buildClient(contract, url);
+      return client;
+    },
+  });
 }
 
 /**

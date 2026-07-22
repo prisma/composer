@@ -44,8 +44,8 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
   Next-typed Postgres** it owns. The data schema is
   [contract.prisma](modules/catalog/contract.prisma); the deploy applies
   [migrations/](modules/catalog/migrations) before the service starts, and
-  `load()` hands the server a typed client — queries like
-  `db.orm.public.Product.where({ id }).first()`, no SQL, no row mapping.
+  `load()` hands the server a `{ url, client }` binding — queries like
+  `db.client.orm.public.Product.where({ id }).first()`, no SQL, no row mapping.
   Consumers wire only the exposed `rpc` port.
 - [modules/orders](modules/orders) — a Module with a **boundary input**: it
   owns its (also Prisma Next-typed) Postgres but declares `deps: { catalog }`,

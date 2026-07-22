@@ -1,7 +1,7 @@
 /**
  * `pnPostgres()`'s two shapes, and storageHash-exact wiring compatibility.
  * `{ name, contract }` is the provisionable identity; `pnPostgres(contract)` is
- * the dependency, whose binding is the typed Prisma Next client. The
+ * the dependency, whose binding is `{ url, client }` (ADR-0040). The
  * `WidgetContract`/`GadgetContract` types come from real `prisma-next
  * contract emit` output (`fixtures/{widget,gadget}-contract/emitted/contract.d.ts`)
  * — the branded `storageHash` literal each carries is the lever under test.
@@ -15,6 +15,7 @@ import { service } from '@internal/core';
 import { expectTypeOf, test } from 'vitest';
 import {
   type Client,
+  type PnPostgresBinding,
   type PnPostgresContract,
   type PnPostgresResourceNode,
   pnContract,
@@ -45,11 +46,14 @@ test('{ name, contract, config } yields the resource node carrying the config pa
   expectTypeOf(identity.config).toEqualTypeOf<string>();
 });
 
-test('pnPostgres(contract) yields the dependency requiring that contract; its binding is the typed client', () => {
+test('pnPostgres(contract) yields the dependency requiring that contract; its binding is { url, client }', () => {
   const dep = pnPostgres(widget);
-  expectTypeOf(dep).toEqualTypeOf<DependencyEnd<Client<typeof widget>, typeof widget>>();
-  // The binding load() hands the app is the Prisma Next client typed by the contract.
-  expectTypeOf<Hydrated<typeof dep>>().toEqualTypeOf<Client<typeof widget>>();
+  expectTypeOf(dep).toEqualTypeOf<DependencyEnd<PnPostgresBinding<typeof widget>, typeof widget>>();
+  // The binding load() hands the app: the raw URL plus the Prisma Next client
+  // typed by the contract (ADR-0040).
+  expectTypeOf<Hydrated<typeof dep>>().toEqualTypeOf<PnPostgresBinding<typeof widget>>();
+  expectTypeOf<Hydrated<typeof dep>['url']>().toEqualTypeOf<string>();
+  expectTypeOf<Hydrated<typeof dep>['client']>().toEqualTypeOf<Client<typeof widget>>();
 });
 
 const build: BuildAdapter = {

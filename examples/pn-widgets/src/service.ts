@@ -6,9 +6,9 @@ import { widgetContract } from './contract.ts';
 /**
  * The pn-widgets compute service. Its `db` dependency is the Prisma
  * Next-typed Postgres: `pnPostgres(widgetContract)`'s binding (what
- * `load()` returns) is the typed Prisma Next client — the framework
- * constructs it in hydrate from the contract + the injected URL (ADR-0022),
- * so server.ts queries `db.orm.public.Widget` directly, typed by the contract.
+ * `load()` returns) carries the raw connection URL and the typed Prisma Next
+ * client, built lazily from the contract + the injected URL (ADR-0040), so
+ * server.ts queries `db.client.orm.public.Widget` directly, typed by the contract.
  */
 export default compute({
   name: 'widgets',

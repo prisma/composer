@@ -143,9 +143,12 @@ connections get closed; see
 
 If you want typed queries and managed migrations, make the database a
 [Prisma Next](https://github.com/prisma/prisma-next) one. `load()` then
-returns a client generated from your schema — queries like
-`db.orm.public.Product.where({ id }).first()` are compile-time checked, no
-SQL strings, no row mapping.
+returns `{ url, client }`: the raw connection string, plus a client generated
+from your schema — queries like
+`db.client.orm.public.Product.where({ id }).first()` are compile-time
+checked, no SQL strings, no row mapping. The client is constructed on first
+access, so a service that brings its own Postgres client reads `db.url` and
+still gets contract-checked wiring and deploy-time migrations (ADR-0040).
 
 The workflow, once per schema change (all `prisma-next` commands — see the
 Prisma Next docs for the details):
