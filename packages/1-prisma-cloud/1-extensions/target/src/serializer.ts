@@ -23,6 +23,7 @@
 import type { Config, ConfigParam, Params, SecretBinding, ServiceNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { type } from 'arktype';
 import { secretName } from './secret.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -344,6 +345,41 @@ export function stashProviderParams(entries: readonly ProviderParamEntry[], addr
     if (value === undefined) continue;
     process.env[configKey('', d)] = encode('service', value);
   }
+}
+
+/** The framework-resolved origin row: COMPOSER_<addr>_ORIGIN. Written per
+ *  compute service at serialize — the service's own provisioned endpoint URL,
+ *  riding the reserved-provider-param machinery (`origin-key.ts`'s
+ *  `ORIGIN_PARAM`); never a declared param, never in config(). A harness with
+ *  no deploy behind it supplies it by setting `COMPOSER_ORIGIN` to the
+ *  JSON-encoded origin URL — exactly how the existing entrypoint tests supply
+ *  their other `COMPOSER_*` rows. */
+export const ORIGIN_KEY_NAME = 'ORIGIN';
+
+/**
+ * Reads this service's origin back out of the address-free stash
+ * `stashProviderParams` wrote for the ORIGIN entry. `COMPOSER_ORIGIN` unset is
+ * a loud failure — a deployed environment always writes it, so an unset row
+ * means either a local harness that hasn't supplied it or a boot() called
+ * before run().
+ */
+export function readOrigin(): string {
+  const d: ParamEntry = {
+    owner: 'service',
+    name: ORIGIN_KEY_NAME,
+    param: { schema: type('string'), optional: true },
+  };
+  const key = configKey('', d);
+  const value = coerce(process.env[key], d, key);
+  if (value === undefined) {
+    throw new Error(
+      "this service's origin is not available (env COMPOSER_ORIGIN is unset) — a deployed environment writes it automatically; a local harness must supply it like any other config value (set COMPOSER_ORIGIN to the JSON-encoded origin URL).",
+    );
+  }
+  return blindCast<
+    string,
+    "the entry's schema is type('string'), so coerce's schema-validated return is a string here"
+  >(value);
 }
 
 /** Synchronous Standard Schema validation — see the matching note in core's `config.ts`. */

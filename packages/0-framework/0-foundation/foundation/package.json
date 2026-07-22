@@ -1,6 +1,6 @@
 {
   "name": "@internal/foundation",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Foundation utilities: the audited cast helpers and runtime assertions.",
@@ -19,6 +19,6 @@
   "devDependencies": {
     "typescript": "^6.0.3",
     "tsdown": "^0.22.7",
-    "@internal/tsdown-config": "workspace:0.1.0"
+    "@internal/tsdown-config": "workspace:0.2.0"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@internal/storage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "S3-compatible object storage (S5): s3Contract, S3Config, the s3() dependency factory.",
@@ -30,9 +30,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.1.0",
-    "@internal/node": "workspace:0.1.0",
-    "@internal/prisma-cloud": "workspace:0.1.0"
+    "@internal/core": "workspace:0.2.0",
+    "@internal/node": "workspace:0.2.0",
+    "@internal/prisma-cloud": "workspace:0.2.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
@@ -41,6 +41,6 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
     "tsdown": "^0.22.7",
-    "@internal/tsdown-config": "workspace:0.1.0"
+    "@internal/tsdown-config": "workspace:0.2.0"
   }
 }

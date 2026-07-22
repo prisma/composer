@@ -1,6 +1,6 @@
 {
   "name": "@internal/streams",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Durable append-only event streams: streamsContract, StreamsConfig, the durableStreams() dependency factory, and the streams() module wrapping @prisma/streams-server.",
@@ -33,16 +33,16 @@
   },
   "dependencies": {
     "@durable-streams/client": "0.2.6",
-    "@internal/core": "workspace:0.1.0",
-    "@internal/node": "workspace:0.1.0",
-    "@internal/prisma-cloud": "workspace:0.1.0",
-    "@internal/storage": "workspace:0.1.0",
+    "@internal/core": "workspace:0.2.0",
+    "@internal/node": "workspace:0.2.0",
+    "@internal/prisma-cloud": "workspace:0.2.0",
+    "@internal/storage": "workspace:0.2.0",
     "@prisma/streams-local": "0.1.11",
     "@prisma/streams-server": "0.1.11"
   },
   "devDependencies": {
     "@durable-streams/server-conformance-tests": "0.3.5",
-    "@internal/tsdown-config": "workspace:0.1.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",

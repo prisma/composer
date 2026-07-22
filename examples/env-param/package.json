@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-env-param",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,8 +13,8 @@
     "destroy:stage": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --stage \"${ENV_PARAM_STAGE:?ENV_PARAM_STAGE is required}\" ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@prisma/composer": "workspace:0.1.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.1.0"
+    "@prisma/composer": "workspace:0.2.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.2.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",

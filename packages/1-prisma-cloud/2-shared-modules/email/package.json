@@ -1,6 +1,6 @@
 {
   "name": "@internal/email",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Transactional email as a composed module: emailSendContract, emailOutboxContract, defineTemplates, the emailSender() dependency factory.",
@@ -30,16 +30,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.1.0",
-    "@internal/node": "workspace:0.1.0",
-    "@internal/foundation": "workspace:0.1.0",
-    "@internal/prisma-cloud": "workspace:0.1.0",
-    "@internal/service-rpc": "workspace:0.1.0",
+    "@internal/core": "workspace:0.2.0",
+    "@internal/node": "workspace:0.2.0",
+    "@internal/foundation": "workspace:0.2.0",
+    "@internal/prisma-cloud": "workspace:0.2.0",
+    "@internal/service-rpc": "workspace:0.2.0",
     "arktype": "^2.2.3",
     "nodemailer": "^9.0.3"
   },
   "devDependencies": {
-    "@internal/tsdown-config": "workspace:0.1.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "@types/nodemailer": "^8.0.1",
     "typescript": "^6.0.3",

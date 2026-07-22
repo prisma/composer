@@ -10,7 +10,14 @@ import type { Contract } from './contract.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
 // Symbol.for so the check survives duplicated module instances in a workspace.
-const NODE: unique symbol = Symbol.for('prisma:node') as never;
+// Exported as a TYPE only: an extension pack that implements a node interface
+// as a concrete class (rather than building a plain object via these
+// factories) needs the brand nameable to `implements` it honestly (its
+// `declare readonly [NODE]: true` member) — and nothing more. The value is
+// already globally reachable via Symbol.for, so a value export adds nothing.
+const NODE = Symbol.for('prisma:node');
+
+export type { NODE };
 
 // A secret slot rides its OWN brand + field, structurally distinct from deps and
 // params (ADR-0029): sensitivity is by type, not a flag. `secret()` is the NEED

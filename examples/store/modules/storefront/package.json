@@ -1,6 +1,6 @@
 {
   "name": "@store/storefront",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "exports": {
     ".": "./src/service.ts"
@@ -13,10 +13,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@prisma/composer": "workspace:0.1.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.1.0",
-    "@store/catalog": "workspace:0.1.0",
-    "@store/orders": "workspace:0.1.0",
+    "@prisma/composer": "workspace:0.2.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.2.0",
+    "@store/catalog": "workspace:0.2.0",
+    "@store/orders": "workspace:0.2.0",
     "arktype": "^2.2.3",
     "next": "^16.2.9",
     "react": "19.2.7",

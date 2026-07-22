@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-store",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,12 +12,12 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.97",
-    "@prisma/composer": "workspace:0.1.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.1.0",
-    "@store/catalog": "workspace:0.1.0",
-    "@store/orders": "workspace:0.1.0",
-    "@store/promotions": "workspace:0.1.0",
-    "@store/storefront": "workspace:0.1.0",
+    "@prisma/composer": "workspace:0.2.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.2.0",
+    "@store/catalog": "workspace:0.2.0",
+    "@store/orders": "workspace:0.2.0",
+    "@store/promotions": "workspace:0.2.0",
+    "@store/storefront": "workspace:0.2.0",
     "alchemy": "2.0.0-beta.59",
     "arktype": "^2.2.3",
     "effect": "4.0.0-beta.93"

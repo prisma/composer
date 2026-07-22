@@ -7,7 +7,7 @@
 
 export type { BucketConfig } from '../bucket.ts';
 export { bucket, bucketContract } from '../bucket.ts';
-export { compute } from '../compute.ts';
+export { ComputeService, compute } from '../compute.ts';
 export type { HttpClient } from '../http.ts';
 export { http } from '../http.ts';
 export { envParam, paramName } from '../param.ts';

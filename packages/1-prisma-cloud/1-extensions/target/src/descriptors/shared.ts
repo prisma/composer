@@ -31,6 +31,33 @@ export interface ProviderParam extends ProviderParamEntry {
 }
 
 /**
+ * The slice of compute's provisioned handoff a service-derived provider param
+ * may read. A minimal structural type, not `ComputeProvisioned` itself:
+ * shared.ts sits below `descriptors/compute.ts` in the import graph, so
+ * naming the full type here would invert it.
+ */
+export interface ServiceProvisionedAttributes {
+  readonly endpointDomain: Output.Output<string | undefined>;
+}
+
+/**
+ * A reserved provider param whose value derives from the provider service's
+ * OWN provisioned attributes rather than its inbound edges — the
+ * service-derived sibling of `ProviderParam` (e.g. the service's own origin).
+ * Asked for EVERY compute service, exposing or not: a service needs no
+ * consumers to have an origin, so the descriptor's expose check applies only
+ * to edge-derived entries. Like `ProviderParam.value`, the return is encoded
+ * through the serializer's normal service-own literal path (JSON) by the
+ * descriptor's generic loop, never here.
+ */
+export interface ServiceProviderParam extends ProviderParamEntry {
+  readonly valueForService: (
+    provisioned: ServiceProvisionedAttributes,
+    address: string,
+  ) => Output.Output<unknown> | unknown | undefined;
+}
+
+/**
  * The factory's resolved options each node descriptor closes over. Deploy
  * identity (`projectId`/`branchId`) is no longer here — it comes from the
  * resolved container, read via `cloudApplicationOf(ctx.application)`.
@@ -39,13 +66,14 @@ export interface ResolvedCloudOptions {
   readonly workspaceId: string;
   readonly region?: Prisma.ComputeRegion;
   /**
-   * This extension's reserved provider params, keyed by need brand — the
-   * mirror of the `provisions` registry core resolves mints through. Passed
-   * as data so the descriptors never import a brand's module (and so
-   * control.ts, which owns both registries, stays the only place a brand is
-   * named).
+   * This extension's reserved provider params, keyed by need brand —
+   * edge-derived (`ProviderParam`) or service-derived (`ServiceProviderParam`).
+   * The edge-derived side mirrors the `provisions` registry core resolves
+   * mints through. Passed as data so the descriptors never import a brand's
+   * module (and so control.ts, which owns both registries, stays the only
+   * place a brand is named).
    */
-  readonly providerParams: ReadonlyMap<symbol, ProviderParam>;
+  readonly providerParams: ReadonlyMap<symbol, ProviderParam | ServiceProviderParam>;
 }
 
 /** Where a resource lands when the deploy names no region. */

@@ -113,7 +113,11 @@ mock.module('@internal/lowering', () => ({
   },
   ComputeService: (id: string, props: unknown) => {
     recorded.svc.push([id, props]);
-    return Effect.succeed({ id: `${id}#cloud-id`, name: id });
+    return Effect.succeed({
+      id: `${id}#cloud-id`,
+      name: id,
+      endpointDomain: `https://${id}.example`,
+    });
   },
   Deployment: (id: string, props: unknown) => {
     recorded.deploy.push([id, props]);
@@ -518,6 +522,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(result).toEqual({
         serviceId: 'auth-svc#cloud-id',
         projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://auth-svc.example',
       });
       expect(recorded.svc).toEqual([
         ['auth-svc', { projectId: 'shop-project#cloud-id', name: 'auth', region: 'us-east-1' }],
@@ -571,14 +576,18 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         graph: { secrets: [], edges: [] },
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
       } as unknown as LowerContext;
-      const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        serviceId: 'auth-svc#cloud-id',
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://auth-svc.example',
+      };
       const config = { service: { port: 3000 }, inputs: { db: { url: 'postgres://real-db' } } };
 
       const result = run<MockedSerialized>(
         serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
       );
 
-      expect(recorded.envVar.slice(-2)).toEqual([
+      expect(recorded.envVar.slice(-3)).toEqual([
         [
           'COMPOSER_AUTH_DB_URL-var',
           {
@@ -600,10 +609,22 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             class: 'production',
           },
         ],
+        // The framework-resolved origin row — one per compute service,
+        // unconditional, the provisioned service's own endpoint domain.
+        [
+          'COMPOSER_AUTH_ORIGIN-var',
+          {
+            projectId: 'shop-project#cloud-id',
+            key: 'COMPOSER_AUTH_ORIGIN',
+            value: '"https://auth-svc.example"',
+            class: 'production',
+          },
+        ],
       ]);
       expect(result.environment).toEqual([
         { id: 'COMPOSER_AUTH_DB_URL-var#cloud-id', key: 'COMPOSER_AUTH_DB_URL' },
         { id: 'COMPOSER_AUTH_PORT-var#cloud-id', key: 'COMPOSER_AUTH_PORT' },
+        { id: 'COMPOSER_AUTH_ORIGIN-var#cloud-id', key: 'COMPOSER_AUTH_ORIGIN' },
       ]);
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
@@ -642,6 +663,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const provisioned = {
         serviceId: 'consumer-svc#cloud-id',
         projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://consumer-svc.example',
       };
       // buildConfig resolves url from the wired provider; serviceKey has no value yet.
       const config = {
@@ -699,7 +721,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           graph,
           application: { projectId: 'shop-project#cloud-id', branchId: undefined },
         } as unknown as LowerContext;
-        const provisioned = { projectId: 'shop-project#cloud-id' };
+        const provisioned = {
+          projectId: 'shop-project#cloud-id',
+          endpointDomain: 'https://svc.example',
+        };
         const config = { service: { port: 3000 }, inputs: {} };
         const before = recorded.envVar.length;
 
@@ -751,7 +776,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           graph,
           application: { projectId: 'shop-project#cloud-id', branchId: undefined },
         } as unknown as LowerContext;
-        const provisioned = { projectId: 'shop-project#cloud-id' };
+        const provisioned = {
+          projectId: 'shop-project#cloud-id',
+          endpointDomain: 'https://svc.example',
+        };
         // buildConfig resolved the param to the opaque ParamSource, unvalidated — exactly what
         // deploy.ts's resolveParam does for a source-bound param.
         const config = { service: { port: 3000, appOrigin: envParam('APP_ORIGIN') }, inputs: {} };
@@ -796,7 +824,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         graph,
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
       } as unknown as LowerContext;
-      const provisioned = { projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://svc.example',
+      };
       const config = {
         service: { port: 3000, appOrigin: 'https://literal.example.com' },
         inputs: {},
@@ -836,7 +867,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         graph: { secrets: [], edges: [] },
         application: { projectId: 'shop-project#cloud-id', branchId: 'branch_1' },
       } as unknown as LowerContext;
-      const provisioned = { projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://svc.example',
+      };
       const config = { service: { port: 3000 }, inputs: {} };
       const before = recorded.envVar.length;
 
@@ -851,6 +885,16 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             projectId: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH3_PORT',
             value: '3000',
+            class: 'preview',
+            branchId: 'branch_1',
+          },
+        ],
+        [
+          'COMPOSER_AUTH3_ORIGIN-var',
+          {
+            projectId: 'shop-project#cloud-id',
+            key: 'COMPOSER_AUTH3_ORIGIN',
+            value: '"https://svc.example"',
             class: 'preview',
             branchId: 'branch_1',
           },
@@ -878,7 +922,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         graph: { secrets: [], edges: [] },
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
       } as unknown as LowerContext;
-      const provisioned = { projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://svc.example',
+      };
       // A port other than the pack default: serialize must carry 8080 through,
       // not silently normalize it back to 3000.
       const config = { service: { port: 8080 }, inputs: {} };
@@ -976,7 +1023,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
         graph: { secrets: [], edges: [] },
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
       } as unknown as LowerContext;
-      const provisioned = { serviceId: 'store-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        serviceId: 'store-svc#cloud-id',
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://store-svc.example',
+      };
       // buildConfig would populate inputs.credentials from the wired resource's
       // lowered outputs; bucket is the service's own param.
       const config = {
@@ -1007,7 +1058,10 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
         graph: { secrets: [], edges: [] },
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
       } as unknown as LowerContext;
-      const provisioned = { projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://svc.example',
+      };
       const serialize = (config: unknown) =>
         run<MockedS3StoreSerialized>(
           serviceDescriptorOf(target, 's3-store').serialize(
@@ -1367,6 +1421,10 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         .slice(before)
         .map(([, props]) => (props as { key: string }).key);
       expect(writtenKeys).not.toContain('COMPOSER_STOREFRONT_RPC_ACCEPTED_KEYS');
+      // The origin row is service-derived, not edge-derived, so the expose
+      // check above does not apply to it: the non-exposing storefront still
+      // gets its own origin row.
+      expect(writtenKeys).toContain('COMPOSER_STOREFRONT_ORIGIN');
     });
   });
 });
@@ -1586,7 +1644,11 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         application: { projectId: 'shop-project#cloud-id', branchId: undefined },
         provisioned: new Map(),
       } as unknown as LowerContext;
-      const provisioned = { serviceId: 'multi-svc#cloud-id', projectId: 'shop-project#cloud-id' };
+      const provisioned = {
+        serviceId: 'multi-svc#cloud-id',
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://multi-svc.example',
+      };
       const config = { service: { port: 3000 }, inputs: {} };
       const before = recorded.envVar.length;
 

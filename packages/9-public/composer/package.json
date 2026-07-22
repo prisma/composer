@@ -1,6 +1,6 @@
 {
   "name": "@prisma/composer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, the prisma-composer CLI, and the service-rpc/node/nextjs authoring surfaces.",
   "bin": {
@@ -41,15 +41,15 @@
     "@prisma/management-api-sdk": "^1.50.0"
   },
   "devDependencies": {
-    "@internal/assemble": "workspace:0.1.0",
-    "@internal/cli": "workspace:0.1.0",
-    "@internal/core": "workspace:0.1.0",
-    "@internal/foundation": "workspace:0.1.0",
-    "@internal/lowering": "workspace:0.1.0",
-    "@internal/nextjs": "workspace:0.1.0",
-    "@internal/node": "workspace:0.1.0",
-    "@internal/service-rpc": "workspace:0.1.0",
-    "@internal/tsdown-config": "workspace:0.1.0",
+    "@internal/assemble": "workspace:0.2.0",
+    "@internal/cli": "workspace:0.2.0",
+    "@internal/core": "workspace:0.2.0",
+    "@internal/foundation": "workspace:0.2.0",
+    "@internal/lowering": "workspace:0.2.0",
+    "@internal/nextjs": "workspace:0.2.0",
+    "@internal/node": "workspace:0.2.0",
+    "@internal/service-rpc": "workspace:0.2.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
     "@types/node": "^25.9.3",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"

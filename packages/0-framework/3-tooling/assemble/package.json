@@ -1,6 +1,6 @@
 {
   "name": "@internal/assemble",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Deploy-only: routes each service to its build adapter's /assemble entry and applies the wrapper-inlining policy. Consumed by @prisma/composer-cli; the future programmatic deploy API is its second consumer.",
   "exports": {
@@ -14,10 +14,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.1.0"
+    "@internal/core": "workspace:0.2.0"
   },
   "devDependencies": {
-    "@internal/tsdown-config": "workspace:0.1.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^25.9.3",
     "tsdown": "^0.22.7",

@@ -1,6 +1,6 @@
 {
   "name": "@internal/nextjs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
@@ -14,11 +14,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.1.0",
+    "@internal/core": "workspace:0.2.0",
     "esbuild": "^0.28.1"
   },
   "devDependencies": {
-    "@internal/tsdown-config": "workspace:0.1.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^25.9.3",
     "typescript": "^6.0.3",

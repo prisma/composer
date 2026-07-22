@@ -32,6 +32,7 @@ export type {
   ModuleContext,
   ModuleNode,
   ModuleOutputs,
+  NODE,
   ParamBindings,
   ParamNeed,
   ParamNeedBindings,

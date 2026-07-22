@@ -1,6 +1,6 @@
 {
   "name": "@internal/cron",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "The cron Module: scheduled work as a driver (ADR-0020), realized on Prisma Cloud.",
@@ -26,11 +26,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.1.0",
-    "@internal/foundation": "workspace:0.1.0",
-    "@internal/node": "workspace:0.1.0",
-    "@internal/prisma-cloud": "workspace:0.1.0",
-    "@internal/service-rpc": "workspace:0.1.0",
+    "@internal/core": "workspace:0.2.0",
+    "@internal/foundation": "workspace:0.2.0",
+    "@internal/node": "workspace:0.2.0",
+    "@internal/prisma-cloud": "workspace:0.2.0",
+    "@internal/service-rpc": "workspace:0.2.0",
     "arktype": "^2.2.3"
   },
   "devDependencies": {
@@ -38,6 +38,6 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.10",
     "tsdown": "^0.22.7",
-    "@internal/tsdown-config": "workspace:0.1.0"
+    "@internal/tsdown-config": "workspace:0.2.0"
   }
 }
