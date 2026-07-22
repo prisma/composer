@@ -32,7 +32,7 @@ import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
 import { renderSchemaSql } from '../../scripts/generate-schema.ts';
 import { AUTH_PACK_ID, AUTH_SCHEMA, authPack } from '../pack/index.ts';
-import emptyAppContractJson from './fixtures/empty-app/contract.json' with { type: 'json' };
+import emptyAppContractJson from './fixtures/empty-app/emitted/contract.json' with { type: 'json' };
 import {
   createTestDatabase,
   startTestPostgres,
