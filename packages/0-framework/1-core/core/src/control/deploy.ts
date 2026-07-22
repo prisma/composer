@@ -214,6 +214,14 @@ export interface LowerOptions {
 export interface Bundle {
   readonly dir: string;
   readonly entry: string;
+  /**
+   * Absolute paths to the USER-BUILT inputs this bundle was assembled from
+   * (ADR-0041). `prisma-composer dev`'s watch loop watches exactly these — a
+   * file entry as a file, a directory entry recursively — and re-runs
+   * assemble on a change. Optional so a build adapter that predates this
+   * field still compiles; a bundle without it is simply not watched.
+   */
+  readonly watch?: readonly string[];
 }
 
 /** Shared input shape for every extension's build descriptor. */
