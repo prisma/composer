@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun"],
+    "jsx": "react-jsx"
+  },
+  "include": ["module.ts", "prisma-composer.config.ts", "src", "tests", "scripts"]
+}

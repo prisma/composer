@@ -1,9 +1,21 @@
 ---
-description: Git commit best practices — stage explicitly, and sign off every commit (DCO)
+description: Git commit best practices — commit as you go, stage explicitly, and sign off every commit (DCO)
 alwaysApply: true
 ---
 
 # Git commit best practices
+
+## Commit as you go
+
+Commit completed work immediately — at every milestone, finished dispatch, or
+coherent unit of change. Never leave finished work uncommitted or untracked
+while you move on, and never hold a commit back "pending approval":
+committing to the working branch needs no permission (pushing to a shared
+branch and merging are separate questions).
+
+This includes process artifacts: project workspaces (`.drive/`), specs,
+plans, and review documents are part of the work and are committed alongside
+it. An untracked deliverable at the end of a task is a mistake.
 
 ## Sign off every commit (DCO)
 

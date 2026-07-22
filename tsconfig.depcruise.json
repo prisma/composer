@@ -63,6 +63,10 @@
       "@internal/storage": [
         "./packages/1-prisma-cloud/2-shared-modules/storage/src/exports/index.ts"
       ],
+      "@internal/email/testing": [
+        "./packages/1-prisma-cloud/2-shared-modules/email/src/exports/testing.ts"
+      ],
+      "@internal/email": ["./packages/1-prisma-cloud/2-shared-modules/email/src/exports/index.ts"],
       "@internal/streams/testing": [
         "./packages/1-prisma-cloud/2-shared-modules/streams/src/exports/testing.ts"
       ],

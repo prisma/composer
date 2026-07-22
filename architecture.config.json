@@ -307,6 +307,96 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/contract.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/outbox-store.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/delivery.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/handlers.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/pg-outbox-store.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/memory-outbox-store.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/delivery-resend.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/delivery-smtp.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/email-service.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/email-module.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/execution/**",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/exports/index.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/exports/email-service.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/exports/email-entrypoint.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/exports/testing.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/cron/src/*.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
@@ -565,6 +655,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/email.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/9-public/composer-prisma-cloud/src/exports/streams.ts",
       "domain": "public",
       "layer": "public",
@@ -572,6 +668,12 @@
     },
     {
       "glob": "packages/9-public/composer-prisma-cloud/src/exports/storage-testing.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/email-testing.ts",
       "domain": "public",
       "layer": "public",
       "plane": "execution"

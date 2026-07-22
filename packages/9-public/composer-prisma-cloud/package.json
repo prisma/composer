@@ -13,6 +13,9 @@
     "./storage": "./dist/storage/index.mjs",
     "./storage/storage-entrypoint": "./dist/storage/storage-entrypoint.mjs",
     "./storage/testing": "./dist/storage/testing.mjs",
+    "./email": "./dist/email/index.mjs",
+    "./email/email-entrypoint": "./dist/email/email-entrypoint.mjs",
+    "./email/testing": "./dist/email/testing.mjs",
     "./streams": "./dist/streams/index.mjs",
     "./streams/streams-entrypoint": "./dist/streams/streams-entrypoint.mjs",
     "./streams/testing": "./dist/streams/testing.mjs",
@@ -48,6 +51,7 @@
   "devDependencies": {
     "@internal/core": "workspace:0.2.0",
     "@internal/cron": "workspace:0.2.0",
+    "@internal/email": "workspace:0.2.0",
     "@internal/foundation": "workspace:0.2.0",
     "@internal/lowering": "workspace:0.2.0",
     "@internal/nextjs": "workspace:0.2.0",

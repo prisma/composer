@@ -36,6 +36,7 @@ const externalizeFramework = {
 // scheduler-entrypoint was already fully inlined by that package's own build.
 const cronDist = '../../1-prisma-cloud/2-shared-modules/cron/dist';
 const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
+const emailDist = '../../1-prisma-cloud/2-shared-modules/email/dist';
 const streamsDist = '../../1-prisma-cloud/2-shared-modules/streams/dist';
 export default defineConfig([
   {
@@ -108,6 +109,48 @@ export default defineConfig([
     ...baseConfig,
     entry: { testing: 'src/exports/storage-testing.ts' },
     outDir: 'dist/storage',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    ...baseConfig,
+    entry: { index: 'src/exports/email.ts' },
+    outDir: 'dist/email',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // Re-emitted from @internal/email's dist, where email-entrypoint was
+    // already fully inlined (nodemailer + arktype) by that package's own
+    // build; `bun` stays external (the pg outbox store uses Bun's SQL, the
+    // server Bun.serve).
+    ...baseConfig,
+    dts: false,
+    entry: {
+      'email-service': `${emailDist}/email-service.mjs`,
+      'email-entrypoint': `${emailDist}/email-entrypoint.mjs`,
+    },
+    outDir: 'dist/email',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // The /email/testing local stand-in — inlines @internal/email/testing's
+    // engine; `bun` stays external (Bun.serve).
+    ...baseConfig,
+    entry: { testing: 'src/exports/email-testing.ts' },
+    outDir: 'dist/email',
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
