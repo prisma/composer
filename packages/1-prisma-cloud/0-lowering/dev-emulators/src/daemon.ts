@@ -294,6 +294,11 @@ export async function ensureDaemon(
 
   const healthy = await pollUntilHealthy(port, healthPath, START_HEALTH_BUDGET_MS);
   if (!healthy) {
+    // Never leave an unsupervised, never-healthy process running: a spawn
+    // that didn't come up (a squatted port, a broken build) must not leak,
+    // even though the happy-path child is deliberately detached to outlive
+    // this call.
+    await terminate(child.pid, TERMINATE_GRACE_MS);
     throw new Error(`${name} emulator failed to start on port ${port} — see ${logPath}.`);
   }
   return { url: `http://127.0.0.1:${port}` };
