@@ -14,7 +14,12 @@ import type { UserConfig } from 'tsdown';
  * entry opt out with `exports: false` and declare their subpaths by hand.
  */
 export const baseConfig: UserConfig = {
-  dts: true,
+  dts: {
+    enabled: true,
+    // Declaration maps: "go to definition" on a consuming package lands in
+    // the source .ts, not the emitted .d.mts.
+    sourcemap: true,
+  },
   exports: {
     enabled: 'local-only',
     customExports: function stripExportsPrefix(exports) {
