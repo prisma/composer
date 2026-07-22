@@ -24,7 +24,7 @@ export interface LocalEmailServer {
 
 export async function startLocalEmailServer(opts?: { port?: number }): Promise<LocalEmailServer> {
   const localService = compute({
-    name: 'email-local',
+    name: 'emailLocal',
     deps: {},
     build: node({ module: import.meta.url, entry: 'testing.ts' }),
     expose: { send: emailSendContract, outbox: emailOutboxContract },

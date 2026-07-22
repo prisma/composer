@@ -30,9 +30,9 @@ function sourcePayload(binding: unknown): unknown {
 }
 
 const senderConsumer = () =>
-  compute({ name: 'sender-consumer', deps: { email: emailSender({}) }, build });
+  compute({ name: 'senderConsumer', deps: { email: emailSender({}) }, build });
 const outboxConsumer = () =>
-  compute({ name: 'outbox-consumer', deps: { outbox: rpc(emailOutboxContract) }, build });
+  compute({ name: 'outboxConsumer', deps: { outbox: rpc(emailOutboxContract) }, build });
 
 function rootWithEmail() {
   return module('root', {}, ({ provision }) => {
@@ -149,8 +149,8 @@ describe('email()', () => {
     // name; id is the graph address a provision() call picks. Using the same
     // string for both couldn't tell them apart.
     const root = module('root', {}, ({ provision }) => {
-      provision(email({ name: 'mailer-module' }), {
-        id: 'mail-instance',
+      provision(email({ name: 'mailerModule' }), {
+        id: 'mailInstance',
         params: {
           deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
           from: paramSource('EMAIL_FROM'),
@@ -163,12 +163,12 @@ describe('email()', () => {
     const graph = Load(root);
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     // Address generation is driven by the provision id.
-    expect([...byId.keys()]).toContain('mail-instance.service');
-    expect([...byId.keys()]).toContain('mail-instance.db');
+    expect([...byId.keys()]).toContain('mailInstance.service');
+    expect([...byId.keys()]).toContain('mailInstance.db');
     // The module's own declared name/identifier is opts.name, not the id.
-    const moduleNode = byId.get('mail-instance');
+    const moduleNode = byId.get('mailInstance');
     expect(moduleNode !== undefined && 'name' in moduleNode ? moduleNode.name : undefined).toBe(
-      'mailer-module',
+      'mailerModule',
     );
   });
 });
