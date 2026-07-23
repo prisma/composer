@@ -143,9 +143,18 @@ function isPrismaDevModule(value: unknown): value is PrismaDevModule {
  * number matching the candidate we just tried — is what actually survives
  * that boundary.
  */
-function isPortConflict(err: unknown, port: number): boolean {
-  if (typeof err !== 'object' || err === null || !('port' in err)) return false;
-  return err.port === port;
+/**
+ * The port a start refusal is about, when it is one of THIS attempt's ports.
+ * Duck-typed (`instanceof` fails across the dynamic-import boundary): every
+ * `@prisma/dev` port refusal — not-available, requested-twice, and
+ * belongs-to-another-server (its registry can claim a port no bind probe
+ * sees) — carries the offending port as `.port`, and any of the four ports
+ * we requested (database + the three aux listeners) can be the one refused.
+ */
+function portConflictOf(err: unknown, ports: readonly number[]): number | undefined {
+  if (typeof err !== 'object' || err === null || !('port' in err)) return undefined;
+  const port = err.port;
+  return typeof port === 'number' && ports.includes(port) ? port : undefined;
 }
 
 /**
@@ -324,8 +333,14 @@ function main(): void {
     return ports;
   }
 
-  async function smallestUnusedDatabasePort(min: number): Promise<number> {
-    return getPort({ port: portNumbers(min, MAX_DATABASE_PORT), exclude: usedDatabasePorts() });
+  async function smallestUnusedDatabasePort(
+    min: number,
+    alsoExclude: ReadonlySet<number> = new Set(),
+  ): Promise<number> {
+    return getPort({
+      port: portNumbers(min, MAX_DATABASE_PORT),
+      exclude: [...usedDatabasePorts(), ...alsoExclude],
+    });
   }
 
   /** Three fresh, mutually distinct ports for a server's own HTTP/shadow-database/streams listeners — never persisted, only unique right now. */
@@ -373,8 +388,9 @@ function main(): void {
     let dbPort =
       existingRecord?.databasePort ?? (await smallestUnusedDatabasePort(MIN_DATABASE_PORT));
 
+    const conflicted = new Set<number>();
     for (let attempt = 1; ; attempt++) {
-      const aux = await allocateAuxPorts(new Set([dbPort]));
+      const aux = await allocateAuxPorts(new Set([dbPort, ...conflicted]));
       try {
         const server = await prismaDev.startPrismaDevServer({
           name: instanceName,
@@ -398,15 +414,24 @@ function main(): void {
         schedulePersist();
         return { url };
       } catch (err) {
+        const conflictPort = portConflictOf(err, [
+          dbPort,
+          aux.httpPort,
+          aux.shadowDatabasePort,
+          aux.streamsPort,
+        ]);
         const canRetryNextPort =
-          isFreshAllocation && isPortConflict(err, dbPort) && attempt < maxAttempts;
+          isFreshAllocation && conflictPort !== undefined && attempt < maxAttempts;
         if (!canRetryNextPort) {
           const reason = err instanceof Error ? err.message : String(err);
           throw new Error(
             `postgres emulator failed to start database "${instanceName}" on port ${String(dbPort)}: ${maskCredentials(firstLine(reason))}`,
           );
         }
-        dbPort = await smallestUnusedDatabasePort(dbPort + 1);
+        conflicted.add(conflictPort);
+        if (conflictPort === dbPort) {
+          dbPort = await smallestUnusedDatabasePort(dbPort + 1, conflicted);
+        }
       }
     }
   }
