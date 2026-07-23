@@ -120,9 +120,12 @@ async function oneRun(runNumber: number): Promise<number> {
   });
 
   // 4. Re-converge (this is what the CLI's own watch loop would do).
+  // (The measured run used the pre-rename seam, `descriptor.dev`, on the S5
+  // branch; updated here to main's `localTarget` thunk — same call, new name.)
   const descriptor = prismaCloud();
-  if (descriptor.dev === undefined) throw new Error('no dev descriptor');
-  const container = await descriptor.dev.container.ensure({ appName: APP_NAME, stage: undefined });
+  if (descriptor.localTarget === undefined) throw new Error('no local-target descriptor');
+  const localTarget = await descriptor.localTarget();
+  const container = await localTarget.container.ensure({ appName: APP_NAME, stage: undefined });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
   const result = spawnSync(
     alchemyBin(storeDir),

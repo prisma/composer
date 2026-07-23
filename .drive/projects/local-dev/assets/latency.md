@@ -70,3 +70,17 @@ this path is watch-loop-dependent — it's the same re-assemble + re-converge
 `watch.ts` would trigger automatically once `Bundle.watch` lands (tracked
 separately; not on this branch — see FRICTION-S6.md and plan.md's "Known
 items blocking close-out").
+
+## Update (S6 close-out, after the merge to main)
+
+The numbers above were measured on the pre-merge S5 branch. Two things
+changed on main since and do not invalidate them:
+
+- **`Bundle.watch` is now populated by every build adapter** (node:
+  `watch: [runnable.source]`; Next.js: `watch: [standaloneRoot]`), so the
+  file-watch loop fires on its own — the manual re-assemble + re-converge
+  this method used is exactly what the loop now triggers automatically.
+- **The seam was renamed** (`ExtensionDescriptor.dev` →
+  `ExtensionDescriptor.localTarget`, now a lazy thunk). `latency-probe.ts`
+  is updated to the renamed API; the rename touches no part of the measured
+  path.

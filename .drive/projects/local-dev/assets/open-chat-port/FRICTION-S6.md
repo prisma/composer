@@ -182,6 +182,9 @@ once per fresh instance. Documented in the port's README (see the S6 report).
 ## 6. BLOCKING FRAMEWORK BUG — warm restart after Ctrl-C can leave every
    service `stopped` while `prisma-composer dev` reports the app ready
 
+**Since FIXED on #164 — see the Update at the end of this finding. The
+text below records the bug as found.**
+
 **Where hit:** proving criterion 6 (warm restart) against this port,
 independently of the store's own S5 proving script.
 
@@ -193,8 +196,11 @@ URLs refused connections. `GET /apps/open-chat/services` on the compute
 emulator showed `chat`, `streams.service`, and `storage.service` all
 `"status": "stopped"`.
 
-**Cause:** the local `Deployment` provider (`LocalDeploymentProvider` in
-`@internal/lowering/dev/compute.ts`) only calls the emulator's
+**Cause:** the local `Deployment` provider (`LocalDeploymentProvider` — at
+the time in `@internal/lowering`'s `src/dev/compute.ts`; after the
+localTarget rename it lives in `@internal/local-target`,
+`packages/1-prisma-cloud/0-lowering/local-target/src/compute.ts`) only
+calls the emulator's
 `PUT .../deployment` — which is what triggers the emulator's documented
 "a stopped/held service always starts on a deployment PUT" rule — from
 inside its `reconcile`. Alchemy itself decides whether to call `reconcile`
@@ -241,3 +247,13 @@ is very likely the SAME root cause across every local app, not just this
 port — `examples/store`'s own criterion-6 check should be tightened to an
 HTTP round-trip so a regression here is caught in the framework's own test
 suite, not rediscovered by the next port.
+
+**Update (S6 close-out): FIXED on #164**, by a third route close to
+recommendation (b)'s spirit: the attachment seam grew a session-resume
+call. `LocalTargetAttachment.startServices()` ("start every stopped
+service from its last deployment — a no-op converge cannot start
+anything") is called by the dev command on every attachment after each
+converge, before it prints the front door (`run-dev.ts`, step 8, with a
+rollback to stopped on partial failure). A warm start therefore restarts
+whatever the previous session's Ctrl-C stopped, regardless of Alchemy's
+props diff.

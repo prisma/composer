@@ -3,7 +3,8 @@
 The local dev loop: one command brings up the whole topology from the root
 module, credential-free, with deploy parity everywhere above the Alchemy
 provider boundary. The architectural decision — dev runs the deploy pipeline
-against local providers, substituted through an extension's `dev` descriptor —
+against local providers, substituted through an extension's `localTarget`
+descriptor —
 is recorded in
 [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md);
 this doc is the mechanics.
@@ -33,8 +34,9 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 
 1. **Import + Load** — identical, same errors.
 2. **Config** — identical, except: every extension in the config must carry a
-   `dev` descriptor; a missing one fails naming the extension ("`<id>` has no
-   dev support"). The extension factory must resolve **no** platform
+   `localTarget` descriptor; a missing one fails naming the extension
+   ("`<id>` has no dev support — it declares no `localTarget` descriptor").
+   The extension factory must resolve **no** platform
    environment on this path (no workspace id, no region, no token).
 3. **Assemble** — identical. Dev consumes the user's built output through the
    same adapters and produces the same bundles; missing output produces the
@@ -84,7 +86,7 @@ emulator, which owns the processes:
   instances and data. (A detached mode where services keep serving with no
   session is a designed extension, not v1.)
 
-  **Known gap (S6 finding, unresolved):** a service actually only restarts
+  **Known gap (S6 finding, fixed in #164):** a service actually only restarts
   when its `Deployment` resource is re-put — and Alchemy skips calling the
   provider at all when a resource's props (artifact hash, env) are
   unchanged from its last recorded apply. A Ctrl-C stop is invisible to that
@@ -97,11 +99,12 @@ emulator, which owns the processes:
   finding "warm-restart-noop"); the existing store proving script's own
   criterion-6 check doesn't catch it because it asserts port *stability*
   and reads Postgres directly, never an HTTP round-trip against the
-  restarted service. Fix belongs in the dev pipeline (`run-dev.ts`) or the
-  local `Deployment` provider: either force a reconcile every dev start
-  regardless of Alchemy's diff, or give the provider an `observe` step that
-  compares against the emulator's actual reported status, not just stored
-  props.
+  restarted service. **Fixed in #164** by a session-resume call on the
+  attachment seam: `LocalTargetAttachment.startServices()` starts every
+  stopped service from its last deployment, and the dev command calls it
+  on every attachment after each converge, before printing the front door
+  (`run-dev.ts`) — so a warm start restarts what a previous session's
+  Ctrl-C stopped even when the converge is all-noop.
 
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
@@ -235,7 +238,7 @@ Deploy's rule holds: every failure names its fix.
 
 | Failure | Error tells the user |
 | --- | --- |
-| extension has no `dev` descriptor | which extension, and that it does not support local dev |
+| extension has no `localTarget` descriptor | which extension, and that it does not support local dev |
 | built output missing | same as deploy: the expected path, "run your build" |
 | `bun` not on PATH | that dev runs services under bun (the Compute runtime) and how to install it |
 | no installed `prisma` bin (the local-Postgres emulator) | what was searched for and to add `prisma` to devDependencies |
@@ -278,12 +281,14 @@ mechanics are pinned in the implementation spec. Restart latency is measured
   against `examples/store` (Apple M3 Max) — comfortably inside the
   single-digit-seconds target. Method and full numbers:
   `.drive/projects/local-dev/assets/latency.md`.
-- **Warm-restart-after-Ctrl-C can leave services stopped** — see the
-  Compute-emulator section above ("Known gap (S6 finding, unresolved)").
-- **`Bundle.watch` isn't populated on every branch yet** (S2 slice); until
-  it lands everywhere, a service reports `[dev] <address> has no watchable
-  inputs` at startup and a rebuild has to be triggered manually (rerun `dev`,
-  or a second converge) rather than picked up by the file-watch loop.
+- **Warm-restart-after-Ctrl-C could leave services stopped** (S6 finding,
+  fixed in #164) — see the Compute-emulator section above ("Known gap").
+- **`Bundle.watch` was not populated everywhere during S6** — resolved:
+  both build adapters now populate it (node watches the entry file or the
+  whole `dir`; Next.js watches the standalone root), so the file-watch
+  loop picks rebuilds up on its own. A build descriptor that still returns
+  no `watch` entries reports `[dev] <address> has no watchable inputs` at
+  startup and needs its rebuilds triggered manually.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
   § 4's `PnMigration` line is for framework-run migrations only). An app that
   runs its own migrations (e.g. via `prisma-next db init`, like the
