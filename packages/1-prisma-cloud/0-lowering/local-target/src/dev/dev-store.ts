@@ -1,10 +1,12 @@
 /**
- * The shared dev-instance store (local-dev spec § 4): the three JSON files
- * under `<devDir>/` every local provider reads or writes. Every write is
+ * The shared dev-instance store (local-dev spec § 4): the JSON files under
+ * `<devDir>/` every local provider reads or writes. Every write is
  * temp-then-rename; reads and writes on the SAME file are additionally
  * serialized behind one in-process async queue per absolute path, because the
  * local providers reconcile concurrently inside the one alchemy child and a
- * naive read-modify-write would drop a concurrent writer's key.
+ * naive read-modify-write would drop a concurrent writer's key. Postgres
+ * instance state is NOT here (REVISED — operator review of #162): the
+ * `postgres-main` daemon owns it now.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -113,34 +115,4 @@ export function envStore(devDir: string): DevStore<Record<string, string>> {
 /** `<devDir>/secrets.json` — platform var name → value (shell-sourced or minted placeholder). Mode 0o600. */
 export function secretsStore(devDir: string): DevStore<Record<string, string>> {
   return createStore(path.join(devDir, 'secrets.json'), isStringRecord, {}, 0o600);
-}
-
-export interface PostgresInstanceEntry {
-  readonly instance: string;
-  readonly url: string;
-}
-
-function isPostgresInstanceEntry(value: unknown): value is PostgresInstanceEntry {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'instance' in value &&
-    typeof value.instance === 'string' &&
-    'url' in value &&
-    typeof value.url === 'string'
-  );
-}
-
-function isPostgresRecord(value: unknown): value is Record<string, PostgresInstanceEntry> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.values(value).every(isPostgresInstanceEntry)
-  );
-}
-
-/** `<devDir>/postgres.json` — Database resource name → its `prisma dev` instance name and URL. */
-export function postgresStore(devDir: string): DevStore<Record<string, PostgresInstanceEntry>> {
-  return createStore(path.join(devDir, 'postgres.json'), isPostgresRecord, {});
 }
