@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { Load, module, secret, string } from '@internal/core';
 import { secretsStore } from '@internal/local-target';
 import { PrismaCloudContainer } from '../container.ts';
-import { runDevPreflight } from '../dev/preflight.ts';
+import { runDevPreflight } from '../local-target/preflight.ts';
 import { compute } from '../exports/index.ts';
 import { envParam } from '../param.ts';
 import { envSecret } from '../secret.ts';

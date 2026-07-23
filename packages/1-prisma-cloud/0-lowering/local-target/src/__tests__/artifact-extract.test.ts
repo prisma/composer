@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { packageComputeArtifact } from '@internal/lowering/compute';
-import { extractComputeArtifact } from '../compute/artifact-extract.ts';
+import { extractComputeArtifact } from '../artifact-extract.ts';
 
 function makeBundle(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-test-'));

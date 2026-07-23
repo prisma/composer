@@ -2,7 +2,7 @@
  * Assembles the extension's local-target descriptor (local-dev spec § 5;
  * naming, operator 2026-07-23 — "dev" names the user-facing feature only)
  * — the implementation behind `src/exports/local-target.ts`'s public
- * `localTargetDescriptor()`. Every `src/dev/*` implementation file, plus
+ * `localTargetDescriptor()`. Every `src/local-target/*` implementation file, plus
  * `@internal/local-target`, feeds ONLY this entry — never `./control`
  * (ADR-0041, operator directive): the production control entry carries
  * just the lazy

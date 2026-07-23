@@ -5,7 +5,7 @@ import { ensureDaemon, instanceNameFor, postgresClient } from '@internal/dev-emu
 import { Connection, Database } from '@internal/lowering/postgres';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import { LocalConnectionProvider, LocalDatabaseProvider } from '../dev/postgres.ts';
+import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
 
 /**
  * Delta review finding A (#160): `LocalDatabaseProvider` used to re-derive

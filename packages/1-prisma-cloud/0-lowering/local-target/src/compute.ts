@@ -21,7 +21,7 @@ import { Project } from '@internal/lowering/postgres';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
-import { extractComputeArtifact } from '../compute/artifact-extract.ts';
+import { extractComputeArtifact } from './artifact-extract.ts';
 import { appNameOf } from './app-name.ts';
 import { envStore, secretsStore } from './dev-store.ts';
 

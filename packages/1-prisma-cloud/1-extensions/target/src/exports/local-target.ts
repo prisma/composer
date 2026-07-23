@@ -4,6 +4,6 @@
  * `./control`, loaded only via the lazy
  * `localTarget: () => import('@prisma/composer-prisma-cloud/local-target').then(...)`
  * reference `control/extension.ts` carries. Implementation lives in
- * `../dev/descriptor.ts`.
+ * `../local-target/descriptor.ts`.
  */
-export { localTargetDescriptor } from '../dev/descriptor.ts';
+export { localTargetDescriptor } from '../local-target/descriptor.ts';
