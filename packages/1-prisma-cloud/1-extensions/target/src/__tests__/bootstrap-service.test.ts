@@ -5,7 +5,7 @@
  * (mirroring run(), the channel an entry reads its port from).
  */
 import { describe, expect, test } from 'bun:test';
-import { SecretBox } from '@internal/core';
+import { isSecretString, type SecretString } from '@internal/core';
 import { type } from 'arktype';
 import { compute } from '../compute.ts';
 import { envSecret } from '../secret.ts';
@@ -54,11 +54,11 @@ describe('bootstrapService', () => {
     const app = compute({
       name: 'web',
       deps: {},
-      input: type({ greeting: 'string', apiKey: type.instanceOf(SecretBox) }),
+      input: type({ greeting: 'string', apiKey: type('unknown').narrow(isSecretString) }),
       build,
     });
     let rowAtBoot: string | undefined;
-    let readBack: { greeting: string; apiKey: SecretBox<unknown> } | undefined;
+    let readBack: { greeting: string; apiKey: SecretString } | undefined;
     await withEnv(
       {
         [inputKey('')]: undefined,
@@ -76,7 +76,7 @@ describe('bootstrapService', () => {
           },
           async () => {
             rowAtBoot = process.env[inputKey('')];
-            readBack = app.input() as { greeting: string; apiKey: SecretBox<unknown> };
+            readBack = app.input() as { greeting: string; apiKey: SecretString };
           },
         ),
     );
