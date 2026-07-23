@@ -31,18 +31,17 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
   devDependency in tests only) incl. presigned GET/PUT.
 - **Spec sections:** § 1, behavior contracts.
 
-### S2 — `Bundle.watch` + directory-form fixes (REVISED — no new adapter)
+### S2 — `dir()` build adapter
 
-- **Outcome (revised):** `node()`'s existing directory form is friction
-  #3's fix, already on `main` — the originally planned `dir()` duplicate
-  is struck. S2 lands: the `Bundle.watch` contract (spec § 3) populated in
-  `node()` (single-file → entry file; directory form → the whole dir) and
-  `nextjs()`; the symlink-as-`dir` hard-error fix, which is a real hole in
-  `main`'s directory form; doc corrections where `node()` is still
-  described as single-file-only.
-- **Proves:** directory-form assemble tests (symlink-as-dir on both file
-  and directory targets, tree fidelity, watch fields per form).
-- **Spec sections:** § 7 (revised), § 3's watch bullets.
+- **Outcome:** `@prisma/composer/dir` authoring + assemble per spec § 7:
+  verbatim tree copy, named entry, symlink hard error, wrapper bundling
+  identical to `node()`'s. Also lands the `Bundle.watch` contract (spec
+  § 3): the optional core field plus `watch` population in `node()`,
+  `nextjs()`, and `dir()`. Guide/docs entry.
+- **Proves:** assemble tests (missing dir/entry errors verbatim, symlink
+  error, tree fidelity); a fixture app with a multi-file runnable deploys
+  through the full assemble path (no cloud needed — assemble-level test).
+- **Spec sections:** § 7.
 
 ### S3 — `@internal/dev-emulators`: daemon layer + Compute & bucket emulators
 
@@ -112,8 +111,8 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
 
 ### S6 — proof on the open-chat port + measurement + close-out docs
 
-- **Outcome:** the open-chat port (separate repo) switched to `node()`'s
-  directory form + `prisma-composer dev`, replacing `scripts/dev.ts`; sign-in/history/
+- **Outcome:** the open-chat port (separate repo) switched to `dir()` +
+  `prisma-composer dev`, replacing `scripts/dev.ts`; sign-in/history/
   live-tail verified; friction found lands here as fixes (re-triaged if
   large); restart latency for `examples/store` measured and recorded;
   `deploy-cli.md` scope updated; `local-dev.md` + ADR-0041 reconciled with
@@ -123,39 +122,22 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
 
 ## Known items blocking close-out (found in S5 proving, 2026-07-23)
 
-- ~~Restart amplification~~ — **resolved on the S5 branch**: root-caused
-  (app-wide env materialization completing between converges) with
-  three-converge byte evidence; fixed by the pinned scoped materialization;
-  proven by the store-level exactly-one-restart assertion, run twice.
-- ~~Criteria 4/5 scripting~~ — **resolved on the S5 branch**: the S4
-  fixture gained a bucket flow, a secret, and an envParam;
-  `local-dev-criteria-4-5.integration.ts` proves all four sub-criteria at
-  the CLI level as a required gate.
+- **Restart amplification (defect):** rebuilding one service restarts its
+  RPC dependents too (observed: catalog rebuild → catalog + cron.runner +
+  orders.service restarted; storefront + cron.scheduler correctly
+  untouched). Something in the dependents' materialized deployment env
+  recomputes as changed on every converge. Root-cause and fix in the local
+  providers (S4 code) before S6 sign-off — acceptance criterion 2 requires
+  exactly-one-service restarts.
+- **Criteria 4/5 scripting pending:** `examples/store` has neither a bucket
+  nor a secret/env-param; the S4 fixture needs both to script the bucket
+  file-drop round-trip and the placeholder-warning / env-param-error
+  criteria at the CLI level.
 - ~~Emulator stop/reap honesty~~ — **resolved, no bug**: `killChild`
   already awaits SIGTERM → 5 s grace → SIGKILL → exit before state flips;
   the observation was the grace period itself. Locked in by a regression
   test (an ignores-SIGTERM fixture: the listing never says `stopped` while
   the pid lives, and the stop measurably takes the grace period).
-
-### S7 — MERGED INTO THE #162 REWORK WAVE (operator review, 2026-07-23)
-
-Will's #162 review mandated the programmatic adoption in-place ("replace
-it with programmatic use of prisma dev") — the section below is executed
-as part of the rework, not post-stack.
-
-### (was S7) — adopt @prisma/dev programmatically
-
-Operator decision (2026-07-23): replace the Postgres CLI shell-out with
-`@prisma/dev`'s programmatic API, hosted in our own `postgres-main`
-emulator daemon beside compute/buckets — `startPrismaDevServer({ name,
-databasePort, persistenceMode })` per `Database` resource, ports from our
-registry, persistence on. Deletes: bin walk-up, last-stdout-line URL
-parsing, `prisma dev start/stop/rm` coupling, the probe/start recovery
-sequence. Sub-decision to settle at pickup: version ownership (lean:
-resolve `@prisma/dev` from the app's node_modules so the app owns the
-version, consistent with runtime ownership). The CLI shell-out in the
-shipped slices is transitional and marked so here. Not started until the
-current stack merges.
 
 ## Close-out (required)
 

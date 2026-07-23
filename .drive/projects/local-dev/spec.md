@@ -952,14 +952,5 @@ The open-chat proof (S6) uses `node({ module, dir, entry })`.
 
 ## Open questions
 
-(none currently open — a gap found during implementation is recorded here
-and raised, not improvised around)
-
-**Resolved:** S5's branch base (`claude/local-dev-s4-dev-target`) predates
-`Bundle.watch` (S2 scope, not an ancestor of S4). `watch.ts`/`run-dev.ts`
-read it through a locally-declared structural extension of `Bundle` with one
-justified `blindCast`, so every bundle takes the spec's own pinned "not
-watched" fallback until S2 merges, and the watch loop activates for real the
-moment it does — see `packages/0-framework/3-tooling/cli/src/dev/watch.ts`'s
-doc comment. No spec change needed; recorded here only so the resolution is
-visible next to where the gap used to be.
+(none — a gap found during implementation is recorded here and raised, not
+improvised around)
