@@ -96,3 +96,31 @@ test('a missing or mistyped handler does not compile', () => {
   // @ts-expect-error wrong output shape (ok must be a boolean, not a string)
   serve(authService, { rpc: { verify: async ({ token }, _deps) => ({ ok: token }) } });
 });
+
+// ——— Mixed expose: non-rpc ports are skipped by Handlers<S> ———
+
+/** A non-rpc exposed port — connection config as __cmp, not a method map. */
+const httpishContract = {
+  kind: 'httpish',
+  __cmp: { url: '' },
+  satisfies: () => true,
+} as unknown as import('@internal/core').Contract<'httpish', { url: string }>;
+
+declare const mixedService: RunnableServiceNode<
+  typeof node.inputs,
+  typeof node.params,
+  { api: typeof httpishContract; rpc: typeof authContract }
+>;
+
+test('Handlers<S> does not demand a handler map for a non-rpc exposed port', () => {
+  serve(mixedService, {
+    rpc: {
+      verify: async ({ token }, _deps) => ({ ok: token.length > 0 }),
+    },
+  });
+});
+
+test('the rpc port stays exhaustive even beside a non-rpc port', () => {
+  // @ts-expect-error missing the required "verify" handler for the exposed "rpc" port
+  serve(mixedService, { rpc: {} });
+});
