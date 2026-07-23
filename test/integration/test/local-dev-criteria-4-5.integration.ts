@@ -73,17 +73,6 @@ function emulatorRegistryRoot(): string {
   return path.join(os.homedir(), '.prisma-composer', 'emulators');
 }
 
-function resolveBin(name: string): string | undefined {
-  let dir = integrationDir;
-  for (;;) {
-    const candidate = path.join(dir, 'node_modules', '.bin', name);
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
 function tailOf(filePath: string, n = 60): string {
   let content: string;
   try {
@@ -108,18 +97,9 @@ function dumpDiagnostics(): void {
     console.error(`\n--- session-${i}.log (tail) ---`);
     console.error(tailOf(logPath));
   }
-  for (const name of ['compute', 'buckets'] as const) {
+  for (const name of ['compute', 'buckets', 'postgres'] as const) {
     console.error(`\n--- ${name} emulator log (tail) ---`);
     console.error(tailOf(path.join(emulatorRegistryRoot(), `${name}.log`)));
-  }
-  console.error('\n--- prisma dev ls ---');
-  const prismaBin = resolveBin('prisma');
-  if (prismaBin === undefined) {
-    console.error('<no node_modules/.bin/prisma found above the integration package>');
-  } else {
-    const result = spawnSync(prismaBin, ['dev', 'ls'], { encoding: 'utf8' });
-    console.error(result.stdout ?? '');
-    if (result.stderr) console.error(result.stderr);
   }
   console.error('=== end diagnostics ===\n');
 }
@@ -341,8 +321,8 @@ async function main(): Promise<void> {
       await stopDev(session).catch(() => undefined);
     }
     // Full app-scoped teardown through the CLI's own --fresh, exactly as
-    // local-dev-store.integration.ts does — removes the real `prisma dev`
-    // instance this fixture's `postgres({ name: 'appdb' })` created, the
+    // local-dev-store.integration.ts does — removes the postgres-main-hosted
+    // server this fixture's `postgres({ name: 'appdb' })` created, the
     // emulators' app-scoped records, and the local state dir, never the
     // machine-global daemons.
     try {

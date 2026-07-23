@@ -46,21 +46,26 @@
  *      redeploy — S3's own pinned "a stopped service always starts on
  *      redeploy" behavior — which would defeat this proof entirely).
  *   3. Postgres persistence: a row is written directly against the real
- *      `prisma dev` URL (read from `.prisma-composer/dev/postgres.json`,
- *      never through the app's own RPC surface — this is a storage-layer
- *      proof, not a business-logic one) before Ctrl-C; a second `dev` start
- *      reads it back (warm); `--fresh` wipes it.
+ *      local Postgres URL (read from the postgres-main daemon's own
+ *      database listing — the daemon owns instance state, REVISED —
+ *      operator review of #162; never through the app's own RPC surface —
+ *      this is a storage-layer proof, not a business-logic one) before
+ *      Ctrl-C; a second `dev` start reads it back (warm); `--fresh` wipes
+ *      it.
  *   6. Warm restart: the second start's front-door ports match the first's
- *      exactly — no re-provisioning.
+ *      exactly — no re-provisioning — AND an HTTP round-trip against the
+ *      front door succeeds (the services genuinely serve after the resume;
+ *      port-stability alone missed a live resume bug — spec § Acceptance).
  *
  * Not proved here (see the S5 report): criteria 4/5 (bucket, placeholder/
  * env-param) are proved against the S4 fixture instead — store declares
  * neither a bucket nor a secret/env-param.
  *
  * WHY THIS IS A STANDALONE SCRIPT, NOT bun:test: same reasoning as
- * local-dev.integration.ts — a nested `prisma dev --detach` grandchild's
- * stdout is unreliable under `bun test`'s own process tree. Invoked by
- * package.json's `test` script as a second `bun run` step.
+ * local-dev.integration.ts — a detached grandchild a converge causes to
+ * spawn (the emulator daemon programs) loses stdout under `bun test`'s own
+ * process tree. Invoked by package.json's `test` script as a second
+ * `bun run` step.
  */
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
@@ -87,7 +92,6 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 const integrationDir = path.resolve(import.meta.dir, '..');
 const repoRoot = path.resolve(integrationDir, '..', '..');
 const storeDir = path.join(repoRoot, 'examples', 'store');
-const devDir = path.join(storeDir, '.prisma-composer', 'dev');
 // Deliberately OUTSIDE `.prisma-composer/dev` — `--fresh` recursively
 // removes that whole directory (runDevTeardown), which would delete these
 // logs mid-run otherwise.
@@ -122,17 +126,6 @@ function emulatorRegistryRoot(): string {
   return path.join(os.homedir(), '.prisma-composer', 'emulators');
 }
 
-function resolveBin(name: string): string | undefined {
-  let dir = integrationDir;
-  for (;;) {
-    const candidate = path.join(dir, 'node_modules', '.bin', name);
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
 function tailOf(filePath: string, n = 60): string {
   let content: string;
   try {
@@ -150,25 +143,24 @@ function tailOf(filePath: string, n = 60): string {
  * `alchemy` converge output inline) are on the runner, gone the moment the
  * job ends. Bounded, never throws.
  */
-function dumpDiagnostics(): void {
+async function dumpDiagnostics(): Promise<void> {
   console.error('\n=== diagnostics ===');
   for (let i = 1; i <= sessionCount; i += 1) {
     const logPath = path.join(logDir, `session-${i}.log`);
     console.error(`\n--- session-${i}.log (tail) ---`);
     console.error(tailOf(logPath));
   }
-  for (const name of ['compute', 'buckets'] as const) {
+  for (const name of ['compute', 'buckets', 'postgres'] as const) {
     console.error(`\n--- ${name} emulator log (tail) ---`);
     console.error(tailOf(path.join(emulatorRegistryRoot(), `${name}.log`)));
   }
-  console.error('\n--- prisma dev ls ---');
-  const prismaBin = resolveBin('prisma');
-  if (prismaBin === undefined) {
-    console.error('<no node_modules/.bin/prisma found above the integration package>');
-  } else {
-    const result = spawnSync(prismaBin, ['dev', 'ls'], { encoding: 'utf8' });
-    console.error(result.stdout ?? '');
-    if (result.stderr) console.error(result.stderr);
+  console.error(`\n--- postgres-main databases (app ${APP_NAME}) ---`);
+  try {
+    console.error(JSON.stringify(await listPostgresDatabases(), null, 2));
+  } catch (error) {
+    console.error(
+      `<postgres-main listing unavailable: ${error instanceof Error ? error.message : String(error)}>`,
+    );
   }
   console.error('=== end diagnostics ===\n');
 }
@@ -212,8 +204,8 @@ function isRegistryEntry(value: unknown): value is EmulatorRegistryEntry {
 }
 
 /** The documented on-disk registry contract (spec § 2 daemon.ts) — read directly, same as local-dev.integration.ts. */
-function readComputeEntry(): EmulatorRegistryEntry | undefined {
-  const parsed = readJson(path.join(os.homedir(), '.prisma-composer', 'emulators', 'compute.json'));
+function readEmulatorEntry(name: 'compute' | 'postgres'): EmulatorRegistryEntry | undefined {
+  const parsed = readJson(path.join(emulatorRegistryRoot(), `${name}.json`));
   return isRegistryEntry(parsed) ? parsed : undefined;
 }
 
@@ -225,11 +217,25 @@ interface ServiceInfo {
 
 /** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never a typed client. */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
-  const entry = readComputeEntry();
+  const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
   const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${app}/services`);
   if (!res.ok) throw new Error(`compute emulator listServices failed: ${res.status}`);
   return (await res.json()) as ServiceInfo[];
+}
+
+interface PostgresDatabaseInfo {
+  readonly instanceName: string;
+  readonly url: string;
+}
+
+/** The documented postgres-emulator wire protocol (spec § 4, REVISED — operator review of #162: the daemon owns instance state, there is no dev-store postgres.json) — plain fetch, never the typed client. */
+async function listPostgresDatabases(): Promise<readonly PostgresDatabaseInfo[]> {
+  const entry = readEmulatorEntry('postgres');
+  if (entry === undefined) throw new Error('postgres emulator registry entry not found');
+  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/databases`);
+  if (!res.ok) throw new Error(`postgres emulator listDatabases failed: ${res.status}`);
+  return (await res.json()) as PostgresDatabaseInfo[];
 }
 
 /** Every address's pid, keyed by address — undefined for a stopped/absent service. */
@@ -320,15 +326,13 @@ function readJson(file: string): unknown {
   }
 }
 
-interface PostgresEntry {
-  readonly instance: string;
-  readonly url: string;
-}
-
-function readCatalogDbUrl(): string {
-  const postgres = readJson(path.join(devDir, 'postgres.json')) as Record<string, PostgresEntry>;
-  const entry = postgres['pcdev-store-catalog-database'];
-  assert(entry?.url !== undefined, 'postgres.json must have a pcdev-store-catalog-database entry');
+async function readCatalogDbUrl(): Promise<string> {
+  const databases = await listPostgresDatabases();
+  const entry = databases.find((d) => d.instanceName === 'pcdev-store-catalog-database');
+  assert(
+    entry?.url !== undefined,
+    'the postgres-main listing must carry a pcdev-store-catalog-database entry',
+  );
   return entry.url;
 }
 
@@ -450,7 +454,8 @@ async function rebuildCatalogAndReconverge(): Promise<Record<string, number | un
 
   const descriptor = prismaCloud();
   if (descriptor.dev === undefined) throw new Error('no dev descriptor');
-  const container = await descriptor.dev.container.ensure({ appName: APP_NAME, stage: undefined });
+  const dev = await descriptor.dev();
+  const container = await dev.container.ensure({ appName: APP_NAME, stage: undefined });
   const envVars = containerEnv(new Map([[descriptor.id, container]]));
 
   const result = spawnSync(
@@ -550,7 +555,7 @@ async function main(): Promise<void> {
     }
 
     // ——— Criterion 3 (write half): a row through the real local Postgres URL ———
-    const dbUrl = readCatalogDbUrl();
+    const dbUrl = await readCatalogDbUrl();
     await withSql(dbUrl, async (sql) => {
       // prisma-next's migration DDL folds the table name and single-word
       // columns to lowercase (unquoted identifiers); "priceCents" alone
@@ -577,7 +582,24 @@ async function main(): Promise<void> {
       'criterion 6: warm restart keeps the same ports',
     );
 
-    const warmDbUrl = readCatalogDbUrl();
+    // The pinned half of criterion 6 (spec § Acceptance): after the warm
+    // restart the services must GENUINELY SERVE, not merely be listed with
+    // stable ports — a converge that diffs nothing starts nothing, so only
+    // the attach step's startServices() resume makes this round-trip
+    // succeed. Port stability alone let exactly that resume bug ship.
+    const warmStorefront = session.endpoints.find((e) => e.address === 'storefront');
+    assert(warmStorefront !== undefined, 'the warm front door must list the storefront service');
+    const warmHealth = await waitForAsync(
+      () => fetch(warmStorefront.url).then((r) => (r.ok ? r : undefined)),
+      15_000,
+    );
+    assertEqual(
+      warmHealth.status,
+      200,
+      'criterion 6: the HTTP round-trip succeeds after a warm restart (services resumed)',
+    );
+
+    const warmDbUrl = await readCatalogDbUrl();
     assertEqual(warmDbUrl, dbUrl, 'criterion 6: the Postgres URL is stable across a warm restart');
     const warmRow = await withSql(
       warmDbUrl,
@@ -589,7 +611,9 @@ async function main(): Promise<void> {
       'criterion 3: the row survives a warm (non---fresh) restart',
     );
     console.log('[proving] PASS criterion 3 (warm): row survived a Ctrl-C restart');
-    console.log('[proving] PASS criterion 6: same ports, no re-provisioning across a warm restart');
+    console.log(
+      '[proving] PASS criterion 6: same ports, no re-provisioning, and a serving front door across a warm restart',
+    );
 
     await stopDev(session);
     console.log('[proving] session 2 stopped cleanly on SIGINT');
@@ -597,9 +621,10 @@ async function main(): Promise<void> {
     // ——— Criterion 3 (--fresh half): the instance and its data are gone ———
     session = await startDev(true);
     console.log(`[proving] session 3 (--fresh) ready: ${JSON.stringify(session.endpoints)}`);
-    const freshDbUrl = readCatalogDbUrl();
-    // --fresh removes the whole prisma dev instance (prisma dev rm) and
-    // recreates it on next provision — migrations reapply as part of THIS
+    const freshDbUrl = await readCatalogDbUrl();
+    // --fresh removes the app's postgres-main-hosted servers and their
+    // persisted data (DELETE /apps/<app> on the daemon, runDevTeardown) and
+    // recreates them on next provision — migrations reapply as part of THIS
     // SAME converge (PnMigration runs on every converge), so the "product"
     // table exists again by the time the front door prints; the proof is
     // that it's freshly migrated and EMPTY — the proving row from before
@@ -624,7 +649,7 @@ async function main(): Promise<void> {
     // touch the machine-global emulator daemons, only this app's own
     // records. `--fresh` teardown only runs BEFORE that session's own
     // (mandatory) converge, never after — so `startDev(true)` + `stopDev`
-    // alone still leaves the `prisma dev` postgres instances THIS cleanup
+    // alone still leaves the postgres-main-hosted servers THIS cleanup
     // session's own converge just recreated. Call `dev.teardown` directly
     // afterward to actually remove them (`--fresh` then Ctrl-C then
     // teardown leaves nothing running and no data behind for the next run).
@@ -632,12 +657,13 @@ async function main(): Promise<void> {
       const cleanup = await startDev(true);
       await stopDev(cleanup);
       const descriptor = prismaCloud();
-      if (descriptor.dev?.teardown !== undefined) {
-        const container = await descriptor.dev.container.ensure({
+      const dev = descriptor.dev === undefined ? undefined : await descriptor.dev();
+      if (dev?.teardown !== undefined) {
+        const container = await dev.container.ensure({
           appName: APP_NAME,
           stage: undefined,
         });
-        await descriptor.dev.teardown({ container, stage: undefined });
+        await dev.teardown({ container, stage: undefined });
       }
     } catch (error) {
       console.error(
@@ -662,8 +688,8 @@ main()
   .then(() => {
     process.exitCode = 0;
   })
-  .catch((error: unknown) => {
+  .catch(async (error: unknown) => {
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
-    dumpDiagnostics();
+    await dumpDiagnostics();
     process.exitCode = 1;
   });

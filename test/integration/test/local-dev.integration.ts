@@ -146,25 +146,24 @@ function tailOf(filePath: string, n = 60): string {
  * never throws (a missing file/daemon is itself diagnostic, not fatal to
  * the diagnostic dump).
  */
-function dumpDiagnostics(): void {
+async function dumpDiagnostics(): Promise<void> {
   console.error('\n=== diagnostics ===');
   for (let i = 1; i <= convergeCount; i += 1) {
     const logFile = path.join(logDir, `converge-${i}.log`);
     console.error(`\n--- converge-${i}.log (tail) ---`);
     console.error(tailOf(logFile));
   }
-  for (const name of ['compute', 'buckets'] as const) {
+  for (const name of ['compute', 'buckets', 'postgres'] as const) {
     console.error(`\n--- ${name} emulator log (tail) ---`);
     console.error(tailOf(path.join(emulatorRegistryRoot(), `${name}.log`)));
   }
-  console.error('\n--- prisma dev ls ---');
-  const prismaBin = resolveBin('prisma');
-  if (prismaBin === undefined) {
-    console.error('<no node_modules/.bin/prisma found above the integration package>');
-  } else {
-    const result = spawnSync(prismaBin, ['dev', 'ls'], { encoding: 'utf8' });
-    console.error(result.stdout ?? '');
-    if (result.stderr) console.error(result.stderr);
+  console.error(`\n--- postgres-main databases (app ${APP_NAME}) ---`);
+  try {
+    console.error(JSON.stringify(await listPostgresDatabases(), null, 2));
+  } catch (error) {
+    console.error(
+      `<postgres-main listing unavailable: ${error instanceof Error ? error.message : String(error)}>`,
+    );
   }
   console.error('=== end diagnostics ===\n');
 }
@@ -709,8 +708,8 @@ main()
   .then(() => {
     process.exitCode = 0;
   })
-  .catch((error: unknown) => {
+  .catch(async (error: unknown) => {
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
-    dumpDiagnostics();
+    await dumpDiagnostics();
     process.exitCode = 1;
   });
