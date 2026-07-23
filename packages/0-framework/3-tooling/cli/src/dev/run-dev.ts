@@ -7,13 +7,10 @@
  */
 import * as path from 'node:path';
 import type { RunAssembler } from '@internal/assemble';
-import type {
-  ContainerInstance,
-  DevAttachment,
-  ExtensionDescriptor,
-  PrismaAppConfig,
-} from '@internal/core/config';
-import { containerEnv, DEV_DIR, isBuildOnlyExtension } from '@internal/core/config';
+import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
+import { containerEnv } from '@internal/core/config';
+import type { DevAttachment, DevExtensionDescriptor } from '@internal/core/dev';
+import { DEV_DIR, resolveDevDescriptors } from '@internal/core/dev';
 import { CliError } from '../cli-error.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { type RunAlchemyInput, runAlchemy } from '../run-alchemy.ts';
@@ -38,22 +35,6 @@ function toCliError(error: unknown): CliError {
   return error instanceof CliError
     ? error
     : new CliError(error instanceof Error ? error.message : String(error));
-}
-
-/** Every configured extension that participates in dev (build-only extensions are exempt — ADR-0041). */
-function devParticipants(config: PrismaAppConfig): readonly ExtensionDescriptor[] {
-  return config.extensions.filter((extension) => !isBuildOnlyExtension(extension));
-}
-
-function checkDevCapability(config: PrismaAppConfig): void {
-  for (const extension of devParticipants(config)) {
-    if (extension.dev === undefined) {
-      throw new CliError(
-        `extension "${extension.id}" has no local dev support (no \`dev\` descriptor) — remove ` +
-          'it from prisma-composer.config.ts or update it.',
-      );
-    }
-  }
 }
 
 /** `[dev] ready:` then one line per endpoint, ordered by address depth (fewest dots first) then lexicographic. Exported for tests. */
@@ -138,17 +119,22 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
     pipelineDeps,
   );
 
-  // 2. Dev-capability check — every non-build-only extension declares `dev`.
-  checkDevCapability(config);
-  const participants = devParticipants(config);
+  // 2. Dev-capability check — resolve every non-build-only extension's lazy
+  // `dev` thunk ONCE (ADR-0041's lazy dev reference); its pinned error names
+  // any extension without dev support, and build-only extensions are exempt
+  // inside it. Every subsequent hook call runs off this resolved map.
+  let resolved: ReadonlyMap<string, DevExtensionDescriptor>;
+  try {
+    resolved = await resolveDevDescriptors(config);
+  } catch (error) {
+    throw toCliError(error);
+  }
 
   // 3. Containers — purely local, resolved before anything else can fail.
   const containers = new Map<string, ContainerInstance>();
-  for (const extension of participants) {
-    const dev = extension.dev;
-    if (dev === undefined) continue; // checkDevCapability already proved this can't happen
+  for (const [id, dev] of resolved) {
     try {
-      containers.set(extension.id, await dev.container.ensure({ appName: name, stage: undefined }));
+      containers.set(id, await dev.container.ensure({ appName: name, stage: undefined }));
     } catch (error) {
       throw toCliError(error);
     }
@@ -156,11 +142,10 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
 
   // 4. `--fresh`: teardown every participant's dev instance, then continue cold.
   if (args.fresh) {
-    for (const extension of participants) {
-      const dev = extension.dev;
-      if (dev?.teardown === undefined) continue;
+    for (const [id, dev] of resolved) {
+      if (dev.teardown === undefined) continue;
       try {
-        await dev.teardown({ container: containers.get(extension.id), stage: undefined });
+        await dev.teardown({ container: containers.get(id), stage: undefined });
       } catch (error) {
         throw toCliError(error);
       }
@@ -168,22 +153,20 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   }
 
   // 5. Preflight — always (dev has no deploy/destroy split).
-  for (const extension of participants) {
-    const dev = extension.dev;
-    if (dev?.preflight === undefined) continue;
+  for (const [id, dev] of resolved) {
+    if (dev.preflight === undefined) continue;
     try {
-      await dev.preflight({ graph, container: containers.get(extension.id), stage: undefined });
+      await dev.preflight({ graph, container: containers.get(id), stage: undefined });
     } catch (error) {
       throw toCliError(error);
     }
   }
 
   // 6. Emulators — ensure the daemons this topology's node kinds need.
-  for (const extension of participants) {
-    const dev = extension.dev;
-    if (dev?.emulators === undefined) continue;
+  for (const [id, dev] of resolved) {
+    if (dev.emulators === undefined) continue;
     try {
-      await dev.emulators({ graph, container: containers.get(extension.id), devDir });
+      await dev.emulators({ graph, container: containers.get(id), devDir });
     } catch (error) {
       throw toCliError(error);
     }
@@ -218,12 +201,19 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   const firstStatus = converge();
   if (firstStatus !== 0) return firstStatus;
 
-  // 8. Attach: endpoints, merged logs, print the front door.
+  // 8. Attach: start every stopped service (session resume — a no-op converge
+  // cannot restart what a previous session's Ctrl-C stopped), then print the
+  // front door and pump merged logs.
   const attachments: DevAttachment[] = [];
-  for (const extension of participants) {
-    const dev = extension.dev;
-    if (dev === undefined) continue;
-    attachments.push(await dev.attach({ container: containers.get(extension.id), devDir }));
+  for (const [id, dev] of resolved) {
+    attachments.push(await dev.attach({ container: containers.get(id), devDir }));
+  }
+  for (const attachment of attachments) {
+    try {
+      await attachment.startServices();
+    } catch (error) {
+      throw toCliError(error);
+    }
   }
   printFrontDoor(await mergedEndpoints(attachments));
 
