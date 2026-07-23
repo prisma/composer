@@ -343,7 +343,7 @@
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/dev/**",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/local-target/**",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"
