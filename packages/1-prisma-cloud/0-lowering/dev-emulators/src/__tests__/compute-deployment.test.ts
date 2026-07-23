@@ -7,11 +7,13 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { computeClient, type ServiceInfo } from '../client.ts';
-import { stopDaemon } from '../daemon.ts';
+import { isPidAlive, stopDaemon } from '../daemon.ts';
 import {
   CRASHING_BOOTSTRAP,
   ensureFreshDaemon,
   servingBootstrap,
+  skipContendedServicePorts,
+  sleep,
   tempDir,
   waitFor,
   waitForHttp,
@@ -25,6 +27,11 @@ beforeEach(async () => {
   registryRoot = tempDir('compute-deploy-registry');
   const { url } = await ensureFreshDaemon('compute', registryRoot);
   daemonUrl = url;
+  // The fixtures below actually bind their reserved port (Bun.serve) —
+  // steer past any low service port a process outside this test's control
+  // already holds, the same class of shared-machine contention the
+  // daemon-port retry feature addresses one layer down.
+  await skipContendedServicePorts(computeClient({ registryRoot }));
 });
 
 afterEach(async () => {
@@ -242,6 +249,64 @@ describe('crash supervision', () => {
     const res = await waitForHttp(`http://127.0.0.1:${String(reserved.port)}`, 3000);
     expect(await res.text()).toBe('recovered');
   }, 30_000);
+});
+
+describe('stop truthfulness', () => {
+  test('a child that ignores SIGTERM is only listed stopped once SIGKILL has actually landed', async () => {
+    const client = computeClient({ registryRoot });
+    const artifactDir = writeBootstrap(
+      "process.on('SIGTERM', () => {});\n" + servingBootstrap('stubborn'),
+    );
+    const reserved = await client.ensureService('app-i', 'stubborn');
+
+    await client.putDeployment('app-i', 'stubborn', {
+      address: 'app-i.stubborn',
+      artifactDir,
+      artifactHash: 'h',
+      env: baseEnv({ PORT: String(reserved.port) }),
+      port: reserved.port,
+    });
+    await waitFor(
+      async () => (await deployedService('app-i', 'stubborn')).status === 'running',
+      5000,
+    );
+    const pid = (await deployedService('app-i', 'stubborn')).pid;
+    if (pid === undefined) throw new Error('expected the running service to report a pid');
+    // `running` flips as soon as the child is spawned (spec: spawning IS
+    // the observable action), before the child has actually finished
+    // executing its own `process.on('SIGTERM', ...)` line — wait for the
+    // server to actually answer, so the SIGTERM sent below truly lands
+    // after the handler is installed, not racing bun's own startup.
+    await waitForHttp(`http://127.0.0.1:${String(reserved.port)}`, 3000);
+
+    // Poll the listing concurrently with the in-flight stop request: the
+    // moment it ever reports `stopped`, the pid it just reported must
+    // already be genuinely dead — never a state the listing predicted
+    // ahead of the real OS process.
+    let sawStoppedBeforeDeath = false;
+    const watcher = (async () => {
+      for (;;) {
+        const svc = await deployedService('app-i', 'stubborn');
+        if (svc.status === 'stopped') {
+          if (isPidAlive(pid)) sawStoppedBeforeDeath = true;
+          return;
+        }
+        await sleep(25);
+      }
+    })();
+
+    const stopStart = Date.now();
+    await client.stopApp('app-i');
+    const stopElapsedMs = Date.now() - stopStart;
+    await watcher;
+
+    expect(sawStoppedBeforeDeath).toBe(false);
+    expect(isPidAlive(pid)).toBe(false);
+    // A SIGTERM-ignoring child only dies on SIGKILL, after the full pinned
+    // grace period — confirms the stop actually waited it out rather than
+    // reporting success early.
+    expect(stopElapsedMs).toBeGreaterThanOrEqual(4900);
+  }, 15_000);
 });
 
 describe('log follow', () => {

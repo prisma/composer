@@ -10,6 +10,7 @@ import { ensureDaemon, stopDaemon } from '../daemon.ts';
 import {
   ensureFreshDaemon,
   servingBootstrap,
+  skipContendedServicePorts,
   tempDir,
   waitFor,
   waitForHttp,
@@ -21,6 +22,11 @@ let registryRoot: string;
 beforeEach(async () => {
   registryRoot = tempDir('compute-multi-app-registry');
   await ensureFreshDaemon('compute', registryRoot);
+  // The "serving" tests actually bind their reserved port (Bun.serve) —
+  // steer past any low service port a process outside this test's control
+  // already holds, the same class of shared-machine contention the
+  // daemon-port retry feature addresses one layer down.
+  await skipContendedServicePorts(computeClient({ registryRoot }));
 });
 
 afterEach(async () => {

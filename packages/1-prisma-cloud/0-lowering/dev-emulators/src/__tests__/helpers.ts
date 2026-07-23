@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { ComputeClient } from '../client.ts';
 import { type DaemonName, ensureDaemon } from '../daemon.ts';
 
 export function tempDir(prefix: string): string {
@@ -63,14 +64,30 @@ export async function waitForHttp(url: string, timeoutMs: number): Promise<Respo
 
 const DEFAULT_MIN_PORT = 4300;
 
-function isPortFree(port: number): Promise<boolean> {
+function canBind(port: number, host: string): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = http.createServer();
     probe.once('error', () => resolve(false));
-    probe.listen(port, '127.0.0.1', () => {
+    probe.listen(port, host, () => {
       probe.close(() => resolve(true));
     });
   });
+}
+
+/**
+ * A process already bound to `0.0.0.0` (all interfaces — e.g. `Bun.serve`'s
+ * own default, unlike this package's own daemons, which always bind
+ * `127.0.0.1` explicitly) does not stop a SEPARATE, narrower `127.0.0.1`
+ * bind on the same port from succeeding — the two sockets coexist, and
+ * which one actually receives an incoming request becomes ambiguous. A
+ * port only counts as free here when NEITHER bind scope is already taken.
+ */
+async function isPortFree(port: number): Promise<boolean> {
+  const [loopback, wildcard] = await Promise.all([
+    canBind(port, '127.0.0.1'),
+    canBind(port, '0.0.0.0'),
+  ]);
+  return loopback && wildcard;
 }
 
 /** The first genuinely free port at or above `startFrom` — a shared machine may have unrelated processes already bound near the default port range. */
@@ -107,4 +124,25 @@ export async function ensureFreshDaemon(
     );
   }
   return ensureDaemon(name, { registryRoot });
+}
+
+const DEFAULT_MIN_SERVICE_PORT = 3000;
+
+/**
+ * Reserves dummy services on a fresh Compute daemon to push every REAL
+ * service this test reserves afterward past any port near the default
+ * service range already bound by a process outside this test's control —
+ * unlike the daemon-registry case, a service's port is only chosen (never
+ * verified against the real OS) at reservation time, so a service that
+ * lands on a contended port fails to bind only once something actually
+ * tries to `Bun.serve()` there.
+ */
+export async function skipContendedServicePorts(
+  client: Pick<ComputeClient, 'ensureService'>,
+  minPort: number = DEFAULT_MIN_SERVICE_PORT,
+): Promise<void> {
+  const freePort = await findFreePort(minPort);
+  for (let i = 0; i < freePort - minPort; i++) {
+    await client.ensureService('port-skip', `dummy-${String(i)}`);
+  }
 }
