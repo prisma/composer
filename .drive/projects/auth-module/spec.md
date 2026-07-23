@@ -485,9 +485,12 @@ Pinned option values:
   text ids, matching the pack's `text` columns; pinned by a unit test).
 - Plugins, in order: `jwt({ jwt: { expirationTime: '15m' }, jwks: {} })`
   (EdDSA/Ed25519 default; `/api/auth/jwks` default path; default
-  `definePayload` — full user object; consumers read only the § contract
-  claims), `bearer()`, `admin()`, `magicLink({ sendMagicLink: <cb>,
-  expiresIn: 300, disableSignUp: false })`.
+  `definePayload: ({ user, session }) => ({ ...user, sid: session.id })` —
+  the default full-user shape plus the one claim the verifier contract
+  requires; 1.6.24's default payload carries NO session claim, so a plain
+  default would make every token fail `sid` extraction (amended
+  2026-07-23, D5)), `bearer()`, `admin()`, `magicLink({ sendMagicLink:
+  <cb>, expiresIn: 300, disableSignUp: false })`.
 
 S1 (pre-email): the three send callbacks log
 `auth: email delivery not wired (slice S2): <purpose> for <email>` and
