@@ -33,6 +33,7 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.97",
     "@effect/platform-node": "4.0.0-beta.92",
+    "@internal/dev-emulators": "workspace:0.2.0",
     "@prisma-next/cli": "0.16.0",
     "@prisma-next/config-loader": "0.16.0",
     "@prisma-next/contract": "0.16.0",

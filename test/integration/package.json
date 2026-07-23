@@ -12,6 +12,8 @@
     "@prisma/composer-prisma-cloud": "workspace:0.2.0",
     "@types/bun": "^1.3.13",
     "@types/node": "^25.9.3",
+    "alchemy": "2.0.0-beta.59",
+    "prisma": "7.9.0",
     "typescript": "^6.0.3"
   }
 }

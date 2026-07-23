@@ -784,5 +784,50 @@ friction #3's shape) and independently useful.
 
 ## Open questions
 
-(none — a gap found during implementation is recorded here and raised, not
-improvised around)
+- **S4 — `mergedDevProviders` throws for build-only extensions, which are
+  required in the SAME config `lower()`'s dev path consumes.** § 3 pins:
+  "an extension with `dev === undefined` throws ... `extension "<id>" has no
+  dev support`" — unconditionally, for every entry in `config.extensions`,
+  with no carve-out. `@prisma/composer/node`'s `nodeBuild()` extension (and
+  presumably `nodeBuild`/`nextjsBuild` generally) is build-only: it declares
+  `{ id, nodes: { node: { kind: 'build', assemble } } }` and nothing else —
+  no `providers`, no `container`, no `application`. It cannot sensibly
+  implement `DevDescriptor.attach` (non-optional): "the dev session's view
+  of the running app" has no meaning for an extension that owns no
+  resources or services.
+
+  Confirmed live: a fixture config `{ extensions: [prismaCloud(), nodeBuild()],
+  state: prismaState() }` — the exact shape `prisma-composer.config.ts` needs
+  today for `deploy`'s assemble step to route through
+  `config.extensions[build.extension].nodes[build.type]` — passed to
+  `lower(app, config, { dev: true, ... })` fails immediately:
+  `LowerError: extension "@prisma/composer/node" has no dev support — it
+  declares no \`dev\` descriptor (ADR-0041).` `mergedProviders` (deploy) does
+  not have this problem — it skips an extension with no `.providers` rather
+  than throwing (`extension.providers !== undefined ? [...] : []`).
+
+  Because local-dev.md's own pipeline table says dev's Config step is
+  "identical" to deploy's (the SAME `prisma-composer.config.ts`, needed for
+  the SAME assemble routing — D9), this is not a fixture-only quirk: ANY
+  real app that configures a build-only extension alongside a
+  provider-bearing one — which is every app, since `nodeBuild()`/
+  `nextjsBuild()` are how a compute service's `build` routes at all — would
+  hit this in a real `prisma-composer dev` session, not just in a
+  synthetic test.
+
+  Not resolved here: whether `mergedDevProviders` should skip an extension
+  with no `.providers` the same way `mergedProviders` does (mirroring the
+  "like mergedProviders" framing literally, but weakening the pinned
+  unconditional-throw wording), whether build-only extensions must grow a
+  trivial `.dev` shape (and what `attach` would even return for one), or
+  something else. Implemented exactly as pinned in `core/deploy.ts`
+  (`mergedDevProviders` throws unconditionally, no `.providers`-presence
+  exemption) — not weakened to work around this. The S4 integration test
+  sidesteps it by giving the DEV STACK FILE a config that omits
+  `nodeBuild()` (confirmed safe: `lower()`'s own node-lowering loop never
+  reads a service's `build.extension`, only `descriptorFor`'s lookup via the
+  node's own `.extension` field — the build registry is consulted only by
+  `assembleServices`, a CLI/tooling-level concern outside `lower()`
+  entirely) — a test-side-only workaround; the CLI's own dev pipeline (S5)
+  will hit this for real unless S5 resolves it, or this question is
+  answered first.
