@@ -19,6 +19,7 @@
     "@internal/core": "workspace:0.2.0",
     "@internal/foundation": "workspace:0.2.0",
     "c12": "^3.3.4",
+    "chokidar": "^4.0.3",
     "clipanion": "^3.2.1"
   },
   "devDependencies": {

@@ -1,25 +1,24 @@
 /**
  * Local-dev spec § 6 `watch.ts`: watches each assembled bundle's declared
  * `watch` paths (a directory watched recursively, a file watched plainly),
- * debounced 300 ms and coalesced across every service into one callback —
- * one edit across several files/services still fires exactly one rebuild.
+ * debounced 300 ms and coalesced across every service — one edit across
+ * several files/services still fires exactly one rebuild.
  *
- * `Bundle` on this branch does not yet declare an optional `watch` field
- * (spec § 3 — landing in the S2 slice, a sibling of this one; see
- * `.drive/projects/local-dev/spec.md`'s Open Questions). This module reads
- * it defensively through a locally-declared structural extension so it is
- * fully wired the moment a bundle actually carries one; today every bundle
- * takes the pinned "not watched" fallback.
+ * The watch ENGINE is `chokidar` v4 (operator decision, design tip 74272d8:
+ * don't-reinvent-the-wheel beats the no-new-deps contract here — chokidar
+ * absorbs the atomic-rename/inode-swap class this module used to hand-fix
+ * with a parent-directory workaround, plus the cross-platform
+ * recursive-watch differences; v4 is pure JS, no native code, no glob
+ * surface — irrelevant here anyway, since every target is a literal file or
+ * directory path, never a pattern). The debounce stays OURS: chokidar's own
+ * `awaitWriteFinish` is a per-file "has this file's size stopped changing"
+ * poll, a different semantic from "coalesce a burst across many files into
+ * one callback," which is what the dev loop actually needs.
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
 import type { Bundle } from '@internal/core/deploy';
-import { blindCast } from '@internal/foundation/casts';
+import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 
 const DEBOUNCE_MS = 300;
-
-/** The optional core field this branch's `Bundle` doesn't declare yet — see this module's doc comment. */
-type WatchableBundle = Bundle & { readonly watch?: readonly string[] };
 
 export interface WatchTarget {
   readonly address: string;
@@ -34,11 +33,7 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
   const targets: WatchTarget[] = [];
   const unwatchable: string[] = [];
   for (const [address, bundle] of Object.entries(bundles)) {
-    const watchable = blindCast<
-      WatchableBundle,
-      "core's Bundle doesn't declare `watch` on this branch yet (spec § 3, S2 slice); reading it defensively is safe — an absent field is exactly the pinned 'not watched' fallback this code already handles"
-    >(bundle);
-    const paths = watchable.watch;
+    const paths = bundle.watch;
     if (paths === undefined || paths.length === 0) {
       unwatchable.push(address);
       continue;
@@ -49,13 +44,14 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
 }
 
 /**
- * Watches every target's paths, debounced 300 ms and coalesced across every
- * service, invoking `onChange` once per burst. Returns a stop function.
- * Silently skips a path that no longer exists on disk (nothing to watch).
+ * Watches every target's paths via chokidar, debounced 300 ms and coalesced
+ * across every service, invoking `onChange` once per burst. Returns a stop
+ * function. A path that doesn't exist on disk is simply never reported by
+ * chokidar (nothing to watch) — no explicit existence check needed, unlike
+ * the old `fs.watch`-based implementation.
  */
 export function startWatch(targets: readonly WatchTarget[], onChange: () => void): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const watchers: fs.FSWatcher[] = [];
 
   const trigger = (): void => {
     if (timer !== undefined) clearTimeout(timer);
@@ -65,39 +61,12 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
     }, DEBOUNCE_MS);
   };
 
-  for (const target of targets) {
-    for (const watchPath of target.paths) {
-      let stat: fs.Stats;
-      try {
-        stat = fs.statSync(watchPath);
-      } catch {
-        continue;
-      }
-      if (stat.isDirectory()) {
-        watchers.push(fs.watch(watchPath, { recursive: true }, () => trigger()));
-        continue;
-      }
-      // A FILE target is watched via its PARENT directory, filtered to its
-      // own basename — not `fs.watch(watchPath)` directly. A build that
-      // replaces the file via delete+recreate or an atomic rename (both
-      // common — `rm -rf dist && bun build --outfile`, or any writer that
-      // writes to a temp path and renames over the target) changes the
-      // underlying inode; a watch bound to the original file's inode goes
-      // silently dead after that first replacement and never fires again.
-      // Watching the directory survives every rebuild, no matter how the
-      // build tool replaces the file.
-      const dir = path.dirname(watchPath);
-      const base = path.basename(watchPath);
-      watchers.push(
-        fs.watch(dir, { recursive: false }, (_event, filename) => {
-          if (filename === null || filename === base) trigger();
-        }),
-      );
-    }
-  }
+  const allPaths = targets.flatMap((target) => target.paths);
+  const watcher: FSWatcher = chokidarWatch(allPaths, { ignoreInitial: true });
+  watcher.on('all', () => trigger());
 
   return () => {
     if (timer !== undefined) clearTimeout(timer);
-    for (const watcher of watchers) watcher.close();
+    void watcher.close();
   };
 }
