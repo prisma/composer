@@ -98,10 +98,18 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
     }
   }
 
+  // An 'error' emitted with no listener throws and would take the whole dev
+  // session down — a watch error (EMFILE, a vanished directory) is worth a
+  // line, not the process.
+  const reportError = (error: unknown): void => {
+    console.error(`[dev] watch error: ${error instanceof Error ? error.message : String(error)}`);
+  };
+
   const watchers: FSWatcher[] = [];
   if (directoryRoots.size > 0) {
     const directoryWatcher = chokidar.watch([...directoryRoots], { ignoreInitial: true });
     directoryWatcher.on('all', () => trigger());
+    directoryWatcher.on('error', reportError);
     watchers.push(directoryWatcher);
   }
   if (parentRoots.size > 0) {
@@ -109,6 +117,7 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
     parentWatcher.on('all', (_event, eventPath) => {
       if (fileTargets.has(path.resolve(eventPath))) trigger();
     });
+    parentWatcher.on('error', reportError);
     watchers.push(parentWatcher);
   }
 
