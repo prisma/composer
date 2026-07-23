@@ -591,7 +591,12 @@ app+database, so the ghost is ours: adopt the live server when the
 refusal carries one (`ServerAlreadyRunningError.server`, duck-typed),
 otherwise clear the dead state entry (internal state `deleteServer`) and
 retry. Concurrent ensures for the same instance coalesce onto one
-in-flight start; the
+in-flight start. The daemon installs process-level
+unhandledRejection/uncaughtException guards (log credential-masked into
+its registry log, keep serving): it hosts `@prisma/dev`'s runtime
+in-process, and one attempt's abandoned background work must not kill a
+machine-shared daemon — request paths still surface their own errors as
+500s; the
 `@prisma/dev` module is imported from the CALLER-RESOLVED path so the app
 owns the version) → `{ "url": string }`, idempotent; `GET
 /apps/<app>/databases` → listing; `DELETE /apps/<app>` → close the app's
