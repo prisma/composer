@@ -591,7 +591,17 @@ app+database, so the ghost is ours: adopt the live server when the
 refusal carries one (`ServerAlreadyRunningError.server`, duck-typed),
 otherwise clear the dead state entry (internal state `deleteServer`) and
 retry. Concurrent ensures for the same instance coalesce onto one
-in-flight start. The daemon installs process-level
+in-flight start. REVISED (post-#164 CI evidence, PR #167): the
+"already running" refusal is thrown only on ELOCKED — a LIVE process
+holds the server's state lock — so recovery is ADOPT-ONLY with bounded
+patience for a mid-boot holder; nothing on that path may delete server
+state or data (the deleted-data recovery wiped a migrated schema and
+crashed the daemon natively). And because in-daemon servers' persisted
+state records the DAEMON's own pid, `deleteServer` (whose kill path
+targets that pid while the state claims live) may only run after
+`getServerStatus` confirms a close has settled; if it never settles,
+teardown leaves the data in place rather than risk a self-kill. The
+daemon installs process-level
 unhandledRejection/uncaughtException guards (log credential-masked into
 its registry log, keep serving): it hosts `@prisma/dev`'s runtime
 in-process, and one attempt's abandoned background work must not kill a
