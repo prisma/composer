@@ -25,4 +25,6 @@ export {
   sessionRecord,
   userRecord,
 } from '../contract.ts';
+export type { AuthProxyTarget } from '../proxy.ts';
+export { authProxy } from '../proxy.ts';
 export { authService } from './auth-service.ts';
