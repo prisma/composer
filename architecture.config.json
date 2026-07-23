@@ -121,6 +121,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/0-lowering/dev-emulators/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "control"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/control/**",
       "domain": "prisma-cloud",
       "layer": "extensions",

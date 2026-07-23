@@ -45,6 +45,15 @@
       "@internal/s3-protocol": [
         "./packages/1-prisma-cloud/0-lowering/s3-protocol/src/exports/index.ts"
       ],
+      "@internal/dev-emulators/compute-main": [
+        "./packages/1-prisma-cloud/0-lowering/dev-emulators/src/exports/compute-main.ts"
+      ],
+      "@internal/dev-emulators/buckets-main": [
+        "./packages/1-prisma-cloud/0-lowering/dev-emulators/src/exports/buckets-main.ts"
+      ],
+      "@internal/dev-emulators": [
+        "./packages/1-prisma-cloud/0-lowering/dev-emulators/src/exports/index.ts"
+      ],
       "@internal/prisma-cloud/control": [
         "./packages/1-prisma-cloud/1-extensions/target/src/exports/control.ts"
       ],
