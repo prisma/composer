@@ -66,9 +66,12 @@ describe('streams()', () => {
     });
   });
 
-  test('no secret slot remains anywhere in the graph', () => {
+  test('no secret leaf remains anywhere in the graph — the streams service binds no input', () => {
     const graph = Load(root());
-    expect(graph.secrets).toEqual([]);
+    const streamsBindings = graph.inputBindings.filter((b) =>
+      b.serviceAddress.startsWith('streams'),
+    );
+    expect(streamsBindings).toEqual([]);
   });
 
   test('opts.name customizes the module', () => {

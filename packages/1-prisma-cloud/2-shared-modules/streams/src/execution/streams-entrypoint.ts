@@ -10,7 +10,6 @@ import { streamsService } from '../streams-service.ts';
 const service = streamsService();
 
 const { store } = service.load();
-const { port } = service.config();
 
 // The bearer key is minted per streams module by the target's registered
 // provisioner and stashed here as a reserved provider param (ADR-0031/
@@ -47,7 +46,8 @@ if (typeof parsed !== 'string' || parsed.length === 0) {
 }
 const apiKey = parsed;
 process.env['API_KEY'] = apiKey;
-process.env['PORT'] = String(port);
+// PORT is already set by compute's run() (and bootstrapService) before this
+// entry boots (ADR-0041 removed config()); the streams server binds it itself.
 // Bind beyond loopback so the Compute router can reach the server.
 process.env['DS_HOST'] ??= '0.0.0.0';
 // The container home dir has almost no writable space; keep the hot tier on
