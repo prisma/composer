@@ -157,6 +157,51 @@ function portConflictOf(err: unknown, ports: readonly number[]): number | undefi
   return typeof port === 'number' && ports.includes(port) ? port : undefined;
 }
 
+function isPrismaDevServer(value: unknown): value is PrismaDevServer {
+  if (!isStringKeyedRecord(value) || typeof value['close'] !== 'function') return false;
+  const database = value['database'];
+  return isStringKeyedRecord(database) && typeof database['connectionString'] === 'string';
+}
+
+/**
+ * The live server behind a "name is already running" refusal, when there is
+ * one. A start that fails mid-boot (e.g. on a port another server's
+ * registry claims) can leave its state entry behind, so OUR OWN next
+ * attempt for the same name is refused. `@prisma/dev`'s
+ * `ServerAlreadyRunningError` carries the running server as a `.server`
+ * getter (duck-typed — `instanceof` fails across the dynamic-import
+ * boundary); its parent class (state entry exists but nothing actually
+ * runs) has no such getter, and a dead ghost resolves to null — both mean
+ * "nothing to adopt".
+ */
+async function adoptableServerOf(err: unknown): Promise<PrismaDevServer | undefined> {
+  if (!isStringKeyedRecord(err) || !('server' in err)) return undefined;
+  if (err['name'] !== 'ServerAlreadyRunningError') return undefined;
+  try {
+    const server: unknown = await err['server'];
+    return isPrismaDevServer(server) ? server : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isNameAlreadyTaken(err: unknown): boolean {
+  return (
+    isStringKeyedRecord(err) &&
+    (err['name'] === 'ServerAlreadyRunningError' || err['name'] === 'ServerStateAlreadyExistsError')
+  );
+}
+
+/** The port of a postgres connection URL, when it parses as one. */
+function databasePortOf(connectionString: string): number | undefined {
+  try {
+    const port = Number(new URL(connectionString).port);
+    return Number.isInteger(port) && port > 0 ? port : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A dynamic `import()` failure's own message routinely names a SECOND path
  * (e.g. bun's "Cannot find module '<target>' from '<importer>'") — the
@@ -367,13 +412,31 @@ function main(): void {
     return { httpPort, shadowDatabasePort, streamsPort };
   }
 
-  async function ensureDatabase(
+  const inflightEnsures = new Map<string, Promise<{ url: string }>>();
+
+  /** Concurrent PUTs for the same database coalesce onto one start — a second `startPrismaDevServer` for a name whose first start is still booting fails as "already running". */
+  function ensureDatabase(
     app: string,
     id: string,
     prismaDevModulePath: string,
   ): Promise<{ url: string }> {
-    const appRec = getOrCreateApp(app);
     const instanceName = instanceNameFor(app, id);
+    const inflight = inflightEnsures.get(instanceName);
+    if (inflight) return inflight;
+    const run = ensureDatabaseSerialized(app, id, prismaDevModulePath, instanceName).finally(() => {
+      inflightEnsures.delete(instanceName);
+    });
+    inflightEnsures.set(instanceName, run);
+    return run;
+  }
+
+  async function ensureDatabaseSerialized(
+    app: string,
+    id: string,
+    prismaDevModulePath: string,
+    instanceName: string,
+  ): Promise<{ url: string }> {
+    const appRec = getOrCreateApp(app);
     const existingRecord = appRec.databases[id];
 
     // Already live in THIS process — idempotent, nothing to do.
@@ -414,6 +477,31 @@ function main(): void {
         schedulePersist();
         return { url };
       } catch (err) {
+        if (isNameAlreadyTaken(err)) {
+          // Our own earlier attempt (this loop's, or a crashed run's) left the
+          // name behind — the name is namespaced to this app+database, so it
+          // is ours by construction. A live server is simply the goal already
+          // reached: adopt it. A dead state entry is cleared and the start
+          // retried.
+          const ghost = await adoptableServerOf(err);
+          if (ghost !== undefined) {
+            const url = ghost.database.connectionString;
+            runtimes.set(instanceName, ghost);
+            appRec.databases[id] = {
+              id,
+              instanceName,
+              databasePort: databasePortOf(url) ?? dbPort,
+              url,
+            };
+            schedulePersist();
+            return { url };
+          }
+          if (attempt < maxAttempts) {
+            const internalState = await importPrismaDevInternalState(prismaDevModulePath);
+            await internalState.deleteServer(instanceName);
+            continue;
+          }
+        }
         const conflictPort = portConflictOf(err, [
           dbPort,
           aux.httpPort,
