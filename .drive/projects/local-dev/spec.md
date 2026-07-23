@@ -59,6 +59,15 @@ by ADR-0041 and `@internal/local-target`:
   (`providers`/`container`/`preflight`/`emulators`/`attach`/`teardown`)
   and do not change. Every spec reference to the old names reads as the
   new ones; this section is the rename's single source of truth.
+- Internal directory names too (operator review of #162, 2026-07-23:
+  "Why is dev in the filepath again?"): no `src/dev/` directories.
+  `@internal/local-target`'s implementation files sit flat at `src/`
+  (the package name already scopes them; the former single-file
+  `src/compute/` folds in as `src/artifact-extract.ts`), and the target
+  extension's implementation lives in `src/local-target/` (matching its
+  export subpath). `dev-store.ts` keeps its name — it is the store OF
+  the user-facing `.prisma-composer/dev/` directory. Spec references to
+  `src/dev/...` below read as these locations.
 
 ## New/changed surface, by package
 
