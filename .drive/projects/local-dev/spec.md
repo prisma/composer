@@ -39,6 +39,27 @@ construction above the Alchemy provider boundary.
 | D11 | Hot reload / user dev-commands / remote bindings: designed extensions, **not v1** | local-dev.md |
 | D12 | One dev instance per working directory; no stages; `--fresh` is wholesale local deletion, never `alchemy destroy` | local-dev.md |
 
+## Naming (operator, 2026-07-23): the seam is the LOCAL TARGET, not "dev"
+
+"dev" names the user-facing feature only — the `prisma-composer dev`
+command, the `[dev]` log prefix, the `.prisma-composer/dev/` state dir.
+The architectural seam uses the concept's real noun, already established
+by ADR-0041 and `@internal/local-target`:
+
+- `ExtensionDescriptor.localTarget?: () => Promise<LocalTargetDescriptor>`
+  (was `dev`); the descriptor type is `LocalTargetDescriptor` (was
+  `DevExtensionDescriptor`), its inputs `LocalTargetProvidersInput` etc.
+- Core subpath `@prisma/composer/local-target` (was `/dev`):
+  `resolveLocalTargets` (was `resolveDevDescriptors`),
+  `localTargetProviders` (was `devProviders`), `DEV_DIR` unchanged (it
+  names the user-facing dir).
+- Extension subpath `@prisma/composer-prisma-cloud/local-target` (was
+  `/dev`), exporting `localTargetDescriptor()`.
+- Hook names inside the descriptor are already precise nouns
+  (`providers`/`container`/`preflight`/`emulators`/`attach`/`teardown`)
+  and do not change. Every spec reference to the old names reads as the
+  new ones; this section is the rename's single source of truth.
+
 ## New/changed surface, by package
 
 ### 1. `@internal/s3-protocol` — NEW package (extraction)
