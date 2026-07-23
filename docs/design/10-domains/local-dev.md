@@ -88,7 +88,12 @@ implements itself: the hosted platform joins the branch's config variables
 into a deployment at version-create; locally, the `Deployment` provider
 performs the same join from the `EnvironmentVariable` records the lowering
 emitted — against props defined in this repo, once, not an emulation of a
-foreign API.
+foreign API. One pinned deviation: the local join is scoped to the
+service's own rows (plus the unprefixed poison rows), because the platform
+diffs a deployment only on its own referenced rows while an app-wide local
+snapshot diffs on bytes — which restart-amplified dependents on every
+first-after-cold converge. No sanctioned reader consumes sibling rows, so
+the scoping changes restart behavior only.
 
 ### Process lifetimes
 

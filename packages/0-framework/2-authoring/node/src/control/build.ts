@@ -40,7 +40,12 @@ function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
   );
 }
 
-/** What the author built, resolved: the path copied under `bundle/`, and where the entry lands inside it. */
+/**
+ * What the author built, resolved: the path copied under `bundle/`, and
+ * what `Bundle.watch` names for this form (ADR-0041) — the single-file form
+ * watches the entry file itself; the directory form watches the whole `dir`,
+ * since a rebuild may touch only a sibling the entry doesn't import.
+ */
 interface BuiltRunnable {
   /** The path copied verbatim under `bundle/` — the built directory, or the single built file. */
   readonly source: string;
@@ -73,11 +78,53 @@ function resolveFile(entrySpec: string, moduleDir: string): BuiltRunnable {
   };
 }
 
+/** The shared "dir contains symlinks" error, reused by both the root-is-a-symlink case and the nested-symlink walk below — one message shape, never two to drift apart. */
+function symlinksFoundError(dirPath: string, found: readonly string[]): Error {
+  const listed = found.slice(0, 5).join(', ');
+  return new Error(
+    `the build adapter's dir ("${dirPath}") contains symlinks, which the platform's packager ` +
+      `rejects: ${listed}${found.length > 5 ? `, and ${found.length - 5} more` : ''}. The tree is ` +
+      'copied verbatim, so make your build emit real files in dir (for example, a hoisted ' +
+      'node_modules, or dereference the links into dir with cp -RL).',
+  );
+}
+
+/**
+ * Compute's packager rejects symlinks, so a tree containing one cannot deploy.
+ * We fail here, naming the links, rather than dereferencing them on the copy:
+ * the artifact must be what the author's build produced (ADR-0005), and
+ * following a link that points outside `dir` would pull in files the author
+ * never named. The walk reads dirents (lstat semantics), so a symlinked
+ * directory is reported and never descended into. Checks only `dirPath`'s
+ * children — the caller (`resolveDir`) checks `dirPath` itself before this
+ * runs, since that check also decides "not a directory" vs "is a symlink"
+ * and must happen before any dereferencing stat.
+ */
+async function assertNoSymlinks(dirPath: string): Promise<void> {
+  const found: string[] = [];
+  const walk = async (current: string): Promise<void> => {
+    for (const entry of await fs.promises.readdir(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) found.push(full);
+      else if (entry.isDirectory()) await walk(full);
+    }
+  };
+  await walk(dirPath);
+
+  if (found.length > 0) throw symlinksFoundError(dirPath, found);
+}
+
 /**
  * The directory form: `dir` is the built tree, resolved against dirname(module)
  * (ADR-0004) and copied whole; `entry` resolves inside `dir` and names the file
  * that boots. An `entry` that resolves outside `dir` is rejected rather than
  * followed — only `dir` is ever copied.
+ *
+ * `dir` itself can be a symlink — not just something inside it. `lstat` it
+ * before anything else so that case hard-errors identically whether the link
+ * points at a real directory (which a dereferencing `stat` would otherwise
+ * accept as "is a directory") or at a file: neither is ever silently
+ * dereferenced and copied (ADR-0005).
  */
 async function resolveDir(
   dirSpec: string,
@@ -85,13 +132,20 @@ async function resolveDir(
   moduleDir: string,
 ): Promise<BuiltRunnable> {
   const dirPath = path.resolve(moduleDir, dirSpec);
-  if (!fs.existsSync(dirPath)) {
+
+  let dirLstat: fs.Stats;
+  try {
+    dirLstat = await fs.promises.lstat(dirPath);
+  } catch {
     throw new Error(
       `no built directory at ${dirPath} — run your build first (the build adapter's ` +
         `dir, "${dirSpec}", resolves against dirname(module)).`,
     );
   }
-  if (!fs.statSync(dirPath).isDirectory()) {
+  if (dirLstat.isSymbolicLink()) {
+    throw symlinksFoundError(dirPath, [dirPath]);
+  }
+  if (!dirLstat.isDirectory()) {
     throw new Error(
       `the build adapter's dir ("${dirPath}") is not a directory — drop dir to deploy a ` +
         'single built file, naming it as entry.',
@@ -120,35 +174,6 @@ async function resolveDir(
     entry: path.relative(dirPath, entryPath).split(path.sep).join('/'),
     copyInto: (bundleDir) => fs.promises.cp(dirPath, bundleDir, { recursive: true }),
   };
-}
-
-/**
- * Compute's packager rejects symlinks, so a tree containing one cannot deploy.
- * We fail here, naming the links, rather than dereferencing them on the copy:
- * the artifact must be what the author's build produced (ADR-0005), and
- * following a link that points outside `dir` would pull in files the author
- * never named. The walk reads dirents (lstat semantics), so a symlinked
- * directory is reported and never descended into.
- */
-async function assertNoSymlinks(dirPath: string): Promise<void> {
-  const found: string[] = [];
-  const walk = async (current: string): Promise<void> => {
-    for (const entry of await fs.promises.readdir(current, { withFileTypes: true })) {
-      const full = path.join(current, entry.name);
-      if (entry.isSymbolicLink()) found.push(full);
-      else if (entry.isDirectory()) await walk(full);
-    }
-  };
-  await walk(dirPath);
-
-  if (found.length === 0) return;
-  const listed = found.slice(0, 5).join(', ');
-  throw new Error(
-    `the build adapter's dir ("${dirPath}") contains symlinks, which the platform's packager ` +
-      `rejects: ${listed}${found.length > 5 ? `, and ${found.length - 5} more` : ''}. The tree is ` +
-      'copied verbatim, so make your build emit real files in dir (for example, a hoisted ' +
-      'node_modules, or dereference the links into dir with cp -RL).',
-  );
 }
 
 /**
@@ -209,7 +234,14 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   await runnable.copyInto(path.join(workDir, 'bundle'));
 
-  return { dir: workDir, entry: path.posix.join('bundle', runnable.entry) };
+  return {
+    dir: workDir,
+    entry: path.posix.join('bundle', runnable.entry),
+    // Single-file form: watch the entry file (== source). Directory form:
+    // watch the whole dir (== source too) — a rebuild may touch only a
+    // sibling of entry (ADR-0041).
+    watch: [runnable.source],
+  };
 }
 
 /** The node build extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */

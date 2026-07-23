@@ -114,6 +114,8 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(bundleApp, 'public', 'favicon.ico'))).toBe(true);
     // We never wrote into the user's build output.
     expect(fs.existsSync(path.join(root, '.next', 'standalone', 'main.mjs'))).toBe(false);
+    // Bundle.watch names the standalone output dir (ADR-0041).
+    expect(result.watch).toEqual([path.join(root, '.next', 'standalone')]);
   }, 20_000);
 
   test('standaloneServerPath locates the app server.js (the integration-test seam)', () => {
