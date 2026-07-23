@@ -1239,6 +1239,9 @@ importers:
 
   test/integration:
     devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1085.0
+        version: 3.1087.0
       '@prisma/composer':
         specifier: workspace:0.2.0
         version: link:../../packages/9-public/composer

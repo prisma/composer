@@ -377,6 +377,16 @@ async function main(): Promise<void> {
   bucketsPreExisting = readEmulatorEntry('buckets') !== undefined;
   postgresPreExisting = readEmulatorEntry('postgres') !== undefined;
 
+  // dev.preflight() (unlike every other dev hook here) computes its own
+  // state directory from `process.cwd()` rather than accepting one — every
+  // other call in this script is handed `devDir` explicitly (fixtureDir-
+  // based). This script runs from the package root (test/integration), not
+  // the fixture dir, so preflight must be run with cwd temporarily pointed
+  // at the fixture — otherwise its secrets.json write (S5's secret/env-param
+  // proof) lands somewhere this script never looks. Restored in `finally`.
+  const originalCwd = process.cwd();
+  process.chdir(fixtureDir);
+
   try {
     // 1. Construct the extension with NO PRISMA_* present — proves the
     // scrubbed-env construction requirement through the real factory.
@@ -413,10 +423,16 @@ async function main(): Promise<void> {
     // 4. Assemble both services (real build adapter, hand-written "built" entries).
     const bundles = await assembleFixture();
 
-    // 5. Preflight — this fixture binds no secrets/env-params; must be a no-op.
+    // 5. Preflight — the fixture's secret/env-param proof lives in the
+    // dedicated S5 script (local-dev-criteria-4-5.integration.ts), which
+    // deliberately runs WITHOUT these set; this script sets both so its own
+    // (unrelated) proofs keep passing regardless of shell state.
+    process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
+    process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
     if (dev.preflight !== undefined) {
       await dev.preflight({ graph, container: devContainer, stage: undefined });
     }
+    process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
     // an `s3`-kinded resource, postgres because the graph has a
@@ -492,12 +508,19 @@ async function main(): Promise<void> {
       'the deployed web child carries COMPOSER_WEB_PORT = the emulator-assigned port, JSON-encoded',
     );
 
-    // secrets.json: no secrets/params in this fixture, so it is either
-    // absent or empty — never populated.
-    const secrets = readJson(path.join(devDir, 'secrets.json'));
-    assert(
-      secrets === undefined || Object.keys(secrets as object).length === 0,
-      'secrets.json must be absent or empty for this fixture',
+    // secrets.json: the shell-sourced secret + env-param this run set above,
+    // verbatim (S5 addition — the placeholder/hard-error paths have their
+    // own dedicated script).
+    const secrets = readJson(path.join(devDir, 'secrets.json')) as Record<string, string>;
+    assertEqual(
+      secrets['LOCALDEV_FIXTURE_API_KEY'],
+      'test-api-key',
+      'secrets.json carries the shell-sourced secret',
+    );
+    assertEqual(
+      secrets['LOCALDEV_FIXTURE_GREETING'],
+      'hello',
+      'secrets.json carries the shell-sourced env-param',
     );
 
     // 11. The postgres-main daemon's own listing (REVISED — operator review
@@ -589,6 +612,7 @@ async function main(): Promise<void> {
 
     console.log('PASS: local dev (S4) integration proof');
   } finally {
+    process.chdir(originalCwd);
     await attachment?.stopServices().catch(() => undefined);
 
     // App-scoped teardown through the extension's own public

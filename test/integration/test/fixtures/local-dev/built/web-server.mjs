@@ -8,6 +8,7 @@
 // what the "changed artifact restarts exactly one service" proof edits
 // between converges.
 
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import node from '@prisma/composer/node';
 import { bucket, compute, postgres } from '@prisma/composer-prisma-cloud';
 
@@ -22,10 +23,26 @@ const VERSION = 'v1';
 const { port } = service.config();
 const { db, store } = service.load();
 
+// The bucket round-trip proof (S5, acceptance criterion 4): a real
+// @aws-sdk/client-s3 client against the bucket binding, exactly as
+// examples/bucket's blob app does.
+const s3 = new S3Client({
+  region: 'auto',
+  endpoint: store.url,
+  forcePathStyle: true,
+  credentials: { accessKeyId: store.accessKeyId, secretAccessKey: store.secretAccessKey },
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
+});
+
+async function collectBytes(body) {
+  return body.transformToByteArray();
+}
+
 Bun.serve({
   port,
   hostname: '0.0.0.0',
-  fetch(request) {
+  async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/health') {
       return Response.json({
@@ -40,6 +57,38 @@ Bun.serve({
         // inferring it indirectly from a successful bind.
         portEnv: process.env['COMPOSER_WEB_PORT'] ?? null,
       });
+    }
+    if (url.pathname.startsWith('/blobs/')) {
+      const key = decodeURIComponent(url.pathname.slice('/blobs/'.length));
+      if (key.length === 0) return new Response('missing key', { status: 400 });
+      if (request.method === 'PUT') {
+        const body = new Uint8Array(await request.arrayBuffer());
+        const contentType = request.headers.get('content-type') ?? 'application/octet-stream';
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: store.bucket,
+            Key: key,
+            Body: body,
+            ContentType: contentType,
+          }),
+        );
+        return Response.json({ key, size: body.byteLength }, { status: 201 });
+      }
+      if (request.method === 'GET') {
+        try {
+          const res = await s3.send(new GetObjectCommand({ Bucket: store.bucket, Key: key }));
+          const bytes = await collectBytes(res.Body);
+          return new Response(bytes, {
+            status: 200,
+            headers: { 'content-type': res.ContentType ?? 'application/octet-stream' },
+          });
+        } catch (error) {
+          const status = error?.$metadata?.httpStatusCode;
+          if (status === 404) return new Response('not found', { status: 404 });
+          throw error;
+        }
+      }
+      return new Response('method not allowed', { status: 405 });
     }
     return new Response('local-dev fixture: web', { status: 200 });
   },
