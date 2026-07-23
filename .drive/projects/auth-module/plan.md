@@ -102,6 +102,39 @@ taken at S3 pickup, with the platform team's multi-port answer in hand.
 
 ## Open items (recorded during S2, 2026-07-23)
 
+- **Pre-commit hooks never fire in most linked worktrees (repo-wide,
+  needs an operator decision).** The shared config sets a RELATIVE
+  `core.hooksPath = .husky/_`, which is what husky writes and works
+  per-checkout. But 8 of the 16 linked worktrees carry an ABSOLUTE
+  `core.hooksPath` in their `config.worktree`, pinned to the main
+  checkout — and `<main>/.husky/_` does not exist, so git finds no hook
+  and runs nothing. Verified empirically with a discarded empty commit.
+  Nobody bypassed anything; the checks were simply not wired. A single
+  `pnpm install` in the main checkout regenerates `<main>/.husky/_` and
+  restores pre-commit for all eight. Something in the worktree-creation
+  path writes that absolute override — husky would not. Worth fixing at
+  the source, not just regenerating.
+- **Two accounts of the published testing bundle disagree — resolve
+  before close-out.** The rework review recorded `externalizeEmailToSelf`
+  as applying to `dist/auth/testing.mjs`; the rebase implementer reports
+  that pass re-emits from an already-bundled artifact, so no
+  `@internal/email` specifier survives to rewrite and the testing bundle
+  carries its own copy of the email code. Both agree the behavior is
+  correct today (the identity check that matters happens through
+  `dist/auth/index.mjs`, which does externalize), so this is a question
+  of which description is accurate, not a defect. Settle it by reading
+  the built output before the claim is migrated into durable docs.
+- **Secret-slot key collisions after normalization (framework,
+  follow-up).** A service with sibling secret slots named `x` and
+  `x_MINTED` generates the same platform var name and Alchemy resource
+  id; separately `configKey` uppercases, so `foo` and `FOO` already
+  collide today. Unreachable from shipped code. Fix is one assertion that
+  a service's secret-slot keys stay distinct after normalization,
+  covering both classes — not a minted-specific guard.
+- **Both deployed smokes are stale.** Neither `examples/auth`'s S1 smoke
+  nor the S2 email smoke has run since the rework, which changed the
+  secret's resource identity. Re-run both before either PR merges.
+
 - **envParam value changes never reach running services (framework gap).**
   The Deployment lowering claims a new deployment "when any upstream value
   changes", but `EnvironmentVariable` attributes carry only `{id, key}` —
