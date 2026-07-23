@@ -10,6 +10,7 @@ describe('parseArgs() (clipanion-backed)', () => {
       name: undefined,
       stage: undefined,
       production: false,
+      fresh: false,
     });
   });
 
@@ -21,6 +22,7 @@ describe('parseArgs() (clipanion-backed)', () => {
         name: 'ci-run',
         stage: 'prod',
         production: false,
+        fresh: false,
       },
     );
     expect(parseArgs(['deploy', '--stage', 'prod', 'src/service.ts', '--name', 'ci-run'])).toEqual({
@@ -29,6 +31,7 @@ describe('parseArgs() (clipanion-backed)', () => {
       name: 'ci-run',
       stage: 'prod',
       production: false,
+      fresh: false,
     });
   });
 
@@ -39,6 +42,7 @@ describe('parseArgs() (clipanion-backed)', () => {
       name: undefined,
       stage: undefined,
       production: true,
+      fresh: false,
     });
   });
 
@@ -77,6 +81,37 @@ describe('parseArgs() (clipanion-backed)', () => {
       name: '',
       stage: undefined,
       production: false,
+      fresh: false,
     });
+  });
+
+  test('parses a bare dev invocation', () => {
+    expect(parseArgs(['dev', 'src/service.ts'])).toEqual({
+      command: 'dev',
+      entry: 'src/service.ts',
+      name: undefined,
+      stage: undefined,
+      production: false,
+      fresh: false,
+    });
+  });
+
+  test('parses dev --name and --fresh', () => {
+    expect(parseArgs(['dev', 'src/service.ts', '--name', 'ci-run', '--fresh'])).toEqual({
+      command: 'dev',
+      entry: 'src/service.ts',
+      name: 'ci-run',
+      stage: undefined,
+      production: false,
+      fresh: true,
+    });
+  });
+
+  test('throws UsageError when dev is passed --stage', () => {
+    expect(() => parseArgs(['dev', 'src/service.ts', '--stage', 'prod'])).toThrow(UsageError);
+  });
+
+  test('throws UsageError when dev is passed --production', () => {
+    expect(() => parseArgs(['dev', 'src/service.ts', '--production'])).toThrow(UsageError);
   });
 });
