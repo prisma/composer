@@ -155,6 +155,17 @@ plus the shared daemon layer and typed loopback clients.
   5. Foreign process on the port → same error; `--fresh` does NOT touch the
      daemons (they are machine-global, shared by other apps); recovering a
      stolen port is manual (delete the registry entry).
+- **Concurrent-ensure protocol:** the observe→spawn→persist critical
+  section is serialized ACROSS PROCESSES per daemon name with an atomic
+  directory lock: `mkdir <registryRoot>/.lock-<name>` (atomic creation IS
+  acquisition; the holder writes its pid to `<lockDir>/pid`). On `EEXIST`:
+  if the recorded holder pid is dead, remove the lock dir and retry
+  immediately; else poll every 250 ms up to 10 s, then
+  `Error: timed out waiting for another process ensuring the <name> emulator — remove <lockDir> if stale.`
+  After acquiring, RE-READ the registry before deciding to spawn — the
+  previous holder may have already done the job. Port allocation happens
+  inside the lock, so two daemons can never claim one port. Release
+  (rm the dir) in a finally.
 - `stopDaemon(name)`: SIGTERM/SIGKILL + registry cleanup. Not called by any
   v1 command — an operator escape hatch, exported for tests.
 - **Publish note (S5 scope):** `import.meta.resolve('@internal/dev-emulators/…')`
