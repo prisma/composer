@@ -714,6 +714,34 @@ a dependency binding's raw connection values, the general escape hatch that
 also retires the `configKey()` idiom. (a) serves this app best; (b) serves
 every app whose client the framework hasn't wrapped yet.
 
+### 15. No optional secret slots — credentials for an off-by-default feature can't live on the service node
+
+**Where hit:** nativization review. The four GitHub/Google OAuth variables
+are the only values left reading `process.env` in app code; everything else
+moved onto the service node.
+
+**Symptom.** open-chat shows a social sign-in provider on the auth screen
+exactly when that provider's credentials are present. Declaring those
+credentials as `secret()` slots makes them *required*: `secrets()` resolves
+every declared slot eagerly and one unbound or empty slot fails the whole
+call (finding #6's mechanism), taking guest sign-in down with it. So a
+feature that is legitimately off in a given deployment forces every operator
+to invent placeholder values — and a placeholder makes the app's
+"is this provider configured?" presence check read as configured.
+
+**Workaround.** The four variables stay plain `process.env` reads in
+`src/server/auth.ts`, with a comment naming this gap. Their delivery in a
+deployment would be hand-set platform env vars — the exact off-framework
+pattern the rest of the port eliminated.
+
+**Recommendation.** Optional secret slots: `secret({ optional: true })`
+typing its `secrets()` entry as `SecretString | undefined`, unbound (or
+bound to a platform var absent in that deploy) resolving to `undefined`
+instead of failing, required slots keeping today's eager all-or-nothing
+behavior. The deploy should report which optional slots resolved absent, so
+a typo'd variable name reads as a visible "absent" line rather than a
+silently disabled feature.
+
 ## Referenced elsewhere
 
 The following are recorded in the slice spec's "Chosen design" and
