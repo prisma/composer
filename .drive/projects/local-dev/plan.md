@@ -97,7 +97,10 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
   merged prefixed logs); `watch.ts` (debounced rebuild → re-assemble →
   re-converge; converge failure leaves the running app untouched);
   `--fresh`; Ctrl-C = `stopServices()` + exit; every error string from the
-  spec verbatim.
+  spec verbatim. Plus publish-safe daemon-entry resolution (spec § 2's
+  publish note): `ensureDaemon` takes the entry path; public daemon-entry
+  subpaths on `@prisma/composer-prisma-cloud`; the published dist resolves
+  its own daemons.
 - **Proves:** the spec's acceptance criteria 1–6 on `examples/store`,
   scripted as an integration test where feasible (bring-up, single-service
   restart on rebuild, warm restart after Ctrl-C with stable ports/URLs,

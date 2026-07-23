@@ -157,6 +157,13 @@ plus the shared daemon layer and typed loopback clients.
      stolen port is manual (delete the registry entry).
 - `stopDaemon(name)`: SIGTERM/SIGKILL + registry cleanup. Not called by any
   v1 command — an operator escape hatch, exported for tests.
+- **Publish note (S5 scope):** `import.meta.resolve('@internal/dev-emulators/…')`
+  resolves in-repo but not from the published bundle — `@internal/*` are
+  private workspace packages that npm consumers never receive. S5 changes
+  `ensureDaemon` to take the resolved `entry` path from its caller and adds
+  public daemon-entry subpaths on `@prisma/composer-prisma-cloud` that the
+  extension resolves against its own package, making the published dist
+  self-contained. Until then the in-repo resolution stands.
 
 #### `compute-main.ts` — the Compute emulator (subpath `/compute-main`)
 
@@ -331,6 +338,14 @@ and on `ExtensionDescriptor`:
   devDir })`; an extension with `dev === undefined` throws `LowerError` with
   message exactly:
   `extension "<id>" has no dev support — it declares no \`dev\` descriptor (ADR-0041).`
+  **Build-only exemption:** an extension participating in assembly only —
+  every `nodes` entry is `kind: 'build'` AND it declares none of
+  `providers`/`application`/`provisions`/`container` — has nothing to
+  emulate and is exempt: `mergedDevProviders` skips it silently, and every
+  dev hook iteration (containers, preflight, emulators, attach, teardown —
+  § 6) applies the same rule. Export the predicate as
+  `isBuildOnlyExtension(extension)` in `app-config.ts` so the CLI and
+  `mergedDevProviders` share one definition.
 - `lower()`: when `opts.dev === true`, use `mergedDevProviders(config,
   containers, path.join(process.cwd(), DEV_DIR))` — `containers` is the map
   `lower()` already deserializes from the env transport; state resolution is
@@ -367,9 +382,16 @@ registry (§ 2).
 
 #### `src/dev/compute.ts` — local compute cluster providers
 
-Every local provider factory takes `(input: DevProvidersInput)` — the app
-name is `prismaCloudContainerOf(input.container).input.appName`, `devDir` is
-`input.devDir`; nothing here reads `process.cwd()` or the environment.
+Every local provider factory takes `(input: DevProvidersInput)`; `devDir`
+is `input.devDir`; nothing here reads `process.cwd()` or the environment.
+Two layer-order accommodations are pinned (this package cannot import the
+extensions layer): the app name is read as `input.container.input.appName`
+directly off the generic `ContainerInstance` (the field is on the base
+interface; it is the same value `prismaCloudContainerOf` would yield), and
+the Deployment provider's env-key formula is an inline duplicate of the
+extensions-layer `configKey`, documented at both sites as a wire-protocol
+match. Giving these a shared home below both layers is recorded follow-up
+scope, not v1.
 
 - `LocalComputeServiceProvider(input)`: `reconcile` calls the Compute
   emulator — `PUT /apps/<app>/services/<news.name>` (idempotent) →
@@ -436,14 +458,11 @@ name is `prismaCloudContainerOf(input.container).input.appName`, `devDir` is
      run `<prisma-bin> dev start <instance>`; re-probe for up to 10 s.
      Still unreachable →
      `Error: the local Postgres instance "<instance>" did not come back on <host:port> — run \`prisma dev rm <instance>\` and retry (or \`prisma-composer dev --fresh\`).`
-  **Verification item (S4, before building on it):** confirm `prisma dev
-  start <name>` restores a stopped instance on its ORIGINAL port (the
-  recorded URL must stay valid — Alchemy attributes freeze it). If it does
-  not, the pinned fallback — do not design a third option — is to pass an
-  explicit `--db-port` at first create, allocated from a machine-global
-  `~/.prisma-composer/pg-ports.json` (smallest ≥ 5400 unused there), and
-  record it; escalate to the operator only if `--db-port` + `start` still
-  cannot hold the port.
+  **Verified (S4):** `prisma dev start <name>` restores a stopped instance
+  on its ORIGINAL port (probe: create → stop → confirm unreachable → start
+  → same port reachable; prisma dev v0.16). The TCP-probe → `start` →
+  re-probe sequence above is the implemented path; the `--db-port` fallback
+  is retired unneeded.
   Return `{ id: instance, name: news.name }`-shaped attributes mirroring
   the hosted provider's attribute type.
 - `LocalConnectionProvider(input)`: `reconcile` scans `postgres.json`
@@ -605,9 +624,12 @@ New control-plane files (all under `src/`, plane `control` in
        `run()` into `src/pipeline.ts` — config discovery/load, entry load,
        Load, coverage validation, name resolution, assemble — so deploy and
        dev cannot drift; `run()` is refactored to consume it).
-    2. Dev-capability check: every configured extension has `dev` — else
+    2. Dev-capability check: every configured extension that is NOT
+       build-only (core's `isBuildOnlyExtension`, § 3) has `dev` — else
        `CliError`:
        `extension "<id>" has no local dev support (no \`dev\` descriptor) — remove it from prisma-composer.config.ts or update it.`
+       Build-only extensions pass through: assembly still uses them; every
+       dev hook iteration skips them.
     3. Containers: `dev.container.ensure({ appName: name, stage: undefined })`
        per extension — safe before anything else: dev containers are purely
        local and cannot fail on corrupt state.
