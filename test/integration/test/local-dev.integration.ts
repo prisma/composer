@@ -405,12 +405,12 @@ async function main(): Promise<void> {
     const web = endpoints.find((e) => e.address === 'web');
     assert(web !== undefined, 'the web service must appear in attach().endpoints()');
     if (web === undefined) throw new Error('unreachable');
-    const health = await waitFor(
+    const health = (await waitFor(
       () => fetch(`${web.url}/health`).then((r) => (r.ok ? r.json() : undefined)),
       15_000,
-    );
+    )) as { ok: boolean; version: string; db: boolean; store: boolean; portEnv: string | null };
     assertEqual(
-      health,
+      { ok: health.ok, version: health.version, db: health.db, store: health.store },
       { ok: true, version: 'v1', db: true, store: true },
       'the web service /health round-trip',
     );
@@ -430,10 +430,22 @@ async function main(): Promise<void> {
     assert(typeof webInfo.pid === 'number', 'web service must report a pid');
     assert(typeof bkgInfo.pid === 'number', 'bkg service must report a pid');
 
-    // 10. env store correct: poison DATABASE_URL rows.
+    // 10. env store correct: poison DATABASE_URL rows. The port-override row
+    // (COMPOSER_<ADDRESS>_PORT) is deliberately NEVER persisted to env.json
+    // (local-dev spec § 4: "Ports live nowhere here" — the Deployment
+    // provider materializes it fresh into each deployment's own env, in
+    // memory, and never writes it back) — so it is verified through the
+    // fixture's own /health response (captured above, before webInfo existed
+    // to compare against) rather than by reading env.json for a key it never
+    // receives.
     const env = readJson(path.join(devDir, 'env.json')) as Record<string, string>;
     assertEqual(env['DATABASE_URL'], '-', 'env.json DATABASE_URL is poisoned');
     assertEqual(env['DATABASE_URL_POOLED'], '-', 'env.json DATABASE_URL_POOLED is poisoned');
+    assertEqual(
+      health.portEnv,
+      JSON.stringify(webInfo.port),
+      'the deployed web child carries COMPOSER_WEB_PORT = the emulator-assigned port, JSON-encoded',
+    );
 
     // secrets.json: no secrets/params in this fixture, so it is either
     // absent or empty — never populated.
