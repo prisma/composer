@@ -3,16 +3,28 @@
  * apps driven with bindings shaped exactly as the framework hydrates them
  * (authApi client, jwtVerifier over the local JWKS, rpc clients), no cloud
  * credentials.
+ *
+ * `email` is wired to `startLocalEmailServer`'s outbox — the SAME
+ * `emailSender(authTemplates).connection.hydrate(...)` call a deploy graph
+ * produces, no full `Load` graph needed. Signup requires verification
+ * (`requireEmailVerification: true`), so this test reads the verification
+ * link back through the email module's outbox port (not the in-memory
+ * `capturedEmails` capture) and follows it before logging in — the
+ * module-depends-on-module proof this example exists to make.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { makeClient } from '@prisma/composer/service-rpc';
 import {
   authAdminContract,
   authSessionContract,
+  authTemplates,
   jwtVerifier,
 } from '@prisma/composer-prisma-cloud/auth';
 import type { LocalAuthServer } from '@prisma/composer-prisma-cloud/auth/testing';
 import { startLocalAuthServer } from '@prisma/composer-prisma-cloud/auth/testing';
+import { emailOutboxContract, emailSender } from '@prisma/composer-prisma-cloud/email';
+import type { LocalEmailServer } from '@prisma/composer-prisma-cloud/email/testing';
+import { startLocalEmailServer } from '@prisma/composer-prisma-cloud/email/testing';
 import { createApiApp } from '../src/api/app.ts';
 import { createOpsApp } from '../src/ops/app.ts';
 import {
@@ -37,6 +49,7 @@ const PASSWORD = 'correct-horse-battery';
 describe.skipIf(pgServer === undefined)('the example wiring against startLocalAuthServer', () => {
   if (pgServer === undefined) return;
   let db: TestDatabase;
+  let mailServer: LocalEmailServer;
   let auth: LocalAuthServer;
   let apiApp: (request: Request) => Promise<Response>;
   let opsApp: (request: Request) => Promise<Response>;
@@ -51,7 +64,9 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
 
   beforeAll(async () => {
     db = await createTestDatabase(pgServer.url);
-    auth = await startLocalAuthServer({ databaseUrl: db.url });
+    mailServer = await startLocalEmailServer();
+    const email = await emailSender(authTemplates).connection.hydrate({ url: mailServer.url });
+    auth = await startLocalAuthServer({ databaseUrl: db.url, email });
 
     // The same binding shapes the framework hydrates in the deployed app.
     apiApp = createApiApp({
@@ -59,15 +74,19 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
       verifier: await jwtVerifier().connection.hydrate({ url: auth.url }),
       session: makeClient(authSessionContract, auth.url),
     });
-    opsApp = createOpsApp({ admin: makeClient(authAdminContract, auth.url) });
+    opsApp = createOpsApp({
+      admin: makeClient(authAdminContract, auth.url),
+      outbox: makeClient(emailOutboxContract, mailServer.url),
+    });
   });
   afterAll(async () => {
     await auth?.stop();
+    await mailServer?.stop();
     await db?.drop().catch(() => {});
     pgServer.stop();
   });
 
-  test('the full loop: signup → login → token → /me → session → revoke → null', async () => {
+  test('the full loop: signup → verify (via outbox) → login → token → /me → session → revoke → null', async () => {
     const signup = await call(
       apiApp,
       '/api/auth/sign-up/email',
@@ -75,6 +94,27 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     );
     expect(signup.status).toBe(200);
     const userId = ((await signup.json()) as { user: { id: string } }).user.id;
+
+    // Login is rejected until verified — requireEmailVerification: true.
+    const rejected = await call(
+      apiApp,
+      '/api/auth/sign-in/email',
+      json({ email: EMAIL, password: PASSWORD }),
+    );
+    expect(rejected.status).toBe(403);
+
+    // Read the sent email back through the ops app's OWN route (never the
+    // outbox port directly) — the same shape the deployed smoke script uses.
+    const sentEmail = await call(
+      opsApp,
+      '/admin/find-sent-email',
+      json({ to: EMAIL, templateId: 'verification' }),
+    );
+    expect(sentEmail.status).toBe(200);
+    const link = ((await sentEmail.json()) as { text: string | null }).text;
+    if (link === undefined || link === null) throw new Error('verification email carried no link');
+    const verify = await fetch(link, { redirect: 'manual' });
+    expect([200, 302]).toContain(verify.status);
 
     const login = await call(
       apiApp,

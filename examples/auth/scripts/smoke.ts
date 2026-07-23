@@ -4,10 +4,16 @@
  * services' URLs via the Management API, then drives the whole loop through
  * the app's OWN endpoints (never the module's ports directly):
  *
- *   signup → login (bearer) → /api/auth/token → JWT-verified /me →
+ *   signup → verify (read the outbox via ops's own route, follow the link)
+ *   → login (bearer) → /api/auth/token → JWT-verified /me →
  *   session.getSession via the api service → admin revokeUserSessions via
  *   the ops service → getSession now null → /me STILL verifies (stateless
  *   JWT: revocation is the per-call opt-in).
+ *
+ * The email module runs `deliveryMode: none` on this stage (a junk
+ * delivery credential, no real provider account — the same preview-stage
+ * story as the email example) — the outbox readback is what proves a real
+ * send happened, not just that Better Auth called the callback.
  *
  *   [AUTH_STACK_NAME=…] bun scripts/smoke.ts
  *
@@ -95,6 +101,7 @@ const json = (body: unknown, headers: Record<string, string> = {}) => ({
 });
 
 let userId = '';
+let verificationLink = '';
 let bearer = '';
 let sessionToken = '';
 let jwt = '';
@@ -113,6 +120,38 @@ await check('signup through the proxied /api/auth/sign-up/email', async () => {
   const body = asJson<{ user?: { id?: string } }>(await res.json());
   userId = body.user?.id ?? '';
   expect(userId !== '', 'no user id in signup response');
+});
+
+await check(
+  'login is rejected until the outbox link is followed (requireEmailVerification)',
+  async () => {
+    const res = await fetch(`${apiUrl}/api/auth/sign-in/email`, json({ email, password }));
+    expect(
+      res.status === 403,
+      `expected sign-in to be rejected pre-verification, got ${res.status}`,
+    );
+  },
+);
+
+await check(
+  'ops’s find-sent-email route reads the verification email back through the outbox port',
+  async () => {
+    const res = await fetch(
+      `${opsUrl}/admin/find-sent-email`,
+      json({ to: email, templateId: 'verification' }),
+    );
+    expect(res.status === 200, `find-sent-email status ${res.status}`);
+    const body = asJson<{ subject?: string; text?: string | null }>(await res.json());
+    expect(body.subject === 'Verify your email address', `unexpected subject: ${body.subject}`);
+    const link = body.text ?? '';
+    expect(link !== '', 'verification email carried no link');
+    verificationLink = link;
+  },
+);
+
+await check('following the outbox link verifies the address', async () => {
+  const res = await fetch(verificationLink, { redirect: 'manual' });
+  expect([200, 302].includes(res.status), `verify status ${res.status}`);
 });
 
 await check('login returns a bearer token and a session token', async () => {
