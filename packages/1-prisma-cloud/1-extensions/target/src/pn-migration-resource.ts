@@ -1,5 +1,5 @@
 /**
- * The `PnMigration` Alchemy resource (ADR-0022, slice 2 D2) — the migration
+ * The `PnMigration` Alchemy resource (ADR-0022) — the migration
  * step modeled as a tracked resource so it participates in deploy state: keyed
  * on the target REF identity (`targetHash` + sorted `invariants`), an
  * unchanged redeploy is an Alchemy-level no-op (on top of the marker read),

@@ -136,7 +136,7 @@ export function createHandlers(config: HandlersConfig): EmailHandlers {
       idempotencyKey: input.idempotencyKey,
     });
 
-    // Dedup on conflict (D10): no delivery attempt, original row returned.
+    // Dedup on conflict: no delivery attempt, original row returned.
     if (!outcome.inserted || deliveryMode === 'none') {
       return toSendResult(outcome.row);
     }

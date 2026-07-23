@@ -7,7 +7,7 @@
  *   signup → login (bearer) → /api/auth/token → JWT-verified /me →
  *   session.getSession via the api service → admin revokeUserSessions via
  *   the ops service → getSession now null → /me STILL verifies (stateless
- *   JWT: revocation is the per-call opt-in, D6).
+ *   JWT: revocation is the per-call opt-in).
  *
  *   [AUTH_STACK_NAME=…] bun scripts/smoke.ts
  *
@@ -169,13 +169,10 @@ await check('getSession is now null — instant logout through the port', async 
   expect(body.session === null && body.user === null, 'session survived revocation');
 });
 
-await check(
-  '/me STILL verifies — stateless JWTs outlive revocation until expiry (D6)',
-  async () => {
-    const res = await fetch(`${apiUrl}/me`, { headers: { authorization: `Bearer ${jwt}` } });
-    expect(res.status === 200, `/me status ${res.status}`);
-  },
-);
+await check('/me STILL verifies — stateless JWTs outlive revocation until expiry', async () => {
+  const res = await fetch(`${apiUrl}/me`, { headers: { authorization: `Bearer ${jwt}` } });
+  expect(res.status === 200, `/me status ${res.status}`);
+});
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

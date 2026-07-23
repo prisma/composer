@@ -2,7 +2,7 @@
  * The S3 wire-protocol engine (spec § 2): a pure `Request` → `Response`
  * handler over an `ObjectStore`. Path-style routing only; the bucket in the
  * path is the store's namespace (any bucket name is accepted). Every request is
- * SigV4-verified first; a failure is 403. No server framework — D3 wires this
+ * SigV4-verified first; a failure is 403. No server framework — `storage-server.ts` wires this
  * into `Bun.serve`.
  *
  * Runtime engine code; NOT re-exported from the authoring barrel.

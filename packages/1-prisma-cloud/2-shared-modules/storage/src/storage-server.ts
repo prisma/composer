@@ -1,12 +1,12 @@
 /**
- * Boots the S3 wire protocol on `Bun.serve` — the D2 handler over any
+ * Boots the S3 wire protocol on `Bun.serve` — the wire-protocol handler over any
  * `ObjectStore`. Binds all interfaces (Compute routes external HTTP to the VM,
  * so a loopback-only listener would be unreachable). Installs the FT-5219
  * process guards so an idle Bun.SQL connection close surfaces as a logged
  * error instead of crash-looping the process on scale-to-zero.
  *
- * Runtime engine code; NOT re-exported from the authoring barrel. The D4
- * entrypoint reads deps via `load()` and calls this.
+ * Runtime engine code; NOT re-exported from the authoring barrel. The
+ * service's entrypoint reads deps via `load()` and calls this.
  */
 import { createS3Handler } from './handler.ts';
 import type { Credentials } from './sigv4.ts';

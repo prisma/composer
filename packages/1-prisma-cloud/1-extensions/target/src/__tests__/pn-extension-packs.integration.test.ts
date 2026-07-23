@@ -1,5 +1,5 @@
 /**
- * Multi-space migration with a declared extension pack (auth module D2),
+ * Multi-space migration with a declared extension pack,
  * proven against a real local Postgres: the app space (widget contract) and
  * one synthetic pack space (`gadget`, the gadget contract) migrate in ONE
  * `applyPnMigration` call —

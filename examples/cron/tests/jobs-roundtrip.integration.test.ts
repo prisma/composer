@@ -1,10 +1,10 @@
 /// <reference types="bun" />
 /**
- * Proves S1's structured `jobs` param survives deploy-encode -> boot-decode
+ * Proves the structured `jobs` param survives deploy-encode -> boot-decode
  * -> config() unchanged: `bootstrapService` stashes the schedule's `jobs`
  * array into the process env with the exact `stash` a deploy boot uses, then
  * a freshly constructed scheduler node — reading the same address-free env
- * keys, per S1's address-free stash — reads it back through `config()`. Run
+ * keys, per the address-free stash — reads it back through `config()`. Run
  * via `bun test` (needs `bootstrapService`'s env write, not vitest).
  */
 import { describe, expect, test } from 'bun:test';

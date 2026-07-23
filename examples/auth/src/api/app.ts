@@ -3,7 +3,7 @@
  * local integration test can drive it with bindings pointed at
  * `startLocalAuthServer` (the same shapes the framework hydrates):
  *
- *   /api/auth/*  → authProxy(authApi)   (the browser golden path, D11)
+ *   /api/auth/*  → authProxy(authApi)   (the browser golden path)
  *   /me          → Authorization: Bearer <jwt> verified STATELESSLY
  *   /session     → POST { token } → the session port's getSession
  *   /health      → 200
@@ -39,7 +39,7 @@ export function createApiApp(deps: ApiDeps): (request: Request) => Promise<Respo
     if (pathname === '/me') {
       const header = request.headers.get('authorization') ?? '';
       const token = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-      // No DB access on this path — that is the JWT binding's whole value (D6).
+      // No DB access on this path — that is the JWT binding's whole value.
       const verified = token === '' ? null : await deps.verifier.verify(token);
       if (verified === null) return json({ error: 'unauthorized' }, 401);
       return json({

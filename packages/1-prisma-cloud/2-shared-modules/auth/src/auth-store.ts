@@ -1,6 +1,6 @@
 /**
  * The `AuthStore` behind the `session`/`admin` port handlers — DB-direct SQL
- * against the auth schema (D12), one method per port operation. Row→record
+ * against the auth schema, one method per port operation. Row→record
  * mapping (Date → ISO string, `banExpires` column → `banExpiresAt` field,
  * effective-ban applied to `banned`) happens in the implementation, in one
  * place; this module also owns the pieces both sides share: the effective-ban

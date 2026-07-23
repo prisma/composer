@@ -1,5 +1,5 @@
 /**
- * The full local loop with no cloud credentials (D16, spec § Testing
+ * The full local loop with no cloud credentials (spec § Testing
  * export), against a real local Postgres: signup → login (cookie AND
  * bearer) → `/api/auth/token` → verification through the REAL
  * `jwtVerifier()` hydrate pointed at the local URL → the session and admin
@@ -68,7 +68,7 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
     userId = body.user.id;
 
     // sendOnSignUp: true + the capture seam: the live verification link is
-    // readable BEFORE any real email wiring exists (S1).
+    // readable BEFORE any real email wiring exists.
     const captured = server.capturedEmails.find((e) => e.template === 'verification');
     expect(captured?.to).toBe(EMAIL);
     expect(captured?.url).toContain(server.url);

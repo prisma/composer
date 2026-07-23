@@ -1,6 +1,6 @@
 /**
  * `defineTemplates`'s literal-key inference and `EmailSender<T>`'s
- * per-template method typing (spec D3): the client's shape comes straight
+ * per-template method typing: the client's shape comes straight
  * off the template declarations, with no annotation at the call site, and a
  * wrong `data` shape must not compile.
  *

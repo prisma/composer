@@ -1,5 +1,5 @@
 /**
- * The safety-critical migration decision + apply logic (slice 2 D2, ref-based
+ * The safety-critical migration decision + apply logic (ref-based
  * target per review R4), proven against a real local Postgres — isolated from
  * the Alchemy stack / Prisma Cloud provisioning. Exercises `applyPnMigration`
  * end to end in two shapes:

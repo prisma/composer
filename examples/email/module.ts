@@ -6,9 +6,9 @@ import mailerService from './src/mailer/service.ts';
 /**
  * The email example: a `mailer` app backed by the `email()` module.
  * `deliveryMode`/`from` are module-boundary params bound to platform env
- * vars (production sets `resend`/`smtp`; preview sets `none` — D6, no
+ * vars (production sets `resend`/`smtp`; preview sets `none` — no
  * topology change by stage); `deliveryCredential` is a boundary secret,
- * always required even in `none` mode (D8, the junk-credential wart). The
+ * always required even in `none` mode (the junk-credential wart). The
  * module's `send`/`outbox` ports wire into the mailer's own dependencies —
  * nothing outside this file (and nothing in the mailer's tests) ever calls
  * the module's ports directly.

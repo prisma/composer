@@ -4,7 +4,7 @@
  * (`defineTemplates`), and `emailSender(templates)` — the dependency that
  * turns a template map into one typed method per template over the `send`
  * port. Templates render consumer-side (ADR-0005); the wire carries only
- * rendered mail (spec D2).
+ * rendered mail.
  */
 import type { DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';

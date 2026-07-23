@@ -1,6 +1,6 @@
 /**
  * The `session` + `admin` rpc handler maps, DB-direct over an `AuthStore`
- * (D12 — Better Auth's admin plugin authorizes via admin sessions; our ports
+ * (Better Auth's admin plugin authorizes via admin sessions; our ports
  * authorize via wiring, so the handlers never call `auth.api.*`). A later
  * dispatch wires these into `serve(authService(), ...)`; `createAuthHandlers`
  * takes its store already constructed, so everything here stays testable

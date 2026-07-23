@@ -2,7 +2,7 @@
  * The example's own wiring against `startLocalAuthServer` — the api and ops
  * apps driven with bindings shaped exactly as the framework hydrates them
  * (authApi client, jwtVerifier over the local JWKS, rpc clients), no cloud
- * credentials (D16, DoD 5).
+ * credentials.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { makeClient } from '@prisma/composer/service-rpc';

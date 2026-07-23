@@ -1,5 +1,5 @@
 /**
- * Type-level tests for cron() (ADR-0020, S2 dispatch 3): the returned
+ * Type-level tests for cron() (ADR-0020): the returned
  * module's boundary deps are exactly the runner's own deps, a runner that
  * doesn't expose `{ trigger: triggerContract }` is rejected at compile time,
  * and a runner exposing extra ports beyond `trigger` still type-checks.

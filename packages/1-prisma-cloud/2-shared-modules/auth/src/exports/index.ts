@@ -4,7 +4,8 @@
  * `jwtVerifier()`), and the `auth()` module. The runtime engine (store,
  * handlers, entrypoint) stays OUT of this barrel, so a consumer graph that
  * imports this module never bundles a `node:`/`bun` token. The pack has its
- * own subpath (`./pack`); `templates`/`proxy` re-exports land with S2/D5.
+ * own subpath (`./pack`); `templates`/`proxy` re-exports land with the
+ * email-flows and deployment work.
  */
 export { auth } from '../auth-module.ts';
 export type {

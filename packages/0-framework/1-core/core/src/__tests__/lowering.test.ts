@@ -229,7 +229,7 @@ describe('buildConfig', () => {
     });
   });
 
-  // ——— The connection contract (S2). The consumer's connection declaration IS the
+  // ——— The connection contract. The consumer's connection declaration IS the
   // contract (ADR-0033): core resolves each declared param by name against the
   // producer's outputs. A producer that under-delivers used to hand the
   // consumer a silent `undefined`, which serialized into its environment and
@@ -522,7 +522,7 @@ describe('lowering a module root — a single service', () => {
     expect(result).toBeUndefined();
   });
 
-  test('the lowering effect resolves to undefined — S1 kills the stack-output dump for good', () => {
+  test('the lowering effect resolves to undefined — nothing dumps stack outputs anymore', () => {
     const { config } = fakeExtension();
     const root = singleServiceModule('fake/compute');
 

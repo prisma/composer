@@ -3,7 +3,7 @@
 // its own bare node — the stash keys config by owner+param-name, address-free,
 // so a node with the same db/credentials/bucket shape reads the same env keys
 // the app's own node wrote (mirrors scheduler-entrypoint.ts). This is where the
-// pure engine (D2) and the Postgres store (D3) meet the framework: load() hands
+// pure engine and the Postgres store meet the framework: load() hands
 // the deps, config() the params, and the server serves the wire protocol.
 import { createPgStore } from '../pg-store.ts';
 import { startStorageServer } from '../storage-server.ts';

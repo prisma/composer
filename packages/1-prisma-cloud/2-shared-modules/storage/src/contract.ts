@@ -1,7 +1,7 @@
 /**
- * The S3-compatible object-storage contract (S5 § 1) — the wire-protocol
+ * The S3-compatible object-storage contract — the wire-protocol
  * binding a consumer's `s3()` dependency requires, and the storage service's
- * `store` port will provide (D4). Mirrors `postgresContract`/`postgres()`
+ * `store` port will provide. Mirrors `postgresContract`/`postgres()`
  * exactly: `satisfies` compares kind only, and the dependency's binding IS the
  * typed connection config (ADR-0015) — the app builds its own client.
  */

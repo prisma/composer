@@ -24,7 +24,7 @@ const auth = betterAuth(
   buildAuthOptions({ databaseUrl: db.url, secret: secret.expose(), baseUrl }),
 );
 
-// DB-direct handlers (D12): the ports authorize via wiring, never via
+// DB-direct handlers: the ports authorize via wiring, never via
 // Better Auth admin sessions — so they speak SQL through the service's own
 // store, not auth.api.*.
 const handlers = createAuthHandlers(createPgAuthStore(db.url));

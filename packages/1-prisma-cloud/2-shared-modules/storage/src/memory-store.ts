@@ -1,6 +1,6 @@
 /**
  * An in-memory `ObjectStore` for the protocol tests — the same contract the
- * Postgres store (D3) implements. Test-only; never wired into a deployed
+ * Postgres store implements. Test-only; never wired into a deployed
  * service. Not re-exported from the authoring barrel.
  */
 import { createHash } from 'node:crypto';

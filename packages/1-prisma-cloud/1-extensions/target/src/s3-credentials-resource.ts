@@ -1,5 +1,5 @@
 /**
- * The `S3Credentials` Alchemy resource (S5) — mints a random SigV4 key pair
+ * The `S3Credentials` Alchemy resource — mints a random SigV4 key pair
  * ONCE at create and keeps it STABLE across deploys, so an unchanged module
  * no-ops on redeploy. The pair is generated with the Web Crypto global
  * (`crypto.getRandomValues` — no `node:` import, matching this package's

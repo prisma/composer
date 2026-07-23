@@ -1,5 +1,5 @@
 /**
- * The `OutboxStore` interface every email is written to (spec D6: stored
+ * The `OutboxStore` interface every email is written to (stored
  * first, delivery attempted after) and read back through the outbox port.
  * `pg-outbox-store.ts` and `memory-outbox-store.ts` both implement this
  * against the same row shape. The cursor codec (`base64(createdAtISO + '|' +
@@ -46,7 +46,7 @@ export interface NewEmailRow {
   readonly idempotencyKey: string;
 }
 
-/** `inserted: false` means the row already existed for this idempotency key (D10); `row` is the pre-existing row and no delivery is attempted. */
+/** `inserted: false` means the row already existed for this idempotency key; `row` is the pre-existing row and no delivery is attempted. */
 export interface InsertOutcome {
   readonly row: EmailRow;
   readonly inserted: boolean;
@@ -83,7 +83,7 @@ export interface ListPage {
 }
 
 export interface OutboxStore {
-  /** `on conflict (idempotencyKey) do nothing` semantics (D10) — see {@link InsertOutcome}. */
+  /** `on conflict (idempotencyKey) do nothing` semantics — see {@link InsertOutcome}. */
   insert(row: NewEmailRow): Promise<InsertOutcome>;
   /** Applies a delivery outcome; adds `update.attempts` to the row's running `attempts` total and sets `updatedAt`. Throws if `id` does not exist. */
   updateDelivery(id: string, update: DeliveryUpdate): Promise<EmailRow>;

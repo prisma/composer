@@ -1,5 +1,5 @@
 /**
- * The `ObjectStore` contract at the store level — the exact semantics the D3
+ * The `ObjectStore` contract at the store level — the exact semantics the
  * Postgres store must reproduce (ETag = quoted sha256 hex, range clamping,
  * prefix + token + maxKeys pagination, idempotent delete, buckets as
  * namespaces). Exercised here against the in-memory reference.

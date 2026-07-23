@@ -1,6 +1,6 @@
 /**
  * The minimal object store the protocol handler drives — the seam between the
- * wire protocol (D2) and its backing (the Postgres bytea store, D3). Buckets
+ * wire protocol and its backing (the Postgres bytea store). Buckets
  * are namespaces: any bucket name is accepted and simply scopes keys. The
  * store owns the ETag (quoted SHA-256 hex of the object bytes).
  */

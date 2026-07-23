@@ -7,9 +7,9 @@
  * already at head), the secret is a fixed dev value, and serve() runs in
  * its no-keys pass-through (nothing provisioned the accepted-keys env).
  *
- * Email: by default the S1 send seam captures `{ template, to, url }` into
+ * Email: by default the send seam captures `{ template, to, url }` into
  * `capturedEmails`, so a local flow can read its live verification /
- * reset / magic links before slice S2 wires real delivery. Supplying
+ * reset / magic links before real delivery is wired. Supplying
  * `email` replaces the capture.
  */
 import node from '@internal/node';

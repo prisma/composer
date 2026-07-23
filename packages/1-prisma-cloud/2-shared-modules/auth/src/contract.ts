@@ -126,7 +126,7 @@ function claimString(claims: Record<string, unknown>, key: string): string | und
  * Stateless JWT verifier over the wired instance's JWKS. Signature +
  * `exp`/`nbf` only (30 s tolerance); no `iss`/`aud` — the verifier only
  * trusts keys fetched from the wired instance, and instances never share
- * keys (D15). jose caches the JWKS and refetches on an unknown `kid`.
+ * keys. jose caches the JWKS and refetches on an unknown `kid`.
  */
 export function jwtVerifier(): DependencyEnd<JwtVerifier, typeof authApiContract> {
   return dependency({

@@ -2,7 +2,7 @@
  * The `email()` module (spec §"Module factory"): a self-contained,
  * deployable email service. It owns its Postgres `db` and the `service`
  * wired to it, and exposes two independent ports (`send`, `outbox`) — the
- * least-privilege split from D4 (a consumer that can send must not
+ * least-privilege split (a consumer that can send must not
  * automatically read every email ever sent). `deliveryMode` and `from` are
  * module-boundary param slots: the enclosing app must bind a source
  * (`envParam(...)`), so both vary per stage. The db is invisible to

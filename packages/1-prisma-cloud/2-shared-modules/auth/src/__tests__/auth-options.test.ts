@@ -1,7 +1,7 @@
 /**
  * `buildAuthOptions()`'s pinned values (spec § Better Auth configuration) —
  * asserted field by field so a drift in any pinned option fails HERE with
- * its name, plus the S1 email seam: absent sender → the pinned no-op log;
+ * its name, plus the email seam: absent sender → the pinned no-op log;
  * present sender → `{ purpose, to, url }` forwarded (what the testing
  * export's capture rides on).
  */
@@ -36,7 +36,7 @@ describe('buildAuthOptions — pinned values', () => {
     expect(pool.listenerCount('error')).toBe(1);
   });
 
-  test('emailAndPassword: enabled, S1 verification off, reset revokes sessions', () => {
+  test('emailAndPassword: enabled, verification off until email is wired, reset revokes sessions', () => {
     expect(options.emailAndPassword?.enabled).toBe(true);
     expect(options.emailAndPassword?.requireEmailVerification).toBe(false);
     expect(options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
@@ -68,7 +68,7 @@ describe('buildAuthOptions — pinned values', () => {
   });
 });
 
-describe('the S1 email seam', () => {
+describe('the email seam', () => {
   test('with a sender: the three callbacks forward { purpose, to, url }', async () => {
     const events: AuthEmailEvent[] = [];
     const options = buildAuthOptions({ ...inputs, sendEmail: (e) => void events.push(e) });
@@ -85,7 +85,7 @@ describe('the S1 email seam', () => {
     ]);
   });
 
-  test('without a sender: callbacks log the pinned S1 line and resolve', async () => {
+  test('without a sender: callbacks log the pinned not-wired line and resolve', async () => {
     const options = buildAuthOptions(inputs);
     const logged: string[] = [];
     const realLog = console.log;
@@ -97,9 +97,7 @@ describe('the S1 email seam', () => {
     } finally {
       console.log = realLog;
     }
-    expect(logged).toEqual([
-      'auth: email delivery not wired (slice S2): verification for x@example.com',
-    ]);
+    expect(logged).toEqual(['auth: email delivery not wired: verification for x@example.com']);
   });
 });
 

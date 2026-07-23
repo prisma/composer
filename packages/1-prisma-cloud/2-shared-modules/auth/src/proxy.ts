@@ -1,6 +1,6 @@
 /**
- * `authProxy()` — the mount-anywhere forwarder for the public auth surface
- * (D11): the consumer app proxies `/api/auth/*` to the auth service so
+ * `authProxy()` — the mount-anywhere forwarder for the public auth surface:
+ * the consumer app proxies `/api/auth/*` to the auth service so
  * browsers get first-party httpOnly cookies on the app's own origin, and
  * redirect flows (magic-link verify → callbackURL) land back on it.
  */

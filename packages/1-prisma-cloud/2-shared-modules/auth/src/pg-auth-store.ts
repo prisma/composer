@@ -3,7 +3,7 @@
  * every table reference qualified through the ONE `AUTH_SCHEMA` constant
  * (`"user"` is a reserved word, hence the quoting throughout). No schema
  * work at boot: the deploy migrated and marker-signed the auth space before
- * this process exists (D5). Writes are confined to `session` deletes and the
+ * this process exists. Writes are confined to `session` deletes and the
  * three ban columns.
  *
  * Runtime engine code (Bun's `SQL`); NOT re-exported from the authoring

@@ -153,7 +153,7 @@ export function provisionManifest(graph: Graph): readonly SecretBinding[] {
  * The app's param-binding manifest: every param a `provision()` call bound —
  * literal or an opaque, target-defined `ParamSource` — at the address that
  * declared it. The param sibling of `provisionManifest`, for a deploy
- * target's own preflight to consume (D2). Pure graph introspection,
+ * target's own preflight to consume. Pure graph introspection,
  * TARGET-AGNOSTIC; a param this manifest omits simply falls back to its own
  * `default` at `buildConfig`.
  */

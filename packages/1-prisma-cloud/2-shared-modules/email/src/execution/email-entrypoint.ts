@@ -1,8 +1,8 @@
 // The reusable boot module the email service's build points `entry` at (see
 // emailService's `node({ entry: './email-entrypoint.mjs' })`). Mirrors
 // storage's entrypoint: load() hands the hydrated `db` binding, config()
-// the params, secrets() the credential; this is where the pg outbox store
-// (D2), the delivery backing (D3, chosen by deliveryMode), and handlers.ts
+// the params, secrets() the credential; this is where the pg outbox store,
+// the delivery backing (chosen by deliveryMode), and handlers.ts
 // meet the framework, served over serve()'s generated fetch handler.
 
 import { serve } from '@internal/service-rpc';

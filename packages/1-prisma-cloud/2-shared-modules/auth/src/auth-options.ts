@@ -1,22 +1,22 @@
 /**
  * `buildAuthOptions()` — the ONE Better Auth configuration, used by the
- * service entrypoint AND (S4) `createEmbeddedAuth`, so the two shapes stay
- * behaviorally identical (D13). Every option value here is pinned by the
- * spec (§ Better Auth configuration); change them there first.
+ * service entrypoint AND (eventually) `createEmbeddedAuth`, so the two
+ * shapes stay behaviorally identical. Every option value here is pinned by
+ * the spec (§ Better Auth configuration); change them there first.
  *
- * S1 email posture: no real sends. `sendEmail` is the seam — absent (the
- * deployed S1 service), each Better Auth send callback logs the pinned
+ * Pre-email posture: no real sends. `sendEmail` is the seam — absent (the
+ * deployed service), each Better Auth send callback logs the pinned
  * message and returns; present (the testing export), the callback forwards
- * `{ purpose, to, url }` so local flows can read their live links. S2
- * replaces this seam with the email-module template sender and flips
- * `requireEmailVerification` to true.
+ * `{ purpose, to, url }` so local flows can read their live links. The
+ * email-flows work replaces this seam with the email-module template sender
+ * and flips `requireEmailVerification` to true.
  */
 import type { BetterAuthOptions } from 'better-auth';
 import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
 import { AUTH_SCHEMA } from './pack/constants.ts';
 
-/** One auth email touchpoint, as the S1 seam reports it. */
+/** One auth email touchpoint, as the send seam reports it. */
 export interface AuthEmailEvent {
   readonly purpose: 'verification' | 'passwordReset' | 'magicLink';
   readonly to: string;
@@ -24,15 +24,15 @@ export interface AuthEmailEvent {
   readonly url: string;
 }
 
-/** The S1 send seam — the testing export captures through this; S2 replaces it with real template sends. */
+/** The send seam — the testing export captures through this until real template sends are wired. */
 export type AuthEmailSender = (event: AuthEmailEvent) => void | Promise<void>;
 
 export interface AuthOptionsInputs {
   readonly databaseUrl: string;
   readonly secret: string;
-  /** The PUBLIC origin of the consumer app (scheme+host, no trailing slash, no path) — D11. */
+  /** The PUBLIC origin of the consumer app (scheme+host, no trailing slash, no path) — what browsers see and `trustedOrigins` allows. */
   readonly baseUrl: string;
-  /** S1: absent in the deployed service (callbacks log and return); the testing export injects a capturing sender. */
+  /** Absent in the deployed service (callbacks log and return); the testing export injects a capturing sender. */
   readonly sendEmail?: AuthEmailSender;
 }
 
@@ -61,9 +61,9 @@ function hardenedPool(databaseUrl: string): pg.Pool {
 export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
   const send = (purpose: AuthEmailEvent['purpose'], to: string, url: string): Promise<void> => {
     if (inputs.sendEmail === undefined) {
-      // S1: delivery is not wired yet — never throw (a down mail path must
+      // Delivery is not wired yet — never throw (a down mail path must
       // not brick signup); the pinned log line is the operational record.
-      console.log(`auth: email delivery not wired (slice S2): ${purpose} for ${to}`);
+      console.log(`auth: email delivery not wired: ${purpose} for ${to}`);
       return Promise.resolve();
     }
     return Promise.resolve(inputs.sendEmail({ purpose, to, url }));
@@ -78,7 +78,8 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
     database: hardenedPool(inputs.databaseUrl),
     emailAndPassword: {
       enabled: true,
-      // S1: no real sends, so verification cannot complete — S2 flips this.
+      // No real sends yet, so verification cannot complete; the email-flows
+      // work flips this on.
       requireEmailVerification: false,
       sendResetPassword: ({ user, url }) => send('passwordReset', user.email, url),
       revokeSessionsOnPasswordReset: true,
