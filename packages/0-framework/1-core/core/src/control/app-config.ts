@@ -64,8 +64,16 @@ export interface ExtensionDescriptor {
    * in container-transport.ts.
    */
   readonly container?: ContainerDescriptor;
-  /** Local dev counterparts (ADR-0041). */
-  readonly dev?: DevDescriptor;
+  /**
+   * Local dev counterparts (ADR-0041) — a LAZY reference: an async thunk,
+   * never the descriptor object itself. This keeps the production control
+   * entry's static import graph free of dev implementation code (operator
+   * directive) — the thunk is one line, dynamically importing the
+   * extension's own dev entry by bare specifier
+   * (e.g. `() => import('@prisma/composer-prisma-cloud/dev').then((m) => m.devDescriptor())`),
+   * so nothing dev-flavored is bundled into, or loaded by, any deploy path.
+   */
+  readonly dev?: () => Promise<DevExtensionDescriptor>;
 }
 
 /**
@@ -97,8 +105,8 @@ export interface TeardownInput {
   readonly stage: string | undefined;
 }
 
-/** Local counterparts for `prisma-composer dev` (ADR-0041). An extension without one is not dev-capable. */
-export interface DevDescriptor {
+/** The extension's dev-mode counterpart (ADR-0041) — the dev variant OF ExtensionDescriptor, hence the full qualifier. An extension without one is not dev-capable. */
+export interface DevExtensionDescriptor {
   /** Local providers for the SAME resource types this extension's lowering emits. Receives the app identity — unlike deploy's env-arg-free `providers()`, local providers are emulator clients and must know which app they provision for. */
   providers(input: DevProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */

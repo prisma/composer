@@ -22,7 +22,6 @@ import {
   type LowerOptions,
   lower,
   lowering,
-  mergedDevProviders,
   mergedProviders,
   type Outputs,
   type ProvisionEdge,
@@ -1434,29 +1433,6 @@ const buildOnlyExtension = (id = 'test/build-only'): ExtensionDescriptor => ({
   nodes: { node: { kind: 'build', assemble: () => Promise.reject(new Error('unused')) } },
 });
 
-const devCapableExtension = (id = 'test/dev-pack'): ExtensionDescriptor => ({
-  id,
-  nodes: {},
-  dev: {
-    providers: () => Layer.empty,
-    container: {
-      ensure: () => {
-        throw new Error('ensure() must not run here');
-      },
-      locate: () => {
-        throw new Error('locate() must not run here');
-      },
-      remove: () => {
-        throw new Error('remove() must not run here');
-      },
-      deserialize: () => {
-        throw new Error('deserialize() must not run here');
-      },
-    },
-    attach: () => Promise.reject(new Error('unused')),
-  },
-});
-
 describe('isBuildOnlyExtension', () => {
   test('true for an extension whose every node is kind: build and declares no providers/application/provisions/container', () => {
     expect(isBuildOnlyExtension(buildOnlyExtension())).toBe(true);
@@ -1498,31 +1474,5 @@ describe('isBuildOnlyExtension', () => {
 
   test('true for an extension with no nodes at all (vacuously every node is build)', () => {
     expect(isBuildOnlyExtension({ id: 'test/empty', nodes: {} })).toBe(true);
-  });
-});
-
-describe('mergedDevProviders', () => {
-  test('a dev-capable extension plus a build-only extension merges without error — the build-only extension is skipped', () => {
-    const dev = devCapableExtension();
-    const buildOnly = buildOnlyExtension();
-    const config: PrismaAppConfig = {
-      extensions: [dev, buildOnly],
-      state: { extension: dev.id, create: () => stateSentinel('config') },
-    };
-
-    expect(mergedDevProviders(config, new Map(), '/tmp/dev')).toBeDefined();
-  });
-
-  test('an extension with a non-build node and no dev descriptor throws the pinned no-dev-support message', () => {
-    const { descriptor } = fakeExtension();
-    const { providers: _dropped, ...bare } = descriptor;
-    const config: PrismaAppConfig = {
-      extensions: [bare],
-      state: { extension: bare.id, create: () => stateSentinel('config') },
-    };
-
-    expect(() => mergedDevProviders(config, new Map(), '/tmp/dev')).toThrow(
-      'extension "test/pack" has no dev support — it declares no `dev` descriptor (ADR-0041).',
-    );
   });
 });

@@ -16,13 +16,11 @@ import {
   type ResourceNode,
   type ServiceNode,
 } from '../node.ts';
-import {
-  type ContainerInstance,
-  DEV_DIR,
-  type ExtensionDescriptor,
-  isBuildOnlyExtension,
-  type NodeDescriptor,
-  type PrismaAppConfig,
+import type {
+  ContainerInstance,
+  ExtensionDescriptor,
+  NodeDescriptor,
+  PrismaAppConfig,
 } from './app-config.ts';
 
 /** The Layer shape every Alchemy state store must satisfy — what `LowerOptions.state` and `PrismaAppConfig.state` both traffic in. */
@@ -202,8 +200,8 @@ export interface LowerOptions {
   readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
-  /** Retarget lowering at every extension's `dev` providers (ADR-0041) instead of its hosted `providers()`. */
-  readonly dev?: boolean;
+  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `devProviders(...)` here (ADR-0041); `lower()` itself learns nothing about dev. */
+  readonly providers?: Layer.Layer<never>;
   /**
    * Invoked once per deploy, during apply, with the Deploy operation's result
    * — the app and every node it deployed, resolved, in topo order.
@@ -535,35 +533,6 @@ export function mergedProviders(config: PrismaAppConfig): Layer.Layer<never> {
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
 }
 
-function noDevSupportError(id: string): LowerError {
-  return new LowerError(
-    `extension "${id}" has no dev support — it declares no \`dev\` descriptor (ADR-0041).`,
-  );
-}
-
-/**
- * All configured extensions' DEV providers merged, config array order (ADR-0041).
- * A build-only extension (`isBuildOnlyExtension`) owns no resources or
- * services, so it is skipped like `mergedProviders` skips an extension with
- * no `providers`. Every other configured extension must be dev-capable, or
- * dev cannot bring the app up at all, so this throws naming the extension.
- */
-export function mergedDevProviders(
-  config: PrismaAppConfig,
-  containers: ReadonlyMap<string, ContainerInstance>,
-  devDir: string,
-): Layer.Layer<never> {
-  const layers = config.extensions.flatMap((extension) => {
-    if (extension.dev === undefined) {
-      if (isBuildOnlyExtension(extension)) return [];
-      throw noDevSupportError(extension.id);
-    }
-    return [extension.dev.providers({ container: containers.get(extension.id), devDir })];
-  });
-  const [first, ...rest] = layers;
-  return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
-}
-
 /**
  * The deployment-report Action's input, declared in RESOLVED terms — this is
  * what the runner receives. The call site passes `Input<DeployedEntity>`s,
@@ -780,13 +749,7 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
   const containers = deserializeContainers(config.extensions, process.env);
-  const providers =
-    opts.dev === true
-      ? // No `node:path` import (invariant 5 — core stays runtime-agnostic):
-        // dev is POSIX-only (the spec's own Windows note), so a plain
-        // `/`-join is exact here, not an approximation.
-        mergedDevProviders(config, containers, `${process.cwd()}/${DEV_DIR}`)
-      : mergedProviders(config);
+  const providers = opts.providers ?? mergedProviders(config);
 
   return Alchemy.Stack(
     opts.name,

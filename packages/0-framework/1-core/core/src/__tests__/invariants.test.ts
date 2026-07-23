@@ -32,12 +32,38 @@ const leanTokens = [
   '"node:', // a node:-scheme import always appears quoted in a bundle
 ];
 
-describe('entry map: core splits into authoring + deploy — no runtime entry', () => {
-  test("package.json exports '.', './deploy', './config', and './testing' (casts/assertions live in @internal/foundation)", () => {
+describe('entry map: core splits into authoring + deploy + dev — no runtime entry', () => {
+  test("package.json exports '.', './deploy', './config', './dev', and './testing' (casts/assertions live in @internal/foundation)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
-    expect(codeEntries.sort()).toEqual(['.', './config', './deploy', './testing']);
+    expect(codeEntries.sort()).toEqual(['.', './config', './deploy', './dev', './testing']);
+  });
+
+  // ADR-0041's own firewall: `/deploy` and the root `.` entry must never
+  // carry anything dev-flavored — `lower()` is provenance-ignorant (REVISED,
+  // operator review of #162), so nothing in its own module or the authoring
+  // barrel should mention dev's own vocabulary at all.
+  test("'./deploy' and '.' export no dev-flavored name — dev's own subpath is the only door to it", () => {
+    const deployText = fs.readFileSync(path.join(srcDir, 'exports', 'deploy.ts'), 'utf8');
+    const indexText = fs.readFileSync(path.join(srcDir, 'exports', 'index.ts'), 'utf8');
+    const devTokens = [
+      'devProviders',
+      'resolveDevDescriptors',
+      'DevExtensionDescriptor',
+      'DevProvidersInput',
+      'DEV_DIR',
+    ];
+    for (const token of devTokens) {
+      expect({ file: 'exports/deploy.ts', containsToken: deployText.includes(token) }).toEqual({
+        file: 'exports/deploy.ts',
+        containsToken: false,
+      });
+      expect({ file: 'exports/index.ts', containsToken: indexText.includes(token) }).toEqual({
+        file: 'exports/index.ts',
+        containsToken: false,
+      });
+    }
   });
 });
 

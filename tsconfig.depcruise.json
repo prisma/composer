@@ -15,6 +15,7 @@
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
       "@internal/core/config": ["./packages/0-framework/1-core/core/src/exports/app-config.ts"],
       "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/exports/deploy.ts"],
+      "@internal/core/dev": ["./packages/0-framework/1-core/core/src/exports/dev.ts"],
       "@internal/core/testing": ["./packages/0-framework/1-core/core/src/exports/testing.ts"],
       "@internal/core": ["./packages/0-framework/1-core/core/src/exports/index.ts"],
       "@internal/service-rpc": [
@@ -35,16 +36,19 @@
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"
       ],
+      "@internal/lowering/buckets": [
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/buckets.ts"
+      ],
       "@internal/lowering/compute": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/compute.ts"
       ],
       "@internal/lowering/state": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/state.ts"
       ],
-      "@internal/lowering/dev": [
-        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/dev.ts"
-      ],
       "@internal/lowering": ["./packages/1-prisma-cloud/0-lowering/lowering/src/exports/index.ts"],
+      "@internal/local-target": [
+        "./packages/1-prisma-cloud/0-lowering/local-target/src/exports/index.ts"
+      ],
       "@internal/s3-protocol": [
         "./packages/1-prisma-cloud/0-lowering/s3-protocol/src/exports/index.ts"
       ],
@@ -59,6 +63,9 @@
       ],
       "@internal/prisma-cloud/control": [
         "./packages/1-prisma-cloud/1-extensions/target/src/exports/control.ts"
+      ],
+      "@internal/prisma-cloud/dev": [
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/dev.ts"
       ],
       "@internal/prisma-cloud/prisma-next": [
         "./packages/1-prisma-cloud/1-extensions/target/src/exports/prisma-next.ts"
@@ -97,6 +104,7 @@
       "@internal/cron": ["./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/index.ts"],
       "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
       "@prisma/composer/deploy": ["./packages/9-public/composer/src/exports/deploy.ts"],
+      "@prisma/composer/dev": ["./packages/9-public/composer/src/exports/dev.ts"],
       "@prisma/composer/testing": ["./packages/9-public/composer/src/exports/testing.ts"],
       "@prisma/composer/casts": ["./packages/9-public/composer/src/exports/casts.ts"],
       "@prisma/composer/assertions": ["./packages/9-public/composer/src/exports/assertions.ts"],
@@ -109,6 +117,9 @@
       "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
       "@prisma/composer-prisma-cloud/control": [
         "./packages/9-public/composer-prisma-cloud/src/exports/control.ts"
+      ],
+      "@prisma/composer-prisma-cloud/dev": [
+        "./packages/9-public/composer-prisma-cloud/src/exports/dev.ts"
       ],
       "@prisma/composer-prisma-cloud/prisma-next": [
         "./packages/9-public/composer-prisma-cloud/src/exports/prisma-next.ts"
