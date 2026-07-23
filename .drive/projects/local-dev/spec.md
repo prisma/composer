@@ -393,10 +393,48 @@ vocabularies. New package `@internal/local-target` at
 hosted providers, its own name: it IS the local deploy target's provider
 suite), plane `control`, importing `@internal/dev-emulators` and
 `@internal/s3-protocol`. Everything previously specced under
-`@internal/lowering`'s `src/dev/` lives here instead; `artifact-extract`
-stays beside the artifact writer it mirrors (in `@internal/lowering`'s
-compute dir) and is imported downward. No floating module-level doc
-comments that attach to nothing (repo style).
+`@internal/lowering`'s `src/dev/` lives here instead — INCLUDING
+`artifact-extract` (operator: emulation code is physically separated from
+production source, full stop; the tar reader exists only for dev, so it
+and its `tar` dependency live here, not in `@internal/lowering`).
+Format-drift protection comes from a round-trip test in this package that
+imports the WRITER (`packageComputeArtifact`, a downward import) and
+asserts extraction fidelity — co-location is not the mechanism. No
+floating module-level doc comments that attach to nothing (repo style).
+
+**Physical-separation rule (operator, 2026-07-23), applied everywhere:**
+dev/emulation code lives in dev-only packages (`@internal/local-target`,
+`@internal/dev-emulators`) or dev-only modules/entry points — never
+intermixed with production logic. In core, the dev aggregator
+(`devProviders`) and `DEV_DIR` are exported via a NEW control-plane
+subpath `@prisma/composer/dev` (its own `src/exports/dev.ts`; the
+generated dev stack module imports from it) — nothing dev-flavored is
+exported from `/deploy` or the root. The seam TYPES
+(`DevExtensionDescriptor` and its inputs) remain in `app-config.ts`
+because `ExtensionDescriptor.dev` must reference them — they are contract,
+not emulation logic. The IMPLEMENTATIONS are fully excluded from
+production bundles (operator directive): see the lazy dev reference
+below.
+
+**The dev seam is a lazy reference (REVISED — operator directive):**
+`ExtensionDescriptor.dev?: () => Promise<DevExtensionDescriptor>`. The
+production control entry carries ONE line — a thunk dynamically importing
+the extension's own dev entry by bare specifier — so no dev implementation
+code is bundled into, or loaded by, any deploy path. The extension ships a
+separate control-plane entry `src/exports/dev.ts` → public subpath
+`@prisma/composer-prisma-cloud/dev`, exporting `devDescriptor():
+DevExtensionDescriptor` (self-contained; the dev side needs none of the
+deploy factory's options — it is credential-free by design). `prismaCloud()`'s
+field is exactly:
+`dev: () => import('@prisma/composer-prisma-cloud/dev').then((m) => m.devDescriptor())`.
+Core's `@prisma/composer/dev` subpath gains
+`resolveDevDescriptors(config): Promise<ReadonlyMap<string, DevExtensionDescriptor>>`
+(resolves every non-build-only extension's thunk once, with the pinned
+no-dev-support error for a missing thunk); `devProviders(resolved,
+containers, devDir)` takes the RESOLVED map. The generated dev stack
+module top-level-awaits `resolveDevDescriptors(config)` (ESM TLA); the
+dev command resolves once at step 2 and passes resolved descriptors to
+every subsequent hook call. Deploy and destroy never touch `dev`.
 
 #### `src/dev/dev-store.ts` — the shared dev-instance store
 
@@ -448,15 +486,15 @@ scope, not v1.
   1. Unpack `news.artifactPath` (tar.gz, the ustar format
      `packageComputeArtifact` writes) into
      `<devDir>/artifacts/<artifactHash>/` if absent — extraction uses the
-     maintained `tar` package (node-tar; dependency razor — reading tar is
-     commodity even though we write our own deterministic subset), with
-     entry filtering pinned: regular files only, reject links/devices,
-     reject path escapes. Temp-then-rename at the directory level. (WHY an
-     extractor exists at all: on the platform, the artifact is uploaded and
-     the platform unpacks it; locally the Compute emulator runs from a
-     directory, so the unpack step that was platform-side needs a local
-     counterpart. Unpacking the real tar keeps the strongest parity: what
-     runs is byte-for-byte what ships.)
+     maintained `tar` package (dependency razor), implemented IN
+     `@internal/local-target` (physical-separation rule: the reader exists
+     only for dev), with entry filtering pinned: regular files only,
+     reject links/devices, reject path escapes. Temp-then-rename at the
+     directory level. (WHY an extractor exists at all: on the platform the
+     artifact is uploaded and the platform unpacks it; locally the Compute
+     emulator runs from a directory, so the platform-side unpack step
+     needs a local counterpart. Unpacking the real tar keeps the strongest
+     parity: what runs is byte-for-byte what ships.)
   2. Fetch the service's port: `PUT /apps/<app>/services/<id>` (idempotent)
      where `id` = the ComputeService's name resolved from
      `news.computeServiceId`. Resolve the address from
@@ -516,8 +554,18 @@ server that fails to start surfaces the underlying error text verbatim
 (credential-masked) in the 500 body.
 Version ownership: `@prisma/dev` resolves from the APP's node_modules
 (passed into the daemon as a resolved path), keeping the app in charge of
-its Prisma version; absent →
+its Prisma version. Resolution is two-step, pinned: (1)
+`createRequire(join(cwd, 'package.json')).resolve('@prisma/dev')`; (2) on
+failure, resolve `prisma`'s own package first and resolve `@prisma/dev`
+from THERE (apps typically depend on the `prisma` CLI, which carries it);
+both failing →
 `Error: local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app's devDependencies.`
+The local `Database` provider PUTs the daemon's ensure with that path and
+stores the returned `{ url }` on its own ATTRIBUTES; the local
+`Connection` provider resolves its url from the daemon's listing (GET
+databases, matched by instance name derived from `news.databaseId`).
+`dev-store`'s `postgres.json` is DELETED — the daemon owns instance state.
+`resolve-bin.ts` and `spawn-utils.ts` are deleted with the shell-out.
 - Instance name derivation: `pcdev-<app>-<database-id>`, where `<app>` and
   `<database-id>` are lowercased with every char outside `[a-z0-9]` replaced
   by `-`, runs collapsed, trimmed to 63 chars.
@@ -601,12 +649,12 @@ without either.
 not leak into platform primitives. The address is already intrinsic to the
 packaged artifact (its `bootstrap.js` bakes `run("<address>", …)`), so the
 artifact's OWN manifest carries it: `packageComputeArtifact` writes
-`compute.manifest.json` as `{ manifestVersion: "2", entrypoint:
-"bootstrap.js", address: "<address>" }` (a format this repo owns; version
-bumped, readers of "1" unaffected — the platform reads only `entrypoint`).
+`compute.manifest.json` as `{ manifestVersion: "1", entrypoint:
+"bootstrap.js", address: "<address>" }` — no version bump (operator: there
+are no consumers to protect; the platform reads only `entrypoint`).
 The local Deployment provider reads `address` from the unpacked artifact's
 manifest; a manifest without it →
-`Error: artifact manifest carries no address — repackage with a current @prisma/composer (manifestVersion 2).`
+`Error: artifact manifest carries no address — repackage with a current @prisma/composer.`
 `ComputeSerialized.address` and the serialize/deploy threading are also
 reverted.
 
@@ -636,11 +684,12 @@ New control-plane files (all under `src/`, plane `control` in
      `missingError` but scoped `local dev` and instructing
      `Set each in the shell you run \`prisma-composer dev\` from.`
 - `src/dev/emulators.ts` — `runDevEmulators(input: DevEmulatorsInput)`:
-  inspect the graph's node kinds; `ensureDaemon('compute')` always (every
-  app has services); `ensureDaemon('buckets')` when any `s3`-kinded resource
-  node exists. Postgres needs no pre-start — its instances are created at
-  provision through the ORM CLI. Idempotent; prints one `[dev]` line per
-  daemon it actually started.
+  inspect the graph's node kinds; `ensureDaemon('compute', …)` always
+  (every app has services); `ensureDaemon('buckets', …)` when any
+  `s3`-kinded resource node exists; `ensureDaemon('postgres', …)` when any
+  `postgres`- or `prisma-next`-kinded resource node exists (REVISED —
+  Postgres is a first-class daemon since the programmatic adoption).
+  Idempotent; prints one `[dev]` line per daemon it actually started.
 - `src/dev/attach.ts` — `devAttach(input: DevAttachInput): DevAttachment`,
   a Compute-emulator client scoped to the app:
   - `endpoints()` → `GET /apps/<app>/services`, mapped to
