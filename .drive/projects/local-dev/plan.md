@@ -31,17 +31,18 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
   devDependency in tests only) incl. presigned GET/PUT.
 - **Spec sections:** § 1, behavior contracts.
 
-### S2 — `dir()` build adapter
+### S2 — `Bundle.watch` + directory-form fixes (REVISED — no new adapter)
 
-- **Outcome:** `@prisma/composer/dir` authoring + assemble per spec § 7:
-  verbatim tree copy, named entry, symlink hard error, wrapper bundling
-  identical to `node()`'s. Also lands the `Bundle.watch` contract (spec
-  § 3): the optional core field plus `watch` population in `node()`,
-  `nextjs()`, and `dir()`. Guide/docs entry.
-- **Proves:** assemble tests (missing dir/entry errors verbatim, symlink
-  error, tree fidelity); a fixture app with a multi-file runnable deploys
-  through the full assemble path (no cloud needed — assemble-level test).
-- **Spec sections:** § 7.
+- **Outcome (revised):** `node()`'s existing directory form is friction
+  #3's fix, already on `main` — the originally planned `dir()` duplicate
+  is struck. S2 lands: the `Bundle.watch` contract (spec § 3) populated in
+  `node()` (single-file → entry file; directory form → the whole dir) and
+  `nextjs()`; the symlink-as-`dir` hard-error fix, which is a real hole in
+  `main`'s directory form; doc corrections where `node()` is still
+  described as single-file-only.
+- **Proves:** directory-form assemble tests (symlink-as-dir on both file
+  and directory targets, tree fidelity, watch fields per form).
+- **Spec sections:** § 7 (revised), § 3's watch bullets.
 
 ### S3 — `@internal/dev-emulators`: daemon layer + Compute & bucket emulators
 
@@ -111,8 +112,8 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
 
 ### S6 — proof on the open-chat port + measurement + close-out docs
 
-- **Outcome:** the open-chat port (separate repo) switched to `dir()` +
-  `prisma-composer dev`, replacing `scripts/dev.ts`; sign-in/history/
+- **Outcome:** the open-chat port (separate repo) switched to `node()`'s
+  directory form + `prisma-composer dev`, replacing `scripts/dev.ts`; sign-in/history/
   live-tail verified; friction found lands here as fixes (re-triaged if
   large); restart latency for `examples/store` measured and recorded;
   `deploy-cli.md` scope updated; `local-dev.md` + ADR-0041 reconciled with
