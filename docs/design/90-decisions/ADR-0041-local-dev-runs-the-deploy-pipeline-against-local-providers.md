@@ -263,8 +263,9 @@ this repo owns.
 - [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md)
   — the terminating converge child the machine-scoped emulators decouple
   dev from.
-- [ADR-0011](ADR-0011-targets-supply-the-deploy-state-layer.md) — the state
-  layer the `dev.state` descriptor supplies locally.
+- [ADR-0011](ADR-0011-targets-supply-the-deploy-state-layer.md) — targets
+  supply the durable deploy state layer; dev instead uses Alchemy's own
+  `localState()` through `LowerOptions.state` (tool state, ADR-0004).
 - [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) /
   [ADR-0038](ADR-0038-containers-are-an-extension-descriptor.md) — the
   extension-descriptor pattern `dev` extends.

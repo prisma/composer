@@ -144,6 +144,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   return {
     dir: workDir,
     entry: path.posix.join('bundle', appRel.split(path.sep).join('/'), 'server.js'),
+    watch: [standaloneRoot],
   };
 }
 
