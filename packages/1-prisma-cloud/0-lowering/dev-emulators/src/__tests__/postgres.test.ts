@@ -9,8 +9,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { spawn } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as net from 'node:net';
-import { startPrismaDevServer } from '@prisma/dev';
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { deleteServer } from '@prisma/dev/internal/state';
 import { Client as PgClient } from 'pg';
 import { postgresClient } from '../client.ts';
@@ -248,14 +251,38 @@ describe("a server that exists in @prisma/dev's records but not the daemon's", (
     // delete, leaves a server registered under a name the daemon has no
     // record of. Starting into that used to surface "already running" as a
     // 500 — and the recovery that deleted the state took the data (and the
-    // daemon) with it. This test creates exactly that mismatch, first-hand.
+    // daemon) with it.
+    //
+    // The foreign server runs in its OWN process, exactly as a leftover
+    // from a previous daemon does. That is not incidental: the record names
+    // its host's pid, and teardown stops an adopted server by that pid — so
+    // a server started inside THIS test process would make the teardown
+    // kill the test runner.
     const app = 'pgtest-adopt';
     const id = 'db';
     const instanceName = instanceNameFor(app, id);
 
-    // A server the daemon knows nothing about, under the name it derives.
-    const foreign = await startPrismaDevServer({ name: instanceName, persistenceMode: 'stateful' });
-    const foreignUrl = foreign.database.connectionString;
+    const scriptPath = path.join(tempDir('adopt-host'), 'host.mjs');
+    fs.writeFileSync(
+      scriptPath,
+      `import { startPrismaDevServer } from ${JSON.stringify(pathToFileURL(prismaDevModulePath()).href)};
+const server = await startPrismaDevServer({ name: ${JSON.stringify(instanceName)}, persistenceMode: 'stateful' });
+console.log(server.database.connectionString);
+setInterval(() => {}, 1 << 30);
+`,
+    );
+
+    const host = spawn(process.execPath, [scriptPath], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const foreignUrl = await new Promise<string>((resolve, reject) => {
+      let out = '';
+      host.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+        const line = out.split('\n')[0];
+        if (line !== undefined && out.includes('\n')) resolve(line.trim());
+      });
+      host.once('error', reject);
+      host.once('exit', (code) => reject(new Error(`host exited early (${String(code)})`)));
+    });
 
     try {
       await ensureFreshDaemon('postgres', registryRoot);
@@ -263,8 +290,8 @@ describe("a server that exists in @prisma/dev's records but not the daemon's", (
 
       const ensured = await client.ensureDatabase(app, id, prismaDevModulePath());
 
-      // Adopted: the same live server, reachable, not a second one on a
-      // different port.
+      // Adopted: the same live server, reachable — not a second one on a
+      // different port, and not an error.
       expect(ensured.url).toBe(foreignUrl);
       const pg = new PgClient({ connectionString: ensured.url });
       await pg.connect();
@@ -276,7 +303,7 @@ describe("a server that exists in @prisma/dev's records but not the daemon's", (
 
       await client.deleteApp(app);
     } finally {
-      await foreign.close().catch(() => undefined);
+      host.kill('SIGKILL');
       await deleteServer(instanceName).catch(() => undefined);
     }
   }, 60_000);

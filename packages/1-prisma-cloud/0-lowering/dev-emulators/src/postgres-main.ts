@@ -648,8 +648,13 @@ function main(): void {
       for (const db of entries) {
         // A server this daemon adopted rather than started has no handle to
         // close, so stop it by its record first (`killServer` leaves data).
+        // Never by OUR pid: `killServer` signals whatever pid the record
+        // names, and a record naming this daemon would make it kill itself.
         if (!runtimes.has(db.instanceName)) {
-          await internalState.killServer(db.instanceName).catch(() => undefined);
+          const owner = await serverStatusOf(internalState, db.instanceName);
+          if (owner.pid !== process.pid) {
+            await internalState.killServer(db.instanceName).catch(() => undefined);
+          }
         }
         // `deleteServer`'s kill path targets the pid in the server's persisted
         // state — for an in-daemon server that pid is THIS DAEMON's own. The
