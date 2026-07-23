@@ -50,8 +50,8 @@ function builtEntryGraph(entryFileName: string): string {
   return parts.join('\n');
 }
 
-describe('entry map: authoring + control + prisma-next + testing, no other runtime entry', () => {
-  test("package.json exports '.', './connection', './control', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
+describe('entry map: authoring + control + dev + prisma-next + testing, no other runtime entry', () => {
+  test("package.json exports '.', './connection', './control', './dev', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
@@ -59,9 +59,40 @@ describe('entry map: authoring + control + prisma-next + testing, no other runti
       '.',
       './connection',
       './control',
+      './dev',
       './prisma-next',
       './testing',
     ]);
+  });
+});
+
+describe("invariant 7 (ADR-0041's lazy dev reference): the production control entry never reaches dev implementation", () => {
+  test("the built './control' bundle graph carries no dev-implementation token — only the bare-specifier dynamic import to './dev'", () => {
+    const graph = builtEntryGraph('control.mjs');
+    // Positive marker: the probe genuinely reached the real bundle (the
+    // hosted-path env read, present regardless of dev).
+    expect(graph).toContain('PRISMA_WORKSPACE_ID');
+    // The lazy reference itself must survive as a genuine bare-specifier
+    // dynamic import — not inlined, not rewritten to a relative dist path.
+    expect(graph).toContain('@prisma/composer-prisma-cloud/dev');
+    for (const token of [
+      // Function-shaped tokens check for a trailing "(" — a bare mention of
+      // the name in a SHARED file's prose doc comment (e.g. container.ts's
+      // `deserialize` explaining that `dev/container.ts` reuses it) is not a
+      // leak; an actual call or declaration always has the paren.
+      'devContainerDescriptor(',
+      'runDevPreflight(',
+      'runDevEmulators(',
+      'devAttach(',
+      'runDevTeardown(',
+      'devProviders(',
+      '@internal/local-target',
+    ]) {
+      expect({ token, containsToken: graph.includes(token) }).toEqual({
+        token,
+        containsToken: false,
+      });
+    }
   });
 });
 

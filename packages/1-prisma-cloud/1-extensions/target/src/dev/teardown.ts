@@ -6,7 +6,7 @@
  * directory, and the dev stage's `localState()` directory.
  *
  * Every actual filesystem/child-process operation is delegated to
- * `@internal/lowering/dev` (this extension's own source stays free of
+ * `@internal/local-target` (this extension's own source stays free of
  * `node:`/`bun:` imports — invariant 5); control-plane only, runs in the CLI
  * parent (no CliError import — see container.ts).
  */
@@ -14,7 +14,7 @@
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
 import { bucketsClient, computeClient } from '@internal/dev-emulators';
-import { removeLocalPaths, removeLocalPostgresInstances } from '@internal/lowering/dev';
+import { removeLocalPaths, removeLocalPostgresInstances } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
 async function tolerateUnreachable(action: () => Promise<void>): Promise<void> {

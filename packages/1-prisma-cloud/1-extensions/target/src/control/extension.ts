@@ -7,7 +7,6 @@ import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config
 import type { ProvisionerDescriptor } from '@internal/core/deploy';
 import { blindCast } from '@internal/foundation/casts';
 import * as Prisma from '@internal/lowering';
-import { devProviders } from '@internal/lowering/dev';
 /** The Prisma Cloud–hosted deploy state store; its implementation lives in @internal/lowering. */
 import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
@@ -31,11 +30,6 @@ import type {
   ResolvedCloudOptions,
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
-import { devAttach } from '../dev/attach.ts';
-import { devContainerDescriptor } from '../dev/container.ts';
-import { runDevEmulators } from '../dev/emulators.ts';
-import { runDevPreflight } from '../dev/preflight.ts';
-import { runDevTeardown } from '../dev/teardown.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
@@ -392,22 +386,12 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       s3: bucketDescriptor(o),
     },
 
-    dev: {
-      container: devContainerDescriptor(),
-      providers: (input) =>
-        asProvidersLayer(
-          Layer.mergeAll(
-            devProviders(input),
-            PgWarmProvider(),
-            PnMigrationProvider(),
-            S3CredentialsProvider(),
-            Prisma.ServiceKeyProvider(),
-          ),
-        ),
-      preflight: (input) => runDevPreflight(input),
-      emulators: (input) => runDevEmulators(input),
-      attach: (input) => devAttach(input),
-      teardown: (input) => runDevTeardown(input),
-    },
+    // A lazy reference, not the descriptor (ADR-0041, operator directive):
+    // this control entry must carry no dev implementation code, so the ONE
+    // line here is a dynamic import of this extension's own SEPARATE dev
+    // entry (`src/exports/dev.ts` → `@prisma/composer-prisma-cloud/dev`) —
+    // never a static import. `resolveDevDescriptors` (core) is the only
+    // caller.
+    dev: () => import('@prisma/composer-prisma-cloud/dev').then((m) => m.devDescriptor()),
   };
 };

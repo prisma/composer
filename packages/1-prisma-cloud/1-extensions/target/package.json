@@ -7,6 +7,7 @@
     ".": "./dist/index.mjs",
     "./connection": "./dist/connection.mjs",
     "./control": "./dist/control.mjs",
+    "./dev": "./dist/dev.mjs",
     "./prisma-next": "./dist/prisma-next.mjs",
     "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
@@ -22,6 +23,7 @@
     "@internal/core": "workspace:0.2.0",
     "@internal/dev-emulators": "workspace:0.2.0",
     "@internal/foundation": "workspace:0.2.0",
+    "@internal/local-target": "workspace:0.2.0",
     "@internal/lowering": "workspace:0.2.0",
     "@internal/node": "workspace:0.2.0",
     "@internal/s3-protocol": "workspace:0.2.0",
