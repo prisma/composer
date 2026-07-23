@@ -152,9 +152,18 @@ plus the shared daemon layer and typed loopback clients.
      timeout → kill the spawned child (it must not outlive a failed
      ensure), then
      `Error: <name> emulator failed to start on port <port> — see <logPath>.`
-  5. Foreign process on the port → same error; `--fresh` does NOT touch the
-     daemons (they are machine-global, shared by other apps); recovering a
-     stolen port is manual (delete the registry entry).
+  5. Port taken at spawn (the daemon exits with a bind error before
+     reporting healthy): if the registry entry is being created FRESH — no
+     previously persisted port — the ensure, still holding the lock,
+     allocates the next free candidate (≥ 4300, skipping registry-used
+     ports), persists it, and retries the spawn, up to 5 candidates before
+     the pinned failure error. A fresh allocation has handed out no
+     endpoint, so moving it is safe — and this also makes ensure robust
+     when isolated registries (tests) or foreign processes race for the
+     same port. With a PREVIOUSLY persisted port, never retry elsewhere:
+     endpoints frozen in deploy state reference it — fail with the pinned
+     error; recovery is manual (`--fresh` does NOT touch the daemons — they
+     are machine-global, shared by other apps).
 - **Concurrent-ensure protocol:** the observe→spawn→persist critical
   section is serialized ACROSS PROCESSES per daemon name with an atomic
   directory lock: `mkdir <registryRoot>/.lock-<name>` (atomic creation IS
@@ -580,10 +589,13 @@ New control-plane files (all under `src/`, plane `control` in
     restart shows a gap, never a dead session).
   - `stopServices()` → `POST /apps/<app>/stop`.
 - `src/dev/teardown.ts` — `runDevTeardown(input: TeardownInput)`:
-  1. `<prisma-bin> dev stop 'pcdev-<app>-*'` then
-     `<prisma-bin> dev rm 'pcdev-<app>-*'` (glob per the CLI's stop/rm NAME
-     pattern support; tolerate nonzero exit when no instance matches — match
-     on the CLI's "not found"-style output, otherwise rethrow with output).
+  1. `<prisma-bin> dev stop 'pcdev-<slug(app)>-*'` then
+     `<prisma-bin> dev rm 'pcdev-<slug(app)>-*'` — the glob applies the SAME
+     name slugging § 4's instance derivation uses (one shared `slug`
+     implementation), or an app name containing slugged characters would
+     orphan its instances (glob per the CLI's stop/rm NAME pattern support;
+     tolerate nonzero exit when no instance matches — match on the CLI's
+     "not found"-style output, otherwise rethrow with output).
   2. Compute emulator: `DELETE /apps/<app>` (stops children, removes records
      and logs). Bucket emulator: `DELETE /_pcdev/apps/<app>` (removes
      registrations + credentials). Both tolerate an unreachable or absent
