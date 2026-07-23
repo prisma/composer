@@ -124,6 +124,11 @@ taken at S3 pickup, with the platform team's multi-port answer in hand.
   `dist/auth/index.mjs`, which does externalize), so this is a question
   of which description is accurate, not a defect. Settle it by reading
   the built output before the claim is migrated into durable docs.
+- **`composeServiceFetch`'s public prefix matches as a plain string.** A
+  prefix that would swallow `/rpc/` now throws at composition time, but
+  `/api/auth` still also matches `/api/authorize` — over-matching rather
+  than shadowing. Fix is to match on a segment boundary. Deliberately left
+  out of the un-publish change (review finding F17, second half).
 - **Secret-slot key collisions after normalization (framework,
   follow-up).** A service with sibling secret slots named `x` and
   `x_MINTED` generates the same platform var name and Alchemy resource
