@@ -254,18 +254,32 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
     const finish = (): void => {
       if (stopping) return;
       stopping = true;
+      console.log("[dev] stopping — the app's services are stopping; emulators and data stay up.");
       stopWatch();
       void (async () => {
         logsController.abort();
         for (const attachment of attachments) {
           await attachment.stopServices().catch(() => undefined);
         }
+        console.log('[dev] stopped.');
         resolve();
       })();
     };
 
-    process.once('SIGINT', finish);
-    process.once('SIGTERM', finish);
+    // alchemy's own library code (imported transitively while loading the
+    // app's config/providers) registers its own process-level SIGINT/SIGTERM
+    // listeners for ITS OWN in-process resource bookkeeping — irrelevant
+    // here, since the actual converge runs in a separate spawned `alchemy`
+    // child process (run-alchemy.ts), never in this one. Left in place,
+    // whichever of its listeners runs first can call process.exit()
+    // synchronously and tear this process down before the watch loop's own
+    // async cleanup (stopping the app's services) ever gets a turn. This is
+    // this process's OWN signal handling from here on: strip whatever else
+    // is registered and become the only listener.
+    process.removeAllListeners('SIGINT');
+    process.removeAllListeners('SIGTERM');
+    process.on('SIGINT', finish);
+    process.on('SIGTERM', finish);
   });
 
   return 0;

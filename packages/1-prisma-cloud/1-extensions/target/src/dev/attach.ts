@@ -34,7 +34,7 @@ async function* mergedLogs(app: string, signal: AbortSignal): AsyncIterable<LogL
     wake = undefined;
   };
 
-  const follow = (id: string): void => {
+  const follow = (id: string, address: string): void => {
     if (followed.has(id)) return;
     followed.add(id);
     void (async () => {
@@ -44,7 +44,7 @@ async function* mergedLogs(app: string, signal: AbortSignal): AsyncIterable<LogL
           buffer += chunk;
           let newlineAt = buffer.indexOf('\n');
           while (newlineAt !== -1) {
-            push({ service: id, line: buffer.slice(0, newlineAt) });
+            push({ service: address, line: buffer.slice(0, newlineAt) });
             buffer = buffer.slice(newlineAt + 1);
             newlineAt = buffer.indexOf('\n');
           }
@@ -59,7 +59,13 @@ async function* mergedLogs(app: string, signal: AbortSignal): AsyncIterable<LogL
 
   const relist = async (): Promise<void> => {
     const services = await client.listServices(app);
-    for (const svc of services) follow(svc.id);
+    // The emulator's `id` is the (path-segment-safe) key `followLogs` needs;
+    // the log line is labelled with the real, dotted address — the same
+    // identity the front door prints, so a service's endpoint line and its
+    // log lines name it identically (a nested module's service address
+    // contains dots the emulator's own id path segment cannot carry — see
+    // compute.ts's `slugServiceId`).
+    for (const svc of services) follow(svc.id, svc.address);
   };
 
   await relist();
