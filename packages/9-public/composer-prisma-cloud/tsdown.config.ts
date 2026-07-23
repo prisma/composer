@@ -38,6 +38,7 @@ const cronDist = '../../1-prisma-cloud/2-shared-modules/cron/dist';
 const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
 const emailDist = '../../1-prisma-cloud/2-shared-modules/email/dist';
 const streamsDist = '../../1-prisma-cloud/2-shared-modules/streams/dist';
+const devEmulatorsDist = '../../1-prisma-cloud/0-lowering/dev-emulators/dist';
 export default defineConfig([
   {
     ...baseConfig,
@@ -72,6 +73,30 @@ export default defineConfig([
       'scheduler-entrypoint': `${cronDist}/scheduler-entrypoint.mjs`,
     },
     outDir: 'dist/cron',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // Re-emitted from @internal/dev-emulators' dist (spec § 2's publish
+    // note): the daemon programs `ensureDaemon` spawns need a resolvable
+    // entry inside a PUBLISHED install's own dependency tree — the private
+    // `@internal/dev-emulators` package is never installed standalone.
+    // outDir is the DEFAULT `dist` (not a subdirectory): `readOwnVersion()`
+    // (baked into every one of these programs AND into this package's own
+    // `dev.mjs`, which calls `ensureDaemon`) resolves `../package.json`
+    // relative to its own file — both sides must sit at the SAME depth
+    // under `dist/` or they read different package.json files and disagree
+    // on "own version", breaking `ensureDaemon`'s staleness check.
+    ...baseConfig,
+    dts: false,
+    entry: {
+      'compute-main': `${devEmulatorsDist}/compute-main.mjs`,
+      'buckets-main': `${devEmulatorsDist}/buckets-main.mjs`,
+      'postgres-main': `${devEmulatorsDist}/postgres-main.mjs`,
+    },
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
