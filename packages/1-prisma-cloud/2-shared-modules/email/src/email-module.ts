@@ -32,15 +32,19 @@ export function email(opts?: {
     },
     ({ params, secrets, provision }) => {
       const db = provision(postgres({ name: 'db' }), { id: 'db' });
-      const service = provision(
-        emailService(opts?.deliveryUrl !== undefined ? { deliveryUrl: opts.deliveryUrl } : {}),
-        {
-          id: 'service',
-          deps: { db },
-          params: { deliveryMode: params.deliveryMode, from: params.from },
-          secrets: { deliveryCredential: secrets.deliveryCredential },
+      const service = provision(emailService(), {
+        id: 'service',
+        deps: { db },
+        // The service takes ONE input binding (ADR-0041); the module's
+        // forwarded boundary params/secret are its env-sourced leaves, and
+        // deliveryUrl (a static factory option) is a literal.
+        input: {
+          deliveryMode: params.deliveryMode,
+          deliveryUrl: opts?.deliveryUrl ?? 'https://api.resend.com',
+          from: params.from,
+          deliveryCredential: secrets.deliveryCredential,
         },
-      );
+      });
       return { send: service.send, outbox: service.outbox };
     },
   );

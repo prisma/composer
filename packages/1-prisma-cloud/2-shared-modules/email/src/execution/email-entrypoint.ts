@@ -1,9 +1,10 @@
 // The reusable boot module the email service's build points `entry` at (see
 // emailService's `node({ entry: './email-entrypoint.mjs' })`). Mirrors
-// storage's entrypoint: load() hands the hydrated `db` binding, config()
-// the params, secrets() the credential; this is where the pg outbox store
-// (D2), the delivery backing (D3, chosen by deliveryMode), and handlers.ts
-// meet the framework, served over serve()'s generated fetch handler.
+// storage's entrypoint: load() hands the hydrated `db` binding, input() the
+// validated input object (the credential as a redacting SecretString box,
+// ADR-0041), run() the PORT env; this is where the pg outbox store (D2), the
+// delivery backing (D3, chosen by deliveryMode), and handlers.ts meet the
+// framework, served over serve()'s generated fetch handler.
 
 import { serve } from '@internal/service-rpc';
 import type { Delivery } from '../delivery.ts';
@@ -18,8 +19,8 @@ import { checkDeliveryUrl } from './check-delivery-url.ts';
 const service = emailService();
 
 const { db } = service.load();
-const { deliveryMode, deliveryUrl, from, port } = service.config();
-const { deliveryCredential } = service.secrets();
+const { deliveryMode, deliveryUrl, from, deliveryCredential } = service.input();
+const port = Number(process.env['PORT']);
 
 const deliveryUrlError = checkDeliveryUrl(deliveryMode, deliveryUrl);
 if (deliveryUrlError !== null) throw new Error(deliveryUrlError);
