@@ -43,6 +43,17 @@ export default defineConfig([
       /^jose/,
       /^pg/,
     ],
+    // The JS bundle still inlines arktype/arkregex (noExternal above) so the
+    // deployed entrypoint stays self-contained. The DECLARATION bundle is a
+    // separate rolldown pass that walks arkregex's .d.ts re-export chain
+    // (arktype -> arkregex `charset.d.ts` importing `StringDigit` from
+    // `escape.d.ts`) and hits a rolldown dts-bundling bug there — unrelated
+    // to this package's own types (this entrypoint's own `.d.mts` is an
+    // empty stub; it exports nothing, see auth-entrypoint.ts). `deps.dts`
+    // scopes an override to the declaration pass only, so arktype/arkregex
+    // are left as unbundled references there without touching the runtime
+    // JS bundling above.
+    deps: { dts: { neverBundle: [/^arktype/, /^arkregex/] } },
   },
   {
     ...baseConfig,
@@ -68,5 +79,10 @@ export default defineConfig([
       /^jose/,
       /^pg/,
     ],
+    // Same declaration-pass workaround as the entrypoint pass above — this
+    // one DOES matter: `./testing`'s exported types (`LocalAuthServer`,
+    // `CapturedAuthEmail`) are real public API, consumed by
+    // `composer-prisma-cloud/src/exports/auth-testing.ts`.
+    deps: { dts: { neverBundle: [/^arktype/, /^arkregex/] } },
   },
 ]);
