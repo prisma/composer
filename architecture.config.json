@@ -133,7 +133,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pn-pack-requirement.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/required-pack-head.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"

@@ -26,8 +26,8 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
 import { isEnvParamSource, paramName } from './param.ts';
-import { resolvePnProject } from './pn-config.ts';
-import { isPnPostgresResourceNode, packRequirementOf } from './prisma-next.ts';
+import { resolvePrismaNextConfig } from './pn-config.ts';
+import { isPnPostgresResourceNode, requiredPackHeadOf } from './prisma-next.ts';
 import { secretName } from './secret.ts';
 
 type EnvClass = 'production' | 'preview';
@@ -228,13 +228,14 @@ export async function runPreflight(
 }
 
 /**
- * The extension-pack half of the deploy preflight (auth module D5): every
- * dependency edge whose required contract carries a `packRequirement` must be
- * wired to a `pnPostgres` resource whose `prisma-next.config.ts` lists that
- * pack at the required head hash. Enforced HERE — at deploy time, before the
- * migration step constructs — because wireability (`pnContract().satisfies`)
- * deliberately says yes to every pack requirement: the authoring-side
- * contract value cannot see the resource's config. Invoked from the
+ * The extension-pack half of the deploy preflight: every dependency edge
+ * whose required contract carries a `requiredPackHead` must be wired to a
+ * `pnPostgres` resource whose `prisma-next.config.ts` lists that pack at the
+ * required head hash. Enforced HERE — at deploy time, before the migration
+ * step constructs — because wireability (`pnContract().satisfies`)
+ * deliberately says yes to every required pack head (the authoring-side
+ * contract value cannot see the resource's config), and boot time would be
+ * too late: the service would be down after a green deploy. Invoked from the
  * `prisma-next` descriptor's lowering, beside the migration-step
  * construction.
  */
@@ -245,7 +246,7 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     if (consumer === undefined || consumer.kind !== 'service') continue;
     const slot = consumer.inputs[edge.input];
     if (slot === undefined) continue;
-    const requirement = packRequirementOf(slot.required);
+    const requirement = requiredPackHeadOf(slot.required);
     if (requirement === undefined) continue;
 
     const node = graph.nodes.find((n) => n.id === edge.from)?.node;
@@ -262,7 +263,7 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
       );
     }
 
-    const { extensionPacks } = await resolvePnProject(provider.config);
+    const { extensionPacks } = await resolvePrismaNextConfig(provider.config);
     const pack = extensionPacks.find((p) => p.id === requirement.packId);
     if (pack === undefined) {
       throw new Error(

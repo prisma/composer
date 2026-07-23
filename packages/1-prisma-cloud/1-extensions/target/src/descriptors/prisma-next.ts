@@ -7,7 +7,7 @@ import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { PgWarm } from '../pg-warm-resource.ts';
-import { packHeads, resolvePnProject } from '../pn-config.ts';
+import { packHeadRefHashes, resolvePrismaNextConfig } from '../pn-config.ts';
 import { PnMigration } from '../pn-migration-resource.ts';
 import { runPackPreflight } from '../preflight.ts';
 import { isPnPostgresResourceNode } from '../prisma-next.ts';
@@ -46,7 +46,7 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       }
       const contractJson = node.provides.__cmp.contractJson;
       const { migrationsDir, extensionPacks } = yield* Effect.promise(() =>
-        resolvePnProject(node.config),
+        resolvePrismaNextConfig(node.config),
       );
       // The target REF (node's named `targetRef`, or head by default) is
       // resolved once here so the same identity keys the resource's diff below.
@@ -54,10 +54,10 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         resolveTargetRef(migrationsDir, contractJson, node.targetRef),
       );
 
-      // Every pack-requirement edge must name a pack the wired resource's
+      // Every required-pack-head edge must name a pack the wired resource's
       // config actually carries, at the required head — checked before the
       // migration step exists, so a bad wiring fails the deploy here rather
-      // than leaving a green deploy with a service missing its schema (D5).
+      // than leaving a green deploy with a service missing its schema.
       yield* Effect.promise(() => runPackPreflight(graph));
 
       // Warm the DB first (FT-5226), then migrate against the now-warm url —
@@ -72,7 +72,7 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
         migrationsDir,
         targetHash: ref.hash,
         invariants: [...ref.invariants].sort(),
-        packHeads: packHeads(extensionPacks),
+        packHeadRefHashes: packHeadRefHashes(extensionPacks),
         configPath: node.config,
         ...(node.targetRef !== undefined ? { refName: node.targetRef } : {}),
       });

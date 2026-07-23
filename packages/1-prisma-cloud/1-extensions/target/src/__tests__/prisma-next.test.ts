@@ -16,10 +16,10 @@ import { isNode, Load, module, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import {
   isPnPostgresResourceNode,
-  packRequirementOf,
   pnContract,
-  pnPackRequirement,
   pnPostgres,
+  requiredPackHead,
+  requiredPackHeadOf,
 } from '../exports/prisma-next.ts';
 import { postgres } from '../postgres.ts';
 import type { Contract as GadgetContract } from './fixtures/gadget-contract/emitted/contract.d.ts';
@@ -78,13 +78,13 @@ describe('pnContract().satisfies()', () => {
   });
 });
 
-describe('pnPackRequirement() — the extension-pack claim (wireability only, D5)', () => {
-  const requirement = pnPackRequirement({ packId: 'auth', headHash: 'sha256:auth-head' });
+describe('requiredPackHead() — the pack-head claim (wireability only)', () => {
+  const requirement = requiredPackHead({ packId: 'auth', headHash: 'sha256:auth-head' });
 
   test('is a frozen prisma-next-kind contract carrying the requirement in __cmp', () => {
     expect(requirement.kind).toBe('prisma-next');
     expect(Object.isFrozen(requirement)).toBe(true);
-    expect(packRequirementOf(requirement)).toEqual({
+    expect(requiredPackHeadOf(requirement)).toEqual({
       packId: 'auth',
       headHash: 'sha256:auth-head',
     });
@@ -106,20 +106,20 @@ describe('pnPackRequirement() — the extension-pack claim (wireability only, D5
     expect(widget.satisfies(gadget)).toBe(false);
   });
 
-  test('packRequirementOf reads defensively — malformed shapes yield undefined', () => {
-    expect(packRequirementOf(undefined)).toBeUndefined();
+  test('requiredPackHeadOf reads defensively — malformed shapes yield undefined', () => {
+    expect(requiredPackHeadOf(undefined)).toBeUndefined();
     const widget = pnContract<WidgetContract>(widgetContractJson);
-    expect(packRequirementOf(widget)).toBeUndefined();
+    expect(requiredPackHeadOf(widget)).toBeUndefined();
     const malformed = (cmp: unknown) =>
       ({ kind: 'prisma-next', __cmp: cmp, satisfies: () => false }) as Contract<
         'prisma-next',
         unknown
       >;
-    expect(packRequirementOf(malformed(null))).toBeUndefined();
-    expect(packRequirementOf(malformed({ packRequirement: null }))).toBeUndefined();
-    expect(packRequirementOf(malformed({ packRequirement: { packId: 'auth' } }))).toBeUndefined();
+    expect(requiredPackHeadOf(malformed(null))).toBeUndefined();
+    expect(requiredPackHeadOf(malformed({ requiredPackHead: null }))).toBeUndefined();
+    expect(requiredPackHeadOf(malformed({ requiredPackHead: { packId: 'auth' } }))).toBeUndefined();
     expect(
-      packRequirementOf(malformed({ packRequirement: { packId: 42, headHash: 'x' } })),
+      requiredPackHeadOf(malformed({ requiredPackHead: { packId: 42, headHash: 'x' } })),
     ).toBeUndefined();
   });
 });

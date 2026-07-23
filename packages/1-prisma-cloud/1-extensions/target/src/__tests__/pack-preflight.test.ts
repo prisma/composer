@@ -1,6 +1,6 @@
 /**
- * `runPackPreflight` — the deploy-time enforcement of `pnPackRequirement`
- * (auth module D5): wireability says yes to every pack requirement, so THIS
+ * `runPackPreflight` — the deploy-time enforcement of `requiredPackHead`:
+ * wireability says yes to every required pack head, so THIS
  * is the check that the wired resource's `prisma-next.config.ts` actually
  * lists the pack at the required head. Driven against real `Load` graphs
  * (real wiring, real satisfies path) with the packed-contract fixture's
@@ -19,7 +19,7 @@ import {
 } from '@internal/core';
 import { compute } from '../compute.ts';
 import { runPackPreflight } from '../preflight.ts';
-import { pnContract, pnPackRequirement, pnPostgres } from '../prisma-next.ts';
+import { pnContract, pnPostgres, requiredPackHead } from '../prisma-next.ts';
 import { GADGET_PACK_HEAD_HASH, GADGET_PACK_ID } from './fixtures/packed-contract/pack.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
   type: 'json',
@@ -38,7 +38,7 @@ const packDep = (packId: string, headHash: string) =>
   dependency({
     type: 'prisma-next',
     connection: { params: { url: string() }, hydrate: (v) => v },
-    required: pnPackRequirement({ packId, headHash }),
+    required: requiredPackHead({ packId, headHash }),
   });
 
 const build = {

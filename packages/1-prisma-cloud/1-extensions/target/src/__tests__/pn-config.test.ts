@@ -1,18 +1,18 @@
 /**
- * `resolvePnProject` — the config-path → project-facts resolution the lowering
- * does when assembling `PnMigration` props (slice 2 D2; extension packs, auth
- * D2). Loads real `prisma-next.config.ts` fixtures via PN's config loader:
- * the widget fixture (no packs) and the packed fixture (one synthetic pack).
- * No database / Prisma Cloud involved. Plus `packHeads`, the pack identity
- * fold the migration resource keys its diff on.
+ * `resolvePrismaNextConfig` — the config-path → project-facts resolution the
+ * lowering does when assembling `PnMigration` props. Loads real
+ * `prisma-next.config.ts` fixtures via PN's config loader: the widget
+ * fixture (no packs) and the packed fixture (one synthetic pack). No
+ * database / Prisma Cloud involved. Plus `packHeadRefHashes`, the pack
+ * identity fold the migration resource keys its diff on.
  */
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import {
   type PnExtensionPack,
-  packHeads,
+  packHeadRefHashes,
   resolveMigrationsDir,
-  resolvePnProject,
+  resolvePrismaNextConfig,
 } from '../pn-config.ts';
 import {
   GADGET_PACK_HEAD_HASH,
@@ -36,9 +36,9 @@ const packedConfig = path.join(
   'prisma-next.config.ts',
 );
 
-describe('resolvePnProject', () => {
+describe('resolvePrismaNextConfig', () => {
   test('resolves the default migrations/ dir relative to the config file', async () => {
-    const project = await resolvePnProject(widgetConfig);
+    const project = await resolvePrismaNextConfig(widgetConfig);
     // The widget config sets no `migrations.dir`, so PN's default `migrations/`
     // resolves next to the config file (its `source/` directory).
     expect(project.migrationsDir).toBe(path.join(path.dirname(widgetConfig), 'migrations'));
@@ -46,24 +46,24 @@ describe('resolvePnProject', () => {
   });
 
   test('a config with no extension packs yields []', async () => {
-    const project = await resolvePnProject(widgetConfig);
+    const project = await resolvePrismaNextConfig(widgetConfig);
     expect(project.extensionPacks).toEqual([]);
   });
 
   test('surfaces declared extension packs with their contract-space heads', async () => {
-    const project = await resolvePnProject(packedConfig);
+    const project = await resolvePrismaNextConfig(packedConfig);
     expect(project.extensionPacks.map((p) => p.id)).toEqual([GADGET_PACK_ID]);
     expect(project.extensionPacks[0]?.contractSpace?.headRef.hash).toBe(GADGET_PACK_HEAD_HASH);
   });
 
-  test('resolveMigrationsDir stays the migrationsDir projection of resolvePnProject', async () => {
+  test('resolveMigrationsDir stays the migrationsDir projection of resolvePrismaNextConfig', async () => {
     expect(await resolveMigrationsDir(widgetConfig)).toBe(
-      (await resolvePnProject(widgetConfig)).migrationsDir,
+      (await resolvePrismaNextConfig(widgetConfig)).migrationsDir,
     );
   });
 });
 
-describe('packHeads (the migration-resource diff-key fold)', () => {
+describe('packHeadRefHashes (the migration-resource diff-key fold)', () => {
   const pack = (id: string, hash: string | undefined): PnExtensionPack =>
     ({
       kind: 'extension',
@@ -84,27 +84,27 @@ describe('packHeads (the migration-resource diff-key fold)', () => {
     }) as unknown as PnExtensionPack;
 
   test('one entry per pack, "<id>:<headHash>", sorted by pack id', () => {
-    expect(packHeads([pack('zeta', 'sha256:z'), pack('alpha', 'sha256:a')])).toEqual([
+    expect(packHeadRefHashes([pack('zeta', 'sha256:z'), pack('alpha', 'sha256:a')])).toEqual([
       'alpha:sha256:a',
       'zeta:sha256:z',
     ]);
   });
 
   test('a pack upgrade (new head hash) changes its entry', () => {
-    expect(packHeads([pack('auth', 'sha256:v1')])).not.toEqual(
-      packHeads([pack('auth', 'sha256:v2')]),
+    expect(packHeadRefHashes([pack('auth', 'sha256:v1')])).not.toEqual(
+      packHeadRefHashes([pack('auth', 'sha256:v2')]),
     );
   });
 
   test('a pack without a contractSpace still contributes its id (head "-")', () => {
-    expect(packHeads([pack('bare', undefined)])).toEqual(['bare:-']);
+    expect(packHeadRefHashes([pack('bare', undefined)])).toEqual(['bare:-']);
   });
 
   test('no packs → empty key contribution', () => {
-    expect(packHeads([])).toEqual([]);
+    expect(packHeadRefHashes([])).toEqual([]);
   });
 
   test('the real packed fixture folds to its declared head', () => {
-    expect(packHeads([gadgetPack])).toEqual([`${GADGET_PACK_ID}:${GADGET_PACK_HEAD_HASH}`]);
+    expect(packHeadRefHashes([gadgetPack])).toEqual([`${GADGET_PACK_ID}:${GADGET_PACK_HEAD_HASH}`]);
   });
 });

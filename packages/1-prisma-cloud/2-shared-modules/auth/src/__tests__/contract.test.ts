@@ -2,12 +2,12 @@
  * The authoring surface's runtime shapes: the `auth-api` contract's
  * kind-only satisfies, the dependency factories' node shapes (what wires,
  * what hydrates), `authDb()`'s pack claim, and the wire record schemas.
- * jose's actual verification runs against a live server in D5's integration
- * suite — here we only prove hydrate is pure construction (no fetch).
+ * jose's actual verification runs against a live server in the local-server
+ * integration suite — here we only prove hydrate is pure construction (no fetch).
  */
 import { describe, expect, test } from 'bun:test';
 import type { Contract } from '@internal/core';
-import { packRequirementOf } from '@internal/prisma-cloud';
+import { requiredPackHeadOf } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import {
   authApi,
@@ -78,7 +78,7 @@ describe('authDb()', () => {
     const dep = authDb();
     expect(dep.kind).toBe('dependency');
     expect(dep.type).toBe('prisma-next');
-    expect(packRequirementOf(dep.required)).toEqual({
+    expect(requiredPackHeadOf(dep.required)).toEqual({
       packId: AUTH_PACK_ID,
       headHash: AUTH_PACK_HEAD_HASH,
     });

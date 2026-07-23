@@ -19,7 +19,7 @@ import { resolve } from 'pathe';
 export type PnExtensionPack = NonNullable<PrismaNextConfig['extensionPacks']>[number];
 
 /** What the deploy reads out of one `prisma-next.config.ts`. */
-export interface PnProject {
+export interface ResolvedPrismaNextConfig {
   /** The absolute migrations directory PN reads authored migration packages from. */
   readonly migrationsDir: string;
   /** The config's declared extension packs (`[]` when it declares none). */
@@ -27,7 +27,9 @@ export interface PnProject {
 }
 
 /** Loads the config at `configPath` and resolves the facts the deploy consumes. */
-export async function resolvePnProject(configPath: string): Promise<PnProject> {
+export async function resolvePrismaNextConfig(
+  configPath: string,
+): Promise<ResolvedPrismaNextConfig> {
   const config = await loadConfig(configPath);
   return {
     // `resolve(configPath, '..')` is the config file's directory; the
@@ -39,17 +41,18 @@ export async function resolvePnProject(configPath: string): Promise<PnProject> {
 
 /** The absolute migrations directory PN reads authored migration packages from. */
 export async function resolveMigrationsDir(configPath: string): Promise<string> {
-  return (await resolvePnProject(configPath)).migrationsDir;
+  return (await resolvePrismaNextConfig(configPath)).migrationsDir;
 }
 
 /**
  * The pack-head identity entries the `PnMigration` resource folds into its
- * diff key: `"<packId>:<headHash>"`, sorted by pack id, so a pack upgrade (or
- * a pack added/removed) produces a distinct deploy step. A pack without a
+ * diff key: `"<packId>:<headRefHash>"` — each pack's contract-space head ref,
+ * identified by its storage hash — sorted by pack id, so a pack upgrade (or a
+ * pack added/removed) produces a distinct deploy step. A pack without a
  * `contractSpace` contributes `"-"` for its head — it declares no migratable
  * space, but its presence still belongs in the key.
  */
-export function packHeads(extensionPacks: readonly PnExtensionPack[]): readonly string[] {
+export function packHeadRefHashes(extensionPacks: readonly PnExtensionPack[]): readonly string[] {
   return extensionPacks
     .map((pack) => `${pack.id}:${pack.contractSpace?.headRef.hash ?? '-'}`)
     .sort();

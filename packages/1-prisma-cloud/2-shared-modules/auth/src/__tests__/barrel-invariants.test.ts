@@ -21,7 +21,7 @@ describe('authoring barrel', () => {
     // Positive markers: the probe genuinely bundled the surface (the port
     // kind and the pack claim both survive minification-free bundling).
     expect(js).toContain('auth-api');
-    expect(js).toContain('packRequirement');
+    expect(js).toContain('requiredPackHead');
     for (const token of [
       'alchemy',
       'from "effect',

@@ -11,10 +11,10 @@ import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/ru
 import type { SqlStorage } from '@prisma-next/sql-contract/types';
 import pg from 'pg';
 import { normalizeSslMode, retryTransientConnect } from './pg-connection.ts';
-import { type PnPackRequirement, packRequirementOf } from './pn-pack-requirement.ts';
+import { type RequiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
 
-export type { PnPackRequirement } from './pn-pack-requirement.ts';
-export { packRequirementOf, pnPackRequirement } from './pn-pack-requirement.ts';
+export type { RequiredPackHead } from './required-pack-head.ts';
+export { requiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
 
 /**
  * Any Prisma Next contract this primitive can carry — the bound both
@@ -26,13 +26,12 @@ export type AnyPnContract = import('@prisma-next/contract/types').Contract<SqlSt
 /**
  * The comparison payload behind a `prisma-next` Contract. `_contract` is a
  * type-only anchor so plain assignability between two `PnCmp`s means the
- * branded `storageHash` literals match. `packRequirement` is the
- * extension-pack claim a `pnPackRequirement` contract carries instead of a
- * contract value.
+ * branded `storageHash` literals match. `requiredPackHead` is the pack-head
+ * claim a `requiredPackHead()` contract carries instead of a contract value.
  */
 export interface PnCmp<C extends AnyPnContract = AnyPnContract> {
   readonly contractJson: unknown;
-  readonly packRequirement?: PnPackRequirement;
+  readonly requiredPackHead?: RequiredPackHead;
   readonly _contract?: C;
 }
 
@@ -92,11 +91,11 @@ export function pnContract(contract: unknown): unknown {
     kind: 'prisma-next',
     __cmp: { contractJson: contract },
     satisfies: (required) => {
-      // A pack requirement is wireable to ANY pn database (D5): whether the
+      // A required pack head is wireable to ANY pn database: whether the
       // wired resource's config actually lists the pack at the required head
       // is enforced by the deploy preflight, not here — the authoring-side
       // contract value cannot see the resource's prisma-next.config.ts.
-      if (packRequirementOf(required) !== undefined) return true;
+      if (requiredPackHeadOf(required) !== undefined) return true;
       const requiredHash = storageHashOf(required);
       return requiredHash !== undefined && requiredHash === storageHashOf(value);
     },

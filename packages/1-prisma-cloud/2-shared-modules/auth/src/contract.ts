@@ -7,7 +7,7 @@
  */
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
-import { pnPackRequirement } from '@internal/prisma-cloud';
+import { requiredPackHead } from '@internal/prisma-cloud';
 // Type-only, and type-only it must stay: the value surface of ./prisma-next
 // carries pg (node: imports), which this authoring barrel must never bundle.
 import type { PnPostgresContract } from '@internal/prisma-cloud/prisma-next';
@@ -239,6 +239,6 @@ export function authDb(): DependencyEnd<{ url: string }, PnPostgresContract> {
       params: { url: string() },
       hydrate: ({ url }) => ({ url }),
     },
-    required: pnPackRequirement({ packId: AUTH_PACK_ID, headHash: AUTH_PACK_HEAD_HASH }),
+    required: requiredPackHead({ packId: AUTH_PACK_ID, headHash: AUTH_PACK_HEAD_HASH }),
   });
 }

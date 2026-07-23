@@ -21,7 +21,7 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { resolvePnProject } from './pn-config.ts';
+import { resolvePrismaNextConfig } from './pn-config.ts';
 import { applyPnMigration } from './prisma-next-migrate.ts';
 
 export interface PnMigrationProps {
@@ -43,17 +43,18 @@ export interface PnMigrationProps {
   /** The named ref (`targetRef`) this deploy pinned, when set — threaded to PN's migrate. */
   readonly refName?: string;
   /**
-   * `"<packId>:<headHash>"` per declared extension pack, SORTED by pack id
-   * (`packHeads`, pn-config.ts) — folded into the diff key so a pack upgrade
-   * at an unchanged app contract still produces a distinct deploy step.
-   * Only the identity rides in props: pack DESCRIPTORS carry functions, which
-   * cannot live in persisted Alchemy state — reconcile reloads them from
-   * `configPath`.
+   * `"<packId>:<headRefHash>"` per declared extension pack, SORTED by pack id
+   * (`packHeadRefHashes`, pn-config.ts) — folded into the diff key so a pack
+   * upgrade at an unchanged app contract still produces a distinct deploy
+   * step. Only the identity rides in props: pack DESCRIPTORS carry functions,
+   * which cannot live in persisted Alchemy state — reconcile reloads them
+   * from `configPath`.
    */
-  readonly packHeads: readonly string[];
+  readonly packHeadRefHashes: readonly string[];
   /**
    * The resource's `prisma-next.config.ts` path — where reconcile reloads the
-   * declared extension-pack descriptors from when `packHeads` is non-empty.
+   * declared extension-pack descriptors from when `packHeadRefHashes` is
+   * non-empty.
    */
   readonly configPath: string;
 }
@@ -89,7 +90,9 @@ export const pnMigrationProviderService: Provider.ProviderService<PnMigration> =
         // the key says packs are declared, so a pack-free project never pays
         // (or depends on) the config load at apply time.
         const extensionPacks =
-          news.packHeads.length > 0 ? (await resolvePnProject(news.configPath)).extensionPacks : [];
+          news.packHeadRefHashes.length > 0
+            ? (await resolvePrismaNextConfig(news.configPath)).extensionPacks
+            : [];
         return applyPnMigration({
           url: news.url,
           contractJson: news.contractJson,
