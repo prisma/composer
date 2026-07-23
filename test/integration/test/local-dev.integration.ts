@@ -709,7 +709,10 @@ main()
     process.exitCode = 0;
   })
   .catch(async (error: unknown) => {
-    console.error(error instanceof Error ? (error.stack ?? error.message) : error);
+    // Mask credentialed URLs (spec's masking contract) — a converge error can
+    // embed a live connection string, and this line reaches CI's public log.
+    const text = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    console.error(text.replace(/:\/\/([^:@/\s]+):[^@/\s]+@/g, '://$1:***@'));
     await dumpDiagnostics();
     process.exitCode = 1;
   });
