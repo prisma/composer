@@ -872,8 +872,14 @@ New control-plane files (all under `src/`, plane `control` in
     no-new-deps contract here — chokidar absorbs the atomic-rename/inode
     class we hand-fixed once already and the cross-platform recursive-watch
     differences; v4 is pure JS, no native code, no glob surface). The
-    hand-rolled parent-directory workaround is deleted; its delete+recreate
-    regression test STAYS as a behavior test. `startWatch` returns
+    hand-rolled parent-directory MECHANISM survives, re-expressed through
+    chokidar (Linux CI proof, 2026-07-23: an inotify watch bound directly
+    to a file dies with the file's inode, and chokidar v4 absorbs atomic
+    renames but NOT unlink+recreate of a directly watched file): file
+    targets are watched via a depth-0 chokidar watch on their parent
+    directory filtered to the exact path, directory targets recursively as
+    themselves, and a nonexistent path counts as a file target. The
+    delete+recreate regression test STAYS as a behavior test. `startWatch` returns
     `{ ready, stop }`: chokidar attaches its OS-level watches
     asynchronously, so a change made before attachment is missed entirely —
     `ready` resolves on chokidar's own 'ready' (and on `stop()`, so an
