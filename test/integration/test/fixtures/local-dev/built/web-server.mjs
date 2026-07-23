@@ -33,6 +33,12 @@ Bun.serve({
         version: VERSION,
         db: typeof db.url === 'string' && db.url.length > 0,
         store: typeof store.url === 'string' && store.url.length > 0,
+        // The port-override row local dev's Deployment provider materializes
+        // into this process's own env (never persisted to env.json — see
+        // local-dev spec § 4) — exposed here so a test can assert on it
+        // directly, through the documented HTTP contract, rather than
+        // inferring it indirectly from a successful bind.
+        portEnv: process.env['COMPOSER_WEB_PORT'] ?? null,
       });
     }
     return new Response('local-dev fixture: web', { status: 200 });
