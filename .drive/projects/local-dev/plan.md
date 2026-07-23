@@ -120,6 +120,24 @@ scripts. Implementer dispatches use Sonnet-4.6-mid, reviewers Opus-4.8-mid
 - **Depends on:** S2 + S5.
 - **Spec sections:** acceptance criteria 7–10.
 
+## Known items blocking close-out (found in S5 proving, 2026-07-23)
+
+- **Restart amplification (defect):** rebuilding one service restarts its
+  RPC dependents too (observed: catalog rebuild → catalog + cron.runner +
+  orders.service restarted; storefront + cron.scheduler correctly
+  untouched). Something in the dependents' materialized deployment env
+  recomputes as changed on every converge. Root-cause and fix in the local
+  providers (S4 code) before S6 sign-off — acceptance criterion 2 requires
+  exactly-one-service restarts.
+- **Criteria 4/5 scripting pending:** `examples/store` has neither a bucket
+  nor a secret/env-param; the S4 fixture needs both to script the bucket
+  file-drop round-trip and the placeholder-warning / env-param-error
+  criteria at the CLI level.
+- **Emulator stop/reap honesty (verify):** after `stopServices()`, the
+  listing shows `stopped`/`pid: null` while the OS process may still be in
+  its SIGTERM grace window. Verify against the pinned stop semantics and
+  make the listing truthful (S3 code).
+
 ## Close-out (required)
 
 - [ ] Verify all acceptance criteria in `.drive/projects/local-dev/spec.md`
