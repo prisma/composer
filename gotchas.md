@@ -335,7 +335,7 @@ await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 500
 
 - Upstream: [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while)
 - Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
-- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect succeeds — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking)
+- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect in a run of at least 14 succeeds — the rejection is intermittent, so a shorter unanimous streak is treated as luck, not a fix (same reasoning as PRO-217's 14-hold requirement below) — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking)
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
 
 ---
