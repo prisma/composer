@@ -234,6 +234,29 @@ and would re-provision resources it can't see. Cut over per app:
 4. Delete the workspace-level `prisma-composer-state` project from the
    Console whenever convenient; nothing reads it after the upgrade.
 
+### If you upgraded before destroying
+
+A deploy on the new version starts from empty state, finds the resources the
+old state was tracking, and refuses to touch them:
+
+```
+PrismaApiError: {"error":{"code":"app:already_exists", ...}}
+EnvironmentVariable "COMPOSER_..." exists but is untracked in this deploy
+state — refusing to overwrite a reserved COMPOSER_ key.
+```
+
+The old state cannot be read back. Recover by removing the leftovers so the
+next deploy recreates everything under fresh state — either:
+
+- Delete the app's Project in the Console (everything in it goes: apps,
+  databases, environment variables), then deploy again. Simplest, and right
+  whenever the Project holds nothing you created outside the framework.
+- Or downgrade the framework packages, run the destroys from step 1, upgrade
+  again, and deploy.
+
+Recreated apps get new generated URLs; anything pointing at the old ones
+needs updating.
+
 ## The full picture
 
 [`docs/design/10-domains/deploy-cli.md`](../design/10-domains/deploy-cli.md)
