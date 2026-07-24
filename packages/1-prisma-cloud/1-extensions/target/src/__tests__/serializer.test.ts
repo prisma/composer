@@ -4,9 +4,8 @@
  * bound to `envParam(...)` (as opposed to a literal, unchanged, param).
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type ConfigParam, param, string } from '@internal/core';
+import { type ConfigParam, param, service, string } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { compute } from '../exports/index.ts';
 import { ORIGIN_PARAM } from '../origin-key.ts';
 import {
   configKey,
@@ -38,8 +37,19 @@ const nonEmptyString: StandardSchemaV1<string, string> = {
   },
 };
 
+// Raw core service(): the env-sourced param wire is now exercised only by
+// extension-RESERVED params (ADR-0042 removed user params from compute()),
+// but the serializer machinery is param-name-agnostic — a plain node with a
+// declared param proves it.
 const svc = (extra: Record<string, ConfigParam> = {}) =>
-  compute({ name: 'web', deps: {}, params: { appOrigin: string(), ...extra }, build });
+  service({
+    name: 'web',
+    extension: '@prisma/composer-prisma-cloud',
+    type: 'compute',
+    inputs: {},
+    params: { appOrigin: string(), ...extra },
+    build,
+  });
 
 async function withEnv<T>(values: Record<string, string | undefined>, fn: () => T): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));

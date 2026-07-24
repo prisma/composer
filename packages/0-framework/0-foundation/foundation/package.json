@@ -3,8 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Foundation utilities: the audited cast helpers and runtime assertions.",
+  "description": "Foundation utilities: the audited cast helpers, runtime assertions, the redacting secret box, and its opt-in arktype spelling.",
   "exports": {
+    "./arktype": "./dist/arktype.mjs",
     "./assertions": "./dist/assertions.mjs",
     "./casts": "./dist/casts.mjs",
     "./secret": "./dist/secret.mjs",
@@ -15,6 +16,9 @@
     "build": "tsdown",
     "clean": "rm -rf dist",
     "test": "bun test"
+  },
+  "dependencies": {
+    "arktype": "^2.2.3"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

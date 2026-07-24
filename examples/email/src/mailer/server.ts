@@ -6,7 +6,7 @@ import { createEmailApp } from './app.ts';
 import service from './service.ts';
 
 const { email, outbox } = service.load();
-const { port } = service.config();
+const port = service.port();
 
 process.on('uncaughtException', (err) => console.error('uncaughtException', err));
 process.on('unhandledRejection', (err) => console.error('unhandledRejection', err));

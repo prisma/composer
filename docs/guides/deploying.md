@@ -137,10 +137,8 @@ prisma-composer deploy module.ts --stage "pr-$PR_NUMBER"    # on push
 prisma-composer destroy module.ts --stage "pr-$PR_NUMBER"   # on close
 ```
 
-One extra: if your app declares secrets (see
-[Building an app § Secrets](building-an-app.md#secrets)) or binds params with
-`envParam` (see
-[§ Binding a param at provision](building-an-app.md#binding-a-param-at-provision)),
+One extra: if your app binds input fields with `envSecret` or `envParam`
+(see [Building an app § Service input](building-an-app.md#service-input)),
 each stage keeps its own copy of those platform variables, and the platform
 copy is the store — the deploying shell only seeds it. A fresh stage (a new
 `pr-42`) has none of them yet, so CI must export the values

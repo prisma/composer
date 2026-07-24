@@ -5,7 +5,7 @@ import service from './service.ts';
 // load() hydrates `db` into the { url, client } Prisma Next binding (ADR-0040)
 // — no SQL, no row mapping; queries are typed by contract.prisma's emitted contract.
 const { db } = service.load();
-const { port } = service.config();
+const port = service.port();
 
 // A Prisma Postgres direct connection is dropped when it idles / the service
 // scales to zero; the lazy pool reconnects on the next query. Surface those

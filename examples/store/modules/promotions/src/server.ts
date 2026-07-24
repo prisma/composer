@@ -12,7 +12,7 @@ const handler = serveSchedule(service, schedule, {
 });
 export default handler;
 
-const { port } = service.config();
+const port = service.port();
 
 // Bind all interfaces — Compute routes external HTTP to the VM, so a
 // loopback-only listener would be unreachable.

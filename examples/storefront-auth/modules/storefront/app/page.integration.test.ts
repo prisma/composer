@@ -31,18 +31,10 @@ function isNextjsBuild(build: BuildAdapter): build is NextjsBuildAdapter {
   return build.type === 'nextjs' && 'appDir' in build && typeof build.appDir === 'string';
 }
 
-/** Boots the built standalone Next entry — its own `server.js`, unmodified — via the same seam `assemble()` uses to locate it. The deploy chain is bootstrap.js -> main.mjs -> server.js; here `bootstrapService`'s `stash` stands in for the wrapper's env write. */
-function bootStandaloneNext(build: NextjsBuildAdapter, port: number): () => Promise<void> {
+/** Boots the built standalone Next entry — its own `server.js`, unmodified — via the same seam `assemble()` uses to locate it. The deploy chain is bootstrap.js -> main.mjs -> server.js; here `bootstrapService`'s env writes (Config stash + PORT) stand in for the wrapper's, and Next's standalone server binds `process.env.PORT` directly. */
+function bootStandaloneNext(build: NextjsBuildAdapter): () => Promise<void> {
   const entryPath = standaloneServerPath(build);
   return async () => {
-    // Next's standalone server binds `process.env.PORT` directly (its own
-    // convention) — it does NOT read the service's config(). The framework's
-    // address-free config keys are COMPOSER_-prefixed (ADR-0029), so `stash` no
-    // longer writes a bare `PORT` for Next to pick up. A real nextjs deploy uses
-    // the reserved default port (3000), which Next also defaults to, so the
-    // deployed storefront is unaffected; this test drives a non-default port to
-    // avoid local conflicts, so it hands PORT to the raw server explicitly.
-    process.env.PORT = String(port);
     await import(pathToFileURL(entryPath).href);
   };
 }
@@ -58,7 +50,7 @@ describe('storefront -> auth round trip, driven over real HTTP (bootstrapService
     const app = await bootstrapService(
       storefrontService,
       { service: { port: PORT }, inputs: { auth: { url: fake.url.href } } },
-      bootStandaloneNext(storefrontService.build, PORT),
+      bootStandaloneNext(storefrontService.build),
     );
 
     const res = await app.fetch(new Request(app.url));

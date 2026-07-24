@@ -135,7 +135,7 @@ compile:
 import { serve } from '@prisma/composer/service-rpc';
 import service from './service.ts';
 
-const { port } = service.config();
+const port = service.port(); // the reserved port, resolved (default 3000)
 
 const QUOTES = [
   'Simplicity is prerequisite for reliability.',
@@ -154,11 +154,12 @@ export default handler;
 Bun.serve({ port, hostname: '0.0.0.0', fetch: handler });
 ```
 
-Notice what's missing: no port constant, no URL of anything, no
-`process.env`. Configuration arrives through `service.config()` (the `port`
-it reads is a param every service gets for free, default 3000), dependencies
-through `service.load()` — that's the whole framework contract with your
-code.
+Notice what's missing: no URL of anything, no `process.env`. Every service
+gets a port for free (default 3000), read through `service.port()`;
+dependencies arrive through `service.load()`, and any configuration of your
+own through `service.input()`
+([Building an app](building-an-app.md#service-input)) — three typed
+accessors, and that's the whole framework contract with your code.
 
 ## 3. The gateway service
 
@@ -188,7 +189,7 @@ export default compute({
 import service from './service.ts';
 
 const { quotes } = service.load();
-const { port } = service.config();
+const port = service.port();
 
 Bun.serve({
   port,
@@ -271,10 +272,12 @@ prisma-composer log module.ts quotes     # just one
 ```
 
 Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes — `COMPOSER_PORT` for a service's own `port`,
-`COMPOSER_QUOTES_URL` for the `quotes` dependency's URL — so `service.load()`
-and `service.config()` read exactly what they'll read in production. You never
-set them by hand locally; `dev` *is* the deploy. Full workflow (one-service
+variables a deploy writes, each keyed by the service's address —
+`COMPOSER_QUOTES_PORT` for the `quotes` service's own `port`,
+`COMPOSER_QUOTES_INPUT` for its input document, `COMPOSER_QUOTES_URL` for a
+`quotes` dependency's URL — so `service.load()`, `service.input()`, and
+`service.port()` read exactly what they'll read in production. You never set
+them by hand locally; `dev` *is* the deploy. Full workflow (one-service
 logs, `--tail`, `--fresh`, what persists) in
 [Running locally](running-locally.md).
 
@@ -364,14 +367,15 @@ code you already have stays the server; you add the declaration around it.
 `compute({ name, deps, build: node({ module, entry }) })` pointing `entry` at
 your built server file, then make three changes to the server itself:
 
-1. Read the port from `service.config()` instead of `process.env.PORT`, and
-   bind `0.0.0.0`.
-2. Replace every `process.env` read with what it really is: a param for plain
-   config, a secret for credentials, or a dependency for anything another
-   service provides. If a param's value differs per stage — an app origin, an
-   external URL — bind it with `envParam`.
-   [Building an app § Config params](building-an-app.md#config-params) has
-   the how-to-choose table and all three shapes.
+1. Read the port from `service.port()` (never `process.env`), and bind
+   `0.0.0.0`.
+2. Replace every other `process.env` read with what it really is: a field of
+   the service's input schema for config and credentials, or a dependency
+   for anything another service provides. If a value differs per stage — an
+   app origin, an external URL — bind it with `envParam`; a credential, with
+   `envSecret`. [Building an app § Service
+   input](building-an-app.md#service-input) has the how-to-choose table and
+   both shapes.
 3. If it talks to Postgres: declare `deps: { db: postgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.

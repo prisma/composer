@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { configOf, number, provisionManifest, string } from '../config.ts';
+import { configOf, inputManifest, number, string } from '../config.ts';
 import { Load } from '../graph.ts';
-import { dependency, module, provisionNeed, secret, secretSource, service } from '../node.ts';
-import { conn, scalarDeclaration } from './helpers.ts';
+import { dependency, module, provisionNeed, secretSource, service } from '../node.ts';
+import { anyInputSchema, conn, scalarDeclaration } from './helpers.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -96,14 +96,14 @@ describe('configOf', () => {
     expect(hydrateCalls).toBe(0);
   });
 
-  test('a secret slot is NOT a config param — configOf never reports it', () => {
+  test('the input schema is NOT a config param — configOf never reports it', () => {
     const root = service({
       name: 'ingest',
       extension: 'test/pack',
       type: 'fake/app',
       inputs: {},
       params: { port: number({ default: 3000 }) },
-      secrets: { stripeKey: secret() },
+      input: anyInputSchema,
       build,
     });
 
@@ -111,15 +111,15 @@ describe('configOf', () => {
   });
 });
 
-describe('provisionManifest', () => {
-  test('aggregates the root-bound secret names across the graph', () => {
+describe('inputManifest', () => {
+  test('aggregates the provision-time input bindings across the graph (ADR-0042)', () => {
     const ingest = service({
       name: 'ingest',
       extension: 'test/pack',
       type: 'fake/app',
       inputs: {},
       params: {},
-      secrets: { stripeKey: secret() },
+      input: anyInputSchema,
       build,
     });
     const web = service({
@@ -128,32 +128,27 @@ describe('provisionManifest', () => {
       type: 'fake/app',
       inputs: {},
       params: {},
-      secrets: { sendgrid: secret() },
+      input: anyInputSchema,
       build,
     });
+    const ingestBinding = { stripeKey: secretSource('STRIPE_SECRET_KEY') };
+    const webBinding = { sendgrid: secretSource('SENDGRID_API_KEY') };
     const graph = Load(
       module('app', ({ provision }) => {
-        provision(ingest, {
-          id: 'ingest',
-          secrets: { stripeKey: secretSource('STRIPE_SECRET_KEY') },
-        });
-        provision(web, { id: 'web', secrets: { sendgrid: secretSource('SENDGRID_API_KEY') } });
+        provision(ingest, { id: 'ingest', input: ingestBinding });
+        provision(web, { id: 'web', input: webBinding });
       }),
     );
 
-    const manifest = provisionManifest(graph);
-    // Core records the binding per (service, slot) with an opaque source; the
-    // env-var name lives in the target's payload, which core never reads.
+    // Core records the binding per service address as opaque plain data; the
+    // leaves' payloads (env-var names) are the target's, which core never reads.
+    const manifest = inputManifest(graph);
     expect(manifest).toHaveLength(2);
-    expect(manifest).toContainEqual(
-      expect.objectContaining({ serviceAddress: 'ingest', slot: 'stripeKey' }),
-    );
-    expect(manifest).toContainEqual(
-      expect.objectContaining({ serviceAddress: 'web', slot: 'sendgrid' }),
-    );
+    expect(manifest).toContainEqual({ serviceAddress: 'ingest', binding: ingestBinding });
+    expect(manifest).toContainEqual({ serviceAddress: 'web', binding: webBinding });
   });
 
-  test('is empty when no service declares a secret slot', () => {
+  test('is empty when no service declares an input schema', () => {
     const svc = service({
       name: 'x',
       extension: 'test/pack',
@@ -168,7 +163,7 @@ describe('provisionManifest', () => {
       }),
     );
 
-    expect(provisionManifest(graph)).toEqual([]);
+    expect(inputManifest(graph)).toEqual([]);
   });
 });
 

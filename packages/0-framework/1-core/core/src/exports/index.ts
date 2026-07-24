@@ -6,7 +6,7 @@
  */
 
 export type { SecretString } from '@internal/foundation/secret';
-export { SecretBox } from '@internal/foundation/secret';
+export { isSecretString, SecretBox } from '@internal/foundation/secret';
 export type {
   Config,
   ConfigDeclaration,
@@ -15,11 +15,18 @@ export type {
   Params,
   Values,
 } from '../config.ts';
-export { configOf, number, param, paramManifest, provisionManifest, string } from '../config.ts';
+export { configOf, inputManifest, number, param, paramManifest, string } from '../config.ts';
 export type { Contract } from '../contract.ts';
-export type { Edge, Graph, GraphNode, NodeId, ParamBinding, SecretBinding } from '../graph.ts';
+export type {
+  Edge,
+  Graph,
+  GraphNode,
+  NodeId,
+  ParamBinding,
+  ServiceInputBinding,
+} from '../graph.ts';
 export { Load, LoadError } from '../graph.ts';
-export { hydrate, hydrateSecrets, hydrateSync } from '../hydrate.ts';
+export { hydrate, hydrateSync } from '../hydrate.ts';
 export type {
   BuildAdapter,
   DependencyEnd,
@@ -27,7 +34,9 @@ export type {
   Expose,
   Hydrated,
   HydratedDeps,
+  InputBinding,
   InputRef,
+  InputValueOf,
   ModuleBuilder,
   ModuleContext,
   ModuleNode,
@@ -47,7 +56,6 @@ export type {
   SecretNeed,
   SecretSource,
   Secrets,
-  SecretValues,
   ServiceNode,
 } from '../node.ts';
 export {

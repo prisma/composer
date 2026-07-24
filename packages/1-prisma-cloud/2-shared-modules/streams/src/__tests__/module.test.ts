@@ -5,7 +5,7 @@
  * the bearer key. Mirrors storage's module.test.ts.
  */
 import { describe, expect, test } from 'bun:test';
-import { Load, module } from '@internal/core';
+import { isSecretSource, Load, module } from '@internal/core';
 import node from '@internal/node';
 import { compute, STREAMS_API_KEY } from '@internal/prisma-cloud';
 import { storage } from '@internal/storage';
@@ -66,9 +66,19 @@ describe('streams()', () => {
     });
   });
 
-  test('no secret slot remains anywhere in the graph', () => {
+  test('no secret leaf remains anywhere in the graph — every recorded binding is secret-free', () => {
     const graph = Load(root());
-    expect(graph.secrets).toEqual([]);
+    const secretLeaves: unknown[] = [];
+    const walk = (value: unknown): void => {
+      if (isSecretSource(value)) {
+        secretLeaves.push(value);
+        return;
+      }
+      if (typeof value !== 'object' || value === null) return;
+      for (const member of Object.values(value)) walk(member);
+    };
+    for (const { binding } of graph.inputBindings) walk(binding);
+    expect(secretLeaves).toEqual([]);
   });
 
   test('opts.name customizes the module', () => {

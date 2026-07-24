@@ -7,11 +7,11 @@
  * and reversing it (see core-model.md § Runtime). Core never stringifies and
  * never touches an environment.
  *
- * Secrets are NOT params — they are their own forwardable slot (ADR-0029, see
- * `secret()`/`envSecret()`/`secrets()` in node.ts). A param is never secret.
+ * Secrets are NOT params — they ride the service's input binding as
+ * `envSecret(...)` leaves (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { Graph, ParamBinding, SecretBinding } from './graph-types.ts';
+import type { Graph, ParamBinding, ServiceInputBinding } from './graph-types.ts';
 import type { ProvisionNeed, ServiceNode } from './node.ts';
 
 /**
@@ -139,14 +139,14 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 }
 
 /**
- * The app's provision manifest: every secret binding the root resolved across
- * the graph (ADR-0029) — an opaque, target-defined source per service secret
- * slot; a deploy target's preflight reads its own payload. Pure graph
- * introspection, TARGET-AGNOSTIC — the target consumes it to verify each secret
- * exists on the platform before deploy. The values are provisioned out-of-band.
+ * The app's input manifest: every service input binding a `provision()` call
+ * supplied (ADR-0042). Pure graph introspection, TARGET-AGNOSTIC — a deploy
+ * target's recursive descent classifies the binding's leaves (its preflight
+ * verifies each `envSecret` leaf's platform var exists before deploy; the
+ * values are provisioned out-of-band).
  */
-export function provisionManifest(graph: Graph): readonly SecretBinding[] {
-  return graph.secrets;
+export function inputManifest(graph: Graph): readonly ServiceInputBinding[] {
+  return graph.inputBindings;
 }
 
 /**

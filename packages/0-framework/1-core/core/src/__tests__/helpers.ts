@@ -1,5 +1,11 @@
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { ConfigDeclaration, Connection, Params, Values } from '../config.ts';
 import type { Contract } from '../contract.ts';
+
+/** A pass-anything Standard Schema for input-schema tests — Load never validates a binding; the deploy target does. */
+export const anyInputSchema: StandardSchemaV1<unknown, unknown> = {
+  '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+};
 
 /** A test connection: declared params + a recording/simple hydrate. */
 export const conn = <P extends Params, C>(

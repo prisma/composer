@@ -29,6 +29,17 @@ function sourcePayload(binding: unknown): unknown {
   throw new Error('expected a ParamSource or SecretSource binding');
 }
 
+/** The email service's recorded input binding, as the plain object it is. */
+function serviceBindingOf(
+  inputBindings: ReadonlyArray<{ serviceAddress: string; binding: unknown }>,
+): Record<string, unknown> {
+  const binding = inputBindings.find((b) => b.serviceAddress === 'email.service')?.binding;
+  if (typeof binding !== 'object' || binding === null || Array.isArray(binding)) {
+    throw new Error('expected an object input binding for email.service');
+  }
+  return binding as Record<string, unknown>;
+}
+
 const senderConsumer = () =>
   compute({ name: 'senderConsumer', deps: { email: emailSender({}) }, build });
 const outboxConsumer = () =>
@@ -74,21 +85,29 @@ describe('email()', () => {
     ]);
   });
 
-  test('boundary params forward: deliveryMode/from map to their bound env sources, not just any source', () => {
+  test("boundary params and secret forward into the service's input binding, mapped to their bound env sources (ADR-0042)", () => {
     const graph = Load(rootWithEmail());
-    const forwarded = graph.params.filter((p) => p.serviceAddress === 'email.service');
-    const bySlot = new Map(forwarded.map((p) => [p.slot, p.binding]));
-    expect(bySlot.size).toBe(2);
-    expect(sourcePayload(bySlot.get('deliveryMode'))).toBe('EMAIL_DELIVERY_MODE');
-    expect(sourcePayload(bySlot.get('from'))).toBe('EMAIL_FROM');
+    const binding = serviceBindingOf(graph.inputBindings);
+    expect(sourcePayload(binding['deliveryMode'])).toBe('EMAIL_DELIVERY_MODE');
+    expect(sourcePayload(binding['from'])).toBe('EMAIL_FROM');
+    expect(sourcePayload(binding['deliveryCredential'])).toBe('EMAIL_DELIVERY_CREDENTIAL');
+    expect(binding['deliveryUrl']).toBe('https://api.resend.com');
   });
 
-  test('the boundary secret forwards: deliveryCredential maps to its bound env source', () => {
-    const graph = Load(rootWithEmail());
-    const forwarded = graph.secrets.filter((s) => s.serviceAddress === 'email.service');
-    expect(forwarded).toHaveLength(1);
-    expect(forwarded[0]?.slot).toBe('deliveryCredential');
-    expect(sourcePayload(forwarded[0]?.source)).toBe('EMAIL_DELIVERY_CREDENTIAL');
+  test('opts.deliveryUrl overrides the literal deliveryUrl leaf of the input binding', () => {
+    const root = module('root', {}, ({ provision }) => {
+      provision(email({ deliveryUrl: 'http://localhost:8025' }), {
+        id: 'email',
+        params: {
+          deliveryMode: paramSource('EMAIL_DELIVERY_MODE'),
+          from: paramSource('EMAIL_FROM'),
+        },
+        secrets: { deliveryCredential: secretSource('EMAIL_DELIVERY_CREDENTIAL') },
+      });
+      return {};
+    });
+    const graph = Load(root);
+    expect(serviceBindingOf(graph.inputBindings)['deliveryUrl']).toBe('http://localhost:8025');
   });
 
   test('the send port resolves to the service for a sender consumer', () => {

@@ -1,4 +1,4 @@
-import { type SecretBinding, type SecretSource, secretSource } from '@internal/core';
+import { type SecretSource, secretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 
 /**
@@ -61,19 +61,19 @@ function isEnvSecretPayload(payload: unknown): payload is EnvSecretPayload {
 }
 
 /**
- * Reads the Prisma Cloud env-var name back out of a secret binding's opaque
- * source. A source not built by `envSecret` (a raw `secretSource(...)` or
- * another target's source) carries no name — reject it here. `secretName` runs
- * in preflight before any provisioning, so a foreign source fails early and
- * clearly rather than producing a broken deploy with an undefined name.
+ * Reads the Prisma Cloud env-var name back out of an opaque secret source —
+ * an `envSecret` leaf of an input binding (ADR-0042). A source not built by
+ * `envSecret` (a raw `secretSource(...)` or another target's source) carries
+ * no name — reject it here, with `where` naming the leaf's position, so a
+ * foreign source fails early and clearly rather than producing a broken
+ * deploy with an undefined name.
  */
-export function secretName(binding: SecretBinding): string {
-  const payload = binding.source.payload;
+export function secretName(source: SecretSource, where: string): string {
+  const payload = source.payload;
   if (!isEnvSecretPayload(payload)) {
     throw new Error(
-      `secret slot "${binding.slot}" of service "${binding.serviceAddress}" is bound to a source ` +
-        "not created by envSecret() — bind secrets with envSecret('NAME') from " +
-        '@prisma/composer-prisma-cloud.',
+      `${where} is bound to a secret source not created by envSecret() — bind secrets with ` +
+        "envSecret('NAME') from @prisma/composer-prisma-cloud.",
     );
   }
   return payload.name;

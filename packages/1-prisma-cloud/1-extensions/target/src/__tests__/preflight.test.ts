@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { Load, module, secret, string } from '@internal/core';
+import { Load, module } from '@internal/core';
 import type { ManagementApiClient } from '@internal/lowering';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { envParam } from '../param.ts';
@@ -64,12 +65,17 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
+/** Load never validates a binding, so a pass-anything schema is enough here. */
+const anySchema: StandardSchemaV1<unknown, unknown> = {
+  '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+};
+
 const secretGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'ingest', deps: {}, secrets: { stripeKey: secret() }, build }), {
+      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        secrets: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
       });
     }),
   );
@@ -85,23 +91,26 @@ const noSecretGraph = () =>
 const sharedSecretGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, secrets: { key: secret() }, build }), {
+      provision(compute({ name: 'web', deps: {}, input: anySchema, build }), {
         id: 'web',
-        secrets: { key: envSecret('STRIPE_SECRET_KEY') },
+        // Nested on purpose — preflight's walk must find a leaf at any depth.
+        input: { stripe: { key: envSecret('STRIPE_SECRET_KEY') } },
       });
-      provision(compute({ name: 'ingest', deps: {}, secrets: { key: secret() }, build }), {
+      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        secrets: { key: envSecret('STRIPE_SECRET_KEY') },
+        input: { key: envSecret('STRIPE_SECRET_KEY') },
       });
     }),
   );
 
+// The reserved `port` param keeps the env-sourced param channel (ADR-0042):
+// binding it to envParam(...) still writes a pointer row the platform must back.
 const paramGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, params: { appOrigin: string() }, build }), {
+      provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { appOrigin: envParam('APP_ORIGIN') },
+        params: { port: envParam('APP_ORIGIN') },
       });
     }),
   );
@@ -110,9 +119,9 @@ const paramGraph = () =>
 const literalParamGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, params: { appOrigin: string() }, build }), {
+      provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { appOrigin: 'https://literal.example.com' },
+        params: { port: 3100 },
       });
     }),
   );

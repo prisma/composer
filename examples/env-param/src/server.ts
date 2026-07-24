@@ -1,6 +1,6 @@
 // The app's own entrypoint (the build adapter's `entry`) — the pack-printed
 // bootstrap dynamically imports this AFTER main.run(address, boot) has
-// re-keyed the platform environment address-free, so service.config() below
+// re-keyed the platform environment address-free, so service.input() below
 // reads it directly, with no address.
 //
 // The build emits this file into dist/server/ next to assets/, and the build
@@ -10,14 +10,15 @@
 
 import service from './service.ts';
 
-const { greeting, port } = service.config();
+const { greeting } = service.input();
+const port = service.port();
 
 const logo = Bun.file(new URL('./assets/logo.svg', import.meta.url));
 
 const handler = async (request: Request): Promise<Response> => {
   if (new URL(request.url).pathname !== '/logo.svg') {
-    // The live proof for the param: the env-sourced value, read through
-    // config() at runtime — schema-validated, unredacted.
+    // The live proof for the input: the env-sourced value, read through
+    // input() at runtime — schema-validated, unredacted.
     return Response.json({ greeting });
   }
   // The live proof for the build: a file that only exists here if the whole

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { blindCast } from '@internal/foundation/casts';
 import { Load } from '../graph.ts';
-import type { SecretSource, Secrets } from '../node.ts';
+import type { InputBinding } from '../node.ts';
 import { isSecretSource, module, resource, secret, secretSource, service } from '../node.ts';
-import { providerContract } from './helpers.ts';
+import { anyInputSchema, providerContract } from './helpers.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -12,21 +12,20 @@ const build = {
   entry: 'server.js',
 };
 
-// Generic so `svc('plain')` infers an EMPTY secret map (no required secrets),
-// while `svc('auth', { k: secret() })` infers its declared slots.
-const svc = <S extends Secrets = Record<never, never>>(
-  name: string,
-  secrets: S = blindCast<S, 'default empty secret map'>({}),
-) =>
+/** A service that declares an input schema (ADR-0042) — its provision requires an `input` binding. */
+const svcWithInput = (name: string) =>
   service({
     name,
     extension: 'test/pack',
     type: 'fake/app',
     inputs: {},
     params: {},
-    secrets,
+    input: anyInputSchema,
     build,
   });
+
+const plainSvc = (name: string) =>
+  service({ name, extension: 'test/pack', type: 'fake/app', inputs: {}, params: {}, build });
 
 describe('secret sources', () => {
   test('secretSource builds a secret source; secret() and plain values are not', () => {
@@ -37,54 +36,57 @@ describe('secret sources', () => {
   });
 });
 
-describe('Load records secret bindings', () => {
-  test('the root binds a service secret directly (the leaf case)', () => {
-    const auth = svc('auth', { signingKey: secret() });
+describe('Load records input bindings (ADR-0042)', () => {
+  test('the root binds a service input directly (the leaf case)', () => {
+    const auth = svcWithInput('auth');
+    const binding = { signingKey: secretSource('AUTH_SIGNING_KEY') };
     const graph = Load(
       module('root', ({ provision }) => {
-        provision(auth, { id: 'auth', secrets: { signingKey: secretSource('AUTH_SIGNING_KEY') } });
+        provision(auth, { id: 'auth', input: binding });
       }),
     );
-    // Core records the binding at the right address/slot with an opaque source;
-    // it never reads the payload (the target's concern).
-    expect(graph.secrets.length).toBe(1);
-    expect(graph.secrets[0]?.serviceAddress).toBe('auth');
-    expect(graph.secrets[0]?.slot).toBe('signingKey');
-    expect(isSecretSource(graph.secrets[0]?.source)).toBe(true);
+    // Core records the binding at the right address as opaque plain data; it
+    // never reads a leaf's payload (the target's concern).
+    expect(graph.inputBindings).toHaveLength(1);
+    expect(graph.inputBindings[0]?.serviceAddress).toBe('auth');
+    expect(graph.inputBindings[0]?.binding).toBe(binding);
   });
 
-  test('a module forwards a secret slot to an inner service (the multi-level case)', () => {
-    const inner = svc('inner', { key: secret() });
+  test('a module forwards a secret slot into an inner service input binding (the multi-level case)', () => {
+    const inner = svcWithInput('inner');
     const authModule = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
-      provision(inner, { id: 'inner', secrets: { key: secrets.key } });
+      provision(inner, { id: 'inner', input: { key: secrets.key } });
     });
     const graph = Load(
       module('root', ({ provision }) => {
         provision(authModule, { id: 'auth', secrets: { key: secretSource('AUTH_KEY') } });
       }),
     );
-    // The source flows root -> module.secrets.key -> inner's slot; the binding is
-    // recorded at the inner service's full address (payload untouched by core).
-    expect(graph.secrets.length).toBe(1);
-    expect(graph.secrets[0]?.serviceAddress).toBe('auth.inner');
-    expect(graph.secrets[0]?.slot).toBe('key');
-    expect(isSecretSource(graph.secrets[0]?.source)).toBe(true);
+    // The source flows root -> module.secrets.key -> a leaf of inner's input
+    // binding; recorded at the inner service's full address.
+    expect(graph.inputBindings).toHaveLength(1);
+    expect(graph.inputBindings[0]?.serviceAddress).toBe('auth.inner');
+    const binding = blindCast<
+      Record<string, unknown> | undefined,
+      'test reads the recorded plain-object binding by key'
+    >(graph.inputBindings[0]?.binding);
+    expect(isSecretSource(binding?.['key'])).toBe(true);
   });
 
-  test('a service with no secret slots yields no bindings', () => {
+  test('a service with no input schema yields no bindings', () => {
     const graph = Load(
       module('root', ({ provision }) => {
-        provision(svc('plain'), { id: 'plain' });
+        provision(plainSvc('plain'), { id: 'plain' });
       }),
     );
-    expect(graph.secrets).toEqual([]);
+    expect(graph.inputBindings).toEqual([]);
   });
 });
 
-describe('Load validates secret wiring', () => {
+describe('Load validates input bindings and secret forwarding', () => {
   test('a module that declares a secret but never forwards it fails', () => {
     const m = module('auth', { secrets: { key: secret() } }, ({ provision }) => {
-      provision(svc('plain'), { id: 'plain' }); // never forwards secrets.key
+      provision(plainSvc('plain'), { id: 'plain' }); // never forwards secrets.key
     });
     expect(() =>
       Load(
@@ -95,29 +97,130 @@ describe('Load validates secret wiring', () => {
     ).toThrow(/declares secret "key" but never forwards/);
   });
 
+  test('a forwarded secret counts as used wherever it nests inside an input binding', () => {
+    const inner = svcWithInput('inner');
+    const m = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
+      // The forwarded source sits DEEP in the binding — the usage walk must find it.
+      provision(inner, { id: 'inner', input: { stripe: { keys: [secrets.key] } } });
+    });
+    expect(() =>
+      Load(
+        module('root', ({ provision }) => {
+          provision(m, { id: 'auth', secrets: { key: secretSource('AUTH_KEY') } });
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  test('a cyclic input binding completes and the forwarded secret is still marked used', () => {
+    const inner = svcWithInput('inner');
+    const m = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
+      const cyclic: Record<string, unknown> = { key: secrets.key };
+      cyclic['self'] = cyclic;
+      provision(inner, {
+        id: 'inner',
+        input: blindCast<
+          InputBinding,
+          'a deliberately self-referential binding to exercise the cycle guard'
+        >(cyclic),
+      });
+    });
+    const graph = Load(
+      module('root', ({ provision }) => {
+        provision(m, { id: 'auth', secrets: { key: secretSource('AUTH_KEY') } });
+      }),
+    );
+    expect(graph.inputBindings).toHaveLength(1);
+  });
+
+  test('a forwarded secret nested inside an unrelated source payload is not falsely marked used', () => {
+    const inner = svcWithInput('inner');
+    const m = module(
+      'auth',
+      { secrets: { a: secret(), b: secret() } },
+      ({ secrets, provision }) => {
+        // `a` is forwarded directly; `b` is buried in another source's opaque
+        // payload — core must treat that source as a leaf, so `b` never reaches a
+        // provision and is flagged unused.
+        provision(inner, {
+          id: 'inner',
+          input: blindCast<
+            InputBinding,
+            'nests a forwarded ref inside an opaque source payload to exercise the leaf boundary'
+          >({ a: secrets.a, other: secretSource({ nested: secrets.b }) }),
+        });
+      },
+    );
+    expect(() =>
+      Load(
+        module('root', ({ provision }) => {
+          provision(m, { id: 'auth', secrets: { a: secretSource('A'), b: secretSource('B') } });
+        }),
+      ),
+    ).toThrow(/declares secret "b" but never forwards/);
+  });
+
   test('a root module that declares its own secret slot fails — the root binds, it does not declare', () => {
     const root = module('root', { secrets: { key: secret() } }, () => {});
     expect(() => Load(root)).toThrow(/deployed as the root/);
   });
 
-  test('a lone service that declares secret slots is rejected at Load', () => {
-    const auth = svc('auth', { signingKey: secret() });
-    expect(() => Load(auth)).toThrow(/no enclosing scope to bind them/);
+  test('a lone service that declares an input schema is rejected at Load', () => {
+    const auth = svcWithInput('auth');
+    expect(() => Load(auth)).toThrow(/no enclosing scope to bind its input/);
   });
 
-  test('a non-secret value wired into a secret slot is rejected', () => {
-    const auth = svc('auth', { signingKey: secret() });
+  test('a declared input schema left unbound in a provision fails at Load', () => {
+    const auth = svcWithInput('auth');
     expect(() =>
       Load(
         module('root', ({ provision }) => {
-          // @ts-expect-error a secret slot must be bound with a secret source
-          provision(auth, { id: 'auth', secrets: { signingKey: 'not-a-secret' } });
+          provision(
+            auth,
+            blindCast<
+              { id: string; input: InputBinding },
+              'deliberately omit the binding to exercise the runtime not-bound check'
+            >({ id: 'auth' }),
+          );
         }),
       ),
-    ).toThrow(/non-secret value/);
+    ).toThrow(/Input of provisioned service "auth" is not bound/);
   });
 
-  test('a resource may not receive secrets', () => {
+  test('an input binding on a schema-less service fails at Load', () => {
+    expect(() =>
+      Load(
+        module('root', ({ provision }) => {
+          provision(
+            plainSvc('plain'),
+            blindCast<
+              { id: string },
+              'inject an input binding the overloads reject — exercise the runtime check'
+            >({ id: 'plain', input: {} }),
+          );
+        }),
+      ),
+    ).toThrow(/declares no input schema/);
+  });
+
+  test('a secrets map on a service fails at Load — secrets ride the input binding now', () => {
+    const auth = svcWithInput('auth');
+    expect(() =>
+      Load(
+        module('root', ({ provision }) => {
+          provision(
+            auth,
+            blindCast<
+              { id: string; input: InputBinding },
+              'inject the removed secrets option to exercise the runtime rejection'
+            >({ id: 'auth', input: {}, secrets: { key: secretSource('K') } }),
+          );
+        }),
+      ),
+    ).toThrow(/received secrets for a service/);
+  });
+
+  test('a resource may not receive an input binding', () => {
     const db = resource({
       name: 'db',
       extension: 'test/pack',
@@ -126,59 +229,56 @@ describe('Load validates secret wiring', () => {
     expect(() =>
       Load(
         module('root', ({ provision }) => {
-          // The resource provision overload takes no `secrets`; inject it to
-          // exercise the runtime rejection (load-module.ts).
           provision(
             db,
             blindCast<
               { id: string },
-              'a resource takes no secrets — inject one to hit the runtime check'
-            >({ id: 'db', secrets: { k: secretSource('K') } }),
+              'a resource takes no input — inject one to hit the runtime check'
+            >({ id: 'db', input: {} }),
           );
         }),
       ),
-    ).toThrow(/resource has no secret slots/);
+    ).toThrow(/resource declares no input schema/);
   });
 
-  test('a declared secret slot left unbound in a provision fails at Load', () => {
-    const auth = svc('auth', { signingKey: secret() });
+  test('a module may not receive an input binding — the service that declares the schema binds it', () => {
+    const m = module('child', {}, ({ provision }) => {
+      provision(plainSvc('plain'), { id: 'plain' });
+    });
     expect(() =>
       Load(
         module('root', ({ provision }) => {
           provision(
-            auth,
+            m,
             blindCast<
-              { id: string; secrets: { signingKey: SecretSource } },
-              'deliberately omit the binding to exercise the runtime not-bound check'
-            >({ id: 'auth', secrets: {} }),
+              { id: string },
+              'a module takes no input binding — inject one to hit the runtime check'
+            >({ id: 'child', input: {} }),
           );
         }),
       ),
-    ).toThrow(/is not bound/);
+    ).toThrow(/input binding for a module/);
   });
 
-  test('an extra secrets key naming a non-slot fails at Load', () => {
-    const auth = svc('auth', { signingKey: secret() });
+  test('a non-secret value wired into a module secret slot is rejected', () => {
+    const m = module('auth', { secrets: { key: secret() } }, ({ secrets, provision }) => {
+      provision(svcWithInput('inner'), { id: 'inner', input: { key: secrets.key } });
+    });
     expect(() =>
       Load(
         module('root', ({ provision }) => {
-          provision(
-            auth,
-            blindCast<
-              { id: string; secrets: { signingKey: SecretSource } },
-              'inject an extra non-slot key to exercise the runtime extra-key check'
-            >({ id: 'auth', secrets: { signingKey: secretSource('K'), bogus: secretSource('B') } }),
-          );
+          // @ts-expect-error a secret slot must be bound with a secret source
+          provision(m, { id: 'auth', secrets: { key: 'not-a-secret' } });
         }),
       ),
-    ).toThrow(/"bogus", which is not a secret slot/);
+    ).toThrow(/non-secret value/);
   });
 
   test('branded copies keep used-tracking per-slot — the SAME source bound to two slots, forwarding only one, flags the other unused', () => {
-    const inner = svc('inner', { key: secret() });
+    const inner = svcWithInput('inner');
     const m = module('m', { secrets: { a: secret(), b: secret() } }, ({ secrets, provision }) => {
       // Forward only `a`; `b` is never forwarded.
-      provision(inner, { id: 'inner', secrets: { key: secrets.a } });
+      provision(inner, { id: 'inner', input: { key: secrets.a } });
     });
     // The SAME source object is bound to BOTH a and b. Without the per-slot
     // branded copies, forwarding secrets.a would alias-mark b used too; with

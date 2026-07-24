@@ -20,7 +20,7 @@ const service = compute({
 
 const VERSION = 'v1';
 
-const { port } = service.config();
+const port = service.port();
 const { db, store } = service.load();
 
 // The bucket round-trip proof (S5, acceptance criterion 4): a real

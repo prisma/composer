@@ -3,8 +3,8 @@
 This guide covers everything you reach for once
 [Getting started](getting-started.md) has shown you the shape: giving a
 service a database (plain or Prisma Next-typed), packaging pieces as reusable
-Modules, the cron/storage/streams modules that ship with the framework,
-configuration, and secrets.
+Modules, the cron/storage/streams modules that ship with the framework, and
+the service input — configuration and secrets as one schema.
 
 ## How the pieces fit
 
@@ -16,19 +16,21 @@ never participates in the wiring, it just receives the results:
 ```ts
 compute({
   name: 'auth',                 // the service's name in the app graph
-  deps: { db: postgres() },     // what it needs   → read via service.load()
-  params: { region: string() }, // its config      → read via service.config()
-  secrets: { key: secret() },   // its credentials → read via service.secrets()
+  deps: { db: postgres() },     // what it needs         → read via service.load()
+  input: authInput,             // its incoming config   → read via service.input()
   build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: authContract },// what it offers to other services
 });
 ```
 
-Dependencies, config, and secrets are three deliberately separate things with
-three separate accessors, so a database can never masquerade as a string and
-a credential can never end up in ordinary config. Your code contains no
-`process.env` reads and no URLs; that is what makes every environment —
-production, a stage, a test — just a different set of injected values.
+Dependencies and input are two deliberately separate channels with two
+separate accessors. A dependency is a live connection to another node; input
+is data — plain values and credentials together, declared as one schema
+([below](#service-input)), where a field typed as the redacting
+`SecretString` box can never end up as an ordinary string. Your code contains
+no configuration `process.env` reads and no URLs; that is what makes every
+environment — production, a stage, a test — just a different set of injected
+values.
 
 ## Contracts
 
@@ -219,12 +221,17 @@ export default module(
     const service = provision(authService, {
       id: 'service',
       deps: { db },
-      secrets: { signingKey: secrets.signingKey },
+      input: { signingKey: secrets.signingKey },
     });
     return { rpc: service.rpc };
   },
 );
 ```
+
+The boundary still declares `secrets: { signingKey: secret() }` — a nameless
+need the module forwards without ever learning the platform variable's name.
+Inside, the forwarded ref is just another leaf of the service's input binding
+([below](#service-input)).
 
 The root then treats it like any other node:
 
@@ -246,7 +253,10 @@ outermost Module, with no boundary at all.
   module named `auth` would read as `auth.auth`).
 - `deps` — a value for each declared dependency slot: another provision, or
   an exposed port.
-- `secrets` — a binding for each secret need (below).
+- `input` — the service's input binding ([below](#service-input)); required
+  exactly when the service declares an input schema.
+- `secrets` — for a module boundary: a binding for each forwarded secret
+  need.
 
 Two naming rules the platform enforces: provision names must be at least
 three characters (call a database `'database'`, not `'db'` — the wiring key
@@ -360,121 +370,142 @@ The ecosystem is new. Today the three Modules above plus the ones you write
 are the whole set, so treat `prisma-composer-*` as the place to look rather
 than a catalogue that already has what you need.
 
-## Config params
+## Service input
 
-Everything a running service receives arrives through one of three channels,
+Everything a running service receives arrives through one of two channels,
 and choosing the channel is most of the decision:
 
 | The value is… | Declare it as | Provide it | Read it |
 | --- | --- | --- | --- |
 | produced by another node — a database, another service | a dependency: `deps: { db: postgres() }` | wire it at `provision()` | `service.load()` |
-| plain configuration — a region, a flag, an app origin | a param: `params: { region: string() }` | a `default`, a literal at `provision()`, or a per-stage platform variable via `envParam()` | `service.config()` |
-| a credential | a secret: `secrets: { key: secret() }` | `envSecret('NAME')` at the root | `service.secrets()`, redacted |
+| anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, `envParam()`, or `envSecret()` | `service.input()` |
 
-Dependencies are covered above; [secrets below](#secrets). This section is
-the middle row.
+Dependencies are covered above. This section is the second row.
 
-A param is a value you want to configure without touching code: a region, a
-feature flag, a job list. Declare it with a schema —
-that schema gives you the TypeScript type *and* validates the stored value at
-boot, so garbage config is a loud startup failure, not a runtime surprise:
+A service declares its whole incoming configuration — plain values and
+credentials together — as **one
+[Standard Schema](https://standardschema.dev)** (arktype, zod, valibot —
+anything implementing the interface). The schema gives you the TypeScript
+type *and* validates the assembled input at deploy and again at boot, so
+garbage config is a loud failure, not a runtime surprise. A credential is
+simply a field typed as the framework's redacting `SecretString` box:
 
 ```ts
-import { param, string } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
 import { type } from 'arktype';
 
-compute({
-  name: 'scheduler',
-  params: {
-    jobs: param(type({ jobId: 'string', every: 'string' }).array()),
-    region: string({ optional: true }),
-  },
-  // ...
+const schedulerInput = type({
+  jobs: type({ jobId: 'string', every: 'string' }).array(),
+  'region?': 'string',
+  apiKey: secretString(),
 });
+
+compute({ name: 'scheduler', input: schedulerInput, /* ... */ });
 ```
 
-`string()` and `number()` cover the scalars; `param(schema)` takes any
-[Standard Schema](https://standardschema.dev) validator (arktype, zod,
-valibot — anything implementing the interface). Params can have a `default`
-or be `optional`. Read them with
-`service.config()` — they never appear in `load()`.
-
-Every service gets a reserved `port` param (default 3000); declaring your own
-`port` is an authoring error, caught immediately.
-
-### Binding a param at provision
-
-A `default` is the fallback, not the only source: the `provision()` call can
-bind the value, and the binding wins. The service declares what it needs; the
-place that provisions it decides where the value comes from:
+Because the input is a real schema, legality can be conditional — "no
+`stripeSecretKey` unless billing is on" is a union, not a framework feature,
+and `service.input()` narrows it like any other TypeScript union:
 
 ```ts
-// the service declares the param
-const web = compute({
-  name: 'web',
-  params: { appOrigin: string() },
-  // ...
-});
+const chatInput = type({ stripeEnabled: 'false' }).or(
+  type({ stripeEnabled: 'true', stripeSecretKey: secretString() }),
+);
 
-// a literal — the app knows the value, so it lives in the app's code:
-provision(web, { params: { appOrigin: 'https://example.com' } });
-
-// or a platform environment variable, per stage:
-import { envParam } from '@prisma/composer-prisma-cloud';
-provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
+const chat = compute({ name: 'chat', input: chatInput, /* ... */ });
 ```
 
-`envParam('NAME')` is for values the code *can't* know. An app origin is the
-canonical case: it's different on production and on every preview stage, and
-a stage's public URL doesn't exist until that stage first deploys. Each stage
-keeps its own copy of the variable, so one topology serves them all.
+Every service also gets a reserved `port` (default 3000), outside the input
+schema and read through its own typed accessor — `service.port()`, a sibling
+of `service.origin()` — so `Bun.serve({ port: service.port() })` listens
+where Compute routes, with no `process.env` in your code. (The framework
+also exports the resolved port as the `PORT` environment variable, but that
+is only for a server it does not write and cannot call — Next.js's
+standalone `server.js`, which binds `PORT` itself.)
 
-How the value travels: **the stage's platform variable is the store; the
-deploying shell only seeds it.** At deploy, preflight checks the name exists
-for the target stage — a name the stage is missing is copied up from the
-deploying shell's environment, and a name absent from both fails the deploy
-early, naming the variable. Once the stage has it, your shell no longer
-matters. At boot the service reads the variable and hands it to the param's
-schema as a raw string — so bind `envParam` to string params. To change the
-value later, set it on the platform and redeploy; a running instance's
-environment is frozen when the instance is created.
+### Binding the input at provision
 
-It's still a param: read through `config()`, never redacted. Credentials
-belong in secrets, below.
+The service declares what shapes are legal; the place that provisions it
+decides where each value comes from. The binding is a plain object mirroring
+the schema's shape whose leaves are literals, `envParam(...)`, or
+`envSecret(...)`:
+
+```ts
+import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+
+provision(chat, {
+  input: {
+    stripeEnabled: true,
+    appOrigin: envParam('APP_ORIGIN'),
+    stripeSecretKey: envSecret('STRIPE_SECRET_KEY'),
+  },
+});
+```
+
+Secretness is enforced by validation, not annotation: binding a plain
+literal where the schema expects a `SecretString` fails the deploy (a
+credential almost landed in plain config), and binding `envSecret` where the
+schema expects a string fails the same way. Neither side can silently
+misclassify a credential.
+
+**`envParam('NAME')`** is for plain values the code *can't* know. An app
+origin is the canonical case: it's different on production and on every
+preview stage, and a stage's public URL doesn't exist until that stage first
+deploys. Each stage keeps its own copy of the variable, so one topology
+serves them all. How the value travels: **the stage's platform variable is
+the store; the deploying shell only seeds it.** At deploy, preflight checks
+the name exists for the target stage — a name the stage is missing is copied
+up from the deploying shell's environment. Once the stage has it, your shell
+no longer matters. The variable's value arrives as a raw string, so bind
+`envParam` to string fields. To change the value later, set it on the
+platform and redeploy; a running instance's environment is frozen when the
+instance is created.
 [`examples/env-param`](../../examples/env-param/) is the minimal working
 version, including a smoke script that proves the per-stage split.
 
-## Secrets
-
-Credentials get their own channel, separate from params, with one rule:
-**the value never enters framework config**. The service declares a nameless
-need, the root binds that need to a platform environment-variable name, and
-the value only ever lives in that platform variable:
+**`envSecret('NAME')`** is for credentials, with one rule: **the value never
+enters framework config**. The platform variable is seeded exactly the way
+an `envParam` one is — preflight copies it from the deploying shell when the
+stage doesn't have it yet, so CI (or you) exports `STRIPE_SECRET_KEY` for a
+first deploy. The framework carries only the variable's *name*; the platform
+injects the value straight into the running instance. What your code gets is
+a `SecretString` box that redacts on logging, rendering, and
+JSON-serialization — leaking it takes a deliberate `.expose()`:
 
 ```ts
-// the service: "I need a signing key" — no name, no value
-compute({ /* ... */ secrets: { signingKey: secret() } });
-
-// the root: "that need is the platform variable AUTH_SIGNING_SECRET"
-provision(authModule, { secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
-
-// the server: the only way to the value is an explicit expose()
-const { signingKey } = service.secrets(); // SecretBox<string>
-signingKey.expose();
+const input = service.input();
+if (input.stripeEnabled) stripe(input.stripeSecretKey.expose());
 ```
 
-The `SecretBox` redacts on logging, rendering, and JSON-serialization —
-leaking it takes a deliberate `.expose()`. A Module forwards a need up to its
-parent without ever learning the platform name, which is what lets a reusable
-Module require credentials without dictating your naming.
+A reusable Module forwards a secret need up to its parent without ever
+learning the platform name ([above](#reusable-modules)), which is what lets
+a Module require credentials without dictating your naming.
 
-The platform variable is seeded exactly the way an `envParam` one is
-([above](#binding-a-param-at-provision)): preflight copies it from the
-deploying shell when the stage doesn't have it yet — so CI (or you) exports
-`AUTH_SIGNING_SECRET` for a first deploy. The framework itself never holds
-the value: not in code, not in deploy state, not in generated config — it
-carries only the variable's *name*, and the platform injects the value
-straight into the running instance.
+### Absence is the schema's call
+
+An env-bound field whose variable is unset (or empty) in the deploy shell
+resolves to *key omitted*; whether that is legal is the schema's call — an
+optional field, a union arm, or a validation error that fails the deploy. A
+credential for an off-by-default feature is an ordinary optional
+`SecretString` field, not a framework flag. Because an omitted key can also
+be a typo'd variable name, the deploy report prints every key that resolved
+absent.
+
+### What travels
+
+The deploy validates the resolved binding, applies the schema's defaults,
+and serializes the result into one document row, with each secret as a
+pointer naming the platform variable that holds the value — never the value
+itself:
+
+```json
+{ "stripeEnabled": true, "stripeSecretKey": { "$secret": "STRIPE_SECRET_KEY" } }
+```
+
+At boot the framework swaps each pointer for a redacting box over the named
+variable, validates against the schema again, and `service.input()` returns
+the typed object. The document is secret-free by construction, which is why
+the deploy report can print it verbatim.
 
 ## Builds
 
@@ -540,11 +571,12 @@ The design record explains *why* the model is shaped this way:
   contracts in depth.
 - [`module-composition.md`](../design/10-domains/module-composition.md) —
   boundaries, forwarding, nesting.
-- [`config-params.md`](../design/10-domains/config-params.md) — the config
-  round trip, [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
-  for the secrets model, and
+- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
+  — why the service input is one schema and the binding carries the sourcing;
+  [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
+  for the forwardable secret need, and
   [ADR-0032](../design/90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md)
-  for provision-time binding and `envParam`.
+  for provision-time binding and env sourcing.
 - [ADR-0030](../design/90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md)
   — why service keys work the way they do.
 - [ADR-0005](../design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)

@@ -1,5 +1,4 @@
 import { describe, expect, spyOn, test } from 'bun:test';
-import { defineSchedule } from '../schedule.ts';
 import { cronScheduler, runScheduler } from '../scheduler.ts';
 
 interface FakeTimer {
@@ -112,12 +111,25 @@ describe('cronScheduler() deploy wrapper', () => {
   // node — not the package barrel (named exports only), which would make
   // main.run undefined at boot.
   test('build.module targets scheduler-service, whose default export is runnable', async () => {
-    const nodeDef = cronScheduler(defineSchedule({ tick: '2s' }));
+    const nodeDef = cronScheduler();
     expect(nodeDef.build.module).toMatch(/scheduler-service\.mjs$/);
 
     const wrapper = await import('../exports/scheduler-service.ts');
     expect(typeof wrapper.default.run).toBe('function');
     expect(typeof wrapper.default.load).toBe('function');
-    expect(typeof wrapper.default.config).toBe('function');
+    expect(typeof wrapper.default.input).toBe('function');
+  });
+
+  test('the scheduler declares the jobs input schema — the schedule arrives as a provision-time binding (ADR-0042)', () => {
+    const nodeDef = cronScheduler();
+    expect(nodeDef.inputSchema).toBeDefined();
+    const validate = nodeDef.inputSchema['~standard'].validate;
+    expect(validate({ jobs: [{ jobId: 'tick', every: '2s' }] })).toEqual({
+      value: { jobs: [{ jobId: 'tick', every: '2s' }] },
+    });
+    const rejected = validate({ jobs: [{ jobId: 'tick' }] });
+    expect(
+      'issues' in (rejected as object) && (rejected as { issues: unknown }).issues,
+    ).toBeTruthy();
   });
 });

@@ -35,6 +35,10 @@ function childEnv(): NodeJS.ProcessEnv {
     COMPOSER_STORE_ACCESSKEYID: 'local',
     COMPOSER_STORE_SECRETACCESSKEY: 'local-secret',
     COMPOSER_PORT: JSON.stringify(port),
+    // A deployed boot's run() (and bootstrapService) exposes the resolved
+    // port as PORT before the entry runs (ADR-0042 removed config()); this
+    // child boots the entrypoint directly, so it sets PORT the same way.
+    PORT: String(port),
     // The target stores the provisioned key address-scoped and compute's `run`
     // validates and re-stashes it address-free (JSON-encoded, the same wire
     // format any service-own literal param takes); this child boots the

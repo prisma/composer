@@ -20,10 +20,13 @@
  * input's params are provisioning refs at deploy (resolved strings at boot)
  * and pass through untouched, so a ref keeps carrying its ordering edge.
  */
-import type { Config, ConfigParam, Params, SecretBinding, ServiceNode } from '@internal/core';
+import type { Config, ConfigParam, Params, ServiceNode } from '@internal/core';
+import { isParamSource, isSecretSource } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import { SecretBox, type SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
+import { isEnvParamSource } from './param.ts';
 import { secretName } from './secret.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -172,7 +175,7 @@ function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string): unknown
 /**
  * Boot: read each declared param from env by its key, reverse the param's own
  * serialization (missing/invalid fails loudly), assemble the typed Config.
- * Secrets ride a separate channel (deserializeSecrets), not this one.
+ * The input document rides its own channel (readInput), not this one.
  */
 export const deserialize = (node: ServiceNode, address: string): Config => {
   const service: Record<string, unknown> = {};
@@ -212,87 +215,334 @@ export const stash = (node: ServiceNode, config: Config): void => {
   }
 };
 
-// ——— Secret channel (ADR-0029): a POINTER row per secret slot, boot double-lookup.
+// ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
 //
-// A secret is NOT a param — it is its own slot on the node (`node.secretSlots`).
-// Deploy writes COMPOSER_<addr>_<slot> = <platform env-var NAME> (the name the
-// root bound it to, from `graph.secrets`); the value never enters this row or
-// deploy state. Boot reads that pointer, then the platform var it names, and
-// wraps the result in a SecretBox (core's `hydrateSecrets`). Writer (deploy) and
-// reader (boot) share `secretKey`, so they cannot drift.
+// Deploy resolves the provision-time input binding (literals as-is, envParam
+// leaves read from the deploy shell, envSecret leaves as `$secret` pointers),
+// validates the resolved object with the service's own Standard Schema
+// (secrets as empty sentinel boxes — never values), and writes the
+// defaults-applied result to COMPOSER_<addr>_INPUT. Boot reads that one row,
+// swaps each pointer for a redacting box over the named platform var,
+// validates again, and hands the app the typed object. Writer and reader
+// share the walk below, so they cannot drift. Secret VALUES never enter the
+// document.
 
-/** The pointer-row key for a secret slot: COMPOSER_<addr>_<slot> (secrets are service-level). */
-export const secretKey = (address: string, slot: string): string =>
-  configKey(address, { owner: 'service', name: slot });
+/** The input document's own row name; its full key is COMPOSER_<addr>_INPUT. */
+export const INPUT_KEY_NAME = 'INPUT';
 
-/** One secret pointer row to write at deploy: the slot's key mapped to the bound platform NAME. */
-export interface SecretRow {
-  readonly key: string;
-  readonly name: string;
+/** The input document row's key for a service address. */
+export const inputKey = (address: string): string =>
+  configKey(address, { owner: 'service', name: INPUT_KEY_NAME });
+
+// The document's one reserved key. User data may legitimately contain a
+// "$secret" key, so the writer escapes any key matching /^\$+secret$/ by
+// prefixing one more "$" ("$secret" → "$$secret", "$$secret" → "$$$secret"),
+// and the reader strips one "$" back off — a round-trip under which only the
+// framework can put a literal single-"$" marker in the document.
+const SECRET_MARKER = '$secret';
+const ESCAPABLE_KEY = /^\$+secret$/;
+const ESCAPED_KEY = /^\$\$+secret$/;
+
+/** True for the framework's secret pointer: `{ "$secret": "<PLATFORM_VAR>" }` and nothing else. */
+function isSecretPointer(value: unknown): value is { readonly $secret: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).length === 1 &&
+    SECRET_MARKER in value &&
+    typeof value[SECRET_MARKER] === 'string'
+  );
+}
+
+/** A plain data object (not an array, not a class instance) — the only object shape a binding/document may nest. */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+const ABSENT: unique symbol = Symbol('composer-input-absent');
+
+/** What `resolveInputBinding` hands back: the schema-ready object plus the sentinel→platform-name map and every key path that resolved absent. */
+export interface ResolvedInputBinding {
+  readonly resolved: unknown;
+  /** Each secret leaf's sentinel box, mapped to the platform var it points to — identity is the lever `serializeInput` substitutes by. */
+  readonly sentinels: ReadonlyMap<SecretString, string>;
+  /** Dot-joined binding paths whose env-bound leaf resolved absent (unset/empty deploy-shell var) — deploy-report fodder. */
+  readonly absent: readonly string[];
 }
 
 /**
- * Deploy: the pointer rows for a node's secret slots — each slot's key mapped to
- * the platform NAME the root bound it to (looked up in `graph.secrets`). Never a
- * value. A declared slot with no binding is a Load-invariant violation (Load
- * binds every slot), surfaced loudly here rather than written as a blank row.
+ * Deploy: recursive descent over the provision-time binding (plain data).
+ * `envSecret` leaves become empty sentinel `SecretBox`es (the value never
+ * enters the deploy); `envParam` leaves read the deploy shell — unset or
+ * empty means the enclosing object key is OMITTED, and the schema arbitrates
+ * whether that absence is legal (ADR-0042). Everything non-plain (a class
+ * instance, a function, a raw SecretBox holding a value) is rejected loudly.
  */
-export function secretPointerRows(
+export function resolveInputBinding(
+  binding: unknown,
+  env: Record<string, string | undefined>,
+): ResolvedInputBinding {
+  const sentinels = new Map<SecretString, string>();
+  const absent: string[] = [];
+
+  const walk = (value: unknown, path: string): unknown => {
+    if (isSecretSource(value)) {
+      const name = secretName(
+        value,
+        path === '' ? 'the input binding root' : `input key "${path}"`,
+      );
+      const sentinel = new SecretBox('');
+      sentinels.set(sentinel, name);
+      return sentinel;
+    }
+    if (isParamSource(value)) {
+      if (!isEnvParamSource(value)) {
+        throw new Error(
+          `input binding${path === '' ? '' : ` key "${path}"`} is bound to a param source not ` +
+            "created by envParam() — bind env-sourced input values with envParam('NAME') from " +
+            '@prisma/composer-prisma-cloud.',
+        );
+      }
+      const raw = env[value.payload.name];
+      if (raw === undefined || raw === '') {
+        absent.push(
+          path === '' ? `(root) → ${value.payload.name}` : `${path} → ${value.payload.name}`,
+        );
+        return ABSENT;
+      }
+      return raw;
+    }
+    if (Array.isArray(value)) {
+      return value.map((member, index) => {
+        const resolvedMember = walk(member, path === '' ? String(index) : `${path}.${index}`);
+        if (resolvedMember === ABSENT) {
+          throw new Error(
+            `input binding key "${path}[${index}]" is an env-bound array element whose variable is ` +
+              'unset — an array position cannot be omitted; bind a literal or provision the variable.',
+          );
+        }
+        return resolvedMember;
+      });
+    }
+    if (isPlainObject(value)) {
+      const out: Record<string, unknown> = {};
+      for (const [key, member] of Object.entries(value)) {
+        const resolvedMember = walk(member, path === '' ? key : `${path}.${key}`);
+        if (resolvedMember === ABSENT) continue; // key omitted — the schema arbitrates absence
+        out[key] = resolvedMember;
+      }
+      return out;
+    }
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+    throw new Error(
+      `input binding${path === '' ? '' : ` key "${path}"`} holds a value that is not plain data ` +
+        `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}) — a binding's ` +
+        'leaves are literals, envParam(...), or envSecret(...) (ADR-0042). A secret VALUE ' +
+        "(e.g. a SecretBox) never belongs in a binding — bind envSecret('NAME') instead.",
+    );
+  };
+
+  const resolved = walk(binding, '');
+  return { resolved: resolved === ABSENT ? undefined : resolved, sentinels, absent };
+}
+
+/** One serialized input document, ready to write as an env row. */
+export interface InputDocumentRow {
+  readonly key: string;
+  /** The JSON document — defaults-applied, secret leaves as `$secret` pointers, secret-free by construction. */
+  readonly value: string;
+  /** Dot-joined binding paths whose env-bound leaf resolved absent — deploy-report fodder. */
+  readonly absent: readonly string[];
+}
+
+/**
+ * Deploy: resolve the binding, judge it with the service's own schema
+ * (secrets as opaque sentinel boxes), and serialize the defaults-applied
+ * VALIDATED output — pointers substituted back where the sentinels sit — into
+ * one JSON row. Returns `undefined` for a service with no input schema.
+ * A validation failure that mentions a secret leaf means either a
+ * misclassified binding (a literal where the schema wants a `SecretString`,
+ * or vice versa) or a schema refining on secret CONTENT — deploy-time
+ * validation sees only empty boxes, and the ADR forbids content refinements.
+ */
+export function serializeInput(
   node: ServiceNode,
   address: string,
-  bindings: readonly SecretBinding[],
-): readonly SecretRow[] {
-  const rows: SecretRow[] = [];
-  for (const slot of Object.keys(node.secretSlots)) {
-    const binding = bindings.find((b) => b.serviceAddress === address && b.slot === slot);
-    if (binding === undefined) {
+  binding: unknown,
+  env: Record<string, string | undefined> = process.env,
+): InputDocumentRow | undefined {
+  const schema = node.inputSchema;
+  if (schema === undefined) {
+    if (binding !== undefined) {
       throw new Error(
-        `secret slot "${slot}" of "${address}" has no bound platform name — Load should have bound it (ADR-0029).`,
+        `service "${address}" has an input binding but declares no input schema — Load should have rejected it (ADR-0042).`,
       );
     }
-    rows.push({ key: secretKey(address, slot), name: secretName(binding) });
+    return undefined;
   }
-  return rows;
+  if (binding === undefined) {
+    throw new Error(
+      `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0042).`,
+    );
+  }
+  const { resolved, sentinels, absent } = resolveInputBinding(binding, env);
+  let validated: unknown;
+  try {
+    validated = standardValidateSync(schema, resolved);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `invalid input for service "${address}": ${message}\n` +
+        '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
+        'A failure naming a secret field means the binding and schema disagree about its ' +
+        'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
+    );
+  }
+  const document = substituteSecretPointers(validated, sentinels, address);
+  return { key: inputKey(address), value: JSON.stringify(document), absent };
 }
 
 /**
- * Boot: resolve every secret slot to its value by double-lookup — read the
- * pointer key (the platform NAME), then read that platform var. A missing
- * pointer or a missing/empty platform value is a loud failure naming both keys.
- * Returns a plain Record for core's `hydrateSecrets` to box.
+ * Walks the VALIDATED output, mapping each sentinel box (by identity) back to
+ * its `{ "$secret": name }` pointer and escaping any user key that matches
+ * the reserved marker. A `SecretString` the walk does not recognize came from
+ * the schema itself (a default or transform minting a box) — there is no
+ * platform var behind it, so it is rejected rather than serialized.
  */
-export const deserializeSecrets = (node: ServiceNode, address: string): Record<string, string> => {
-  const values: Record<string, string> = {};
-  for (const slot of Object.keys(node.secretSlots)) {
-    const key = secretKey(address, slot);
-    const name = process.env[key];
-    if (name === undefined || name === '') {
-      throw new Error(
-        `missing secret pointer for slot "${slot}" (env ${key}) — the deploy did not write it.`,
-      );
+function substituteSecretPointers(
+  value: unknown,
+  sentinels: ReadonlyMap<SecretString, string>,
+  address: string,
+): unknown {
+  const walk = (v: unknown, path: string): unknown => {
+    if (v instanceof SecretBox) {
+      const name = sentinels.get(v);
+      if (name === undefined) {
+        throw new Error(
+          `input key "${path}" of service "${address}" validated to a SecretString the binding did ` +
+            'not supply — a schema must not mint secret boxes (a default/transform cannot name a ' +
+            "platform variable); bind the field with envSecret('NAME') instead.",
+        );
+      }
+      return { [SECRET_MARKER]: name };
     }
-    const value = process.env[name];
-    if (value === undefined || value === '') {
-      throw new Error(
-        `secret "${slot}" is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset or empty.`,
-      );
+    if (Array.isArray(v)) return v.map((m, i) => walk(m, `${path}[${i}]`));
+    if (isPlainObject(v)) {
+      const out: Record<string, unknown> = {};
+      for (const [key, member] of Object.entries(v)) {
+        if (member === undefined) continue;
+        const written = ESCAPABLE_KEY.test(key) ? `$${key}` : key;
+        out[written] = walk(member, path === '' ? key : `${path}.${key}`);
+      }
+      return out;
     }
-    values[slot] = value;
-  }
-  return values;
-};
+    if (
+      v === null ||
+      v === undefined ||
+      typeof v === 'string' ||
+      typeof v === 'number' ||
+      typeof v === 'boolean'
+    ) {
+      return v;
+    }
+    throw new Error(
+      `input key "${path}" of service "${address}" validated to a value that cannot be serialized ` +
+        `(a ${typeof v === 'object' ? 'non-plain object' : typeof v}) — the input document is plain JSON (ADR-0042).`,
+    );
+  };
+  return walk(value, '');
+}
 
 /**
- * run()'s setup step for secrets: re-emit each slot's pointer NAME under its
- * address-free key, so the address-free `deserializeSecrets` double-looks-up
- * identically. Never the value — the value stays only in the platform var.
+ * Boot: read the one input document row (address-free after run()'s
+ * re-stash), swap each `$secret` pointer for a redacting box over the named
+ * platform var, unescape reserved keys, validate with the service's own
+ * schema, and return the typed object. A missing row is a loud failure naming
+ * the env var — a deployed environment always writes it; a local harness must
+ * supply it (set the row to the serialized input document).
  */
-export const stashSecrets = (node: ServiceNode, address: string): void => {
-  for (const slot of Object.keys(node.secretSlots)) {
-    const name = process.env[secretKey(address, slot)];
-    if (name === undefined) continue;
-    process.env[secretKey('', slot)] = name;
+export function readInput(node: ServiceNode, address: string): unknown {
+  const schema = node.inputSchema;
+  if (schema === undefined) {
+    throw new Error(
+      `input() called on service "${node.name}", which declares no input schema — declare ` +
+        '`input: <schema>` on compute() to use it (ADR-0042).',
+    );
   }
+  const key = inputKey(address);
+  const raw = process.env[key];
+  if (raw === undefined || raw === '') {
+    throw new Error(
+      `this service's input is not available (env ${key} is unset) — a deployed environment ` +
+        'writes it automatically; a local harness must supply it like any other config value ' +
+        `(set ${key} to the serialized input document).`,
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `this service's input document is not valid JSON (env ${key}): ${message} — a deployed ` +
+        'environment writes it automatically; a local harness must supply the serialized input ' +
+        `document (set ${key} to it).`,
+    );
+  }
+  const hydrated = hydrateInputDocument(parsed, key);
+  try {
+    return standardValidateSync(schema, hydrated);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`invalid input document (env ${key}): ${message}`);
+  }
+}
+
+/** Reverses the document encoding: `$secret` pointers become redacting boxes over the named platform vars; escaped reserved keys drop one "$". */
+function hydrateInputDocument(value: unknown, key: string): unknown {
+  if (isSecretPointer(value)) {
+    const name = value[SECRET_MARKER];
+    const secret = process.env[name];
+    if (secret === undefined || secret === '') {
+      throw new Error(
+        `secret input is not provisioned (env ${key} → ${name}): the platform var "${name}" is unset or empty.`,
+      );
+    }
+    return new SecretBox(secret);
+  }
+  if (Array.isArray(value)) return value.map((member) => hydrateInputDocument(member, key));
+  if (isPlainObject(value)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, member] of Object.entries(value)) {
+      const read = ESCAPED_KEY.test(k) ? k.slice(1) : k;
+      out[read] = hydrateInputDocument(member, key);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * run()'s setup step for the input document: re-emit the row under its
+ * address-free key, so the address-free `readInput` reads identically. The
+ * document carries pointers, never values — the values stay only in their
+ * platform vars.
+ */
+export const stashInput = (node: ServiceNode, address: string): void => {
+  if (node.inputSchema === undefined) return;
+  const raw = process.env[inputKey(address)];
+  if (raw === undefined) return;
+  process.env[inputKey('')] = raw;
 };
 
 // ——— Reserved provider params (ADR-0031): a provider-side minted value —

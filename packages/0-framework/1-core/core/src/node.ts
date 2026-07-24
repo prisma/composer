@@ -3,9 +3,8 @@
  * data objects. A node's `extension` + `type` form its deploy-time registry key (ADR-0017).
  */
 import { blindCast } from '@internal/foundation/casts';
-import type { SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { ConfigParam, Connection, Params, Values } from './config.ts';
+import type { ConfigParam, Connection, Params } from './config.ts';
 import type { Contract } from './contract.ts';
 
 // Brand — set by the factories below; how Load tells a node from junk.
@@ -37,7 +36,7 @@ export interface SecretNeed {
   readonly kind: 'secret';
 }
 
-/** A service/module's secret slots: name → the need it declares. */
+/** A module's secret-forwarding slots: name → the need it declares. */
 export type Secrets = Record<string, SecretNeed>;
 
 /** The wiring value bound to a secret slot: a target-defined payload core forwards but never inspects. A target (e.g. @prisma/composer-prisma-cloud's `envSecret`) builds one via `secretSource()`. */
@@ -47,11 +46,8 @@ export interface SecretSource<T = unknown> {
   readonly payload: T;
 }
 
-/** What `provision(node, { secrets })` supplies: one source per declared secret slot. */
+/** What `provision(moduleChild, { secrets })` supplies: one source per declared secret slot. */
 export type SecretBindings<S extends Secrets> = { [K in keyof S]: SecretSource };
-
-/** What `secrets()` returns: one redacting SecretBox per declared slot. */
-export type SecretValues<S extends Secrets> = { readonly [K in keyof S]: SecretString };
 
 /** Declares a secret NEED. Nameless — the platform name is bound at the root via `envSecret`. */
 export function secret(): SecretNeed {
@@ -175,6 +171,27 @@ export type ParamNeedBindings<PN extends ParamNeeds> = {
   readonly [K in keyof PN]?: ParamSource;
 };
 
+/**
+ * What `provision(service, { input })` accepts (ADR-0042): a plain object
+ * mirroring the service's input schema, whose leaves are literals,
+ * `envParam(...)` sources, or `envSecret(...)` sources. Deliberately a
+ * best-effort structural type: the framework never introspects a Standard
+ * Schema, so the binding's exact shape cannot be derived from it — deploy-time
+ * validation of the resolved binding is the real check.
+ */
+export type InputBinding =
+  | string
+  | number
+  | boolean
+  | null
+  | ParamSource
+  | SecretSource
+  | readonly InputBinding[]
+  | { readonly [key: string]: InputBinding };
+
+/** What `input()` returns: the schema's validated output type; `never` on a service that declares no input schema. */
+export type InputValueOf<I> = I extends StandardSchemaV1 ? StandardSchemaV1.InferOutput<I> : never;
+
 /** Opaque `Contract<any, any>` bound shared by every node/port type that doesn't care which contract. */
 // biome-ignore lint/suspicious/noExplicitAny: the one alias for this bound — see doc comment.
 export type AnyContract = Contract<any, any>;
@@ -217,7 +234,7 @@ export interface ServiceNode<
   D extends Deps = Deps,
   P extends Params = Params,
   E extends Expose = Expose,
-  S extends Secrets = Secrets,
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
 > {
   readonly [NODE]: true;
   readonly kind: 'service';
@@ -227,10 +244,10 @@ export interface ServiceNode<
   readonly extension: string;
   readonly type: string;
   readonly inputs: D;
-  /** Service-level config declarations (e.g. port). */
+  /** Extension-reserved config declarations (e.g. compute's `port`) — never user-authored (ADR-0042). */
   readonly params: P;
-  /** Declared secret input slots (authored as `secrets`) — bound at the root via `envSecret`, read via the `secrets()` accessor (ADR-0029). Named `secretSlots` on the node so the data field does not collide with that accessor. */
-  readonly secretSlots: S;
+  /** The service's whole incoming configuration as ONE Standard Schema (authored as `input`, ADR-0042), or `undefined` when it takes none. The framework never introspects it — it only calls `~standard.validate`. Named `inputSchema` on the node so the data field does not collide with the `input()` accessor. */
+  readonly inputSchema: I;
   /** How the app's entry is built + assembled. */
   readonly build: BuildAdapter;
   /** Named output ports this service exposes — the Contracts a consumer's `rpc(contract)` can require. `undefined` when the service exposes nothing. */
@@ -239,20 +256,19 @@ export interface ServiceNode<
 
 /**
  * The extension's runnable/loadable service node. `run` boots the app after
- * deserializing its Config; `load`/`config` then read deps/params back out
- * (kept separate per ADR-0021 so a same-named dep and param never collide).
+ * deserializing its environment; `load` reads the hydrated deps and `input`
+ * the validated, typed input object (ADR-0042).
  */
 export interface RunnableServiceNode<
   D extends Deps = Deps,
   P extends Params = Params,
   E extends Expose = Expose,
-  S extends Secrets = Secrets,
-> extends ServiceNode<D, P, E, S> {
+  I extends StandardSchemaV1 | undefined = StandardSchemaV1 | undefined,
+> extends ServiceNode<D, P, E, I> {
   run(address: string, boot: () => Promise<unknown>): Promise<unknown>;
   load(): HydratedDeps<D>;
-  config(): Values<P>;
-  /** The service's secrets, each a redacting SecretBox — a third accessor beside load()/config() (ADR-0021). */
-  secrets(): SecretValues<S>;
+  /** The service's validated input — one typed object, secrets as redacting `SecretString` boxes (ADR-0042). */
+  input(): InputValueOf<I>;
 }
 
 /**
@@ -354,19 +370,29 @@ type DepBindings<D extends Deps> = {
 };
 
 /**
- * `provision`'s trailing options: an explicit `id` (default: the node's own
- * `name`) plus, for a node that declares dependency slots, the `deps` that
- * satisfy them. `deps` is required exactly when the node has slots —
- * `[keyof D] extends [never]` is the "no slots" test — so a dependency can
- * never be left unwired at compile time. The whole object is therefore
- * optional for a slot-less node and required for one with slots. `params` is
- * always optional — a bound value overrides `param.default`, but a param may
- * fall back to its default (or be `optional`) instead, unlike `deps`/`secrets`.
- * `PB` is the params-binding map appropriate to the target: `ParamBindings<P>`
- * for a service's real, schema-bearing params; `ParamNeedBindings<PN>` for a
- * child module's nameless forwarding slots.
+ * A SERVICE provision's trailing options: an explicit `id` (default: the
+ * node's own `name`); `deps` required exactly when the node declares
+ * dependency slots (`[keyof D] extends [never]` is the "no slots" test);
+ * `input` required exactly when the node declares an input schema (ADR-0042).
+ * `params` is always optional — it binds only extension-reserved params (e.g.
+ * compute's `port`), which fall back to their own defaults.
  */
-type ProvisionArgs<D extends Deps, S extends Secrets, PB> = [keyof D] extends [never]
+type ServiceProvisionArgs<D extends Deps, I extends StandardSchemaV1 | undefined, PB> = [
+  keyof D,
+] extends [never]
+  ? I extends undefined
+    ? [opts?: { id?: string; params?: PB }]
+    : [opts: { id?: string; input: InputBinding; params?: PB }]
+  : I extends undefined
+    ? [opts: { id?: string; deps: DepBindings<D>; params?: PB }]
+    : [opts: { id?: string; deps: DepBindings<D>; input: InputBinding; params?: PB }];
+
+/**
+ * A child-MODULE provision's trailing options: `deps`/`secrets` required
+ * exactly when the module declares the slots; a declared param-forwarding
+ * slot may be bound to a `ParamSource`.
+ */
+type ModuleProvisionArgs<D extends Deps, S extends Secrets, PB> = [keyof D] extends [never]
   ? [keyof S] extends [never]
     ? [opts?: { id?: string; params?: PB }]
     : [opts: { id?: string; secrets: SecretBindings<S>; params?: PB }]
@@ -380,30 +406,40 @@ export interface ModuleBuilder {
     resource: ResourceNode<C>,
     opts?: { id?: string },
   ): { readonly id: string } & RefPort<C>;
-  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`secrets` are required iff it declares them; a declared param may be bound (literal or `ParamSource`), overriding its default. */
-  provision<D extends Deps, P extends Params, E extends Expose, S extends Secrets>(
-    service: ServiceNode<D, P, E, S>,
-    ...args: ProvisionArgs<D, S, ParamBindings<P>>
+  /** Registers an owned service; its id defaults to the node's `name`; `deps`/`input` are required iff it declares them; a reserved param may be bound (literal or `ParamSource`), overriding its default. */
+  provision<
+    D extends Deps,
+    P extends Params,
+    E extends Expose,
+    I extends StandardSchemaV1 | undefined,
+  >(
+    service: ServiceNode<D, P, E, I>,
+    ...args: ServiceProvisionArgs<D, I, ParamBindings<P>>
   ): ProvisionedRef<E>;
   /**
-   * The service call with `deps`/`secrets` spelled out. `ProvisionArgs` above
-   * cannot resolve while `D`/`S` are still unbound type parameters — a generic
-   * wrapper like `cron()` provisioning a caller-supplied service — so that call
-   * site resolves to this concrete overload instead.
+   * The service call with `deps`/`input` spelled out. `ServiceProvisionArgs`
+   * above cannot resolve while `D`/`I` are still unbound type parameters — a
+   * generic wrapper like `cron()` provisioning a caller-supplied service — so
+   * that call site resolves to this concrete overload instead.
    */
-  provision<D extends Deps, P extends Params, E extends Expose, S extends Secrets>(
-    service: ServiceNode<D, P, E, S>,
+  provision<
+    D extends Deps,
+    P extends Params,
+    E extends Expose,
+    I extends StandardSchemaV1 | undefined,
+  >(
+    service: ServiceNode<D, P, E, I>,
     opts: {
       id?: string;
       deps: DepBindings<D>;
-      secrets?: SecretBindings<S>;
+      input?: InputBinding;
       params?: ParamBindings<P>;
     },
   ): ProvisionedRef<E>;
   /** Registers an owned child module; its id defaults to the node's `name`; `deps`/`secrets` are required iff it declares them; a declared param-forwarding slot may be bound to a `ParamSource`. */
   provision<D extends Deps, E extends Expose, S extends Secrets, PN extends ParamNeeds>(
     child: ModuleNode<D, E, S, PN>,
-    ...args: ProvisionArgs<D, S, ParamNeedBindings<PN>>
+    ...args: ModuleProvisionArgs<D, S, ParamNeedBindings<PN>>
   ): ProvisionedRef<E>;
   /** The child-module call with `deps`/`secrets` spelled out — the same generic-wrapper escape as the service overload above. */
   provision<D extends Deps, E extends Expose, S extends Secrets, PN extends ParamNeeds>(
@@ -491,16 +527,6 @@ function freezeParams<P extends Params>(params: P): P {
   return Object.freeze(frozen) as P;
 }
 
-function freezeSecrets<S extends Secrets>(secrets: S): S {
-  const frozen: Record<string, SecretNeed> = {};
-  for (const [name, need] of Object.entries(secrets)) {
-    frozen[name] = Object.freeze({ ...need });
-  }
-  return blindCast<S, 'the frozen per-slot copy is exactly the declared Secrets map S'>(
-    Object.freeze(frozen),
-  );
-}
-
 /** A frozen shallow copy that keeps the caller's declared type. */
 function frozenShallowCopy<T extends object>(obj: T): T {
   return blindCast<
@@ -580,41 +606,34 @@ export function resource<C extends AnyContract>(def: {
 
 /**
  * Constructs a branded, frozen Service node — declarations only (inputs,
- * params, build adapter, and the ports it exposes). Pure; carries no runtime behavior.
+ * params, the input schema, build adapter, and the ports it exposes). Pure;
+ * carries no runtime behavior.
  */
 export function service<
   D extends Deps,
   P extends Params,
   E extends Expose = Record<never, never>,
-  S extends Secrets = Record<never, never>,
+  I extends StandardSchemaV1 | undefined = undefined,
 >(def: {
   name: string;
   extension: string;
   type: string;
   inputs: D;
   params: P;
-  secrets?: S;
+  input?: I;
   build: BuildAdapter;
   expose?: E;
-}): ServiceNode<D, P, E, S> {
+}): ServiceNode<D, P, E, I> {
   requireName(def.name, 'service');
   requireExtension(def.extension, 'service');
   requireType(def.type, 'service');
   requireConfigKeySegmentNames(Object.keys(def.inputs), 'input', 'service');
   requireConfigKeySegmentNames(Object.keys(def.params), 'param', 'service');
-  requireConfigKeySegmentNames(Object.keys(def.secrets ?? {}), 'secret', 'service');
-  // A secret slot and a service-OWN param of the same name derive the SAME
-  // config key (COMPOSER_<addr>_<NAME>), so they'd write two rows to one key.
-  // A same-named dependency is fine — its keys carry the input+param segments
-  // (COMPOSER_<addr>_<NAME>_<param>), which never collide — matching how a dep
-  // and a param may already share a name (ADR-0021).
-  for (const slot of Object.keys(def.secrets ?? {})) {
-    if (Object.hasOwn(def.params, slot)) {
-      throw new Error(
-        `service() secret slot "${slot}" collides with a param of the same name — a secret slot and ` +
-          `a service param derive the same config key (COMPOSER_<addr>_${slot.toUpperCase()}); rename one.`,
-      );
-    }
+  if (def.input !== undefined && typeof def.input['~standard']?.validate !== 'function') {
+    throw new Error(
+      'service() `input` must be a Standard Schema (an object with a "~standard".validate ' +
+        'function) — see https://standardschema.dev (ADR-0042).',
+    );
   }
   return Object.freeze({
     [NODE]: true as const,
@@ -624,9 +643,10 @@ export function service<
     type: def.type,
     inputs: frozenShallowCopy(def.inputs),
     params: freezeParams(def.params),
-    secretSlots: freezeSecrets(
-      def.secrets ?? blindCast<S, 'no secrets declared → an empty slot map'>({}),
-    ),
+    inputSchema: blindCast<
+      I,
+      'omitted input (I = undefined by default) is the undefined member of I'
+    >(def.input),
     build: Object.freeze({ ...def.build }),
     expose: def.expose !== undefined ? frozenShallowCopy(def.expose) : undefined,
   });

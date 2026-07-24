@@ -57,6 +57,11 @@ describe('cron()', () => {
       input: 'trigger',
       kind: 'dependency',
     });
+    // The schedule rides the scheduler's input binding (ADR-0042), recorded at provision.
+    expect(graph.inputBindings).toContainEqual({
+      serviceAddress: 'cron.scheduler',
+      binding: { jobs: [{ jobId: 'tick', every: '2s' }] },
+    });
   });
 
   test("an invalid wiring — the runner's own dep left unwired into the cron module — throws at Load", () => {

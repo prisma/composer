@@ -6,10 +6,13 @@
  * DIFFERENT policy to each (a placeholder for a missing secret, a hard error
  * for a missing env-sourced param), so the two lists stay separate here
  * rather than merged into one.
+ *
+ * Secrets are the `envSecret` leaves of every service's input binding
+ * (ADR-0042); env-sourced params are the `envParam`-bound reserved params.
  */
 
 import type { Graph } from '@internal/core';
-import { paramManifest, provisionManifest } from '@internal/core';
+import { inputManifest, isSecretSource, paramManifest } from '@internal/core';
 import { isEnvParamSource, paramName } from './param.ts';
 import { secretName } from './secret.ts';
 
@@ -19,7 +22,7 @@ export interface PreflightName {
 }
 
 export interface PreflightNames {
-  /** Every secret slot's bound platform var name, deduped by name (first service wins the reported address). */
+  /** Every input-binding secret leaf's bound platform var name, deduped by name (first service wins the reported address). */
   readonly secrets: readonly PreflightName[];
   /** Every env-sourced param binding's platform var name (envParam-bound only — a literal-bound param never touches the platform), deduped the same way. */
   readonly envParams: readonly PreflightName[];
@@ -33,18 +36,29 @@ function dedupedNames(entries: Iterable<PreflightName>): readonly PreflightName[
   return [...byName.values()];
 }
 
-/** Walks `graph.secrets`/`graph.params` exactly as `runPreflight` did before this extraction. */
+/** Every `envSecret` leaf of one input binding: its platform name, found by the same dumb recursive descent the serializer uses (ADR-0042). */
+function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: string[]): void {
+  if (isSecretSource(binding)) {
+    out.push(secretName(binding, `an input-binding secret leaf of service "${serviceAddress}"`));
+    return;
+  }
+  if (typeof binding !== 'object' || binding === null) return;
+  const members = Array.isArray(binding) ? binding : Object.values(binding);
+  for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
+}
+
+/** Walks each service's input binding for `envSecret` leaves, and `graph.params` for env-sourced params (ADR-0042). */
 export function collectPreflightNames(graph: Graph): PreflightNames {
-  const secrets = dedupedNames(
-    provisionManifest(graph).map((binding) => ({
-      name: secretName(binding),
-      serviceAddress: binding.serviceAddress,
-    })),
-  );
+  const secretEntries: PreflightName[] = [];
+  for (const { serviceAddress, binding } of inputManifest(graph)) {
+    const leafNames: string[] = [];
+    collectSecretLeafNames(binding, serviceAddress, leafNames);
+    for (const name of leafNames) secretEntries.push({ name, serviceAddress });
+  }
   const envParams = dedupedNames(
     paramManifest(graph)
       .filter((binding) => isEnvParamSource(binding.binding))
       .map((binding) => ({ name: paramName(binding), serviceAddress: binding.serviceAddress })),
   );
-  return { secrets, envParams };
+  return { secrets: dedupedNames(secretEntries), envParams };
 }

@@ -6,7 +6,7 @@ import { createBlobApp } from './app.ts';
 import service from './service.ts';
 
 const { store } = service.load(); // S3Config: { url, bucket, accessKeyId, secretAccessKey }
-const { port } = service.config();
+const port = service.port();
 
 process.on('uncaughtException', (err) => console.error('uncaughtException', err));
 process.on('unhandledRejection', (err) => console.error('unhandledRejection', err));

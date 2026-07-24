@@ -75,10 +75,22 @@ describe('storage()', () => {
     expect([...byId.keys()]).toContain('blobs.service');
     expect([...byId.keys()]).toContain('blobs.db');
 
-    // opts.bucket reaches the s3-store service's `bucket` param default.
-    const service = byId.get('blobs.service');
-    const bucketDefault =
-      service !== undefined && 'params' in service ? service.params['bucket']?.default : undefined;
-    expect(bucketDefault).toBe('photos');
+    // opts.bucket reaches the s3-store service as its input binding (ADR-0042).
+    expect(graph.inputBindings).toContainEqual({
+      serviceAddress: 'blobs.service',
+      binding: { bucket: 'photos' },
+    });
+  });
+
+  test('the default bucket binding is "storage"', () => {
+    const root = module('root', {}, ({ provision }) => {
+      provision(storage(), { id: 'storage' });
+      return {};
+    });
+
+    expect(Load(root).inputBindings).toContainEqual({
+      serviceAddress: 'storage.service',
+      binding: { bucket: 'storage' },
+    });
   });
 });

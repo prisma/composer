@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load, module, secret, string } from '@internal/core';
+import { Load, module } from '@internal/core';
 import { secretsStore } from '@internal/local-target';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
@@ -20,22 +21,32 @@ const build = {
 const fakeContainer = () =>
   new PrismaCloudContainer({ appName: 'app', stage: undefined }, 'local', undefined);
 
+/** Load never validates a binding, so a pass-anything schema is enough here (ADR-0042). */
+const anySchema: StandardSchemaV1<unknown, unknown> = {
+  '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+};
+
+// A secret is an `envSecret` leaf of the service's INPUT binding (ADR-0042);
+// dev preflight walks the binding for it and mints a placeholder when unset.
 const secretGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'ingest', deps: {}, secrets: { stripeKey: secret() }, build }), {
+      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
         id: 'ingest',
-        secrets: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
       });
     }),
   );
 
+// The reserved `port` param keeps the env-sourced param channel (ADR-0042):
+// binding it to envParam(...) is what a missing-env-param hard-error is proven
+// against — dev preflight reads env-sourced params from `paramManifest`.
 const paramGraph = () =>
   Load(
     module('app', ({ provision }) => {
-      provision(compute({ name: 'web', deps: {}, params: { appOrigin: string() }, build }), {
+      provision(compute({ name: 'web', deps: {}, build }), {
         id: 'web',
-        params: { appOrigin: envParam('APP_ORIGIN') },
+        params: { port: envParam('APP_ORIGIN') },
       });
     }),
   );

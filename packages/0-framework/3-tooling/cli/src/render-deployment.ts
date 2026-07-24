@@ -94,12 +94,20 @@ export function renderDeployment(result: DeploymentResult): string {
       continue;
     }
     // The first entity shares the label's line; the rest wrap into the
-    // same column, as does a url.
+    // same column, as do a url and the entity's detail lines (e.g. compute's
+    // serialized input document and its absent-key list, ADR-0042 — a
+    // newline-holding detail value renders as one labeled line per entry).
     row.deployed.entities.forEach((entity, index) => {
       const prefix = index === 0 ? row.label : row.continuation;
       lines.push(`${pad(prefix, column)}${entityLine(entity)}`);
       if (entity.url !== undefined) {
         lines.push(`${pad(row.continuation, column)}${entity.url}`);
+      }
+      for (const [key, value] of Object.entries(entity.details ?? {})) {
+        if (value === '') continue;
+        for (const line of value.split('\n')) {
+          lines.push(`${pad(row.continuation, column)}${key} ${line}`);
+        }
       }
     });
   }

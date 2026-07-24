@@ -25,7 +25,11 @@ export function cron<RD extends Deps, RP extends Params, Ids extends string>(opt
 }): ModuleNode<RD, Record<never, never>> {
   return module(opts.name ?? 'cron', { deps: opts.runner.inputs }, ({ inputs, provision }) => {
     const runner = provision(opts.runner, { id: 'runner', deps: inputs });
-    provision(cronScheduler(opts.schedule), { id: 'scheduler', deps: { trigger: runner.trigger } });
+    provision(cronScheduler(), {
+      id: 'scheduler',
+      deps: { trigger: runner.trigger },
+      input: { jobs: [...opts.schedule.jobs] },
+    });
     return {};
   });
 }

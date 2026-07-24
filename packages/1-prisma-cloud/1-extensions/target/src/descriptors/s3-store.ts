@@ -46,18 +46,26 @@ export function s3StoreDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor
       Effect.gen(function* () {
         const serialized = yield* base.serialize(ctx, provisioned, config);
         const credentials = config.inputs['credentials'] ?? {};
-        const bucket = config.service['bucket'];
+        // `bucket` is a key of the service's input document (ADR-0042) —
+        // compute's serialize already resolved, validated, and serialized the
+        // binding, so the defaults-applied document is the one honest source.
+        const document: unknown =
+          serialized.input !== undefined ? JSON.parse(serialized.input.value) : undefined;
+        const bucket =
+          typeof document === 'object' && document !== null && 'bucket' in document
+            ? document.bucket
+            : undefined;
         // The D4a↔D4b naming contract: the storage module must wire a
-        // `credentials` dependency and a `bucket` param. A missing one would
-        // otherwise deploy a store that 403s every request (unverifiable creds)
-        // or has no namespace — fail the deploy with a clear message instead.
+        // `credentials` dependency and bind a `bucket` input key. A missing one
+        // would otherwise deploy a store that 403s every request (unverifiable
+        // creds) or has no namespace — fail the deploy with a clear message instead.
         if (
           credentials['accessKeyId'] === undefined ||
           credentials['secretAccessKey'] === undefined ||
           bucket === undefined
         ) {
           throw new Error(
-            "s3-store service must wire a 'credentials' dependency and a 'bucket' param",
+            "s3-store service must wire a 'credentials' dependency and declare a 'bucket' input key",
           );
         }
         return {

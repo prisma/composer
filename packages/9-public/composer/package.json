@@ -15,6 +15,7 @@
     "./testing": "./dist/testing.mjs",
     "./casts": "./dist/casts.mjs",
     "./assertions": "./dist/assertions.mjs",
+    "./arktype": "./dist/arktype.mjs",
     "./service-rpc": "./dist/service-rpc.mjs",
     "./node": "./dist/node.mjs",
     "./node/control": "./dist/node-control.mjs",

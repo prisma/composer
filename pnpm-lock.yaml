@@ -478,6 +478,10 @@ importers:
         version: 6.0.3
 
   packages/0-framework/0-foundation/foundation:
+    dependencies:
+      arktype:
+        specifier: ^2.2.3
+        version: 2.2.3
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.3.0

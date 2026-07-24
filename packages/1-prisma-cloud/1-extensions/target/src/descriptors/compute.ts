@@ -11,8 +11,9 @@ import {
   configKey,
   encode,
   encodeParamPointer,
+  type InputDocumentRow,
   paramEntries,
-  secretPointerRows,
+  serializeInput,
 } from '../serializer.ts';
 import {
   cloudApplicationOf,
@@ -41,10 +42,11 @@ export interface ComputeProvisioned {
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
-/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, and the resolved port it routes to. */
+/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
 export interface ComputeSerialized {
   readonly environment: readonly Prisma.EnvironmentVariable[];
   readonly port: number;
+  readonly input?: InputDocumentRow;
 }
 
 /**
@@ -74,10 +76,11 @@ export function computeDescriptor(
         return { serviceId: svc.id, projectId, endpointDomain: svc.endpointDomain };
       }),
 
-    // Two channels of rows: PARAMS (service-own literals JSON-encoded; dependency
-    // provisioning refs passed through, keeping their ordering edge) and SECRETS
-    // (a POINTER row per slot holding the bound platform NAME, never a value —
-    // ADR-0029). The class/branch scope is identical for both.
+    // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
+    // dependency provisioning refs passed through, keeping their ordering
+    // edge) and the INPUT document (one JSON row per service, secret leaves
+    // as `$secret` pointers, never a value — ADR-0042). The class/branch
+    // scope is identical for both.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
@@ -115,13 +118,19 @@ export function computeDescriptor(
           );
         }
 
-        for (const { key, name } of secretPointerRows(svc, address, graph.secrets)) {
+        const inputRow = serializeInput(
+          svc,
+          address,
+          graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
+        );
+        if (inputRow !== undefined) {
           records.push(
-            yield* Prisma.EnvironmentVariable(`${key}-var`, {
+            yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
               projectId,
-              key,
-              // The pointer: the platform env-var NAME the root bound the slot to.
-              value: name,
+              key: inputRow.key,
+              // The defaults-applied document — secret leaves are `$secret`
+              // pointers naming platform vars, never values (ADR-0042).
+              value: inputRow.value,
               class: cls,
               ...branch,
             }),
@@ -196,7 +205,11 @@ export function computeDescriptor(
         // This is the only place the raw, untyped config is read, so it is the
         // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
-        return { environment: records, port };
+        return {
+          environment: records,
+          port,
+          ...(inputRow !== undefined ? { input: inputRow } : {}),
+        };
       }),
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
@@ -227,6 +240,23 @@ export function computeDescriptor(
         // public endpoint, and this descriptor is the only party that knows
         // that. Both fields are still unresolved Output references at this
         // point — apply resolves them before the report's runner sees them.
+        //
+        // The report's two lines of honesty (ADR-0042): the serialized input
+        // document (secret-free by construction — every secret leaf is a
+        // `$secret` pointer) and every binding key that resolved absent in
+        // the deploy shell (a possible typo'd variable name). Newlines in a
+        // detail value render as one line per entry.
+        const inputDetails =
+          serialized.input !== undefined
+            ? {
+                details: {
+                  input: serialized.input.value,
+                  ...(serialized.input.absent.length > 0
+                    ? { absent: serialized.input.absent.join('\n') }
+                    : {}),
+                },
+              }
+            : {};
         return {
           outputs: { url: deployment.deployedUrl, projectId: provisioned.projectId },
           entities: [
@@ -234,6 +264,7 @@ export function computeDescriptor(
               kind: 'compute-service',
               id: provisioned.serviceId,
               url: deployment.deployedUrl,
+              ...inputDetails,
             },
           ],
         };

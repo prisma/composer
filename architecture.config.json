@@ -625,6 +625,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/9-public/composer/src/exports/arktype.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/9-public/composer/src/exports/service-rpc.ts",
       "domain": "public",
       "layer": "public",

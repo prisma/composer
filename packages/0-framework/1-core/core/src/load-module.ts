@@ -6,7 +6,7 @@ import {
   LoadError,
   type NodeId,
   type ParamBinding,
-  type SecretBinding,
+  type ServiceInputBinding,
 } from './graph-types.ts';
 import { serviceInputs } from './load-service.ts';
 import {
@@ -172,6 +172,26 @@ function validateWiring(
   }
 }
 
+/**
+ * Flattens a value into itself plus every nested object/array member value —
+ * identity fodder for the ctx.secrets/ctx.params usage marking, which must
+ * see a forwarded source wherever it sits inside an input binding (ADR-0042).
+ * A secret/param source is an opaque leaf: it is pushed (a forwarded ref IS
+ * such a source, so identity-matching still needs it) but never descended
+ * into, so a ref buried in an unrelated source's payload is not falsely seen
+ * as used. `seen` guards object cycles so a self-referential binding cannot
+ * recurse forever.
+ */
+function deepValues(value: unknown, out: unknown[], seen: WeakSet<object> = new WeakSet()): void {
+  out.push(value);
+  if (typeof value !== 'object' || value === null) return;
+  if (isSecretSource(value) || isParamSource(value)) return;
+  if (seen.has(value)) return;
+  seen.add(value);
+  const members = Array.isArray(value) ? value : Object.values(value);
+  for (const member of members) deepValues(member, out, seen);
+}
+
 /** The (unvalidated) edges a `wiring` object implies — one dependency edge per entry; `validateWiring` does the real checking. */
 function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] {
   return Object.entries(wiring).map(([input, ref]) => ({
@@ -183,14 +203,15 @@ function wiringEdges(wiring: Record<string, unknown>, targetId: string): Edge[] 
 }
 
 /**
- * Checks the secrets wired into one provisioned child: every declared slot is
- * bound to a real secret source (an `envSecret` or a forwarded ctx.secrets
- * ref), and no wired key names a slot the child doesn't declare — the secret
- * analog of `validateWiring`'s per-input checks, but resolved inline (a source
- * carries its own name, so no whole-graph pass is needed).
+ * Checks the secrets wired into one provisioned child MODULE: every declared
+ * forwarding slot is bound to a real secret source (an `envSecret` or a
+ * forwarded ctx.secrets ref), and no wired key names a slot the module
+ * doesn't declare — the secret analog of `validateWiring`'s per-input checks,
+ * but resolved inline (a source carries its own name, so no whole-graph pass
+ * is needed).
  */
 function validateSecretBinding(
-  child: ServiceNode | ModuleNode,
+  child: ModuleNode,
   id: string,
   secretWiring: Record<string, unknown>,
   enclosingModuleName: string,
@@ -305,7 +326,7 @@ function flatten(
   nodes: GraphNode[],
   edges: Edge[],
   pending: PendingWiring[],
-  secretBindings: SecretBinding[],
+  inputBindings: ServiceInputBinding[],
   paramBindings: ParamBinding[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
 ): Record<string, unknown> {
@@ -332,8 +353,8 @@ function flatten(
   // provision's wiring (forwarded down) — or, below, in the body's returned
   // outputs (passed through). Identity comparison is key-precise because each
   // entry is its own object.
-  const markUsed = (values: Record<string, unknown>): void => {
-    for (const value of Object.values(values)) {
+  const markUsed = (values: readonly unknown[]): void => {
+    for (const value of values) {
       for (const key of Object.keys(ctxInputs)) {
         if (value === ctxInputs[key]) used.add(key);
       }
@@ -349,8 +370,8 @@ function flatten(
     ctxSecrets[key] =
       typeof bound === 'object' && bound !== null ? { ...bound, [MODULE_SECRET_KEY]: key } : bound;
   }
-  const markSecretsUsed = (values: Record<string, unknown>): void => {
-    for (const value of Object.values(values)) {
+  const markSecretsUsed = (values: readonly unknown[]): void => {
+    for (const value of values) {
       for (const key of Object.keys(ctxSecrets)) {
         if (value === ctxSecrets[key]) usedSecrets.add(key);
       }
@@ -366,8 +387,8 @@ function flatten(
     ctxParams[key] =
       typeof bound === 'object' && bound !== null ? { ...bound, [MODULE_PARAM_KEY]: key } : bound;
   }
-  const markParamsUsed = (values: Record<string, unknown>): void => {
-    for (const value of Object.values(values)) {
+  const markParamsUsed = (values: readonly unknown[]): void => {
+    for (const value of values) {
       for (const key of Object.keys(ctxParams)) {
         if (value === ctxParams[key]) usedParams.add(key);
       }
@@ -380,17 +401,20 @@ function flatten(
       id?: string;
       deps?: Record<string, unknown>;
       secrets?: Record<string, unknown>;
+      input?: unknown;
       params?: Record<string, unknown>;
     },
     // biome-ignore lint/suspicious/noExplicitAny: ModuleBuilder's real overload set is checked at the call site; the collector implementation is untyped by design.
   ): any => {
-    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/`opts.params`
-    // carry the producers, secret sources, and param bindings that satisfy its slots.
-    // The "_"/"." and duplicate-id checks, brand-check and address join below are
-    // identical whether the id was written or inferred.
+    // The id defaults to the node's own `name`; `opts.deps`/`opts.secrets`/
+    // `opts.input`/`opts.params` carry the producers, secret sources, input
+    // binding, and param bindings that satisfy its slots. The "_"/"." and
+    // duplicate-id checks, brand-check and address join below are identical
+    // whether the id was written or inferred.
     const id = opts?.id ?? child.name;
     const provisionWiring = opts?.deps;
     const provisionSecrets = opts?.secrets;
+    const provisionInput = opts?.input;
     const provisionParams = opts?.params;
     if (typeof id !== 'string' || id.length === 0) {
       throw new LoadError(`provision() requires a non-empty id (module "${moduleNode.name}").`);
@@ -441,6 +465,11 @@ function flatten(
           `provision("${id}") received secrets for a resource — a resource has no secret slots to satisfy.`,
         );
       }
+      if (provisionInput !== undefined) {
+        throw new LoadError(
+          `provision("${id}") received an input binding for a resource — a resource declares no input schema.`,
+        );
+      }
       if (provisionParams !== undefined) {
         throw new LoadError(
           `provision("${id}") received params for a resource — a resource has no params to satisfy.`,
@@ -455,26 +484,51 @@ function flatten(
     }
 
     const localWiring = { ...(provisionWiring ?? {}) };
-    markUsed(localWiring);
+    markUsed(Object.values(localWiring));
 
-    // Secrets: validate every declared slot is bound to a real secret source,
-    // reject extras, and mark forwarded refs used (identity). No `pending`
-    // deferral — a secret source carries its own name, so nothing needs the
-    // whole graph to resolve (unlike a dependency's producer).
     const localSecrets = { ...(provisionSecrets ?? {}) };
-    markSecretsUsed(localSecrets);
-    validateSecretBinding(child, id, localSecrets, moduleNode.name);
+    markSecretsUsed(Object.values(localSecrets));
 
     const localParams = { ...(provisionParams ?? {}) };
-    markParamsUsed(localParams);
+    markParamsUsed(Object.values(localParams));
 
     if (child.kind === 'service') {
-      // A service's slots resolve to names HERE — record one binding per slot.
-      for (const slot of Object.keys(child.secretSlots)) {
-        const bound = localSecrets[slot];
-        if (isSecretSource(bound)) {
-          secretBindings.push({ serviceAddress: fullAddress, slot, source: bound });
-        }
+      if (provisionSecrets !== undefined) {
+        throw new LoadError(
+          `provision("${id}") received secrets for a service — a service takes its secrets as ` +
+            'envSecret(...) leaves of its `input` binding (ADR-0042), not a secrets map.',
+        );
+      }
+      // The input binding pairs 1:1 with a declared input schema — a schema
+      // with no binding has nothing to resolve at deploy, and a binding with
+      // no schema has no judge (ADR-0042).
+      if (child.inputSchema !== undefined && provisionInput === undefined) {
+        throw new LoadError(
+          `Input of provisioned service "${id}" is not bound (module "${moduleNode.name}") — the ` +
+            'service declares an input schema; bind it with `input: { … }` on its provision() call.',
+        );
+      }
+      if (child.inputSchema === undefined && provisionInput !== undefined) {
+        throw new LoadError(
+          `provision("${id}") received an input binding, but the service declares no input schema ` +
+            `(module "${moduleNode.name}").`,
+        );
+      }
+      if (provisionInput !== undefined) {
+        // A forwarded ctx.secrets/ctx.params ref counts as used wherever it
+        // sits inside the binding — the binding is plain data, so a deep
+        // value walk finds it.
+        const leaves: unknown[] = [];
+        deepValues(provisionInput, leaves);
+        markSecretsUsed(leaves);
+        markParamsUsed(leaves);
+        inputBindings.push({
+          serviceAddress: fullAddress,
+          binding: blindCast<
+            ServiceInputBinding['binding'],
+            'the provision overloads type the binding as InputBinding; the collector receives it untyped'
+          >(provisionInput),
+        });
       }
       // A service param binding is optional per slot (default is the
       // fallback), so this only rejects a name that isn't a real param —
@@ -496,6 +550,18 @@ function flatten(
       byId.set(fullAddress, child);
       return refFor(fullAddress, child);
     }
+
+    if (provisionInput !== undefined) {
+      throw new LoadError(
+        `provision("${id}") received an input binding for a module — a module has no input schema; ` +
+          'bind the input on the service that declares it.',
+      );
+    }
+    // Secrets: validate every declared module slot is bound to a real secret
+    // source, reject extras. No `pending` deferral — a source carries its own
+    // name, so nothing needs the whole graph to resolve (unlike a
+    // dependency's producer).
+    validateSecretBinding(child, id, localSecrets, moduleNode.name);
 
     // A module's param-forwarding slots have no schema of their own: every
     // declared one must be bound to a real ParamSource, the same requirement
@@ -519,7 +585,7 @@ function flatten(
       nodes,
       edges,
       pending,
-      secretBindings,
+      inputBindings,
       paramBindings,
       byId,
     );
@@ -553,7 +619,7 @@ function flatten(
   // enclosing scope — that is using it, not ignoring it (module-composition.md
   // § Forwarding). The consumer of the pass-through output still resolves to
   // the original producer, since the entry read through to its port.
-  markUsed(outputs);
+  markUsed(Object.values(outputs));
 
   for (const key of Object.keys(moduleNode.deps)) {
     if (!used.has(key)) {
@@ -633,11 +699,11 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
   const nodes: GraphNode[] = [];
   const edges: Edge[] = [];
   const pending: PendingWiring[] = [];
-  const secretBindings: SecretBinding[] = [];
+  const inputBindings: ServiceInputBinding[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
 
-  flatten(root, undefined, {}, {}, {}, nodes, edges, pending, secretBindings, paramBindings, byId);
+  flatten(root, undefined, {}, {}, {}, nodes, edges, pending, inputBindings, paramBindings, byId);
 
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
@@ -647,7 +713,7 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
-    secrets: secretBindings,
+    inputBindings,
     params: paramBindings,
   };
 }

@@ -1,11 +1,11 @@
 // The docs site entry. Serves the landing page at / and each guide at
 // /guides/<slug> — everything pre-rendered into the bundle, nothing loaded at
-// runtime. The port is the service's own config param (ADR-0021); no globals.
+// runtime.
 import { guides } from './generated/content.ts';
 import service from './service.ts';
 import { guidePage, landingPage, notFoundPage } from './template.ts';
 
-const { port } = service.config();
+const port = service.port();
 
 const bySlug = new Map(guides.map((g) => [g.slug, g]));
 

@@ -17,10 +17,12 @@ builds its clients, and answers requests.
 ## Unit tests — `mockService`
 
 `mockService(service, overrides)` returns a copy of the service whose
-`load()` yields your fakes and whose `config()` yields param defaults overlaid
-with any overrides (one flat object — dependency names route to `load()`,
-param names to `config()`). The fakes are type-checked against the service's
-declared dependencies, so a fake with the wrong shape doesn't compile.
+`load()` yields your fakes and whose `input()` yields the input object you
+supply under the reserved `input` key (one flat object — dependency names
+route to `load()`, `input` to `input()`; the input double is handed over
+as-is, not validated). The fakes are type-checked against the service's
+declared dependencies and its input schema, so a double with the wrong shape
+doesn't compile.
 
 Substituting the mocked service for the real one is your test runner's job —
 `vi.mock` in Vitest, `mock.module` in bun test. A Vitest example, testing a
@@ -89,15 +91,15 @@ Five things to know:
 
 **Next.js services need a third argument** — a boot function — because the
 built entry lives inside Next's standalone output. Resolve it with
-`standaloneServerPath`, and hand Next the port explicitly (its standalone
-server reads `process.env.PORT`, not the service's config):
+`standaloneServerPath`; `bootstrapService` exports the resolved port as
+`process.env.PORT` before booting, which is exactly what Next's standalone
+server binds:
 
 ```ts
 import { pathToFileURL } from 'node:url';
 import { standaloneServerPath } from '@prisma/composer/nextjs/control';
 
 await bootstrapService(storefront, config, async () => {
-  process.env.PORT = String(PORT);
   await import(pathToFileURL(standaloneServerPath(storefront.build)).href);
 });
 ```

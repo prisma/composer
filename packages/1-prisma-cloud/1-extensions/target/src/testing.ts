@@ -8,13 +8,32 @@
  * this reaches the production runtime (`compute()` ships only `run`/`load`).
  */
 
-import type { Config, Deps, Expose, Params, RunnableServiceNode } from '@internal/core';
-import { stash } from './serializer.ts';
+import type {
+  Config,
+  Deps,
+  Expose,
+  InputBinding,
+  Params,
+  RunnableServiceNode,
+} from '@internal/core';
+import { serializeInput, stash } from './serializer.ts';
 
 /** What `bootstrapService` hands back: a live, driveable instance of the booted entry. */
 export interface BootstrappedService {
   readonly url: string;
   readonly fetch: typeof fetch;
+}
+
+/**
+ * `bootstrapService`'s config: core's Config plus the service's provision-time
+ * `input` binding (ADR-0042) — required exactly when the service declares an
+ * input schema, exactly like `provision()`. The binding rides the same
+ * deploy-side path a real deploy takes (`serializeInput`: resolve, validate
+ * with sentinel boxes, one `$secret`-pointer document row), so `input()` in
+ * the booted entry reads it identically to a deployed process.
+ */
+export interface BootstrapConfig extends Config {
+  readonly input?: InputBinding;
 }
 
 /**
@@ -27,12 +46,15 @@ export interface BootstrappedService {
  * supplies its own `boot` thunk; the target owns that resolution.
  *
  * `config.service.port` must be concrete — the entry self-listens and never
- * reports an OS-assigned port back. No `close()`: teardown rides bun-test's
- * per-file process isolation (H3's resolved decision).
+ * reports an OS-assigned port back. The resolved port is also exposed as
+ * `process.env.PORT` before boot, mirroring `run()` — that is the channel an
+ * entry reads its port from (ADR-0042 removed `config()`). No `close()`:
+ * teardown rides bun-test's per-file process isolation (H3's resolved
+ * decision).
  */
 export async function bootstrapService<D extends Deps, P extends Params, E extends Expose>(
   service: RunnableServiceNode<D, P, E>,
-  config: Config,
+  config: BootstrapConfig,
   boot?: () => Promise<void>,
 ): Promise<BootstrappedService> {
   const port = config.service['port'];
@@ -49,6 +71,11 @@ export async function bootstrapService<D extends Deps, P extends Params, E exten
     });
 
   stash(service, config);
+  if (service.inputSchema !== undefined || config.input !== undefined) {
+    const row = serializeInput(service, '', config.input);
+    if (row !== undefined) process.env[row.key] = row.value;
+  }
+  process.env['PORT'] = String(port);
   await bootEntry();
   return { url: `http://localhost:${port}/`, fetch };
 }

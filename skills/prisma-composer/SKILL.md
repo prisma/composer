@@ -3,8 +3,9 @@ name: prisma-composer
 description: >-
   How to write, test, and deploy an app with Prisma Composer
   (`@prisma/composer`): declare services with `compute()` and typed
-  dependencies, define RPC contracts, compose Modules, read config and
-  secrets, compose the ready-made cron/storage/streams Modules, provision a
+  dependencies, define RPC contracts, compose Modules, declare the service
+  input (config and secrets as one schema, read back with `input()`),
+  compose the ready-made cron/storage/streams Modules, provision a
   raw S3-compatible object-store bucket with `bucket()`, find extensions (npm
   packages named `prisma-composer-*`), test with `mockService`/`bootstrapService`,
   run the whole app locally with `prisma-composer dev` and tail its logs with
@@ -28,8 +29,10 @@ module wires them together by their typed ports. Your code receives everything
 from exactly one place — the service node:
 
 - `service.load()` — dependencies (typed RPC clients, database bindings)
-- `service.config()` — config params (validated, typed values)
-- `service.secrets()` — secret values (redacting `SecretBox`es)
+- `service.input()` — the service's whole input, one schema-validated typed
+  object; credentials in it are redacting `SecretString` boxes
+- `service.port()` — the reserved port to bind (default 3000), typed; never
+  `process.env`
 
 The framework never bundles or transforms your code. You build your app with
 whatever bundler you like (`bun build`, `next build`); `prisma-composer deploy`
@@ -49,7 +52,7 @@ Two packages, and only two, appear in your `package.json`:
 
 | Package | Provides |
 | --- | --- |
-| `@prisma/composer` | Core authoring: `module`, `secret`, params, `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
+| `@prisma/composer` | Core authoring: `module`, `secret`, `isSecretString`, `/arktype` (the `secretString()` schema leaf), `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
 | `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
 
 ## Anatomy of a service
@@ -99,8 +102,8 @@ import { serve } from '@prisma/composer/service-rpc';
 import { SQL } from 'bun';
 import service from './service.ts';
 
-const { db } = service.load();     // { url } — you build your own client
-const { port } = service.config(); // params, separate namespace from deps
+const { db } = service.load(); // { url } — you build your own client
+const port = service.port();   // the reserved port, resolved (default 3000)
 
 const sql = new SQL({ url: db.url, max: 1, idleTimeout: 10 });
 
@@ -205,7 +208,9 @@ export default module('my-app', ({ provision }) => {
 
 `provision(node, opts?)` accepts `id` (defaults to the node's own name),
 `deps` (wire each declared dependency to a provisioned ref or exposed port),
-and `secrets` (bind secret needs — see § Secrets).
+`input` (the service's input binding — required exactly when it declares an
+input schema, see § Service input), and `secrets` (bind a module boundary's
+forwarded secret needs).
 
 ## Builds are yours
 
@@ -346,7 +351,7 @@ export default module(
     const service = provision(authService, {
       id: 'service',
       deps: { db },
-      secrets: { signingKey: secrets.signingKey },
+      input: { signingKey: secrets.signingKey }, // forwarded ref as a binding leaf
     });
     return { rpc: service.rpc };
   },
@@ -400,86 +405,76 @@ const handler = serveSchedule(service, schedule, {
 provision(cron({ schedule, runner: runnerService }), { deps: { worker: worker.rpc } });
 ```
 
-## Config params
+## Service input
 
 Choosing the channel is most of the decision:
 
 | The value is… | Declare | Provide | Read |
 | --- | --- | --- | --- |
 | produced by another node | `deps: { db: postgres() }` | wire at `provision()` | `load()` |
-| plain config | `params: { region: string() }` | `default`, literal at `provision()`, or `envParam()` per stage | `config()` |
-| a credential | `secrets: { key: secret() }` | `envSecret('NAME')` at the root | `secrets()`, redacted |
+| anything else — config or credential | one field of the `input` schema | bind at `provision()`: literal, `envParam()`, or `envSecret()` | `input()` |
 
-Params are caller-owned schemas on the declaration. `string()`
-and `number()` cover the scalars; `param(schema)` wraps any
-[Standard Schema](https://standardschema.dev) validator:
+The service declares its whole incoming configuration — plain values and
+credentials together — as **one
+[Standard Schema](https://standardschema.dev)** (arktype is the house
+choice). A credential is a field typed as the redacting `SecretString` box;
+conditional legality ("no stripe key unless billing is on") is an ordinary
+schema union:
 
 ```ts
-import { param, string } from '@prisma/composer';
+// service.ts — the shapes that are legal
+import { secretString } from '@prisma/composer/arktype';
 import { type } from 'arktype';
 
 compute({
   name: 'scheduler',
-  params: {
-    jobs: param(type({ jobId: 'string', every: 'string' }).array()),
-    region: string({ optional: true }),
-  },
+  input: type({
+    jobs: type({ jobId: 'string', every: 'string' }).array(),
+    'region?': 'string',
+    apiKey: secretString(),
+  }),
   // ...
 });
+
+// module.ts — where each value comes from; the binding mirrors the schema's shape
+import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+provision(scheduler, {
+  input: {
+    jobs: [{ jobId: 'tick', every: '60s' }],   // a literal
+    region: envParam('REGION'),                 // a per-stage platform variable
+    apiKey: envSecret('SCHEDULER_API_KEY'),     // a credential — name only, never the value
+  },
+});
+
+// server.ts — one call, one validated typed object
+const input = service.input();
+input.apiKey.expose(); // the only way to a secret's value; the box redacts everywhere else
 ```
 
-Read them with `service.config()` — never `load()`; deps and params are
-separate namespaces. Facets are `default` and `optional`. Every service has a
-reserved `port` param (default 3000); declaring your own `port` is an
-authoring error.
+Rules that bite:
 
-**Binding at provision.** A param's value doesn't have to be its
-authoring-time `default` — the `provision()` call can bind it, and the
-binding wins:
+- **Secretness is enforced by validation**: a literal bound where the schema
+  expects `SecretString` fails the deploy, and `envSecret` bound to a plain
+  string field fails the same way. Don't put credentials in plain fields.
+- **`envParam` values arrive as raw strings** — bind them to string fields.
+  The stage's platform variable is the store; the deploying shell only seeds
+  it (preflight copies a missing name up from the shell, and fails early,
+  naming the variable, when both lack it). Changing the platform value needs
+  a redeploy.
+- **Absence is the schema's call**: an env-bound field whose variable is
+  unset (or empty) resolves to *key omitted* — legal only if the schema says
+  so (optional field, union arm). The deploy report prints the serialized
+  input document (secret-free: secrets ride as `{"$secret":"VAR"}` pointers)
+  and every key that resolved absent.
+- **The reserved `port` (default 3000) is outside the schema** — read it
+  through `service.port()` (a sibling of `service.origin()`), never
+  `process.env`. The framework also exports `PORT` for Next.js standalone,
+  which binds it itself.
+- A module forwards a secret need without learning the platform name
+  (the auth Module above); the forwarded ref is a binding leaf.
 
-```ts
-// A literal — per-application config without touching the service:
-provision(web, { params: { appOrigin: 'https://example.com' } });
-
-// A platform env var, per stage — plain config like an app origin that
-// differs between production and a preview stage. Not a secret, not a
-// literal you'd hardcode:
-import { envParam } from '@prisma/composer-prisma-cloud';
-provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
-```
-
-An `envParam` value is read at boot from the named platform variable and
-handed to the param's schema as a **raw string** — so bind it to `string()`
-params (a `number()` schema fails at boot). The stage's platform variable is
-the store; the deploying shell only seeds it: preflight copies a name the
-stage is missing up from the shell, and fails early (naming the variable)
-when both lack it — the same mechanism as secrets. Changing the platform
-value needs a redeploy to take effect. Unlike a secret it reads back through
-`config()`, unredacted; use `secret()`/`envSecret` for credentials.
-`examples/env-param` in the prisma/composer repo is the working version.
-
-## Secrets
-
-Secret values never travel through framework config. A service
-declares a nameless **need**; the root binds it to a platform env-var name;
-the value stays only in that platform variable:
-
-```ts
-// service.ts — the need
-import { secret } from '@prisma/composer';
-compute({ /* ... */ secrets: { signingKey: secret() } });
-
-// module.ts root — the binding
-import { envSecret } from '@prisma/composer-prisma-cloud';
-provision(authModule, { secrets: { signingKey: envSecret('AUTH_SIGNING_SECRET') } });
-
-// server.ts — the read
-const { signingKey } = service.secrets(); // SecretBox<string>
-signingKey.expose();                      // the only way to the value; the box redacts everywhere else
-```
-
-Modules forward needs without learning the name (the auth Module above). A
-secret is not a param — don't put credentials in `params`.
+`examples/env-param` and `examples/storefront-auth` in the prisma/composer
+repo are the working versions.
 
 ## Testing
 
@@ -492,10 +487,11 @@ under test:
 | Run the real boot + request path against a fake dependency | `bootstrapService` | `@prisma/composer-prisma-cloud/testing` |
 
 **Unit — `mockService`.** Returns a copy of the service whose `load()` yields
-your doubles (type-checked against the declared deps) and whose `config()`
-yields param defaults overlaid with any overrides, in one flat object. Wiring
-the module substitution is your runner's job (`vi.mock` in Vitest,
-`mock.module` in bun test):
+your doubles (type-checked against the declared deps) and whose `input()`
+yields the object you pass under the reserved `input` key, in one flat
+object (required exactly when the service declares an input schema; handed
+over as-is, not validated). Wiring the module substitution is your runner's
+job (`vi.mock` in Vitest, `mock.module` in bun test):
 
 ```tsx
 // page.test.tsx
@@ -537,9 +533,12 @@ const res = await app.fetch(new Request(app.url));
   test does).
 - **Next.js services take a third argument**, a boot thunk, because the built
   entry lives in Next's standalone output — resolve it with
-  `standaloneServerPath` from `@prisma/composer/nextjs/control` and set
-  `process.env.PORT` before importing it (Next's standalone server binds
-  `PORT`, not the service's config).
+  `standaloneServerPath` from `@prisma/composer/nextjs/control`.
+  `bootstrapService` exports the resolved port as `process.env.PORT` before
+  booting, which is what Next's standalone server binds.
+- **A service with an input schema takes `input`** in the config — a binding
+  exactly like `provision()`'s, run through the real serialize/read path, so
+  `input()` in the booted entry sees what a deploy would produce.
 
 **The fake you pass.** A dependency's type is its contract, so any value of
 that shape is a valid double: a bare object (fastest), the real client over an

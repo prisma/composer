@@ -1,13 +1,13 @@
 /**
- * Type-level rules for the secret slot vocabulary (ADR-0029): `secret()` is a
- * need, `secretSource()` is a source, `SecretValues<S>` boxes each slot, and
- * `provision` requires a source per declared secret slot. Type-only (vitest
+ * Type-level rules for the input vocabulary (ADR-0042): `secretSource()` is a
+ * source, a service's declared input schema makes the provision-time `input`
+ * binding required, and a schema-less service rejects one. Type-only (vitest
  * `--typecheck`, never executed).
  */
-import type { SecretBox } from '@internal/foundation/secret';
 import { expectTypeOf, test } from 'vitest';
-import type { BuildAdapter, SecretNeed, SecretSource, SecretValues } from '../node.ts';
+import type { BuildAdapter, SecretNeed, SecretSource } from '../node.ts';
 import { module, secret, secretSource, service } from '../node.ts';
+import { anyInputSchema } from './helpers.ts';
 
 const build: BuildAdapter = {
   extension: '@prisma/composer/node',
@@ -21,28 +21,37 @@ test('secret() is a SecretNeed; secretSource() is a SecretSource', () => {
   expectTypeOf(secretSource('AUTH_SIGNING_KEY')).toEqualTypeOf<SecretSource<string>>();
 });
 
-test('SecretValues<S> maps each declared slot to a SecretBox<string>', () => {
-  type S = { signingKey: SecretNeed; apiKey: SecretNeed };
-  expectTypeOf<SecretValues<S>>().toEqualTypeOf<{
-    readonly signingKey: SecretBox<string>;
-    readonly apiKey: SecretBox<string>;
-  }>();
-});
-
-test('provisioning a service with a secret slot requires a source per slot', () => {
+test('provisioning a service with an input schema requires the input binding', () => {
   const svc = service({
     name: 'auth',
     extension: 'test/pack',
     type: 'fake/app',
     inputs: {},
     params: {},
-    secrets: { signingKey: secret() },
+    input: anyInputSchema,
     build,
   });
 
   module('root', ({ provision }) => {
-    // @ts-expect-error a declared secret slot must be bound
+    // @ts-expect-error a declared input schema must be bound
     provision(svc, { id: 'auth' });
-    provision(svc, { id: 'auth', secrets: { signingKey: secretSource('AUTH_SIGNING_KEY') } });
+    provision(svc, { id: 'auth', input: { signingKey: secretSource('AUTH_SIGNING_KEY') } });
+  });
+});
+
+test('provisioning a schema-less service rejects an input binding', () => {
+  const svc = service({
+    name: 'plain',
+    extension: 'test/pack',
+    type: 'fake/app',
+    inputs: {},
+    params: {},
+    build,
+  });
+
+  module('root', ({ provision }) => {
+    provision(svc, { id: 'plain' });
+    // @ts-expect-error no input schema declared — nothing to bind
+    provision(svc, { id: 'plain2', input: {} });
   });
 });

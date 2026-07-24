@@ -3,26 +3,30 @@
 // artifact changes. Self-contained (see web-server.mjs's doc comment for
 // why this doesn't import the sibling .ts source).
 //
-// Also carries the secret/env-param proof (S5, acceptance criterion 5):
-// GET /status reports whether the secret looks like a locally-minted
-// placeholder (`local-placeholder-<hex>`) and echoes the bound greeting —
-// dev never reaches this far at all when the env-param is unset (preflight
-// hard-errors first), so this endpoint's mere reachability is half the proof.
+// Also carries the secret/env-param proof (S5, acceptance criterion 5),
+// migrated to ADR-0042: GET /status reports whether the secret looks like a
+// locally-minted placeholder (`local-placeholder-<hex>`). The env-sourced
+// param rides the reserved `port` channel (module.ts binds it to
+// LOCALDEV_FIXTURE_GREETING) — dev never reaches this far at all when it is
+// unset (preflight hard-errors first), so this endpoint's mere reachability
+// is half the proof.
 
-import { secret, string } from '@prisma/composer';
+import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
+import { type } from 'arktype';
 
 const service = compute({
   name: 'bkg',
   deps: {},
-  secrets: { apiKey: secret() },
-  params: { greeting: string() },
+  input: type({ apiKey: secretString() }),
   build: node({ module: import.meta.url, entry: 'bg-server.mjs' }),
 });
 
-const { port, greeting } = service.config();
-const { apiKey } = service.secrets();
+// The reserved port local dev's Deployment provider materializes into this
+// process's env (the emulator-assigned port), read back address-free.
+const port = service.port();
+const { apiKey } = service.input();
 
 Bun.serve({
   port,
@@ -31,7 +35,6 @@ Bun.serve({
     const url = new URL(request.url);
     if (url.pathname === '/status') {
       return Response.json({
-        greeting,
         apiKeyIsPlaceholder: apiKey.expose().startsWith('local-placeholder-'),
       });
     }

@@ -8,13 +8,13 @@ import { SQL } from 'bun';
 import service from './service.ts';
 
 const { db } = service.load(); // db: PostgresConfig — the app owns its client
-const { port } = service.config(); // config params are read separately from deps (ADR-0021)
-const { signingKey } = service.secrets(); // signingKey: SecretBox<string> — redacts everywhere but expose()
+const { signingKey } = service.input(); // signingKey: SecretString — redacts everywhere but expose() (ADR-0042)
+const port = service.port();
 
 // The E2E's KNOWN test marker for the secret the root binds to AUTH_SIGNING_SECRET
 // (matched by the value the deploy provisions — see .github/workflows/e2e-deploy.yml
 // and scripts/e2e-verify.sh). `secretCheck` below proves the secret round-tripped
-// (root envSecret -> pointer row -> boot double-lookup -> SecretBox) by comparing
+// (root envSecret -> input-document $secret pointer -> boot lookup -> SecretBox) by comparing
 // `signingKey.expose()` to this marker and returning ONLY a boolean. `.expose()` is
 // the sole reader; the value is never rendered or logged (SecretBox redacts). This
 // constant is a non-sensitive demonstration marker, not a real credential.

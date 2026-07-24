@@ -1,4 +1,4 @@
-import type { DependencyEnd, ModuleNode, ResourceNode, SecretSource, ServiceNode } from './node.ts';
+import type { DependencyEnd, InputBinding, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
 export type NodeId = string;
@@ -23,19 +23,16 @@ export interface Edge {
 }
 
 /**
- * A resolved secret binding: the root bound a service's secret slot to an
- * opaque, target-defined source, and the wiring forwarded it to that service's
- * address (ADR-0029). Core never inspects the source; the deploy target reads
- * its own payload. A target's serializer keys the pointer row off this; the
- * preflight manifest aggregates the sources.
+ * A service's provision-time input binding (ADR-0042): the plain object a
+ * `provision(service, { input })` call supplied, recorded at that service's
+ * address. Core never walks it beyond usage tracking; the deploy target's
+ * recursive descent classifies its leaves (literals, `envParam`, `envSecret`).
  */
-export interface SecretBinding {
-  /** The graph address of the service that declares the secret slot. */
+export interface ServiceInputBinding {
+  /** The graph address of the service that declares the input schema. */
   readonly serviceAddress: NodeId;
-  /** The secret slot key on that service. */
-  readonly slot: string;
-  /** The opaque source the root bound the slot to. Core never inspects it; the deploy target reads back its own payload. */
-  readonly source: SecretSource;
+  /** The binding object supplied at provision. */
+  readonly binding: InputBinding;
 }
 
 /**
@@ -60,8 +57,8 @@ export interface Graph {
   /** Root + one per input, topo-ordered (deps first). */
   readonly nodes: readonly GraphNode[];
   readonly edges: readonly Edge[];
-  /** Every service secret slot resolved to its root-bound opaque source. */
-  readonly secrets: readonly SecretBinding[];
+  /** Every service input binding a `provision()` call supplied (ADR-0042). */
+  readonly inputBindings: readonly ServiceInputBinding[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];
 }

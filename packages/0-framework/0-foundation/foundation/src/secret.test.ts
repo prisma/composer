@@ -1,6 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 import { inspect } from 'node:util';
-import { SecretBox } from './secret.ts';
+import { isSecretString, SecretBox } from './secret.ts';
+
+// What a second copy of secret.ts in a bundle produces: a different class
+// object whose instances carry the same registered brand.
+const SECRET_BOX: unique symbol = Symbol.for('prisma:secret-box') as never;
+
+class DuplicatedModuleSecretBox<T> {
+  readonly [SECRET_BOX] = true;
+  readonly #value: T;
+  constructor(value: T) {
+    this.#value = value;
+  }
+  expose(): T {
+    return this.#value;
+  }
+  toString(): string {
+    return '[REDACTED]';
+  }
+}
 
 describe('SecretBox', () => {
   test('expose() round-trips the wrapped value', () => {
@@ -33,5 +51,32 @@ describe('SecretBox', () => {
     expect(inspect(box)).toBe('[REDACTED]');
     expect(inspect({ key: box })).toContain('[REDACTED]');
     expect(inspect(box)).not.toContain('sk_live');
+  });
+});
+
+describe('isSecretString', () => {
+  test('true for a SecretBox instance', () => {
+    expect(isSecretString(new SecretBox('sk_live_abc'))).toBe(true);
+    expect(isSecretString(new SecretBox(''))).toBe(true);
+  });
+
+  test('true for a box built by a duplicated copy of this module', () => {
+    expect(isSecretString(new DuplicatedModuleSecretBox('sk_live_abc'))).toBe(true);
+  });
+
+  test('false for an unbranded look-alike that exposes and redacts', () => {
+    const lookalike = {
+      expose: () => 'sk_live_abc',
+      toString: () => '[REDACTED]',
+    };
+    expect(isSecretString(lookalike)).toBe(false);
+  });
+
+  test('false for plain values and non-redacting lookalikes', () => {
+    expect(isSecretString('sk_live_abc')).toBe(false);
+    expect(isSecretString(undefined)).toBe(false);
+    expect(isSecretString(null)).toBe(false);
+    expect(isSecretString({})).toBe(false);
+    expect(isSecretString({ expose: () => 'x', toString: () => 'x' })).toBe(false);
   });
 });

@@ -10,7 +10,7 @@
 import service from './service.ts';
 
 const { db } = service.load(); // db: { url, client } — the Prisma Next binding (ADR-0040)
-const { port } = service.config();
+const port = service.port();
 
 // A Prisma Postgres direct connection is dropped when it idles / the service
 // scales to zero; the lazy pool reconnects on the next query. Surface those as

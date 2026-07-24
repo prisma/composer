@@ -180,12 +180,15 @@ async function managementClient(): Promise<ManagementApiClient> {
 }
 
 /**
- * The Prisma Cloud extension's `preflight`. Aggregates the target-agnostic
- * manifests (core's `provisionManifest` for secrets, `paramManifest` filtered
- * to env-sourced bindings for params), checks each pointer name against the
- * platform, fills from the shell where possible, and fails loudly on anything
- * absent from both. Accepts an injected client for tests; otherwise builds one
- * from env.
+ * The Prisma Cloud extension's `preflight`. Uses the shared name collector
+ * (`collectPreflightNames`, ADR-0042) — every service's input-binding
+ * `envSecret` leaf, plus `paramManifest` filtered to env-sourced reserved
+ * params — checks each platform name against the platform, fills from the
+ * shell where possible, and fails loudly on anything absent from both.
+ * `envParam` leaves of an input binding are NOT checked here — they resolve
+ * from the deploy shell at serialize, and an unset one is an omitted key the
+ * schema arbitrates. Accepts an injected client for tests; otherwise builds
+ * one from env.
  */
 export async function runPreflight(
   input: PreflightInput,
@@ -193,12 +196,12 @@ export async function runPreflight(
 ): Promise<void> {
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
-  // One check per platform NAME (many slots/services, secret or param, may
-  // bind the same one). Every wired secret is required — the forwarding model
-  // has no optional slot; a param binding is only checked when it is
-  // env-sourced — a literal-bound param never touches the platform. Deploy
-  // treats the two lists identically (unlike dev preflight), so they're
-  // merged here, secrets first (matching the pre-extraction dedup order).
+  // One check per platform NAME (many leaves/services, secret or param, may
+  // bind the same one). Every bound secret leaf is required — absence is
+  // expressed by omitting the key from the binding, never by an unprovisioned
+  // var; a param binding is only checked when it is env-sourced. Deploy treats
+  // the two lists identically (unlike dev preflight), so they're merged here,
+  // secrets first.
   const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
   for (const meta of [...collected.secrets, ...collected.envParams]) {

@@ -1,20 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type { ConfigDeclaration, Contract } from '@internal/core';
-import {
-  configOf,
-  hydrateSync,
-  isNode,
-  number,
-  param,
-  SecretBox,
-  secret,
-  string,
-} from '@internal/core';
+import type { ConfigDeclaration, Contract, SecretBox } from '@internal/core';
+import { configOf, hydrateSync, isNode, number, param, service, string } from '@internal/core';
+import { secretString } from '@internal/foundation/arktype';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { compute, postgres, postgresContract } from '../exports/index.ts';
 import { bootstrapService } from '../exports/testing.ts';
-import { configKey, deserialize, deserializeSecrets, encode, secretKey } from '../serializer.ts';
+import { configKey, deserialize, encode } from '../serializer.ts';
 import { RPC_ACCEPTED_KEYS_PARAM } from '../service-keys.ts';
 import { STREAMS_API_KEY_ENV, STREAMS_API_KEY_PARAM } from '../streams-keys.ts';
 
@@ -44,8 +36,6 @@ const build = {
 };
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
-const COMPOSER_RETRIES_KEY = configKey('', { owner: 'service', name: 'retries' });
-
 async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
   for (const [k, v] of Object.entries(values)) process.env[k] = v;
@@ -140,42 +130,14 @@ describe('compute()', () => {
     expect(deps).toEqual({ db: { url: 'postgres://fake' } });
   });
 
-  test('rejects a secret slot name that collides with a param name (same config key)', () => {
+  test('rejects a dependency named "port" — collides with the reserved service param', () => {
     expect(() =>
       compute({
         name: 'test-service',
-        deps: {},
-        params: { token: string() },
-        secrets: { token: secret() },
+        deps: { port: postgres() },
         build,
       }),
-    ).toThrow(/secret slot "token" collides with a param of the same name/);
-  });
-
-  test('rejects a param named "origin" — collides with the framework-written origin row', () => {
-    expect(() =>
-      compute({
-        name: 'test-service',
-        deps: {},
-        params: { origin: string() },
-        build,
-      }),
-    ).toThrow(
-      /compute\(\): param "origin" collides with the framework-written origin row — rename the param\./,
-    );
-  });
-
-  test('rejects a secret slot named "origin" — collides with the framework-written origin row', () => {
-    expect(() =>
-      compute({
-        name: 'test-service',
-        deps: {},
-        secrets: { origin: secret() },
-        build,
-      }),
-    ).toThrow(
-      /compute\(\): secret "origin" collides with the framework-written origin row — rename the secret\./,
-    );
+    ).toThrow(/dependency "port" collides with the reserved service param/);
   });
 });
 
@@ -368,7 +330,6 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     );
 
     expect(loaded).toEqual({ db: { url: 'postgres://x' } });
-    expect(app.config()).toEqual({ port: 4001 });
   });
 
   test("a lone-service deploy (address '') reads and re-stashes the same COMPOSER_-prefixed keys", async () => {
@@ -388,7 +349,6 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     );
 
     expect(loaded).toEqual({ db: { url: 'postgres://y' } });
-    expect(app.config()).toEqual({ port: 3000 });
   });
 
   test('a postgres dependency in deps round-trips through run()/load() — the binding is its config', async () => {
@@ -403,7 +363,6 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     );
 
     expect(loaded).toEqual({ db: { url: 'postgres://dual' } });
-    expect(app.config()).toEqual({ port: 3000 });
   });
 
   test('run() calls boot() exactly once, even with nothing to hydrate', async () => {
@@ -555,46 +514,29 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     expect(seenAtBoot).toBe('');
   });
 
-  test('stash() writes the re-encoded typed value for a declared param, not a raw copy', async () => {
-    const app = compute({
-      name: 'web',
-      deps: {},
-      params: { retries: number({ default: 1 }) },
-      build,
-    });
+  test('stash() writes the re-encoded typed value for the reserved port param, not a raw copy', async () => {
+    const app = compute({ name: 'web', deps: {}, build });
     let seenAtBoot: string | undefined;
     // The address-scoped row is textually different from what encode() emits
     // (JSON tolerates the padding); stash() decodes then re-encodes the typed
     // value, so the address-free row is always the canonical form.
-    await withEnv(
-      {
-        COMPOSER_WEB_RETRIES: '  5  ',
-        COMPOSER_RETRIES: '',
-        COMPOSER_WEB_PORT: '',
-        COMPOSER_PORT: '',
-      },
-      () =>
-        app.run('web', async () => {
-          seenAtBoot = process.env[COMPOSER_RETRIES_KEY];
-        }),
-    );
-    expect(seenAtBoot).toBe('5');
-  });
-
-  test('a lone-service deploy (address "") reads and re-writes the same address-free key for a declared param', async () => {
-    const app = compute({
-      name: 'plain',
-      deps: {},
-      params: { retries: number({ default: 1 }) },
-      build,
-    });
-    let seenAtBoot: string | undefined;
-    await withEnv({ COMPOSER_RETRIES: '7', COMPOSER_PORT: '' }, () =>
-      app.run('', async () => {
-        seenAtBoot = process.env[COMPOSER_RETRIES_KEY];
+    await withEnv({ COMPOSER_WEB_PORT: '  5001  ', COMPOSER_PORT: '' }, () =>
+      app.run('web', async () => {
+        seenAtBoot = process.env['COMPOSER_PORT'];
       }),
     );
-    expect(seenAtBoot).toBe('7');
+    expect(seenAtBoot).toBe('5001');
+  });
+
+  test('a lone-service deploy (address "") reads and re-writes the same address-free key for the reserved port param', async () => {
+    const app = compute({ name: 'plain', deps: {}, build });
+    let seenAtBoot: string | undefined;
+    await withEnv({ COMPOSER_PORT: '7001' }, () =>
+      app.run('', async () => {
+        seenAtBoot = process.env['COMPOSER_PORT'];
+      }),
+    );
+    expect(seenAtBoot).toBe('7001');
   });
 
   test("the RPC reserved provider param's address-free key is @internal/service-rpc's RPC_ACCEPTED_KEYS_ENV — writer and reader cannot drift", () => {
@@ -607,40 +549,34 @@ describe('bootstrapService(service, config, boot) — the in-process integration
     const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
 
     let deps: unknown;
-    let cfg: unknown;
     await withEnv({ COMPOSER_DB_URL: '', COMPOSER_PORT: '' }, () =>
       bootstrapService(
         app,
         { service: { port: 4321 }, inputs: { db: { url: 'postgres://bootstrap' } } },
         async () => {
           deps = app.load();
-          cfg = app.config();
         },
       ),
     );
 
     expect(deps).toEqual({ db: { url: 'postgres://bootstrap' } });
-    expect(cfg).toEqual({ port: 4321 });
   });
 
   test('needs no pre-set environment — the caller supplies the Config directly, unlike run()', async () => {
     const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
 
     let deps: unknown;
-    let cfg: unknown;
     await withEnv({ COMPOSER_DB_URL: 'stale', COMPOSER_PORT: 'stale' }, () =>
       bootstrapService(
         app,
         { service: { port: 5555 }, inputs: { db: { url: 'postgres://fresh' } } },
         async () => {
           deps = app.load();
-          cfg = app.config();
         },
       ),
     );
 
     expect(deps).toEqual({ db: { url: 'postgres://fresh' } });
-    expect(cfg).toEqual({ port: 5555 });
   });
 
   test('returns { url, fetch } pointing at the configured port', async () => {
@@ -680,7 +616,6 @@ describe('compute().load()', () => {
       // Memoized: one binding set per process — the same object each call.
       expect(first).toBe(second);
       expect(first).toEqual({ db: { url: 'postgres://z' } });
-      expect(app.config()).toEqual({ port: 3000 });
     });
   });
 });
@@ -704,6 +639,30 @@ describe('compute().origin()', () => {
       process.env[ORIGIN_KEY] = '"https://second.example.com"';
       expect(app.origin()).toBe('https://first.example.com');
     });
+  });
+});
+
+describe('compute().port()', () => {
+  test('returns the resolved service port after run() has stashed the config', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let seen: number | undefined;
+    await withEnv({ COMPOSER_INGEST_PORT: '8080', COMPOSER_PORT: '', PORT: '' }, () =>
+      app.run('ingest', async () => {
+        seen = app.port();
+      }),
+    );
+    expect(seen).toBe(8080);
+  });
+
+  test('returns the default port (3000) when none is configured', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let seen: number | undefined;
+    await withEnv({ COMPOSER_INGEST_PORT: '', COMPOSER_PORT: '', PORT: '' }, () =>
+      app.run('ingest', async () => {
+        seen = app.port();
+      }),
+    );
+    expect(seen).toBe(3000);
   });
 });
 
@@ -748,7 +707,6 @@ describe('importing a service module', () => {
     );
 
     expect(loaded).toEqual({ db: { url: 'postgres://fixture' } });
-    expect(fixture.default.config()).toEqual({ port: 3000 });
   });
 });
 
@@ -758,9 +716,13 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
       { jobId: 'tick', every: '60s' },
       { jobId: 'mrr', every: '24h' },
     ];
-    const app = compute({
+    // Raw core service(): user params are gone from compute() (ADR-0042), but
+    // extension-reserved structured params still ride this wire.
+    const app = service({
       name: 'scheduler',
-      deps: {},
+      extension: '@prisma/composer-prisma-cloud',
+      type: 'compute',
+      inputs: {},
       params: {
         jobs: param(type({ jobId: 'string', every: 'string' }).array(), { default: jobs }),
       },
@@ -792,71 +754,51 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
   });
 });
 
-describe('secret slots — pointer rows + boot double-lookup (ADR-0029)', () => {
-  const secretApp = () =>
-    compute({ name: 'ingest', deps: {}, secrets: { stripeKey: secret() }, build });
+describe('the input document — run() re-stash → input() (ADR-0042)', () => {
+  const inputSchema = type({ stripeEnabled: 'boolean', 'stripeKey?': secretString() });
 
-  test('secretKey derives COMPOSER_<addr>_<slot>', () => {
-    expect(secretKey('', 'stripeKey')).toBe('COMPOSER_STRIPEKEY');
-    expect(secretKey('ingest', 'stripeKey')).toBe('COMPOSER_INGEST_STRIPEKEY');
-  });
-
-  test('the pointer key holds the platform NAME; deserializeSecrets double-looks-up the value', async () => {
-    const app = secretApp();
-    await withEnv(
-      { [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY', STRIPE_SECRET_KEY: 'sk_live_abc' },
-      () => {
-        expect(deserializeSecrets(app, '')).toEqual({ stripeKey: 'sk_live_abc' });
-      },
-    );
-  });
-
-  test('a missing pointer row fails loudly', async () => {
-    const app = secretApp();
-    await withEnv({}, () => {
-      expect(() => deserializeSecrets(app, '')).toThrow(/missing secret pointer/);
-    });
-  });
-
-  test('a missing platform var fails loudly, naming both keys', async () => {
-    const app = secretApp();
-    await withEnv({ [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY' }, () => {
-      expect(() => deserializeSecrets(app, '')).toThrow(/STRIPE_SECRET_KEY/);
-    });
-  });
-
-  test('an empty platform var fails loudly — empty is unresolved', async () => {
-    const app = secretApp();
-    await withEnv(
-      { [secretKey('', 'stripeKey')]: 'STRIPE_SECRET_KEY', STRIPE_SECRET_KEY: '' },
-      () => {
-        expect(() => deserializeSecrets(app, '')).toThrow(/unset or empty/);
-      },
-    );
-  });
-
-  test('secrets() returns a redacting SecretBox; it survives run() → stashSecrets → secrets() (the stash trap)', async () => {
-    const app = secretApp();
-    let box: SecretBox<string> | undefined;
+  test('run() re-stashes the address-scoped input row address-free; input() hydrates, validates, and boxes the secret', async () => {
+    const app = compute({ name: 'ingest', deps: {}, input: inputSchema, build });
+    let seen: { stripeEnabled: boolean; stripeKey?: SecretBox<unknown> } | undefined;
     await withEnv(
       {
-        // address-keyed pointer row + the user-provisioned platform var:
-        COMPOSER_INGEST_STRIPEKEY: 'STRIPE_SECRET_KEY',
+        // deploy-shaped document row (address-keyed) + the user-provisioned platform var:
+        COMPOSER_INGEST_INPUT: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
         STRIPE_SECRET_KEY: 'sk_live_trap',
         COMPOSER_INGEST_PORT: '',
-        // address-free keys stashSecrets/stash (over)write — tracked so withEnv restores them:
-        COMPOSER_STRIPEKEY: '',
+        // address-free keys the stash (over)writes — tracked so withEnv restores them:
+        COMPOSER_INPUT: '',
         COMPOSER_PORT: '',
       },
       () =>
         app.run('ingest', async () => {
-          box = app.secrets().stripeKey;
+          seen = app.input();
         }),
     );
-    expect(box).toBeInstanceOf(SecretBox);
-    expect(box?.expose()).toBe('sk_live_trap');
-    // Redacted everywhere but expose() — if stashSecrets re-emitted the VALUE
-    // instead of the POINTER, the address-free double-lookup would have thrown.
-    expect(String(box)).toBe('[REDACTED]');
+    expect(seen?.stripeEnabled).toBe(true);
+    expect(seen?.stripeKey?.expose()).toBe('sk_live_trap');
+    // Redacted everywhere but expose() — the document carried only the
+    // pointer; the value stayed in its platform var until this boot lookup.
+    expect(String(seen?.stripeKey)).toBe('[REDACTED]');
+  });
+
+  test('input() memoizes — the same object on every call', async () => {
+    const app = compute({ name: 'memo', deps: {}, input: type({ greeting: 'string' }), build });
+    await withEnv({ COMPOSER_INPUT: '{"greeting":"hello"}' }, () => {
+      expect(app.input()).toBe(app.input());
+      expect(app.input()).toEqual({ greeting: 'hello' });
+    });
+  });
+
+  test('a missing input row is a loud failure naming the env var', async () => {
+    const app = compute({ name: 'lost', deps: {}, input: type({ greeting: 'string' }), build });
+    await withEnv({}, () => {
+      expect(() => app.input()).toThrow(/env COMPOSER_INPUT is unset/);
+    });
+  });
+
+  test('input() on a service with no declared schema is a loud authoring error', async () => {
+    const app = compute({ name: 'plain', deps: {}, build });
+    expect(() => app.input()).toThrow(/declares no input schema/);
   });
 });

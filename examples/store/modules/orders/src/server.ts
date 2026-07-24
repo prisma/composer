@@ -4,7 +4,7 @@ import service from './service.ts';
 // load() hydrates both deps: `db` is the { url, client } Prisma Next binding
 // (ADR-0040), `catalog` a typed client of catalogContract — both plain async calls.
 const { db, catalog } = service.load();
-const { port } = service.config();
+const port = service.port();
 
 // A Prisma Postgres direct connection is dropped when it idles / the service
 // scales to zero; the lazy pool reconnects on the next query. Surface those

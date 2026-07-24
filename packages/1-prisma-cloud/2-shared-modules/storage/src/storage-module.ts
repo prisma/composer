@@ -18,9 +18,10 @@ export function storage(opts?: {
   return module(opts?.name ?? 'storage', { expose: { store: s3Contract } }, ({ provision }) => {
     const db = provision(postgres({ name: 'db' }), { id: 'db' });
     const credentials = provision(s3Credentials({ name: 'credentials' }), { id: 'credentials' });
-    const service = provision(storageService({ bucket: opts?.bucket ?? 'storage' }), {
+    const service = provision(storageService(), {
       id: 'service',
       deps: { db, credentials },
+      input: { bucket: opts?.bucket ?? 'storage' },
     });
     return { store: service.store };
   });

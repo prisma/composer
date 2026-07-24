@@ -3,8 +3,8 @@
 // main.run(address, boot)` — same as an app's own service.ts, whose default
 // export is the runnable node an entrypoint drives. A factory barrel with only
 // named exports would leave `main` undefined and `main.run()` throw at boot.
-// An empty schedule is fine: run() reads the real jobs from the stashed env,
-// never from this default.
+// The node is schedule-free: run() reads the real jobs from the stashed input
+// document row, never from authoring state.
 import { cronScheduler } from '../scheduler.ts';
 
-export default cronScheduler<string>({ jobs: [] });
+export default cronScheduler();
