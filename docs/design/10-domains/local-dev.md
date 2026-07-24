@@ -3,7 +3,8 @@
 The local dev loop: one command brings up the whole topology from the root
 module, credential-free, with deploy parity everywhere above the Alchemy
 provider boundary. The architectural decision — dev runs the deploy pipeline
-against local providers, substituted through an extension's `dev` descriptor —
+against local providers, substituted through an extension's `localTarget`
+descriptor —
 is recorded in
 [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md);
 this doc is the mechanics.
@@ -32,26 +33,30 @@ shorter name is a CLI-distribution question (Composer joining a unified
 Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 
 1. **Import + Load** — identical, same errors.
-2. **Config** — identical, except: every extension in the config must carry a
-   `dev` descriptor; a missing one fails naming the extension ("`<id>` has no
-   dev support"). The extension factory must resolve **no** platform
-   environment on this path (no workspace id, no region, no token).
+2. **Config** — identical, except: every extension that owns resources must
+   carry a `localTarget` descriptor; a missing one fails naming the extension
+   ("extension `<id>` has no dev support — it declares no `localTarget`
+   descriptor (ADR-0041)"). A build-only extension (one whose nodes are all
+   `kind: 'build'`, declaring no providers/application/provisions/container)
+   has nothing to emulate and is exempt. The extension factory must resolve
+   **no** platform environment on this path (no workspace id, no region, no
+   token).
 3. **Assemble** — identical. Dev consumes the user's built output through the
    same adapters and produces the same bundles; missing output produces the
    same "run your build" error.
-4. **Containers + emulators** — the `dev.container` descriptor resolves a
+4. **Containers + emulators** — the `localTarget.container` descriptor resolves a
    stable local identity from the app name with no platform calls. Then the
-   `dev.emulators` hook inspects the loaded graph and ensures one emulator
+   `localTarget.emulators` hook inspects the loaded graph and ensures one emulator
    daemon per node kind the topology uses (Compute always; buckets when
    bucket resources exist; Postgres needs no pre-start — its instances are
    created at provision through the ORM CLI).
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
    `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
-   `dev.providers()` layer and Alchemy's built-in `localState()` store, always
+   `localTarget.providers()` layer and Alchemy's built-in `localState()` store, always
    at Alchemy stage `dev`. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
    terminates as always, and the Compute emulator keeps serving.
-6. **Attach** — new, dev-only: through `dev.attach`, render the front door
+6. **Attach** — new, dev-only: through `localTarget.attach`, render the front door
    (every service's endpoint), stream the merged logs, watch for rebuilds,
    loop. Ctrl-C stops the app's service instances through the attachment and
    exits; emulators and data persist.
@@ -79,9 +84,30 @@ emulator, which owns the processes:
   and remove.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
   instances and detaches. Every emulator — Compute, Postgres instances, the
-  bucket emulator — stays up with its data; the next start is warm.
-  `--fresh` is what removes instances and data. (A detached mode where
-  services keep serving with no session is a designed extension, not v1.)
+  bucket emulator — stays up with its data; the next start reprovisions the
+  same instances (same ports, same data). `--fresh` is what removes
+  instances and data. (A detached mode where services keep serving with no
+  session is a designed extension, not v1.)
+
+  **Known gap (proving-pass finding, fixed in #164):** a service actually only restarts
+  when its `Deployment` resource is re-put — and Alchemy skips calling the
+  provider at all when a resource's props (artifact hash, env) are
+  unchanged from its last recorded apply. A Ctrl-C stop is invisible to that
+  diff: nothing about the resource's *props* changed, only the process's
+  live status, which Alchemy's state file does not track. So a second
+  `prisma-composer dev` after a plain Ctrl-C can converge with everything
+  reported "noop" and leave every previously-stopped service `stopped` —
+  the CLI still prints `[dev] ready:` with each service's URL, but nothing
+  is listening on them. Confirmed against the open-chat proving port (the
+  warm-restart-noop finding); the existing store proving script's own
+  criterion-6 check doesn't catch it because it asserts port *stability*
+  and reads Postgres directly, never an HTTP round-trip against the
+  restarted service. **Fixed in #164** by a session-resume call on the
+  attachment seam: `LocalTargetAttachment.startServices()` starts every
+  stopped service from its last deployment, and the dev command calls it
+  on every attachment after each converge, before printing the front door
+  (`run-dev.ts`) — so a warm start restarts what a previous session's
+  Ctrl-C stopped even when the converge is all-noop.
 
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
@@ -215,7 +241,7 @@ Deploy's rule holds: every failure names its fix.
 
 | Failure | Error tells the user |
 | --- | --- |
-| extension has no `dev` descriptor | which extension, and that it does not support local dev |
+| extension has no `localTarget` descriptor | which extension, and that it does not support local dev |
 | built output missing | same as deploy: the expected path, "run your build" |
 | `bun` not on PATH | that dev runs services under bun (the Compute runtime) and how to install it |
 | no installed `prisma` bin (the local-Postgres emulator) | what was searched for and to add `prisma` to devDependencies |
@@ -243,15 +269,52 @@ Deploy's rule holds: every failure names its fix.
 
 ## Open questions
 
-- **Restart latency budget.** Assemble + package + converge per edit is
-  unmeasured. The artifact cache (unpack once per hash) is designed; whether
-  package's tar step needs a dev bypass for very large trees (Next standalone)
-  is a measurement away. Decide with numbers, not in advance.
+(none outstanding from the design phase — see Known limitations below for
+gaps found during implementation.)
 
 (Settled since the first draft: Postgres runs one named `prisma dev` instance
 per `Database` resource; the front door prints every service URL ordered by
 address depth then name, shallowest first; port allocation and the remaining
-mechanics are pinned in the implementation spec.)
+mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md).
+Restart latency is measured — see Known limitations.)
+
+## Proven against a real app
+
+The design's founding claim was proven against open-chat — a real,
+pre-existing Composer app in its own repo (chat service, Postgres, streams
+and storage modules), written before local dev existed. With no cloud
+credentials of any kind in the shell, `prisma-composer dev module.ts`
+brought it up: sign-in worked, chat history loaded, and the live-tail
+stream delivered events. Chat generation failed at exactly one place — the
+outbound OpenRouter call — because the local run minted a placeholder for
+the `OPENROUTER_API_KEY` secret instead of demanding a real one: the
+designed failure boundary, observed end to end. The port itself was one
+commit: point the app's framework dependency at the build under test,
+switch its service to `node()`'s directory build form, fix a launcher path
+that only worked un-moved, catch up with two API changes — and delete the
+app's 169-line hand-rolled dev script, which the framework command
+replaces.
+
+## Known limitations (found while proving the implementation)
+
+- **Restart latency: median 3.24s** per edit-rebuild-reconverge cycle
+  against `examples/store` (5 runs, 3.09-3.35s, Apple M3 Max) —
+  comfortably inside the single-digit-seconds target. Measured by a probe
+  that edits one service's source, then times rebuild -> converge -> the
+  emulator reporting the restarted pid.
+- **Warm-restart-after-Ctrl-C could leave services stopped** (fixed in
+  #164) — see the Compute-emulator section above ("Known gap").
+- **`Bundle.watch` was not populated everywhere during the proving pass** — resolved:
+  both build adapters now populate it (node watches the entry file or the
+  whole `dir`; Next.js watches the standalone root), so the file-watch
+  loop picks rebuilds up on its own. A build descriptor that still returns
+  no `watch` entries reports `[dev] <address> has no watchable inputs` at
+  startup and needs its rebuilds triggered manually.
+- **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
+  § 4's `PnMigration` line is for framework-run migrations only). An app that
+  runs its own migrations (e.g. via `prisma-next db init`, like the
+  open-chat port) needs that as a manual step against the local Postgres URL
+  on a fresh dev instance; `dev` does not know to run it automatically.
 
 ## Related
 

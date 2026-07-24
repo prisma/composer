@@ -6,34 +6,45 @@
 credentials, by running the **same pipeline as `prisma-composer deploy`** —
 import the entry, Load the graph, assemble each service, lower, converge through
 Alchemy — with substitution at exactly one boundary: the Alchemy resource
-**providers**. An extension declares its local counterparts on an optional `dev`
-field of its descriptor, the same pattern as `container`/`preflight`/`teardown`
-(ADR-0017, ADR-0038):
+**providers**. An extension declares its local counterparts on an optional
+`localTarget` field of its descriptor, the same pattern as
+`container`/`preflight`/`teardown` (ADR-0017, ADR-0038). The field is a lazy
+async thunk, never the descriptor object itself, so no deploy path ever
+imports local-target implementation code:
 
 ```ts
 export interface ExtensionDescriptor {
   // ... existing fields unchanged ...
-  /** Local counterparts for `prisma-composer dev`. An extension without one is not dev-capable. */
-  readonly dev?: DevDescriptor;
+  /** The extension's LOCAL TARGET counterpart — a lazy thunk. An extension without one is not local-target-capable (cannot back `prisma-composer dev`). */
+  readonly localTarget?: () => Promise<LocalTargetDescriptor>;
 }
 
-export interface DevDescriptor {
+export interface LocalTargetDescriptor {
   /** Local providers for the SAME resource types the extension's lowering emits — handed the app identity, since local providers are emulator clients. */
-  providers(input: DevProvidersInput): ProvidersLayer;
+  providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
   /** A stable local identity — resolved without any platform call. */
   readonly container: ContainerDescriptor;
   /** Dev value-sourcing policy: secrets from the shell else minted placeholders; env-sourced params from the shell else a hard error. */
   preflight?(input: PreflightInput): Promise<void>;
   /** Ensure the emulator daemons this topology's node kinds need are running (idempotent — they persist across sessions). */
-  emulators?(input: DevEmulatorsInput): Promise<void>;
+  emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
   /** The dev session's view of the running app: endpoints, merged logs, and the stop control. */
-  attach(input: DevAttachInput): Promise<DevAttachment>;
+  attach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment>;
   /** `--fresh`: remove every local trace of the dev instance — emulator instances, state, data. */
   teardown?(input: TeardownInput): Promise<void>;
 }
 ```
 
-`DevDescriptor` deliberately has **no `nodes` and no `provisions`**: the
+(Naming, operator 2026-07-23: "dev" names user-facing surfaces only — the
+`prisma-composer dev` command, the `[dev]` log prefix, the
+`.prisma-composer/dev/` state dir. The seam takes the concept's real noun:
+the field is `localTarget`, the core subpath is
+`@prisma/composer/local-target` with `resolveLocalTargets` and
+`localTargetProviders`, and the extension subpath is
+`@prisma/composer-prisma-cloud/local-target` exporting
+`localTargetDescriptor()`.)
+
+`LocalTargetDescriptor` deliberately has **no `nodes` and no `provisions`**: the
 lowering — node descriptors, address derivation, config serialization,
 provisioners — is byte-identical between dev and deploy. Dev cannot diverge the
 semantics of the graph; it can only substitute what the lowered resources *do*.
@@ -91,9 +102,19 @@ streams, a stop control — and runs the watch loop (rebuild → re-assemble →
 re-converge). Core renders what the hook returns and never learns any
 emulator's API (the ADR-0038 opacity pattern). Ctrl-C stops the app's
 service instances through the attachment and exits; the emulators, the
-databases, and the bucket data persist, making the next start warm. A
-detached mode (services keep serving with no session, full platform parity)
-is a designed extension, not v1.
+databases, and the bucket data persist, making the next start warm — the
+data and ports are warm. **What "falls out of Alchemy's own diffing" (above)
+cuts both ways**, found while proving this ADR against a real app: a
+Ctrl-C stop changes a service's live status, not its `Deployment` resource's
+props, so a subsequent `dev` with no source edit can converge as all-noop
+and never re-put the stopped service — it stays down even though the CLI
+reports the app ready. Fixed in #164: `LocalTargetAttachment` carries a
+session-resume call, `startServices()`, which the dev command invokes on
+every attachment after each converge, before printing the front door — so
+a warm start restarts stopped services independent of Alchemy's props
+diff. Details in [local-dev.md](../10-domains/local-dev.md). A detached
+mode (services keep serving with no session, full platform parity) is a
+designed extension, not v1.
 
 **Rebuilds stay the user's** (ADR-0005). Dev watches the *built* output that
 assembly consumes, never sources; the user's own watcher (`next dev` is not
@@ -188,7 +209,9 @@ this repo owns.
   every supported app shape; the general directory-runnable build adapter is a
   prerequisite. Restart latency is bounded by assemble + package + converge;
   the local `Deployment` provider owns artifact caching (unpack once per hash).
-  Measure before optimizing further.
+  Measured at 3.24s median for one edit-rebuild-converge cycle against
+  `examples/store` (5 runs, Apple M3 Max) — full context in the local-dev
+  domain doc's "Known limitations".
 - **The extension factory must not require platform environment for dev.** The
   hosted factory's required workspace variable stays deploy-only; the `dev`
   path resolves no credentials at all.
@@ -199,7 +222,7 @@ this repo owns.
   unpacked artifacts, bucket objects, minted placeholders — lives under
   `.prisma-composer/dev/` (ADR-0004's tool-state rule), while the emulator
   daemons keep their own machine-global registry. `--fresh` is wholesale
-  local deletion through `dev.teardown` (every resource is a local file,
+  local deletion through `localTarget.teardown` (every resource is a local file,
   process, or emulator instance), never an `alchemy destroy`.
 - **Process supervision lives in the Compute emulator, not the CLI.** The
   framework owns a small, generic daemon layer (registry, stable ports,
@@ -207,7 +230,7 @@ this repo owns.
   policy; the dev command itself supervises nothing — it renders the
   `attach` hook's view.
 - **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in
-  `dev.preflight`: a secret slot bound in the shell's environment is used; an
+  `localTarget.preflight`: a secret slot bound in the shell's environment is used; an
   unbound slot gets a minted, persisted placeholder and a printed warning. An
   env-sourced *param* (ADR-0032) with no shell value is a hard error instead —
   params feed schema validation at boot, so junk there produces a confusing
@@ -268,7 +291,7 @@ this repo owns.
   `localState()` through `LowerOptions.state` (tool state, ADR-0004).
 - [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) /
   [ADR-0038](ADR-0038-containers-are-an-extension-descriptor.md) — the
-  extension-descriptor pattern `dev` extends.
+  extension-descriptor pattern `localTarget` extends.
 - [ADR-0020](ADR-0020-scheduled-work-is-a-driver-not-a-resource.md) — why cron
   fires for real in dev.
 - [ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md) /

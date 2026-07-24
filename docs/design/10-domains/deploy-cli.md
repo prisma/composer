@@ -21,19 +21,26 @@ root's name names the application),
 
 ## Scope
 
-Two commands:
+Three commands:
 
 - **`prisma-composer deploy <entry>`** — deploy the application whose root node is
   `entry`'s default export, to a stage (default: production).
 - **`prisma-composer destroy <entry>`** — tear a stage down (same derivation,
   Alchemy destroy); the target stage is always explicit (see § Stages and
   containers).
+- **`prisma-composer dev <entry>`** — bring up the application whose root node
+  is `entry`'s default export, entirely on this machine, credential-free —
+  local counterparts of every provisioned resource, real service processes,
+  no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
+  design; flags: `--name` (same override semantics as deploy), `--fresh`
+  (tear down and reprovision every local instance before starting).
 
-Flags: `--name` (override the root's name — per-run ephemeral deploys in
-shared workspaces), `--stage <name>` (target a named, isolated environment
-instead of production), `--production` (destroy-only — explicitly target the
-production environment). Nothing else. `prisma-composer build`, `prisma-composer
-dev`, and topology emission are out of scope (see § Out of scope).
+Deploy/destroy flags: `--name` (override the root's name — per-run ephemeral
+deploys in shared workspaces), `--stage <name>` (target a named, isolated
+environment instead of production), `--production` (destroy-only —
+explicitly target the production environment). `--stage`/`--production` do
+not exist on `dev` (clipanion rejects them as unknown flags). `prisma-composer
+build` and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The bin is runtime-agnostic — no bun-only APIs anywhere in the
 CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
@@ -209,9 +216,6 @@ The CLI's quality lives in its errors; each failure names its fix:
 ## Out of scope (designed around)
 
 - **`prisma-composer build`** — and with it any build-command convention or override.
-- **`prisma-composer dev`** — the local loop; designed in
-  [local-dev.md](local-dev.md) (ADR-0041) as its own command re-running this
-  pipeline against local providers.
 - **Topology emission** — the serialized-topology artifact for agents/tooling;
   when it lands it must strip the machine-specific `build.module` (ADR-0004).
 - **Config-file escape hatch** — a `prisma-composer.config.ts` may exist one day as
