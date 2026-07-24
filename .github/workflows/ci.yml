@@ -90,11 +90,16 @@ jobs:
       # undiagnosable. The instance itself is disposable; only its download
       # populates the shared engine cache every later invocation (the
       # integration proofs') reuses.
+      # `prisma dev` is a DYNAMIC subcommand: the pinned `prisma` CLI still
+      # fetches `@prisma/cli-dev@latest` from npm at run time, so an upstream
+      # publish can break this step with no change in this repo (gotchas.md,
+      # "prisma dev fetches its implementation at run time"). The `@<version>`
+      # first argument pins it; bump deliberately.
       - name: Warm the prisma dev engine cache
         working-directory: test/integration
         run: |
-          pnpm exec prisma dev --name ci-engine-warmup --detach
-          pnpm exec prisma dev rm ci-engine-warmup --force
+          pnpm exec prisma dev @0.16.22 --name ci-engine-warmup --detach
+          pnpm exec prisma dev @0.16.22 rm ci-engine-warmup --force
       - name: Test
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
