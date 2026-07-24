@@ -266,4 +266,13 @@ describe('readInput — the boot half', () => {
       expect(() => readInput(node, '')).toThrow(/invalid input document \(env COMPOSER_INPUT\)/);
     });
   });
+
+  test('a malformed document row fails naming the env key, not a bare SyntaxError', async () => {
+    const node = svc(conditional);
+    await withEnv({ [inputKey('')]: '{not valid json' }, () => {
+      expect(() => readInput(node, '')).toThrow(
+        /input document is not valid JSON \(env COMPOSER_INPUT\)/,
+      );
+    });
+  });
 });

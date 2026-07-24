@@ -488,7 +488,18 @@ export function readInput(node: ServiceNode, address: string): unknown {
         `(set ${key} to the serialized input document).`,
     );
   }
-  const hydrated = hydrateInputDocument(JSON.parse(raw), key);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `this service's input document is not valid JSON (env ${key}): ${message} — a deployed ` +
+        'environment writes it automatically; a local harness must supply the serialized input ' +
+        `document (set ${key} to it).`,
+    );
+  }
+  const hydrated = hydrateInputDocument(parsed, key);
   try {
     return standardValidateSync(schema, hydrated);
   } catch (cause) {
