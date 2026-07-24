@@ -4,8 +4,11 @@
  * Maintainer-facing minor-bump.
  *
  * Reads the root `package.json` version *as committed at HEAD*, computes
- * the next minor (`0.7.0` → `0.8.0`), and writes that value to every
- * workspace `package.json` via `set-version.ts`.
+ * the next minor (`0.7.0` → `0.8.0`), writes that value to every
+ * workspace `package.json` via `set-version.ts`, and regenerates
+ * `pnpm-lock.yaml` so the lockfile's `workspace:<version>` specifiers
+ * match the new manifests (CI installs with `--frozen-lockfile` and
+ * fails on any mismatch).
  *
  * Reading from HEAD (rather than disk) is what makes the script
  * idempotent: re-running it without committing the previous bump
@@ -51,6 +54,13 @@ console.log('');
 
 const setVersionScript = join(rootDir, 'scripts', 'set-version.ts');
 execFileSync('node', [setVersionScript, nextVersion], {
+  cwd: rootDir,
+  stdio: 'inherit',
+});
+
+console.log('');
+console.log('Regenerating pnpm-lock.yaml…');
+execFileSync('pnpm', ['install', '--lockfile-only'], {
   cwd: rootDir,
   stdio: 'inherit',
 });

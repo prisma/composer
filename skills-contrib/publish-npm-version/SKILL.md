@@ -42,11 +42,14 @@ undisturbed.
    pnpm install --frozen-lockfile
    ```
 2. **Bump.** `pnpm bump-minor` reads the root version at `HEAD`, computes the next
-   minor (`0.2.0` → `0.3.0`), and stamps every workspace `package.json` in
-   lockstep (rewriting internal `workspace:` deps to the new version).
-3. **Sanity-check** the bump is clean and complete:
+   minor (`0.2.0` → `0.3.0`), stamps every workspace `package.json` in
+   lockstep (rewriting internal `workspace:` deps to the new version), and
+   regenerates `pnpm-lock.yaml` to match.
+3. **Sanity-check** the bump is clean and complete. The diff must include
+   `pnpm-lock.yaml` — CI installs with `--frozen-lockfile`, so a bump without the
+   lockfile fails every CI job at the install step:
    ```bash
-   git diff --stat                      # every workspace package.json + lockfile
+   git diff --stat                      # every workspace package.json + pnpm-lock.yaml
    pnpm check:publish-deps              # no workspace:/catalog: leaks, exact internal pins
    ```
 4. **Commit** with the release title and dual DCO sign-off, then push and open the PR:
