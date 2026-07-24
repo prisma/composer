@@ -320,7 +320,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       {},
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({
-      secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED' },
+      secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED', redacted: true },
     });
     expect(row?.generated).toEqual([
       { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
@@ -335,7 +335,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       {},
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({
-      token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED' },
+      token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED', redacted: false },
     });
     expect(row?.generated[0]?.redacted).toBe(false);
   });
@@ -361,10 +361,25 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
     expect(String(value.secret)).toBe('[REDACTED]');
   });
 
+  test('deploy → boot round trip: a non-redacted generated leaf hydrates to a PLAIN STRING, not a box', async () => {
+    const node = svc(type({ token: 'string' }));
+    const row = serializeInput(node, 'web', { token: generatedParam({ redacted: false }) }, {});
+    const value = await withEnv(
+      { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_TOKEN_GENERATED: 'plain-generated-value' },
+      () => readInput(node, '') as { token: string },
+    );
+    // The facet on the pointer drives this: a box here would fail the plain
+    // `string` schema field — the exact case uniform-boxing would have broken.
+    expect(value.token).toBe('plain-generated-value');
+    expect(value.token).not.toBeInstanceOf(SecretBox);
+  });
+
   test('a missing generated var at boot is a hard error naming the var and the disagreement', async () => {
     const node = svc(type({ secret: secretString() }));
     await withEnv(
-      { [inputKey('')]: '{"secret":{"$generated":"COMPOSER_WEB_SECRET_GENERATED"}}' },
+      {
+        [inputKey('')]: '{"secret":{"$generated":"COMPOSER_WEB_SECRET_GENERATED","redacted":true}}',
+      },
       () => {
         expect(() => readInput(node, '')).toThrow(/COMPOSER_INPUT → COMPOSER_WEB_SECRET_GENERATED/);
         expect(() => readInput(node, '')).toThrow(/deploy and the running service disagree/);
@@ -389,7 +404,9 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
     // pointer keeps the single-"$" marker.
     expect(row?.value).toContain('"$$generated":"NOT_A_POINTER"');
     expect(row?.value).toContain('"$$$generated":"ALSO_NOT"');
-    expect(row?.value).toContain('"real":{"$generated":"COMPOSER_WEB_REAL_GENERATED"}');
+    expect(row?.value).toContain(
+      '"real":{"$generated":"COMPOSER_WEB_REAL_GENERATED","redacted":true}',
+    );
 
     const node = svc(anySchema);
     const value = await withEnv(

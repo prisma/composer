@@ -827,7 +827,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // The input document is a $generated pointer, never a value; the leaf also
       // rides the serialize → deploy handoff.
       expect(result.input?.value).toBe(
-        '{"secret":{"$generated":"COMPOSER_INGEST_SECRET_GENERATED"}}',
+        '{"secret":{"$generated":"COMPOSER_INGEST_SECRET_GENERATED","redacted":true}}',
       );
       expect(result.input?.generated).toEqual([
         { varName: 'COMPOSER_INGEST_SECRET_GENERATED', bytes: 48, redacted: true, path: 'secret' },

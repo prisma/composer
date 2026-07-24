@@ -271,15 +271,19 @@ function isSecretPointer(value: unknown): value is { readonly $secret: string } 
   );
 }
 
-/** True for the framework's generated pointer: `{ "$generated": "<PLATFORM_VAR>" }` and nothing else. */
-function isGeneratedPointer(value: unknown): value is { readonly $generated: string } {
+/** True for the framework's generated pointer: `{ "$generated": "<PLATFORM_VAR>", "redacted": <bool> }` and nothing else. The `redacted` facet rides the pointer so boot — which is schema-blind — knows whether to box (§ 4.1). */
+function isGeneratedPointer(
+  value: unknown,
+): value is { readonly $generated: string; readonly redacted: boolean } {
   return (
     typeof value === 'object' &&
     value !== null &&
     !Array.isArray(value) &&
-    Object.keys(value).length === 1 &&
+    Object.keys(value).length === 2 &&
     GENERATED_MARKER in value &&
-    typeof value[GENERATED_MARKER] === 'string'
+    typeof value[GENERATED_MARKER] === 'string' &&
+    'redacted' in value &&
+    typeof value['redacted'] === 'boolean'
   );
 }
 
@@ -368,8 +372,9 @@ export function resolveInputBinding(
     // the param/secret branches. It resolves to a sentinel the schema
     // validates — a redacting box when redacted, the empty string otherwise
     // (mirroring the deploy sentinel a secret leaf uses). The substitution
-    // later swaps the sentinel for a `{ "$generated": VAR }` pointer by path;
-    // the walk itself provisions nothing.
+    // later swaps the sentinel for a `{ "$generated": VAR, "redacted": <bool> }`
+    // pointer by path — the facet rides the pointer so schema-blind boot knows
+    // whether to box; the walk itself provisions nothing.
     if (isGeneratedParamSource(value)) {
       const { bytes, redacted } = value.payload;
       const varName = generatedParamVarName(address, path);
@@ -506,14 +511,15 @@ export function serializeInput(
 
 /**
  * Walks the VALIDATED output, mapping each generated leaf (by input path) to
- * its `{ "$generated": VAR }` pointer and each sentinel box (by identity) to
- * its `{ "$secret": name }` pointer, escaping any user key that matches a
- * reserved marker. The generated check runs FIRST, so a redacted generated
- * leaf's sentinel box becomes `$generated`, never mistaken for a secret. A
- * `SecretString` the walk does not recognize came from the schema itself (a
- * default or transform minting a box) — there is no platform var behind it, so
- * it is rejected rather than serialized. The path format matches
- * `resolveInputBinding`'s exactly, so generated leaves are found by path.
+ * its `{ "$generated": VAR, "redacted": <bool> }` pointer and each sentinel box
+ * (by identity) to its `{ "$secret": name }` pointer, escaping any user key that
+ * matches a reserved marker. The generated check runs FIRST, so a redacted
+ * generated leaf's sentinel box becomes `$generated`, never mistaken for a
+ * secret. The `redacted` facet rides the pointer so schema-blind boot knows
+ * whether to box. A `SecretString` the walk does not recognize came from the
+ * schema itself (a default or transform minting a box) — there is no platform
+ * var behind it, so it is rejected rather than serialized. The path format
+ * matches `resolveInputBinding`'s exactly, so generated leaves are found by path.
  */
 function substitutePointers(
   value: unknown,
@@ -521,10 +527,10 @@ function substitutePointers(
   generated: readonly GeneratedLeaf[],
   address: string,
 ): unknown {
-  const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf.varName]));
+  const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
-    const generatedVar = generatedByPath.get(path);
-    if (generatedVar !== undefined) return { [GENERATED_MARKER]: generatedVar };
+    const leaf = generatedByPath.get(path);
+    if (leaf !== undefined) return { [GENERATED_MARKER]: leaf.varName, redacted: leaf.redacted };
     if (v instanceof SecretBox) {
       const name = sentinels.get(v);
       if (name === undefined) {
@@ -608,7 +614,7 @@ export function readInput(node: ServiceNode, address: string): unknown {
   }
 }
 
-/** Reverses the document encoding: `$secret` and `$generated` pointers become redacting boxes over the named platform vars; escaped reserved keys drop one "$". */
+/** Reverses the document encoding: `$secret` pointers become redacting boxes; a `$generated` pointer becomes a box iff its `redacted` facet is true, a plain string otherwise; escaped reserved keys drop one "$". */
 function hydrateInputDocument(value: unknown, key: string): unknown {
   if (isSecretPointer(value)) {
     const name = value[SECRET_MARKER];
@@ -630,11 +636,11 @@ function hydrateInputDocument(value: unknown, key: string): unknown {
           'means the deploy and the running service disagree.',
       );
     }
-    // A generated leaf's value hydrates wrapped in the redacting box, matching
-    // the redacted facet — the only facet with a boot caller (the auth signing
-    // value). The `secretString()` schema field a redacted generated leaf
-    // pairs with requires exactly this box.
-    return new SecretBox(generated);
+    // Boot is schema-blind, so the redacted facet rides the pointer: box iff it
+    // says so, plain string otherwise. The schema field the author wrote (a
+    // `secretString()` box or a plain string) agrees with the facet by
+    // construction — a disagreement is a wiring error validation catches (§ 4.5).
+    return value.redacted ? new SecretBox(generated) : generated;
   }
   if (Array.isArray(value)) return value.map((member) => hydrateInputDocument(member, key));
   if (isPlainObject(value)) {
