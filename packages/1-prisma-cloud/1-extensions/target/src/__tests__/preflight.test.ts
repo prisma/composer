@@ -4,7 +4,7 @@ import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PrismaCloudContainer } from '../container.ts';
 import { compute } from '../exports/index.ts';
-import { envParam } from '../param.ts';
+import { envParam, generatedParam } from '../param.ts';
 import { runPreflight } from '../preflight.ts';
 import { envSecret } from '../secret.ts';
 
@@ -84,6 +84,17 @@ const noSecretGraph = () =>
   Load(
     module('app', ({ provision }) => {
       provision(compute({ name: 'ingest', deps: {}, build }), { id: 'ingest' });
+    }),
+  );
+
+/** Only a generated leaf — the deploy provisions its var; nothing for an operator to seed. */
+const generatedGraph = () =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'ingest', deps: {}, input: anySchema, build }), {
+        id: 'ingest',
+        input: { secret: generatedParam() },
+      });
     }),
   );
 
@@ -277,6 +288,16 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
     await runPreflight(
       { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      { client: fakeClient(state) },
+    );
+
+    expect(state.gets).toEqual([]);
+    expect(state.posts).toEqual([]);
+  });
+
+  test('a generated leaf is skipped — nothing to seed, no platform calls at all', async () => {
+    await runPreflight(
+      { graph: generatedGraph(), container: fakeContainer('proj', undefined), stage: undefined },
       { client: fakeClient(state) },
     );
 

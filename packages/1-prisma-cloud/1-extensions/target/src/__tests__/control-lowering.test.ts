@@ -29,6 +29,7 @@ import {
   projectIdOf,
   type ResolvedCloudOptions,
 } from '../descriptors/shared.ts';
+import * as RealGeneratedParam from '../generated-param-resource.ts';
 import * as RealPgWarm from '../pg-warm-resource.ts';
 import * as RealS3Credentials from '../s3-credentials-resource.ts';
 
@@ -49,6 +50,7 @@ const recorded: {
   creds: Array<[string, unknown]>;
   bucket: Array<[string, unknown]>;
   bucketKey: Array<[string, unknown]>;
+  generated: Array<[string, unknown]>;
 } = {
   envVar: [],
   db: [],
@@ -61,6 +63,7 @@ const recorded: {
   creds: [],
   bucket: [],
   bucketKey: [],
+  generated: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -154,10 +157,21 @@ mock.module('../s3-credentials-resource.ts', () => ({
   S3CredentialsProvider: () => ({ stub: 's3-credentials-provider' }),
 }));
 
+// GeneratedParam is a real Alchemy Resource (needs the Stack service); stub it
+// so the compute lowering's generated-leaf data flow runs purely. The value is
+// derived from `id` so a per-leaf row is distinguishable in assertions.
+mock.module('../generated-param-resource.ts', () => ({
+  ...RealGeneratedParam,
+  GeneratedParam: (id: string, props: unknown) => {
+    recorded.generated.push([id, props]);
+    return Effect.succeed({ value: `generated-for-${id}` });
+  },
+  GeneratedParamProvider: () => ({ stub: 'generated-param-provider' }),
+}));
+
 const { prismaCloud } = await import('../exports/control.ts');
-const { compute, envParam, envSecret, postgres, postgresContract, s3StoreService } = await import(
-  '../exports/index.ts'
-);
+const { compute, envParam, envSecret, generatedParam, postgres, postgresContract, s3StoreService } =
+  await import('../exports/index.ts');
 const { dependency, module, provisionNeed, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/service-rpc');
@@ -757,6 +771,68 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
       },
     );
+  });
+
+  test('serialize provisions a GeneratedParam resource + an env row per generated leaf (ADR-0041)', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({
+        name: 'ingest',
+        deps: {},
+        input: type({ secret: secretString() }),
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: 'file:///test/service.ts',
+          entry: 'server.js',
+        },
+      });
+      const graph = {
+        inputBindings: [
+          { serviceAddress: 'ingest', binding: { secret: generatedParam({ bytes: 48 }) } },
+        ],
+        edges: [],
+      };
+      const ctx = {
+        address: 'ingest',
+        node,
+        graph,
+        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+      } as unknown as LowerContext;
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://svc.example',
+      };
+      const config = { service: { port: 3000 }, inputs: {} };
+      const beforeGen = recorded.generated.length;
+      const beforeEnv = recorded.envVar.length;
+
+      const result = run<MockedSerialized>(
+        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
+      );
+
+      // The GeneratedParam resource: id stable per service+leaf, bytes threaded.
+      expect(recorded.generated.slice(beforeGen)).toEqual([
+        ['COMPOSER_INGEST_INPUT:secret-generated', { bytes: 48 }],
+      ]);
+      // The env row carries the resource's value under the framework var the
+      // document's $generated pointer names.
+      const writes = recorded.envVar.slice(beforeEnv).map(([, props]) => props);
+      expect(writes).toContainEqual({
+        projectId: 'shop-project#cloud-id',
+        key: 'COMPOSER_INGEST_SECRET_GENERATED',
+        value: 'generated-for-COMPOSER_INGEST_INPUT:secret-generated',
+        class: 'production',
+      });
+      // The input document is a $generated pointer, never a value; the leaf also
+      // rides the serialize → deploy handoff.
+      expect(result.input?.value).toBe(
+        '{"secret":{"$generated":"COMPOSER_INGEST_SECRET_GENERATED"}}',
+      );
+      expect(result.input?.generated).toEqual([
+        { varName: 'COMPOSER_INGEST_SECRET_GENERATED', bytes: 48, redacted: true, path: 'secret' },
+      ]);
+    });
   });
 
   test('serialize records every env-bound input key that resolved absent — deploy-report fodder (ADR-0042)', async () => {

@@ -9,9 +9,15 @@ import { SecretBox, service } from '@internal/core';
 import { secretString } from '@internal/foundation/arktype';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { envParam } from '../param.ts';
+import { envParam, generatedParam } from '../param.ts';
 import { envSecret } from '../secret.ts';
-import { inputKey, readInput, resolveInputBinding, serializeInput } from '../serializer.ts';
+import {
+  assertDistinctPointerNames,
+  inputKey,
+  readInput,
+  resolveInputBinding,
+  serializeInput,
+} from '../serializer.ts';
 
 const build = {
   extension: '@prisma/composer/node',
@@ -274,5 +280,169 @@ describe('readInput — the boot half', () => {
         /input document is not valid JSON \(env COMPOSER_INPUT\)/,
       );
     });
+  });
+});
+
+describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
+  test('a redacted generated leaf resolves to a box sentinel and records the generated list', () => {
+    const { resolved, generated } = resolveInputBinding({ secret: generatedParam() }, {}, 'web');
+    expect((resolved as Record<string, unknown>)['secret']).toBeInstanceOf(SecretBox);
+    expect(generated).toEqual([
+      { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
+    ]);
+  });
+
+  test('a non-redacted generated leaf resolves to an empty-string sentinel', () => {
+    const { resolved, generated } = resolveInputBinding(
+      { token: generatedParam({ redacted: false, bytes: 16 }) },
+      {},
+      'web',
+    );
+    expect((resolved as Record<string, unknown>)['token']).toBe('');
+    expect(generated).toEqual([
+      { varName: 'COMPOSER_WEB_TOKEN_GENERATED', bytes: 16, redacted: false, path: 'token' },
+    ]);
+  });
+
+  test('the var name is address- and path-scoped, even for a nested leaf', () => {
+    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, {}, 'api');
+    expect(generated[0]?.varName).toBe('COMPOSER_API_AUTH_SIGNING_GENERATED');
+    expect(generated[0]?.path).toBe('auth.signing');
+  });
+});
+
+describe('serializeInput — generated leaves become $generated pointers (ADR-0041)', () => {
+  test('a redacted leaf (secretString schema) serializes to a $generated pointer + records the leaf', () => {
+    const row = serializeInput(
+      svc(type({ secret: secretString() })),
+      'web',
+      { secret: generatedParam() },
+      {},
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED' },
+    });
+    expect(row?.generated).toEqual([
+      { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
+    ]);
+  });
+
+  test('a non-redacted leaf (plain string schema) also serializes to a $generated pointer', () => {
+    const row = serializeInput(
+      svc(type({ token: 'string' })),
+      'web',
+      { token: generatedParam({ redacted: false, bytes: 16 }) },
+      {},
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED' },
+    });
+    expect(row?.generated[0]?.redacted).toBe(false);
+  });
+
+  test('the pointer prints; the value lives in state, never in the document', () => {
+    const row = serializeInput(
+      svc(type({ secret: secretString() })),
+      'web',
+      { secret: generatedParam() },
+      {},
+    );
+    expect(row?.value).toContain('"$generated":"COMPOSER_WEB_SECRET_GENERATED"');
+  });
+
+  test('deploy → boot round trip: a redacted generated leaf hydrates to a box exposing the provisioned value', async () => {
+    const node = svc(type({ secret: secretString() }));
+    const row = serializeInput(node, 'web', { secret: generatedParam() }, {});
+    const value = await withEnv(
+      { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_SECRET_GENERATED: 'generated-value-xyz' },
+      () => readInput(node, '') as { secret: SecretBox<string> },
+    );
+    expect(value.secret.expose()).toBe('generated-value-xyz');
+    expect(String(value.secret)).toBe('[REDACTED]');
+  });
+
+  test('a missing generated var at boot is a hard error naming the var and the disagreement', async () => {
+    const node = svc(type({ secret: secretString() }));
+    await withEnv(
+      { [inputKey('')]: '{"secret":{"$generated":"COMPOSER_WEB_SECRET_GENERATED"}}' },
+      () => {
+        expect(() => readInput(node, '')).toThrow(/COMPOSER_INPUT → COMPOSER_WEB_SECRET_GENERATED/);
+        expect(() => readInput(node, '')).toThrow(/deploy and the running service disagree/);
+      },
+    );
+  });
+});
+
+describe('the reserved $generated key — user data round-trips (ADR-0041)', () => {
+  const anySchema: StandardSchemaV1<unknown, unknown> = {
+    '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
+  };
+
+  test('a user object containing "$generated" (and "$$generated") is escaped on write and unescaped on read', async () => {
+    const binding = {
+      real: generatedParam(),
+      forged: { $generated: 'NOT_A_POINTER' },
+      doubled: { $$generated: 'ALSO_NOT' },
+    };
+    const row = serializeInput(svc(anySchema), 'web', binding, {});
+    // On the wire the user keys carry one extra "$"; only the framework's own
+    // pointer keeps the single-"$" marker.
+    expect(row?.value).toContain('"$$generated":"NOT_A_POINTER"');
+    expect(row?.value).toContain('"$$$generated":"ALSO_NOT"');
+    expect(row?.value).toContain('"real":{"$generated":"COMPOSER_WEB_REAL_GENERATED"}');
+
+    const node = svc(anySchema);
+    const value = await withEnv(
+      { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_REAL_GENERATED: 'gen-real' },
+      () => readInput(node, '') as Record<string, unknown>,
+    );
+    expect((value['real'] as SecretBox<string>).expose()).toBe('gen-real');
+    expect(value['forged']).toEqual({ $generated: 'NOT_A_POINTER' });
+    expect(value['doubled']).toEqual({ $$generated: 'ALSO_NOT' });
+  });
+});
+
+describe('the pointer-name collision guard (ADR-0041, F02)', () => {
+  test('two secret leaves binding the same platform name collide (secret/secret)', () => {
+    expect(() =>
+      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, {}, 'web'),
+    ).toThrow(/both resolve to the platform variable "SHARED"/);
+  });
+
+  test('two secret leaves whose names differ only in case collide (case-collision)', () => {
+    expect(() =>
+      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, {}, 'web'),
+    ).toThrow(/both resolve to the platform variable "TOKEN"/);
+  });
+
+  test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {
+    expect(() =>
+      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, {}, 'web'),
+    ).toThrow(/both resolve to the platform variable "COMPOSER_WEB_TOKEN_GENERATED"/);
+  });
+
+  test('secret and generated names are checked in one pool (secret-vs-generated)', () => {
+    // A secret name can never be COMPOSER_-prefixed via envSecret, so this
+    // cross-namespace collision is exercised on the guard directly: it is one
+    // general pool, not a per-marker special case.
+    expect(() =>
+      assertDistinctPointerNames(
+        [
+          { path: 'fromSecret', varName: 'COMPOSER_WEB_SECRET_GENERATED' },
+          { path: 'fromGenerated', varName: 'COMPOSER_WEB_SECRET_GENERATED' },
+        ],
+        'web',
+      ),
+    ).toThrow(/input paths "fromSecret" and "fromGenerated"/);
+  });
+
+  test('a secret leaf and a generated leaf with distinct names do NOT collide', () => {
+    const { generated, sentinels } = resolveInputBinding(
+      { sec: envSecret('MY_SECRET'), gen: generatedParam() },
+      {},
+      'web',
+    );
+    expect(generated).toHaveLength(1);
+    expect([...sentinels.values()]).toEqual(['MY_SECRET']);
   });
 });
