@@ -26,7 +26,7 @@
     "@internal/tsdown-config": "workspace:0.3.0",
     "@prisma/dev": "^0.24.14",
     "@types/bun": "^1.3.13",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.1",
     "@types/pg": "^8.20.0",
     "@types/proper-lockfile": "^4.1.4",
     "pg": "^8.22.0",
