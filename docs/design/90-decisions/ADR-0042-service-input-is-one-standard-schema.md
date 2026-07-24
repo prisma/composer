@@ -109,6 +109,14 @@ variable), consolidated into one document instead of scattered per-slot rows.
 Secret values never appear in the document, so the deploy report can print it
 verbatim.
 
+The document is `JSON.stringify`d at deploy and re-parsed at boot, so the
+schema's validated output must be JSON-representable: plain objects, arrays,
+strings, numbers, booleans, and null, plus the framework's own `SecretString`
+leaves (which serialize to `$secret` pointers). A schema whose output carries
+`BigInt`, a `Date`, a class instance, or a symbol is outside the contract —
+the two ends would not see byte-identical input. Schemas that need such a
+value should keep the wire field a string and reconstruct it in the app.
+
 **Absence is arbitrated by the schema.** An env-bound leaf whose variable is
 unset (or empty) in the deploy shell resolves to *key omitted*; whether that
 is legal is the schema's call — `.optional()`, a union arm, or a hard error.

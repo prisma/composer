@@ -272,8 +272,9 @@ prisma-composer log module.ts quotes     # just one
 ```
 
 Under the hood the local providers write the same `COMPOSER_*` environment
-variables a deploy writes — `COMPOSER_PORT` for a service's own `port`,
-`COMPOSER_INPUT` for its input document, `COMPOSER_QUOTES_URL` for the
+variables a deploy writes, each keyed by the service's address —
+`COMPOSER_QUOTES_PORT` for the `quotes` service's own `port`,
+`COMPOSER_QUOTES_INPUT` for its input document, `COMPOSER_QUOTES_URL` for a
 `quotes` dependency's URL — so `service.load()`, `service.input()`, and
 `service.port()` read exactly what they'll read in production. You never set
 them by hand locally; `dev` *is* the deploy. Full workflow (one-service
