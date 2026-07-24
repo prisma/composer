@@ -215,7 +215,7 @@ export const stash = (node: ServiceNode, config: Config): void => {
   }
 };
 
-// ——— Input channel (ADR-0041): ONE self-describing JSON document per service.
+// ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
 //
 // Deploy resolves the provision-time input binding (literals as-is, envParam
 // leaves read from the deploy shell, envSecret leaves as `$secret` pointers),
@@ -278,7 +278,7 @@ export interface ResolvedInputBinding {
  * `envSecret` leaves become empty sentinel `SecretBox`es (the value never
  * enters the deploy); `envParam` leaves read the deploy shell — unset or
  * empty means the enclosing object key is OMITTED, and the schema arbitrates
- * whether that absence is legal (ADR-0041). Everything non-plain (a class
+ * whether that absence is legal (ADR-0042). Everything non-plain (a class
  * instance, a function, a raw SecretBox holding a value) is rejected loudly.
  */
 export function resolveInputBinding(
@@ -347,7 +347,7 @@ export function resolveInputBinding(
     throw new Error(
       `input binding${path === '' ? '' : ` key "${path}"`} holds a value that is not plain data ` +
         `(${typeof value === 'object' ? 'a non-plain object' : `a ${typeof value}`}) — a binding's ` +
-        'leaves are literals, envParam(...), or envSecret(...) (ADR-0041). A secret VALUE ' +
+        'leaves are literals, envParam(...), or envSecret(...) (ADR-0042). A secret VALUE ' +
         "(e.g. a SecretBox) never belongs in a binding — bind envSecret('NAME') instead.",
     );
   };
@@ -385,14 +385,14 @@ export function serializeInput(
   if (schema === undefined) {
     if (binding !== undefined) {
       throw new Error(
-        `service "${address}" has an input binding but declares no input schema — Load should have rejected it (ADR-0041).`,
+        `service "${address}" has an input binding but declares no input schema — Load should have rejected it (ADR-0042).`,
       );
     }
     return undefined;
   }
   if (binding === undefined) {
     throw new Error(
-      `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0041).`,
+      `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0042).`,
     );
   }
   const { resolved, sentinels, absent } = resolveInputBinding(binding, env);
@@ -405,7 +405,7 @@ export function serializeInput(
       `invalid input for service "${address}": ${message}\n` +
         '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
         'A failure naming a secret field means the binding and schema disagree about its ' +
-        'secretness, or the schema refines on secret content — which ADR-0041 forbids.)',
+        'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
     );
   }
   const document = substituteSecretPointers(validated, sentinels, address);
@@ -457,7 +457,7 @@ function substituteSecretPointers(
     }
     throw new Error(
       `input key "${path}" of service "${address}" validated to a value that cannot be serialized ` +
-        `(a ${typeof v === 'object' ? 'non-plain object' : typeof v}) — the input document is plain JSON (ADR-0041).`,
+        `(a ${typeof v === 'object' ? 'non-plain object' : typeof v}) — the input document is plain JSON (ADR-0042).`,
     );
   };
   return walk(value, '');
@@ -476,7 +476,7 @@ export function readInput(node: ServiceNode, address: string): unknown {
   if (schema === undefined) {
     throw new Error(
       `input() called on service "${node.name}", which declares no input schema — declare ` +
-        '`input: <schema>` on compute() to use it (ADR-0041).',
+        '`input: <schema>` on compute() to use it (ADR-0042).',
     );
   }
   const key = inputKey(address);

@@ -38,7 +38,7 @@ const nonEmptyString: StandardSchemaV1<string, string> = {
 };
 
 // Raw core service(): the env-sourced param wire is now exercised only by
-// extension-RESERVED params (ADR-0041 removed user params from compute()),
+// extension-RESERVED params (ADR-0042 removed user params from compute()),
 // but the serializer machinery is param-name-agnostic — a plain node with a
 // declared param proves it.
 const svc = (extra: Record<string, ConfigParam> = {}) =>

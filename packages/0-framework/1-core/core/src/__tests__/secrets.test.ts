@@ -12,7 +12,7 @@ const build = {
   entry: 'server.js',
 };
 
-/** A service that declares an input schema (ADR-0041) — its provision requires an `input` binding. */
+/** A service that declares an input schema (ADR-0042) — its provision requires an `input` binding. */
 const svcWithInput = (name: string) =>
   service({
     name,
@@ -36,7 +36,7 @@ describe('secret sources', () => {
   });
 });
 
-describe('Load records input bindings (ADR-0041)', () => {
+describe('Load records input bindings (ADR-0042)', () => {
   test('the root binds a service input directly (the leaf case)', () => {
     const auth = svcWithInput('auth');
     const binding = { signingKey: secretSource('AUTH_SIGNING_KEY') };

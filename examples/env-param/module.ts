@@ -5,7 +5,7 @@ import echoService from './src/service.ts';
 /**
  * The env-param example: one service whose required `greeting` input key is
  * bound to the env var ENV_PARAM_GREETING at provision. The deploy shell's
- * value resolves into the input document at deploy (ADR-0041 — an unset var
+ * value resolves into the input document at deploy (ADR-0042 — an unset var
  * omits the key, which this schema rejects), and the server reads it back
  * through `input()` at boot.
  *

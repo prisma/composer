@@ -55,7 +55,7 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
     throw new LoadError(
       `Service "${rootId}" declares an input schema but is being loaded directly — a lone service ` +
         'has no enclosing scope to bind its input. Compose it inside a module whose provision() ' +
-        'call binds `input: { … }` (ADR-0041).',
+        'call binds `input: { … }` (ADR-0042).',
     );
   }
   const rootGraphNode: GraphNode = { id: rootId, node: root };

@@ -152,8 +152,11 @@ registry). What we deliberately didn't do:
   ADR-0022 §Alternatives ("Deferred, not rejected"). Prerequisite spike before
   pickup: confirm PN handles multiple peer app-authored spaces in one database
   end-to-end (PN ADR 212's monorepo-aggregator case).
-- **Dev-time story** — parked sketch: `prisma dev` serves identical local
-  copies of the management API; Alchemy treats the local machine as one more
-  deploy target, lowering unchanged.
+- **Dev-time story** — resolved by ADR-0041: the "lowering unchanged" half of
+  the parked sketch survives, but substitution happens at the Alchemy provider
+  boundary (local providers for the same resource types), not by serving a
+  local copy of the Management API — see
+  `docs/design/90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md`
+  and `docs/design/10-domains/local-dev.md`.
 - **Factory name** — `pnPostgres` is a placeholder; Prisma Next → Prisma Data
   rename incoming at GA. Rename the factory when the product name lands.

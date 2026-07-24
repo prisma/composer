@@ -304,7 +304,7 @@ describe('service()', () => {
     ).not.toThrow();
   });
 
-  test('carries a declared input schema as `inputSchema`, undefined when omitted (ADR-0041)', () => {
+  test('carries a declared input schema as `inputSchema`, undefined when omitted (ADR-0042)', () => {
     const withSchema = service({
       name: 'hello',
       extension: 'test/pack',

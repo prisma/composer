@@ -18,6 +18,9 @@ architecture/design phase that comes *after* the high-level model is settled.
   (a caller-owned schema), carried through deploy, serialized to platform
   storage by the target (over key/value string pairs), and read back at boot.
   Rests on ADR-0018 and ADR-0019.
+- [`local-dev.md`](local-dev.md) — the local dev loop (`prisma-composer dev`):
+  the pipeline deltas vs deploy, the process table and supervisor, per-resource
+  stand-ins, value sourcing, and the dev error surface. Rests on ADR-0041.
 
 The settled high-level model is recorded in:
 

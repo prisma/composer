@@ -175,7 +175,7 @@ function validateWiring(
 /**
  * Flattens a value into itself plus every nested object/array member value —
  * identity fodder for the ctx.secrets/ctx.params usage marking, which must
- * see a forwarded source wherever it sits inside an input binding (ADR-0041).
+ * see a forwarded source wherever it sits inside an input binding (ADR-0042).
  */
 function deepValues(value: unknown, out: unknown[]): void {
   out.push(value);
@@ -488,12 +488,12 @@ function flatten(
       if (provisionSecrets !== undefined) {
         throw new LoadError(
           `provision("${id}") received secrets for a service — a service takes its secrets as ` +
-            'envSecret(...) leaves of its `input` binding (ADR-0041), not a secrets map.',
+            'envSecret(...) leaves of its `input` binding (ADR-0042), not a secrets map.',
         );
       }
       // The input binding pairs 1:1 with a declared input schema — a schema
       // with no binding has nothing to resolve at deploy, and a binding with
-      // no schema has no judge (ADR-0041).
+      // no schema has no judge (ADR-0042).
       if (child.inputSchema !== undefined && provisionInput === undefined) {
         throw new LoadError(
           `Input of provisioned service "${id}" is not bound (module "${moduleNode.name}") — the ` +

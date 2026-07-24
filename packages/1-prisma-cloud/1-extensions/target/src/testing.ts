@@ -26,7 +26,7 @@ export interface BootstrappedService {
 
 /**
  * `bootstrapService`'s config: core's Config plus the service's provision-time
- * `input` binding (ADR-0041) — required exactly when the service declares an
+ * `input` binding (ADR-0042) — required exactly when the service declares an
  * input schema, exactly like `provision()`. The binding rides the same
  * deploy-side path a real deploy takes (`serializeInput`: resolve, validate
  * with sentinel boxes, one `$secret`-pointer document row), so `input()` in
@@ -48,7 +48,7 @@ export interface BootstrapConfig extends Config {
  * `config.service.port` must be concrete — the entry self-listens and never
  * reports an OS-assigned port back. The resolved port is also exposed as
  * `process.env.PORT` before boot, mirroring `run()` — that is the channel an
- * entry reads its port from (ADR-0041 removed `config()`). No `close()`:
+ * entry reads its port from (ADR-0042 removed `config()`). No `close()`:
  * teardown rides bun-test's per-file process isolation (H3's resolved
  * decision).
  */

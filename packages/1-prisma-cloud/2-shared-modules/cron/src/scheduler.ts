@@ -1,7 +1,7 @@
 /**
  * The reusable scheduler node and its firing logic. `cronScheduler` builds a
  * `compute()` whose one input is the `jobs` schedule (bound at provision by
- * `cron()`, ADR-0041) and whose only dependency is `trigger(jobId)`; nothing
+ * `cron()`, ADR-0042) and whose only dependency is `trigger(jobId)`; nothing
  * else about it varies per app. `runScheduler` is the pure, injectable firing
  * loop the entrypoint (and its tests) drive.
  */

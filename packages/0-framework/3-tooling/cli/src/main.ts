@@ -5,17 +5,15 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { assembleServices, type RunAssembler } from '@internal/assemble';
-import { Load } from '@internal/core';
+import type { RunAssembler } from '@internal/assemble';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
 import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
+import { runDev } from './dev/run-dev.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
-import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
-import { loadEntry } from './load-entry.ts';
+import { type PipelineDeps, runPipeline } from './pipeline.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
-import { validateRegistryCoverage } from './validate-coverage.ts';
 import { validateStageName } from './validate-stage.ts';
 
 const BINARY_NAME = 'prisma-composer';
@@ -63,8 +61,32 @@ class DestroyCommand extends DeployCliCommand {
   readonly action = 'destroy' as const;
 }
 
+/** `<entry>`/`--name`/`--fresh` only — no `--stage`/`--production` (local-dev spec § 6: a working directory has exactly one dev instance, no stages). */
+class DevCommand extends Command {
+  static override paths = [['dev']];
+  static override usage = Command.Usage({
+    description:
+      "Bring up the application whose root node is <entry>'s default export, entirely on this machine, credential-free.",
+    examples: [['Run an app locally', '$0 dev src/service.ts']],
+  });
+
+  entry = Option.String({ name: 'entry' });
+
+  name = Option.String('--name', {
+    description: "Override the root node's name — the dev instance's application name.",
+  });
+
+  fresh = Option.Boolean('--fresh', false, {
+    description: 'Destroy the dev stack and wipe the dev state directory before starting.',
+  });
+
+  async execute(): Promise<number> {
+    return 0;
+  }
+}
+
 function buildCli(): Cli {
-  return Cli.from([DeployCommand, DestroyCommand], {
+  return Cli.from([DeployCommand, DestroyCommand, DevCommand], {
     binaryName: BINARY_NAME,
     binaryLabel: 'The prisma-composer deploy CLI',
   });
@@ -81,11 +103,12 @@ function isUnknownSyntaxError(error: unknown): error is Error {
 }
 
 export interface ParsedArgs {
-  readonly command: 'deploy' | 'destroy';
+  readonly command: 'deploy' | 'destroy' | 'dev';
   readonly entry: string;
   readonly name: string | undefined;
   readonly stage: string | undefined;
   readonly production: boolean;
+  readonly fresh: boolean;
 }
 
 /** Exported for direct testing (main.test.ts) — not part of the package's public barrel (see index.ts). */
@@ -112,6 +135,18 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       name: command.name,
       stage: command.stage,
       production: command.production,
+      fresh: false,
+    };
+  }
+
+  if (command instanceof DevCommand) {
+    return {
+      command: 'dev',
+      entry: command.entry,
+      name: command.name,
+      stage: undefined,
+      production: false,
+      fresh: command.fresh,
     };
   }
 
@@ -182,6 +217,11 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     }
     throw error;
   }
+
+  if (args.command === 'dev') {
+    return runDev(args, deps);
+  }
+
   const stage = effectiveStage(args);
   if (stage !== undefined) validateStageName(stage);
   const cwd = process.cwd();
@@ -194,48 +234,24 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     warnIfNoLocalDeployState(cwd);
   }
 
-  // 1. Find + load prisma-composer.config.ts — runs extension env validation before the entry import.
-  const resolvedEntryPath = path.resolve(cwd, args.entry);
-  const configPath = findConfigPathForEntry(resolvedEntryPath);
-  if (configPath === undefined) {
-    throw missingConfigError(resolvedEntryPath);
-  }
-  const config = deps.config ?? (await loadAppConfig(configPath)).config;
-
-  // 2. Import the entry module; its default export must be a node.
-  const entryModule = await loadEntry(args.entry, cwd);
-
-  // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
-  const graph = Load(entryModule.root);
-  if (graph.root.node.kind !== 'module') {
-    throw new CliError(
-      'The deploy root must be a module — wrap your service, e.g. ' +
-        "export default module('name', ({ provision }) => { provision(service); }).",
-    );
-  }
-
-  // 4. Registry coverage: every node/build in the graph has a matching descriptor in the config.
-  validateRegistryCoverage(graph, config);
-
-  // 5. Resolve the name.
-  const name = args.name ?? entryModule.root.name;
-  if (name.length === 0) {
-    throw new CliError('The root node has no name — name it at authoring, or pass --name.');
-  }
-
-  // 6. Assemble each service through the config's registries.
-  let assembled: Awaited<ReturnType<typeof assembleServices>>;
-  try {
-    assembled = await assembleServices(graph, config, cwd, deps.runAssembler);
-  } catch (error) {
-    if (args.command === 'destroy' && error instanceof Error) {
-      throw new CliError(
-        `${error.message}\n\ndestroy evaluates the same stack program as deploy, which packages ` +
-          'the built artifacts — so the app must be built first. Run the build, then retry the destroy.',
-      );
-    }
-    throw error;
-  }
+  // 1–6. The shared prefix (pipeline.ts): config discovery/load, entry load,
+  // Load, registry coverage, name resolution, assemble.
+  const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
+  const onAssembleError =
+    args.command === 'destroy'
+      ? (error: Error): CliError =>
+          new CliError(
+            `${error.message}\n\ndestroy evaluates the same stack program as deploy, which packages ` +
+              'the built artifacts — so the app must be built first. Run the build, then retry the destroy.',
+          )
+      : undefined;
+  const { configPath, config, entryModule, graph, name, assembled } = await runPipeline(
+    args.entry,
+    args.name,
+    cwd,
+    pipelineDeps,
+    onAssembleError,
+  );
 
   // 7. Resolve each extension's own container (e.g. Prisma Cloud's Project +
   // named-stage Branch) via its own descriptor — deploy ensures (creates if

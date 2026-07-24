@@ -10,7 +10,6 @@
  */
 import { createHash } from 'node:crypto';
 import { retryTransientConnect } from '@internal/prisma-cloud/connection';
-import { SQL } from 'bun';
 import type {
   GetResult,
   HeadResult,
@@ -18,7 +17,8 @@ import type {
   ListResult,
   ObjectStore,
   PutResult,
-} from './store.ts';
+} from '@internal/s3-protocol';
+import { SQL } from 'bun';
 
 const DEFAULT_MAX_KEYS = 1000;
 

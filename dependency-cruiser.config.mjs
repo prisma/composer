@@ -160,10 +160,21 @@ const createPlaneRules = () => {
 const createSinkAndConsumerRules = () => {
   forbidden.push({
     name: 'public-is-a-sink',
-    comment: '9-public is a sink (ADR-0028): no internal package imports the published packages',
+    comment:
+      '9-public is a sink (ADR-0028): no internal package imports the published packages. ' +
+      "One sanctioned exception: the prisma-cloud target's control/extension.ts names its own " +
+      "local-target entry's PUBLISHED subpath in a dynamic import (ADR-0041's lazy local-target " +
+      'reference — operator directive; naming, operator 2026-07-23) so the production control ' +
+      'bundle stays free of local-target implementation code; the specifier resolves at a ' +
+      "CONSUMING app's runtime, never as a real build-time dependency between these two packages " +
+      '(verified: dist/control.mjs keeps it as a genuine external dynamic import, never inlined ' +
+      "— see target's invariant 7 test).",
     severity: 'error',
     from: { path: '^packages/(0-framework|1-prisma-cloud)/' },
-    to: { path: '^packages/9-public/' },
+    to: {
+      path: '^packages/9-public/',
+      pathNot: '^packages/9-public/composer-prisma-cloud/src/exports/local-target\\.ts$',
+    },
   });
   forbidden.push({
     name: 'examples-import-public-only',

@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
-import { MemoryObjectStore } from '../memory-store.ts';
+import { MemoryObjectStore } from '@internal/s3-protocol';
 
 const TEXT = new TextEncoder();
 let store: MemoryObjectStore;

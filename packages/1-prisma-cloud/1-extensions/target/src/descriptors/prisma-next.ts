@@ -24,7 +24,7 @@ import {
  * target REF identity (hash + sorted invariants): unchanged redeploy is a
  * no-op, a contract or ref-invariant change re-migrates.
  */
-export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, node, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
@@ -32,7 +32,7 @@ export function prismaNextDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       const db = yield* Prisma.Database(`${id}-db`, {
         projectId: projectIdOf(application),
         name: id,
-        region: o.region ?? DEFAULT_REGION,
+        region: o().region ?? DEFAULT_REGION,
         ...(branchId !== undefined ? { branchId } : {}),
       });
       const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id });

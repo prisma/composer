@@ -64,6 +64,19 @@ export interface ExtensionDescriptor {
    * in container-transport.ts.
    */
   readonly container?: ContainerDescriptor;
+  /**
+   * The extension's LOCAL TARGET counterpart (ADR-0041; naming, operator
+   * 2026-07-23 — "dev" names the user-facing feature only, the seam takes
+   * the concept's real noun) — a LAZY reference: an async thunk, never the
+   * descriptor object itself. This keeps the production control entry's
+   * static import graph free of local-target implementation code (operator
+   * directive) — the thunk is one line, dynamically importing the
+   * extension's own local-target entry by bare specifier
+   * (e.g. `() => import('@prisma/composer-prisma-cloud/local-target').then((m) => m.localTargetDescriptor())`),
+   * so nothing local-target-flavored is bundled into, or loaded by, any
+   * deploy path.
+   */
+  readonly localTarget?: () => Promise<LocalTargetDescriptor>;
 }
 
 /**
@@ -93,6 +106,74 @@ export interface TeardownInput {
   readonly container: ContainerInstance | undefined;
   /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
   readonly stage: string | undefined;
+}
+
+/** The extension's LOCAL TARGET counterpart (ADR-0041) — the local-target variant OF ExtensionDescriptor, hence the full qualifier. An extension without one is not local-target-capable (cannot back the "dev" feature). */
+export interface LocalTargetDescriptor {
+  /** Local providers for the SAME resource types this extension's lowering emits. Receives the app identity — unlike deploy's env-arg-free `providers()`, local providers are emulator clients and must know which app they provision for. */
+  providers(input: LocalTargetProvidersInput): Layer.Layer<never>;
+  /** A stable local identity — resolved without any platform call. */
+  readonly container: ContainerDescriptor;
+  /** Value sourcing (secrets/env-params) — runs where deploy's preflight runs. */
+  preflight?(input: PreflightInput): Promise<void>;
+  /** Ensure the emulator daemons this topology's node kinds need are running (idempotent; they persist across sessions). */
+  emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
+  /** The dev session's view of the running app. Core renders it and never learns an emulator's API. */
+  attach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment>;
+  /** `--fresh`: remove every local trace of the dev instance — emulator instances, state, data. */
+  teardown?(input: TeardownInput): Promise<void>;
+}
+
+export interface LocalTargetProvidersInput {
+  /** This extension's resolved local-target container (its `input.appName` is the emulator app namespace). */
+  readonly container: ContainerInstance | undefined;
+  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  readonly devDir: string;
+}
+
+export interface LocalTargetEmulatorsInput {
+  /** The loaded application graph — inspected for which node kinds need an emulator. */
+  readonly graph: Graph;
+  readonly container: ContainerInstance | undefined;
+  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  readonly devDir: string;
+}
+
+export interface LocalTargetAttachInput {
+  readonly container: ContainerInstance | undefined;
+  readonly devDir: string;
+}
+
+export interface LocalTargetAttachment {
+  /** Start every stopped service from its last deployment (the session-resume signal — a no-op converge cannot start anything). */
+  startServices(): Promise<void>;
+  /** Every service's local endpoint, for the front door. */
+  endpoints(): Promise<readonly { readonly address: string; readonly url: string }[]>;
+  /** Merged, line-oriented log stream across the app's services (including services that appear after later converges). Ends when `signal` aborts. */
+  logs(signal: AbortSignal): AsyncIterable<{ readonly service: string; readonly line: string }>;
+  /** Stop the app's service instances (emulators and data persist). */
+  stopServices(): Promise<void>;
+}
+
+/** `<cwd>/.prisma-composer/dev` — the dev instance's app-scoped state directory (ADR-0041, ADR-0004's tool-state rule). "dev" names the user-facing feature/dir (naming, operator 2026-07-23) — this constant's name and value are unchanged by the localTarget rename. */
+export const DEV_DIR = '.prisma-composer/dev';
+
+/**
+ * True when an extension only participates in assembly (every `nodes` entry
+ * is `kind: 'build'`, and it declares none of `providers`/`application`/
+ * `provisions`/`container`) — it owns no resources or services, so it has
+ * nothing to emulate and is exempt from local-target-capability requirements
+ * (ADR-0041). Shared by `localTargetProviders` and every local-target hook
+ * iteration.
+ */
+export function isBuildOnlyExtension(extension: ExtensionDescriptor): boolean {
+  return (
+    Object.values(extension.nodes).every((node) => node.kind === 'build') &&
+    extension.providers === undefined &&
+    extension.application === undefined &&
+    extension.provisions === undefined &&
+    extension.container === undefined
+  );
 }
 
 /**

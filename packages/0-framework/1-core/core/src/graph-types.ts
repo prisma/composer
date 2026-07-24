@@ -23,7 +23,7 @@ export interface Edge {
 }
 
 /**
- * A service's provision-time input binding (ADR-0041): the plain object a
+ * A service's provision-time input binding (ADR-0042): the plain object a
  * `provision(service, { input })` call supplied, recorded at that service's
  * address. Core never walks it beyond usage tracking; the deploy target's
  * recursive descent classifies its leaves (literals, `envParam`, `envSecret`).
@@ -57,7 +57,7 @@ export interface Graph {
   /** Root + one per input, topo-ordered (deps first). */
   readonly nodes: readonly GraphNode[];
   readonly edges: readonly Edge[];
-  /** Every service input binding a `provision()` call supplied (ADR-0041). */
+  /** Every service input binding a `provision()` call supplied (ADR-0042). */
   readonly inputBindings: readonly ServiceInputBinding[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */
   readonly params: readonly ParamBinding[];

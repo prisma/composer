@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 /**
  * Proves the schedule survives deploy-encode -> boot-decode -> input()
- * unchanged (ADR-0041): `bootstrapService` serializes the `input` binding into
+ * unchanged (ADR-0042): `bootstrapService` serializes the `input` binding into
  * the process env with the exact input-document path a deploy uses, then a
  * freshly constructed scheduler node — reading the same address-free row —
  * reads it back through `input()`. Run via `bun test` (needs

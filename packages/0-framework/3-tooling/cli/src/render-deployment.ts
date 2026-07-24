@@ -95,7 +95,7 @@ export function renderDeployment(result: DeploymentResult): string {
     }
     // The first entity shares the label's line; the rest wrap into the
     // same column, as do a url and the entity's detail lines (e.g. compute's
-    // serialized input document and its absent-key list, ADR-0041 — a
+    // serialized input document and its absent-key list, ADR-0042 — a
     // newline-holding detail value renders as one labeled line per entry).
     row.deployed.entities.forEach((entity, index) => {
       const prefix = index === 0 ? row.label : row.continuation;

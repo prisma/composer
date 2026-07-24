@@ -1,4 +1,4 @@
-# ADR-0041: Service input is one standard schema; the binding carries the sourcing
+# ADR-0042: Service input is one standard schema; the binding carries the sourcing
 
 ## Decision
 

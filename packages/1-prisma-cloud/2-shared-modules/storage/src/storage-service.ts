@@ -2,7 +2,7 @@
  * The storage service node (like cron's `scheduler.ts` + `scheduler-service.ts`
  * combined): `storageService` builds the `s3-store` service — a Postgres `db`
  * dependency, a minted `credentials` dependency, a `bucket` input key
- * (bound at provision by `storage()`, ADR-0041), and the `store` port exposing
+ * (bound at provision by `storage()`, ADR-0042), and the `store` port exposing
  * `s3Contract`. The deploy bootstrap runs the default-exported bare node
  * (`main.run(address, boot)`); the real bucket comes from the stashed input
  * document at runtime — exactly like `scheduler-service.ts` default-exports a

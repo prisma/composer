@@ -112,7 +112,7 @@ describe('configOf', () => {
 });
 
 describe('inputManifest', () => {
-  test('aggregates the provision-time input bindings across the graph (ADR-0041)', () => {
+  test('aggregates the provision-time input bindings across the graph (ADR-0042)', () => {
     const ingest = service({
       name: 'ingest',
       extension: 'test/pack',

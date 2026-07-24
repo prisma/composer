@@ -209,7 +209,9 @@ The CLI's quality lives in its errors; each failure names its fix:
 ## Out of scope (designed around)
 
 - **`prisma-composer build`** — and with it any build-command convention or override.
-- **`prisma-composer dev`** — the local loop.
+- **`prisma-composer dev`** — the local loop; designed in
+  [local-dev.md](local-dev.md) (ADR-0041) as its own command re-running this
+  pipeline against local providers.
 - **Topology emission** — the serialized-topology artifact for agents/tooling;
   when it lands it must strip the machine-specific `build.module` (ADR-0004).
 - **Config-file escape hatch** — a `prisma-composer.config.ts` may exist one day as

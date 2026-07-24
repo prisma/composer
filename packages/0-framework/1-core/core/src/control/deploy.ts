@@ -200,6 +200,8 @@ export interface LowerOptions {
   readonly stage?: string;
   /** Alchemy state store for the stack. Defaults to the config's own state layer. */
   readonly state?: AlchemyStateLayer;
+  /** Explicit provider set for the stack. Defaults to the config's own merged `providers()` (`mergedProviders`) — the same override precedence as `state`. The dev stack module passes `localTargetProviders(...)` here (ADR-0041); `lower()` itself learns nothing about the local target. */
+  readonly providers?: Layer.Layer<never>;
   /**
    * Invoked once per deploy, during apply, with the Deploy operation's result
    * — the app and every node it deployed, resolved, in topo order.
@@ -214,6 +216,14 @@ export interface LowerOptions {
 export interface Bundle {
   readonly dir: string;
   readonly entry: string;
+  /**
+   * Absolute paths to the USER-BUILT inputs this bundle was assembled from
+   * (ADR-0041). `prisma-composer dev`'s watch loop watches exactly these — a
+   * file entry as a file, a directory entry recursively — and re-runs
+   * assemble on a change. Optional so a build adapter that predates this
+   * field still compiles; a bundle without it is simply not watched.
+   */
+  readonly watch?: readonly string[];
 }
 
 /** Shared input shape for every extension's build descriptor. */
@@ -747,10 +757,11 @@ export function lower(root: ModuleNode, config: PrismaAppConfig, opts: LowerOpti
   // match what Alchemy.Stack accepts.
   const stackEffect = Effect.orDie(lowering(root, config, opts)) as Effect.Effect<undefined, never>;
   const containers = deserializeContainers(config.extensions, process.env);
+  const providers = opts.providers ?? mergedProviders(config);
 
   return Alchemy.Stack(
     opts.name,
-    { providers: mergedProviders(config), state: resolveStateLayer(opts, config, containers) },
+    { providers, state: resolveStateLayer(opts, config, containers) },
     stackEffect,
   );
 }

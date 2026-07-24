@@ -91,7 +91,7 @@ describe('renderDeployment', () => {
     );
   });
 
-  test("an entity's details render one labeled line each — a newline-holding value one line per entry (ADR-0041's input document + absent keys)", () => {
+  test("an entity's details render one labeled line each — a newline-holding value one line per entry (ADR-0042's input document + absent keys)", () => {
     const results = [
       deployed('web', [
         {

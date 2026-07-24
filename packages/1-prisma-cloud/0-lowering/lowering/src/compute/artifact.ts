@@ -145,7 +145,18 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
 
   const entryFile = resolveEntry(opts.bundleDir, opts.bundleEntry);
   const bootstrap = `import main from "./${entryFile}";\nawait main.run(${JSON.stringify(opts.address)}, () => import(${JSON.stringify(`./${opts.appEntry}`)}));\n`;
-  const manifest = `${JSON.stringify({ manifestVersion: MANIFEST_VERSION, entrypoint: 'bootstrap.js' }, null, 2)}\n`;
+  // `address` is intrinsic artifact metadata, not dev config — bootstrap.js
+  // above already bakes `main.run(address, …)`, so the manifest carrying it
+  // too is the same fact recorded twice: once for the boot path, once for a
+  // reader that needs the address WITHOUT executing the artifact (the local
+  // Deployment provider, which learns nothing else about dev — local-dev
+  // spec § 4). No version bump — no consumer needs protecting from a new
+  // field; the platform still reads only `entrypoint`.
+  const manifest = `${JSON.stringify(
+    { manifestVersion: MANIFEST_VERSION, entrypoint: 'bootstrap.js', address: opts.address },
+    null,
+    2,
+  )}\n`;
 
   const files = walkFiles(opts.bundleDir).map((relPath) => ({
     relPath,

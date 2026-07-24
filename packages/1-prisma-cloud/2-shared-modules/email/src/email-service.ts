@@ -1,7 +1,7 @@
 /**
  * The email compute service (spec §"Service definition"): a Postgres `db`
  * dependency, ONE input schema — `deliveryMode`/`deliveryUrl`/`from` plus the
- * `deliveryCredential` secret leaf (a `SecretString`-typed field, ADR-0041) —
+ * `deliveryCredential` secret leaf (a `SecretString`-typed field, ADR-0042) —
  * and the two exposed ports (`send`, `outbox`). The module (`email-module.ts`)
  * binds the input at provision: forwarded boundary params/secret as leaves,
  * `deliveryUrl` as a literal. Build/entry mechanics copied from storage's

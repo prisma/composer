@@ -103,7 +103,7 @@ const sharedSecretGraph = () =>
     }),
   );
 
-// The reserved `port` param keeps the env-sourced param channel (ADR-0041):
+// The reserved `port` param keeps the env-sourced param channel (ADR-0042):
 // binding it to envParam(...) still writes a pointer row the platform must back.
 const paramGraph = () =>
   Load(

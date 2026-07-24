@@ -62,7 +62,7 @@ function isEnvSecretPayload(payload: unknown): payload is EnvSecretPayload {
 
 /**
  * Reads the Prisma Cloud env-var name back out of an opaque secret source —
- * an `envSecret` leaf of an input binding (ADR-0041). A source not built by
+ * an `envSecret` leaf of an input binding (ADR-0042). A source not built by
  * `envSecret` (a raw `secretSource(...)` or another target's source) carries
  * no name — reject it here, with `where` naming the leaf's position, so a
  * foreign source fails early and clearly rather than producing a broken

@@ -57,7 +57,7 @@ describe('cron()', () => {
       input: 'trigger',
       kind: 'dependency',
     });
-    // The schedule rides the scheduler's input binding (ADR-0041), recorded at provision.
+    // The schedule rides the scheduler's input binding (ADR-0042), recorded at provision.
     expect(graph.inputBindings).toContainEqual({
       serviceAddress: 'cron.scheduler',
       binding: { jobs: [{ jobId: 'tick', every: '2s' }] },

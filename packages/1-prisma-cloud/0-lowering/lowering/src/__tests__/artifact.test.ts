@@ -57,20 +57,21 @@ describe('packageComputeArtifact', () => {
     expect(bootstrap).toContain('await main.run("auth", () => import("./server.js"));');
   });
 
-  test('writes compute.manifest.json with entrypoint bootstrap.js', () => {
+  test('writes compute.manifest.json with entrypoint bootstrap.js and the packaged address', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const artifact = packageComputeArtifact({
       id: 'hello',
       bundleDir,
       appEntry: 'server.js',
-      address: '',
+      address: 'auth',
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
     expect(JSON.parse(read('compute.manifest.json'))).toEqual({
       manifestVersion: '1',
       entrypoint: 'bootstrap.js',
+      address: 'auth',
     });
   });
 

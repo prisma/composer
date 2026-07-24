@@ -28,7 +28,7 @@ export interface S3StoreSerialized extends ComputeSerialized {
   readonly secretAccessKey: unknown;
 }
 
-export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
+export function s3StoreDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   // No `base.kind !== 'service'` check any more: computeDescriptor's return
   // type says `kind: 'service'`, so the discriminant is a compile-time fact
   // rather than something to re-test at runtime.
@@ -46,7 +46,7 @@ export function s3StoreDescriptor(o: ResolvedCloudOptions): NodeDescriptor {
       Effect.gen(function* () {
         const serialized = yield* base.serialize(ctx, provisioned, config);
         const credentials = config.inputs['credentials'] ?? {};
-        // `bucket` is a key of the service's input document (ADR-0041) —
+        // `bucket` is a key of the service's input document (ADR-0042) —
         // compute's serialize already resolved, validated, and serialized the
         // binding, so the defaults-applied document is the one honest source.
         const document: unknown =

@@ -6,7 +6,7 @@ import { type } from 'arktype';
  * A single compute service with one required input key and no default — the
  * smallest surface that forces a provision-time binding. The root binds
  * `greeting` to a platform env var via `envParam` (module.ts); the server
- * reads it back through `input()` (ADR-0041).
+ * reads it back through `input()` (ADR-0042).
  *
  * Its build is the adapter's directory form: `bun build --outdir` emits the
  * server into `dist/server/` and the build script copies `assets/` in beside

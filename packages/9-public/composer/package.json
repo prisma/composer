@@ -10,6 +10,7 @@
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
     "./deploy": "./dist/deploy.mjs",
+    "./local-target": "./dist/local-target.mjs",
     "./report": "./dist/report.mjs",
     "./testing": "./dist/testing.mjs",
     "./casts": "./dist/casts.mjs",

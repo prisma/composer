@@ -30,7 +30,7 @@ export default module(
     const service = provision(authService, {
       id: 'service',
       deps: { db },
-      // The service takes ONE input binding (ADR-0041); the forwarded
+      // The service takes ONE input binding (ADR-0042); the forwarded
       // boundary secret is its one leaf.
       input: { signingKey: secrets.signingKey },
     });

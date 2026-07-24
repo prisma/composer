@@ -18,11 +18,13 @@ project_id="$(curl -sS -H "$auth_header" "$api/projects?limit=100" \
 
 # The post-promote endpoint domain is the servable one (the create-time domain
 # is a placeholder — PRO-200); by the time this script runs, deploy + promote
-# have completed, so the service read returns the real domain.
-domain="$(curl -sS -H "$auth_header" "$api/projects/$project_id/compute-services?limit=100" \
-  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.name==='storefront');console.log(s?.serviceEndpointDomain??'')})")"
-[ -n "$domain" ] || { echo "Project $project_id has no 'storefront' compute service with an endpoint domain."; exit 1; }
-# serviceEndpointDomain arrives WITH the https:// scheme (see the PRO-200
+# have completed, so the app read returns the real domain. `/v1/apps` is the
+# current Management API surface for what used to be `/v1/compute-services`
+# (same underlying resources — see cold-start-canary.ts and gotchas.md PRO-217).
+domain="$(curl -sS -H "$auth_header" "$api/apps?projectId=$project_id&limit=100" \
+  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.name==='storefront');console.log(s?.appEndpointDomain??'')})")"
+[ -n "$domain" ] || { echo "Project $project_id has no 'storefront' app with an endpoint domain."; exit 1; }
+# appEndpointDomain arrives WITH the https:// scheme (see the PRO-200
 # gotcha's captured responses); tolerate either shape.
 case "$domain" in
   http://*|https://*) url="$domain" ;;

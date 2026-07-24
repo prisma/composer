@@ -28,7 +28,7 @@ type ReservedParams = typeof reservedParams;
 /**
  * A Prisma Compute service — declarations only (deps + one input schema +
  * build + the ports it exposes), no descriptor. The reserved `port` param
- * rides its own channel (ADR-0041 leaves it untouched); a dependency named
+ * rides its own channel (ADR-0042 leaves it untouched); a dependency named
  * like it fails at authoring.
  *
  *   · run(address, boot) — the process controller: deserialize the platform
@@ -38,7 +38,7 @@ type ReservedParams = typeof reservedParams;
  *   · load() / input() — called from inside the app's entry: read the stash;
  *     load() hydrates + memoizes the deps, input() parses the input document,
  *     replaces each `$secret` pointer with a redacting box over the named
- *     platform var, validates with the declared schema, and memoizes (ADR-0041).
+ *     platform var, validates with the declared schema, and memoizes (ADR-0042).
  *   · origin() — this service's platform-assigned public origin, read from the
  *     stash `run()` populates; memoized per process.
  *   · port() — this service's resolved reserved port (the value `run()` routes
@@ -96,7 +96,7 @@ export class ComputeService<
     stashProviderParams(RESERVED_PROVIDER_PARAMS, address);
     // Re-emit the input DOCUMENT address-free too, so input() reads the same
     // row with no address (secret values stay only in their platform vars —
-    // the document carries pointers, ADR-0041).
+    // the document carries pointers, ADR-0042).
     stashInput(this, address);
     // Expose the resolved service port under the near-universal PORT convention,
     // so a framework-unaware server (Next.js's standalone server.js binds the

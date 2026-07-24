@@ -61,7 +61,7 @@ export type SecretString = SecretBox<string>;
 
 /**
  * True for a redacting secret box — what a schema's secret leaf checks
- * (ADR-0041). Reads the brand rather than `instanceof`, so a box from a
+ * (ADR-0042). Reads the brand rather than `instanceof`, so a box from a
  * duplicated module copy in a bundle counts and a look-alike does not.
  */
 export function isSecretString(value: unknown): value is SecretString {

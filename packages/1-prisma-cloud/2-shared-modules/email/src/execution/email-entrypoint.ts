@@ -2,7 +2,7 @@
 // emailService's `node({ entry: './email-entrypoint.mjs' })`). Mirrors
 // storage's entrypoint: load() hands the hydrated `db` binding, input() the
 // validated input object (the credential as a redacting SecretString box,
-// ADR-0041), run() the PORT env; this is where the pg outbox store (D2), the
+// ADR-0042), run() the PORT env; this is where the pg outbox store (D2), the
 // delivery backing (D3, chosen by deliveryMode), and handlers.ts meet the
 // framework, served over serve()'s generated fetch handler.
 

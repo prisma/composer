@@ -35,7 +35,7 @@ export function email(opts?: {
       const service = provision(emailService(), {
         id: 'service',
         deps: { db },
-        // The service takes ONE input binding (ADR-0041); the module's
+        // The service takes ONE input binding (ADR-0042); the module's
         // forwarded boundary params/secret are its env-sourced leaves, and
         // deliveryUrl (a static factory option) is a literal.
         input: {

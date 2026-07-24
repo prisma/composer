@@ -8,7 +8,7 @@
  * never touches an environment.
  *
  * Secrets are NOT params — they ride the service's input binding as
- * `envSecret(...)` leaves (ADR-0041). A param is never secret.
+ * `envSecret(...)` leaves (ADR-0042). A param is never secret.
  */
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Graph, ParamBinding, ServiceInputBinding } from './graph-types.ts';
@@ -140,7 +140,7 @@ export function configOf(root: ServiceNode): readonly ConfigDeclaration[] {
 
 /**
  * The app's input manifest: every service input binding a `provision()` call
- * supplied (ADR-0041). Pure graph introspection, TARGET-AGNOSTIC — a deploy
+ * supplied (ADR-0042). Pure graph introspection, TARGET-AGNOSTIC — a deploy
  * target's recursive descent classifies the binding's leaves (its preflight
  * verifies each `envSecret` leaf's platform var exists before deploy; the
  * values are provisioned out-of-band).

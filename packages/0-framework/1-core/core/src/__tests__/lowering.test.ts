@@ -5,7 +5,11 @@ import * as Layer from 'effect/Layer';
 import type { Config, Params } from '../config.ts';
 import { number, string } from '../config.ts';
 import { containerEnvVarName } from '../container-transport.ts';
-import type { ExtensionDescriptor, PrismaAppConfig } from '../control/app-config.ts';
+import {
+  type ExtensionDescriptor,
+  isBuildOnlyExtension,
+  type PrismaAppConfig,
+} from '../control/app-config.ts';
 import {
   type AlchemyStateLayer,
   type Artifact,
@@ -1418,5 +1422,57 @@ describe('mergedProviders', () => {
     };
 
     expect(mergedProviders(config)).toBeDefined();
+  });
+});
+
+// A build-only extension: every `nodes` entry is `kind: 'build'`, and none
+// of `providers`/`application`/`provisions`/`container` are declared — the
+// exact shape `nodeBuild()` uses (ADR-0041's build-only exemption).
+const buildOnlyExtension = (id = 'test/build-only'): ExtensionDescriptor => ({
+  id,
+  nodes: { node: { kind: 'build', assemble: () => Promise.reject(new Error('unused')) } },
+});
+
+describe('isBuildOnlyExtension', () => {
+  test('true for an extension whose every node is kind: build and declares no providers/application/provisions/container', () => {
+    expect(isBuildOnlyExtension(buildOnlyExtension())).toBe(true);
+  });
+
+  test('false for an extension with a non-build node', () => {
+    const { descriptor } = fakeExtension();
+    expect(isBuildOnlyExtension(descriptor)).toBe(false);
+  });
+
+  test('false for an all-build-node extension that also declares providers', () => {
+    const extension: ExtensionDescriptor = {
+      ...buildOnlyExtension(),
+      providers: () => Layer.empty,
+    };
+    expect(isBuildOnlyExtension(extension)).toBe(false);
+  });
+
+  test('false for an all-build-node extension that also declares a container', () => {
+    const extension: ExtensionDescriptor = {
+      ...buildOnlyExtension(),
+      container: {
+        ensure: () => {
+          throw new Error('unused');
+        },
+        locate: () => {
+          throw new Error('unused');
+        },
+        remove: () => {
+          throw new Error('unused');
+        },
+        deserialize: () => {
+          throw new Error('unused');
+        },
+      },
+    };
+    expect(isBuildOnlyExtension(extension)).toBe(false);
+  });
+
+  test('true for an extension with no nodes at all (vacuously every node is build)', () => {
+    expect(isBuildOnlyExtension({ id: 'test/empty', nodes: {} })).toBe(true);
   });
 });

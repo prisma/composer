@@ -13,7 +13,7 @@ import type { ResolvedCloudOptions } from './shared.ts';
  * `_o` is unused today (the mint needs no region/project) but kept for symmetry
  * with the other descriptors' signature.
  */
-export function s3CredentialsDescriptor(_o: ResolvedCloudOptions): NodeDescriptor {
+export function s3CredentialsDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id }) =>
     Effect.gen(function* () {
       const creds = yield* S3Credentials(`${id}-creds`, {});

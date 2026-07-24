@@ -31,6 +31,12 @@
       "plane": "control"
     },
     {
+      "glob": "packages/0-framework/1-core/core/src/exports/local-target.ts",
+      "domain": "framework",
+      "layer": "core",
+      "plane": "control"
+    },
+    {
       "glob": "packages/0-framework/1-core/core/src/exports/index.ts",
       "domain": "framework",
       "layer": "core",
@@ -115,6 +121,24 @@
       "plane": "control"
     },
     {
+      "glob": "packages/1-prisma-cloud/0-lowering/s3-protocol/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/0-lowering/dev-emulators/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/0-lowering/local-target/src/**",
+      "domain": "prisma-cloud",
+      "layer": "lowering",
+      "plane": "control"
+    },
+    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/control/**",
       "domain": "prisma-cloud",
       "layer": "extensions",
@@ -140,6 +164,12 @@
     },
     {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/control.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/local-target.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"
@@ -307,6 +337,18 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/preflight-names.ts",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/local-target/**",
+      "domain": "prisma-cloud",
+      "layer": "extensions",
+      "plane": "control"
+    },
+    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/email/src/contract.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
@@ -463,12 +505,6 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/store.ts",
-      "domain": "prisma-cloud",
-      "layer": "modules",
-      "plane": "shared"
-    },
-    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/exports/storage-entrypoint.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
@@ -481,25 +517,7 @@
       "plane": "execution"
     },
     {
-      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/handler.ts",
-      "domain": "prisma-cloud",
-      "layer": "modules",
-      "plane": "execution"
-    },
-    {
-      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/sigv4.ts",
-      "domain": "prisma-cloud",
-      "layer": "modules",
-      "plane": "execution"
-    },
-    {
       "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/pg-store.ts",
-      "domain": "prisma-cloud",
-      "layer": "modules",
-      "plane": "execution"
-    },
-    {
-      "glob": "packages/1-prisma-cloud/2-shared-modules/storage/src/memory-store.ts",
       "domain": "prisma-cloud",
       "layer": "modules",
       "plane": "execution"
@@ -548,6 +566,12 @@
     },
     {
       "glob": "packages/9-public/composer/src/exports/deploy.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/9-public/composer/src/exports/local-target.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
@@ -626,6 +650,12 @@
     },
     {
       "glob": "packages/9-public/composer-prisma-cloud/src/exports/control.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/local-target.ts",
       "domain": "public",
       "layer": "public",
       "plane": "control"
@@ -730,7 +760,13 @@
       "exceptions": []
     }
   },
-  "crossDomainExceptions": [],
+  "crossDomainExceptions": [
+    {
+      "from": "packages/1-prisma-cloud/1-extensions/target/src/control/**",
+      "to": "packages/9-public/composer-prisma-cloud/src/exports/local-target.ts",
+      "reason": "ADR-0041's lazy local-target reference (operator directive; naming, operator 2026-07-23): control/extension.ts's `localTarget` field is a dynamic import of its own published local-target subpath by bare specifier, so no local-target implementation code is bundled into, or loaded by, any deploy path. The specifier resolves at a CONSUMING app's runtime, never as a real build-time dependency between these two packages — verified: dist/control.mjs keeps it as a genuine external dynamic import, never inlined (target's invariant 7 test)."
+    }
+  ],
   "layerOrder": {
     "framework": ["foundation", "core", "authoring", "tooling"],
     "prisma-cloud": ["lowering", "extensions", "modules"],

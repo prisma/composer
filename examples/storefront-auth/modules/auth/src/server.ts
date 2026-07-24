@@ -8,7 +8,7 @@ import { SQL } from 'bun';
 import service from './service.ts';
 
 const { db } = service.load(); // db: PostgresConfig — the app owns its client
-const { signingKey } = service.input(); // signingKey: SecretString — redacts everywhere but expose() (ADR-0041)
+const { signingKey } = service.input(); // signingKey: SecretString — redacts everywhere but expose() (ADR-0042)
 const port = service.port();
 
 // The E2E's KNOWN test marker for the secret the root binds to AUTH_SIGNING_SECRET

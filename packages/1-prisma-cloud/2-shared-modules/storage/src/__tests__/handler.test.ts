@@ -18,8 +18,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createS3Handler } from '../handler.ts';
-import { MemoryObjectStore } from '../memory-store.ts';
+import { createS3Handler, MemoryObjectStore } from '@internal/s3-protocol';
 
 const CREDENTIALS = { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secretkey123' };
 const BUCKET = 'bucket';

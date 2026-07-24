@@ -1,7 +1,7 @@
 /**
  * bootstrapService's environment writes: it feeds the booted entry exactly the
  * way a deployed boot is fed — the Config stash, the input document row
- * (ADR-0041, via the same serializeInput the deploy uses), and process.env.PORT
+ * (ADR-0042, via the same serializeInput the deploy uses), and process.env.PORT
  * (mirroring run(), the channel an entry reads its port from).
  */
 import { describe, expect, test } from 'bun:test';

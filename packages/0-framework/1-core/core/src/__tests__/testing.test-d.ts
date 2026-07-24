@@ -1,7 +1,7 @@
 /**
  * `mockService`'s override argument is typed against the service's own `deps`
  * (`HydratedDeps<D>`) and `input` (the schema's inferred output, required
- * exactly when the service declares a schema — ADR-0041). A double that
+ * exactly when the service declares a schema — ADR-0042). A double that
  * doesn't satisfy a dep's hydrated shape, or an input of the wrong type, must
  * fail to compile. Type-only (vitest `--typecheck`, never executed): see
  * testing.test.ts for the runtime behavior.

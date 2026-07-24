@@ -716,7 +716,7 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
       { jobId: 'tick', every: '60s' },
       { jobId: 'mrr', every: '24h' },
     ];
-    // Raw core service(): user params are gone from compute() (ADR-0041), but
+    // Raw core service(): user params are gone from compute() (ADR-0042), but
     // extension-reserved structured params still ride this wire.
     const app = service({
       name: 'scheduler',
@@ -754,7 +754,7 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
   });
 });
 
-describe('the input document — run() re-stash → input() (ADR-0041)', () => {
+describe('the input document — run() re-stash → input() (ADR-0042)', () => {
   const inputSchema = type({ stripeEnabled: 'boolean', 'stripeKey?': secretString() });
 
   test('run() re-stashes the address-scoped input row address-free; input() hydrates, validates, and boxes the secret', async () => {

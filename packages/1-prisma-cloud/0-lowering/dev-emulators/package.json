@@ -1,0 +1,47 @@
+{
+  "name": "@internal/dev-emulators",
+  "version": "0.2.0",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./buckets-main": "./dist/buckets-main.mjs",
+    "./compute-main": "./dist/compute-main.mjs",
+    "./postgres-main": "./dist/postgres-main.mjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "tsdown",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@internal/s3-protocol": "workspace:0.2.0",
+    "get-port": "^7.2.0",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1085.0",
+    "@aws-sdk/s3-request-presigner": "^3.1085.0",
+    "@internal/tsdown-config": "workspace:0.2.0",
+    "@prisma/dev": "^0.24.14",
+    "@types/bun": "^1.3.13",
+    "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "pg": "^8.22.0",
+    "tsdown": "^0.22.7",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/compose.git",
+    "directory": "packages/1-prisma-cloud/0-lowering/dev-emulators"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "private": true,
+  "types": "./dist/index.d.mts"
+}

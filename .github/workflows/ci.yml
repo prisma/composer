@@ -76,6 +76,25 @@ jobs:
       # under CI concurrency.
       - name: Build packages
         run: pnpm build
+      # `@prisma/dev` (the ORM's local-Postgres server — the local-dev
+      # integration proofs' postgres-main daemon hosts it programmatically
+      # via `startPrismaDevServer`) downloads its database engine binaries
+      # on its first-ever invocation on a machine. A dev workstation
+      # accumulates that cache across sessions; a CI runner starts genuinely
+      # cold every time. Isolating the download in its own step (the `prisma`
+      # CLI drives the same `@prisma/dev` engine cache) gives it a clear,
+      # attributable failure (network egress to the engine host, disk
+      # space, ...) instead of surfacing buried inside a 5-service
+      # `alchemy deploy` three provider frames deep — which is exactly what
+      # made the failure this step's own commit message references
+      # undiagnosable. The instance itself is disposable; only its download
+      # populates the shared engine cache every later invocation (the
+      # integration proofs') reuses.
+      - name: Warm the prisma dev engine cache
+        working-directory: test/integration
+        run: |
+          pnpm exec prisma dev --name ci-engine-warmup --detach
+          pnpm exec prisma dev rm ci-engine-warmup --force
       - name: Test
         env:
           STATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres

@@ -56,7 +56,7 @@ export interface ComputeSerialized {
  * Annotating this `NodeDescriptor` would force s3-store to cast them back.
  */
 export function computeDescriptor(
-  o: ResolvedCloudOptions,
+  o: () => ResolvedCloudOptions,
 ): { readonly kind: 'service' } & ServiceLowering<ComputeProvisioned, ComputeSerialized> {
   return {
     kind: 'service' as const,
@@ -70,7 +70,7 @@ export function computeDescriptor(
         const svc = yield* Prisma.ComputeService(`${id}-svc`, {
           projectId,
           name: id,
-          region: o.region ?? DEFAULT_REGION,
+          region: o().region ?? DEFAULT_REGION,
           ...(branchId !== undefined ? { branchId } : {}),
         });
         return { serviceId: svc.id, projectId, endpointDomain: svc.endpointDomain };
@@ -79,7 +79,7 @@ export function computeDescriptor(
     // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
     // dependency provisioning refs passed through, keeping their ordering
     // edge) and the INPUT document (one JSON row per service, secret leaves
-    // as `$secret` pointers, never a value — ADR-0041). The class/branch
+    // as `$secret` pointers, never a value — ADR-0042). The class/branch
     // scope is identical for both.
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
@@ -129,7 +129,7 @@ export function computeDescriptor(
               projectId,
               key: inputRow.key,
               // The defaults-applied document — secret leaves are `$secret`
-              // pointers naming platform vars, never values (ADR-0041).
+              // pointers naming platform vars, never values (ADR-0042).
               value: inputRow.value,
               class: cls,
               ...branch,
@@ -172,7 +172,7 @@ export function computeDescriptor(
             refsByBrand.set(edge.brand, refs);
           }
         }
-        for (const [brand, entry] of o.providerParams) {
+        for (const [brand, entry] of o().providerParams) {
           const raw =
             'valueForService' in entry
               ? entry.valueForService(provisioned, address)
@@ -241,7 +241,7 @@ export function computeDescriptor(
         // that. Both fields are still unresolved Output references at this
         // point — apply resolves them before the report's runner sees them.
         //
-        // The report's two lines of honesty (ADR-0041): the serialized input
+        // The report's two lines of honesty (ADR-0042): the serialized input
         // document (secret-free by construction — every secret leaf is a
         // `$secret` pointer) and every binding key that resolved absent in
         // the deploy shell (a possible typo'd variable name). Newlines in a

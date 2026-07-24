@@ -571,7 +571,7 @@ The design record explains *why* the model is shaped this way:
   contracts in depth.
 - [`module-composition.md`](../design/10-domains/module-composition.md) —
   boundaries, forwarding, nesting.
-- [ADR-0041](../design/90-decisions/ADR-0041-service-input-is-one-standard-schema.md)
+- [ADR-0042](../design/90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
   — why the service input is one schema and the binding carries the sourcing;
   [ADR-0029](../design/90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md)
   for the forwardable secret need, and

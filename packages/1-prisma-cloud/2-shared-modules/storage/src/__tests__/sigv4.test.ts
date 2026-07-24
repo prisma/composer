@@ -15,7 +15,7 @@ import { describe, expect, test } from 'bun:test';
 import { createHash, createHmac } from 'node:crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { verifyRequest } from '../sigv4.ts';
+import { verifyRequest } from '@internal/s3-protocol';
 
 const CREDENTIALS = { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secretkey123' };
 const ENDPOINT = 'http://127.0.0.1:9000';

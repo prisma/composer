@@ -35,5 +35,11 @@
     "turbo": "^2.10.5",
     "typescript": "^6.0.3"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "prisma",
+      "@prisma/engines"
+    ]
+  },
   "version": "0.2.0"
 }

@@ -13,7 +13,6 @@
  * in the CLI parent, so it builds its own Management API client from env — the
  * same credential path `container.ts`'s `ensure`/`locate` use.
  */
-import { inputManifest, isSecretSource, paramManifest } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
@@ -25,8 +24,7 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
-import { isEnvParamSource, paramName } from './param.ts';
-import { secretName } from './secret.ts';
+import { collectPreflightNames } from './preflight-names.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -181,27 +179,16 @@ async function managementClient(): Promise<ManagementApiClient> {
   );
 }
 
-/** Every `envSecret` leaf of one input binding: its platform name, found by the same dumb recursive descent the serializer uses (ADR-0041). */
-function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: string[]): void {
-  if (isSecretSource(binding)) {
-    out.push(secretName(binding, `an input-binding secret leaf of service "${serviceAddress}"`));
-    return;
-  }
-  if (typeof binding !== 'object' || binding === null) return;
-  const members = Array.isArray(binding) ? binding : Object.values(binding);
-  for (const member of members) collectSecretLeafNames(member, serviceAddress, out);
-}
-
 /**
- * The Prisma Cloud extension's `preflight`. Aggregates the target-agnostic
- * manifests (core's `inputManifest` walked for `envSecret` leaves — ADR-0041;
- * `paramManifest` filtered to env-sourced bindings for reserved params),
- * checks each platform name against the platform, fills from the shell where
- * possible, and fails loudly on anything absent from both. `envParam` leaves
- * of an input binding are NOT checked here — they resolve from the deploy
- * shell at serialize, and an unset one is an omitted key the schema
- * arbitrates. Accepts an injected client for tests; otherwise builds one
- * from env.
+ * The Prisma Cloud extension's `preflight`. Uses the shared name collector
+ * (`collectPreflightNames`, ADR-0042) — every service's input-binding
+ * `envSecret` leaf, plus `paramManifest` filtered to env-sourced reserved
+ * params — checks each platform name against the platform, fills from the
+ * shell where possible, and fails loudly on anything absent from both.
+ * `envParam` leaves of an input binding are NOT checked here — they resolve
+ * from the deploy shell at serialize, and an unset one is an omitted key the
+ * schema arbitrates. Accepts an injected client for tests; otherwise builds
+ * one from env.
  */
 export async function runPreflight(
   input: PreflightInput,
@@ -212,20 +199,13 @@ export async function runPreflight(
   // One check per platform NAME (many leaves/services, secret or param, may
   // bind the same one). Every bound secret leaf is required — absence is
   // expressed by omitting the key from the binding, never by an unprovisioned
-  // var; a reserved-param binding is only checked when it is env-sourced — a
-  // literal-bound param never touches the platform.
+  // var; a param binding is only checked when it is env-sourced. Deploy treats
+  // the two lists identically (unlike dev preflight), so they're merged here,
+  // secrets first.
+  const collected = collectPreflightNames(input.graph);
   const names = new Map<string, MissingBinding>();
-  for (const { serviceAddress, binding } of inputManifest(input.graph)) {
-    const leafNames: string[] = [];
-    collectSecretLeafNames(binding, serviceAddress, leafNames);
-    for (const name of leafNames) {
-      if (!names.has(name)) names.set(name, { name, serviceAddress });
-    }
-  }
-  for (const binding of paramManifest(input.graph)) {
-    if (!isEnvParamSource(binding.binding)) continue;
-    const name = paramName(binding);
-    if (!names.has(name)) names.set(name, { name, serviceAddress: binding.serviceAddress });
+  for (const meta of [...collected.secrets, ...collected.envParams]) {
+    if (!names.has(meta.name)) names.set(meta.name, meta);
   }
   if (names.size === 0) return;
 

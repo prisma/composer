@@ -1,5 +1,5 @@
 /**
- * The input channel (ADR-0041): the deploy-side binding walk
+ * The input channel (ADR-0042): the deploy-side binding walk
  * (`resolveInputBinding`), the one-document serialization (`serializeInput`),
  * and the boot-side read (`readInput`) — classification, absence, `$secret`
  * escaping, sentinel validation, and the round trip.
@@ -44,7 +44,7 @@ async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> |
   }
 }
 
-describe('resolveInputBinding — the recursive descent (ADR-0041)', () => {
+describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   test('classifies literals, envParam, and envSecret leaves, nested objects and arrays included', () => {
     const { resolved, sentinels, absent } = resolveInputBinding(
       {
@@ -128,7 +128,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
     );
   });
 
-  test('misclassification — a literal where the schema wants a SecretString — fails at deploy, with the ADR-0041 note', () => {
+  test('misclassification — a literal where the schema wants a SecretString — fails at deploy, with the ADR-0042 note', () => {
     const attempt = () =>
       serializeInput(
         svc(conditional),
@@ -197,7 +197,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
   });
 });
 
-describe('the reserved $secret key — user data round-trips (ADR-0041)', () => {
+describe('the reserved $secret key — user data round-trips (ADR-0042)', () => {
   const anySchema: StandardSchemaV1<unknown, unknown> = {
     '~standard': { version: 1, vendor: 'test', validate: (value) => ({ value }) },
   };

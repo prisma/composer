@@ -4,6 +4,10 @@
  * `UNSIGNED-PAYLOAD`) for header auth, `UNSIGNED-PAYLOAD` for presign — and is
  * never re-hashed; the verifier trusts what was signed, like a real S3 endpoint.
  * Runtime engine code (`node:crypto`); not re-exported from the authoring barrel.
+ *
+ * Also owns `mintKeyPair` (local-dev spec § 1) — the one key-pair generator
+ * both the deploy-time `S3Credentials` resource and the local dev bucket
+ * emulator's credential provisioning use.
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
@@ -13,6 +17,23 @@ export interface Credentials {
 }
 
 export type VerifyResult = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+
+function randomBytes(n: number): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(n));
+}
+
+function toHexUpper(bytes: Uint8Array): string {
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
+/** A fresh SigV4 key pair: an AKIA-prefixed id and a 40-char base64 secret. */
+export function mintKeyPair(): Credentials {
+  const accessKeyId = `AKIA${toHexUpper(randomBytes(8))}`;
+  const secretAccessKey = btoa(String.fromCharCode(...randomBytes(30)));
+  return { accessKeyId, secretAccessKey };
+}
 
 const ALGORITHM = 'AWS4-HMAC-SHA256';
 const UNSIGNED_PAYLOAD = 'UNSIGNED-PAYLOAD';

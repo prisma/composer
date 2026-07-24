@@ -47,7 +47,7 @@ if (typeof parsed !== 'string' || parsed.length === 0) {
 const apiKey = parsed;
 process.env['API_KEY'] = apiKey;
 // PORT is already set by compute's run() (and bootstrapService) before this
-// entry boots (ADR-0041 removed config()); the streams server binds it itself.
+// entry boots (ADR-0042 removed config()); the streams server binds it itself.
 // Bind beyond loopback so the Compute router can reach the server.
 process.env['DS_HOST'] ??= '0.0.0.0';
 // The container home dir has almost no writable space; keep the hot tier on

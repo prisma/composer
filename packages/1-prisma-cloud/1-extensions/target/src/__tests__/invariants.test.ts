@@ -50,8 +50,8 @@ function builtEntryGraph(entryFileName: string): string {
   return parts.join('\n');
 }
 
-describe('entry map: authoring + control + prisma-next + testing, no other runtime entry', () => {
-  test("package.json exports '.', './connection', './control', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
+describe('entry map: authoring + control + local-target + prisma-next + testing, no other runtime entry', () => {
+  test("package.json exports '.', './connection', './control', './local-target', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
@@ -59,9 +59,40 @@ describe('entry map: authoring + control + prisma-next + testing, no other runti
       '.',
       './connection',
       './control',
+      './local-target',
       './prisma-next',
       './testing',
     ]);
+  });
+});
+
+describe("invariant 7 (ADR-0041's lazy local-target reference): the production control entry never reaches local-target implementation", () => {
+  test("the built './control' bundle graph carries no local-target-implementation token — only the bare-specifier dynamic import to './local-target'", () => {
+    const graph = builtEntryGraph('control.mjs');
+    // Positive marker: the probe genuinely reached the real bundle (the
+    // hosted-path env read, present regardless of the local target).
+    expect(graph).toContain('PRISMA_WORKSPACE_ID');
+    // The lazy reference itself must survive as a genuine bare-specifier
+    // dynamic import — not inlined, not rewritten to a relative dist path.
+    expect(graph).toContain('@prisma/composer-prisma-cloud/local-target');
+    for (const token of [
+      // Function-shaped tokens check for a trailing "(" — a bare mention of
+      // the name in a SHARED file's prose doc comment (e.g. container.ts's
+      // `deserialize` explaining that `dev/container.ts` reuses it) is not a
+      // leak; an actual call or declaration always has the paren.
+      'devContainerDescriptor(',
+      'runDevPreflight(',
+      'runDevEmulators(',
+      'devAttach(',
+      'runDevTeardown(',
+      'localTargetProviders(',
+      '@internal/local-target',
+    ]) {
+      expect({ token, containsToken: graph.includes(token) }).toEqual({
+        token,
+        containsToken: false,
+      });
+    }
   });
 });
 
@@ -91,7 +122,7 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — PRISMA_WORKSPACE_ID + optional PRISMA_REGION; the CLI-fed deploy identity now arrives via ctx.container, never env), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), teardown.ts (shell token), compute.ts (exposes the resolved port as PORT), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
+  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), teardown.ts (shell token), compute.ts (exposes the resolved port as PORT), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -105,6 +136,7 @@ describe('invariant 4: environment touches are confined to the config serializer
       { file: 'compute.ts', count: 1 },
       { file: 'container.ts', count: 3 },
       { file: 'control/extension.ts', count: 2 },
+      { file: 'local-target/preflight.ts', count: 2 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 11 },
       { file: 'teardown.ts', count: 1 },

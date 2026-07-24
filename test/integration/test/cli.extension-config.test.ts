@@ -42,7 +42,16 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
     expect(result.stderr).toContain('run your build first');
   }, 30_000);
 
-  test('without PRISMA_WORKSPACE_ID, fails at the real prismaCloud() env check during config evaluation — proving the /control entry actually resolved and ran', () => {
+  // Local-dev spec § 5: prismaCloud() now constructs with NO environment
+  // present (its `dev` field must be buildable credential-free), so
+  // PRISMA_WORKSPACE_ID's absence no longer surfaces at config evaluation —
+  // config evaluation is exactly where the OLD eager check used to fire, so
+  // this proves the restructure through the real CLI path, not just a unit
+  // test of prismaCloud() in isolation. The pipeline still reaches the same
+  // "no built entry" failure assemble hits regardless of the env (container
+  // resolution, which DOES still require PRISMA_WORKSPACE_ID, runs after
+  // assemble and is never reached here either way).
+  test('without PRISMA_WORKSPACE_ID, config evaluation still succeeds — deploy fails at the same missing-built-entry point as with the env var present', () => {
     const env = { ...process.env };
     delete env['PRISMA_WORKSPACE_ID'];
 
@@ -54,6 +63,8 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).not.toContain('Cannot resolve');
-    expect(result.stderr).toContain('environment variable PRISMA_WORKSPACE_ID is required');
+    expect(result.stderr).not.toContain('PRISMA_WORKSPACE_ID');
+    expect(result.stderr).toContain('no built entry at');
+    expect(result.stderr).toContain('run your build first');
   }, 30_000);
 });

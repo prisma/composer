@@ -85,7 +85,7 @@ describe('email()', () => {
     ]);
   });
 
-  test("boundary params and secret forward into the service's input binding, mapped to their bound env sources (ADR-0041)", () => {
+  test("boundary params and secret forward into the service's input binding, mapped to their bound env sources (ADR-0042)", () => {
     const graph = Load(rootWithEmail());
     const binding = serviceBindingOf(graph.inputBindings);
     expect(sourcePayload(binding['deliveryMode'])).toBe('EMAIL_DELIVERY_MODE');

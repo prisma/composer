@@ -18,7 +18,7 @@ import type { Deps, Expose, HydratedDeps, InputValueOf, RunnableServiceNode } fr
  * its own hydrated shape (`Client<C>` for an RPC dep, the resource binding
  * for a resource dep) — a double of the wrong shape is a compile error — plus
  * `input`, the already-validated input object, required exactly when the
- * service declares an input schema (ADR-0041). A dependency literally named
+ * service declares an input schema (ADR-0042). A dependency literally named
  * "input" shadows the input override — rename the dependency.
  */
 export type LoadOverrides<

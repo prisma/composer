@@ -691,7 +691,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     });
   });
 
-  test('the input document serializes to ONE row — secret leaves are $secret pointers, never values (ADR-0041)', async () => {
+  test('the input document serializes to ONE row — secret leaves are $secret pointers, never values (ADR-0042)', async () => {
     await withEnv(
       // The real secret value is present in the deploy shell, proving it still
       // cannot reach the serialized row.
@@ -758,7 +758,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     );
   });
 
-  test('serialize records every env-bound input key that resolved absent — deploy-report fodder (ADR-0041)', async () => {
+  test('serialize records every env-bound input key that resolved absent — deploy-report fodder (ADR-0042)', async () => {
     await withEnv({ NOT_SET_GREETING_VAR: undefined }, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = compute({
@@ -1058,7 +1058,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     ]);
   });
 
-  test("deploy puts the input document and its absent keys on the report entity's details (ADR-0041)", () => {
+  test("deploy puts the input document and its absent keys on the report entity's details (ADR-0042)", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = { id: 'auth' } as unknown as LowerContext;
     const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
@@ -1760,7 +1760,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       // The three-brand options can't ride the shared registry, so erase the
       // precise descriptor to the registry's own type — the same assignment
       // control.ts makes when it registers the real one.
-      const descriptor: NodeDescriptor = computeDescriptor(o);
+      const descriptor: NodeDescriptor = computeDescriptor(() => o);
       if (descriptor.kind !== 'service') throw new Error('expected a service descriptor');
       run<MockedSerialized>(descriptor.serialize(ctx, provisioned, config));
 

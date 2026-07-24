@@ -1,5 +1,5 @@
 /**
- * Type-level rules for the input vocabulary (ADR-0041): `secretSource()` is a
+ * Type-level rules for the input vocabulary (ADR-0042): `secretSource()` is a
  * source, a service's declared input schema makes the provision-time `input`
  * binding required, and a schema-less service rejects one. Type-only (vitest
  * `--typecheck`, never executed).

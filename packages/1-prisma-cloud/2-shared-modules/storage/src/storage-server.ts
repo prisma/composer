@@ -8,9 +8,8 @@
  * Runtime engine code; NOT re-exported from the authoring barrel. The D4
  * entrypoint reads deps via `load()` and calls this.
  */
-import { createS3Handler } from './handler.ts';
-import type { Credentials } from './sigv4.ts';
-import type { ObjectStore } from './store.ts';
+import type { Credentials, ObjectStore } from '@internal/s3-protocol';
+import { createS3Handler } from '@internal/s3-protocol';
 
 export interface StorageServer {
   /** The externally reachable base URL of the running server. */

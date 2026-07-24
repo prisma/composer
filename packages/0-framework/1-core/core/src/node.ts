@@ -172,7 +172,7 @@ export type ParamNeedBindings<PN extends ParamNeeds> = {
 };
 
 /**
- * What `provision(service, { input })` accepts (ADR-0041): a plain object
+ * What `provision(service, { input })` accepts (ADR-0042): a plain object
  * mirroring the service's input schema, whose leaves are literals,
  * `envParam(...)` sources, or `envSecret(...)` sources. Deliberately a
  * best-effort structural type: the framework never introspects a Standard
@@ -244,9 +244,9 @@ export interface ServiceNode<
   readonly extension: string;
   readonly type: string;
   readonly inputs: D;
-  /** Extension-reserved config declarations (e.g. compute's `port`) — never user-authored (ADR-0041). */
+  /** Extension-reserved config declarations (e.g. compute's `port`) — never user-authored (ADR-0042). */
   readonly params: P;
-  /** The service's whole incoming configuration as ONE Standard Schema (authored as `input`, ADR-0041), or `undefined` when it takes none. The framework never introspects it — it only calls `~standard.validate`. Named `inputSchema` on the node so the data field does not collide with the `input()` accessor. */
+  /** The service's whole incoming configuration as ONE Standard Schema (authored as `input`, ADR-0042), or `undefined` when it takes none. The framework never introspects it — it only calls `~standard.validate`. Named `inputSchema` on the node so the data field does not collide with the `input()` accessor. */
   readonly inputSchema: I;
   /** How the app's entry is built + assembled. */
   readonly build: BuildAdapter;
@@ -257,7 +257,7 @@ export interface ServiceNode<
 /**
  * The extension's runnable/loadable service node. `run` boots the app after
  * deserializing its environment; `load` reads the hydrated deps and `input`
- * the validated, typed input object (ADR-0041).
+ * the validated, typed input object (ADR-0042).
  */
 export interface RunnableServiceNode<
   D extends Deps = Deps,
@@ -267,7 +267,7 @@ export interface RunnableServiceNode<
 > extends ServiceNode<D, P, E, I> {
   run(address: string, boot: () => Promise<unknown>): Promise<unknown>;
   load(): HydratedDeps<D>;
-  /** The service's validated input — one typed object, secrets as redacting `SecretString` boxes (ADR-0041). */
+  /** The service's validated input — one typed object, secrets as redacting `SecretString` boxes (ADR-0042). */
   input(): InputValueOf<I>;
 }
 
@@ -373,7 +373,7 @@ type DepBindings<D extends Deps> = {
  * A SERVICE provision's trailing options: an explicit `id` (default: the
  * node's own `name`); `deps` required exactly when the node declares
  * dependency slots (`[keyof D] extends [never]` is the "no slots" test);
- * `input` required exactly when the node declares an input schema (ADR-0041).
+ * `input` required exactly when the node declares an input schema (ADR-0042).
  * `params` is always optional — it binds only extension-reserved params (e.g.
  * compute's `port`), which fall back to their own defaults.
  */
@@ -632,7 +632,7 @@ export function service<
   if (def.input !== undefined && typeof def.input['~standard']?.validate !== 'function') {
     throw new Error(
       'service() `input` must be a Standard Schema (an object with a "~standard".validate ' +
-        'function) — see https://standardschema.dev (ADR-0041).',
+        'function) — see https://standardschema.dev (ADR-0042).',
     );
   }
   return Object.freeze({

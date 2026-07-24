@@ -120,7 +120,7 @@ describe('cronScheduler() deploy wrapper', () => {
     expect(typeof wrapper.default.input).toBe('function');
   });
 
-  test('the scheduler declares the jobs input schema — the schedule arrives as a provision-time binding (ADR-0041)', () => {
+  test('the scheduler declares the jobs input schema — the schedule arrives as a provision-time binding (ADR-0042)', () => {
     const nodeDef = cronScheduler();
     expect(nodeDef.inputSchema).toBeDefined();
     const validate = nodeDef.inputSchema['~standard'].validate;

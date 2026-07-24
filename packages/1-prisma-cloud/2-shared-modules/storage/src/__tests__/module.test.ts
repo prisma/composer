@@ -75,7 +75,7 @@ describe('storage()', () => {
     expect([...byId.keys()]).toContain('blobs.service');
     expect([...byId.keys()]).toContain('blobs.db');
 
-    // opts.bucket reaches the s3-store service as its input binding (ADR-0041).
+    // opts.bucket reaches the s3-store service as its input binding (ADR-0042).
     expect(graph.inputBindings).toContainEqual({
       serviceAddress: 'blobs.service',
       binding: { bucket: 'photos' },
