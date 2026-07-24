@@ -114,4 +114,43 @@ describe('parseArgs() (clipanion-backed)', () => {
   test('throws UsageError when dev is passed --production', () => {
     expect(() => parseArgs(['dev', 'src/service.ts', '--production'])).toThrow(UsageError);
   });
+
+  test('parses a bare log invocation — every service, default backlog', () => {
+    expect(parseArgs(['log', 'src/service.ts'])).toEqual({
+      command: 'log',
+      entry: 'src/service.ts',
+      name: undefined,
+      stage: undefined,
+      production: false,
+      fresh: false,
+      address: undefined,
+      tail: 20,
+    });
+  });
+
+  test('parses log with a service address and --tail', () => {
+    expect(parseArgs(['log', 'src/service.ts', 'catalog.service', '--tail', '100'])).toEqual({
+      command: 'log',
+      entry: 'src/service.ts',
+      name: undefined,
+      stage: undefined,
+      production: false,
+      fresh: false,
+      address: 'catalog.service',
+      tail: 100,
+    });
+  });
+
+  test('parses log --tail 0 (live only)', () => {
+    expect(parseArgs(['log', 'src/service.ts', '--tail', '0']).tail).toBe(0);
+  });
+
+  test('throws UsageError on a negative or non-numeric --tail', () => {
+    expect(() => parseArgs(['log', 'src/service.ts', '--tail', '-1'])).toThrow(UsageError);
+    expect(() => parseArgs(['log', 'src/service.ts', '--tail', 'lots'])).toThrow(UsageError);
+  });
+
+  test('throws UsageError when log entry is missing', () => {
+    expect(() => parseArgs(['log'])).toThrow(UsageError);
+  });
 });

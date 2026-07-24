@@ -22,9 +22,13 @@ interface LogLine {
  * dropped (an emulator restart shows a gap in that service's stream, never a
  * dead session).
  */
-async function* mergedLogs(app: string, signal: AbortSignal): AsyncIterable<LogLine> {
+async function* mergedLogs(app: string, signal: AbortSignal, tail: number): AsyncIterable<LogLine> {
   const client = computeClient();
   const followed = new Set<string>();
+  // Backlog is emitted once per service, on its FIRST follow — a follower
+  // that drops and re-attaches (an emulator restart) resumes from the end, so
+  // history is not replayed on every reconnect.
+  const backlogged = new Set<string>();
   const queue: LogLine[] = [];
   let wake: (() => void) | undefined;
 
@@ -37,10 +41,12 @@ async function* mergedLogs(app: string, signal: AbortSignal): AsyncIterable<LogL
   const follow = (id: string, address: string): void => {
     if (followed.has(id)) return;
     followed.add(id);
+    const followTail = backlogged.has(id) ? 0 : tail;
+    backlogged.add(id);
     void (async () => {
       try {
         let buffer = '';
-        for await (const chunk of client.followLogs(app, id, signal)) {
+        for await (const chunk of client.followLogs(app, id, signal, { tail: followTail })) {
           buffer += chunk;
           let newlineAt = buffer.indexOf('\n');
           while (newlineAt !== -1) {
@@ -102,7 +108,7 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
       const services = await client.listServices(app);
       return services.map((svc) => ({ address: svc.address, url: svc.url }));
     },
-    logs: (signal) => mergedLogs(app, signal),
+    logs: (signal, opts) => mergedLogs(app, signal, opts?.tail ?? 0),
     stopServices: () => client.stopApp(app),
   };
 }

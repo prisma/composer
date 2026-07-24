@@ -12,6 +12,7 @@ import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
 import { runDev } from './dev/run-dev.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
+import { runLog } from './log/run-log.ts';
 import { type PipelineDeps, runPipeline } from './pipeline.ts';
 import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
 import { validateStageName } from './validate-stage.ts';
@@ -85,8 +86,36 @@ class DevCommand extends Command {
   }
 }
 
+class LogCommand extends Command {
+  static override paths = [['log']];
+  static override usage = Command.Usage({
+    description:
+      "Tail the merged logs of the locally-running application whose root node is <entry>'s default export.",
+    examples: [
+      ['Tail every service', '$0 log src/service.ts'],
+      ['Tail one service', '$0 log src/service.ts catalog.service'],
+    ],
+  });
+
+  entry = Option.String({ name: 'entry' });
+
+  address = Option.String({ name: 'address', required: false });
+
+  name = Option.String('--name', {
+    description: "Override the root node's name — the dev instance's application name.",
+  });
+
+  tail = Option.String('--tail', {
+    description: `How many trailing history lines to show before live output (default ${String(DEFAULT_LOG_TAIL)}).`,
+  });
+
+  async execute(): Promise<number> {
+    return 0;
+  }
+}
+
 function buildCli(): Cli {
-  return Cli.from([DeployCommand, DestroyCommand, DevCommand], {
+  return Cli.from([DeployCommand, DestroyCommand, DevCommand, LogCommand], {
     binaryName: BINARY_NAME,
     binaryLabel: 'The prisma-composer deploy CLI',
   });
@@ -103,13 +132,20 @@ function isUnknownSyntaxError(error: unknown): error is Error {
 }
 
 export interface ParsedArgs {
-  readonly command: 'deploy' | 'destroy' | 'dev';
+  readonly command: 'deploy' | 'destroy' | 'dev' | 'log';
   readonly entry: string;
   readonly name: string | undefined;
   readonly stage: string | undefined;
   readonly production: boolean;
   readonly fresh: boolean;
+  /** `log` only — restrict output to this one service address. */
+  readonly address?: string | undefined;
+  /** `log` only — trailing history lines before live output. */
+  readonly tail?: number | undefined;
 }
+
+/** `log`'s default backlog: an empty screen reads as broken, so show a little recent history before going live. */
+const DEFAULT_LOG_TAIL = 20;
 
 /** Exported for direct testing (main.test.ts) — not part of the package's public barrel (see index.ts). */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
@@ -147,6 +183,23 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       stage: undefined,
       production: false,
       fresh: command.fresh,
+    };
+  }
+
+  if (command instanceof LogCommand) {
+    const tail = command.tail === undefined ? DEFAULT_LOG_TAIL : Number.parseInt(command.tail, 10);
+    if (Number.isNaN(tail) || tail < 0) {
+      throw new UsageError('`--tail` must be a non-negative integer.');
+    }
+    return {
+      command: 'log',
+      entry: command.entry,
+      name: command.name,
+      stage: undefined,
+      production: false,
+      fresh: false,
+      address: command.address,
+      tail,
     };
   }
 
@@ -220,6 +273,18 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
 
   if (args.command === 'dev') {
     return runDev(args, deps);
+  }
+
+  if (args.command === 'log') {
+    return runLog(
+      {
+        entry: args.entry,
+        name: args.name,
+        address: args.address,
+        tail: args.tail ?? DEFAULT_LOG_TAIL,
+      },
+      { config: deps.config },
+    );
   }
 
   const stage = effectiveStage(args);

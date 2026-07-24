@@ -60,6 +60,12 @@ export function servingBootstrapEnv(body: string): { FIXTURE_BODY: string } {
 /** Exits immediately with a nonzero code — a fast-crashing service. */
 export const CRASHING_BOOTSTRAP = 'process.exit(1);\n';
 
+/** Prints `line-1`…`line-<LINES>` then serves (stays up) — a service whose log has a known, exact set of history lines. */
+export const LOGGING_BOOTSTRAP =
+  "const n = Number(process.env['LINES'] ?? '0');\n" +
+  "for (let i = 1; i <= n; i++) console.log('line-' + i);\n" +
+  "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('ok') });\n";
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

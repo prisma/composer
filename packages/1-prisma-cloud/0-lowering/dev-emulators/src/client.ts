@@ -185,7 +185,12 @@ export interface ComputeClient {
   /** `GET /apps/<app>/services`. */
   listServices(app: string): Promise<ServiceInfo[]>;
   /** `GET /apps/<app>/services/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
-  followLogs(app: string, id: string, signal?: AbortSignal): AsyncIterable<string>;
+  followLogs(
+    app: string,
+    id: string,
+    signal?: AbortSignal,
+    opts?: { readonly tail?: number },
+  ): AsyncIterable<string>;
   /** `POST /apps/<app>/stop`. */
   stopApp(app: string): Promise<void>;
   /** `POST /apps/<app>/start` — the session-resume signal; starts every service with a stored deployment that isn't already running. */
@@ -240,8 +245,10 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       return body;
     },
 
-    async *followLogs(app, id, signal) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/services/${encodeSegment(id)}/logs?follow=1`;
+    async *followLogs(app, id, signal, opts) {
+      const tail =
+        opts?.tail !== undefined ? `&tail=${String(Math.max(0, Math.trunc(opts.tail)))}` : '';
+      const url = `${baseUrl}/apps/${encodeSegment(app)}/services/${encodeSegment(id)}/logs?follow=1${tail}`;
       const res = await expectOk(await adminFetch(url, signal ? { signal } : undefined));
       const body = res.body;
       if (!body) return;

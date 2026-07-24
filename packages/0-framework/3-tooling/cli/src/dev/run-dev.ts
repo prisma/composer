@@ -82,28 +82,6 @@ async function mergedEndpoints(
   return lists.flat();
 }
 
-/** Pumps every attachment's merged log stream to stdout, each line prefixed `[<service>] `, until `signal` aborts. */
-function pumpLogs(attachments: readonly LocalTargetAttachment[], signal: AbortSignal): void {
-  for (const attachment of attachments) {
-    void (async () => {
-      try {
-        for await (const { service, line } of attachment.logs(signal)) {
-          if (signal.aborted) return;
-          console.log(`[${service}] ${line}`);
-        }
-      } catch (error) {
-        // Quiet only for the abort that ends every session; a genuinely
-        // broken stream is said out loud instead of logs just going silent.
-        if (!signal.aborted) {
-          console.error(
-            `[dev] log stream failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-    })();
-  }
-}
-
 /** Runs the full dev pipeline; returns the process exit code. */
 export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<number> {
   if (process.platform === 'win32') {
@@ -227,9 +205,10 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
     }
   }
   printFrontDoor(await mergedEndpoints(attachments));
-
-  const logsController = new AbortController();
-  pumpLogs(attachments, logsController.signal);
+  // Logs are a separate command, not this view: `dev` supervises many service
+  // processes and streaming them all inline drowns the front door and the
+  // rebuild notices. `prisma-composer log` tails them on demand.
+  console.log(`[dev] logs: prisma-composer log ${args.entry}`);
 
   // 9. Watch loop until SIGINT/SIGTERM: rebuild → re-assemble → re-converge;
   // a converge failure keeps the running app and keeps watching.
@@ -285,7 +264,6 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
       console.log("[dev] stopping — the app's services are stopping; emulators and data stay up.");
       watch.stop();
       void (async () => {
-        logsController.abort();
         for (const attachment of attachments) {
           await attachment.stopServices().catch(() => undefined);
         }

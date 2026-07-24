@@ -11,6 +11,7 @@ import { isPidAlive, stopDaemon } from '../daemon.ts';
 import {
   CRASHING_BOOTSTRAP,
   ensureFreshDaemon,
+  LOGGING_BOOTSTRAP,
   SERVING_BOOTSTRAP,
   servingBootstrapEnv,
   skipContendedServicePorts,
@@ -474,4 +475,46 @@ describe('log follow', () => {
     controller.abort();
     await following;
   });
+
+  test('?tail=N replays only the last N history lines before going live', async () => {
+    const client = computeClient({ registryRoot });
+    const artifactDir = writeBootstrap(LOGGING_BOOTSTRAP);
+    const reserved = await client.ensureService('app-tail', 'logger');
+    await client.putDeployment('app-tail', 'logger', {
+      address: 'app-tail.logger',
+      artifactDir,
+      artifactHash: 't',
+      env: baseEnv({ PORT: String(reserved.port), LINES: '10' }),
+      port: reserved.port,
+    });
+
+    // All ten lines are on disk before the follow attaches — so what the
+    // follow returns is backlog, not live output racing the loop.
+    await waitFor(
+      async () =>
+        (
+          await fetch(`${daemonUrl}/apps/app-tail/services/logger/logs`).then((r) => r.text())
+        ).includes('line-10\n'),
+      5000,
+      100,
+    );
+
+    const chunks: string[] = [];
+    const controller = new AbortController();
+    await (async () => {
+      for await (const chunk of client.followLogs('app-tail', 'logger', controller.signal, {
+        tail: 3,
+      })) {
+        chunks.push(chunk);
+        if (chunks.join('').includes('line-10\n')) break;
+      }
+    })();
+    controller.abort();
+
+    const seen = chunks.join('');
+    expect(seen).toContain('line-8\n');
+    expect(seen).toContain('line-10\n');
+    expect(seen).not.toContain('line-7\n');
+    expect(seen).not.toContain('line-1\n');
+  }, 15_000);
 });

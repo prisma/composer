@@ -149,8 +149,11 @@ export interface LocalTargetAttachment {
   startServices(): Promise<void>;
   /** Every service's local endpoint, for the front door. */
   endpoints(): Promise<readonly { readonly address: string; readonly url: string }[]>;
-  /** Merged, line-oriented log stream across the app's services (including services that appear after later converges). Ends when `signal` aborts. */
-  logs(signal: AbortSignal): AsyncIterable<{ readonly service: string; readonly line: string }>;
+  /** Merged, line-oriented log stream across the app's services (including services that appear after later converges). `opts.tail` is how many trailing lines of existing history to emit before live output (default 0 — live only). Ends when `signal` aborts. */
+  logs(
+    signal: AbortSignal,
+    opts?: { readonly tail?: number },
+  ): AsyncIterable<{ readonly service: string; readonly line: string }>;
   /** Stop the app's service instances (emulators and data persist). */
   stopServices(): Promise<void>;
 }

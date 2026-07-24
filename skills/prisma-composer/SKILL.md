@@ -7,13 +7,16 @@ description: >-
   secrets, compose the ready-made cron/storage/streams Modules, provision a
   raw S3-compatible object-store bucket with `bucket()`, find extensions (npm
   packages named `prisma-composer-*`), test with `mockService`/`bootstrapService`,
-  and deploy with `prisma-composer deploy` (stages, destroy). Use when building
-  a Prisma App, wiring a service dependency, adding a Postgres database, adding
-  scheduled jobs / blob storage / event streams / a raw bucket, writing tests
-  for composed services, or deploying/tearing down an environment. Triggers on
+  run the whole app locally with `prisma-composer dev` and tail its logs with
+  `prisma-composer log`, and deploy with `prisma-composer deploy` (stages,
+  destroy). Use when building a Prisma App, wiring a service dependency, adding
+  a Postgres database, adding scheduled jobs / blob storage / event streams / a
+  raw bucket, writing tests for composed services, running an app locally,
+  reading its logs, or deploying/tearing down an environment. Triggers on
   "prisma composer", "@prisma/composer", "prisma app", "compute()",
   "service.load()", "module()", "contract()", "mockService",
-  "bootstrapService", "prisma-composer deploy", "--stage",
+  "bootstrapService", "prisma-composer dev", "prisma-composer log",
+  "prisma-composer deploy", "--stage", "--fresh", "--tail",
   "prisma-composer destroy", "prisma-composer-", "bucket()".
 ---
 
@@ -544,6 +547,43 @@ in-memory handler, or a real local server (what `bootstrapService` drives).
 Ship a dependency's fake from its own package as a `/fake` entry point,
 outside `src/`, so the fake and the real service always share one contract.
 
+## Running locally
+
+`prisma-composer dev module.ts` runs the whole app on this machine — every
+service, its Postgres and buckets, wired as they deploy — with **no cloud
+credentials** (no `PRISMA_*`). It runs the same pipeline as deploy against
+local emulators, so build first, exactly like deploy:
+
+```sh
+turbo run build && prisma-composer dev module.ts
+```
+
+It prints each service's local URL (the "front door"), watches built output
+and restarts a service when its build changes, and runs until Ctrl-C. Ctrl-C
+stops the app's processes but leaves the local databases, buckets, and their
+data up, so the next `dev` is a warm start; `--fresh` wipes this app's local
+instances and data first.
+
+`dev` does **not** print service logs — that would bury the front door once
+several services run. Logs are their own command:
+
+| You want to… | Run |
+| --- | --- |
+| Run the app locally | `prisma-composer dev module.ts` |
+| Start clean (wipe local data) | `prisma-composer dev module.ts --fresh` |
+| Tail every service's logs | `prisma-composer log module.ts` |
+| Tail one service | `prisma-composer log module.ts <address>` |
+| Show more history first | `prisma-composer log module.ts --tail <n>` |
+
+`prisma-composer log` follows the merged logs of the already-running app, each
+line prefixed with its service (`[catalog.service] …`); pass a dotted address
+to narrow to one. It only reads — it never builds, provisions, starts, or
+stops anything. `--tail <n>` sets how much recent history to show before live
+output (default 20; `0` for live-only). An unset secret doesn't block a local
+run: it becomes a placeholder plus a warning, and only the code path that
+spends it fails, at the real external service it calls. Windows isn't
+supported yet.
+
 ## Deploying
 
 Requires exactly two environment variables: `PRISMA_SERVICE_TOKEN` and
@@ -652,10 +692,6 @@ every shipped block supplies what it declares.
 
 Name the gap instead of inventing an API:
 
-- **No dev server / watch loop.** Local dev is running a server entry
-  directly (see each example's `dev` script); dependencies must be supplied
-  via the environment or a locally-run counterpart. A first-class dev loop is
-  on the roadmap.
 - **No interactive auth.** Deploys authenticate only via a static
   `PRISMA_SERVICE_TOKEN`; there is no `login` flow.
 - **No in-memory contract bindings.** A dependency can't yet be wired to a

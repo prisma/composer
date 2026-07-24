@@ -239,34 +239,44 @@ export default defineConfig({
 
 ## 5. Run it locally
 
-There's no dev server yet (it's on the roadmap) — but a server entry is just
-a program, and locally `service.load()` and `service.config()` read plain
-environment variables. The naming rule: `COMPOSER_` + the slot's name (+ the
-connection param, for dependencies), uppercased — `COMPOSER_PORT` for the
-service's own `port` param, `COMPOSER_QUOTES_URL` for the `quotes`
-dependency's URL, and a `db` dependency would read `COMPOSER_DB_URL`. A
-missing required value fails loudly at boot with the exact variable name it
-wanted.
-
-These are the same `COMPOSER_*` variables a deploy writes for the running
-service. Locally they're yours to set; in a deployed environment they belong
-to the deploy, which rewrites them every time.
-
-Two terminals:
+One command brings the whole app up on your machine — both services wired
+together, no cloud credentials. Like deploy, it runs your *built* output, so
+build first (the build is §6, just below):
 
 ```sh
-# terminal 1 — quotes; port defaults to 3000
-bun run src/quotes/server.ts
+pnpm build
+prisma-composer dev module.ts
+```
 
-# terminal 2 — gateway on 3001, pointed at the local quotes
-COMPOSER_PORT=3001 COMPOSER_QUOTES_URL=http://localhost:3000/ bun run src/gateway/server.ts
+It runs the same pipeline a deploy runs, against local stand-ins for Prisma
+Cloud, and prints the front door — each service's local URL:
+
+```
+[dev] ready:
+[dev] gateway   http://localhost:3001
+[dev] quotes    http://localhost:3000
+[dev] logs: prisma-composer log module.ts
 
 curl localhost:3001
 # Make it work, make it right, make it fast.
 ```
 
-In production nobody writes these variables by hand — the deploy provisions
-them from the wiring in `module.ts`. Locally you *are* the deploy.
+`dev` keeps running and restarts a service when its build changes; `Ctrl-C`
+stops it (your data stays, so the next start is warm). It doesn't print
+service logs — that's a separate command so it doesn't bury the front door:
+
+```sh
+prisma-composer log module.ts            # every service, merged and prefixed
+prisma-composer log module.ts quotes     # just one
+```
+
+Under the hood the local providers write the same `COMPOSER_*` environment
+variables a deploy writes — `COMPOSER_PORT` for a service's own `port`,
+`COMPOSER_QUOTES_URL` for the `quotes` dependency's URL — so `service.load()`
+and `service.config()` read exactly what they'll read in production. You never
+set them by hand locally; `dev` *is* the deploy. Full workflow (one-service
+logs, `--tail`, `--fresh`, what persists) in
+[Running locally](running-locally.md).
 
 ## 6. Build and deploy
 
@@ -400,6 +410,9 @@ the wiring for free.
   config params, secrets.
 - [Testing](testing.md) — unit tests with `mockService`, integration tests
   with `bootstrapService`.
+- [Running locally](running-locally.md) — `prisma-composer dev` and
+  `prisma-composer log` in full: one service, `--tail`, `--fresh`, warm
+  restarts.
 - [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with

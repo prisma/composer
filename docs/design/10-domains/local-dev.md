@@ -11,16 +11,23 @@ this doc is the mechanics.
 
 ## Scope
 
-One command:
+Two commands:
 
 - **`prisma-composer dev <entry>`** — bring up the application whose root node
   is `entry`'s default export, entirely on the local machine, and keep it up:
-  watch built output, restart changed services, stream logs, until interrupted.
+  watch built output, restart changed services, until interrupted. It does
+  **not** stream service logs — once it is supervising several processes,
+  streaming them all inline drowns the front door and the rebuild notices; it
+  prints a one-line pointer to `log` instead.
+- **`prisma-composer log <entry> [address]`** — tail the merged logs of that
+  already-running app: every service, or one named by its dotted `address`
+  (`catalog.service`). Follows live; `--tail <n>` sets how much recent history
+  to show first (default 20, `0` for live-only). It only reads the running
+  app's logs — it neither builds, provisions, starts, nor stops anything.
 
-Flags: `--fresh` (destroy the dev stack and wipe the dev state directory before
-starting). Nothing else to start with. Stages do not apply — a working
-directory has exactly one dev instance; parallel instances are parallel
-checkouts.
+Flags: `dev` takes `--fresh` (destroy the dev stack and wipe the dev state
+directory before starting). Stages do not apply — a working directory has
+exactly one dev instance; parallel instances are parallel checkouts.
 
 **Naming.** goals.md calls the local emulator "`prisma dev`". That name is
 owned today by the ORM CLI's local-Postgres command — which this harness itself
@@ -56,10 +63,12 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    at Alchemy stage `dev`. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
    terminates as always, and the Compute emulator keeps serving.
-6. **Attach** — new, dev-only: through `localTarget.attach`, render the front door
-   (every service's endpoint), stream the merged logs, watch for rebuilds,
-   loop. Ctrl-C stops the app's service instances through the attachment and
-   exits; emulators and data persist.
+6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
+   door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C stops
+   the app's service instances through the attachment and exits; emulators and
+   data persist. Logs are not streamed here — `prisma-composer log` reads the
+   same attachment's merged-log view on demand, so `dev`'s own output stays
+   the front door plus lifecycle and rebuild notices.
 
 ## The Compute emulator
 
@@ -80,6 +89,10 @@ emulator, which owns the processes:
   writes its supervision events into that service's log stream; repeated
   crash-looping is a held state visible in the service listing and the logs,
   not silent churn.
+- **Log follow** → the per-service log file is append-only and spans sessions,
+  so a follow starts at the current end by default (`?tail=<n>` includes the
+  last `n` lines as backlog first). `prisma-composer log`'s `--tail` maps
+  straight onto it; a follow never replays the whole file.
 - **Instance deleted** (service removed from the topology, `--fresh`) → stop
   and remove.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
@@ -131,7 +144,8 @@ the scoping changes restart behavior only.
    and the bucket emulator. They survive dev sessions; `--fresh` removes an
    app's instances.
 3. **The dev session owns no processes at all** — it is a view (`attach`):
-   endpoints, merged logs, the stop control, and the watch loop.
+   endpoints, the stop control, and the watch loop. That same view's merged
+   logs back the separate `prisma-composer log` command.
 
 The emulator daemon bookkeeping (registry, stable ports, readiness,
 version-skew restart) is framework-owned and minimal; Postgres reuses the

@@ -34,6 +34,39 @@ export interface PipelineResult {
   readonly assembled: AssembledServices;
 }
 
+export interface AppIdentity {
+  readonly configPath: string;
+  readonly config: PrismaAppConfig;
+  readonly name: string;
+}
+
+/**
+ * The pipeline's front — config discovery/load, entry load, name resolution —
+ * WITHOUT Load, coverage, or assemble. `log` needs only who the app is (its
+ * config and resolved name) to reach the already-running local instance; it
+ * neither builds nor provisions, so it must not require the user's built
+ * output the way the full pipeline does.
+ */
+export async function resolveAppIdentity(
+  entry: string,
+  overrideName: string | undefined,
+  cwd: string,
+  deps: PipelineDeps = {},
+): Promise<AppIdentity> {
+  const resolvedEntryPath = path.resolve(cwd, entry);
+  const configPath = findConfigPathForEntry(resolvedEntryPath);
+  if (configPath === undefined) {
+    throw missingConfigError(resolvedEntryPath);
+  }
+  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+  const entryModule = await loadEntry(entry, cwd);
+  const name = overrideName ?? entryModule.root.name;
+  if (name.length === 0) {
+    throw new CliError('The root node has no name — name it at authoring, or pass --name.');
+  }
+  return { configPath, config, name };
+}
+
 /**
  * Runs config discovery/load, entry load, Load, registry coverage, name
  * resolution, and assemble — steps 1–6 of `run()`. `onAssembleError`, when

@@ -70,7 +70,18 @@ pnpm dev   # from examples/store
 
 Serves in-memory fakes of catalog and orders on loopback ports and runs
 `next dev` against them — the same fakes the unit test injects via
-`mockService` ([page.test.tsx](modules/storefront/app/page.test.tsx)).
+`mockService` ([page.test.tsx](modules/storefront/app/page.test.tsx)). This is
+the fast UI loop.
+
+To run the **whole real topology** locally instead — every service, its
+Postgres and buckets, wired as they deploy, credential-free:
+
+```sh
+pnpm build && prisma-composer dev module.ts
+prisma-composer log module.ts          # logs, in another terminal
+```
+
+See [Running locally](../../docs/guides/running-locally.md).
 
 ## Deploy
 

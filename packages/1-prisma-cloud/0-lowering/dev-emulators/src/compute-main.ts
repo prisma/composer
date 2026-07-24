@@ -554,12 +554,44 @@ function main(): void {
     res.end();
   }
 
-  function handleFollowLogs(res: http.ServerResponse, logPath: string): void {
+  /** Byte offset a follow should start at to show the last `tailLines` complete lines; `<= 0` (or an empty file) starts at the current end, no backlog. */
+  function startOffsetForTail(logPath: string, tailLines: number): number {
+    let size = 0;
+    try {
+      size = fs.statSync(logPath).size;
+    } catch {
+      return 0;
+    }
+    if (tailLines <= 0 || size === 0) return size;
+    const fd = fs.openSync(logPath, 'r');
+    try {
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, 0);
+      // Walk back from the end counting line boundaries; the byte after the
+      // Nth newline from the end begins the last N lines. A trailing newline
+      // terminates the final line and is not itself a boundary to count.
+      let seen = 0;
+      for (let i = size - 1; i >= 0; i -= 1) {
+        if (buf[i] !== 0x0a) continue;
+        if (i === size - 1) continue;
+        seen += 1;
+        if (seen === tailLines) return i + 1;
+      }
+      return 0;
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+
+  function handleFollowLogs(res: http.ServerResponse, logPath: string, tailLines: number): void {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
     if (!fs.existsSync(logPath)) fs.closeSync(fs.openSync(logPath, 'a'));
 
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-    let offset = 0;
+    // Start at the last `tailLines` complete lines, or at the current end when
+    // none are asked for — a follow with no backlog must not replay the whole
+    // (unrotated, session-spanning) file.
+    let offset = startOffsetForTail(logPath, tailLines);
     let stopped = false;
     let timer: NodeJS.Timeout | undefined;
 
@@ -641,7 +673,10 @@ function main(): void {
         const svc = state[app]?.services[id];
         if (!svc) return text(res, 404, `no such service "${id}" in app "${app}"`);
         if (url.searchParams.get('follow') === '1') {
-          handleFollowLogs(res, svc.logPath);
+          const tailParam = url.searchParams.get('tail');
+          const tailLines =
+            tailParam === null ? 0 : Math.max(0, Number.parseInt(tailParam, 10) || 0);
+          handleFollowLogs(res, svc.logPath, tailLines);
           return;
         }
         const content = fs.existsSync(svc.logPath) ? fs.readFileSync(svc.logPath) : Buffer.alloc(0);
