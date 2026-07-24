@@ -15,6 +15,7 @@ import { blindCast } from '@internal/foundation/casts';
 import { localTargetProviders } from '@internal/local-target';
 import * as Prisma from '@internal/lowering';
 import * as Layer from 'effect/Layer';
+import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
@@ -47,6 +48,7 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
           PgWarmProvider(),
           PnMigrationProvider(),
           S3CredentialsProvider(),
+          GeneratedParamProvider(),
           Prisma.ServiceKeyProvider(),
         ),
       ),
