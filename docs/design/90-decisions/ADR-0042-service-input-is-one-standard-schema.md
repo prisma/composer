@@ -62,16 +62,21 @@ the work:
 
 - **The binding is the traversable structure.** It is a plain object
   mirroring the schema's shape whose leaves are literals, `envParam(...)`,
-  or `envSecret(...)` markers. A dumb recursive descent over it yields
-  everything provisioning needs: each `envSecret` leaf becomes an in-memory
-  sentinel plus a pointer to the platform variable that holds its value;
-  everything else becomes config data. The walk mints no platform resource —
-  the sentinels live only long enough to be validated and then written into
-  the document as pointers, so a binding the schema later rejects (an
-  invalid conditional branch, say) leaves nothing behind: validation runs
-  before the one document row is written, and the platform variable a
-  pointer names is the operator's own, seeded by preflight, not something
-  this walk creates. The node graph itself is built from `deps`, which this
+  `envSecret(...)`, or `generatedParam(...)` markers (the source table in
+  [`../10-domains/config-params.md`](../10-domains/config-params.md)). A dumb
+  recursive descent over it yields everything provisioning needs: each
+  `envSecret` leaf becomes an in-memory sentinel plus a `$secret` pointer to
+  the operator's platform variable; each `generatedParam` leaf becomes a
+  sentinel plus a `$generated` pointer to a framework-owned variable the
+  deploy will fill, and is recorded for the descriptor's deploy step (§
+  Generated sources); everything else becomes config data. **The walk itself
+  creates no platform resource** — the sentinels live only long enough to be
+  validated and then written into the document as pointers, so a binding the
+  schema later rejects leaves nothing behind: validation runs before the one
+  document row is written. An `envSecret` pointer names the operator's own
+  variable, seeded by preflight; a `$generated` pointer names a variable the
+  descriptor's deploy step provisions (that step, not this walk, is where a
+  resource is created). The node graph itself is built from `deps`, which this
   ADR does not touch.
 - **The schema is a black-box judge, invoked twice.** At deploy, the
   resolved binding — literals as-is, env params read from the deploy shell,
@@ -124,6 +129,43 @@ This replaces any need for a framework-level "optional secret" flag: a
 credential for an off-by-default feature is an ordinary optional
 `SecretString` field. Because an omitted key can also be a typo'd variable
 name, the deploy report prints every key that resolved absent.
+
+### Generated sources
+
+A fourth source, `generatedParam(...)`, is a param the **target generates at
+deploy** rather than reads from the environment — a value with no external
+holder to reference (an rpc service key, an instance signing key). It is a
+config *param*, not a secret ([ADR-0029](ADR-0029-secrets-are-a-forwardable-slot.md)):
+the framework produces it and keeps it in deploy state, stable across
+redeploys. It rides the same walk as every other leaf, with three differences,
+all consequences of "the framework produces and stores this value":
+
+- **The pointer carries a redaction facet.** A generated leaf serializes to
+  `{"$generated": "<VAR>", "redacted": <bool>}`, where `<VAR>` is a
+  framework-owned variable name (reserved `COMPOSER_` prefix). It carries
+  `redacted` because — unlike an `envSecret`, which is always redacted — a
+  generated param may be either, and **boot cannot ask the schema** which:
+  Standard Schema exposes only `validate`, never a field's type. So the deploy,
+  which knows the facet, writes it into the self-describing document, and boot
+  reads it from the pointer: a redacted leaf hydrates to a `SecretString`, a
+  plain one to a string.
+- **The descriptor's deploy step provisions the value.** The walk records each
+  generated leaf; after it runs, the compute descriptor provisions one
+  generation resource per leaf (which mints the value once and returns the same
+  value on every later reconcile, so it is stable) and writes it to the named
+  framework variable. Preflight skips generated leaves entirely — there is no
+  operator variable to check.
+- **The value never appears in the document, redacted or not** — only the
+  pointer does, so the deploy report prints the document verbatim, exactly as
+  for secrets. The difference from a secret is *where the value lives*: a
+  secret's value is the operator's, injected by the platform and never in
+  state; a generated param's value is the framework's, provisioned into deploy
+  state. Redaction governs only whether that value is masked in logs.
+
+A single collision check covers both pointer kinds: after the walk, every
+`$secret` and `$generated` variable name on a service must be distinct once
+normalized, or the deploy fails naming both input paths — so a secret and a
+generated param can never quietly share a variable.
 
 ## Reasoning
 

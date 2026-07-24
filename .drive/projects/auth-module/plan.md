@@ -142,19 +142,19 @@ Two operator decisions:
   idea.
 
 
-- **Latent break on a Prisma Next `0.16` bump: the config field flips.**
-  Compose pins `@prisma-next/config-loader@0.15.0`, whose validated field
-  is `extensionPacks` — which is what `pn-config.ts` reads. PN `0.16.0`
-  renames it to `extensions` and rejects `extensionPacks`. The example
-  config already writes `extensions: [authPack]`, which works today only
-  because the pinned `0.15.0` `postgres/defineConfig` wrapper maps
-  user-facing `extensions:` → validated `extensionPacks`. On a bump to
-  `0.16`, `config.extensionPacks` becomes `undefined → []`, silently
-  emptying both the deploy preflight's pack lookup AND the migration
-  resource's `packHeadRefHashes` diff key (a pack upgrade would stop
-  producing a distinct deploy step). Read `config.extensions ?? config.extensionPacks`,
-  or track the rename, before bumping. Verified against installed 0.15.0
-  vs the 0.16.0 source checkout.
+- **Latent (NOT yet live): a future Prisma Next flips the config field
+    `extensionPacks` → `extensions`.** `pn-config.ts` reads
+    `config.extensionPacks`. The ADR-0042 migration is on **published
+    `@prisma-next/config@0.16.0`, which STILL validates `extensionPacks`**
+    (its `config-validation` rejects `extensions`), so the field compose
+    reads is populated and the pack path works — verified on-branch, and the
+    pack tests pass. The rename lives only in the **unpublished** local
+    `./prisma-next` checkout (also labelled 0.16.0 but ahead of npm). When
+    that rename ships, `config.extensionPacks` becomes `undefined → []`,
+    silently emptying the preflight pack lookup and the
+    `packHeadRefHashes` diff key. Fix before adopting that PN: read
+    `config.extensions ?? config.extensionPacks`. (Corrects the earlier note
+    that pegged the break to 0.16 — it's a later published version.)
 
 - **Pre-commit hooks never fire in most linked worktrees (repo-wide,
   needs an operator decision).** The shared config sets a RELATIVE

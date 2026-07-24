@@ -79,29 +79,49 @@ you call but don't provision is **Configuration**, not a Resource.
 
 See `layering.md` → Resources: first-class vs BYO.
 
-### Configuration — config and secrets
+### Configuration — params and their sources
 
 Per-environment values a node needs at runtime but that are **not themselves
 nodes**: injected at the boundary (no-globals — user code never reads the
-environment; the framework injects), supplied per environment. Two kinds, distinguished
-by sensitivity (the `secret` flag on a config param):
+environment; the framework injects). There is **one concept, a param, bound at
+wiring time to a source.** A source is target-provided logic that turns the
+parameter information the author supplies at wiring into a value. Four sources:
 
-**Config** (non-secret) — endpoints, ports, feature flags, plain settings. Most of
-what the framework writes is **graph-materialized**: a connection or resource address it
-computes from the topology and writes to the platform. The "env vars" a service
-boots with are mostly these **wires**, not user input; a wire's change is a graph
-event (a node rewired or re-provisioned), detected by the source's provenance,
-never by inspecting the value.
+- **literal** — the author supplies the value; it travels in the service's
+  input document.
+- **`envParam(NAME)`** — the author supplies an environment-variable name; the
+  target reads the environment at deploy/boot. The value is **never written
+  into deploy state** — deliberately, so it varies by environment, not by
+  deployment logic.
+- **`envSecret(NAME)`** — the author supplies a name; the target reads the
+  platform's secret store. Like `envParam`, the value **never enters deploy
+  state**; unlike it, the value is **redacted**. **This is the only thing the
+  framework calls a secret.**
+- **`generatedParam(...)`** — the author supplies generation parameters; the
+  **target generates the value at deploy** and **persists it in deploy state**,
+  stable across redeploys. A generated value can act as asymmetric knowledge
+  (an rpc service key, an instance signing key) but it is **not a secret** — it
+  is config the system produces and owns.
 
-**Secret** — a sensitive credential (API key, token, password, a connection string
-carrying credentials). A secret is **always sourced from the platform's secret
-store**; the framework never computes it into the graph and never persists its value in
-deployment state. The platform secret may come from the user directly or from a
-third-party manager (e.g. **Doppler**) integrated at the platform — the framework doesn't
-care which. The framework's only job is the last hop: **wire the platform secret to the
-consumer's DI**. A credential the framework itself provisions (a database URL) is written
-to the platform secret store transiently during provisioning and thereafter treated
-as a platform secret — wired by reference, its value never persisted.
+Two properties fall out of the source, and neither is its own category:
+
+- **Persistence follows the source.** Environment sources (`envParam`,
+  `envSecret`) re-resolve per environment and never enter deploy state.
+  Generated and literal values live in the deployment. Persistence is a
+  *consequence* of where the value comes from, not a flag.
+- **Redaction is an orthogonal facet** — whether a value is printed in the
+  deploy report and logs, or masked. `envSecret` is always redacted; a
+  generated param may be redacted (a signing key) or plain (a generated id).
+  Redaction is about *display*; it does not make a value a secret. A value is a
+  secret only when it is *externally sourced and never in state* — `envSecret`.
+
+**The framework never produces a secret.** It resolves environment sources
+(carrying only the name), and it generates config params (which it may store).
+The only secret in the system is one the author wired from the environment with
+`envSecret`. Much of what the framework writes is neither — it is
+**graph-materialized** config (a connection or resource address computed from
+the topology); a wire's change is a graph event, detected by provenance, never
+by inspecting the value.
 
 To pull an unmanaged external dependency *into* the topology as a reproducible node,
 provision it (making it a Resource) or wrap it in a Service that exposes your domain

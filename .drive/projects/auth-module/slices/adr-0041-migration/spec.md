@@ -1,4 +1,4 @@
-# Slice spec: params-vocabulary settlement + auth migration onto ADR-0041
+# Slice spec: params-vocabulary settlement + auth migration onto ADR-0042
 
 > Status: vocabulary settled with Will 2026-07-24 (conversation record); this
 > spec is exhaustive by intent. Every name, type, file placement, and behavior
@@ -83,7 +83,7 @@ export function generatedParam(opts?: GeneratedParamOptions): ParamSource<Genera
 - Validation: `bytes` must be an integer ≥ 16 and ≤ 1024 — construction
   throws otherwise (message names the bound). No other options in v1.
 
-## 4. Deploy mechanics (ADR-0041 world — the branch this lands on)
+## 4. Deploy mechanics (ADR-0042 world — the branch this lands on)
 
 All on the post-#161 shape (`serializer.ts` input walk, `preflight.ts`
 `collectSecretLeafNames`, `descriptors/compute.ts` serialize step).
@@ -105,7 +105,7 @@ All on the post-#161 shape (`serializer.ts` input walk, `preflight.ts`
    string `''` when `redacted: false`. The walk also appends to a new
    `ResolvedInputBinding.generated: readonly GeneratedLeaf[]` list:
    `{ varName: string; bytes: number; redacted: boolean; path: string }`.
-   The walk itself creates NO resource — it stays pure; ADR-0041's
+   The walk itself creates NO resource — it stays pure; ADR-0042's
    "the walk mints no platform resource" sentence is amended (§ 7.5) to
    "the walk creates no platform resource; generated leaves are recorded
    for the descriptor's deploy step, which provisions them."
@@ -175,7 +175,7 @@ tree-hash verification; the orchestrator pushes, the implementer never does).
    The field name stays `secret` — it is Better Auth's own option name for
    its instance secret; local vocabulary, not framework vocabulary. The
    schema field uses `secretString()` because that IS the redaction facet in
-   an ADR-0041 schema: the field type says "boot hands me a redacting box".
+   an ADR-0042 schema: the field type says "boot hands me a redacting box".
 2. **`auth-module.ts`**: provision becomes
    ```ts
    input: { baseUrl: params.baseUrl, secret: generatedParam() },
@@ -237,17 +237,17 @@ tree-hash verification; the orchestrator pushes, the implementer never does).
    rotation = destroy/recreate).
 3. **ADR-0029** — scope sentence added: "This ADR governs *secrets*:
    externally-sourced, user-provided values (`envSecret`). Values the
-   target generates are params (ADR-0032's source frame; ADR-0041's
+   target generates are params (ADR-0032's source frame; ADR-0042's
    `$generated` pointer) — they are not secrets and MAY be recorded in
    deploy state." The "never carries a value" invariant is restated as
    scoped to secrets.
 4. **ADR-0030** — terminology pass: the service key is *a generated param
    before that concept had a name*; "mint" → "generate" in normative text;
    the rejected alternative "a real ADR-0029 secret" gains: "(a generation
-   path now exists — `generatedParam()`, ADR-0041 § Generated sources — and
+   path now exists — `generatedParam()`, ADR-0042 § Generated sources — and
    the decision stands: a service key is config the system maintains, not
    an operator-provided secret)".
-5. **ADR-0041** — new § "Generated sources": the fourth leaf, the
+5. **ADR-0042** — new § "Generated sources": the fourth leaf, the
    `$generated` pointer, the descriptor-provisioned resource, the amended
    walk sentence (§ 4.1), the redaction-via-schema-type rule, the collision
    guard. Plus the leaves list ("literals, `envParam(...)`, or

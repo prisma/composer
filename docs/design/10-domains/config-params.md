@@ -100,12 +100,33 @@ a binding down to a child through a nameless `paramNeed()` slot, the same way
 it forwards a secret need. Value changes need a redeploy, same as secret
 rotation.
 
-Three out-of-band value channels, by who supplies the value: a **secret**
-(ADR-0029, provisioned out-of-band, redacted), a **framework-minted** value (a
-`provision` need per dependency edge, ADR-0031, kept in deploy state), and
-**operator-supplied platform config** (`envParam`, ADR-0032, per stage, never
-in deploy state, read at boot). A param claiming both a `provision` need and a
-provision-time binding is a loud lowering error.
+**One concept, a param, bound to a source** (the glossary's *params and their
+sources* is the canonical statement). Four sources, by where the value comes
+from: a **literal** (in the binding); an **`envParam`**
+([ADR-0032](../90-decisions/ADR-0032-params-bind-at-provision-env-sourcing-is-a-target-source.md),
+operator-supplied per stage, read at boot, **never in deploy state**); an
+**`envSecret`**
+([ADR-0029](../90-decisions/ADR-0029-secrets-are-a-forwardable-slot.md), the
+platform secret store, redacted, **never in deploy state** — the only secret);
+and a **generated param**
+([ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md) §
+Generated sources — the target generates it at deploy and **keeps it in deploy
+state**: an rpc service key, an instance signing key; the generic mechanism
+formerly framed as a per-edge provisioning need,
+[ADR-0031](../90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md)).
+A generated value is config the system produces and owns, **not a secret** —
+"minted" was a misnomer; the value is *generated*. Persistence follows the
+source (environment sources never enter state; generated and literal values
+do), and redaction is an orthogonal display facet, not what makes a value a
+secret. A param claiming both a generated value and a provision-time binding is
+a loud lowering error.
+
+> The rest of this document predates
+> [ADR-0042](../90-decisions/ADR-0042-service-input-is-one-standard-schema.md)
+> (one input schema, `service.input()`); its `params`/`config()` spelling and
+> the "secret is its own slot" framing are superseded there. Syncing this
+> domain doc to the input model is tracked with ADR-0042's own follow-ups; the
+> source model above is current.
 
 ## Serialization belongs to the target
 
