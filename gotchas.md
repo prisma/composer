@@ -595,9 +595,12 @@ Error: Dynamic require of "assert" is not supported
 
 **Cause.** `dev` is a **dynamic subcommand**: the `prisma` CLI npm-installs `@prisma/cli-dev@latest` into a per-day tmpdir cache and imports it at run time. Pinning `prisma` in package.json pins nothing about `dev` — a broken upstream publish (here `0.16.23`, published 10:45 UTC; CI green at 09:43, red by 11:10) breaks every cold-cache machine at once, and warm caches age out daily. The failure looks like your change broke CI when nothing in the repo changed.
 
-**Workaround.** The subcommand loader accepts a version pin as the first argument: `prisma dev @0.16.22 <args>` installs that exact version instead of `@latest`. CI's warm step is pinned this way (`.github/workflows/ci.yml`); bump the pin deliberately.
+**Workaround.** Two, by context:
+
+- **In this repo's CI** the warm step no longer touches the CLI at all — `scripts/warm-prisma-dev-engine.ts` warms the engine cache through the same programmatic `startPrismaDevServer` (`@prisma/dev`, a pinned dependency) the integration proofs use, so no run-time fetch exists to break.
+- **For a `prisma dev` CLI user** the subcommand loader accepts a version pin as the first argument: `prisma dev @0.16.22 <args>` installs that exact version instead of `@latest`.
 
 **Reproduction.**
 
 1. On a machine that hasn't run `prisma dev` today: `pnpm exec prisma dev --name x --detach` → the error above.
-2. `pnpm exec prisma dev @0.16.22 --name x --detach` → works.
+2. `pnpm exec prisma dev @0.16.22 --name x --detach` → works (as does the programmatic `startPrismaDevServer`, which never fetches the subcommand).

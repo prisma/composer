@@ -28,6 +28,17 @@ on:
       - 'docs/guides/**'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
+    inputs:
+      reset:
+        description:
+          'Delete the production project first, then deploy fresh. This is the
+          destroy-then-redeploy cutover for state that predates ADR-0034 (the
+          old workspace-level state is unreadable, so the deploy fails with
+          "app already exists" / "untracked COMPOSER_ key" until the leftover
+          resources are removed). The site is briefly down and its generated
+          URL changes.'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -58,6 +69,9 @@ jobs:
       # `prisma-composer deploy` never builds for you (ADR-0005).
       - name: Build
         run: pnpm turbo run build --filter composer-docs-website
+      - name: Reset the production project (destroy-then-redeploy cutover)
+        if: github.event_name == 'workflow_dispatch' && inputs.reset
+        run: bun scripts/delete-project.ts composer-docs
       # No --stage: this targets production. The CLI is invoked directly rather
       # than through the package's `deploy` script, which sources a local .env
       # that does not exist on a runner (the credentials are already in env).
