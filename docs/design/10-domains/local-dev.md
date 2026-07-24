@@ -89,10 +89,14 @@ emulator, which owns the processes:
   writes its supervision events into that service's log stream; repeated
   crash-looping is a held state visible in the service listing and the logs,
   not silent churn.
-- **Log follow** → the per-service log file is append-only and spans sessions,
-  so a follow starts at the current end by default (`?tail=<n>` includes the
-  last `n` lines as backlog first). `prisma-composer log`'s `--tail` maps
-  straight onto it; a follow never replays the whole file.
+- **Log follow** → each fresh service start (a deployment or a session
+  resume) clears that service's log, so it holds only the current run — a
+  crash-backoff respawn keeps the run's crash trail, but past sessions and
+  past deployments are gone. A follow starts at the current end by default
+  (`?tail=<n>` includes the last `n` lines as backlog first);
+  `prisma-composer log`'s `--tail` maps straight onto it. A live follower is
+  reset to the new start when the log is cleared under it (the daemon tracks a
+  per-log clear generation, so a follower never reads stale bytes).
 - **Instance deleted** (service removed from the topology, `--fresh`) → stop
   and remove.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
