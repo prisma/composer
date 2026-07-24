@@ -175,6 +175,11 @@ class ServiceLog {
     fs.writeSync(this.ensureOpen(), `${line}\n`);
   }
 
+  /** Empties the file — a fresh service start begins a clean log; past sessions' and past deployments' output is not kept. */
+  clear(): void {
+    fs.ftruncateSync(this.ensureOpen(), 0);
+  }
+
   /** Closes the fd if one was ever opened. Idempotent. */
   close(): void {
     if (this.fd === undefined) return;
@@ -224,6 +229,11 @@ function main(): void {
 
   let state: AppsState = {};
   const runtimes = new Map<string, RuntimeInfo>();
+  // Bumped every time a log file is cleared (a fresh service start). A live
+  // follower watches this rather than the file size, so it resets to the new
+  // start reliably — even when the clear and the first new write both land
+  // between two of its polls, which a size comparison alone would miss.
+  const logGeneration = new Map<string, number>();
 
   function runtimeKey(app: string, id: string): string {
     return `${app}/${id}`;
@@ -376,7 +386,8 @@ function main(): void {
     );
     rt.backoffTimer = setTimeout(() => {
       rt.backoffTimer = undefined;
-      void spawnService(app, id, svc, rt);
+      // A crash-backoff respawn — keep the crash trail this run has written.
+      void spawnService(app, id, svc, rt, false);
     }, delayMs);
   }
 
@@ -390,6 +401,8 @@ function main(): void {
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
+    /** A fresh start (a deployment or a session resume) begins a clean log; a crash-backoff respawn keeps the run's crash trail. */
+    fresh: boolean,
   ): Promise<SpawnResult> {
     const env = svc.env ?? {};
     const artifactDir = svc.artifactDir ?? '.';
@@ -402,6 +415,10 @@ function main(): void {
     }
 
     const log = getLog(app, id, svc.logPath);
+    if (fresh) {
+      log.clear();
+      logGeneration.set(svc.logPath, (logGeneration.get(svc.logPath) ?? 0) + 1);
+    }
     const child = spawn(bunPath, ['bootstrap.js'], {
       cwd: artifactDir,
       env,
@@ -449,7 +466,8 @@ function main(): void {
     clearBackoffTimer(rt);
     clearStableTimer(rt);
     rt.consecutiveFastExits = 0;
-    await spawnService(app, id, svc, rt);
+    // A session resume is a fresh start — begin a clean log.
+    await spawnService(app, id, svc, rt, true);
   }
 
   // ——— HTTP plumbing ———
@@ -546,7 +564,9 @@ function main(): void {
     svc.artifactDir = parsed.artifactDir;
     schedulePersist();
 
-    const result = await spawnService(app, id, svc, rt);
+    // A deployment PUT that reaches here is a new or changed deployment (an
+    // unchanged running one returned 204 above) — a fresh start, clean log.
+    const result = await spawnService(app, id, svc, rt, true);
     if (!result.ok) {
       return text(res, 500, result.message ?? 'failed to start the service');
     }
@@ -592,17 +612,28 @@ function main(): void {
     // none are asked for — a follow with no backlog must not replay the whole
     // (unrotated, session-spanning) file.
     let offset = startOffsetForTail(logPath, tailLines);
+    let generation = logGeneration.get(logPath) ?? 0;
     let stopped = false;
     let timer: NodeJS.Timeout | undefined;
 
     const tick = (): void => {
       if (stopped) return;
+      // A fresh service start cleared the file — resume from its new
+      // beginning. Watching the clear generation (not just a size decrease)
+      // catches it even when the clear and the first new write both land
+      // between two ticks.
+      const currentGeneration = logGeneration.get(logPath) ?? 0;
+      if (currentGeneration !== generation) {
+        generation = currentGeneration;
+        offset = 0;
+      }
       let stat: fs.Stats | undefined;
       try {
         stat = fs.statSync(logPath);
       } catch {
         stat = undefined;
       }
+      if (stat && stat.size < offset) offset = 0;
       if (stat && stat.size > offset) {
         const fd = fs.openSync(logPath, 'r');
         const buf = Buffer.alloc(stat.size - offset);
