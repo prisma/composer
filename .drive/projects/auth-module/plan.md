@@ -100,7 +100,47 @@ taken at S3 pickup, with the platform team's multi-port answer in hand.
 - Parallel: S4 alongside S2/S3 once S1 merges.
 - S1 starts immediately; nothing in it waits on #146.
 
+## ADR-0041 adoption (decided 2026-07-24, Will)
+
+PR #161 (ADR-0041) replaces a service's `params`/`secrets` maps and
+`config()`/`secrets()` accessors with one Standard-Schema `input` and a
+single `service.input()`; sourcing (`envParam`/`envSecret`) moves onto the
+`provision(..., { input })` binding; a credential is a field typed
+`secretString()`; port comes from `process.env.PORT`. The auth module was
+built on the old model, and the rework added `mintedSecret()` as a source
+inside it. Auth must migrate.
+
+Two operator decisions:
+
+1. **Migrate now, on #161's branch** — rebase S1 (`s1-rework`) onto
+   `bot/claude/adr-input-schema`, do the input-model migration, then
+   re-stack S2. Ready the moment #161 merges; re-verify against main then.
+2. **Auth carries the minted-secret binding leaf.** `mintedSecret()`
+   becomes a third binding-leaf marker (parallel to `envSecret`) that
+   #161's new `input-serializer.ts` walk recognizes and turns into a minted
+   platform secret + `$secret` pointer. Auth's PRs add that recognition to
+   the new serializer — accepting that auth now edits #161's new file
+   (merge coupling with #161 until it merges).
+
 ## Open items (recorded during S2, 2026-07-23)
+
+- **Upstream PN change: contract must sign extension HEAD HASHES, not just
+  versions (decided 2026-07-24, Will).** The correct pack-compatibility
+  check reads the wired database's emitted app contract — its signed
+  `extensionPacks` section — and asks "is my required head hash present?"
+  Today that section carries only `{ kind, id, familyId, targetId, version }`
+  (`ExtensionPackRef` → `PackRefBase`, no hash field), so the check isn't
+  expressible and compose's current preflight compares a descriptor against
+  itself (inert). Fix, at `~/Projects/prisma/prisma-next`: contract emit
+  records each extension's `contractSpace.headRef.hash` in the
+  `ExtensionPackRef` written into the composed contract. THEN compose's
+  preflight becomes a trivial hash-presence check against the wired
+  resource's contract. For PR #163 now: delete the inert head-comparison
+  branch of `runPackPreflight` (keep the "pack not listed" branch); PN's own
+  migrate/verify still catches real stale-head drift until the proper check
+  lands. This supersedes the earlier "compare against on-disk refs/head.json"
+  idea.
+
 
 - **Latent break on a Prisma Next `0.16` bump: the config field flips.**
   Compose pins `@prisma-next/config-loader@0.15.0`, whose validated field
