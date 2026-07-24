@@ -6,11 +6,13 @@
  * first connect while its upstream warms, but a fast connect occasionally slips
  * through), so a single connect can't tell "fixed" from "got lucky once". The
  * run is judged unanimously (see classifyColdConnectRun) with a REQUIRED
- * check's exits: any active rejection → exit 0 (bug still present); ALL
- * samples succeeding → exit 1, the forcing signal to remove
- * `withConnectionRetry` (packages/1-prisma-cloud/1-extensions/target/src/
- * pg-connection.ts) and this canary; inconclusive → exit 0 with a CI warning
- * annotation, so a flake never blocks unrelated PRs.
+ * check's exits: any active rejection → exit 0 (bug still present); ALL of at
+ * least MIN_BUG_GONE_SAMPLES samples succeeding → exit 1, the forcing signal
+ * to remove `withConnectionRetry`
+ * (packages/1-prisma-cloud/1-extensions/target/src/pg-connection.ts) and this
+ * canary; inconclusive → exit 0 with a CI warning annotation, so a flake
+ * never blocks unrelated PRs. Sampling is adaptive: the first rejection ends
+ * the run, and only an all-success streak keeps going to the full depth.
  */
 import pg from 'pg';
 import { deleteProjectDeep, type HttpCall, type ProjectRef } from './ci-cleanup-utils.ts';
@@ -18,6 +20,7 @@ import {
   type ColdConnectSample,
   classifyColdConnectRun,
   classifyColdConnectSample,
+  MIN_BUG_GONE_SAMPLES,
 } from './cold-connect-canary-classify.ts';
 
 const API = 'https://api.prisma.io/v1';
@@ -134,9 +137,17 @@ try {
   };
   console.log(`Created project "${project.name}" (${project.id}); sampling ${SAMPLES} cold DBs…`);
 
+  // One rejection settles the verdict, so stop there. An all-success streak
+  // keeps sampling up to MIN_BUG_GONE_SAMPLES — below that, all-success is
+  // luck, not the bug-gone forcing signal (see classifyColdConnectRun).
   const samples: ColdConnectSample[] = [];
-  for (let i = 0; i < SAMPLES; i++) {
-    samples.push(await sampleColdConnect(project.id, i));
+  while (
+    samples.length < SAMPLES ||
+    (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
+  ) {
+    const sample = await sampleColdConnect(project.id, samples.length);
+    samples.push(sample);
+    if (sample === 'rejected') break;
   }
 
   const result = classifyColdConnectRun(samples);

@@ -5,6 +5,7 @@ import {
   type ColdConnectSample,
   classifyColdConnectRun,
   classifyColdConnectSample,
+  MIN_BUG_GONE_SAMPLES,
 } from './cold-connect-canary-classify.ts';
 
 describe('classifyColdConnectSample', () => {
@@ -70,14 +71,23 @@ describe("classifyColdConnectRun (unanimity, with a REQUIRED check's three exits
     assert.match(result.message, /still present \(1\/5 rejected\)/);
   });
 
-  it('ALL successes → bug-gone (exit 1 — the forcing signal), actionable for a cold reader', () => {
-    const result = run('success', 'success', 'success', 'success', 'success');
+  it('ALL of MIN_BUG_GONE_SAMPLES successes → bug-gone (exit 1 — the forcing signal), actionable for a cold reader', () => {
+    const result = classifyColdConnectRun(
+      Array.from({ length: MIN_BUG_GONE_SAMPLES }, () => 'success' as const),
+    );
     assert.equal(result.verdict, 'bug-gone');
     assert.match(result.message, /not because of your change/);
     assert.match(result.message, /withConnectionRetry/);
     assert.match(result.message, /pg-connection\.ts/);
     assert.match(result.message, /cold-connect-canary\.ts/);
     assert.match(result.message, /e2e-deploy\.yml/);
+  });
+
+  it('a short all-success streak → inconclusive, NOT bug-gone (a lucky streak must not force removal)', () => {
+    const result = run('success', 'success', 'success', 'success', 'success');
+    assert.equal(result.verdict, 'inconclusive');
+    assert.match(result.message, /luck/);
+    assert.match(result.message, /keep withConnectionRetry/);
   });
 
   it('no rejections but not all-success (timeouts) → inconclusive (exit 0 + warning), not "fixed"', () => {

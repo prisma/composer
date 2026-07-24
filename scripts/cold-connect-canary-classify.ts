@@ -73,9 +73,21 @@ export interface ColdConnectResult {
 }
 
 /**
- * Aggregates N cold-connect samples with UNANIMITY, so one flaky connect can't
- * flip the verdict; see {@link ColdConnectVerdict} for what each verdict makes
- * the job do.
+ * How many all-success samples it takes before `bug-gone` is claimed. The
+ * rejection is intermittent, so a short unanimous streak is the expected
+ * outcome of a run that is too small, not evidence of a fix. Same reasoning
+ * and figure as the cold-start canary's hold requirement (gotchas.md,
+ * PRO-217): at a conservative 20% rejection rate, 0.8^14 ≈ 4.4% chance of a
+ * lucky streak.
+ */
+export const MIN_BUG_GONE_SAMPLES = 14;
+
+/**
+ * Aggregates cold-connect samples with UNANIMITY, so one flaky connect can't
+ * flip the verdict — and `bug-gone` additionally needs
+ * {@link MIN_BUG_GONE_SAMPLES} samples, so a short lucky streak can't force
+ * the workaround's removal; see {@link ColdConnectVerdict} for what each
+ * verdict makes the job do.
  */
 export function classifyColdConnectRun(samples: readonly ColdConnectSample[]): ColdConnectResult {
   const n = samples.length;
@@ -88,6 +100,15 @@ export function classifyColdConnectRun(samples: readonly ColdConnectSample[]): C
     return {
       verdict: 'bug-present',
       message: `Cold-connect rejection still present (${rejected}/${n} rejected) — FT-5226 not fixed; keep withConnectionRetry.`,
+    };
+  }
+  if (success === n && n < MIN_BUG_GONE_SAMPLES) {
+    return {
+      verdict: 'inconclusive',
+      message:
+        `All ${n} cold connects succeeded, but ${MIN_BUG_GONE_SAMPLES} are needed before ` +
+        'claiming FT-5226 is fixed — a short unanimous streak is luck, not evidence. ' +
+        'Not blocking; keep withConnectionRetry.',
     };
   }
   if (success === n) {
