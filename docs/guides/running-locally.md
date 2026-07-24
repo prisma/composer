@@ -70,9 +70,9 @@ attention to one).
   cron.runner`. A nested module's service address is dotted, exactly as the
   front door prints it.
 - **How much history:** `--tail <n>` sets how many recent lines to show before
-  going live (default 20; `--tail 0` for live-only). A follow never replays
-  the whole log — the per-service log file is append-only and spans sessions,
-  so without `--tail` you get the tail, not the entire history.
+  going live (default 20; `--tail 0` for live-only). Each service's log is
+  cleared when it starts fresh, so it only ever holds the current run — you're
+  never scrolling back through past `dev` sessions.
 - **Nothing running yet?** If you haven't `dev`'d the app (or `Ctrl-C`'d it),
   `log` says so and points you at `dev`.
 

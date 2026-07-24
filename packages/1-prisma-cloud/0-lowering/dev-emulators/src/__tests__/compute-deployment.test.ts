@@ -518,3 +518,81 @@ describe('log follow', () => {
     expect(seen).not.toContain('line-1\n');
   }, 15_000);
 });
+
+describe('log reset on a fresh start', () => {
+  const readLog = (app: string, id: string): Promise<string> =>
+    fetch(`${daemonUrl}/apps/${app}/services/${id}/logs`).then((r) => r.text());
+
+  test('a new deployment starts with an empty log — the prior run is gone', async () => {
+    const client = computeClient({ registryRoot });
+    const artifactDir = writeBootstrap(SERVING_BOOTSTRAP);
+    const reserved = await client.ensureService('app-reset', 'web');
+    const deploy = (hash: string, body: string): Promise<void> =>
+      client.putDeployment('app-reset', 'web', {
+        address: 'app-reset.web',
+        artifactDir,
+        artifactHash: hash,
+        env: baseEnv({ PORT: String(reserved.port), ...servingBootstrapEnv(body) }),
+        port: reserved.port,
+      });
+
+    await deploy('v1', 'one');
+    await waitFor(
+      async () => (await readLog('app-reset', 'web')).includes('booted: one'),
+      5000,
+      100,
+    );
+
+    // A changed deployment restarts the service — a fresh start.
+    await deploy('v2', 'two');
+    await waitFor(
+      async () => (await readLog('app-reset', 'web')).includes('booted: two'),
+      5000,
+      100,
+    );
+
+    const logText = await readLog('app-reset', 'web');
+    expect(logText).toContain('booted: two');
+    expect(logText).not.toContain('booted: one');
+  }, 15_000);
+
+  test('a follower survives the clear and picks up the fresh log', async () => {
+    const client = computeClient({ registryRoot });
+    const artifactDir = writeBootstrap(SERVING_BOOTSTRAP);
+    const reserved = await client.ensureService('app-reset-follow', 'web');
+    const deploy = (hash: string, body: string): Promise<void> =>
+      client.putDeployment('app-reset-follow', 'web', {
+        address: 'app-reset-follow.web',
+        artifactDir,
+        artifactHash: hash,
+        env: baseEnv({ PORT: String(reserved.port), ...servingBootstrapEnv(body) }),
+        port: reserved.port,
+      });
+
+    await deploy('v1', 'first');
+    await waitFor(
+      async () => (await readLog('app-reset-follow', 'web')).includes('booted: first'),
+      5000,
+      100,
+    );
+
+    const chunks: string[] = [];
+    const controller = new AbortController();
+    const following = (async () => {
+      for await (const chunk of client.followLogs('app-reset-follow', 'web', controller.signal, {
+        tail: 50,
+      })) {
+        chunks.push(chunk);
+      }
+    })().catch(() => undefined);
+    await waitFor(() => chunks.join('').includes('booted: first'), 5000, 100);
+
+    // A fresh start clears the file out from under the follower, then writes anew.
+    await deploy('v2', 'second');
+    await waitFor(() => chunks.join('').includes('booted: second'), 8000, 100);
+    controller.abort();
+    await following;
+
+    expect(chunks.join('')).toContain('booted: second');
+  }, 20_000);
+});
