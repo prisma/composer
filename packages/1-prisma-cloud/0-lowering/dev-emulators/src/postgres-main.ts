@@ -599,32 +599,63 @@ function main(): void {
     }
 
     const isFreshAllocation = existingRecord === undefined;
-    // Fresh picks avoid every port a `@prisma/dev` record claims, or the
-    // start would be refused (see `registryClaimedPorts`). A persisted port
-    // is pinned regardless — endpoints in deploy state reference it.
-    const registryPorts = isFreshAllocation
-      ? await registryClaimedPorts(internalState)
-      : new Set<number>();
-    let dbPort =
-      existingRecord?.databasePort ??
-      (await smallestUnusedDatabasePort(MIN_DATABASE_PORT, registryPorts));
+    // Port picks avoid every port a `@prisma/dev` record claims, or the
+    // start would be refused (see `registryClaimedPorts`). A persisted
+    // DATABASE port is pinned regardless — endpoints in deploy state
+    // reference it.
+    const registryPorts = await registryClaimedPorts(internalState);
+    // Assigned inside the serialized section below; a persisted port is
+    // fixed here and never re-picked.
+    let dbPort = existingRecord?.databasePort ?? 0;
 
     const conflicted = new Set<number>();
     let alreadyRunningRetries = 0;
+    let blindRetries = 0;
     for (let attempt = 1; ; attempt++) {
+      // ALL FOUR ports are ours to pick. `@prisma/dev`'s own picker
+      // consults only its record registry, never the OS — under
+      // concurrent processes it walks onto a port another process has
+      // bound but not yet recorded and fails the bind ("Is port X in
+      // use?", seen on CI with turbo running several packages' tests at
+      // once). Our pick both OS-probes (getPort) and excludes every
+      // recorded claim, and a refusal of any of the four carries the
+      // port, which the retry below turns into fresh candidates.
+      //
+      // Picks happen INSIDE the serialized section, together with the
+      // start they feed: an app converges several databases at once, and
+      // a pick made outside the queue cannot see the ports a sibling's
+      // queued start is about to bind — both ensures would pick the same
+      // free candidates, and the loser's refusal leaks its name's lock
+      // (observed on CI as "already running" with the retry budget spent
+      // on clash-recover cycles).
+      const auxPorts: number[] = [];
       try {
-        // Only the DATABASE port is ours to pin (endpoints in deploy state
-        // reference it). The http/shadow/streams listeners are internal to
-        // `@prisma/dev`, and its own picker is the only one that consults
-        // its registry of other servers — ours could not, which is what
-        // produced the "belongs to another Prisma Dev server" refusals.
-        const server = await serializeStart(() =>
-          prismaDev.startPrismaDevServer({
+        const server = await serializeStart(async () => {
+          if (isFreshAllocation) {
+            dbPort = await smallestUnusedDatabasePort(
+              MIN_DATABASE_PORT,
+              new Set([...registryPorts, ...conflicted]),
+            );
+          }
+          const auxExclude = new Set([...registryPorts, ...conflicted, dbPort]);
+          const pickAux = async (): Promise<number> => {
+            const port = await smallestUnusedDatabasePort(MIN_DATABASE_PORT, auxExclude);
+            auxExclude.add(port);
+            auxPorts.push(port);
+            return port;
+          };
+          const httpPort = await pickAux();
+          const shadowPort = await pickAux();
+          const streamsPort = await pickAux();
+          return prismaDev.startPrismaDevServer({
             name: instanceName,
             databasePort: dbPort,
+            port: httpPort,
+            shadowDatabasePort: shadowPort,
+            streamsPort,
             persistenceMode: 'stateful',
-          }),
-        );
+          });
+        });
         const url = server.database.connectionString;
         leakedStartNames.delete(instanceName);
         runtimes.set(instanceName, server);
@@ -687,7 +718,7 @@ function main(): void {
           // this name needs to know that.
           leakedStartNames.add(instanceName);
         }
-        const conflictPort = portConflictOf(err, [dbPort]);
+        const conflictPort = portConflictOf(err, [dbPort, ...auxPorts]);
         // The aux listener ports are never persisted, so a refusal of one is
         // always retryable with fresh candidates. The DATABASE port is frozen
         // once a record exists (endpoints in deploy state reference it) —
@@ -697,18 +728,24 @@ function main(): void {
           attempt < MAX_FRESH_PORT_CANDIDATES &&
           (conflictPort !== dbPort || isFreshAllocation);
         if (!canRetryNextPort) {
+          // A failure that names no port can still be a transient port
+          // race — a bind that lost to a process our probe couldn't see
+          // yet reports only "Is port X in use?" text, not a `.port`.
+          // Every attempt picks fresh aux candidates, so trying again is
+          // meaningful; bounded so a genuinely broken start still fails
+          // visibly with its own message.
+          if (conflictPort === undefined && !isNameAlreadyTaken(err) && blindRetries < 2) {
+            blindRetries += 1;
+            continue;
+          }
           const reason = err instanceof Error ? err.message : String(err);
           throw new Error(
             `postgres emulator failed to start database "${instanceName}" on port ${String(dbPort)}: ${maskCredentials(firstLine(reason))}`,
           );
         }
+        // The next attempt re-picks every non-pinned port inside the
+        // serialized section, skipping everything conflicted so far.
         conflicted.add(conflictPort);
-        if (conflictPort === dbPort) {
-          dbPort = await smallestUnusedDatabasePort(
-            dbPort + 1,
-            new Set([...conflicted, ...registryPorts]),
-          );
-        }
       }
     }
   }
