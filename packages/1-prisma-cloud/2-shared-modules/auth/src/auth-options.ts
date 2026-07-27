@@ -53,11 +53,23 @@ function hardenedPool(databaseUrl: string): pg.Pool {
     connectionString: databaseUrl,
     // Better Auth is schema-unqualified; every query runs against the auth
     // schema via search_path — the same posture the conformance test pins.
+    // `options` applies it at connection startup on Prisma Postgres, but the
+    // local `prisma-composer dev` emulator (and poolers such as pgbouncer)
+    // drop the startup `options` param, so it is also set per connection below.
     options: `-c search_path=${AUTH_SCHEMA}`,
     connectionTimeoutMillis: 20_000,
     idleTimeoutMillis: 5_000,
   });
   pool.on('error', (err) => console.error('pg pool idle client error', err));
+  // Portable search_path: an in-session SET runs on every new connection, so
+  // it holds even where the startup `options` param is ignored (the dev
+  // emulator). Without it, Better Auth's unqualified queries resolve against
+  // `public` there and fail with `relation "user" does not exist`.
+  pool.on('connect', (client) => {
+    void client
+      .query(`SET search_path TO ${AUTH_SCHEMA}`)
+      .catch((err) => console.error('auth: failed to set search_path', err));
+  });
   return pool;
 }
 
