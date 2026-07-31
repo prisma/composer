@@ -98,9 +98,13 @@ A queue definition is static TypeScript data shared by the producer client,
 consumer contract, and handler helper. It contains the payload schema and the
 delivery policy that must be known at deployment. Consumer registrations are
 also part of the static Composer graph, with exactly one consumer binding for each
-queue. Operational message state, attempts, availability times, and leases are
-durable database state; consumer code and deployment configuration are not stored
-in the database.
+queue. Only an explicit queue-to-consumer edge registers a consumer; exposing a
+compatible but unwired consumer port does not. Any number of producer edges may
+target the same queue. If topology wiring assigns a second distinct logical
+consumer service, graph loading fails before execution or deployment and identifies
+the queue and both conflicting services. Operational message state, attempts,
+availability times, and leases are durable database state; consumer code and
+deployment configuration are not stored in the database.
 
 Queue payloads must be JSON-compatible values. A payload may contain at most
 128 KiB after JSON serialization and UTF-8 encoding. Schema validation runs
@@ -383,8 +387,12 @@ syntax is implemented; batch handling and the remaining signatures stay open.
   to explain retry decisions.
 - **FR4. Static internal consumer.** Each queue is wired at deployment to exactly
   one logical Composer consumer service. One service may consume several queues.
-  Wiring fails before execution when a queue has no consumer or its consumer does
-  not expose the required contract.
+  Only an explicit consumer edge registers a service; exposing an unwired
+  compatible consumer port does not. Graph loading fails before execution or
+  deployment when a queue has no consumer, its consumer does not expose the
+  required contract, or topology wiring assigns a second distinct logical
+  consumer. A duplicate-consumer error identifies the queue and both conflicting
+  consumer services. Additional producer services remain allowed.
 - **FR5. Single-consumer delivery.** Every attempt for a queue is sent to its one
   logical consumer service. A successful attempt completes the message. Runtime
   replicas behind that service endpoint are not separate consumer registrations.
@@ -668,6 +676,12 @@ syntax is implemented; batch handling and the remaining signatures stay open.
       once in stable order. Every event validates against its documented
       discriminated shape and every supported filter narrows results. Covers
       FR30.
+- [ ] **AC33.** One consumer service is wired to a queue while a second service
+      exposes the same consumer contract without being wired. The graph loads and
+      messages go only to the wired consumer. Wiring the second service to the same
+      queue then makes graph loading fail before execution or deployment, and the
+      error identifies the queue and both conflicting consumer services. Adding
+      another producer does not fail graph loading. Covers FR2, FR4, FR5, and NFR2.
 
 # References
 
