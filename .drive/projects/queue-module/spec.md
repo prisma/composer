@@ -5,8 +5,9 @@ at-least-once work delivery on Prisma Cloud. It consists of a Queue Module and a
 always-running dispatcher driver. Version one stores messages in Prisma Postgres
 and pushes each queue's batches over authenticated HTTP to one statically wired
 Composer consumer service. Any number of application services may produce to the
-same queue. A later phase may add publish and subscribe as a separate capability
-without changing this queue delivery contract.
+same queue. Later phases may add statically declared, authenticated external
+producers and consumers. Publish and subscribe remains a separate capability and
+will not change this queue's single-consumer delivery contract.
 
 ## Prototype status
 
@@ -81,8 +82,8 @@ The design therefore needs an explicit dispatcher lifecycle as well as durable
 message state.
 
 The authoring experience should feel familiar to Cloudflare Queues while delivery
-uses a Google Cloud Tasks style HTTP push. Application code must not know about
-database rows, leases, dispatcher instances, service URLs, or authentication
+uses a Google Cloud Tasks style HTTP push. In-graph application code must not know
+about database rows, leases, dispatcher instances, service URLs, or authentication
 keys.
 
 ## Approach
@@ -316,9 +317,15 @@ producer port, including for the same queue it consumes. Separating the queue
 service from the dispatcher preserves this order and avoids a dependency cycle:
 queue service, then consumer services, then dispatcher.
 
-Version two may add a statically declared external HTTPS endpoint with
-queue-specific request authentication. Runtime self-registration is outside the
-current design.
+Direct external enqueue is not part of version one. A later phase may allow a
+queue to target one statically declared external HTTPS consumer instead of a
+Composer consumer service. A separate external producer capability may expose a
+queue-specific HTTPS endpoint to callers outside the Composer graph. Each external
+producer's access is declared by name in the deployment topology, and Composer
+provisions queue-specific credentials. External enqueue uses the same payload
+schema, size limit, and durable-commit guarantee as an internal `send()` call.
+Runtime self-registration, dynamic credential creation, and unauthenticated
+enqueue remain outside the design.
 
 The selected authoring foundation separates pure queue definitions from Composer
 nodes. `defineQueues` creates only a static typed catalog. Standalone
@@ -535,9 +542,13 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - More than one logical consumer or subscription per queue, including publish and
   subscribe delivery of one message to every subscription. A future topic and
   subscription capability must not change the queue's single-consumer contract.
+- Direct enqueue from services outside the Composer graph in version one. Until
+  external producer access is added, an external system must call an in-graph
+  application service that holds the typed producer binding.
 - Statically declared external HTTPS consumers in version one; these are the next
   planned phase.
-- Dynamic consumer registration, discovery, or heartbeats.
+- Dynamic consumer or producer registration, dynamic producer credential
+  creation, discovery, or heartbeats.
 - Exactly-once execution.
 - Consumer-controlled renewable leases or jobs that outlive one HTTP request.
 - Automatic dead-letter routing and separate dead-letter queue consumers.
