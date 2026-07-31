@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.59",
+    "alchemy": "2.0.0-beta.63",
     "arktype": "^2.2.3",
     "c12": "^3.3.4",
     "clipanion": "^3.2.1",

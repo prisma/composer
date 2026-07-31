@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.59",
+    "alchemy": "2.0.0-beta.63",
     "effect": "4.0.0-beta.93",
     "@internal/foundation": "workspace:0.4.0"
   },
