@@ -27,3 +27,8 @@
   dispatcher revisions competed for work, and older revisions used stale
   bindings. Composer needs deployment retirement or a revision-fencing mechanism
   before always-running drivers are production-safe.
+
+- **Unrelated bug.** The queue specification's relative links still use its old
+  `projects/queue-module/` depth after the file moved under `.drive/projects/`.
+  They currently resolve below `.drive/` instead of the repository `docs/`
+  directory and should be corrected separately.

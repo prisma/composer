@@ -3,9 +3,10 @@
 Prisma Composer will provide a first-party queue capability for durable,
 at-least-once work delivery on Prisma Cloud. It consists of a Queue Module and an
 always-running dispatcher driver. Version one stores messages in Prisma Postgres
-and pushes batches over authenticated HTTP to one of several statically registered
-Composer consumer services. A later phase will allow statically declared external
-HTTPS consumers without changing the producer contract.
+and pushes each queue's batches over authenticated HTTP to one statically wired
+Composer consumer service. Any number of application services may produce to the
+same queue. A later phase may add publish and subscribe as a separate capability
+without changing this queue delivery contract.
 
 ## Prototype status
 
@@ -25,10 +26,10 @@ durable path before the full version-one contract:
 - `examples/queues` proves one Compute service can produce and consume its own
   messages through the durable queue, including a real fail-once retry.
 
-The prototype does not yet implement batches, exponential retry, several
-competing consumers, failed-message inspection and replay, pause and resume,
-operational data, or OpenTelemetry. The detailed requirements below remain the
-target design, not a claim about the current implementation.
+The prototype does not yet implement batches, exponential retry, failed-message
+inspection and replay, pause and resume, operational data, or OpenTelemetry. The
+detailed requirements below remain the target design, not a claim about the
+current implementation.
 
 # Context
 
@@ -38,32 +39,33 @@ need a typed, Cloudflare-like handler model. On-call engineers need durable stat
 and clear attempt history when a message is delayed, retried, or delivered more
 than once.
 
-This project starts with work queues, not publish and subscribe. Several consumer
-services may compete for work, but they are alternative implementations of the
-same logical operation. Delivering a message to any registered consumer must
-produce an equivalent application outcome. Different required outcomes belong on
-different queues until publish and subscribe is designed.
+This project starts with work queues, not publish and subscribe. Any number of
+producer services may enqueue work, but each queue has exactly one logical
+consumer service. A service may consume several queues, and the deployment target
+may run several replicas of that service, but replicas are not separate Composer
+consumer registrations. Different required outcomes belong on different queues
+until publish and subscribe is designed as a separate capability.
 
 ## At a glance
 
-A producer receives a typed client through `service.load()` and commits a message
-to the Queue Module. A dispatcher claims available messages from Postgres and
-pushes a bounded batch to one registered consumer service. A successful result
-completes the message; a failed or missing result makes it available for a later
-attempt according to the queue's retry policy.
+Each producer receives a typed client through `service.load()` and commits a
+message to the Queue Module. A dispatcher claims available messages from Postgres
+and pushes a bounded batch to the queue's one consumer service. A successful
+result completes the message; a failed or missing result makes it available for a
+later attempt according to the queue's retry policy.
 
 ```mermaid
 flowchart LR
-  P[Producer service] -->|Typed enqueue client| Q[Queue service]
+  P1[Producer service A] -->|Typed enqueue client| Q[Queue service]
+  P2[Producer service B] -->|Typed enqueue client| Q
   Q --> D[(Prisma Postgres)]
   Q -->|Internal control port| X[Dispatcher]
-  X -->|One HTTP attempt| C1[Consumer service A]
-  X -->|One HTTP attempt| C2[Consumer service B]
-  X -->|One HTTP attempt| C3[Existing web service]
+  X -->|One HTTP attempt| C[One logical consumer service]
 ```
 
-The outgoing arrows represent competing delivery. One message attempt follows
-one arrow; it is not copied to every consumer.
+Every attempt for a queue goes to the same logical consumer service. Runtime
+replicas may share requests behind that service endpoint, but the queue topology
+contains one queue-to-consumer edge.
 
 ## Problem
 
@@ -88,15 +90,17 @@ keys.
 The queue capability is composed from ordinary Composer primitives. The Queue
 Module owns a Prisma Postgres database and a queue service. It exposes a typed
 producer port and an internal dispatch-control port. A separate dispatcher driver
-depends on the control port and the application-owned consumer ports. This remains
-target-specific functionality and does not add a queue primitive to Composer core.
+depends on the control port and the application-owned consumer port for each
+queue. This remains target-specific functionality and does not add a queue
+primitive to Composer core.
 
 A queue definition is static TypeScript data shared by the producer client,
 consumer contract, and handler helper. It contains the payload schema and the
 delivery policy that must be known at deployment. Consumer registrations are
-also part of the static Composer graph. Operational message state, attempts,
-availability times, and leases are durable database state; consumer code and
-deployment configuration are not stored in the database.
+also part of the static Composer graph, with exactly one consumer binding for each
+queue. Operational message state, attempts, availability times, and leases are
+durable database state; consumer code and deployment configuration are not stored
+in the database.
 
 Queue payloads must be JSON-compatible values. A payload may contain at most
 128 KiB after JSON serialization and UTF-8 encoding. Schema validation runs
@@ -142,12 +146,11 @@ self-requests.
 
 Each queue has one queue-wide concurrency limit, which defaults to 10 and accepts
 values from 1 through 100. One slot represents one active batch HTTP request,
-regardless of how many messages the batch contains. The dispatcher distributes
-available slots across registered consumers in round-robin order. It stops
-claiming when every slot is in use and resumes when a request finishes or a lease
-expires. A timed-out request releases its slot, but its messages remain leased
-until expiry. Version one has no zero-value pause, weights, or per-consumer
-capacity settings.
+regardless of how many messages the batch contains. Every slot targets the
+queue's one logical consumer service. The dispatcher stops claiming when every
+slot is in use and resumes when a request finishes or a lease expires. A timed-out
+request releases its slot, but its messages remain leased until expiry. Version
+one has no zero-value pause or per-replica capacity settings.
 
 Version one makes no message ordering guarantee. The dispatcher may prefer
 currently available messages by availability time and creation order when
@@ -302,12 +305,12 @@ are forbidden.
 
 Dedicated consumer Compute services are the documented default because they
 isolate scaling, failures, and logs from the web application. An existing
-Composer web service may expose the same consumer contract and compete for work.
-The application provisions every consumer before the dispatcher and wires its
+Composer web service may instead be the queue's one logical consumer. The
+application provisions each queue's consumer before the dispatcher and wires its
 delivery port into the driver. A consumer may also depend on the Queue Module's
 producer port, including for the same queue it consumes. Separating the queue
 service from the dispatcher preserves this order and avoids a dependency cycle:
-queue service, then consumers, then dispatcher.
+queue service, then consumer services, then dispatcher.
 
 Version two may add a statically declared external HTTPS endpoint with
 queue-specific request authentication. Runtime self-registration is outside the
@@ -360,7 +363,7 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 > provision(queueDispatcher({ queues: { thumbnails } }), {
 >   deps: {
 >     control: queues.dispatch,
->     consumers: worker.queue,
+>     consumers: { thumbnails: worker.queue },
 >   },
 > });
 > ```
@@ -372,24 +375,23 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - **FR1. Typed queue definition.** An application can define a queue from a
   Standard Schema payload validator. The same definition types producer calls,
   consumer handlers, and delivery validation.
-- **FR2. Typed producer binding.** A service wired to the Queue Module receives a
-  queue client through `service.load()`. A successful enqueue response means the
-  message is durably committed.
+- **FR2. Typed producer binding.** Any number of services wired to the Queue
+  Module may receive the same queue's typed client through `service.load()`. A
+  successful enqueue response means the message is durably committed.
 - **FR3. Durable source of truth.** Prisma Postgres stores messages, availability,
   attempt count, current lease, completion state, and enough failure information
   to explain retry decisions.
-- **FR4. Static internal consumers.** Version one accepts multiple Composer
-  services provisioned by the application and registered in its topology. Wiring
-  fails before execution when a consumer does not expose the queue's required
-  contract.
-- **FR5. Competing delivery.** Each attempt is assigned to one registered
-  consumer. Different consumer implementations may process work concurrently,
-  but one successful attempt completes the message for all consumers. The
-  dispatcher selects consumers in round-robin order.
+- **FR4. Static internal consumer.** Each queue is wired at deployment to exactly
+  one logical Composer consumer service. One service may consume several queues.
+  Wiring fails before execution when a queue has no consumer or its consumer does
+  not expose the required contract.
+- **FR5. Single-consumer delivery.** Every attempt for a queue is sent to its one
+  logical consumer service. A successful attempt completes the message. Runtime
+  replicas behind that service endpoint are not separate consumer registrations.
 - **FR6. Flexible consumer placement.** A consumer may be a dedicated Compute
   service or an existing application Compute service. Documentation and examples
   use a dedicated service by default.
-- **FR7. HTTP push.** The dispatcher invokes the selected consumer through a
+- **FR7. HTTP push.** The dispatcher invokes the queue's consumer through a
   bounded, authenticated HTTP request containing a batch of typed messages. The
   response carries one acknowledgement or retry decision for every message.
 - **FR8. Safe claiming.** Concurrent dispatcher work cannot claim the same
@@ -407,20 +409,20 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - **FR12. Internal authentication.** Composer provisions authentication for every
   dispatcher-to-consumer edge. Application handlers do not receive or manage
   service credentials.
-- **FR13. Local operation.** The Queue Module and registered consumers run under
+- **FR13. Local operation.** The Queue Module and wired consumer services run under
   `prisma-composer dev` with local durable storage and the same public producer and
   consumer contracts used after deployment.
 - **FR14. Failure visibility.** Runtime logs and stored attempt data identify the
-  queue, message, attempt number, selected consumer, outcome, and next retry time
+  queue, message, attempt number, consumer, outcome, and next retry time
   without logging the message body by default.
 - **FR15. Traffic-independent dispatch.** The queue capability includes one
   dispatcher driver that remains running and processes new messages, delayed
   retries, and expired leases without application traffic.
 - **FR16. Queue-wide concurrency.** Each queue permits 10 active batch HTTP
   requests by default and accepts a configured limit from 1 through 100. The
-  dispatcher does not claim more work while all slots are in use. All consumers
-  share the limit; version one does not configure weights or per-consumer
-  concurrency.
+  dispatcher does not claim more work while all slots are in use. Every slot
+  targets the queue's one logical consumer; version one does not configure
+  per-replica concurrency.
 - **FR17. Consumer enqueue.** A consumer may receive the typed producer binding
   for any queue, including the same queue it consumes, and enqueue follow-up work
   without creating a dependency cycle.
@@ -493,9 +495,9 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - **NFR1. Composer architecture.** The feature uses existing Module, service,
   resource, dependency, and contract primitives. Composer core remains unaware of
   Prisma Cloud queues.
-- **NFR2. Deterministic topology.** Consumer registrations and delivery edges are
-  visible in the statically loaded graph. Version one performs no runtime service
-  discovery.
+- **NFR2. Deterministic topology.** Each queue's single consumer registration and
+  delivery edge are visible in the statically loaded graph. Version one performs
+  no runtime service discovery.
 - **NFR3. Runtime neutrality.** Public authoring and handler types do not expose
   Bun-only or Node-only types. Application code owns its build, and Composer does
   not bundle or transform it.
@@ -522,7 +524,9 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 
 ## Non-goals
 
-- Publish and subscribe or delivery of one message to every consumer.
+- More than one logical consumer or subscription per queue, including publish and
+  subscribe delivery of one message to every subscription. A future topic and
+  subscription capability must not change the queue's single-consumer contract.
 - Statically declared external HTTPS consumers in version one; these are the next
   planned phase.
 - Dynamic consumer registration, discovery, or heartbeats.
@@ -551,9 +555,9 @@ syntax is implemented; batch handling and the remaining signatures stay open.
       schema-valid payload larger than 128 KiB. Each call returns the relevant
       typed validation failure without creating a message row. Covers FR1, FR2,
       and FR21.
-- [ ] **AC3.** Two different internal consumer services are registered, concurrent
-      messages reach both services over time, and each message is completed by only
-      one successful consumer. Covers FR4–FR7 and NFR2.
+- [ ] **AC3.** Two different producer services enqueue messages to the same queue.
+      Its one wired consumer service receives every message, and each message is
+      completed by one successful attempt. Covers FR2, FR4–FR7, and NFR2.
 - [ ] **AC4.** Two dispatcher workers race for the same available messages and no
       message has two active leases. Covers FR8.
 - [ ] **AC5.** A consumer finishes its side effect but its HTTP response is lost.
@@ -566,8 +570,8 @@ syntax is implemented; batch handling and the remaining signatures stay open.
       FR10 and FR11.
 - [ ] **AC8.** An unwired Compute service cannot invoke a queue consumer endpoint,
       while the wired dispatcher can. Covers FR12.
-- [ ] **AC9.** The same example application, including multiple competing
-      consumers, passes its conformance scenario under local development and a
+- [ ] **AC9.** The same example application, including multiple producers wired to
+      one consumer, passes its conformance scenario under local development and a
       deployed stage. Covers FR13 and NFR1–NFR3.
 - [ ] **AC10.** Delivery logs and attempt records explain a failed attempt and its
       next action without exposing the message body. Covers FR14.
@@ -579,10 +583,9 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - [ ] **AC12.** With no producer or web traffic, a delayed retry becomes due and
       the dispatcher delivers it. Restarting the dispatcher does not prevent due
       work or expired leases from progressing. Covers FR15, NFR5, and NFR8.
-- [ ] **AC13.** With one consumer and a queue concurrency limit of ten, no more
-      than ten batch HTTP requests are active at once. With several consumers,
-      those same queue-wide slots are distributed in round-robin order. Covers FR5
-      and FR16.
+- [ ] **AC13.** With a queue concurrency limit of ten, no more than ten batch HTTP
+      requests to its one logical consumer are active at once. Covers FR5 and
+      FR16.
 - [ ] **AC14.** A consumer is wired to both a queue delivery contract and the same
       queue's producer binding. The application graph loads without a dependency
       cycle, and handling one message can durably enqueue follow-up work. Covers
