@@ -3,7 +3,7 @@
 This guide covers everything you reach for once
 [Getting started](getting-started.md) has shown you the shape: giving a
 service a database (plain or Prisma Next-typed), packaging pieces as reusable
-Modules, the cron/storage/streams modules that ship with the framework, and
+Modules, the cron/storage/streams/queues modules that ship with the framework, and
 the service input — configuration and secrets as one schema.
 
 ## How the pieces fit
@@ -315,6 +315,7 @@ is a couple of lines:
 | `cron` from `@prisma/composer-prisma-cloud/cron` | A scheduler that fires your jobs at your service on an interval | nothing |
 | `storage` from `@prisma/composer-prisma-cloud/storage` | An S3-backed blob store, credentials included | `store` |
 | `streams` from `@prisma/composer-prisma-cloud/streams` | Durable append-only event streams, backed by a `store` | `streams` |
+| `queues` from `@prisma/composer-prisma-cloud/queues` | Persistent work delivery backed by Postgres | `producer`, `dispatch` |
 
 Cron is the one most apps want first. You supply two things — a schedule and
 a runner service that exposes the `trigger` contract — and the module does
@@ -356,6 +357,57 @@ provision(cron({ schedule, runner: promotionsService }), {
 [`examples/storage`](../../examples/storage/) and
 [`examples/streams`](../../examples/streams/) show the other two, including
 the streams module's secret binding.
+
+The queues prototype uses one static catalogue for producer and consumer
+typing. The queue Module owns its Postgres database and queue service. A
+separate always-running dispatcher claims messages and pushes them to the
+consumer service:
+
+```ts
+// queues.ts
+import { defineQueues, fixedBackoff } from '@prisma/composer-prisma-cloud/queues';
+import { type } from 'arktype';
+
+export const appQueues = defineQueues({
+  thumbnails: {
+    message: type({ imageId: 'string' }),
+    retry: {
+      maxAttempts: 5,
+      delay: fixedBackoff({ delay: '5s' }),
+    },
+  },
+});
+```
+
+```ts
+// worker/service.ts
+import { queueConsumer, queueProducer } from '@prisma/composer-prisma-cloud/queues';
+
+export default compute({
+  name: 'worker',
+  deps: { queues: queueProducer(appQueues) },
+  expose: { consumer: queueConsumer() },
+  build: node({ module: import.meta.url, entry: '../../dist/worker/server.mjs' }),
+});
+```
+
+```ts
+// module.ts
+const queue = provision(queues({ definitions: appQueues }));
+const worker = provision(workerService, { deps: { queues: queue.producer } });
+
+provision(queueDispatcher(), {
+  deps: { queue: queue.dispatch, consumer: worker.consumer },
+  input: { pollIntervalMs: 250, leaseSeconds: 30 },
+});
+```
+
+Route `/rpc/*` in the worker to `serveQueues(workerService, appQueues,
+handlers)`. A handler can enqueue follow-up work through the producer dependency,
+including back to the same queue. This first prototype delivers one message per
+request and supports per-queue fixed retry delays. Batches, exponential retry,
+multiple competing consumers, replay, pause, and operational APIs remain future
+work. See [`examples/queues`](../../examples/queues/) for the complete deployed app.
 
 ### Where new blocks come from
 

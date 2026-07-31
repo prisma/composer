@@ -117,6 +117,9 @@
         "./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/scheduler-entrypoint.ts"
       ],
       "@internal/cron": ["./packages/1-prisma-cloud/2-shared-modules/cron/src/exports/index.ts"],
+      "@internal/queues": [
+        "./packages/1-prisma-cloud/2-shared-modules/queues/src/exports/index.ts"
+      ],
       "@prisma/composer/config": ["./packages/9-public/composer/src/exports/config.ts"],
       "@prisma/composer/deploy": ["./packages/9-public/composer/src/exports/deploy.ts"],
       "@prisma/composer/local-target": ["./packages/9-public/composer/src/exports/local-target.ts"],
@@ -148,6 +151,9 @@
       ],
       "@prisma/composer-prisma-cloud/cron": [
         "./packages/9-public/composer-prisma-cloud/src/exports/cron.ts"
+      ],
+      "@prisma/composer-prisma-cloud/queues": [
+        "./packages/9-public/composer-prisma-cloud/src/exports/queues.ts"
       ],
       "@prisma/composer-prisma-cloud": [
         "./packages/9-public/composer-prisma-cloud/src/exports/index.ts"

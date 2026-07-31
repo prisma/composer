@@ -1,0 +1,1 @@
+[unrelated bug] `docs/guides/getting-started.md` declares `const { quotes } = service.load();` twice in the gateway server example. This makes the copied example fail to compile and should be fixed in a separate documentation task.
