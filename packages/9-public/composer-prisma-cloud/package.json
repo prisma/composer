@@ -27,6 +27,9 @@
     "./streams": "./dist/streams/index.mjs",
     "./streams/streams-entrypoint": "./dist/streams/streams-entrypoint.mjs",
     "./streams/testing": "./dist/streams/testing.mjs",
+    "./queues": "./dist/queues/index.mjs",
+    "./queues/queue-entrypoint": "./dist/queues/queue-entrypoint.mjs",
+    "./queues/dispatcher-entrypoint": "./dist/queues/dispatcher-entrypoint.mjs",
     "./package.json": "./package.json"
   },
   "files": [
@@ -71,13 +74,15 @@
     "@internal/nextjs": "workspace:0.3.0",
     "@internal/node": "workspace:0.3.0",
     "@internal/prisma-cloud": "workspace:0.3.0",
+    "@internal/queues": "workspace:0.3.0",
     "@internal/s3-protocol": "workspace:0.3.0",
     "@internal/service-rpc": "workspace:0.3.0",
     "@internal/storage": "workspace:0.3.0",
     "@internal/streams": "workspace:0.3.0",
     "@internal/tsdown-config": "workspace:0.3.0",
     "@types/node": "^26.0.1",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "unrun": "^0.3.1"
   },
   "license": "Apache-2.0",
   "repository": {

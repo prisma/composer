@@ -22,7 +22,8 @@ npx skills add prisma/composer --skill prisma-composer
 That's the whole setup. Your agent now knows the entire API and arrives
 prepped with the **building blocks** it can snap together — ready-made
 Modules for scheduled jobs, blob storage, and event streams, alongside the
-ones you write. Ask it for what you want ("a Next.js storefront calling an
+ones you write. Persistent work queues are available as an early prototype.
+Ask it for what you want ("a Next.js storefront calling an
 orders API with its own Postgres, deployed to a staging stage") and let it
 compose.
 
@@ -131,7 +132,7 @@ have.
 | Guide | Covers |
 | --- | --- |
 | [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
-| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma Next-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
+| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma Next-typed with migrations), reusable Modules, cron/storage/streams/queues, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
 | [Deploying and operating](docs/guides/deploying.md) | Stages, destroy, CI, how apps behave in production |
 
@@ -147,14 +148,16 @@ Complete, deployable apps under [`examples/`](examples/):
 | [cron](examples/cron/) | Scheduled jobs: `defineSchedule` + `serveSchedule` + the cron module |
 | [storage](examples/storage/) | The S3-backed blob store module |
 | [streams](examples/streams/) | Durable append-only event streams over storage |
+| [queues](examples/queues/) | Persistent queue delivery from and back to one Compute service |
 
 ## Building blocks and extensions
 
 A **Module** is the unit of reuse: it owns its internals and exposes a typed
 port, so composing one is a couple of lines and never an integration you have
-to invent. Three ship inside `@prisma/composer-prisma-cloud` today — `cron`
-(scheduled jobs), `storage` (S3-backed blobs), and `streams` (durable event
-streams) — alongside the Modules you write yourself.
+to invent. Four ship inside `@prisma/composer-prisma-cloud` today — `cron`
+(scheduled jobs), `storage` (S3-backed blobs), `streams` (durable event
+streams), and the early `queues` prototype (Postgres-backed work delivery) —
+alongside the Modules you write yourself.
 
 An **extension** is a package that brings its own Modules, resources, or
 deploy target. The convention is an npm package named `prisma-composer-*` —

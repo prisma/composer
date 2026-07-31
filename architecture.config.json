@@ -673,6 +673,54 @@
       "plane": "execution"
     },
     {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/*.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/execution/**",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/exports/index.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/exports/queue-service.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/exports/dispatcher-service.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/exports/queue-entrypoint.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/1-prisma-cloud/2-shared-modules/queues/src/exports/dispatcher-entrypoint.ts",
+      "domain": "prisma-cloud",
+      "layer": "modules",
+      "plane": "execution"
+    },
+    {
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/queues.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/9-public/composer/src/exports/deploy.ts",
       "domain": "public",
       "layer": "public",

@@ -58,6 +58,7 @@ const cronDist = '../../1-prisma-cloud/2-shared-modules/cron/dist';
 const storageDist = '../../1-prisma-cloud/2-shared-modules/storage/dist';
 const emailDist = '../../1-prisma-cloud/2-shared-modules/email/dist';
 const streamsDist = '../../1-prisma-cloud/2-shared-modules/streams/dist';
+const queuesDist = '../../1-prisma-cloud/2-shared-modules/queues/dist';
 const devEmulatorsDist = '../../1-prisma-cloud/0-lowering/dev-emulators/dist';
 export default defineConfig([
   {
@@ -282,6 +283,36 @@ export default defineConfig([
     ...baseConfig,
     entry: { testing: 'src/exports/streams-testing.ts' },
     outDir: 'dist/streams',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: [/^bun$/, /^bun:/],
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    ...baseConfig,
+    entry: { index: 'src/exports/queues.ts' },
+    outDir: 'dist/queues',
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    noExternal: [/^@internal\//],
+    plugins: [externalizeFramework],
+  },
+  {
+    // Both reusable services resolve their entrypoints beside their own built
+    // service module. The internal package has already fully inlined each
+    // program; this pass places the four files in the published /queues tree.
+    ...baseConfig,
+    dts: false,
+    entry: {
+      'queue-service': `${queuesDist}/queue-service.mjs`,
+      'queue-entrypoint': `${queuesDist}/queue-entrypoint.mjs`,
+      'dispatcher-service': `${queuesDist}/dispatcher-service.mjs`,
+      'dispatcher-entrypoint': `${queuesDist}/dispatcher-entrypoint.mjs`,
+    },
+    outDir: 'dist/queues',
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,

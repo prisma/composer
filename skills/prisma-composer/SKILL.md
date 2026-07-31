@@ -53,7 +53,7 @@ Two packages, and only two, appear in your `package.json`:
 | Package | Provides |
 | --- | --- |
 | `@prisma/composer` | Core authoring: `module`, `secret`, `isSecretString`, `/arktype` (the `secretString()` schema leaf), `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
-| `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
+| `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/queues`, `/prisma-next` modules |
 
 ## Anatomy of a service
 
@@ -378,6 +378,7 @@ growing:
 | `cron` from `/cron` | An always-on scheduler firing your schedule at your runner service | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
+| `queues` from `/queues` | Persistent work delivery backed by Postgres | `producer`, `dispatch` |
 
 **Finding more.** A Composer extension — a package that brings its own
 Modules, resources, or deploy target — is published on npm under the name
@@ -404,6 +405,43 @@ const handler = serveSchedule(service, schedule, {
 // module.ts — the cron module's boundary deps mirror the runner's own
 provision(cron({ schedule, runner: runnerService }), { deps: { worker: worker.rpc } });
 ```
+
+Queues use one catalogue for typed producers and consumers. The Module owns
+Postgres; a separate always-running dispatcher pushes claimed messages to a
+consumer service:
+
+```ts
+const definitions = defineQueues({
+  thumbnails: {
+    message: type({ imageId: 'string' }),
+    retry: {
+      maxAttempts: 5,
+      delay: fixedBackoff({ delay: '5s' }),
+    },
+  },
+});
+
+// worker service
+const workerService = compute({
+  name: 'worker',
+  deps: { queues: queueProducer(definitions) },
+  expose: { consumer: queueConsumer() },
+  build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
+});
+
+// root module
+const queue = provision(queues({ definitions }));
+const worker = provision(workerService, { deps: { queues: queue.producer } });
+provision(queueDispatcher(), {
+  deps: { queue: queue.dispatch, consumer: worker.consumer },
+  input: { pollIntervalMs: 250, leaseSeconds: 30 },
+});
+```
+
+The worker routes `/rpc/*` to `serveQueues(workerService, definitions,
+handlers)`. This early prototype delivers one message per request. Configurable
+batches, exponential retry, competing consumers, replay, pause, and operational
+APIs are not implemented yet. Use `examples/queues` as the complete reference.
 
 ## Service input
 
