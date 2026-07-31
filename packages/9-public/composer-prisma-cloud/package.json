@@ -48,7 +48,7 @@
     "@prisma-next/postgres": "0.16.0",
     "@prisma-next/sql-contract": "0.16.0",
     "@prisma/composer": "workspace:0.4.0",
-    "@prisma/management-api-sdk": "^1.50.0",
+    "@prisma/management-api-sdk": "^1.51.0",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.59",
     "arktype": "^2.2.3",
@@ -57,7 +57,7 @@
     "pathe": "^2.0.3",
     "pg": "8.22.0",
     "postgres": "^3.4.9",
-    "tsdown": "^0.22.7"
+    "tsdown": "^0.22.14"
   },
   "devDependencies": {
     "@internal/auth": "workspace:0.4.0",

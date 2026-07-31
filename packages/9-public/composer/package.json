@@ -41,7 +41,7 @@
     "effect": "4.0.0-beta.93",
     "esbuild": "^0.28.1",
     "postgres": "^3.4.9",
-    "@prisma/management-api-sdk": "^1.50.0"
+    "@prisma/management-api-sdk": "^1.51.0"
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.4.0",
@@ -54,7 +54,7 @@
     "@internal/service-rpc": "workspace:0.4.0",
     "@internal/tsdown-config": "workspace:0.4.0",
     "@types/node": "^26.0.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",

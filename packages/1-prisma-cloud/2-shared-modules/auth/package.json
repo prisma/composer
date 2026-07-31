@@ -49,7 +49,7 @@
     "@prisma-next/migration-tools": "0.16.0",
     "@prisma-next/sql-contract": "0.16.0",
     "@prisma-next/target-postgres": "0.16.0",
-    "better-auth": "1.6.24"
+    "better-auth": "1.6.25"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.4.0",
@@ -57,7 +57,7 @@
     "@prisma-next/postgres": "0.16.0",
     "@types/bun": "^1.3.13",
     "@types/pg": "8.20.0",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }
