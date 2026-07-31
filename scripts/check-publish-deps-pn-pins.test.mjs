@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { findLeaks, findPnPinViolations, isExactPnVersion } from './check-publish-deps.mjs';
+import {
+  findLeaks,
+  findPnPinViolations,
+  findPrivateDependencyViolations,
+  isExactPnVersion,
+} from './check-publish-deps.mjs';
 
 const INTERNAL_NAMES = new Set([
   '@prisma/composer',
@@ -184,6 +189,52 @@ describe('findPnPinViolations', () => {
           dependencies: { '@prisma/composer': '0.7.0-dev.5' },
         },
         INTERNAL_NAMES,
+      ),
+      [],
+    );
+  });
+});
+
+describe('findPrivateDependencyViolations', () => {
+  const privateNames = new Set(['@internal/dev-emulators']);
+
+  it('flags private workspace packages installed by consumers', () => {
+    assert.deepEqual(
+      findPrivateDependencyViolations(
+        {
+          dependencies: { '@internal/dev-emulators': '0.3.0' },
+        },
+        privateNames,
+      ),
+      [
+        {
+          field: 'dependencies',
+          name: '@internal/dev-emulators',
+          spec: '0.3.0',
+        },
+      ],
+    );
+  });
+
+  it('allows private workspace packages used only during development', () => {
+    assert.deepEqual(
+      findPrivateDependencyViolations(
+        {
+          devDependencies: { '@internal/dev-emulators': 'workspace:0.3.0' },
+        },
+        privateNames,
+      ),
+      [],
+    );
+  });
+
+  it('does not treat external packages as private workspace packages', () => {
+    assert.deepEqual(
+      findPrivateDependencyViolations(
+        {
+          dependencies: { '@prisma/management-api-sdk': '^1.50.0' },
+        },
+        privateNames,
       ),
       [],
     );

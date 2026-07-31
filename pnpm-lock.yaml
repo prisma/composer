@@ -1247,9 +1247,6 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0-beta.92
         version: 4.0.0-beta.92(effect@4.0.0-beta.93)(ioredis@5.11.1)
-      '@internal/dev-emulators':
-        specifier: workspace:0.3.0
-        version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@prisma-next/cli':
         specifier: 0.16.0
         version: 0.16.0(typanion@3.14.0)(typescript@6.0.3)
@@ -1311,6 +1308,9 @@ importers:
       '@internal/cron':
         specifier: workspace:0.3.0
         version: link:../../1-prisma-cloud/2-shared-modules/cron
+      '@internal/dev-emulators':
+        specifier: workspace:0.3.0
+        version: link:../../1-prisma-cloud/0-lowering/dev-emulators
       '@internal/email':
         specifier: workspace:0.3.0
         version: link:../../1-prisma-cloud/2-shared-modules/email

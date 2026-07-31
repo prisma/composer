@@ -41,7 +41,6 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.97",
     "@effect/platform-node": "4.0.0-beta.92",
-    "@internal/dev-emulators": "workspace:0.3.0",
     "@prisma-next/cli": "0.16.0",
     "@prisma-next/config-loader": "0.16.0",
     "@prisma-next/contract": "0.16.0",
@@ -64,6 +63,7 @@
     "@internal/auth": "workspace:0.3.0",
     "@internal/core": "workspace:0.3.0",
     "@internal/cron": "workspace:0.3.0",
+    "@internal/dev-emulators": "workspace:0.3.0",
     "@internal/email": "workspace:0.3.0",
     "@internal/foundation": "workspace:0.3.0",
     "@internal/local-target": "workspace:0.3.0",

@@ -1,0 +1,1 @@
+[unrelated bug] A clean npm install of both local public tarballs succeeds, but importing `@prisma/composer-prisma-cloud/local-target` fails inside Alchemy because npm resolves its Effect peer to `4.0.0-beta.102`, where `Schedule.both` is unavailable. This is separate from the private workspace dependency and needs its own dependency compatibility investigation.

@@ -113,7 +113,7 @@ describe('runCheck', () => {
       rm,
       io: {
         listPublishablePackageDirs: () => [],
-        listWorkspaceNames: () => new Set(),
+        listWorkspacePackages: () => ({ names: new Set(), privateNames: new Set() }),
         mkdtemp: () => '/tmp/pn-publish-check-fake',
         rm,
         readdirSync: () => [],
@@ -159,6 +159,23 @@ describe('runCheck', () => {
       readPackageJson: () => ({ name: '@scope/foo', version: '1.0.0' }),
       readPackedManifest: () => ({
         dependencies: { bad: 'workspace:*' },
+      }),
+    });
+    assert.equal(runCheck({ argv: [], io }), 1);
+    assert.equal(rm.mock.calls.length, 1);
+  });
+
+  it('returns 1 for a packed dependency on a private workspace package', () => {
+    const { io, rm } = makeIo({
+      listPublishablePackageDirs: () => ['packages/foo'],
+      listWorkspacePackages: () => ({
+        names: new Set(['@scope/foo', '@internal/private']),
+        privateNames: new Set(['@internal/private']),
+      }),
+      readdirSync: () => ['scope-foo-1.0.0.tgz'],
+      readPackageJson: () => ({ name: '@scope/foo', version: '1.0.0' }),
+      readPackedManifest: () => ({
+        dependencies: { '@internal/private': '1.0.0' },
       }),
     });
     assert.equal(runCheck({ argv: [], io }), 1);

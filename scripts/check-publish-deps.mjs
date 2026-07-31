@@ -27,6 +27,11 @@
 //      shared with external packages (e.g. `@prisma/management-api-sdk`)
 //      that must not be treated as internal.
 //
+//   3. Private-workspace-package check. A published package cannot ship a
+//      dependency on a private workspace package because that dependency is
+//      not available to registry consumers. Build-only dependencies belong in
+//      `devDependencies`, which are not installed by consumers.
+//
 // Usage:
 //   node scripts/check-publish-deps.mjs           — exit 1 on any violation
 //   node scripts/check-publish-deps.mjs --json    — same, with JSON report
@@ -135,6 +140,28 @@ export function findPnPinViolations(pkgJson, internalNames) {
   return violations;
 }
 
+/**
+ * Walks the dependency fields installed by package consumers and returns
+ * dependencies on private workspace packages. Such dependencies cannot be
+ * resolved from the registry.
+ *
+ * @param {Record<string, unknown>} pkgJson
+ * @param {Set<string>} privateNames names of private workspace packages
+ * @returns {Array<{ field: string; name: string; spec: string }>}
+ */
+export function findPrivateDependencyViolations(pkgJson, privateNames) {
+  const violations = [];
+  for (const field of SHIPPED_DEP_FIELDS) {
+    const deps = pkgJson[field];
+    if (!deps || typeof deps !== 'object') continue;
+    for (const [name, spec] of Object.entries(deps)) {
+      if (!privateNames.has(name) || typeof spec !== 'string') continue;
+      violations.push({ field, name, spec });
+    }
+  }
+  return violations;
+}
+
 function readPackedManifest(tgzPath) {
   const out = execFileSync('tar', ['-xzOf', tgzPath, 'package/package.json'], {
     encoding: 'utf-8',
@@ -154,26 +181,30 @@ function listPublishablePackageDirs() {
 }
 
 /**
- * Returns the set of package names that belong to this pnpm workspace,
- * via `pnpm list -r --depth -1 --json`. This is the membership source
- * the pin check uses instead of a name-prefix heuristic, since the
- * `@prisma/` npm scope is shared with external packages that are not
- * part of this workspace.
+ * Returns the package names that belong to this pnpm workspace, split into
+ * all names and private names, via `pnpm list -r --depth -1 --json`. This is
+ * the membership source used instead of a name-prefix heuristic, since the
+ * `@prisma/` npm scope is shared with external packages that are not part of
+ * this workspace.
  *
- * @returns {Set<string>}
+ * @returns {{ names: Set<string>; privateNames: Set<string> }}
  */
-function listWorkspaceNames() {
+function listWorkspacePackages() {
   const out = execFileSync('pnpm', ['list', '-r', '--depth', '-1', '--json'], {
     encoding: 'utf-8',
   });
   const parsed = JSON.parse(out);
   const names = new Set();
+  const privateNames = new Set();
   for (const pkg of parsed) {
     if (pkg?.name) {
       names.add(pkg.name);
+      if (pkg.private === true) {
+        privateNames.add(pkg.name);
+      }
     }
   }
-  return names;
+  return { names, privateNames };
 }
 
 /**
@@ -213,7 +244,7 @@ function tarballNameFor(pkgName, version) {
 const DEFAULT_IO = {
   packAll,
   listPublishablePackageDirs,
-  listWorkspaceNames,
+  listWorkspacePackages,
   readPackedManifest,
   readPackageJson: (dir) => JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8')),
   readdirSync,
@@ -242,7 +273,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
   const {
     packAll: pack,
     listPublishablePackageDirs: listDirs,
-    listWorkspaceNames: listNames,
+    listWorkspacePackages: listPackages,
     readPackedManifest: readPacked,
     readPackageJson,
     readdirSync: readDir,
@@ -255,7 +286,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
   const json = args.has('--json');
 
   const dirs = listDirs();
-  const internalNames = listNames();
+  const { names: internalNames, privateNames } = listPackages();
   const dest = mkdtemp();
 
   try {
@@ -274,6 +305,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
      *   tarball: string;
      *   leaks: ReturnType<typeof findLeaks>;
      *   pnPinViolations: ReturnType<typeof findPnPinViolations>;
+     *   privateDependencyViolations: ReturnType<typeof findPrivateDependencyViolations>;
      * }>}
      */
     const offenders = [];
@@ -288,8 +320,19 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
       const packed = readPacked(join(dest, tarballName));
       const leaks = findLeaks(packed);
       const pnPinViolations = findPnPinViolations(packed, internalNames);
-      if (leaks.length > 0 || pnPinViolations.length > 0) {
-        offenders.push({ pkg: sourcePkg.name, tarball: tarballName, leaks, pnPinViolations });
+      const privateDependencyViolations = findPrivateDependencyViolations(packed, privateNames);
+      if (
+        leaks.length > 0 ||
+        pnPinViolations.length > 0 ||
+        privateDependencyViolations.length > 0
+      ) {
+        offenders.push({
+          pkg: sourcePkg.name,
+          tarball: tarballName,
+          leaks,
+          pnPinViolations,
+          privateDependencyViolations,
+        });
       }
     }
 
@@ -297,7 +340,7 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
       stdoutWrite(`${JSON.stringify({ ok: offenders.length === 0, offenders }, null, 2)}\n`);
     } else if (offenders.length === 0) {
       stderrWrite(
-        `\nOK — no workspace:/catalog: leaks and no internal-workspace-package pin violations in ${dirs.length} publishable packages.\n`,
+        `\nOK — no workspace:/catalog: leaks, internal-workspace-package pin violations, or private workspace dependencies in ${dirs.length} publishable packages.\n`,
       );
     } else {
       stderrWrite(
@@ -311,6 +354,9 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
         for (const v of o.pnPinViolations) {
           stderrWrite(`    [pin]      ${v.field}.${v.name} = ${v.spec}\n`);
         }
+        for (const v of o.privateDependencyViolations) {
+          stderrWrite(`    [private]  ${v.field}.${v.name} = ${v.spec}\n`);
+        }
       }
       stderrWrite(
         '\n  [leak] specs are pnpm-internal (workspace:/catalog:) and break consumer installs.\n' +
@@ -320,7 +366,10 @@ export function runCheck({ argv = process.argv.slice(2), io = {} } = {}) {
           '         dependencies/peer/optional, must be a single exact version `X.Y.Z` (a\n' +
           '         pre-release suffix is permitted). Carets, tildes, ranges, and wildcards\n' +
           '         are rejected so consumer installs see the exact internal package graph\n' +
-          '         this release validated against.\n',
+          '         this release validated against.\n' +
+          '  [private] private workspace packages are not published and cannot be installed\n' +
+          '            by registry consumers. Move build-only dependencies to devDependencies\n' +
+          '            or expose the required runtime code through a public package.\n',
       );
     }
 
