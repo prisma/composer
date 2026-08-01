@@ -28,9 +28,9 @@ durable path before the full version-one contract:
   messages through the durable queue, including a real fail-once retry.
 
 The prototype does not yet implement batches, exponential retry, failed-message
-inspection and replay, pause and resume, operational data, or OpenTelemetry. The
-detailed requirements below remain the target design, not a claim about the
-current implementation.
+inspection and replay, pause and resume, or operational data. The detailed
+requirements below remain the target design, not a claim about the current
+implementation.
 
 # Context
 
@@ -244,7 +244,7 @@ Composer service wired to that port receives a typed client and the existing
 per-binding service key; unwired callers are rejected. A later Prisma Console or
 control-plane adapter can consume this contract, but that integration is outside
 this phase. The Queue Module does not store general-purpose metric time series or
-export customer-facing Prometheus or OpenTelemetry metrics in this phase.
+initiate outbound product analytics or metric export.
 
 Queue status returns the authored queue name, `running` or `paused` state,
 optional pause time, counts for available, delayed, leased, and retained failed
@@ -290,23 +290,11 @@ default and at most 100, and filters by occurrence time range, event type,
 consumer identifier, and message identifier. It does not provide payload or
 arbitrary text search.
 
-Anonymous product telemetry over OpenTelemetry is required from version one so
-the Prisma team can observe aggregate queue use and failures. It contains no
-payloads or customer-visible identifiers, and telemetry export failure never
-blocks enqueue, delivery, acknowledgement, retry, replay, pause, or resume. This
-anonymous telemetry is emitted on a best-effort basis after the related durable
-transaction commits. It is not stored in `queue_activity` and is separate from
-the operational data returned through the operational port.
-
-Anonymous counters cover messages enqueued, delivered, acknowledged, retried,
-failed, expired, and replayed, plus queue pauses and resumes. Histograms cover
-serialized payload size, batch size, queue wait time, consumer request duration,
-and attempt number. Rate-limited internal error events carry only the operation,
-normalized error code, Queue Module version, runtime, and Queue Module-owned
-stack frames. Allowed attributes are operation, outcome, failure reason, retry
-algorithm, runtime, and module version. Workspace, project, stage, queue,
-message, batch, consumer, URL, payload, user error text, and user-code stack data
-are forbidden.
+`queue_activity` is the Queue Module's only analytics record. It remains in the
+user's Queue Module database and is available only through the explicitly wired
+operational port. The queue service and dispatcher do not send product analytics,
+internal error events, or queue activity to Prisma or any third-party telemetry
+endpoint.
 
 Dedicated consumer Compute services are the documented default because they
 isolate scaling, failures, and logs from the web application. An existing
@@ -500,10 +488,6 @@ syntax is implemented; batch handling and the remaining signatures stay open.
   state, message-state counts, concurrency use, oldest available message age,
   and observation time. Activity uses a stable discriminated event contract,
   cursor pagination, and filters for time, type, consumer, and message.
-- **FR31. Anonymous product telemetry.** From version one, the queue capability
-  exports anonymous counters for queue operations, histograms for size and
-  timing, and rate-limited normalized internal errors through OpenTelemetry
-  without message payloads or customer-visible identifiers.
 
 ## Non-Functional Requirements
 
@@ -531,11 +515,11 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - **NFR8. Durable clock.** Dispatcher availability is a Prisma Cloud target
   property. Request-scoped `waitUntil`, self-invocation, and producer traffic are
   not accepted as the clock that makes due work progress.
-- **NFR9. Telemetry isolation.** OpenTelemetry export is best-effort and cannot
-  change or delay queue behavior. Anonymous telemetry contains no queue payload,
-  message identifier, queue name, consumer URL, or user-provided error text.
-  Internal error events are rate-limited and include only Queue Module-owned
-  stack frames.
+- **NFR9. No outbound product telemetry.** The queue service and dispatcher make
+  no outbound request for product analytics, OpenTelemetry export, or internal
+  error reporting. Operational analytics remain in `queue_activity` inside the
+  user's Queue Module database and are read only through the wired operational
+  port.
 
 ## Non-goals
 
@@ -559,8 +543,9 @@ syntax is implemented; batch handling and the remaining signatures stay open.
 - Bulk replay of failed messages.
 - Prisma Console or control-plane integration and a Queue Module-owned graphical
   interface.
-- Customer-facing Prometheus or OpenTelemetry metrics and durable metric
-  time-series storage in version one.
+- Queue Module-owned outbound product analytics, Prometheus or OpenTelemetry
+  export, and durable metric time-series storage. Operational activity remains in
+  `queue_activity` inside the user's Queue Module database.
 - Administrative operations beyond failed-message inspection, replay, pause and
   resume, and queue observability.
 - Strict first-in-first-out or per-key message ordering.
@@ -661,11 +646,10 @@ syntax is implemented; batch handling and the remaining signatures stay open.
       never more than 100. Following its opaque cursor across equal failure times
       produces each matching record once in stable order. Every documented
       filter narrows the results without inspecting payloads. Covers FR28.
-- [ ] **AC27.** Queue activity emits the documented anonymous OpenTelemetry
-      counters, histograms, and normalized internal errors without forbidden
-      attributes or user-code stack data. An unavailable exporter does not delay
-      or fail queue operations, and repeated internal errors are rate-limited.
-      Covers FR31 and NFR9.
+- [ ] **AC27.** Enqueue, delivery, retry, failure, replay, pause, and resume write
+      their documented operational activity only to `queue_activity`. Running
+      these operations makes no outbound product analytics, telemetry, or internal
+      error-reporting request. Covers FR30 and NFR9.
 - [ ] **AC28.** Enqueue and delivery of one batch creates batch-level operational
       activity with message and outcome counts rather than one success event per
       message. A terminal failure, replay, pause, and resume each create an
