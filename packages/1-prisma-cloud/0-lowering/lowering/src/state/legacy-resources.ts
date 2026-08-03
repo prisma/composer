@@ -43,8 +43,15 @@
  *     no branch id and the project's default branch id is not derivable
  *     offline, so upstream re-reads the App and repairs the attribute in
  *     place. Branch-stage apps recorded their branch id and converge silently.
- *   · The poison `DATABASE_URL`/`DATABASE_URL_POOLED` rows are neutralised —
- *     see {@link poisonKeyAttr}.
+ *   · The poison `DATABASE_URL`/`DATABASE_URL_POOLED` rows are RETIRED FROM
+ *     STATE, and the variables they named are left on the platform exactly as
+ *     they are — including the `"-"` placeholder value Composer wrote there
+ *     before the migration. The deploy reports them as `retained`, which is
+ *     what happened: no Management API call is made for them, ever. An
+ *     operator who wants the placeholder gone deletes the variable by hand
+ *     (docs/guides/deploying.md gives the call); until then, a service that
+ *     reads `process.env.DATABASE_URL` on a migrated stage still reads `"-"`.
+ *     See {@link retirePoisonRow}.
  *
  * Scope: the HOSTED state store only. Local dev state (alchemy's local
  * store) is never migrated — a stale local row under an unregistered type-id
@@ -175,19 +182,39 @@ const migrateProps = (family: Family, props: unknown): unknown => {
 };
 
 /**
- * A poison-key row named a variable the PLATFORM owns. Deleting one for real
- * is not safe: the legacy adoption matched on `{projectId, class, key}` with
- * no branch id, so the recorded scope may not equal the live variable's, and
- * upstream's delete refuses — loudly, mid-deploy — on a scope mismatch.
- * Handing it an id upstream reads as "not a cloud resource"
- * (`isPrismaDevId`) makes that delete a guaranteed no-op: the state row goes
- * away on the next deploy, the platform's own variable is left untouched, and
- * nothing is left double-managed.
+ * A poison-key row named a variable Composer must stop managing. Deleting one
+ * for real is not safe: the legacy adoption matched on `{projectId, class,
+ * key}` with no branch id, so the recorded scope may not equal the live
+ * variable's, and upstream's delete refuses — loudly, mid-deploy — on a scope
+ * mismatch. Whether the live variable is the platform's own system-managed
+ * template or the `"-"` placeholder Composer wrote over it depends on the
+ * stage, and neither is Composer's to remove.
+ *
+ * Two halves, doing different jobs:
+ *
+ *   · `removalPolicy: "retain"` on the ROW. Alchemy's engine honors it before
+ *     the provider is ever consulted: it drops the state row, makes no API
+ *     call, and reports the resource as `retained` rather than `deleted` —
+ *     which is the truthful verb, and the one an operator reading the deploy
+ *     log needs to see.
+ *   · An `environmentVariableId` the engine reads as "not a cloud resource"
+ *     (`isPrismaDevId`). This governs what the PROVIDER would do if it were
+ *     ever handed these attributes on some other path: nothing.
  */
-const poisonKeyAttr = (key: string) => ({
-  environmentVariableId: `dev:legacy-poison-${key}`,
-  key,
+const retirePoisonRow = (row: Record<string, unknown>, key: string) => ({
+  ...row,
+  removalPolicy: 'retain',
+  attr: { environmentVariableId: `dev:legacy-poison-${key}`, key },
 });
+
+/** The key a poison row named, from whichever half of the row still carries it. */
+const poisonKeyOf = (family: Family, props: unknown, attr: unknown): string | undefined => {
+  if (family !== 'EnvironmentVariable') return undefined;
+  const fromAttr = isRecord(attr) ? attr['key'] : undefined;
+  const fromProps = isRecord(props) ? props['key'] : undefined;
+  const key = typeof fromAttr === 'string' ? fromAttr : fromProps;
+  return typeof key === 'string' && POISON_KEYS.has(key) ? key : undefined;
+};
 
 const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => {
   if (!isRecord(attr)) return attr;
@@ -268,14 +295,12 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
     }
     case 'EnvironmentVariable': {
       if (typeof attr['id'] !== 'string' || 'environmentVariableId' in attr) return attr;
-      const key = attr['key'] ?? oldProps['key'];
-      if (typeof key === 'string' && POISON_KEYS.has(key)) return poisonKeyAttr(key);
       return {
         environmentVariableId: attr['id'],
         projectId: oldProps['projectId'],
         branchId: oldProps['branchId'] ?? null,
         class: oldProps['class'] ?? 'production',
-        key,
+        key: attr['key'] ?? oldProps['key'],
         // The API never returns plaintext, so upstream's own cold-read
         // placeholder is what belongs here — the desired value arrives from
         // props on every reconcile.
@@ -301,6 +326,9 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
     ...('props' in row ? { props: migrateProps(family, row['props']) } : {}),
     ...('attr' in row ? { attr: migrateAttr(family, row['attr'], row['props']) } : {}),
   };
+
+  const poisonKey = poisonKeyOf(family, row['props'], row['attr']);
+  if (poisonKey !== undefined) return retirePoisonRow(migrated, poisonKey);
 
   // Replacement rows nest the displaced generation under `old` (a full row);
   // updating rows nest `{props, attr, bindings}`. Migrate both forms so no

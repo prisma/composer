@@ -135,12 +135,25 @@ default. The platform marks both system-managed, and upstream's
 writes are removed rather than reshaped (they would fail the deploy). What
 still holds the line is the ban at the authoring end: `param.ts` and
 `secret.ts` reject both names, so no Composer-written row can carry one, and
-`configKey` puts every Composer row in the `COMPOSER_` namespace. Existing
-poison state rows are neutralised on read (see `state/legacy-resources.ts`)
-so their deletion never touches the platform's own variable.
+`configKey` puts every Composer row in the `COMPOSER_` namespace.
 
-Residual: an app that reads `process.env.DATABASE_URL` on Prisma Cloud now gets
-the platform's real default rather than a value that fails loudly.
+Existing poison state rows are marked `removalPolicy: "retain"` on read (see
+`state/legacy-resources.ts`), so the engine drops the state row, calls no API,
+and reports `retained` — the truthful verb. The deployed smoke run caught the
+first version of this: it reported `deleted`, which told an operator the
+platform variable was gone when it was still there.
+
+Residual, and it differs by stage:
+
+- A stage Composer never deployed before the swap: `DATABASE_URL` holds the
+  platform's own template value. An app reading it directly gets a working
+  default rather than something that fails loudly — that is the protection we
+  lost.
+- A stage Composer HAD deployed: the `"-"` placeholder it wrote is still on the
+  platform, user-managed (`isManagedBySystem: false`), and stays until an
+  operator deletes it. `docs/guides/deploying.md` gives the call. So a migrated
+  stage keeps the old fail-loudly behaviour by accident, indefinitely, unless
+  someone cleans up.
 
 ## What the swap costs us, precisely
 

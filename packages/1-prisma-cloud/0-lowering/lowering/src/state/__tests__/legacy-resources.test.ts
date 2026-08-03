@@ -670,12 +670,18 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(diff).toEqual({ action: 'update' });
   });
 
-  test('a poison DATABASE_URL row is neutralised: delete touches nothing', async () => {
+  test('a poison DATABASE_URL row is RETAINED, not deleted: state row retired, platform variable untouched', async () => {
     const migrated = migrateLegacyResourceState(legacyEnvRow('DATABASE_URL')) as MigratedRow;
+    // `retain` is what makes the engine drop the state row, skip the provider
+    // entirely, and report the resource as `retained` — the truthful verb for
+    // "we let go of it and called no API". Reporting `deleted` would tell an
+    // operator the platform variable is gone when it is still there.
+    expect(migrated['removalPolicy']).toBe('retain');
     expect(migrated.attr).toEqual({
       environmentVariableId: 'dev:legacy-poison-DATABASE_URL',
       key: 'DATABASE_URL',
     });
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
     const service = await environmentVariableService();
     // The stub's deleteEnvironmentVariable/getEnvironmentVariable die on this
     // id, so completing proves the platform's own variable is never touched.
@@ -707,6 +713,13 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect((migrateLegacyResourceState(composerEnv) as MigratedRow).resourceType).toBe(
       'Prisma.EnvironmentVariable',
     );
+    const composerPoison = {
+      ...legacyEnvRow('DATABASE_URL_POOLED'),
+      resourceType: 'PrismaComposer.EnvironmentVariable',
+    };
+    const migratedPoison = migrateLegacyResourceState(composerPoison) as MigratedRow;
+    expect(migratedPoison.resourceType).toBe('Prisma.EnvironmentVariable');
+    expect(migratedPoison['removalPolicy']).toBe('retain');
   });
 });
 

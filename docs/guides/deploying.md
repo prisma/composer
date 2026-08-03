@@ -283,13 +283,38 @@ and promotes once, then goes quiet. Subsequent deploys are unchanged: a service
 whose code has not changed is not redeployed.
 
 **`DATABASE_URL` and `DATABASE_URL_POOLED` are no longer overwritten.** The
-framework used to replace the platform's seeded values with a placeholder so
-that nothing could depend on them by accident. Those variables are owned by
-Prisma Cloud, and the upstream provider refuses to manage a platform-owned
-variable, so the framework leaves them alone. Nothing you write can carry those
-names — `envSecret`/`envParam` still reject them — but an application that
-reads `process.env.DATABASE_URL` directly now sees the platform's own value.
-Read your database URL from the connection your service declares.
+framework used to replace those variables' values with the placeholder `"-"`,
+so that nothing could depend on them by accident. It no longer touches them:
+they belong to Prisma Cloud, and the upstream provider refuses to manage a
+variable the platform marks as its own. Nothing you write can carry those names
+— `envSecret`/`envParam` still reject them — and every database URL your
+services use comes from the connection they declare.
+
+On the first deploy after the upgrade, the framework **stops tracking** those
+two variables. The deploy log reports them as `retained`, which is exactly what
+happens: the entry is dropped from deploy state and **no call is made to Prisma
+Cloud**, so whatever value the variable holds today stays.
+
+**What that means for an environment the framework deployed before the
+upgrade**: the `"-"` placeholder it wrote is still there. An application that
+reads `process.env.DATABASE_URL` directly reads `"-"` until someone removes the
+variable. Cleaning it up is optional — nothing the framework deploys reads it —
+and it is a manual step, because the framework will not delete a variable it no
+longer manages:
+
+```bash
+# Find the variable (add &branchId=<branch> for a --stage environment).
+curl -s -H "Authorization: Bearer $PRISMA_SERVICE_TOKEN" \
+  "https://api.prisma.io/v1/environment-variables?projectId=<projectId>&key=DATABASE_URL"
+
+# Remove it, using the id from the response.
+curl -s -X DELETE -H "Authorization: Bearer $PRISMA_SERVICE_TOKEN" \
+  "https://api.prisma.io/v1/environment-variables/<envVarId>"
+```
+
+Repeat for `DATABASE_URL_POOLED`. Once removed, the platform's own template
+value applies again. In the Console the same variables are visible under the
+project's environment variables.
 
 **Stage (`--stage`) environments see two one-time effects on their first
 deploy after the upgrade**, because a branch-attached database can no longer

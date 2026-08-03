@@ -54,14 +54,19 @@ every database URL a service consumes is an explicit, per-service variable the
 pack's `serialize` writes under its own named key, inside the `COMPOSER_`
 namespace.
 
-The framework used to go further and overwrite both platform variables with a
-garbage value, so that a direct reader failed loudly. It no longer does. The
-platform marks those variables system-managed, and alchemy's
-`EnvironmentVariable` refuses to manage a system-managed variable at all — an
-overwrite would fail the deploy rather than protect anyone. What remains is the
-ban at the authoring end: `param.ts` and `secret.ts` reject both names, so no
-Composer-written row can carry one. A service that reads `process.env.DATABASE_URL`
-behind the framework's back now reads the platform's own value.
+The framework used to go further and overwrite both platform variables with the
+placeholder `"-"`, so that a direct reader failed loudly. It no longer does. The
+platform marks those variables as its own, and alchemy's `EnvironmentVariable`
+refuses to manage one — an overwrite would fail the deploy rather than protect
+anyone. What remains is the ban at the authoring end: `param.ts` and `secret.ts`
+reject both names, so no Composer-written row can carry one.
+
+A service that reads `process.env.DATABASE_URL` behind the framework's back
+therefore reads whatever the platform holds: the platform's own template on an
+environment Composer never deployed before the swap, or the leftover `"-"` on
+one it did — the migration retires those rows from deploy state without
+touching the variables ([deploying.md](../../guides/deploying.md) has the
+manual cleanup).
 
 ## The resource inventory
 
