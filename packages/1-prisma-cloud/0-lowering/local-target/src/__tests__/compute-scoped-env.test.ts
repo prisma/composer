@@ -8,8 +8,10 @@ import { scopedEnvRows } from '../compute.ts';
  * looks "changed" on the very next converge, purely from a sibling's row
  * landing afterward). `scopedEnvRows` is the fix — every service's
  * materialized env keeps only what it owns (`COMPOSER_<its address>_*`)
- * plus every row OUTSIDE the `COMPOSER_` namespace (the poison rows, which
- * are deliberately app-wide).
+ * plus every row OUTSIDE the `COMPOSER_` namespace. Composer writes no
+ * unprefixed row itself — an unprefixed name is a platform-owned one — but the
+ * store is a plain file an operator can add to, and such a row is app-wide by
+ * nature, so the scoping keeps it.
  */
 describe('scopedEnvRows()', () => {
   test("keeps only the service's own COMPOSER_ rows plus every non-COMPOSER_ row", () => {
@@ -18,15 +20,13 @@ describe('scopedEnvRows()', () => {
       COMPOSER_WEB_ORIGIN: 'http://localhost:3000',
       COMPOSER_ORDERS_SERVICE_PORT: '3001',
       COMPOSER_ORDERS_SERVICE_CATALOG_URL: 'http://localhost:3002',
-      DATABASE_URL: '-',
-      DATABASE_URL_POOLED: '-',
+      SHARED_FEATURE_FLAG: 'on',
     };
 
     expect(scopedEnvRows(all, 'web')).toEqual({
       COMPOSER_WEB_PORT: '3000',
       COMPOSER_WEB_ORIGIN: 'http://localhost:3000',
-      DATABASE_URL: '-',
-      DATABASE_URL_POOLED: '-',
+      SHARED_FEATURE_FLAG: 'on',
     });
   });
 
@@ -44,13 +44,13 @@ describe('scopedEnvRows()', () => {
     });
   });
 
-  test('a service with no rows of its own still gets every poison/app-wide row', () => {
+  test('a service with no rows of its own still gets every app-wide row', () => {
     const all = {
       COMPOSER_OTHER_PORT: '4000',
-      DATABASE_URL: '-',
+      SHARED_FEATURE_FLAG: 'on',
     };
 
-    expect(scopedEnvRows(all, 'web')).toEqual({ DATABASE_URL: '-' });
+    expect(scopedEnvRows(all, 'web')).toEqual({ SHARED_FEATURE_FLAG: 'on' });
   });
 
   test('an empty env store scopes to an empty object', () => {

@@ -8,13 +8,19 @@
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { Providers } from '@internal/lowering';
 import { Bucket, BucketKey } from '@internal/lowering/buckets';
-import { ComputeService, Deployment, EnvironmentVariable } from '@internal/lowering/compute';
-import { Connection, Database, Project } from 'alchemy/Prisma';
+import {
+  App,
+  Connection,
+  Database,
+  Deployment,
+  EnvironmentVariable,
+  Project,
+} from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
 import { LocalBucketKeyProvider, LocalBucketProvider } from './bucket.ts';
 import {
-  LocalComputeServiceProvider,
+  LocalAppProvider,
   LocalDeploymentProvider,
   LocalEnvironmentVariableProvider,
   LocalProjectProvider,
@@ -28,7 +34,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
       Project,
       Database,
       Connection,
-      ComputeService,
+      App,
       Deployment,
       EnvironmentVariable,
       Bucket,
@@ -40,7 +46,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
         LocalProjectProvider(input),
         LocalDatabaseProvider(input),
         LocalConnectionProvider(input),
-        LocalComputeServiceProvider(input),
+        LocalAppProvider(input),
         LocalDeploymentProvider(input),
         LocalEnvironmentVariableProvider(input),
         LocalBucketProvider(input),

@@ -6,9 +6,6 @@ import * as Layer from 'effect/Layer';
 import { Bucket, BucketProvider } from './buckets/Bucket.ts';
 import { BucketKey, BucketKeyProvider } from './buckets/BucketKey.ts';
 import * as client from './client.ts';
-import { ComputeService, ComputeServiceProvider } from './compute/ComputeService.ts';
-import { Deployment, DeploymentProvider } from './compute/Deployment.ts';
-import { EnvironmentVariable, EnvironmentVariableProvider } from './compute/EnvironmentVariable.ts';
 import { fromEnv, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
 
 /** The collection of Prisma resource providers. */
@@ -38,19 +35,23 @@ const prismaEnvironment = () =>
   );
 
 /**
- * Upstream alchemy's live postgres-family providers (Project, Database,
- * Connection) over upstream's management client, authenticated by
+ * Upstream alchemy's live providers for the postgres family (Project,
+ * Database, Connection) and the compute family (App, Deployment,
+ * EnvironmentVariable), over upstream's management client, authenticated by
  * {@link prismaEnvironment}.
  *
  * alchemy 2.0.0-beta.67 exports only the per-resource provider layers, so
  * they are composed by hand here. TODO: switch to upstream's
  * `liveProviderLayer` in the alchemy release that exports it.
  */
-const upstreamPostgresProviders = () =>
+const upstreamPrismaProviders = () =>
   Layer.mergeAll(
     Prisma.ProjectProvider(),
     Prisma.DatabaseProvider(),
     Prisma.ConnectionProvider(),
+    Prisma.AppProvider(),
+    Prisma.DeploymentProvider(),
+    Prisma.EnvironmentVariableProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
     // Provide (NOT provideMerge) the node transport privately — mirrors
@@ -64,6 +65,25 @@ const upstreamPostgresProviders = () =>
  * The Prisma provider bundle: every resource provider, the Management API
  * client, and env-based credentials. Plug into a stack with
  * `{ providers: Prisma.providers() }`.
+ *
+ * The node transport is ALSO exposed as the bundle's ambient `HttpClient`,
+ * overriding the stack's fetch client. Upstream's `Deployment` PUTs the
+ * artifact to a presigned URL, which requires an explicit Content-Length on a
+ * file-backed body — what node's transport sends and fetch's chunked streaming
+ * does not. Upstream serves that from a Prisma-scoped service whose package
+ * subpath (`alchemy/Prisma/Internal/*`) is exported as `null`, so it cannot be
+ * composed in privately from outside; upstream documents the ambient client as
+ * the supported fallback, which is what this makes correct.
+ *
+ * The invariant that keeps this safe, and that new code must preserve: **no
+ * Composer provider may resolve the ambient `HttpClient`**. Every one of them
+ * carries its own client — the Management API client (openapi-fetch), the
+ * bucket resources through it, `PgWarm`/`PnMigration` over postgres.js — so
+ * this layer's override reaches only upstream's artifact upload. A provider
+ * that starts taking `HttpClient.HttpClient` would silently be handed the node
+ * transport by this line. Filed upstream: export the scoped upload client (or
+ * open the Internal subpath), after which this becomes a private
+ * `PrismaUploadClientLive` and the invariant can be retired.
  */
 export const providers = () =>
   Layer.effect(
@@ -72,23 +92,15 @@ export const providers = () =>
       Prisma.Project,
       Prisma.Database,
       Prisma.Connection,
-      ComputeService,
-      Deployment,
-      EnvironmentVariable,
+      Prisma.App,
+      Prisma.Deployment,
+      Prisma.EnvironmentVariable,
       Bucket,
       BucketKey,
     ]),
   ).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        upstreamPostgresProviders(),
-        ComputeServiceProvider(),
-        DeploymentProvider(),
-        EnvironmentVariableProvider(),
-        BucketProvider(),
-        BucketKeyProvider(),
-      ),
-    ),
+    Layer.provide(Layer.mergeAll(upstreamPrismaProviders(), BucketProvider(), BucketKeyProvider())),
+    Layer.provideMerge(NodeHttpClient.layerNodeHttp),
     Layer.provideMerge(client.layer()),
     Layer.provideMerge(fromEnv()),
     Layer.orDie,

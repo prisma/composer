@@ -1,29 +1,86 @@
 /**
- * Local compute-cluster providers (local-dev spec § 4): `ComputeService` and
- * `Deployment` become clients of the machine-scoped Compute emulator;
- * `EnvironmentVariable` becomes a row in the dev env store; `Project` is a
- * total-but-unused identity stand-in (no lowering yields one today). Every
- * factory takes `LocalTargetProvidersInput` — the app name is
- * `input.container`'s `input.appName` (see `app-name.ts`), `devDir` is
+ * Local compute-cluster providers (local-dev spec § 4): upstream alchemy's
+ * `Prisma.App` and `Prisma.Deployment` become clients of the machine-scoped
+ * Compute emulator; `Prisma.EnvironmentVariable` becomes a row in the dev env
+ * store; `Prisma.Project` is a total-but-unused identity stand-in (no lowering
+ * yields one today). Every factory takes `LocalTargetProvidersInput` — the app
+ * name is `input.container`'s `input.appName` (see `app-name.ts`), `devDir` is
  * `input.devDir`; nothing here reads `process.cwd()` or the environment.
+ *
+ * The emitted attributes match upstream's shapes. Fields the emulator has no
+ * answer for are left `null`/`undefined` where upstream's types allow it and
+ * nothing local reads them; the two that ARE read — the App's
+ * `appEndpointDomain` and the Deployment's — carry the emulator's local URL,
+ * which is what the deployed shapes carry too.
  */
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
-import {
-  ComputeService,
-  Deployment,
-  type DeploymentAttributes,
-  EnvironmentVariable,
-} from '@internal/lowering/compute';
-import { Project } from 'alchemy/Prisma';
+import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
+import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
 import { envStore, secretsStore } from './dev-store.ts';
+
+const DEV_TIMESTAMP = '1970-01-01T00:00:00.000Z';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Reads a project id from upstream's `project` input: a plain string or a resolved `Prisma.Project` attributes record. */
+function projectIdOfInput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (isRecord(value) && typeof value['projectId'] === 'string') return value['projectId'];
+  return 'local';
+}
+
+/** Reads an app id from upstream's `app` input: a plain string or a resolved `Prisma.App` attributes record. */
+function appIdOfInput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (isRecord(value) && typeof value['appId'] === 'string') return value['appId'];
+  throw new Error(`local Deployment received an app reference it cannot read: ${String(value)}`);
+}
+
+/**
+ * The artifact's own sha256, streamed from its bytes. Upstream's
+ * `Prisma.Deployment` carries no artifact-hash prop (it fingerprints the file
+ * inside the provider), so the emulator hashes the file it is handed — the
+ * same digest `packageComputeArtifact` derived the path from, which is what
+ * names the unpacked artifact directory and identifies the deployment.
+ *
+ * Memoized on the file's identity (path, size, mtime): a converge re-runs
+ * every provider, artifacts run to hundreds of megabytes, and the watch loop
+ * converges on every save.
+ */
+const artifactHashes = new Map<string, string>();
+
+function artifactSha256(artifactPath: string): string {
+  const stat = fs.statSync(artifactPath);
+  const identity = `${artifactPath}:${String(stat.size)}:${String(stat.mtimeMs)}`;
+  const memoized = artifactHashes.get(identity);
+  if (memoized !== undefined) return memoized;
+  const hash = crypto.createHash('sha256');
+  const fd = fs.openSync(artifactPath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let read = fs.readSync(fd, buffer, 0, buffer.length, null);
+    while (read > 0) {
+      hash.update(buffer.subarray(0, read));
+      read = fs.readSync(fd, buffer, 0, buffer.length, null);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  const digest = hash.digest('hex');
+  artifactHashes.set(identity, digest);
+  return digest;
+}
 
 /**
  * The env-var key the app's own boot-side `deserialize()` reads for its
@@ -50,17 +107,17 @@ const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 /**
  * Scopes `env.json` to what THIS service is allowed to see: rows it owns
  * (`COMPOSER_<its address>_*`) plus every row OUTSIDE the `COMPOSER_`
- * namespace entirely — the poison `DATABASE_URL(_POOLED)` rows are
- * deliberately unprefixed and app-wide (local-dev spec § 4's pinned parity
- * note). The hosted platform materializes the app-wide row set into every
+ * namespace entirely — an unprefixed row is a platform-owned name, app-wide
+ * by nature (local-dev spec § 4's pinned parity note). The hosted platform
+ * materializes the app-wide row set into every
  * deployment but DIFFS a deployment only on its own referenced rows; an
  * app-wide LOCAL materialization restart-amplifies instead — an
  * early-deployed service's snapshot is incomplete on the first converge,
  * "completes" on the second, and diffs as changed. Scoping the content here
  * aligns local restart behavior with the platform's diff scope. The dropped
  * sibling rows have no sanctioned reader: `run()`/`load()` consume only
- * own-address rows, and ambient sibling reads are exactly what the poison
- * rows exist to punish.
+ * own-address rows, and an ambient sibling read is exactly the mistake the
+ * COMPOSER_ namespace exists to make impossible.
  */
 export function scopedEnvRows(
   allRows: Readonly<Record<string, string>>,
@@ -155,31 +212,43 @@ async function materializeEnv(
 }
 
 /**
- * `ComputeService` → the Compute emulator: reserves (or returns) the
- * service's stable port. `delete` is a no-op — instance removal belongs to
- * `teardown` (`DELETE /apps/<app>`), not per-resource Alchemy deletes.
+ * `Prisma.App` → the Compute emulator: reserves (or returns) the service's
+ * stable port. The app id here IS the service's own address, which
+ * `Deployment` slugs back into the emulator's id. `delete` is a no-op —
+ * instance removal belongs to `teardown` (`DELETE /apps/<app>`), not
+ * per-resource Alchemy deletes.
  */
-export function LocalComputeServiceProvider(
+export function LocalAppProvider(
   input: LocalTargetProvidersInput,
-): Layer.Layer<Provider.Provider<ComputeService>> {
-  const service: Provider.ProviderService<ComputeService> = {
+): Layer.Layer<Provider.Provider<App>> {
+  const service: Provider.ProviderService<App> = {
     list: () => Effect.succeed([]),
-    reconcile: ({ news }) =>
+    reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const app = appNameOf(input.container);
-          const { url } = await computeClient().ensureService(app, slugServiceId(news.name));
-          return { id: news.name, name: news.name, endpointDomain: url };
+          const appName = appNameOf(input.container);
+          const name = news.displayName ?? id;
+          const { url } = await computeClient().ensureService(appName, slugServiceId(name));
+          return {
+            appId: name,
+            name,
+            projectId: projectIdOfInput(news.project),
+            regionId: news.regionId ?? 'us-east-1',
+            branchId: news.branchId ?? null,
+            latestDeploymentId: null,
+            appEndpointDomain: url,
+            createdAt: DEV_TIMESTAMP,
+          } satisfies App['Attributes'];
         },
         catch: (cause) => cause,
       }),
     delete: () => Effect.void,
     read: ({ output }) => Effect.succeed(output),
   };
-  return Provider.effect(ComputeService, Effect.succeed(service));
+  return Provider.effect(App, Effect.succeed(service));
 }
 
-/** `EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Parity with deploy: the poison `DATABASE_URL` rows land here like any other. */
+/** `Prisma.EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Upstream's value is `Redacted`; env.json holds the plain string the child process is given. */
 export function LocalEnvironmentVariableProvider(
   input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<EnvironmentVariable>> {
@@ -190,9 +259,20 @@ export function LocalEnvironmentVariableProvider(
         try: async () => {
           await envStore(input.devDir).update((current) => ({
             ...current,
-            [news.key]: news.value,
+            [news.key]: Redacted.value(news.value),
           }));
-          return { id: news.key, key: news.key };
+          return {
+            environmentVariableId: news.key,
+            projectId: projectIdOfInput(news.project),
+            branchId: news.branchId ?? null,
+            class: news.class,
+            key: news.key,
+            value: news.value,
+            valueKid: '',
+            isManagedBySystem: false,
+            createdAt: DEV_TIMESTAMP,
+            updatedAt: DEV_TIMESTAMP,
+          } satisfies EnvironmentVariable['Attributes'];
         },
         catch: (cause) => cause,
       }),
@@ -212,10 +292,13 @@ export function LocalEnvironmentVariableProvider(
 }
 
 /**
- * `Deployment` → unpacks the artifact once per hash, fetches the emulator's
- * assigned port, materializes the child's full env (env store + secrets +
- * the port override + `PATH`/`HOME`), and puts the deployment — the emulator
- * (re)starts the child only when the hash or env actually changed.
+ * `Prisma.Deployment` → unpacks the artifact once per hash, fetches the
+ * emulator's assigned port, materializes the child's full env (env store +
+ * secrets + the port override + `PATH`/`HOME`), and puts the deployment — the
+ * emulator (re)starts the child only when the hash or env actually changed.
+ * `portMapping` is ignored on purpose: the emulator owns port allocation, and
+ * the child learns its port from `COMPOSER_<ADDRESS>_PORT` in the env this
+ * provider materializes.
  */
 export function LocalDeploymentProvider(
   input: LocalTargetProvidersInput,
@@ -224,12 +307,16 @@ export function LocalDeploymentProvider(
     list: () => Effect.succeed([]),
     reconcile: ({ news }) =>
       Effect.tryPromise({
-        try: async (): Promise<DeploymentAttributes> => {
+        try: async (): Promise<Deployment['Attributes']> => {
           const app = appNameOf(input.container);
-          const id = news.computeServiceId;
-          const emulatorId = slugServiceId(id);
+          const appId = appIdOfInput(news.app);
+          const emulatorId = slugServiceId(appId);
+          if (news.artifactPath === undefined) {
+            throw new Error('local Deployment requires an artifactPath — nothing to run.');
+          }
+          const artifactHash = artifactSha256(news.artifactPath);
 
-          const artifactDir = path.join(input.devDir, 'artifacts', news.artifactHash);
+          const artifactDir = path.join(input.devDir, 'artifacts', artifactHash);
           if (!fs.existsSync(artifactDir)) {
             extractComputeArtifact(news.artifactPath, artifactDir);
           }
@@ -240,12 +327,25 @@ export function LocalDeploymentProvider(
           await computeClient().putDeployment(app, emulatorId, {
             address,
             artifactDir,
-            artifactHash: news.artifactHash,
+            artifactHash,
             env,
             port,
           });
 
-          return { deploymentId: news.artifactHash, deployedUrl: `http://localhost:${port}` };
+          const url = `http://localhost:${port}`;
+          return {
+            deploymentId: artifactHash,
+            appId,
+            // The emulator has no Foundry: the artifact digest is the only
+            // identity a local deployment has, and it is what upstream's
+            // recovery-by-version lookup would be given.
+            foundryVersionId: artifactHash,
+            status: 'running',
+            previewDomain: null,
+            artifactHash,
+            appEndpointDomain: url,
+            createdAt: DEV_TIMESTAMP,
+          } satisfies Deployment['Attributes'];
         },
         catch: (cause) => cause,
       }),
@@ -271,7 +371,7 @@ export function LocalProjectProvider(
         projectId: 'local',
         projectName: news.name ?? id,
         workspaceId: 'local',
-        createdAt: '1970-01-01T00:00:00.000Z',
+        createdAt: DEV_TIMESTAMP,
         defaultRegion: null,
         databaseId: undefined,
         defaultConnectionId: undefined,

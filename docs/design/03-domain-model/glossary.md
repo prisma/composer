@@ -375,17 +375,16 @@ is in `layering.md`; this is the term-by-term catalogue.
   `→` **Topology / implicit root Module**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
   tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
-  `yield*`-ed. Ours: `Prisma.Project`, `Database`, `Connection`,
-  `ComputeService`, `Deployment`, `EnvironmentVariable`.
-  `→` a **Service** lowers to `ComputeService` + `Deployment` (+
-  `EnvironmentVariable`); a first-class **Resource** (Postgres) lowers to
-  `Project` + `Database` + `Connection`.
+  `yield*`-ed. Composer binds upstream alchemy's: `Prisma.Project`, `Database`,
+  `Connection`, `App`, `Deployment`, `EnvironmentVariable`.
+  `→` a **Service** lowers to `App` + `Deployment` (+ `EnvironmentVariable`); a
+  first-class **Resource** (Postgres) lowers to `Database` + `Connection`.
 - **Props** — the desired configuration passed at declare time; diffed against
-  the last deploy to detect change. (We put the artifact's `artifactHash` in
-  Props so a rebuild registers as a change.) `→` a node's **Inputs** +
+  the last deploy to detect change. (A rebuild registers as a change because the
+  artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **Inputs** +
   **Configuration**.
-- **Attributes / Output\<T>** — values the cloud returns (`deployedUrl`,
-  `versionId`, ids); lazy references that flow into other Resources' Props.
+- **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
+  `deploymentId`, ids); lazy references that flow into other Resources' Props.
   Resource-to-resource wiring is Output → Props. `→` a node's **Outputs**; a
   **connection** (Output→Input) lowers to Output→Props, plus an
   `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
@@ -413,9 +412,11 @@ These two Alchemy concepts exist but our stack does not use them — and that ga
 is where the framework's own binding layer gets built.
 
 - **Platform** — Alchemy's Resource-that-carries-runtime-code (Cloudflare
-  Worker, AWS Lambda, Container). We model Prisma Compute as **ordinary
-  Resources** (`ComputeService` + `Deployment` + artifact) instead, because
-  Compute isn't an Alchemy-native platform.
+  Worker, AWS Lambda, Container). Alchemy's `Prisma.Compute` is one, but
+  Composer lowers to the **ordinary Resources** (`App` + `Deployment` +
+  artifact) instead — see the compute-family decision in the adoption notes:
+  a service's own origin is an input to its own environment, which one
+  composite resource cannot express.
 - **Binding** (`bind()`) — Alchemy's "the binding *is* the client" for a
   Platform: one call emits permissions + env and hands back a typed SDK client.
   We do **not** use it. The framework's binding/DI (capability `Tag` + `Layer` +

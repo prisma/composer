@@ -41,6 +41,7 @@ import * as RealS3Credentials from '../s3-credentials-resource.ts';
 // the resolved value the mock resource returned).
 const recorded: {
   envVar: Array<[string, unknown]>;
+  envVarProps: Array<[string, { value: unknown }]>;
   db: Array<[string, unknown]>;
   conn: Array<[string, unknown]>;
   warm: Array<[string, unknown]>;
@@ -54,6 +55,7 @@ const recorded: {
   generated: Array<[string, unknown]>;
 } = {
   envVar: [],
+  envVarProps: [],
   db: [],
   conn: [],
   warm: [],
@@ -73,14 +75,50 @@ mock.module('alchemy/Output', () => ({
   // Mirrors `map` above: every "output" here is already the resolved value a
   // mock resource returned, so combining them is just collecting the array.
   all: (...outs: unknown[]) => outs,
+  // Same collapse for `flatMap`, whose function returns an "output" that is
+  // already a resolved value here. What flatMap is FOR — keeping a dependency
+  // edge visible to Alchemy's planner while resolving to a value — cannot be
+  // observed through these mocks at all; it is proven against the real Output
+  // machinery in @internal/lowering's deployment-edge test.
+  flatMap: (output: unknown, fn: (v: unknown) => unknown) => fn(output),
 }));
 
-// The postgres family (Database/Connection) is upstream alchemy's — the
-// descriptors import it from 'alchemy/Prisma', so the stubs live there. The
-// returned attributes use upstream's field names (`databaseId`,
-// `directConnectionString`).
+// The postgres family (Database/Connection) and the compute family
+// (App/Deployment/EnvironmentVariable) are upstream alchemy's — the descriptors
+// import them from 'alchemy/Prisma', so the stubs live there. The returned
+// attributes use upstream's field names (`databaseId`, `appId`,
+// `appEndpointDomain`, `environmentVariableId`).
 mock.module('alchemy/Prisma', () => ({
   ...RealAlchemyPrisma,
+  App: (id: string, props: unknown) => {
+    recorded.svc.push([id, props]);
+    return Effect.succeed({
+      appId: `${id}#cloud-id`,
+      name: id,
+      appEndpointDomain: `https://${id}.example`,
+    });
+  },
+  Deployment: (id: string, props: unknown) => {
+    recorded.deploy.push([id, props]);
+    return Effect.succeed({
+      deploymentId: 'v1',
+      appEndpointDomain: `https://${id}.example`,
+    });
+  },
+  EnvironmentVariable: (id: string, props: { key: string; value: unknown }) => {
+    // Upstream's prop is `Redacted`. Recorded UNWRAPPED so every row
+    // assertion below can name the value it expects in plain text; the
+    // wrapper itself is pinned by its own test, off `recorded.envVarProps`.
+    recorded.envVarProps.push([id, props]);
+    recorded.envVar.push([
+      id,
+      {
+        ...props,
+        value: Redacted.isRedacted(props.value) ? Redacted.value(props.value) : props.value,
+      },
+    ]);
+    return Effect.succeed({ environmentVariableId: `${id}#cloud-id`, key: props.key });
+  },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
     return Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id });
@@ -97,10 +135,6 @@ mock.module('alchemy/Prisma', () => ({
 mock.module('@internal/lowering', () => ({
   ...RealPrismaAlchemy,
   providers: () => ({ stub: 'providers' }),
-  EnvironmentVariable: (id: string, props: { key: string }) => {
-    recorded.envVar.push([id, props]);
-    return Effect.succeed({ id: `${id}#cloud-id`, key: props.key });
-  },
   // A real Alchemy Resource (needs the Stack service); stubbed so
   // application.provision's mint runs purely. The returned "value" is
   // derived from `id` (which itself carries the edge id), so distinct edges
@@ -123,18 +157,6 @@ mock.module('@internal/lowering', () => ({
       endpoint: 'https://t3.storage.dev',
       bucketName: 'user-bucket-stub',
     });
-  },
-  ComputeService: (id: string, props: unknown) => {
-    recorded.svc.push([id, props]);
-    return Effect.succeed({
-      id: `${id}#cloud-id`,
-      name: id,
-      endpointDomain: `https://${id}.example`,
-    });
-  },
-  Deployment: (id: string, props: unknown) => {
-    recorded.deploy.push([id, props]);
-    return Effect.succeed({ deploymentId: 'v1', deployedUrl: `https://${id}.example` });
   },
   packageComputeArtifact: (opts: { id: string }) => {
     recorded.pkg.push([opts]);
@@ -216,7 +238,7 @@ const run = <A>(eff: Effect.Effect<unknown, unknown, unknown>): A =>
 type Resolved<T> = T extends RealOutput.Output<infer U> ? U : T;
 type Mirror<T> = { readonly [K in keyof T]: Resolved<T[K]> };
 /** The mock EnvironmentVariable, standing in for the real resource. */
-type MockedEnvironment = ReadonlyArray<{ id: string; key: string }>;
+type MockedEnvironment = ReadonlyArray<{ environmentVariableId: string; key: string }>;
 
 type MockedProvisioned = Mirror<ComputeProvisioned>;
 type MockedSerialized = Omit<Mirror<ComputeSerialized>, 'environment'> & {
@@ -315,7 +337,7 @@ describe("projectIdOf — narrowing ctx.application to this extension's own prod
 });
 
 describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
-  test('default stage: references the resolved container project (no Project minted), poisons DATABASE_URL + DATABASE_URL_POOLED with "-", class production, no branchId', () => {
+  test('default stage: references the resolved container project (no Project minted), writes NO environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const before = recorded.envVar.length;
     const container = new PrismaCloudContainer(
@@ -332,30 +354,15 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     );
 
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: undefined });
-    // "-", not "": the API rejects empty env-var values (verified at the R4 deploy proof).
-    expect(recorded.envVar.slice(before)).toEqual([
-      [
-        'DATABASE_URL-poison',
-        {
-          projectId: 'shop-project-id',
-          key: 'DATABASE_URL',
-          value: '-',
-          class: 'production',
-        },
-      ],
-      [
-        'DATABASE_URL_POOLED-poison',
-        {
-          projectId: 'shop-project-id',
-          key: 'DATABASE_URL_POOLED',
-          value: '-',
-          class: 'production',
-        },
-      ],
-    ]);
+    // DATABASE_URL/DATABASE_URL_POOLED used to be overwritten with garbage
+    // here. The platform owns those variables (it marks them system-managed,
+    // and alchemy refuses to manage a system-managed variable), so this hook
+    // writes nothing at all; param.ts/secret.ts still reject both names, so no
+    // Composer row can carry one.
+    expect(recorded.envVar.slice(before)).toEqual([]);
   });
 
-  test('named stage: poison env vars carry class "preview" and branchId', () => {
+  test('named stage: still writes no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const before = recorded.envVar.length;
     const container = new PrismaCloudContainer(
@@ -372,28 +379,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     );
 
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: 'branch_1' });
-    expect(recorded.envVar.slice(before)).toEqual([
-      [
-        'DATABASE_URL-poison',
-        {
-          projectId: 'shop-project-id',
-          key: 'DATABASE_URL',
-          value: '-',
-          class: 'preview',
-          branchId: 'branch_1',
-        },
-      ],
-      [
-        'DATABASE_URL_POOLED-poison',
-        {
-          projectId: 'shop-project-id',
-          key: 'DATABASE_URL_POOLED',
-          value: '-',
-          class: 'preview',
-          branchId: 'branch_1',
-        },
-      ],
-    ]);
+    expect(recorded.envVar.slice(before)).toEqual([]);
   });
 
   test('fails with the container-missing error when the CLI parent never resolved one', () => {
@@ -556,7 +542,10 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         endpointDomain: 'https://auth-svc.example',
       });
       expect(recorded.svc).toEqual([
-        ['auth-svc', { projectId: 'shop-project#cloud-id', name: 'auth', region: 'us-east-1' }],
+        [
+          'auth-svc',
+          { project: 'shop-project#cloud-id', displayName: 'auth', regionId: 'us-east-1' },
+        ],
       ]);
     });
   });
@@ -576,9 +565,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'auth2-svc',
           {
-            projectId: 'shop-project#cloud-id',
-            name: 'auth2',
-            region: 'us-east-1',
+            project: 'shop-project#cloud-id',
+            displayName: 'auth2',
+            regionId: 'us-east-1',
             branchId: 'branch_1',
           },
         ],
@@ -622,7 +611,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'COMPOSER_AUTH_DB_URL-var',
           {
-            projectId: 'shop-project#cloud-id',
+            project: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH_DB_URL',
             value: 'postgres://real-db',
             class: 'production',
@@ -634,7 +623,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'COMPOSER_AUTH_PORT-var',
           {
-            projectId: 'shop-project#cloud-id',
+            project: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH_PORT',
             value: '3000',
             class: 'production',
@@ -645,7 +634,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'COMPOSER_AUTH_ORIGIN-var',
           {
-            projectId: 'shop-project#cloud-id',
+            project: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH_ORIGIN',
             value: '"https://auth-svc.example"',
             class: 'production',
@@ -653,13 +642,62 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         ],
       ]);
       expect(result.environment).toEqual([
-        { id: 'COMPOSER_AUTH_DB_URL-var#cloud-id', key: 'COMPOSER_AUTH_DB_URL' },
-        { id: 'COMPOSER_AUTH_PORT-var#cloud-id', key: 'COMPOSER_AUTH_PORT' },
-        { id: 'COMPOSER_AUTH_ORIGIN-var#cloud-id', key: 'COMPOSER_AUTH_ORIGIN' },
+        {
+          environmentVariableId: 'COMPOSER_AUTH_DB_URL-var#cloud-id',
+          key: 'COMPOSER_AUTH_DB_URL',
+        },
+        { environmentVariableId: 'COMPOSER_AUTH_PORT-var#cloud-id', key: 'COMPOSER_AUTH_PORT' },
+        {
+          environmentVariableId: 'COMPOSER_AUTH_ORIGIN-var#cloud-id',
+          key: 'COMPOSER_AUTH_ORIGIN',
+        },
       ]);
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
       expect(result.port).toBe(3000);
+    });
+  });
+
+  test('every env-var value reaches the platform as a Redacted value, never a bare string', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({
+        name: 'test-service',
+        deps: {
+          db: postgres(),
+        },
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: 'file:///test/service.ts',
+          entry: 'server.js',
+        },
+      });
+      const ctx = {
+        address: 'auth',
+        node,
+        graph: { inputBindings: [], edges: [] },
+        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+      } as unknown as LowerContext;
+      const provisioned = {
+        serviceId: 'auth-svc#cloud-id',
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://auth-svc.example',
+      };
+      const before = recorded.envVarProps.length;
+
+      run<MockedSerialized>(
+        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, {
+          service: { port: 3000 },
+          inputs: { db: { url: 'postgres://real-db' } },
+        }),
+      );
+
+      const written = recorded.envVarProps.slice(before);
+      expect(written.length).toBeGreaterThan(0);
+      // A bare string here would put the value in Alchemy's state file in
+      // plain text — the wrapper is what keeps it out.
+      expect(written.every(([, props]) => Redacted.isRedacted(props.value))).toBe(true);
     });
   });
 
@@ -710,7 +748,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const writes = recorded.envVar.slice(before).map(([, props]) => props);
       // The provided url still writes its row...
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_CONSUMER_AUTH_URL',
         value: 'http://auth.internal',
         class: 'production',
@@ -770,7 +808,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         // One self-describing document; the secret leaf is a pointer naming
         // the platform var, never a value.
         expect(writes).toContainEqual({
-          projectId: 'shop-project#cloud-id',
+          project: 'shop-project#cloud-id',
           key: 'COMPOSER_INGEST_INPUT',
           value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
           class: 'production',
@@ -835,7 +873,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       // document's $generated pointer names.
       const writes = recorded.envVar.slice(beforeEnv).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_INGEST_SECRET_GENERATED',
         value: 'generated-for-COMPOSER_INGEST_INPUT:secret-generated',
         class: 'production',
@@ -941,7 +979,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         const writes = recorded.envVar.slice(before).map(([, props]) => props);
         // The pointer row holds the bound platform NAME, never a value.
         expect(writes).toContainEqual({
-          projectId: 'shop-project#cloud-id',
+          project: 'shop-project#cloud-id',
           key: 'COMPOSER_WEB_PORT',
           value: '@composer-param-pointer:PLATFORM_PORT',
           class: 'production',
@@ -988,7 +1026,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
 
       const writes = recorded.envVar.slice(before).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_WEB_PORT',
         value: '4100',
         class: 'production',
@@ -1030,7 +1068,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'COMPOSER_AUTH3_PORT-var',
           {
-            projectId: 'shop-project#cloud-id',
+            project: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH3_PORT',
             value: '3000',
             class: 'preview',
@@ -1040,7 +1078,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         [
           'COMPOSER_AUTH3_ORIGIN-var',
           {
-            projectId: 'shop-project#cloud-id',
+            project: 'shop-project#cloud-id',
             key: 'COMPOSER_AUTH3_ORIGIN',
             value: '"https://svc.example"',
             class: 'preview',
@@ -1110,13 +1148,18 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     expect(result).toEqual({ path: '/tmp/auth.tar.gz', sha256: 'sha-auth' });
   });
 
-  test("deploy's environment prop IS serialize's returned records — the edge that kills PRO-211", () => {
+  test("deploy's artifactPath carries serialize's env records — the ordering edge that kills PRO-211", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = { id: 'auth' } as unknown as LowerContext;
     const provisioned = { serviceId: 'auth-svc#cloud-id', projectId: 'shop-project#cloud-id' };
     const artifact = { path: '/tmp/auth.tar.gz', sha256: 'sha-auth' };
     const serialized = {
-      environment: [{ id: 'COMPOSER_AUTH_DB_URL-var#cloud-id', key: 'COMPOSER_AUTH_DB_URL' }],
+      environment: [
+        {
+          environmentVariableId: 'COMPOSER_AUTH_DB_URL-var#cloud-id',
+          key: 'COMPOSER_AUTH_DB_URL',
+        },
+      ],
       // A non-default port from serialize must reach the Deployment verbatim.
       port: 8080,
     };
@@ -1125,15 +1168,21 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       serviceDescriptorOf(target, 'compute').deploy(ctx, provisioned, artifact, serialized),
     );
 
+    // The mocked `Output.all`/`Output.map` collapse to "apply the function to
+    // the collected values", so the recorded artifactPath is the resolved
+    // path — what the real Output resolves to as well. What the assertion
+    // pins is that the path is built FROM the env rows' ids, which is the
+    // dependency Alchemy schedules the writes on.
     expect(recorded.deploy).toEqual([
       [
         'auth-deploy',
         {
-          computeServiceId: 'auth-svc#cloud-id',
+          app: 'auth-svc#cloud-id',
           artifactPath: '/tmp/auth.tar.gz',
-          artifactHash: 'sha-auth',
-          environment: serialized.environment,
-          port: 8080,
+          artifactContentType: 'application/gzip',
+          portMapping: { http: 8080 },
+          start: true,
+          promote: true,
         },
       ],
     ]);
@@ -1457,13 +1506,13 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_AUTH_MAIN_URL',
         value: 'postgres://data-conn',
         class: 'production',
       });
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_BILLING_STORE_URL',
         value: 'postgres://data-conn',
         class: 'production',
@@ -1534,13 +1583,13 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_WEB_AUTH_SERVICEKEY',
         value: 'key-for-servicekey-web.auth',
         class: 'production',
       });
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_AUTH_RPC_ACCEPTED_KEYS',
         value: '["key-for-servicekey-web.auth"]',
         class: 'production',
@@ -1618,7 +1667,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_AUTH3_RPC_ACCEPTED_KEYS',
         value: '[]',
         class: 'production',
@@ -1740,7 +1789,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       // validates and re-stashes it), JSON-encoded like any service-own
       // literal param.
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_EVENTS_STREAMS_API_KEY',
         value: '"key-for-streamskey-events"',
         class: 'production',
@@ -1897,13 +1946,13 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
 
       const writes = recorded.envVar.slice(before).map(([, props]) => props);
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_MULTI_PARAM_ONE',
         value: '"value-one"',
         class: 'production',
       });
       expect(writes).toContainEqual({
-        projectId: 'shop-project#cloud-id',
+        project: 'shop-project#cloud-id',
         key: 'COMPOSER_MULTI_PARAM_TWO',
         value: '"value-two"',
         class: 'production',

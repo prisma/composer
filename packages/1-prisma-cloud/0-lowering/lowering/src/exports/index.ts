@@ -3,8 +3,10 @@
  * Management API client, container, and credential helpers. Implementation
  * lives in `../providers.ts` and the modules it re-exports; the compute and
  * bucket surfaces are their own entrypoints. The postgres family (Project,
- * Database, Connection) is upstream alchemy's — consumers import it via
- * `import * as Prisma from 'alchemy/Prisma'`.
+ * Database, Connection) and the compute family (App, Deployment,
+ * EnvironmentVariable) are upstream alchemy's — consumers import them via
+ * `import * as Prisma from 'alchemy/Prisma'`. What stays here is Composer's
+ * own: the artifact packager, `ServiceKey`, and the bucket resources.
  */
 export {
   layer as managementClientLayer,

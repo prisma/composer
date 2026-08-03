@@ -117,8 +117,9 @@ async function existsOnPlatform(
 /**
  * Provision `key`=`value` directly via the Management API for the target
  * stage's scope (a production template for the default stage; a preview branch
- * override for a named stage — the same scope the pack writes config rows to,
- * EnvironmentVariable.ts). A 409 means a concurrent deploy already provisioned
+ * override for a named stage — the same scope the pack's config rows are
+ * written to, through alchemy's `Prisma.EnvironmentVariable`). A 409 means a
+ * concurrent deploy already provisioned
  * it — tolerated. The value is never logged.
  */
 async function fillMissing(

@@ -268,12 +268,28 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 - Branch-hosted generation: destroying on the old version already removed the environment's `prisma-composer-state` database. If you skipped that and deleted Branches by hand instead, each Branch took its database with it — but production's, on the default Branch, survives: delete it in the Console.
 - Workspace-hosted generation: delete the workspace-level `prisma-composer-state` project from the Console.
 
-## Upgrading to the upstream postgres resources
+## Upgrading to the upstream Prisma resources
 
-Framework versions that manage databases through upstream alchemy's Prisma
-provider adopt each environment's existing databases in place — deploy state
-is migrated automatically on read, and production environments redeploy with
-no changes to their databases or connections.
+Framework versions that manage databases, apps, deployments, and environment
+variables through upstream alchemy's Prisma provider adopt each environment's
+existing resources in place — deploy state is migrated automatically on read,
+and production environments redeploy with no changes to their databases or
+connections.
+
+**Every service ships one fresh deployment on the first deploy after the
+upgrade**, with the artifact it is already running: the new provider identifies
+a deployment by a fingerprint the old state rows cannot reproduce, so it ships
+and promotes once, then goes quiet. Subsequent deploys are unchanged: a service
+whose code has not changed is not redeployed.
+
+**`DATABASE_URL` and `DATABASE_URL_POOLED` are no longer overwritten.** The
+framework used to replace the platform's seeded values with a placeholder so
+that nothing could depend on them by accident. Those variables are owned by
+Prisma Cloud, and the upstream provider refuses to manage a platform-owned
+variable, so the framework leaves them alone. Nothing you write can carry those
+names — `envSecret`/`envParam` still reject them — but an application that
+reads `process.env.DATABASE_URL` directly now sees the platform's own value.
+Read your database URL from the connection your service declares.
 
 **Stage (`--stage`) environments see two one-time effects on their first
 deploy after the upgrade**, because a branch-attached database can no longer

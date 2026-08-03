@@ -2,9 +2,11 @@
 
 import { isParamSource, type ServiceNode } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
-import * as Prisma from '@internal/lowering';
+import { appAfterEnvironment, packageComputeArtifact } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
+import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
+import * as Redacted from 'effect/Redacted';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
@@ -28,10 +30,10 @@ import {
  * compute's provision → serialize/deploy handoff. `serviceId` is an
  * `Output<string>`, not a `string`: the whole stack effect runs before Alchemy
  * applies anything, so a yielded resource's attributes are lazy references
- * that only resolve at apply time. It reaches `Deployment`'s
- * `computeServiceId` unchanged — that prop takes `Input<string>`, which
- * accepts the reference. `projectId` really is a `string`: it comes from the
- * CLI's environment, not from a resource attribute.
+ * that only resolve at apply time. It reaches `Deployment`'s `app` prop
+ * unchanged — that prop takes `Input<string | App>`, which accepts the
+ * reference. `projectId` really is a `string`: it comes from the CLI's
+ * environment, not from a resource attribute.
  */
 export interface ComputeProvisioned {
   readonly serviceId: Output.Output<string>;
@@ -51,6 +53,18 @@ export interface ComputeSerialized {
 }
 
 /**
+ * Every env-var value goes to the platform wrapped in `Redacted`: the
+ * Management API never reads a value back, so alchemy persists the desired one
+ * in state to repair drift, and `Redacted` is what keeps it out of the
+ * serialized state row. A value that is still an unresolved deploy-time
+ * reference is wrapped inside the map, at the same point it becomes a string.
+ */
+const envValue = (
+  value: string | Output.Output<string>,
+): Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>> =>
+  Output.isOutput(value) ? Output.map(value, Redacted.make) : Redacted.make(value);
+
+/**
  * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
  * registry in control.ts erases it on assignment anyway (method bivariance),
  * but s3-store composes over these hooks and needs their P/S to stay visible.
@@ -68,13 +82,13 @@ export function computeDescriptor(
         validateName(id, 'service name (from provision id)');
         const projectId = projectIdOf(application);
         const branchId = cloudApplicationOf(application).branchId;
-        const svc = yield* Prisma.ComputeService(`${id}-svc`, {
-          projectId,
-          name: id,
-          region: o().region ?? DEFAULT_REGION,
+        const svc = yield* Prisma.App(`${id}-svc`, {
+          project: projectId,
+          displayName: id,
+          regionId: o().region ?? DEFAULT_REGION,
           ...(branchId !== undefined ? { branchId } : {}),
         });
-        return { serviceId: svc.id, projectId, endpointDomain: svc.endpointDomain };
+        return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
     // Two channels of rows: PARAMS (reserved-param literals JSON-encoded;
@@ -110,9 +124,9 @@ export function computeDescriptor(
               : encode(d.owner, value);
           records.push(
             yield* Prisma.EnvironmentVariable(`${key}-var`, {
-              projectId,
+              project: projectId,
               key,
-              value: rowValue,
+              value: envValue(rowValue),
               class: cls,
               ...branch,
             }),
@@ -127,12 +141,12 @@ export function computeDescriptor(
         if (inputRow !== undefined) {
           records.push(
             yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
-              projectId,
+              project: projectId,
               key: inputRow.key,
               // The defaults-applied document — secret leaves are `$secret`
               // pointers, generated leaves are `$generated` pointers, naming
               // platform vars, never values (ADR-0042).
-              value: inputRow.value,
+              value: envValue(inputRow.value),
               class: cls,
               ...branch,
             }),
@@ -148,9 +162,9 @@ export function computeDescriptor(
             });
             records.push(
               yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
-                projectId,
+                project: projectId,
                 key: leaf.varName,
-                value: resource.value,
+                value: envValue(resource.value),
                 class: cls,
                 ...branch,
               }),
@@ -213,9 +227,9 @@ export function computeDescriptor(
             : encode('service', raw);
           records.push(
             yield* Prisma.EnvironmentVariable(`${key}-var`, {
-              projectId,
+              project: projectId,
               key,
-              value,
+              value: envValue(value),
               class: cls,
               ...branch,
             }),
@@ -237,7 +251,7 @@ export function computeDescriptor(
     // identically; the fs/tar work itself lives in @internal/lowering.
     package: ({ id }, { assembled, address }) =>
       Effect.try(() =>
-        Prisma.packageComputeArtifact({
+        packageComputeArtifact({
           id,
           bundleDir: assembled.dir,
           appEntry: assembled.entry,
@@ -245,17 +259,27 @@ export function computeDescriptor(
         }),
       ),
 
-    // The environment prop references serialize's env-var records, so the deploy depends on them.
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
-          computeServiceId: provisioned.serviceId,
+          // `app` carries the ordering edge on serialize's variable writes as
+          // well as the app id — see `appAfterEnvironment` for why it is the
+          // only prop that can (PRO-211).
+          app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
           artifactPath: artifact.path,
-          artifactHash: artifact.sha256,
-          environment: serialized.environment,
+          // The artifact IS a gzipped tar (see @internal/lowering's packager);
+          // upstream sends this as the upload's Content-Type and folds it into
+          // the fingerprint that decides whether a new deployment is needed.
+          artifactContentType: 'application/gzip',
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
-          port: serialized.port,
+          portMapping: { http: serialized.port },
+          // A Composer deploy always ships: upload the artifact, wait for it
+          // to run, then move the app's stable endpoint onto it. Neither is
+          // configurable — "deployed but not serving" is not a state Composer
+          // expresses.
+          start: true,
+          promote: true,
         });
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
@@ -279,12 +303,12 @@ export function computeDescriptor(
               }
             : {};
         return {
-          outputs: { url: deployment.deployedUrl, projectId: provisioned.projectId },
+          outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
           entities: [
             {
               kind: 'compute-service',
               id: provisioned.serviceId,
-              url: deployment.deployedUrl,
+              url: deployment.appEndpointDomain,
               ...inputDetails,
             },
           ],

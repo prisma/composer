@@ -17,7 +17,7 @@ import { resolveDefaultBranchId } from '../container.ts';
 import * as credentials from '../credentials.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
-import { migrateLegacyPostgresState } from './legacy-postgres.ts';
+import { migrateLegacyResourceState } from './legacy-resources.ts';
 import {
   acquireDeployLease,
   heartbeatDeployLease,
@@ -62,7 +62,7 @@ export const prismaStateLayer = (ids: {
 
 /**
  * The stock service with legacy Composer resource rows rewritten to the
- * upstream providers' shapes as they are read (see legacy-postgres.ts) —
+ * upstream providers' shapes as they are read (see legacy-resources.ts) —
  * reads only; rows written by this version are already upstream-shaped.
  */
 const migrateRowsOnRead = (service: StateService): StateService => ({
@@ -73,16 +73,16 @@ const migrateRowsOnRead = (service: StateService): StateService => ({
         ? undefined
         : blindCast<
             PersistedState,
-            'migrateLegacyPostgresState only rewrites legacy Composer resource rows to the upstream field names; every other value passes through unchanged, so the PersistedState shape is preserved'
-          >(migrateLegacyPostgresState(value)),
+            'migrateLegacyResourceState only rewrites legacy Composer resource rows to the upstream field names; every other value passes through unchanged, so the PersistedState shape is preserved'
+          >(migrateLegacyResourceState(value)),
     ),
   getReplacedResources: (request) =>
     Effect.map(service.getReplacedResources(request), (rows) =>
       rows.map((row) =>
         blindCast<
           ReplacedResourceState,
-          'migrateLegacyPostgresState only rewrites legacy Composer resource rows to the upstream field names; the replaced status and envelope shape are preserved'
-        >(migrateLegacyPostgresState(row)),
+          'migrateLegacyResourceState only rewrites legacy Composer resource rows to the upstream field names; the replaced status and envelope shape are preserved'
+        >(migrateLegacyResourceState(row)),
       ),
     ),
 });

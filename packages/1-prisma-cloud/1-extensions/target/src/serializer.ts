@@ -8,8 +8,9 @@
  * root — empty for a lone-service deploy, the "unprefixed" case), then the
  * owner (the input name, dropped for the service's own params), then the
  * param name. auth's db.url ↔ AUTH_DB_URL; a lone service's db.url ↔ DB_URL.
- * The platform's DATABASE_URL is never among them — forbidden and poisoned
- * at project provision (see docs/design/05-prisma-cloud/alchemy-lowering.md).
+ * The platform's DATABASE_URL is never among them: Prisma Cloud owns that name
+ * and the framework refuses to bind it (see
+ * docs/design/05-prisma-cloud/alchemy-lowering.md).
  *
  * This module works off the node's RAW params (`node.params` and each
  * `node.inputs[k].connection.params`) rather than `configOf`'s pure-data
@@ -76,9 +77,10 @@ export const configKey = (
   const owner = d.owner === 'service' ? [] : [d.owner.input];
   // Every generated key lives in the framework's reserved COMPOSER_ namespace
   // (ADR-0029), so it can never collide with — and silently overwrite — a
-  // user-provisioned platform var (e.g. a secret's external name). The poison
-  // keys DATABASE_URL(_POOLED) are written directly in control.ts, not here, so
-  // they stay unprefixed (they are the platform's own names).
+  // user-provisioned platform var (e.g. a secret's external name). Composer
+  // writes no unprefixed variable at all: DATABASE_URL(_POOLED) are the
+  // platform's own names, banned in param.ts/secret.ts and owned by the
+  // platform (control/extension.ts).
   return ['COMPOSER', ...segments, ...owner, d.name].join('_').toUpperCase();
 };
 

@@ -11,6 +11,7 @@ import * as Prisma from '@internal/lowering';
 import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
 import * as Output from 'alchemy/Output';
+import * as AlchemyPrisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import {
@@ -151,7 +152,7 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
   Output.map(provisioned.endpointDomain, (v) => {
     if (v === undefined) {
       throw new Error(
-        `ComputeService for "${address}" reported no endpointDomain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
+        `the App for "${address}" reported no endpoint domain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
       );
     }
     return v;
@@ -174,15 +175,15 @@ export interface PrismaCloudOptions {
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
-  region?: Prisma.ComputeRegion;
+  region?: AlchemyPrisma.Types.PrismaRegionId;
 }
 
-// Prisma.COMPUTE_REGIONS is the runtime source of truth ComputeRegion is
+// Upstream's KNOWN_REGION_IDS is the runtime source of truth PrismaRegionId is
 // derived from, so this can never fall behind — no hand-maintained list, no
 // exhaustiveness gymnastics to keep it honest.
-const KNOWN_REGION_SET: ReadonlySet<string> = new Set(Prisma.COMPUTE_REGIONS);
+const KNOWN_REGION_SET: ReadonlySet<string> = new Set(AlchemyPrisma.KNOWN_REGION_IDS);
 
-function isComputeRegion(value: string): value is Prisma.ComputeRegion {
+function isComputeRegion(value: string): value is AlchemyPrisma.Types.PrismaRegionId {
   return KNOWN_REGION_SET.has(value);
 }
 
@@ -295,7 +296,7 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   if (!isComputeRegion(region)) {
     throw new Error(
       `prismaCloud(): environment variable PRISMA_REGION="${region}" is not a known region ` +
-        `(expected one of: ${Prisma.COMPUTE_REGIONS.join(', ')}).`,
+        `(expected one of: ${AlchemyPrisma.KNOWN_REGION_IDS.join(', ')}).`,
     );
   }
   return { workspaceId, region, providerParams: PROVIDER_PARAMS };
@@ -347,28 +348,21 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // to the stage's Branch — deleting the Branch/Project deletes it
     // platform-side.
 
-    // Runs once per lowering, before any service: references the CLI-ensured
-    // Project, with the poison DATABASE_URL variables written immediately so
-    // nothing can ever rely on the platform default. Per-binding service keys
-    // are no longer minted here (ADR-0031): core's provision phase invokes
-    // `provisions` below, graph-wide, before any service lowers.
+    // Runs once per lowering, before any service: it resolves the CLI-ensured
+    // Project into the application handle every descriptor reads. Per-binding
+    // service keys are not minted here (ADR-0031): core's provision phase
+    // invokes `provisions` below, graph-wide, before any service lowers.
+    //
+    // `DATABASE_URL`/`DATABASE_URL_POOLED` are deliberately absent from this
+    // graph: the platform seeds them and marks them system-managed, and
+    // alchemy's EnvironmentVariable refuses to manage a system-managed
+    // variable at all. What keeps a service off the platform default is the
+    // ban at the authoring end — `param.ts` and `secret.ts` reject both names,
+    // so no Composer-written row can carry one (docs/guides/deploying.md).
     application: {
       provision: (ctx) =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
           const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
-          for (const key of ['DATABASE_URL', 'DATABASE_URL_POOLED']) {
-            yield* Prisma.EnvironmentVariable(`${key}-poison`, {
-              projectId,
-              key,
-              // "-", not "": the API rejects empty env-var values with
-              // "String must contain at least 1 character" (verified at the R4
-              // deploy proof). Any garbage value fails a real connect loudly.
-              value: '-',
-              class: branchId ? 'preview' : 'production',
-              ...(branchId !== undefined ? { branchId } : {}),
-            });
-          }
-
           return { projectId, branchId } satisfies CloudApplication;
         }),
     },

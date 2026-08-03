@@ -1,7 +1,7 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
-import type * as Prisma from '@internal/lowering';
 import type * as Output from 'alchemy/Output';
+import type * as Prisma from 'alchemy/Prisma';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**
@@ -64,7 +64,7 @@ export interface ServiceProviderParam extends ProviderParamEntry {
  */
 export interface ResolvedCloudOptions {
   readonly workspaceId: string;
-  readonly region?: Prisma.ComputeRegion;
+  readonly region?: Prisma.Types.PrismaRegionId;
   /**
    * This extension's reserved provider params, keyed by need brand —
    * edge-derived (`ProviderParam`) or service-derived (`ServiceProviderParam`).
@@ -77,7 +77,7 @@ export interface ResolvedCloudOptions {
 }
 
 /** Where a resource lands when the deploy names no region. */
-export const DEFAULT_REGION: Prisma.ComputeRegion = 'us-east-1';
+export const DEFAULT_REGION: Prisma.Types.PrismaRegionId = 'us-east-1';
 
 // Prisma's Connection create constrains `name` to 3–65 chars (Management API:
 // POST /v1/connections); applied here to every id-derived resource name as the

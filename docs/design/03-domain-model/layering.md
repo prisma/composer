@@ -23,8 +23,8 @@ resource graph, which deploys to the cloud.
   wires, and provisions. Nouns: Resource, Platform, Binding, Layer, Provider,
   Stack, Config. The framework adopts Alchemy's *definition language*; the
   apply *engine* is an open question (see below).
-- **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: ComputeService /
-  ComputeVersion, Database (1:1 within an Environment), Stream, endpoint. Prisma
+- **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: App /
+  Deployment, Database (1:1 within an Environment), Stream, endpoint. Prisma
   Cloud is *one* target; another target's pack maps the same authoring nouns to
   its own hosting primitives. The framework's deploy report calls a thing on
   this plane a **Deployment entity** (`DeployedEntity`): its kind, platform id,
@@ -35,7 +35,7 @@ resource graph, which deploys to the cloud.
 | Authoring (Prisma Composer) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
 | --- | --- | --- |
 | **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its ports | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
-| **Service** (your code; entrypoint + ingress) | Platform (compute Resource running the bundle) | ComputeService → ComputeVersion (tar.gz bundle + manifest + endpoint) |
+| **Service** (your code; entrypoint + ingress) | Platform (compute Resource running the bundle) | App → Deployment (tar.gz bundle + manifest + endpoint) |
 | **Resource** (managed lifecycle, state-first) | Alchemy Resource + Provider (`reconcile`/`delete`/…); Postgres via the Prisma Postgres provider | a Database (1:1 in an Environment), bucket, cache, or provisioned third-party |
 | **Input/Output — communication** (request/response, stream) | Binding (RPC/HTTP client; stream pub/sub) | endpoint URL + injected client; stream |
 | **Data Input** (method TCP/HTTP + contract) | data binding to a Postgres Resource | connection injected, scoped by contract |
