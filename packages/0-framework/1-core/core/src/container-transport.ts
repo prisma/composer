@@ -13,7 +13,7 @@
 export interface LocateContainerInput {
   /** The application name (root node's name, or `--name`). */
   readonly appName: string;
-  /** The named stage, or `undefined` for the default (production) stage. */
+  /** The USER-FACING stage name — `--stage <name>` as the user typed it (git-ref validated), or `undefined` for the default (production) stage. Never what Alchemy receives as its stage; that is `ContainerInstance.alchemyStage`. */
   readonly stage: string | undefined;
 }
 
@@ -24,7 +24,7 @@ export interface LocateContainerInput {
  */
 export interface ContainerInstance {
   readonly input: LocateContainerInput;
-  /** The deterministic Alchemy stage this container implies. Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. When defined, the CLI passes it as alchemy's `--stage`. */
+  /** The exact string the CLI hands `alchemy` as its stage — the deploy-state scope. Distinct from `input.stage`, the user-facing name: for Prisma Cloud this is the resolved Branch id (stable across renames, machine-independent). Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. */
   readonly alchemyStage?: string;
   /** Serialize to a non-empty string for the process transport above. The format is the extension's own; only its `deserialize` reads it. */
   serialize(): string;

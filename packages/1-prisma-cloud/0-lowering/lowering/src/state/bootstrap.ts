@@ -24,7 +24,7 @@ interface ConnectionSummary {
 
 export interface StateConnection {
   readonly projectId: string;
-  /** The Branch the state database lives on — the stage's Branch, or the project's default Branch for production. */
+  /** The Branch the state database lives on. A `--stage <name>` deploy keeps its state on the Branch resolved for that name; a production deploy keeps its state on the project's default Branch. */
   readonly branchId: string;
   readonly databaseId: string;
   readonly connectionString: Redacted.Redacted<string>;
