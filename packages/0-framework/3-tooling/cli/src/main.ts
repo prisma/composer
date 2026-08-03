@@ -370,13 +370,16 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     assembled,
   });
 
-  // 9. Shell out to alchemy against the generated file.
+  // 9. Shell out to alchemy against the generated file. The state-owning
+  // extension's container (same selection as core's resolveStateLayer) may pin
+  // the Alchemy stage; without one, the user stage passes through unchanged.
+  const alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
   try {
     const status = (deps.alchemy ?? runAlchemy)({
       command: args.command,
       stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
       cwd,
-      stage,
+      stage: alchemyStage,
       containerEnv: containerEnv(containers),
     });
     if (status !== 0) {

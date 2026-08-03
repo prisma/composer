@@ -34,6 +34,7 @@ export interface RunAlchemyInput {
   /** The generated stack file's path, relative to `cwd`. */
   readonly stackFileRelativePath: string;
   readonly cwd: string;
+  /** The resolved Alchemy stage: the state-owning container's `alchemyStage` when it supplies one, else the user `--stage`. `undefined` omits the flag (alchemy's own default applies). */
   readonly stage: string | undefined;
   /** Every extension's resolved container, serialized — one env var per extension (core's container-transport naming). Content-blind: the CLI never reads these values, only writes them. */
   readonly containerEnv: Readonly<Record<string, string>>;

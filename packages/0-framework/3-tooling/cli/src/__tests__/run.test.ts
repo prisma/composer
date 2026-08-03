@@ -37,12 +37,13 @@ interface FakeContainer extends ContainerInstance {
   readonly containerScope: string | undefined;
 }
 
-function makeFakeContainer(input: LocateContainerInput): FakeContainer {
+function makeFakeContainer(input: LocateContainerInput, alchemyStage?: string): FakeContainer {
   const containerScope = input.stage !== undefined ? `branch-${input.stage}` : undefined;
   return {
     input,
     containerRef: 'proj-fake',
     containerScope,
+    ...(alchemyStage !== undefined ? { alchemyStage } : {}),
     serialize: () => JSON.stringify({ input, containerRef: 'proj-fake', containerScope }),
   };
 }
@@ -58,18 +59,20 @@ function fakeContainerDescriptor(
     readonly calls?: ContainerCall[];
     readonly notFound?: boolean;
     readonly onRemove?: (instance: FakeContainer) => void | Promise<void>;
+    /** Value the fake instance exposes as `ContainerInstance.alchemyStage`. */
+    readonly alchemyStage?: string;
   } = {},
 ): ContainerDescriptor {
   const calls = opts.calls ?? [];
   return {
     ensure: async (input) => {
       calls.push({ op: 'ensure', input });
-      return makeFakeContainer(input);
+      return makeFakeContainer(input, opts.alchemyStage);
     },
     locate: async (input) => {
       calls.push({ op: 'locate', input });
       if (opts.notFound === true) return undefined;
-      return makeFakeContainer(input);
+      return makeFakeContainer(input, opts.alchemyStage);
     },
     remove: async (instance) => {
       calls.push({ op: 'remove', input: instance.input });
@@ -671,6 +674,110 @@ describe('run() — the full pipeline over fakes', () => {
       expect((error as CliError).message).toBe(
         'Nothing deployed for fixture-app — deploy it first.',
       );
+    });
+  });
+
+  describe('container-supplied alchemyStage (TML-3157)', () => {
+    test("a production deploy (no --stage) passes the state extension container's alchemyStage to alchemy, while containers and preflight still see stage undefined", async () => {
+      const app = makeAppDir('hello-alchemy-stage');
+      process.chdir(app.dir);
+      const containerCalls: ContainerCall[] = [];
+      const alchemyCalls: RunAlchemyInput[] = [];
+      const preflightStages: Array<string | undefined> = [];
+
+      const status = await run(['deploy', app.entryPath], {
+        config: fakeConfig(
+          {
+            preflight: async (input) => {
+              preflightStages.push(input.stage);
+            },
+          },
+          { calls: containerCalls, alchemyStage: 'br_test123' },
+        ),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          alchemyCalls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(alchemyCalls).toHaveLength(1);
+      expect(alchemyCalls[0]?.stage).toBe('br_test123');
+      expect(containerCalls).toEqual([
+        { op: 'ensure', input: { appName: 'hello-alchemy-stage', stage: undefined } },
+      ]);
+      expect(preflightStages).toEqual([undefined]);
+    });
+
+    test('a --stage deploy also passes the container-supplied alchemyStage, not the user stage name', async () => {
+      const app = makeAppDir('hello-staged-alchemy-stage');
+      process.chdir(app.dir);
+      const containerCalls: ContainerCall[] = [];
+      const alchemyCalls: RunAlchemyInput[] = [];
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_staging456' }),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          alchemyCalls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(alchemyCalls[0]?.stage).toBe('br_staging456');
+      expect(containerCalls).toEqual([
+        { op: 'ensure', input: { appName: 'hello-staged-alchemy-stage', stage: 'staging' } },
+      ]);
+    });
+
+    test('destroy --production passes the located container’s alchemyStage while teardown still sees stage undefined', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+      fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+      const alchemyCalls: RunAlchemyInput[] = [];
+      const teardownStages: Array<string | undefined> = [];
+
+      const status = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig(
+          {
+            teardown: async (input) => {
+              teardownStages.push(input.stage);
+            },
+          },
+          { alchemyStage: 'br_test123' },
+        ),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          alchemyCalls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(alchemyCalls[0]?.stage).toBe('br_test123');
+      expect(teardownStages).toEqual([undefined]);
+    });
+
+    test('without a container-supplied alchemyStage, the user stage passes through unchanged (undefined stays undefined)', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const alchemyCalls: RunAlchemyInput[] = [];
+
+      const status = await run(['deploy', app.entryPath], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          alchemyCalls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(alchemyCalls).toHaveLength(1);
+      expect(alchemyCalls[0]?.stage).toBeUndefined();
     });
   });
 

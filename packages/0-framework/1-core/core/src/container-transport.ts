@@ -24,6 +24,8 @@ export interface LocateContainerInput {
  */
 export interface ContainerInstance {
   readonly input: LocateContainerInput;
+  /** The deterministic Alchemy stage this container implies. Framework-visible like `input` — NOT part of the `serialize()` payload, which stays extension-owned. When defined, the CLI passes it as alchemy's `--stage`. */
+  readonly alchemyStage?: string;
   /** Serialize to a non-empty string for the process transport above. The format is the extension's own; only its `deserialize` reads it. */
   serialize(): string;
 }
