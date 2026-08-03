@@ -118,11 +118,15 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     const error: unknown = await check(state).catch((e: unknown) => e);
 
     const message = (error as PrismaApiError).message;
-    expect(message).toContain('destroy and redeploy');
     expect(message).toContain(
       'UPDATE the stage column of alchemy_resource_state and alchemy_stack_output',
     );
     expect(message).toContain(`to "${stage}"`);
+    expect(message).toContain('delete the apps in the Prisma Console');
+    expect(message).toContain('redeploy fresh');
+    // The old first remedy was un-followable: destroy builds this same state
+    // layer and hits this same guard.
+    expect(message).not.toContain('destroy and redeploy');
     expect(message).toContain('remove them or deploy into a different project');
   });
 
