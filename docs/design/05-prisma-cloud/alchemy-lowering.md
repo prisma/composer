@@ -49,9 +49,14 @@ never the container itself (see
 The platform writes `DATABASE_URL` / `DATABASE_URL_POOLED` templates pointing at
 a project's default database — a convenience for hand-provisioned single
 services, and precisely the kind of **implicit ambient config the framework
-exists to eliminate**. The framework never reads it and never depends on it:
-every database URL a service consumes is an explicit, per-service variable the
-pack's `serialize` writes under its own named key, inside the `COMPOSER_`
+exists to eliminate**. The framework never reads it and never depends on it.
+Framework-provisioned Projects are created with `createDatabase: false`, so no
+default database exists on them — but that does not keep the variable away:
+the platform self-heals a missing `DATABASE_URL` template on the first Compute
+deploy, wiring it from any ready database on the Project (default first, then
+oldest). On a Composer Project that is one of the app's own databases. Every
+database URL a service actually consumes is an explicit, per-service variable
+the pack's `serialize` writes under its own named key, inside the `COMPOSER_`
 namespace.
 
 The framework used to go further and overwrite both platform variables with the
@@ -62,11 +67,12 @@ anyone. What remains is the ban at the authoring end: `param.ts` and `secret.ts`
 reject both names, so no Composer-written row can carry one.
 
 A service that reads `process.env.DATABASE_URL` behind the framework's back
-therefore reads whatever the platform holds: the platform's own template on an
-environment Composer never deployed before the swap, or the leftover `"-"` on
-one it did — the migration retires those rows from deploy state without
-touching the variables ([deploying.md](../../guides/deploying.md) has the
-manual cleanup).
+therefore reads whatever the platform holds — the self-healed template
+pointing at one of the app's own databases, or a leftover `"-"` placeholder on
+an environment deployed by earlier Composer versions, which retired the rows
+from deploy state without touching the variables
+([deploying.md](../../guides/deploying.md) has the manual cleanup). The
+authoring-side ban is what keeps framework services off it.
 
 ## The resource inventory
 
