@@ -80,10 +80,13 @@ try {
         'refusing to guess; clean up manually per the deploy guard message.',
     );
   } else {
-    const oldStage = stackScopes[0]?.stage as string;
+    const oldStage = stackScopes[0]?.stage;
+    if (typeof oldStage !== 'string') fail('unreachable: single legacy scope has no stage value');
     await sql.begin(async (tx) => {
-      const a = await tx`UPDATE alchemy_resource_state SET stage = ${newStage} WHERE stack = ${STACK} AND stage = ${oldStage}`;
-      const b = await tx`UPDATE alchemy_stack_output SET stage = ${newStage} WHERE stack = ${STACK} AND stage = ${oldStage}`;
+      const a =
+        await tx`UPDATE alchemy_resource_state SET stage = ${newStage} WHERE stack = ${STACK} AND stage = ${oldStage}`;
+      const b =
+        await tx`UPDATE alchemy_stack_output SET stage = ${newStage} WHERE stack = ${STACK} AND stage = ${oldStage}`;
       console.log(
         `migrated "${STACK}" from scope "${oldStage}" to "${newStage}": ` +
           `${a.count} resource row(s), ${b.count} output row(s)`,
