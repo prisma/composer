@@ -160,3 +160,18 @@ registry). What we deliberately didn't do:
   and `docs/design/10-domains/local-dev.md`.
 - **Factory name** — `pnPostgres` is a placeholder; Prisma Next → Prisma Data
   rename incoming at GA. Rename the factory when the product name lands.
+
+# Standalone effect-resolution slice — deferred (2026-08-03, TML-3158)
+
+- **Align the examples' `@effect/platform-bun` pin** — `examples/cron`,
+  `examples/store`, and `examples/storefront-auth` still pin
+  `@effect/platform-bun: 4.0.0-beta.97` next to `effect: 4.0.0-beta.93`, so the
+  lockfile retains an alchemy entry resolved against `effect@4.0.0-beta.97`.
+  Harmless in-workspace (pnpm tolerates the peer mismatch) and pre-existing on
+  main, but it contradicts the beta.93 constellation the public packages now
+  pin; align to 4.0.0-beta.93.
+- **Upstream: alchemy's loose effect peer range** — `alchemy@2.0.0-beta.59`
+  declares `effect: ">=4.0.0-beta.84 || >=4.0.0"` and
+  `@effect/vitest: ">=4.0.0-beta.84 || >=4.0.0"` (hard dep), which is what let
+  npm float to an incompatible beta in the first place. Worth an upstream issue
+  asking alchemy to tighten to the betas it actually works with.
