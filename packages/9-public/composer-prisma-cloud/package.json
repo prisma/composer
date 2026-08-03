@@ -76,7 +76,7 @@
     "@internal/storage": "workspace:0.4.0",
     "@internal/streams": "workspace:0.4.0",
     "@internal/tsdown-config": "workspace:0.4.0",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.2",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",
