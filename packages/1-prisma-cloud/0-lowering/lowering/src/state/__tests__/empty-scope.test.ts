@@ -122,10 +122,12 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     expect(message).toContain(
       'UPDATE the stage column of alchemy_resource_state and alchemy_stack_output',
     );
-    expect(message).toContain(`to "${stage}"`);
+    // Single quotes: the fragment must be valid SQL when pasted — double
+    // quotes are Postgres identifier quotes and would error.
+    expect(message).toContain(`to '${stage}'`);
     // The UPDATE must be stack-filtered — the state database can hold other
     // stacks' rows, which an unfiltered UPDATE would rewrite too.
-    expect(message).toContain(`WHERE stack = "${stack}"`);
+    expect(message).toContain(`WHERE stack = '${stack}'`);
     expect(message).toContain('delete the apps in the Prisma Console');
     expect(message).toContain('redeploy fresh');
     // The old first remedy was un-followable: destroy builds this same state

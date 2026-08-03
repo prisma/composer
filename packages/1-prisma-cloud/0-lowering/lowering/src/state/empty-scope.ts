@@ -81,7 +81,7 @@ export const failOnEmptyScopeWithLiveApps = (
           'state, a deploy would recreate every resource and fail with already_exists, and a ' +
           'destroy would remove nothing. If those apps are a deployment from before the ' +
           'branch-id state scope, UPDATE the stage column of alchemy_resource_state and ' +
-          `alchemy_stack_output to "${stage}" WHERE stack = "${stack}" (the same database can ` +
+          `alchemy_stack_output to '${stage}' WHERE stack = '${stack}' (the same database can ` +
           "hold other stacks' rows) in this branch's prisma-composer-state database — or " +
           'delete the apps in the Prisma Console (or via the Management API) and redeploy ' +
           "fresh. If they are another deployment's, remove them or deploy into a different " +
