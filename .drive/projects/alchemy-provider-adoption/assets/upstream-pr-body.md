@@ -1,82 +1,117 @@
-# feat(prisma): Bucket + BucketKey resources, providers({dev}) override, Postgres state backend
+This PR completes three gaps in the Prisma provider that show up the moment a
+real framework embeds it. After it, this works:
 
-We're adopting the Prisma provider in Prisma Composer (the framework layer on
-top of Prisma Cloud) and deleting our own resource implementations in its
-favor. This PR adds the pieces Composer needs that the provider doesn't have
-yet. Everything follows the provider's existing conventions; the contract
-fixture, coverage counts, public-surface and source-convention suites are
-updated rather than bypassed.
+```ts
+import * as Alchemy from "alchemy";
+import * as Prisma from "alchemy/Prisma";
+import { postgresState } from "alchemy/State/PostgresState";
+import * as Effect from "effect/Effect";
 
-## 1. `Prisma.Bucket` / `Prisma.BucketKey`
+export default Alchemy.Stack(
+  "Media",
+  {
+    // Bring your own local emulation in `alchemy dev`; live stays live.
+    providers: Prisma.providers({ dev: myEmulatorProviders() }),
+    // Durable, *locked* state — what Compute's own docs ask for.
+    state: postgresState({ dsn: process.env.STATE_DSN! }),
+  },
+  Effect.gen(function* () {
+    const project = yield* Prisma.Project("app", {});
 
-Covers the 7 previously deferred `/v1/buckets` Object Storage routes
-(`deferredRoutes` is now empty in the contract fixture; coverage 71 → 78).
+    // Object storage: the last deferred Management API surface.
+    const bucket = yield* Prisma.Bucket("media", { project });
+    const key = yield* Prisma.BucketKey("media-rw", {
+      bucket,
+      role: "read_write",
+    });
 
-- `Bucket`: read-then-create reconcile, replace on project/name/branch change
-  (no PATCH route exists), identity-verified delete (persists `projectId` +
-  `createdAt`), real `list` for nuke.
-- `BucketKey`: the secret access key is **reveal-once** — the API never
-  returns it after create, so persisted state is authoritative (the
-  `Connection` pattern). Keys are created under a deterministic
-  `instanceId`-derived physical name and looked up before create, so a crash
-  between the create call and the state write cannot mint a second,
-  unenumerable credential — the orphan from the lost response is found by
-  name and revoked before a fresh key is created. Existence is re-verified on
-  read/reconcile via `listBucketKeys` (secrets always from state); note
-  `bucketName` is the provider-side S3 bucket name, not the display name.
-- Docs: `prisma/data/buckets` page + sidebar entry, mirroring connections.
+    return { endpoint: key.endpoint, bucket: key.bucketName };
+  }),
+);
+```
 
-## 2. `providers({ dev })` + `liveProviders()`
+The three ship together because they're the set a production embedder needs at
+once — we (Prisma Composer, the framework layer over Prisma Cloud) are deleting
+our own resource implementations in favor of this provider, and these were the
+three things we couldn't do with it. Each is an independent commit-sized
+concern; happy to split into separate PRs if you'd rather review them that way.
 
-`Prisma.providers()` selects dev-vs-live internally, which means an embedder
-with its own local emulation cannot compose with the live providers without
-hand-rebuilding the client/auth wiring. Two additive changes, defaults
-unchanged:
+## Object storage: `Prisma.Bucket` / `Prisma.BucketKey`
 
-- `providers({ dev })` — a supplied layer replaces the built-in dev layer in
-  `alchemy dev` only. `PrismaLocalProviders` is typed structurally (the union
-  of the twelve resource providers), so an embedder layer typechecks without
-  casts — the test builds one from `Provider.succeed` per resource and passes
-  it with no `as`.
-- `liveProviders()` — the live provider layer exported for frameworks that do
-  their own mode selection.
+The 7 `/v1/buckets` routes were the provider's only deferred Management API
+surface. This adds them to the client/operations layer and puts two resources
+on top, shaped like their siblings (`Database`/`Connection` conventions
+throughout: `Refs` string-or-resource references, replace-on-identity-change
+diff, identity-verified delete, real `list` for nuke).
 
-Composer uses both: upstream live providers on deploy, its own emulator
-providers in dev.
+The interesting part is the key secret. The API returns `secretAccessKey`
+exactly once, at create — it can never be re-read. So persisted state is
+authoritative for the secret (the `Connection` pattern), which raises the
+crash-window question: what if the process dies after `POST …/keys` succeeds
+but before state is written? A naive retry would mint a second, working,
+never-expiring credential that no state row references and `list` can't
+surface. To close that, keys are created under a deterministic
+`instanceId`-derived physical name and looked up by name before create; a hit
+on retry means "create succeeded, response lost" — that orphan's secret is
+gone for good, so it is revoked and one fresh key is minted. Existence is
+re-verified on read/reconcile (secrets always from state), so a key revoked in
+the Console reads as gone instead of haunting the stack.
 
-## 3. `State/PostgresState`
+Docs: `prisma/data/buckets` page + sidebar entry, mirroring connections.
 
-A Postgres state backend: `postgresState({ client | dsn, lockKeyPrefix, id })`
-over two tables, with a per-`(stack, stage)` session advisory lock
-(`pg_try_advisory_lock(hashtextextended(key, 0))` on a reserved connection,
-holder re-verified against `pg_locks` **from a different pool connection**),
-and a TTL-amortized lease check wrapping every operation. Stage-less
-`deleteStack` locks each stage before deleting. The schema migration runs
-under a transaction-scoped advisory lock — concurrent
-`create table if not exists` genuinely fails on Postgres (duplicate `pg_type`
-errors), so first-boot races between two stacks are handled.
+## An embedder seam for dev mode: `providers({ dev })` + `liveProviders()`
 
-Motivation: the `Compute` docstring tells users to "use a durable, locked
-state backend" for safe deployment recovery, and no in-tree backend provides
-locking. Uses the repo's existing `pg` dependency; deliberately **not**
-re-exported from the `State` barrel (a comment explains: the barrel is
+`Prisma.providers()` picks dev-vs-live internally. That's the right default,
+but it's closed: an embedder with richer local emulation (we run a compute
+emulator that supervises the real artifact, a local S3, and a persistent dev
+Postgres) can't swap the dev half without rebuilding the client/auth wiring by
+hand. Two additive changes, defaults untouched:
+
+- `providers({ dev })` — the supplied layer replaces the built-in dev
+  providers during `alchemy dev` only. `PrismaLocalProviders` is a structural
+  type (the union of the twelve resource providers), and the test proves an
+  embedder layer built from `Provider.succeed` typechecks with **no casts** —
+  that's the seam's contract.
+- `liveProviders()` — the live layer exported for frameworks doing their own
+  mode selection.
+
+## A locked state backend: `State/PostgresState`
+
+`Compute`'s recovery docs tell users to "use a durable, locked state backend"
+— and no in-tree backend has locking. This adds one on the dependency the repo
+already carries (`pg`):
+
+- per-`(stack, stage)` **session advisory lock**
+  (`pg_try_advisory_lock(hashtextextended(key, 0))`) held on a reserved
+  connection, with the holder re-verified against `pg_locks` from a
+  *different* pool connection — so a silently dropped lock connection is
+  detected, not trusted;
+- a TTL-amortized lease check wrapping every operation; stage-less
+  `deleteStack` locks each stage before touching it;
+- schema migration under a transaction-scoped advisory lock, because
+  concurrent `create table if not exists` genuinely fails on Postgres
+  (duplicate `pg_type` errors — reproduced on PG 15) and first-boot races
+  between two stacks are exactly the case a state store must survive.
+
+It is deliberately **not** re-exported from the `State` barrel: the barrel is
 imported by engine files that get bundled for workers, and `pg` must stay off
-that graph) — import via `alchemy/State/PostgresState`.
+that graph. Deep import: `alchemy/State/PostgresState` (a comment in the
+barrel says why).
 
-Tests are hermetic stubs per the existing state-backend convention
-(`HttpStateStore`). Two real-Postgres behaviors were verified against a live
-PostgreSQL 15 during development and are documented in comments rather than
-CI-tested: the 64-bit advisory-lock key reconstruction from
-`pg_locks.classid/objid` (intentional bigint shift wraparound), and the
-concurrent-DDL failure that motivates the migration lock.
+Tests are hermetic stubs per the existing backend convention
+(`HttpStateStore`). Two real-Postgres behaviors were verified against live
+PostgreSQL 15 during development and documented in comments rather than
+CI-tested: the 64-bit lock-key reconstruction from `pg_locks.classid/objid`
+(intentional bigint wraparound), and the concurrent-DDL failure motivating the
+migration lock.
 
-## 4. `Resource.ts`: `Aliases` typing
+## One-line core fix: `Aliases` typing
 
 `ResourceClass.Aliases` is `readonly string[] | undefined`, but
-`ResourceClassLike.Aliases?: readonly string[]` — under a consumer tsconfig
+`ResourceClassLike.Aliases?: readonly string[]`. Under a consumer tsconfig
 with `exactOptionalPropertyTypes: true`, every `Provider.effect(cls, …)` call
-fails to typecheck (Composer currently carries this as a pnpm patch). One
-line: `Aliases?: readonly string[] | undefined`.
+fails to typecheck (we currently carry a pnpm patch for this). The fix widens
+the optional to `| undefined`.
 
 ## Verification
 
@@ -85,4 +120,25 @@ line: `Aliases?: readonly string[] | undefined`.
 - Core engine suites (exercising the `Resource.ts` change): 549 passed / 0
   failed.
 - `generate-api-reference`: no new category; Prisma gains the two bucket
-  pages. `docs:check` builds clean.
+  pages; `docs:check` builds clean. Contract fixture updated
+  (`deferredRoutes` now empty; route coverage 71 → 78).
+
+## Alternatives considered
+
+- **Three separate PRs.** Kept together because they're one consumer's
+  complete need and the review context overlaps (BucketKey's crash-window
+  design references Connection's; the dev seam is what makes the state
+  backend's locking story testable end-to-end for us). Say the word and we'll
+  split.
+- **`ReturnType<typeof devProviderLayer>` for `PrismaLocalProviders`.** It
+  bakes the built-in stubs' literal `stables` tuples into the public type —
+  no real embedder layer can satisfy it without `as never`. Structural union
+  instead.
+- **Exporting `postgresState` from the `State` barrel.** Poisons worker
+  bundles with `pg`. Deep import + explanatory comment instead.
+- **Letting embedders rebuild the live wiring themselves** (no
+  `liveProviders()` export). Works today but couples every embedder to the
+  private composition of client/auth/upload layers — each upstream refactor
+  breaks them silently.
+- **A migration-free schema bootstrap** (plain `create table if not exists`).
+  Fails under concurrency on real Postgres; see above.
