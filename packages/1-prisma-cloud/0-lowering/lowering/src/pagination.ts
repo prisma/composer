@@ -17,13 +17,6 @@ const brokenPaginationError = (description: string, reason: string): PrismaApiEr
       'refusing to continue with a possibly incomplete listing.',
   });
 
-/**
- * Drives a cursor-paginated Management API listing with a guard against
- * broken pagination: a cursor that does not advance, or more than
- * {@link MAX_PAGES} pages, FAILS instead of hanging forever or returning a
- * listing known to be incomplete. `onPage` receives each page's rows as they
- * arrive; returning `true` stops early (the caller found what it wanted).
- */
 /** {@link drivePages} in its most common shape: every page's rows, accumulated. */
 export const collectPages = <T>(
   description: string,
@@ -38,6 +31,13 @@ export const collectPages = <T>(
     return rows;
   });
 
+/**
+ * Drives a cursor-paginated Management API listing with a guard against
+ * broken pagination: a cursor that does not advance, or more than
+ * {@link MAX_PAGES} pages, FAILS instead of hanging forever or returning a
+ * listing known to be incomplete. `onPage` receives each page's rows as they
+ * arrive; returning `true` stops early (the caller found what it wanted).
+ */
 export const drivePages = <T>(
   description: string,
   fetchPage: (cursor: string | undefined) => Effect.Effect<Page<T>, PrismaApiError>,
