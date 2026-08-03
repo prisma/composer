@@ -232,9 +232,17 @@ The CLI's quality lives in its errors; each failure names its fix:
   alchemy — the likely causes (wrong directory, nothing ever deployed) mean
   "nothing to do here", not an error; the warning makes the wrong-directory
   case visible instead of silently succeeding (see ADR-0004's state rule).
-- `--stage` passes through to the `alchemy` invocation, which owns Alchemy's
-  own stage/state semantics; the generated stack file carries neither it nor
-  any resolved container (ADR-0007).
+- The Alchemy stage is the resolved **PDP branch id** (TML-3157): after
+  container resolution, the CLI reads `alchemyStage` from the state-owning
+  extension's container (the extension named by `config.state.extension`) and
+  always passes it as `--stage` — the flagged stage's Branch id, or the
+  project's default Branch id when no `--stage` was given. This pins the
+  deploy-state scope to the branch instead of Alchemy's `dev_$USER` default,
+  so it no longer varies by machine. The user-facing `--stage` still selects
+  which Branch the containers/preflight/teardown target; only when the state
+  extension's container supplies no `alchemyStage` does the user value pass
+  through to `alchemy` unchanged (or the flag is omitted). The generated
+  stack file carries neither the stage nor any resolved container (ADR-0007).
 
 ## Known limitations
 

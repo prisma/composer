@@ -1,5 +1,11 @@
 # ADR-0038: Containers are an extension descriptor
 
+> Amended (TML-3157): `ContainerInstance` gained an optional, framework-visible
+> `alchemyStage` — the deterministic Alchemy stage the container implies (the
+> Prisma Cloud extension supplies the resolved Branch id). The CLI reads it
+> from the state-owning extension's container and passes it as `--stage`. The
+> `serialize()` payload stays extension-owned and unread by the framework.
+
 ## Decision
 
 The platform-side space a service deploys *into* — a container, in this
@@ -31,6 +37,8 @@ export interface LocateContainerInput {
 
 export interface ContainerInstance {
   readonly input: LocateContainerInput;
+  /** Amendment (TML-3157): the deterministic Alchemy stage this container implies. */
+  readonly alchemyStage?: string;
   serialize(): string;
 }
 
@@ -47,8 +55,9 @@ other hooks (`ctx.container` in `LowerContext`, `PreflightInput.container`,
 boundary using the extension's own `serialize()`/`deserialize()` — the same
 opacity rule ADR-0033 established for `ctx.application`, extended to a second
 value the framework threads without reading. Core's claim on a
-`ContainerInstance` is exactly `input` and `serialize()`; the owning extension
-narrows to its own concrete type wherever it reads the value back.
+`ContainerInstance` is exactly `input`, `serialize()`, and (per the TML-3157
+amendment) the optional `alchemyStage`; the owning extension narrows to its
+own concrete type wherever it reads the value back.
 
 **`ensure`/`locate` split by intent, not one operation with a flag.** `deploy`
 calls `ensure` (create-if-absent); `destroy` calls `locate` (find-only,

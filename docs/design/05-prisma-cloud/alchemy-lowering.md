@@ -26,7 +26,9 @@ Every deploy environment — production, staging, a per-PR preview — is a
 **Branch** of that one Project
 ([ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)).
 The default stage (no `--stage`) is production, at the Project level:
-resources carry no `branchId` and no Branch exists for it. A **named stage**
+resources carry no `branchId` and no Branch is created for it — the CLI only
+*reads* the Project's existing default Branch's id, which becomes the
+Alchemy stage (the deploy-state scope, TML-3157). A **named stage**
 (`--stage <name>`) is a Branch whose `gitName` is the stage name; every
 resource the target provisions for that stage carries the Branch's id.
 Resolving and creating the Branch — like the Project — happens **before**
