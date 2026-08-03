@@ -39,14 +39,20 @@ export interface DeploymentAttributes {
   deployedUrl?: string;
 }
 
-export type Deployment = Resource<'Prisma.Deployment', DeploymentProps, DeploymentAttributes>;
+export type Deployment = Resource<
+  'PrismaComposer.Deployment',
+  DeploymentProps,
+  DeploymentAttributes
+>;
 
 /**
  * A **deployment** of a Prisma app — creates a deployment, uploads
  * its artifact, starts the VM, waits for it to run, then promotes it to the
  * app's stable endpoint.
  */
-export const Deployment = Resource<Deployment>('Prisma.Deployment');
+export const Deployment = Resource<Deployment>('PrismaComposer.Deployment', {
+  aliases: ['Prisma.Deployment'],
+});
 
 export const DeploymentProvider = () =>
   Provider.effect(

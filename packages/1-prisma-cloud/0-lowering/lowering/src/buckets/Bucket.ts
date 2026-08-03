@@ -17,10 +17,10 @@ export interface BucketAttributes {
   name: string;
 }
 
-export type Bucket = Resource<'Prisma.Bucket', BucketProps, BucketAttributes>;
+export type Bucket = Resource<'PrismaComposer.Bucket', BucketProps, BucketAttributes>;
 
 /** A Prisma **Object Store bucket** inside a project. */
-export const Bucket = Resource<Bucket>('Prisma.Bucket');
+export const Bucket = Resource<Bucket>('PrismaComposer.Bucket', { aliases: ['Prisma.Bucket'] });
 
 export const BucketProvider = () =>
   Provider.effect(

@@ -27,10 +27,12 @@ export interface DatabaseAttributes {
   name: string;
 }
 
-export type Database = Resource<'Prisma.Database', DatabaseProps, DatabaseAttributes>;
+export type Database = Resource<'PrismaComposer.Database', DatabaseProps, DatabaseAttributes>;
 
 /** A Prisma **Postgres database** inside a project. */
-export const Database = Resource<Database>('Prisma.Database');
+export const Database = Resource<Database>('PrismaComposer.Database', {
+  aliases: ['Prisma.Database'],
+});
 
 export const DatabaseProvider = () =>
   Provider.effect(

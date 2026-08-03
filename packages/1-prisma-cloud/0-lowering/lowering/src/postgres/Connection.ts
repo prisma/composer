@@ -20,10 +20,16 @@ export interface ConnectionAttributes {
   connectionString: Redacted.Redacted<string>;
 }
 
-export type Connection = Resource<'Prisma.Connection', ConnectionProps, ConnectionAttributes>;
+export type Connection = Resource<
+  'PrismaComposer.Connection',
+  ConnectionProps,
+  ConnectionAttributes
+>;
 
 /** A **connection** to a Prisma Postgres database — yields the connection string. */
-export const Connection = Resource<Connection>('Prisma.Connection');
+export const Connection = Resource<Connection>('PrismaComposer.Connection', {
+  aliases: ['Prisma.Connection'],
+});
 
 export const ConnectionProvider = () =>
   Provider.effect(

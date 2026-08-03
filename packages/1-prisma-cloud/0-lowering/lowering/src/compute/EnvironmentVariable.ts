@@ -26,7 +26,7 @@ export interface EnvironmentVariableAttributes {
 }
 
 export type EnvironmentVariable = Resource<
-  'Prisma.EnvironmentVariable',
+  'PrismaComposer.EnvironmentVariable',
   EnvironmentVariableProps,
   EnvironmentVariableAttributes
 >;
@@ -36,7 +36,10 @@ export type EnvironmentVariable = Resource<
  * project's services from their attached branch (e.g. wiring one module's URL into
  * another).
  */
-export const EnvironmentVariable = Resource<EnvironmentVariable>('Prisma.EnvironmentVariable');
+export const EnvironmentVariable = Resource<EnvironmentVariable>(
+  'PrismaComposer.EnvironmentVariable',
+  { aliases: ['Prisma.EnvironmentVariable'] },
+);
 
 export const EnvironmentVariableProvider = () =>
   Provider.effect(

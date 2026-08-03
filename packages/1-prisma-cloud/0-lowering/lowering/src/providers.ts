@@ -12,7 +12,7 @@ import { Database, DatabaseProvider } from './postgres/Database.ts';
 import { Project, ProjectProvider } from './postgres/Project.ts';
 
 /** The collection of Prisma resource providers. */
-export class Providers extends Provider.ProviderCollection<Providers>()('Prisma') {}
+export class Providers extends Provider.ProviderCollection<Providers>()('PrismaComposer') {}
 
 /**
  * The Prisma provider bundle: every resource provider, the Management API

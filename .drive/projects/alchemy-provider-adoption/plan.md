@@ -51,8 +51,14 @@ the same conversation.
 ## Sequencing
 
 - Stack: 1 → 2.
-- Parallel: 3 alongside both (start immediately — the export ask is the first
-  action, since slice 1 benefits from it).
+- Parallel: 3 alongside both.
+- **Operator overrides (2026-08-03):** all Composer-side slices land on THIS
+  branch (no per-slice branches; one Composer PR at the end). Slice 3 is ONE
+  implementation PR to alchemy-run/alchemy — `liveProviderLayer` export,
+  bucket resources, and the postgres state backend implemented directly, no
+  asks filed. Upstream branch: `prisma-provider-composer-needs` in
+  `~/Projects/prisma/alchemy` (push blocked until the wmadden-electric fork
+  exists).
 
 ## Close-out (required)
 

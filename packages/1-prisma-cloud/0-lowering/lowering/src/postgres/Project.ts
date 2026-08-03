@@ -16,10 +16,10 @@ export interface ProjectAttributes {
   name: string;
 }
 
-export type Project = Resource<'Prisma.Project', ProjectProps, ProjectAttributes>;
+export type Project = Resource<'PrismaComposer.Project', ProjectProps, ProjectAttributes>;
 
 /** A Prisma Developer Platform **Project** — the container for databases and compute services. */
-export const Project = Resource<Project>('Prisma.Project');
+export const Project = Resource<Project>('PrismaComposer.Project', { aliases: ['Prisma.Project'] });
 
 export const ProjectProvider = () =>
   Provider.effect(

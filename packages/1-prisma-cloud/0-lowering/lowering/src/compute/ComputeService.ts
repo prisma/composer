@@ -53,13 +53,15 @@ export interface ComputeServiceAttributes {
 }
 
 export type ComputeService = Resource<
-  'Prisma.ComputeService',
+  'PrismaComposer.ComputeService',
   ComputeServiceProps,
   ComputeServiceAttributes
 >;
 
 /** A Prisma **Compute service** — the stable app identity behind a project. */
-export const ComputeService = Resource<ComputeService>('Prisma.ComputeService');
+export const ComputeService = Resource<ComputeService>('PrismaComposer.ComputeService', {
+  aliases: ['Prisma.ComputeService'],
+});
 
 export const ComputeServiceProvider = () =>
   Provider.effect(
