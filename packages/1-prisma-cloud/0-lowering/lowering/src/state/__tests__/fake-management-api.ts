@@ -36,6 +36,10 @@ export interface FakeState {
   databases: FakeDatabase[];
   connections: Record<string, FakeConnection[]>;
   apps: FakeApp[];
+  /** Page size for GET /v1/apps — unset serves everything in one page. */
+  appsPageSize?: number;
+  /** When set, GET /v1/apps reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
+  appsCursorStuck?: boolean;
   createShouldFail: boolean;
   deleteShouldFailWith: number | undefined;
   branchListCalls: number;
@@ -129,8 +133,21 @@ export const fakeClient = (state: FakeState): ManagementApiClient => {
           (query['projectId'] === undefined || app.projectId === query['projectId']) &&
           (query['branchId'] === undefined || app.branchId === query['branchId']),
       );
+      const offset = query['cursor'] === undefined ? 0 : Number(query['cursor']);
+      const pageSize = state.appsPageSize ?? filtered.length;
+      const data = filtered.slice(offset, offset + pageSize);
+      if (state.appsCursorStuck === true) {
+        return Promise.resolve(
+          okResponse({ data, pagination: { nextCursor: String(offset), hasMore: true } }),
+        );
+      }
+      const nextOffset = offset + data.length;
+      const hasMore = nextOffset < filtered.length;
       return Promise.resolve(
-        okResponse({ data: filtered, pagination: { nextCursor: null, hasMore: false } }),
+        okResponse({
+          data,
+          pagination: { nextCursor: hasMore ? String(nextOffset) : null, hasMore },
+        }),
       );
     }
     throw new Error(`fakeClient: unexpected GET ${path}`);

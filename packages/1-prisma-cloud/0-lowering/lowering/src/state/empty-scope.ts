@@ -29,6 +29,9 @@ interface AppSummary {
   readonly name: string;
 }
 
+/** Far beyond any real app count per branch; hitting it means the API's pagination is broken, and this check runs under the deploy lock, so it must fail rather than loop. */
+const MAX_APP_PAGES = 1000;
+
 const listAppsOnBranch = (
   client: ManagementApiClient,
   projectId: string,
@@ -37,13 +40,26 @@ const listAppsOnBranch = (
   Effect.gen(function* () {
     const apps: AppSummary[] = [];
     let cursor: string | undefined;
-    for (;;) {
+    for (let pageCount = 0; ; pageCount++) {
+      if (pageCount >= MAX_APP_PAGES) {
+        return yield* Effect.fail(
+          new PrismaApiError({
+            status: 0,
+            message:
+              `listing apps on branch ${branchId} did not finish within ${String(MAX_APP_PAGES)} ` +
+              'pages — the Management API pagination appears broken; refusing to continue with a ' +
+              'possibly incomplete listing.',
+          }),
+        );
+      }
       const query =
         cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
       const page = yield* call(() => client.GET('/v1/apps', { params: { query } }));
       apps.push(...page.data);
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
+      const next = page.pagination.nextCursor;
+      // A non-advancing cursor would refetch the same page forever.
+      if (!page.pagination.hasMore || next === null || next === cursor) break;
+      cursor = next;
     }
     return apps;
   });

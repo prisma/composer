@@ -130,6 +130,39 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     expect(message).toContain('remove them or deploy into a different project');
   });
 
+  test('a multi-page listing is walked to the end — apps beyond the first page still fail the check by name', async () => {
+    const state = newFakeState({
+      appsPageSize: 1,
+      apps: [
+        { id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId },
+        { id: 'app-2', name: 'storefront.worker', projectId: PROJECT_ID, branchId },
+        { id: 'app-3', name: 'storefront.jobs', projectId: PROJECT_ID, branchId },
+      ],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    const message = (error as PrismaApiError).message;
+    expect(message).toContain('3 app(s)');
+    expect(message).toContain('"storefront.web"');
+    expect(message).toContain('"storefront.worker"');
+    expect(message).toContain('"storefront.jobs"');
+  });
+
+  test('a non-advancing cursor terminates instead of looping — the check still fails on the apps it saw', async () => {
+    const state = newFakeState({
+      appsPageSize: 1,
+      appsCursorStuck: true,
+      apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId }],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('"storefront.web"');
+  });
+
   test("apps on a DIFFERENT branch don't count — another stage's apps never block this one", async () => {
     const state = newFakeState({
       apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId: 'br-other' }],
