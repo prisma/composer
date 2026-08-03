@@ -51,9 +51,13 @@ describe('bootstrapStateConnection', () => {
   });
 
   test('production with a carried defaultBranchId uses it without re-resolving the default branch', async () => {
-    await run(state, neverCalled(), { projectId: PROJECT_ID, defaultBranchId: DEFAULT_BRANCH_ID });
+    const result = await run(state, neverCalled(), {
+      projectId: PROJECT_ID,
+      defaultBranchId: DEFAULT_BRANCH_ID,
+    });
 
     expect(state.branchListCalls).toBe(0);
+    expect(result.branchId).toBe(DEFAULT_BRANCH_ID);
     expect(state.databases[0]?.branchId).toBe(DEFAULT_BRANCH_ID);
   });
 
@@ -66,6 +70,7 @@ describe('bootstrapStateConnection', () => {
     });
 
     expect(state.branchListCalls).toBe(0);
+    expect(result.branchId).toBe('br-named');
     expect(result.databaseId).toBe('db-existing');
   });
 

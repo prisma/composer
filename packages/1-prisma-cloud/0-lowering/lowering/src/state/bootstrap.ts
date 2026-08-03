@@ -24,6 +24,8 @@ interface ConnectionSummary {
 
 export interface StateConnection {
   readonly projectId: string;
+  /** The Branch the state database lives on — the stage's Branch, or the project's default Branch for production. */
+  readonly branchId: string;
   readonly databaseId: string;
   readonly connectionString: Redacted.Redacted<string>;
 }
@@ -271,5 +273,5 @@ export const bootstrapStateConnectionWith = (
       verify,
     );
     yield* cleanupAgedConnections(client, database.id);
-    return { projectId: container.projectId, databaseId: database.id, connectionString };
+    return { projectId: container.projectId, branchId, databaseId: database.id, connectionString };
   });

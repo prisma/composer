@@ -7,7 +7,7 @@ import * as Schedule from 'effect/Schedule';
 import postgres from 'postgres';
 import * as client from '../client.ts';
 import * as credentials from '../credentials.ts';
-import { adoptLegacyState } from './adoption.ts';
+import { adoptLegacyState, failOnEmptyScopeWithLiveApps } from './adoption.ts';
 import { bootstrapStateConnection } from './bootstrap.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import { acquireStateLock } from './lock.ts';
@@ -53,7 +53,9 @@ export const prismaStateLayer = (ids: {
         ...(branchId !== undefined ? { branchId } : {}),
         ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
       };
-      const { connectionString } = yield* bootstrapStateConnection(bootstrapInput).pipe(
+      const { connectionString, branchId: stateBranchId } = yield* bootstrapStateConnection(
+        bootstrapInput,
+      ).pipe(
         Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
         Effect.mapError(bootstrapError('resolving the state database on the stage branch')),
       );
@@ -85,9 +87,18 @@ export const prismaStateLayer = (ids: {
 
       // Under the lock, before the service exists — so it precedes Alchemy's
       // first state read and no concurrent deploy can adopt the same rows.
-      yield* adoptLegacyState(sql, stack.name, stack.stage).pipe(
+      const { occupied } = yield* adoptLegacyState(sql, stack.name, stack.stage).pipe(
         Effect.mapError(bootstrapError('adopting legacy deploy state')),
       );
+
+      // Still empty after adoption: refuse to run against a Branch that
+      // already has live apps — before Alchemy mutates any resource.
+      if (!occupied) {
+        yield* failOnEmptyScopeWithLiveApps(projectId, stateBranchId, stack.stage).pipe(
+          Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
+          Effect.mapError(bootstrapError('checking the empty deploy state scope')),
+        );
+      }
 
       const service = guardStateService(makePrismaStateService(sql), lock.checkLive);
 

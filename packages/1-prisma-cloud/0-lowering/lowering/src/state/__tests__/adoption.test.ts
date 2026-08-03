@@ -2,9 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from '
 import { StateStoreError } from 'alchemy/State';
 import * as Effect from 'effect/Effect';
 import postgres from 'postgres';
-import { adoptLegacyState } from '../adoption.ts';
+import { ManagementClient } from '../../client.ts';
+import { PrismaApiError } from '../../http.ts';
+import { adoptLegacyState, failOnEmptyScopeWithLiveApps } from '../adoption.ts';
 import { migratePrismaState } from '../schema.ts';
 import { makePrismaStateService } from '../service.ts';
+import { fakeClient, newFakeState, PROJECT_ID } from './fake-management-api.ts';
 import { startTestPostgres, type TestPostgres } from './harness.ts';
 
 const pg: TestPostgres | undefined = startTestPostgres();
@@ -60,9 +63,10 @@ describe.skipIf(pg === undefined)('adoptLegacyState', () => {
     await sql`truncate table alchemy_resource_state, alchemy_stack_output`;
   });
 
-  test('an empty database is a no-op', async () => {
-    await adopt();
+  test('an empty database is a no-op reporting the scope as unoccupied', async () => {
+    const result = await adopt();
 
+    expect(result.occupied).toBe(false);
     expect(await stagesIn('alchemy_resource_state')).toEqual([]);
     expect(await stagesIn('alchemy_stack_output')).toEqual([]);
   });
@@ -74,8 +78,9 @@ describe.skipIf(pg === undefined)('adoptLegacyState', () => {
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      await adopt();
+      const result = await adopt();
 
+      expect(result.occupied).toBe(true);
       expect(await stagesIn('alchemy_resource_state')).toEqual([newStage]);
       expect(await stagesIn('alchemy_stack_output')).toEqual([newStage]);
       const printed = errorSpy.mock.calls.map((args) => args.join(' ')).join('\n');
@@ -145,8 +150,9 @@ describe.skipIf(pg === undefined)('adoptLegacyState', () => {
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
 
     try {
-      await adopt();
+      const result = await adopt();
 
+      expect(result.occupied).toBe(true);
       expect(errorSpy).not.toHaveBeenCalled();
       expect(await stagesIn('alchemy_resource_state')).toEqual([
         newStage,
@@ -202,5 +208,56 @@ describe.skipIf(pg === undefined)('adoptLegacyState', () => {
 
     expect(await stagesIn('alchemy_resource_state')).toEqual([newStage]);
     expect(await stagesIn('alchemy_stack_output')).toEqual([newStage]);
+  });
+});
+
+describe('failOnEmptyScopeWithLiveApps', () => {
+  const branchId = 'br-default';
+  const stage = 'br_test123';
+
+  const check = (state = newFakeState()) =>
+    Effect.runPromise(
+      failOnEmptyScopeWithLiveApps(PROJECT_ID, branchId, stage).pipe(
+        Effect.provideService(ManagementClient, fakeClient(state)),
+      ),
+    );
+
+  test('an empty target branch passes — a genuinely fresh deploy proceeds', async () => {
+    await expect(check()).resolves.toBeUndefined();
+  });
+
+  test('live apps on the target branch fail with ONE error naming the empty scope, the branch, and every app', async () => {
+    const state = newFakeState({
+      apps: [
+        { id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId },
+        { id: 'app-2', name: 'storefront.worker', projectId: PROJECT_ID, branchId },
+      ],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    const message = (error as PrismaApiError).message;
+    expect(message).toContain(`deploy state scope "${stage}" is empty`);
+    expect(message).toContain(branchId);
+    expect(message).toContain('"storefront.web"');
+    expect(message).toContain('"storefront.worker"');
+    expect(message).toContain('already_exists');
+  });
+
+  test("apps on a DIFFERENT branch don't count — another stage's apps never block this one", async () => {
+    const state = newFakeState({
+      apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId: 'br-other' }],
+    });
+
+    await expect(check(state)).resolves.toBeUndefined();
+  });
+
+  test("another project's apps don't count", async () => {
+    const state = newFakeState({
+      apps: [{ id: 'app-1', name: 'storefront.web', projectId: 'proj-other', branchId }],
+    });
+
+    await expect(check(state)).resolves.toBeUndefined();
   });
 });
