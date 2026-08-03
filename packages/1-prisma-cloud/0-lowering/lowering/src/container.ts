@@ -2,6 +2,7 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import { type ManagementApiClient, ManagementClient } from './client.ts';
 import { call, callVoid, PrismaApiError } from './http.ts';
+import { drivePages } from './pagination.ts';
 
 export interface ResolveContainerOptions {
   /** The workspace to resolve the Project in. */
@@ -99,28 +100,31 @@ const resolveProject = (
 /**
  * The project's implicit default Branch — every live Project owns exactly
  * one (a platform invariant). The list endpoint has no `isDefault` filter,
- * so this pages through the Branches and returns as soon as a page contains
- * it. Never creates one: its absence means the platform's invariant is
- * broken, which is not something a deploy can repair.
+ * so this pages through the Branches (bounded — drivePages) and returns as
+ * soon as a page contains it. Never creates one: its absence means the
+ * platform's invariant is broken, which is not something a deploy can
+ * repair.
  */
 export const resolveDefaultBranchId = (
   client: ManagementApiClient,
   projectId: string,
 ): Effect.Effect<string, PrismaApiError> =>
   Effect.gen(function* () {
-    let cursor: string | undefined;
-    for (;;) {
-      const query = cursor === undefined ? {} : { cursor };
-      const page = yield* call(() =>
-        client.GET('/v1/projects/{projectId}/branches', {
-          params: { path: { projectId }, query },
-        }),
-      );
-      const found = page.data.find((b) => b.isDefault);
-      if (found !== undefined) return found.id;
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
-    }
+    let found: string | undefined;
+    yield* drivePages(
+      `branches of project ${projectId}`,
+      (cursor) =>
+        call(() =>
+          client.GET('/v1/projects/{projectId}/branches', {
+            params: { path: { projectId }, query: cursor === undefined ? {} : { cursor } },
+          }),
+        ),
+      (data) => {
+        found = data.find((b) => b.isDefault)?.id;
+        return found !== undefined;
+      },
+    );
+    if (found !== undefined) return found;
     return yield* Effect.fail(
       new PrismaApiError({
         status: 0,

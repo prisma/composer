@@ -350,10 +350,16 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   // explicit --stage must.
   const alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
   if (alchemyStage === undefined) {
+    // Reachable only for deploy without --stage, and destroy --production
+    // (destroy --stage always has a user stage) — so the remedy can be
+    // command-specific without a third branch.
     throw new CliError(
       'The configured deploy target supplied no deploy scope (its container defines no ' +
-        'alchemyStage), and no --stage was given. Alchemy needs an explicit stage — pass ' +
-        '--stage <name>.',
+        'alchemyStage), so Alchemy has no stage to run under. ' +
+        (args.command === 'deploy'
+          ? 'Pass --stage <name> to choose the deploy scope explicitly.'
+          : 'destroy --production needs a target whose container supplies the production ' +
+            'deploy scope.'),
     );
   }
 

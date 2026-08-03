@@ -3,6 +3,7 @@ import * as Effect from 'effect/Effect';
 import type postgres from 'postgres';
 import { type ManagementApiClient, ManagementClient } from '../client.ts';
 import { call, PrismaApiError } from '../http.ts';
+import { drivePages } from '../pagination.ts';
 import { toStateStoreError } from './errors.ts';
 
 /** Whether the (stack, stage) scope holds any rows in either state table. */
@@ -29,9 +30,6 @@ interface AppSummary {
   readonly name: string;
 }
 
-/** Far beyond any real app count per branch; hitting it means the API's pagination is broken, and this check runs under the deploy lock, so it must fail rather than loop. */
-const MAX_APP_PAGES = 1000;
-
 const listAppsOnBranch = (
   client: ManagementApiClient,
   projectId: string,
@@ -39,28 +37,24 @@ const listAppsOnBranch = (
 ): Effect.Effect<readonly AppSummary[], PrismaApiError> =>
   Effect.gen(function* () {
     const apps: AppSummary[] = [];
-    let cursor: string | undefined;
-    for (let pageCount = 0; ; pageCount++) {
-      if (pageCount >= MAX_APP_PAGES) {
-        return yield* Effect.fail(
-          new PrismaApiError({
-            status: 0,
-            message:
-              `listing apps on branch ${branchId} did not finish within ${String(MAX_APP_PAGES)} ` +
-              'pages — the Management API pagination appears broken; refusing to continue with a ' +
-              'possibly incomplete listing.',
+    // Bounded (drivePages): this check runs under the deploy lock, so broken
+    // pagination must fail loudly, never hang or pass on a partial listing.
+    yield* drivePages(
+      `apps on branch ${branchId}`,
+      (cursor) =>
+        call(() =>
+          client.GET('/v1/apps', {
+            params: {
+              query:
+                cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
+            },
           }),
-        );
-      }
-      const query =
-        cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
-      const page = yield* call(() => client.GET('/v1/apps', { params: { query } }));
-      apps.push(...page.data);
-      const next = page.pagination.nextCursor;
-      // A non-advancing cursor would refetch the same page forever.
-      if (!page.pagination.hasMore || next === null || next === cursor) break;
-      cursor = next;
-    }
+        ),
+      (data) => {
+        apps.push(...data);
+        return false;
+      },
+    );
     return apps;
   });
 
