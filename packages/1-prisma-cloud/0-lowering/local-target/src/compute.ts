@@ -17,7 +17,7 @@ import {
   type DeploymentAttributes,
   EnvironmentVariable,
 } from '@internal/lowering/compute';
-import { Project } from '@internal/lowering/postgres';
+import { Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
@@ -257,16 +257,31 @@ export function LocalDeploymentProvider(
 }
 
 /**
- * `Project` — identity only; present so the provider collection stays total.
- * No lowering yields a `Project` resource today (mirrors the hosted
- * `Project` provider, which is also never exercised — see postgres.ts).
+ * `Prisma.Project` — identity only; present so the provider collection stays
+ * total. No lowering yields a `Project` resource today (mirrors the hosted
+ * wiring, where the container resolves the project pre-alchemy).
  */
 export function LocalProjectProvider(
   _input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<Project>> {
   const service: Provider.ProviderService<Project> = {
     list: () => Effect.succeed([]),
-    reconcile: ({ news }) => Effect.succeed({ id: 'local', name: news.name }),
+    reconcile: ({ id, news }) =>
+      Effect.succeed({
+        projectId: 'local',
+        projectName: news.name ?? id,
+        workspaceId: 'local',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        defaultRegion: null,
+        databaseId: undefined,
+        defaultConnectionId: undefined,
+        directConnectionString: undefined,
+        pooledConnectionString: undefined,
+        accelerateConnectionString: undefined,
+        host: undefined,
+        user: undefined,
+        password: undefined,
+      } satisfies Project['Attributes']),
     delete: () => Effect.void,
   };
   return Provider.effect(Project, Effect.succeed(service));

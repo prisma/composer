@@ -14,6 +14,7 @@ import { secretString } from '@internal/foundation/arktype';
 // mode regardless of the (filesystem-dependent) test-file order.
 import * as RealPrismaAlchemy from '@internal/lowering';
 import * as RealOutput from 'alchemy/Output';
+import * as RealAlchemyPrisma from 'alchemy/Prisma';
 import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
@@ -74,6 +75,25 @@ mock.module('alchemy/Output', () => ({
   all: (...outs: unknown[]) => outs,
 }));
 
+// The postgres family (Database/Connection) is upstream alchemy's — the
+// descriptors import it from 'alchemy/Prisma', so the stubs live there. The
+// returned attributes use upstream's field names (`databaseId`,
+// `directConnectionString`).
+mock.module('alchemy/Prisma', () => ({
+  ...RealAlchemyPrisma,
+  Database: (id: string, props: unknown) => {
+    recorded.db.push([id, props]);
+    return Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id });
+  },
+  Connection: (id: string, props: unknown) => {
+    recorded.conn.push([id, props]);
+    return Effect.succeed({
+      connectionId: `${id}#cloud-id`,
+      directConnectionString: Redacted.make(`postgres://${id}`),
+    });
+  },
+}));
+
 mock.module('@internal/lowering', () => ({
   ...RealPrismaAlchemy,
   providers: () => ({ stub: 'providers' }),
@@ -88,17 +108,6 @@ mock.module('@internal/lowering', () => ({
   ServiceKey: (id: string, props: unknown) => {
     recorded.serviceKey.push([id, props]);
     return Effect.succeed({ value: `key-for-${id}` });
-  },
-  Database: (id: string, props: unknown) => {
-    recorded.db.push([id, props]);
-    return Effect.succeed({ id: `${id}#cloud-id`, name: id });
-  },
-  Connection: (id: string, props: unknown) => {
-    recorded.conn.push([id, props]);
-    return Effect.succeed({
-      id: `${id}#cloud-id`,
-      connectionString: Redacted.make(`postgres://${id}`),
-    });
   },
   Bucket: (id: string, props: unknown) => {
     recorded.bucket.push([id, props]);
@@ -419,10 +428,16 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       // meaning, which is exactly why only the descriptor can decide.
       expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
       expect(recorded.db).toEqual([
-        ['data-db', { projectId: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
+        ['data-db', { project: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
       ]);
       expect(recorded.conn).toEqual([
-        ['data-conn', { databaseId: 'data-db#cloud-id', name: 'data' }],
+        [
+          'data-conn',
+          {
+            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
+            name: 'data',
+          },
+        ],
       ]);
     });
   });
@@ -438,12 +453,13 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
 
       run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx));
 
+      // A named stage attaches the branch at create, which upstream only
+      // permits WITHOUT an explicit display name — so `name` is absent here.
       expect(recorded.db.slice(before)).toEqual([
         [
           'data2-db',
           {
-            projectId: 'shop-project#cloud-id',
-            name: 'data2',
+            project: 'shop-project#cloud-id',
             region: 'us-east-1',
             branchId: 'branch_1',
           },
@@ -1427,10 +1443,16 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       );
 
       expect(recorded.db.slice(before.db)).toEqual([
-        ['data-db', { projectId: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
+        ['data-db', { project: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([
-        ['data-conn', { databaseId: 'data-db#cloud-id', name: 'data' }],
+        [
+          'data-conn',
+          {
+            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
+            name: 'data',
+          },
+        ],
       ]);
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);

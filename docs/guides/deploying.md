@@ -268,6 +268,30 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 - Branch-hosted generation: destroying on the old version already removed the environment's `prisma-composer-state` database. If you skipped that and deleted Branches by hand instead, each Branch took its database with it — but production's, on the default Branch, survives: delete it in the Console.
 - Workspace-hosted generation: delete the workspace-level `prisma-composer-state` project from the Console.
 
+## Upgrading to the upstream postgres resources
+
+Framework versions that manage databases through upstream alchemy's Prisma
+provider adopt each environment's existing databases in place — deploy state
+is migrated automatically on read, and production environments redeploy with
+no changes to their databases or connections.
+
+**Stage (`--stage`) environments see two one-time effects on their first
+deploy after the upgrade**, because a branch-attached database can no longer
+carry an explicit display name at create:
+
+- Each existing stage database is **renamed** to a generated physical name
+  (`<app>-<resource>-db-<stage>-<suffix>`). The database itself, its data,
+  and its ID are untouched — only the display name in the Console changes.
+- The database's **default connection credentials are rotated** during that
+  same reconcile. The framework's own named connection — the one your
+  services actually use — is NOT rotated and keeps working. Only credentials
+  minted outside the framework from the database's *default* connection (for
+  example, copied out of the Console) stop working and must be re-issued.
+
+Local dev state is not migrated: if `prisma-composer dev` fails at plan time
+with `No provider is registered for resource type 'PrismaComposer.…'`, run it
+once with `--fresh` to clear the stale local state.
+
 ## Driving deploys from code
 
 Everything the CLI does is also callable in-process, from

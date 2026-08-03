@@ -22,3 +22,59 @@ export const fromEnv = (): Layer.Layer<PrismaCredentials, Config.ConfigError> =>
       return { token };
     }),
   );
+
+const DEFAULT_BASE_URL = 'https://api.prisma.io';
+
+const isLoopbackHost = (hostname: string) =>
+  hostname === 'localhost' ||
+  hostname.endsWith('.localhost') ||
+  hostname === '127.0.0.1' ||
+  hostname === '[::1]';
+
+/** Same validation as upstream alchemy's `PrismaEnvironment`: an HTTP(S) origin, HTTPS unless loopback, no credentials, no path/query/fragment. */
+const normalizeBaseUrl = (value: string): Effect.Effect<string, Error> =>
+  Effect.try({
+    try: () => {
+      const url = new URL(value);
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        throw new Error('Prisma Management API URL must use HTTP or HTTPS.');
+      }
+      if (url.username.length > 0 || url.password.length > 0) {
+        throw new Error('Prisma Management API URL must not contain credentials.');
+      }
+      if (url.protocol === 'http:' && !isLoopbackHost(url.hostname)) {
+        throw new Error(
+          'Prisma Management API URL must use HTTPS unless it targets a loopback host.',
+        );
+      }
+      if (
+        (url.pathname !== '/' && url.pathname !== '') ||
+        url.search.length > 0 ||
+        url.hash.length > 0
+      ) {
+        throw new Error(
+          'Prisma Management API URL must be an origin without a path, query, or fragment.',
+        );
+      }
+      return url.origin;
+    },
+    catch: (cause) =>
+      cause instanceof Error
+        ? cause
+        : new Error(`Invalid Prisma Management API URL: ${String(cause)}`),
+  });
+
+/**
+ * The Management API origin every Prisma-Cloud client in this package uses —
+ * Composer's own SDK client AND upstream alchemy's postgres providers resolve
+ * it through this one function, so `PRISMA_API_URL` can never point them at
+ * different hosts. Mirrors upstream alchemy's `PrismaEnvironment` resolution:
+ * `PRISMA_API_URL`, then `PRISMA_MANAGEMENT_API_URL`, then the public origin,
+ * normalized and validated identically.
+ */
+export const managementApiBaseUrl = (): Effect.Effect<string, Config.ConfigError | Error> =>
+  Config.string('PRISMA_API_URL').pipe(
+    Config.orElse(() => Config.string('PRISMA_MANAGEMENT_API_URL')),
+    Config.withDefault(DEFAULT_BASE_URL),
+    Effect.flatMap(normalizeBaseUrl),
+  );

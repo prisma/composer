@@ -1,5 +1,12 @@
+import { blindCast } from '@internal/foundation/casts';
 import { Stack, type StackServices } from 'alchemy';
-import { makeHttpStateStore, State } from 'alchemy/State';
+import {
+  makeHttpStateStore,
+  type PersistedState,
+  type ReplacedResourceState,
+  State,
+  type StateService,
+} from 'alchemy/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
@@ -10,6 +17,7 @@ import { resolveDefaultBranchId } from '../container.ts';
 import * as credentials from '../credentials.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
+import { migrateLegacyPostgresState } from './legacy-postgres.ts';
 import {
   acquireDeployLease,
   heartbeatDeployLease,
@@ -45,7 +53,39 @@ export const prismaStateLayer = (ids: {
   /** The project's default Branch id, when the deploy targets the default stage — skips re-resolving it. */
   readonly defaultBranchId?: string;
 }): Layer.Layer<State, never, StackServices> =>
-  stateLayerAgainst(client.MANAGEMENT_API_ORIGIN, ids);
+  // The origin comes from the same resolver upstream's providers use
+  // (credentials.managementApiBaseUrl), so PRISMA_API_URL moves the state
+  // client and the resource providers together, never one without the other.
+  Layer.unwrap(
+    credentials.managementApiBaseUrl().pipe(Effect.map((origin) => stateLayerAgainst(origin, ids))),
+  ).pipe(Layer.orDie);
+
+/**
+ * The stock service with legacy Composer resource rows rewritten to the
+ * upstream providers' shapes as they are read (see legacy-postgres.ts) —
+ * reads only; rows written by this version are already upstream-shaped.
+ */
+const migrateRowsOnRead = (service: StateService): StateService => ({
+  ...service,
+  get: (request) =>
+    Effect.map(service.get(request), (value) =>
+      value === undefined
+        ? undefined
+        : blindCast<
+            PersistedState,
+            'migrateLegacyPostgresState only rewrites legacy Composer resource rows to the upstream field names; every other value passes through unchanged, so the PersistedState shape is preserved'
+          >(migrateLegacyPostgresState(value)),
+    ),
+  getReplacedResources: (request) =>
+    Effect.map(service.getReplacedResources(request), (rows) =>
+      rows.map((row) =>
+        blindCast<
+          ReplacedResourceState,
+          'migrateLegacyPostgresState only rewrites legacy Composer resource rows to the upstream field names; the replaced status and envelope shape are preserved'
+        >(migrateLegacyPostgresState(row)),
+      ),
+    ),
+});
 
 /** `prismaStateLayer` with the API origin injectable — split out so tests can point it at a fake state API. */
 export const stateLayerAgainst = (
@@ -114,7 +154,7 @@ export const stateLayerAgainst = (
         id: 'prisma-postgres',
       }).pipe(Effect.provide(FetchHttpClient.layer));
 
-      return Effect.succeed(service);
+      return Effect.succeed(migrateRowsOnRead(service));
     }).pipe(Effect.provide(dependencies)),
   ).pipe(Layer.orDie, Layer.merge(redactLeaseHeader));
 };

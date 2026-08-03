@@ -9,7 +9,7 @@ import {
   instanceNameFor,
   postgresClient,
 } from '@internal/dev-emulators';
-import { Connection, Database } from '@internal/lowering/postgres';
+import { Connection, Database } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
@@ -29,6 +29,10 @@ import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
  * longer drift. This test proves it end to end, against the real daemon,
  * for exactly the pathological shape that used to fail: an app name AND a
  * database id each ending in a hyphen.
+ *
+ * The providers back upstream alchemy's `Prisma.Database` /
+ * `Prisma.Connection` classes, so the attribute names asserted here are the
+ * upstream ones (`databaseId`, `connectionId`, `directConnectionString`).
  */
 
 const APP = 'pgdrifttestapp-';
@@ -53,6 +57,18 @@ async function withDaemonLogOnFailure<T>(run: () => Promise<T>): Promise<T> {
 function fakeContainer(appName: string): ContainerInstance {
   return { input: { appName, stage: undefined }, serialize: () => 'x' };
 }
+
+const reconcileInput = (id: string, news: Record<string, unknown>) =>
+  ({
+    id,
+    fqn: id,
+    instanceId: id,
+    news,
+    olds: undefined,
+    output: undefined,
+    session: undefined as never,
+    bindings: [],
+  }) as never;
 
 // The default, machine-global daemon (the SAME one `postgresClient()` inside
 // the providers under test talks to) — this test's whole point is proving
@@ -85,26 +101,19 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const databaseService = await Effect.runPromise(
           Database.Provider.pipe(Effect.provide(LocalDatabaseProvider(input))),
         );
-        const databaseAttributes = await Effect.runPromise(
-          databaseService.reconcile({
-            id: 'db',
-            fqn: 'db',
-            instanceId: 'db',
-            news: { projectId: 'p', name: DATABASE_ID, region: 'us-east-1' },
-            olds: undefined,
-            output: undefined,
-            session: undefined as never,
-            bindings: [],
-          }),
+        const databaseAttributes: Database['Attributes'] = await Effect.runPromise(
+          databaseService.reconcile(
+            reconcileInput('db', { project: 'p', name: DATABASE_ID, region: 'us-east-1' }),
+          ),
         );
 
         // The provider-derived id is exactly the daemon's own derivation — no
         // second implementation to drift from it.
-        expect(databaseAttributes.id).toBe(instanceNameFor(APP, DATABASE_ID));
-        expect(databaseAttributes.id).toBe('pcdev-pgdrifttestapp-orders');
+        expect(databaseAttributes.databaseId).toBe(instanceNameFor(APP, DATABASE_ID));
+        expect(databaseAttributes.databaseId).toBe('pcdev-pgdrifttestapp-orders');
         // Proves the trim/collapse actually happened — the pre-fix drift left a
         // doubled dash at the "pgdrifttestapp-" + "-" + "orders-" boundary.
-        expect(databaseAttributes.id.includes('--')).toBe(false);
+        expect(databaseAttributes.databaseId.includes('--')).toBe(false);
 
         // 2. Connection-resolve through the listing (LocalConnectionProvider's
         // own reconcile) — before the fix, this threw noRecordedInstanceError
@@ -112,26 +121,21 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const connectionService = await Effect.runPromise(
           Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
         );
-        const connectionAttributes = await Effect.runPromise(
-          connectionService.reconcile({
-            id: 'conn',
-            fqn: 'conn',
-            instanceId: 'conn',
-            news: { databaseId: databaseAttributes.id, name: 'conn' },
-            olds: undefined,
-            output: undefined,
-            session: undefined as never,
-            bindings: [],
-          }),
+        const connectionAttributes: Connection['Attributes'] = await Effect.runPromise(
+          connectionService.reconcile(
+            reconcileInput('conn', { database: databaseAttributes, name: 'conn' }),
+          ),
         );
 
-        expect(connectionAttributes.id).toBe(databaseAttributes.id);
-        expect(Redacted.value(connectionAttributes.connectionString)).toMatch(/^postgres:\/\//);
+        expect(connectionAttributes.databaseId).toBe(databaseAttributes.databaseId);
+        const direct = connectionAttributes.directConnectionString;
+        if (direct === undefined) throw new Error('expected a direct connection string');
+        expect(Redacted.value(direct)).toMatch(/^postgres:\/\//);
 
         // 3. The daemon's own listing agrees on the same name too — the third
         // independent read of the same value.
         const listed = await postgresClient().listDatabases(APP);
-        const entry = listed.find((d) => d.instanceName === databaseAttributes.id);
+        const entry = listed.find((d) => d.instanceName === databaseAttributes.databaseId);
         expect(entry).toBeDefined();
       }),
     30_000,
@@ -157,45 +161,33 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const databaseService = await Effect.runPromise(
           Database.Provider.pipe(Effect.provide(LocalDatabaseProvider(input))),
         );
-        const databaseAttributes = await Effect.runPromise(
-          databaseService.reconcile({
-            id: 'db',
-            fqn: 'db',
-            instanceId: 'db',
-            news: { projectId: 'p', name: DOTTED_ID, region: 'us-east-1' },
-            olds: undefined,
-            output: undefined,
-            session: undefined as never,
-            bindings: [],
-          }),
+        const databaseAttributes: Database['Attributes'] = await Effect.runPromise(
+          databaseService.reconcile(
+            reconcileInput('db', { project: 'p', name: DOTTED_ID, region: 'us-east-1' }),
+          ),
         );
 
         // slug() is idempotent, so the daemon's instanceNameFor(app, slug(name))
         // equals the provider-recorded instanceNameFor(app, name).
-        expect(databaseAttributes.id).toBe(instanceNameFor(APP, DOTTED_ID));
-        expect(databaseAttributes.id).toBe('pcdev-pgdrifttestapp-catalog-database');
+        expect(databaseAttributes.databaseId).toBe(instanceNameFor(APP, DOTTED_ID));
+        expect(databaseAttributes.databaseId).toBe('pcdev-pgdrifttestapp-catalog-database');
 
         const connectionService = await Effect.runPromise(
           Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
         );
-        const connectionAttributes = await Effect.runPromise(
-          connectionService.reconcile({
-            id: 'conn',
-            fqn: 'conn',
-            instanceId: 'conn',
-            news: { databaseId: databaseAttributes.id, name: 'conn' },
-            olds: undefined,
-            output: undefined,
-            session: undefined as never,
-            bindings: [],
-          }),
+        const connectionAttributes: Connection['Attributes'] = await Effect.runPromise(
+          connectionService.reconcile(
+            reconcileInput('conn', { database: databaseAttributes.databaseId, name: 'conn' }),
+          ),
         );
 
-        expect(connectionAttributes.id).toBe(databaseAttributes.id);
-        expect(Redacted.value(connectionAttributes.connectionString)).toMatch(/^postgres:\/\//);
+        expect(connectionAttributes.databaseId).toBe(databaseAttributes.databaseId);
+        const direct = connectionAttributes.directConnectionString;
+        if (direct === undefined) throw new Error('expected a direct connection string');
+        expect(Redacted.value(direct)).toMatch(/^postgres:\/\//);
 
         const listed = await postgresClient().listDatabases(APP);
-        expect(listed.find((d) => d.instanceName === databaseAttributes.id)).toBeDefined();
+        expect(listed.find((d) => d.instanceName === databaseAttributes.databaseId)).toBeDefined();
       }),
     30_000,
   );

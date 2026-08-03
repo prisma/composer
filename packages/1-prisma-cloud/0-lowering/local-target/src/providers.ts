@@ -9,7 +9,7 @@ import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { Providers } from '@internal/lowering';
 import { Bucket, BucketKey } from '@internal/lowering/buckets';
 import { ComputeService, Deployment, EnvironmentVariable } from '@internal/lowering/compute';
-import { Connection, Database, Project } from '@internal/lowering/postgres';
+import { Connection, Database, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
 import { LocalBucketKeyProvider, LocalBucketProvider } from './bucket.ts';

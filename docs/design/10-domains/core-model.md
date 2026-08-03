@@ -1038,10 +1038,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       postgres: Object.assign(
         ({ id, application }) =>
           Effect.gen(function* () {
-            const db = yield* Prisma.Database(`${id}-db`, { projectId: projectIdOf(application), name: id })
-            const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id })
-            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.connectionString })  // FT-5226 cold-start
-            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.id }] }
+            const db = yield* Prisma.Database(`${id}-db`, { project: projectIdOf(application), name: id, region })
+            const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id })
+            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
+            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
           }),
         { kind: "resource" as const },
       ),

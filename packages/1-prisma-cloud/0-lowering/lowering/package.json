@@ -17,6 +17,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@effect/platform-node": "4.0.0-beta.103",
     "@internal/core": "workspace:0.6.0",
     "@internal/foundation": "workspace:0.6.0",
     "@prisma/management-api-sdk": "^1.57.0",

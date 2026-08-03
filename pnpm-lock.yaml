@@ -800,6 +800,9 @@ importers:
 
   packages/1-prisma-cloud/0-lowering/lowering:
     dependencies:
+      '@effect/platform-node':
+        specifier: 4.0.0-beta.100
+        version: 4.0.0-beta.100(effect@4.0.0-beta.100)(ioredis@5.11.1)
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../../0-framework/1-core/core
