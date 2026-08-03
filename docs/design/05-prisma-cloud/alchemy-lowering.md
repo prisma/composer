@@ -42,8 +42,12 @@ The platform writes `DATABASE_URL` / `DATABASE_URL_POOLED` templates pointing at
 a project's default database — a convenience for hand-provisioned single
 services, and precisely the kind of **implicit ambient config the framework
 exists to eliminate**. The framework never reads it, never depends on it, and
-makes reliance on it impossible: when the framework provisions a Project, it
-**writes user-level
+makes reliance on it impossible. First, the framework creates Projects with
+`createDatabase: false`, so **no default database exists at all** on a
+framework-provisioned Project (the opt-out is workspace-actor-only — fine,
+deploys authenticate with service tokens). Second, as defense in depth (and
+for Projects created before the opt-out, or adopted by name): when the
+framework provisions a Project, it **writes user-level
 `DATABASE_URL` and `DATABASE_URL_POOLED` variables with a poison value** (`"-"` —
 a garbage value any direct reader fails to connect with; the API rejects an empty
 string, `"String must contain at least 1 character"`, verified at the R4 deploy
