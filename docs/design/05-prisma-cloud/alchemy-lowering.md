@@ -172,9 +172,9 @@ How the pieces map:
   named** variable — the same `serialize` path as any other config value.
 - **The connection** lowers to two edges: the producer's endpoint domain flows
   into a named `EnvironmentVariable`, and that variable's **id flows into the
-  consumer's `Deployment`** through its `artifactPath` prop.
+  consumer's `Deployment`** through its `app` prop.
 - Every `EnvironmentVariable` a Deployment boots with is threaded into its
-  `artifactPath` — database URLs and connection URLs alike — so the deployment
+  `app` — database URLs and connection URLs alike — so the deployment
   depends on its config being written first.
 - The Deployment's `portMapping.http` rides the same seam: `serialize` resolves
   the service's `port` param from the typed Config and surfaces it in its
@@ -189,24 +189,32 @@ The edge's job is **ordering**: the variable write completes before
 deployment-create, so the first deployment boots with a complete environment.
 Without it the two race — the failure documented as PRO-211 in `gotchas.md`.
 
-**Why the edge rides `artifactPath`.** Upstream's `Prisma.Deployment` has no
+**Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no
 `environment` prop (Composer's deleted one did). Alchemy derives its dependency
 graph from the resource references a prop's *value* is built from, so the
-descriptor builds `artifactPath` as an Output over every variable's id that
-resolves to the path verbatim: the graph gains the edges, and upstream's
-"replace when the artifact changed" diff sees exactly the path it would
-otherwise have been handed.
+descriptor builds `app` as an Output over the app id AND every variable's id,
+resolving to the app id itself: the graph gains the edges. It cannot ride
+`artifactPath` (or any of upstream's other replacement-block props): the diff
+reads that block as one unit and gives no opinion the moment any member is
+unresolved — and a brand-new variable's reference IS unresolved at plan time —
+which would skip the artifact comparison and silently drop a code change.
+`compute/deployment-edge.ts` records the full argument and its test drives
+upstream's real diff.
 
-**Change propagation is a deferred follow-up, not wired.** A *value* change (a
-rotated URL) reaches the platform's variable row but not the running
-deployment: upstream recreates a deployment only when its artifact fingerprint
-moves, and that fingerprint cannot include the values without persisting a hash
-of them in state (a hash of a secret is itself a leak, and persisting the value
-would put a credential in Alchemy state). The intended fix is upstream's — a
-`Deployment` prop that names the inputs a deployment must be recreated for. It
-is narrow in practice: promoted service endpoints are stable across producer
-redeploys, so a wire's value rarely moves, and true secrets are platform-sourced
-and rotate through the platform, not this edge (see the
+**Change propagation is wired by replacing the deployment on every deploy.**
+The platform freezes a deployment's environment at create, so a *value* change
+(a rotated URL) reaches a running service only through a new deployment — and
+the fingerprint upstream recreates on cannot include the values without
+persisting a hash of them in state (a hash of a secret is itself a leak).
+Instead, the deploy hook hands upstream a fresh per-deploy-run artifact path —
+the content-addressed artifact hard-linked into a per-run generation directory
+(`compute/always-redeploy.ts`) — so upstream's path comparison plans a replace
+on every deploy: same bytes, new path, no value and no hash in state. The
+deliberate cost is that an unchanged service replaces (create, start, promote,
+delete old) instead of nooping. This is a stopgap: when upstream's
+`Prisma.Deployment` gains `redeployOn` (inputs a deployment must be recreated
+for) and the pinned alchemy version includes it, the generation path is
+removed and the environment rows ride `redeployOn` (see the
 [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
 The framework's core constructs these edges when lowering a connection (the

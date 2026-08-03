@@ -34,6 +34,7 @@ import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import { alwaysRedeployArtifactPath } from '../always-redeploy.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
 
 /** A stack the resource constructors register into; nothing ever applies it. */
@@ -78,9 +79,9 @@ afterAll(() => {
 });
 
 /** The deploy hook's props, built by the same helper the descriptor uses. */
-const deploymentProps = () => ({
+const deploymentProps = (propArtifactPath: string = artifactPath) => ({
   app: appAfterEnvironment(app.appId, environment),
-  artifactPath,
+  artifactPath: propArtifactPath,
   artifactContentType: 'application/gzip',
   portMapping: { http: 8080 },
   start: true,
@@ -144,7 +145,10 @@ const persistedOutput = (artifactHash: string) => ({
  * resolve to), every other prop is a value. `olds` are the previous deploy's
  * persisted props, where `app` had resolved to the app id.
  */
-const diffAgainst = async (output: Record<string, unknown>) => {
+const diffAgainst = async (
+  output: Record<string, unknown>,
+  paths: { oldPath?: string; newPath?: string } = {},
+) => {
   const service = await deploymentService();
   if (service.diff === undefined) throw new Error('provider must expose diff');
   return Effect.runPromise(
@@ -153,8 +157,8 @@ const diffAgainst = async (output: Record<string, unknown>) => {
         id: 'auth-deploy',
         fqn: 'auth-deploy',
         instanceId: 'inst-deploy',
-        olds: { ...deploymentProps(), app: 'app-1' },
-        news: deploymentProps(),
+        olds: { ...deploymentProps(paths.oldPath), app: 'app-1' },
+        news: deploymentProps(paths.newPath),
         output,
         session: undefined,
         bindings: [],
@@ -193,10 +197,48 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
     expect(diff).toEqual({ action: 'replace' });
   });
 
-  test('an unchanged artifact plans no replacement', async () => {
+  test('an identical artifactPath plans no replacement — the reuse always-redeploy opts out of', async () => {
     const diff = await diffAgainst(persistedOutput(await artifactFingerprint()));
-    // An update, not a replace: with start/promote asserted on every deploy,
-    // upstream re-asserts the lifecycle of the deployment it already has.
+    // An update, not a replace: with the SAME path and bytes, upstream reuses
+    // the deployment and only re-asserts start/promote. The platform never
+    // re-reads environment rows into a reused deployment, so this is exactly
+    // the plan Composer must never let a real deploy reach —
+    // `alwaysRedeployArtifactPath` hands upstream a fresh path every run.
     expect(diff).toEqual({ action: 'update' });
+  });
+});
+
+describe('always-redeploy: the per-deploy generation path, against upstream diff', () => {
+  test('same bytes, a new deploy run — replace is planned, so env values reach the app', async () => {
+    const previousRun = alwaysRedeployArtifactPath(artifactPath, 'run-1');
+    const thisRun = alwaysRedeployArtifactPath(artifactPath, 'run-2');
+    // The fingerprint has NOT moved — the path alone carries the replace.
+    // This is the pinned always-redeploy choice, not an accident: an
+    // environment-value-only change (invisible to every Deployment prop, the
+    // platform never returns values) and a no-change redeploy are the same
+    // deploy to upstream, and BOTH must ship a fresh deployment because the
+    // platform materializes env rows only at deployment create (PRO-211).
+    const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
+      oldPath: previousRun,
+      newPath: thisRun,
+    });
+    expect(diff).toEqual({ action: 'replace' });
+  });
+
+  test('a changed artifact on a new deploy run still plans a replace', async () => {
+    const diff = await diffAgainst(persistedOutput('the-previous-generations-fingerprint'), {
+      oldPath: alwaysRedeployArtifactPath(artifactPath, 'run-1'),
+      newPath: alwaysRedeployArtifactPath(artifactPath, 'run-2'),
+    });
+    expect(diff).toEqual({ action: 'replace' });
+  });
+
+  test('the generation path stays a plain value — the diff never degrades to update', () => {
+    // The replacement block {portMapping, skipCodeUpload, artifactPath,
+    // artifactContentType} must be RESOLVED at plan time or upstream returns
+    // no opinion and the engine falls back to a plain update — the silent
+    // artifact skip all over again. The generation path is a string computed
+    // before lowering, never an Output.
+    expect(Output.isOutput(alwaysRedeployArtifactPath(artifactPath, 'run-3'))).toBe(false);
   });
 });

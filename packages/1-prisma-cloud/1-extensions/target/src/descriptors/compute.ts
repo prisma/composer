@@ -2,7 +2,11 @@
 
 import { isParamSource, type ServiceNode } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
-import { appAfterEnvironment, packageComputeArtifact } from '@internal/lowering';
+import {
+  alwaysRedeployArtifactPath,
+  appAfterEnvironment,
+  packageComputeArtifact,
+} from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
@@ -266,7 +270,11 @@ export function computeDescriptor(
           // well as the app id — see `appAfterEnvironment` for why it is the
           // only prop that can (PRO-211).
           app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
-          artifactPath: artifact.path,
+          // A fresh per-deploy-run path for the SAME bytes, so upstream plans
+          // a replace on every deploy and a changed environment value always
+          // reaches the running app — see `alwaysRedeployArtifactPath` for the
+          // mechanism, its cost, and the hand-off to upstream's `redeployOn`.
+          artifactPath: alwaysRedeployArtifactPath(artifact.path),
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.

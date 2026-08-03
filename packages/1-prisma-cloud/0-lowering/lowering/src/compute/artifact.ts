@@ -180,12 +180,12 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   const sha256 = crypto.createHash('sha256').update(gz).digest('hex');
 
   // The output path must be content-addressed AND per-user. Content-addressed
-  // because `artifactPath` is a Deployment prop: a path that varies per call
-  // (e.g. mkdtemp) makes every redeploy diff as an update even when the bytes
-  // are identical, breaking the redeploy-noop guarantee. Per-user because a
-  // fixed shared dir under os.tmpdir() is owned by whichever OS user creates
-  // it first — everyone else's writes fail EACCES. Same content → same path
-  // (noop); new build → new hash → new path (update, as designed). uid is -1
+  // so the local dev loop can memoize on it (a converge re-hashes and
+  // re-extracts nothing when the bytes didn't move) — this is the CANONICAL
+  // path; the deploy hook derives the per-deploy-run path the hosted
+  // Deployment is handed from it (`alwaysRedeployArtifactPath`). Per-user
+  // because a fixed shared dir under os.tmpdir() is owned by whichever OS
+  // user creates it first — everyone else's writes fail EACCES. uid is -1
   // on Windows — still a valid, deterministic directory name.
   const outDir = path.join(
     os.tmpdir(),

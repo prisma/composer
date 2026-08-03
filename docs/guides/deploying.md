@@ -276,11 +276,13 @@ existing resources in place — deploy state is migrated automatically on read,
 and production environments redeploy with no changes to their databases or
 connections.
 
-**Every service ships one fresh deployment on the first deploy after the
-upgrade**, with the artifact it is already running: the new provider identifies
-a deployment by a fingerprint the old state rows cannot reproduce, so it ships
-and promotes once, then goes quiet. Subsequent deploys are unchanged: a service
-whose code has not changed is not redeployed.
+**Every deploy ships a fresh deployment of every service**, changed code or
+not — the same behaviour earlier framework versions had. It is what guarantees
+a configuration change always reaches your running services: the platform
+freezes a deployment's environment when the deployment is created, so a
+changed value only takes effect through a new one. The deploy uploads the
+artifact it already has, starts it, moves the stable endpoint over, and
+removes the old deployment; your service's URL does not change.
 
 **`DATABASE_URL` and `DATABASE_URL_POOLED` are no longer overwritten.** The
 framework used to replace those variables' values with the placeholder `"-"`,

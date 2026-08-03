@@ -162,6 +162,10 @@ mock.module('@internal/lowering', () => ({
     recorded.pkg.push([opts]);
     return { path: `/tmp/${opts.id}.tar.gz`, sha256: `sha-${opts.id}` };
   },
+  // The real one hard-links the artifact on disk; a marked pass-through keeps
+  // the data flow pure while letting deploy assertions pin that the hook
+  // routes the path through the per-deploy-generation seam.
+  alwaysRedeployArtifactPath: (artifactPath: string) => `${artifactPath}#per-deploy-generation`,
 }));
 
 // PgWarm is a real Alchemy Resource (needs the Stack service); stub it so the
@@ -1178,7 +1182,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         'auth-deploy',
         {
           app: 'auth-svc#cloud-id',
-          artifactPath: '/tmp/auth.tar.gz',
+          artifactPath: '/tmp/auth.tar.gz#per-deploy-generation',
           artifactContentType: 'application/gzip',
           portMapping: { http: 8080 },
           start: true,

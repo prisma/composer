@@ -25,6 +25,11 @@
  * the code change would be silently dropped, and every later deploy would
  * agree it had already shipped. `app` sits outside that block, and its own
  * check treats an unresolved app as "unchanged" rather than as a change.
+ *
+ * This edge is the ORDERING half only. Getting a changed environment value
+ * into the running app is the other half, and it is not this edge's job:
+ * `alwaysRedeployArtifactPath` makes every deploy replace the deployment, so
+ * the fresh deployment materializes the rows this edge ordered first.
  */
 
 import * as Output from 'alchemy/Output';
