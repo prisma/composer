@@ -84,6 +84,28 @@ describe('buildAuthOptions — pinned values', () => {
     expect(pool.listenerCount('error')).toBe(1);
   });
 
+  test('onConnect: awaits SET search_path on the new client', async () => {
+    const pool = options.database as pg.Pool;
+    const queries: string[] = [];
+    const client = {
+      query: (text: string) => {
+        queries.push(text);
+        return Promise.resolve();
+      },
+    } as unknown as pg.ClientBase;
+    await pool.options.onConnect?.(client);
+    expect(queries).toEqual(['SET search_path TO auth']);
+  });
+
+  test('onConnect: a failed SET rejects so the pool discards the client', async () => {
+    const pool = options.database as pg.Pool;
+    const failure = new Error('SET failed');
+    const client = {
+      query: () => Promise.reject(failure),
+    } as unknown as pg.ClientBase;
+    await expect(pool.options.onConnect?.(client)).rejects.toBe(failure);
+  });
+
   test('emailAndPassword: enabled, verification required, reset revokes sessions', () => {
     expect(options.emailAndPassword?.enabled).toBe(true);
     expect(options.emailAndPassword?.requireEmailVerification).toBe(true);
