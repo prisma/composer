@@ -53,6 +53,7 @@ const recorded: {
   bucket: Array<[string, unknown]>;
   bucketKey: Array<[string, unknown]>;
   generated: Array<[string, unknown]>;
+  poisonClaims: string[];
 } = {
   envVar: [],
   envVarProps: [],
@@ -67,6 +68,7 @@ const recorded: {
   bucket: [],
   bucketKey: [],
   generated: [],
+  poisonClaims: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -135,6 +137,14 @@ mock.module('alchemy/Prisma', () => ({
 mock.module('@internal/lowering', () => ({
   ...RealPrismaAlchemy,
   providers: () => ({ stub: 'providers' }),
+  // Talks to the Management API directly (no Alchemy resource, by design);
+  // stubbed so the application hook runs purely. The projectId it claims for
+  // is recorded — what the claim POSTs is pinned by its own test in
+  // @internal/lowering.
+  claimPoisonDatabaseUrl: (projectId: string) => {
+    recorded.poisonClaims.push(projectId);
+    return Effect.void;
+  },
   // A real Alchemy Resource (needs the Stack service); stubbed so
   // application.provision's mint runs purely. The returned "value" is
   // derived from `id` (which itself carries the edge id), so distinct edges
@@ -341,9 +351,10 @@ describe("projectIdOf — narrowing ctx.application to this extension's own prod
 });
 
 describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
-  test('default stage: references the resolved container project (no Project minted), writes NO environment variable', () => {
+  test('default stage: references the resolved container project (no Project minted) and claims the DATABASE_URL keys', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const before = recorded.envVar.length;
+    const beforeEnv = recorded.envVar.length;
+    const beforeClaims = recorded.poisonClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', stage: undefined },
       'shop-project-id',
@@ -358,17 +369,18 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     );
 
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: undefined });
-    // DATABASE_URL/DATABASE_URL_POOLED used to be overwritten with garbage
-    // here. The platform owns those variables (it marks them system-managed,
-    // and alchemy refuses to manage a system-managed variable), so this hook
-    // writes nothing at all; param.ts/secret.ts still reject both names, so no
-    // Composer row can carry one.
-    expect(recorded.envVar.slice(before)).toEqual([]);
+    expect(recorded.poisonClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
+    // The claim is a direct Management API create, NOT an alchemy resource:
+    // Composer must never plan a write or a delete for either variable, and a
+    // state row would do exactly that. So no EnvironmentVariable is declared
+    // here — for the DATABASE_URL keys or anything else.
+    expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 
-  test('named stage: still writes no environment variable', () => {
+  test('named stage: claims the same project-level keys, and still declares no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
-    const before = recorded.envVar.length;
+    const beforeEnv = recorded.envVar.length;
+    const beforeClaims = recorded.poisonClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', stage: 'staging' },
       'shop-project-id',
@@ -383,7 +395,10 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     );
 
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: 'branch_1' });
-    expect(recorded.envVar.slice(before)).toEqual([]);
+    // The branch id never reaches the claim: the rows are project-level, so
+    // one claim covers every stage of the project.
+    expect(recorded.poisonClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
+    expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 
   test('fails with the container-missing error when the CLI parent never resolved one', () => {

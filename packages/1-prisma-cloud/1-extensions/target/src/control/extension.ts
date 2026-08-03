@@ -349,20 +349,21 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // platform-side.
 
     // Runs once per lowering, before any service: it resolves the CLI-ensured
-    // Project into the application handle every descriptor reads. Per-binding
-    // service keys are not minted here (ADR-0031): core's provision phase
-    // invokes `provisions` below, graph-wide, before any service lowers.
-    //
-    // `DATABASE_URL`/`DATABASE_URL_POOLED` are deliberately absent from this
-    // graph: the platform seeds them and marks them system-managed, and
-    // alchemy's EnvironmentVariable refuses to manage a system-managed
-    // variable at all. What keeps a service off the platform default is the
-    // ban at the authoring end — `param.ts` and `secret.ts` reject both names,
-    // so no Composer-written row can carry one (docs/guides/deploying.md).
+    // Project into the application handle every descriptor reads, and claims
+    // the project's `DATABASE_URL`/`DATABASE_URL_POOLED` with a value that
+    // cannot connect, so Prisma Cloud never fills them in with one of the
+    // app's own databases (`claimPoisonDatabaseUrl` explains the whole
+    // mechanism). The claim is create-only and is NOT part of the resource
+    // graph: alchemy owns nothing here, so nothing plans a write or a delete
+    // for either variable. Binding them at the authoring end stays rejected by
+    // `param.ts`/`secret.ts`. Per-binding service keys are not minted here
+    // (ADR-0031): core's provision phase invokes `provisions` below,
+    // graph-wide, before any service lowers.
     application: {
       provision: (ctx) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
+          yield* Prisma.claimPoisonDatabaseUrl(projectId);
           return { projectId, branchId } satisfies CloudApplication;
         }),
     },
