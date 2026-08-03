@@ -344,6 +344,19 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     }
   }
 
+  // 7.3 The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
+  // — machine-dependent, the TML-3157 incident): the state-owning extension's
+  // container (same selection as core's resolveStateLayer) pins it, else an
+  // explicit --stage must.
+  const alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
+  if (alchemyStage === undefined) {
+    throw new CliError(
+      'The configured deploy target supplied no deploy scope (its container defines no ' +
+        'alchemyStage), and no --stage was given. Alchemy needs an explicit stage — pass ' +
+        '--stage <name>.',
+    );
+  }
+
   // 7.5 Preflight (deploy only): each extension verifies its platform
   // prerequisites — e.g. that every secret env var in the provision manifest
   // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
@@ -370,10 +383,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     assembled,
   });
 
-  // 9. Shell out to alchemy against the generated file. The state-owning
-  // extension's container (same selection as core's resolveStateLayer) may pin
-  // the Alchemy stage; without one, the user stage passes through unchanged.
-  const alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
+  // 9. Shell out to alchemy against the generated file.
   try {
     const status = (deps.alchemy ?? runAlchemy)({
       command: args.command,
