@@ -33,6 +33,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [planLimitReached is masked by the cold-start "not configured correctly yet" message](#planlimitreached-is-masked-by-the-cold-start-not-configured-correctly-yet-message)
 - [Composer's secret model has no optional/conditional secrets — every "off" stage still needs a junk credential](#composers-secret-model-has-no-optionalconditional-secrets--every-off-stage-still-needs-a-junk-credential)
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
+- [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 
 ---
 
@@ -576,3 +577,30 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 
 - Surfaced through: [`examples/email/scripts/build.ts`](examples/email/scripts/build.ts), [`examples/email/src/mailer/service.ts`](examples/email/src/mailer/service.ts)
 - Design record: [`.drive/projects/email-module/spec.md`](.drive/projects/email-module/spec.md) — 2026-07-22 amendment, "Template definitions" (react-email demo)
+## prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version
+
+**Filed upstream:** [TML-3098](https://linear.app/prisma-company/issue/TML-3098/prisma-dev-fails-at-startup-freshly-published-prismacli-dev01623) — _"prisma dev fails at startup — freshly published @prisma/cli-dev@0.16.23 errors with 'Dynamic require of "assert" is not supported'"_
+**Product:** Prisma Next (`prisma dev`)
+**Version:** `prisma` CLI 7.9.0 (pinned) + `@prisma/cli-dev@0.16.23` (fetched at run time), observed 2026-07-24
+**First hit:** CI's "Warm the prisma dev engine cache" step went deterministically red on a workflow-and-docs-only PR; main had been green 90 minutes earlier
+
+**Symptom.** Every `prisma dev` invocation on a cold cache fails before doing anything:
+
+```
+Fetching latest updates for this subcommand...
+ ERROR  Failed to import this dynamic subcommand.
+Underlying Error:
+Error: Dynamic require of "assert" is not supported
+```
+
+**Cause.** `dev` is a **dynamic subcommand**: the `prisma` CLI npm-installs `@prisma/cli-dev@latest` into a per-day tmpdir cache and imports it at run time. Pinning `prisma` in package.json pins nothing about `dev` — a broken upstream publish (here `0.16.23`, published 10:45 UTC; CI green at 09:43, red by 11:10) breaks every cold-cache machine at once, and warm caches age out daily. The failure looks like your change broke CI when nothing in the repo changed.
+
+**Workaround.** Two, by context:
+
+- **In this repo's CI** the warm step no longer touches the CLI at all — `scripts/warm-prisma-dev-engine.ts` warms the engine cache through the same programmatic `startPrismaDevServer` (`@prisma/dev`, a pinned dependency) the integration proofs use, so no run-time fetch exists to break.
+- **For a `prisma dev` CLI user** the subcommand loader accepts a version pin as the first argument: `prisma dev @0.16.22 <args>` installs that exact version instead of `@latest`.
+
+**Reproduction.**
+
+1. On a machine that hasn't run `prisma dev` today: `pnpm exec prisma dev --name x --detach` → the error above.
+2. `pnpm exec prisma dev @0.16.22 --name x --detach` → works (as does the programmatic `startPrismaDevServer`, which never fetches the subcommand).
