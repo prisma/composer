@@ -1,7 +1,7 @@
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { ManagementApiClient } from '../client.ts';
-import type { ResolvedContainer } from '../container.ts';
+import { type ResolvedContainer, resolveDefaultBranchId } from '../container.ts';
 import { call, PrismaApiError } from '../http.ts';
 
 /** The framework-owned database a stage's deploy state lives in — a child of that stage's Branch (ADR-0034). */
@@ -10,61 +10,12 @@ export const STATE_DATABASE_NAME = 'prisma-composer-state';
 /** Every connection created against a state database carries this prefix — see `cleanupAgedConnections`. */
 export const CONNECTION_NAME_PREFIX = 'prisma-composer-state-';
 
-interface BranchSummary {
-  readonly id: string;
-  readonly isDefault: boolean;
-}
-
 export interface DatabaseSummary {
   readonly id: string;
   readonly name: string;
   readonly isDefault: boolean;
   readonly createdAt: string;
 }
-
-const listAllBranches = (
-  client: ManagementApiClient,
-  projectId: string,
-): Effect.Effect<readonly BranchSummary[], PrismaApiError> =>
-  Effect.gen(function* () {
-    const branches: BranchSummary[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const query = cursor === undefined ? {} : { cursor };
-      const page = yield* call(() =>
-        client.GET('/v1/projects/{projectId}/branches', {
-          params: { path: { projectId }, query },
-        }),
-      );
-      branches.push(...page.data);
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
-    }
-    return branches;
-  });
-
-/**
- * The project's implicit default Branch — every live Project owns exactly
- * one (a platform invariant). The list endpoint has no `isDefault` filter, so
- * this pages through every Branch and picks it out client-side. Never creates
- * one: its absence means the platform's invariant is broken, which is not
- * something a deploy can repair.
- */
-const resolveDefaultBranchId = (
-  client: ManagementApiClient,
-  projectId: string,
-): Effect.Effect<string, PrismaApiError> =>
-  Effect.gen(function* () {
-    const branches = yield* listAllBranches(client, projectId);
-    const found = branches.find((b) => b.isDefault);
-    if (found !== undefined) return found.id;
-    return yield* Effect.fail(
-      new PrismaApiError({
-        status: 0,
-        message: `project ${projectId} has no default Branch — the platform guarantees every live Project owns one; contact support.`,
-      }),
-    );
-  });
 
 /** A named stage carries its `branchId`; production omits it, and its state lives on the Project's default Branch. */
 export const resolveBranchId = (

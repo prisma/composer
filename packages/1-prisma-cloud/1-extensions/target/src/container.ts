@@ -26,18 +26,40 @@ import * as Layer from 'effect/Layer';
 
 export const PRISMA_CLOUD_EXTENSION_ID = '@prisma/composer-prisma-cloud';
 
+/** Alchemy's own `--stage` validation pattern (pinned 2.0.0-beta.59, `Cli/commands/_shared.ts`) — asserted before a Branch id is exposed as a stage. */
+const ALCHEMY_STAGE_PATTERN = /^[a-z0-9]+([-_a-z0-9]+)*$/i;
+
+function invalidAlchemyStageError(branchId: string): Error {
+  return new Error(
+    `${PRISMA_CLOUD_EXTENSION_ID}: the resolved Branch id "${branchId}" does not match Alchemy's ` +
+      'stage pattern ^[a-z0-9]+([-_a-z0-9]+)*$ (case-insensitive) — it cannot scope the deploy ' +
+      'state. The platform should never return such an id; contact support.',
+  );
+}
+
 export class PrismaCloudContainer implements ContainerInstance {
+  /** The deterministic Alchemy stage (ContainerInstance SPI): the stage Branch's id, or the default Branch's id for the default stage. Absent only for the dev container, which resolves no Branch. */
+  readonly alchemyStage: string | undefined;
+
   constructor(
     readonly input: LocateContainerInput,
     readonly projectId: string,
     readonly branchId: string | undefined,
-  ) {}
+    readonly defaultBranchId?: string,
+  ) {
+    const stageBranchId = branchId ?? defaultBranchId;
+    if (stageBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(stageBranchId)) {
+      throw invalidAlchemyStageError(stageBranchId);
+    }
+    this.alchemyStage = stageBranchId;
+  }
 
   serialize(): string {
     return JSON.stringify({
       input: this.input,
       projectId: this.projectId,
       ...(this.branchId !== undefined ? { branchId: this.branchId } : {}),
+      ...(this.defaultBranchId !== undefined ? { defaultBranchId: this.defaultBranchId } : {}),
     });
   }
 }
@@ -99,8 +121,12 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   if (branchId !== undefined && typeof branchId !== 'string') {
     throw invalidPayloadError('"branchId" is not a string or absent');
   }
+  const defaultBranchId = parsed['defaultBranchId'];
+  if (defaultBranchId !== undefined && typeof defaultBranchId !== 'string') {
+    throw invalidPayloadError('"defaultBranchId" is not a string or absent');
+  }
 
-  return new PrismaCloudContainer({ appName, stage }, projectId, branchId);
+  return new PrismaCloudContainer({ appName, stage }, projectId, branchId, defaultBranchId);
 }
 
 const workspaceRequiredError = (): Error =>
@@ -153,7 +179,12 @@ async function ensureContainer(
       : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
   const outcome = await Effect.runPromise(provided);
   if (!outcome.ok) throw new Error(outcome.message);
-  return new PrismaCloudContainer(input, outcome.container.projectId, outcome.container.branchId);
+  return new PrismaCloudContainer(
+    input,
+    outcome.container.projectId,
+    outcome.container.branchId,
+    outcome.container.defaultBranchId,
+  );
 }
 
 async function locateContainer(
@@ -182,7 +213,12 @@ async function locateContainer(
       : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
   const outcome = await Effect.runPromise(provided);
   if (!outcome.ok) return undefined;
-  return new PrismaCloudContainer(input, outcome.container.projectId, outcome.container.branchId);
+  return new PrismaCloudContainer(
+    input,
+    outcome.container.projectId,
+    outcome.container.branchId,
+    outcome.container.defaultBranchId,
+  );
 }
 
 /**

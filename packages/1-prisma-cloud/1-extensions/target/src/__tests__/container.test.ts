@@ -17,6 +17,7 @@ interface FakeProject {
 interface FakeBranch {
   id: string;
   gitName: string;
+  isDefault: boolean;
   createdAt: string;
 }
 
@@ -92,6 +93,10 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
         workspace: { id: String(init.body?.['workspaceId']) },
       };
       state.projects.push(project);
+      // The platform creates every Project with its default Branch.
+      state.branches[id] = [
+        { id: `br-default-${id}`, gitName: 'main', isDefault: true, createdAt: project.createdAt },
+      ];
       return Promise.resolve(okResponse({ data: project }, 201));
     }
     if (path === '/v1/projects/{projectId}/branches') {
@@ -101,6 +106,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       const branch: FakeBranch = {
         id: `br-${projectId}-${state.branchCreateCalls}`,
         gitName,
+        isDefault: (state.branches[projectId] ?? []).length === 0,
         createdAt: new Date().toISOString(),
       };
       state.branches[projectId] = [...(state.branches[projectId] ?? []), branch];
@@ -188,8 +194,54 @@ describe('containerDescriptor().ensure()', () => {
       expect(isPrismaCloudContainer(instance)).toBe(true);
       expect(instance.projectId).toBe('proj-1');
       expect(instance.branchId).toBe('br-proj-1-1');
+      expect(instance.alchemyStage).toBe('br-proj-1-1');
       expect(state.projectCreateCalls).toBe(1);
       expect(state.branchCreateCalls).toBe(1);
+    });
+  });
+
+  test("the default stage resolves the project's default Branch id as alchemyStage, creating no Branch", async () => {
+    const state = newFakeState();
+
+    await withEnv(baseEnv, async () => {
+      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const instance = await descriptor.ensure({ appName: 'storefront', stage: undefined });
+
+      expect(instance.projectId).toBe('proj-1');
+      expect(instance.branchId).toBeUndefined();
+      expect(instance.defaultBranchId).toBe('br-default-proj-1');
+      expect(instance.alchemyStage).toBe('br-default-proj-1');
+      expect(state.branchCreateCalls).toBe(0);
+    });
+  });
+
+  test('a platform-returned default Branch id that fails Alchemy’s stage pattern is rejected naming the id', async () => {
+    const state = newFakeState({
+      projects: [
+        {
+          id: 'proj-1',
+          name: 'storefront',
+          createdAt: new Date(1).toISOString(),
+          workspace: { id: 'ws-1' },
+        },
+      ],
+      branches: {
+        'proj-1': [
+          {
+            id: 'br?bad id',
+            gitName: 'main',
+            isDefault: true,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
+      },
+    });
+
+    await withEnv(baseEnv, async () => {
+      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      await expect(descriptor.ensure({ appName: 'storefront', stage: undefined })).rejects.toThrow(
+        /"br\?bad id" does not match Alchemy's stage pattern/,
+      );
     });
   });
 
@@ -204,7 +256,14 @@ describe('containerDescriptor().ensure()', () => {
         },
       ],
       branches: {
-        'proj-1': [{ id: 'br-existing', gitName: 'staging', createdAt: new Date(1).toISOString() }],
+        'proj-1': [
+          {
+            id: 'br-existing',
+            gitName: 'staging',
+            isDefault: false,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
       },
     });
 
@@ -285,7 +344,14 @@ describe('containerDescriptor().locate()', () => {
         },
       ],
       branches: {
-        'proj-1': [{ id: 'br-existing', gitName: 'staging', createdAt: new Date(1).toISOString() }],
+        'proj-1': [
+          {
+            id: 'br-existing',
+            gitName: 'staging',
+            isDefault: false,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
       },
     });
 
@@ -295,6 +361,41 @@ describe('containerDescriptor().locate()', () => {
 
       expect(instance?.projectId).toBe('proj-1');
       expect(instance?.branchId).toBe('br-existing');
+      expect(instance?.alchemyStage).toBe('br-existing');
+      expect(state.projectCreateCalls).toBe(0);
+      expect(state.branchCreateCalls).toBe(0);
+    });
+  });
+
+  test('a located default-stage container carries the default Branch id as alchemyStage (destroy --production scope)', async () => {
+    const state = newFakeState({
+      projects: [
+        {
+          id: 'proj-1',
+          name: 'storefront',
+          createdAt: new Date(1).toISOString(),
+          workspace: { id: 'ws-1' },
+        },
+      ],
+      branches: {
+        'proj-1': [
+          {
+            id: 'br-default',
+            gitName: 'main',
+            isDefault: true,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
+      },
+    });
+
+    await withEnv(baseEnv, async () => {
+      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const instance = await descriptor.locate({ appName: 'storefront', stage: undefined });
+
+      expect(instance?.branchId).toBeUndefined();
+      expect(instance?.defaultBranchId).toBe('br-default');
+      expect(instance?.alchemyStage).toBe('br-default');
       expect(state.projectCreateCalls).toBe(0);
       expect(state.branchCreateCalls).toBe(0);
     });
@@ -465,6 +566,32 @@ describe('serialize()/deserialize() — the parent→child transport round trip'
     expect(restored.branchId).toBeUndefined();
   });
 
+  test('a default-stage instance round-trips its defaultBranchId and alchemyStage', () => {
+    const instance = new PrismaCloudContainer(
+      { appName: 'shop', stage: undefined },
+      'proj-1',
+      undefined,
+      'br-default',
+    );
+    const descriptor = containerDescriptor();
+
+    const restored = descriptor.deserialize(instance.serialize());
+
+    expect(restored.defaultBranchId).toBe('br-default');
+    expect(restored.alchemyStage).toBe('br-default');
+  });
+
+  test("a named-stage instance's alchemyStage survives the round trip", () => {
+    const instance = new PrismaCloudContainer(
+      { appName: 'shop', stage: 'staging' },
+      'proj-1',
+      'br-1',
+    );
+    const descriptor = containerDescriptor();
+
+    expect(descriptor.deserialize(instance.serialize()).alchemyStage).toBe('br-1');
+  });
+
   test('serialize() never emits an empty string', () => {
     const instance = new PrismaCloudContainer(
       { appName: 'shop', stage: undefined },
@@ -488,9 +615,51 @@ describe('serialize()/deserialize() — the parent→child transport round trip'
       'branchId not a string or absent',
       JSON.stringify({ input: { appName: 'a' }, projectId: 'p', branchId: 42 }),
     ],
+    [
+      'defaultBranchId not a string or absent',
+      JSON.stringify({ input: { appName: 'a' }, projectId: 'p', defaultBranchId: 42 }),
+    ],
   ])('rejects an invalid payload: %s', (_label, payload) => {
     const descriptor = containerDescriptor();
     expect(() => descriptor.deserialize(payload)).toThrow(/container transport payload/);
+  });
+});
+
+describe('alchemyStage — the Alchemy stage pattern assertion', () => {
+  test('a dev-shaped container (no Branch at all) has no alchemyStage', () => {
+    const instance = new PrismaCloudContainer(
+      { appName: 'shop', stage: undefined },
+      'local',
+      undefined,
+    );
+    expect(instance.alchemyStage).toBeUndefined();
+  });
+
+  test('a Branch id violating the pattern is rejected at construction, naming the id', () => {
+    expect(
+      () => new PrismaCloudContainer({ appName: 'shop', stage: 'staging' }, 'proj-1', 'br/bad'),
+    ).toThrow(/"br\/bad" does not match Alchemy's stage pattern/);
+  });
+
+  test('a default Branch id violating the pattern is rejected the same way', () => {
+    expect(
+      () =>
+        new PrismaCloudContainer(
+          { appName: 'shop', stage: undefined },
+          'proj-1',
+          undefined,
+          '_leading',
+        ),
+    ).toThrow(/"_leading" does not match Alchemy's stage pattern/);
+  });
+
+  test('real-shaped br_ ids pass, case-insensitively', () => {
+    const instance = new PrismaCloudContainer(
+      { appName: 'shop', stage: 'staging' },
+      'proj-1',
+      'br_ABC123xyz',
+    );
+    expect(instance.alchemyStage).toBe('br_ABC123xyz');
   });
 });
 
