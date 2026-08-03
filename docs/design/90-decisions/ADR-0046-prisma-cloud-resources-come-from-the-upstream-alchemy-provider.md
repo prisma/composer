@@ -3,94 +3,189 @@
 ## Decision
 
 Composer does not implement Alchemy resources for Prisma Cloud's Management
-API. The six resource families that talk to it — project, database,
-connection, app, deployment, environment variable — are the upstream
-`alchemy/Prisma` provider's classes (`Prisma.Project`, `Prisma.Database`,
-`Prisma.Connection`, `Prisma.App`, `Prisma.Deployment`,
-`Prisma.EnvironmentVariable`), registered in Composer's own provider
-collection and driven by Composer's lowering.
+API. It composes the official `alchemy/Prisma` provider's resources and
+providers, and defines its own resources only where no Management API exists
+behind them.
 
-Composer keeps defining resources only where no Management API exists behind
-them: mint-once values (`ServiceKey`, `GeneratedParam`, `S3Credentials`),
-`PnMigration`, `PgWarm`, and — until the upstream contribution ships in a
-release — `Bucket`/`BucketKey`. The hosted state store keeps its policy layer
-(state lives in a framework-owned database on the stage's Branch, ADR-0034);
-its generic Postgres core is contributed upstream.
+The live wiring is composition, not implementation:
 
-The compute family binds the **low-level** trio, not the composite
-`Prisma.Compute`:
+```ts
+// lowering/src/providers.ts — deploys run on upstream's providers
+Layer.mergeAll(
+  Prisma.ProjectProvider(),
+  Prisma.DatabaseProvider(),
+  Prisma.ConnectionProvider(),
+  Prisma.AppProvider(),
+  Prisma.DeploymentProvider(),
+  Prisma.EnvironmentVariableProvider(),
+),
+// + Composer's own resources: Bucket, BucketKey, ServiceKey,
+//   GeneratedParam, S3Credentials, PnMigration, PgWarm
+```
 
-- A service's `COMPOSER_<ADDRESS>_ORIGIN` row carries that service's own
-  platform-assigned domain (ADR-0039). One composite resource owning app,
-  environment rows, and deployment makes that row an input of the resource
-  that produces the domain — a self-edge the planner rejects. Splitting lets
-  the App surface `appEndpointDomain` in `provision`, before any row is
-  written.
-- `Compute` owns environment rows through an internal ownership map with no
-  honest migration from per-key resource rows.
-- `Compute` carries build, framework detection, and bundling. `artifactPath`
-  bypasses them, but the bypass is a prop value; `Prisma.Deployment` has no
-  build path at all, which is the structural form of ADR-0005's guarantee.
+and a lowered compute service is upstream resources wired by Composer's
+descriptors:
 
-The env→deployment ordering edge rides the deployment's `app` prop as an
-Output over every environment row's id (`deployment-edge.ts`). It must not
-ride `artifactPath`: upstream's diff requires that prop to be *resolved*
-before comparing artifacts, and a brand-new environment row is unresolved at
-plan time — the diff then degrades to a generic update that reuses the running
-deployment while recording the new artifact's fingerprint, permanently and
-silently skipping a code deploy.
+```ts
+const app = Prisma.App(`${id}-svc`, { project, regionId, branchId });
+const vars = records.map((r) => Prisma.EnvironmentVariable(...));
+const deployment = Prisma.Deployment(`${id}-deploy`, {
+  app: dependsOnEnvironment(app, vars),   // see "The ordering edge" below
+  artifactPath,                            // Composer's own tar.gz — never built by Alchemy
+  start: true,
+  promote: true,
+});
+```
 
-Local dev is unchanged in shape (ADR-0041): the local target rebinds the same
-upstream resource classes to Composer's emulator providers at the
-`LowerOptions.providers` seam. Upstream's own dev mode (`providers({ dev })`,
-which Composer contributed) is not used, because Composer swaps the whole
-layer rather than one provider's dev half.
+Local dev keeps the shape ADR-0041 defined: the local target binds the same
+upstream resource *classes* to Composer's emulator providers at the
+`LowerOptions.providers` seam. Upstream's built-in dev mode (its providers
+register live and local variants and the engine picks by run mode) is never
+mounted; Composer swaps the whole layer.
+
+Why hand Composer's most platform-critical surface to an external package:
+the provider tracks the Management API at its source, and its deploy
+lifecycle is stronger than what it replaced — failed deployments are cleaned
+up rather than leaked, terminal statuses fail fast instead of polling to
+timeout, and the stable endpoint is read by observing the App after promote
+rather than trusting the promote response.
+
+## The compute family binds the low-level trio, not `Prisma.Compute`
+
+Upstream offers two shapes for compute: a composite `Prisma.Compute` that
+owns app, environment, and deployment in one resource, and the low-level
+`App` / `Deployment` / `EnvironmentVariable`. Composer uses the low-level
+trio. The deciding constraint is a cycle:
+
+Every service's environment includes `COMPOSER_<ADDRESS>_ORIGIN` — the
+service's *own* platform-assigned endpoint domain (ADR-0039). A composite
+resource that owns both the environment rows and the app makes that row an
+input of the very resource that produces the domain: a self-edge the planner
+rejects. Split, the wiring is legal: the App exists first and hands out
+`appEndpointDomain`, environment rows are written from it, the Deployment
+comes last.
+
+Two supporting reasons:
+
+- `Compute` owns environment rows through an internal ownership map and
+  refuses in-scope rows absent from it; Composer's per-key rows have no
+  honest mapping into that map.
+- `Compute` carries build, framework detection, and bundling. Its
+  `artifactPath` prop bypasses them, but a bypass is a prop value;
+  `Prisma.Deployment` has **no build path at all**, which is ADR-0005's
+  guarantee in structural form.
+
+What the trio costs: `Compute`'s preview/stable health checks and automatic
+rollback are not inherited, and deployment reuse must be handled by Composer
+(next two sections).
+
+## The ordering edge rides the `app` prop
+
+Environment rows must be written before the deployment is created, because
+the platform snapshots the branch environment into a deployment at create.
+Upstream's `Deployment` has no prop for that dependency, so Composer builds
+the edge into the `app` prop: an Output over the app id *and* every
+environment row's id, resolving to the app id
+(`lowering/src/compute/deployment-edge.ts`). Alchemy derives its graph from
+the resource references inside prop values, so every row is scheduled first.
+
+The edge must not ride `artifactPath`. Upstream's diff reads
+`{portMapping, skipCodeUpload, artifactPath, artifactContentType}` as one
+block and offers no opinion when any member is unresolved — and a brand-new
+environment row is always unresolved at plan time. The consequence of
+getting this wrong is severe and quiet: the artifact comparison never runs,
+the engine falls back to a plain update, and the reconcile keeps the running
+deployment while recording the new artifact's fingerprint as deployed — a
+code change silently never ships, and every later deploy agrees it already
+did. The `app` prop sits outside that block and tolerates being unresolved.
+`compute/__tests__/deployment-edge.test.ts` drives upstream's real diff and
+real Output machinery and fails if the edge ever moves back.
+
+## Every deploy replaces the deployment
+
+The platform bakes environment values into a deployment at create, and
+upstream reuses a deployment whose artifact is unchanged — so a value-only
+change (a rotated secret) would update the platform's variable row and never
+reach the running app. Composer instead guarantees that a deploy ships what
+was declared: the deploy hook hard-links the content-addressed artifact into
+a per-deploy-generation path (`compute/always-redeploy.ts`), the resolved
+path differs every run, and upstream plans a replace — create, start,
+promote, delete the old — for every service on every deploy.
+
+No value or hash of a value lands in deploy state. The alternatives are
+worse: hashing values into state leaks (a hash of a secret is itself a
+leak), and no upstream environment-variable attribute distinguishes "the
+value changed" from "a deploy ran" (values are re-applied every deploy to
+heal drift).
+
+The cost is deliberate: the deployment reuse upstream's fingerprinting
+provides is given up. The exit is named in the code: when the pinned alchemy
+version includes `Deployment.redeployOn` (inputs a deployment is recreated
+for, fingerprinted `Redacted` upstream), the generation path is deleted and
+the environment rows move onto that prop — one edit in
+`descriptors/compute.ts`.
 
 ## Consequences
 
-- Composer's collection tag is `'PrismaComposer'` and its remaining resource
-  type-ids are `PrismaComposer.*` — the `Prisma.*` namespace belongs to
-  upstream. Rows written before the adoption migrate on read in the hosted
-  store (`state/legacy-resources.ts`): type-ids, attribute shapes, and the
-  neutralization of the retired poison rows.
-- Branch-stage databases carry generated physical names. Upstream refuses an
-  explicit name combined with branch attachment in create (correct: PDP
-  creates and attaches in separate transactions with no idempotency key), and
-  attach-after-create is reverted by upstream's reconcile. Production keeps
-  explicit names; branch stages attach at create and take the generated name.
-- The platform's seeded `DATABASE_URL`/`DATABASE_URL_POOLED` are no longer
-  overwritten. They are system-managed and upstream refuses to manage them.
-  The authoring-side ban remains: `param.ts`/`secret.ts` reject the names, and
-  every Composer row is `COMPOSER_`-prefixed. An app reading
-  `process.env.DATABASE_URL` outside the framework sees the platform's value.
-- Auth never touches Alchemy's profile store: Composer provides
-  `PrismaEnvironment` directly from `PRISMA_SERVICE_TOKEN`, with one base-URL
-  resolver shared by the upstream providers and Composer's own SDK client.
-- Two regressions are accepted and filed as upstream asks: an environment
-  value change alone no longer replaces the running deployment (the only
-  non-secret change signal upstream exposes, `updatedAt`, moves on every
-  deploy, so no mechanism at this layer can express "the value changed"), and
-  the App delete conflict-retry budget is ~3.75 s where Composer's old
-  provider waited up to 5 minutes.
+- **Namespaces.** The `Prisma.*` resource type-id namespace and the
+  `'Prisma'` collection tag belong to upstream. Composer's collection tag is
+  `'PrismaComposer'` and its own resources are `PrismaComposer.*`. Rows
+  persisted under retired Composer type-ids are rewritten on read by the
+  hosted state store (`state/legacy-resources.ts`): ids, attribute shapes,
+  and the retirement of the poison rows below. The module is the durable
+  compatibility boundary for state written by earlier Composer versions.
+- **Branch-stage databases carry generated physical names.** Upstream
+  refuses an explicit name combined with branch attachment at create — and
+  it is right to: the Management API creates the database and attaches the
+  branch in separate transactions with no idempotency key, so a lost
+  response is indistinguishable from a foreign database. Attaching after
+  create does not survive either: upstream's reconcile detaches a branch its
+  props don't declare. So branch stages attach at create and take the
+  generated name; production keeps explicit names.
+- **The platform's `DATABASE_URL` is left alone.** Prisma Cloud seeds
+  `DATABASE_URL`/`DATABASE_URL_POOLED` on every app and marks them
+  system-managed; upstream refuses to manage system-managed variables.
+  Composer neither overwrites nor tracks them. The guarantee that apps read
+  configuration through the framework is held at the authoring end instead:
+  `param.ts`/`secret.ts` reject the reserved names, and every
+  Composer-written row is `COMPOSER_`-prefixed. An app that reads
+  `process.env.DATABASE_URL` directly sees whatever the platform put there.
+- **Auth never touches Alchemy's profile store.** Alchemy's own credential
+  flow prompts on a TTY and hard-fails non-interactive; Composer runs
+  alchemy as a subprocess with piped stdio. Composer provides
+  `PrismaEnvironment` directly from `PRISMA_SERVICE_TOKEN`, with one
+  base-URL resolver shared between upstream's providers and Composer's own
+  SDK client so both always target the same host.
+- **A known weakness is inherited:** upstream retries a conflicting App
+  delete for only a few seconds, where Composer's own resource waited out
+  deployment drain for minutes. Slow drains can fail a destroy and need a
+  re-run.
 
 ## Alternatives considered
 
-- **Keep Composer's own resources.** Rejected: six API wrappers whose drift
-  against the Management API Composer pays for alone, with a less hardened
-  deploy lifecycle than upstream's (no failure cleanup, no terminal-status
-  fast-fail, promote-response trust instead of post-promote observation).
-- **Composite `Prisma.Compute`.** Rejected for the self-edge, the ownership
-  map, and ADR-0005 (above).
-- **Vendor `src/Prisma/` into Composer.** Works mechanically, inherits
-  `@prisma/dev` and permanent drift. Kept only as a fallback if a future
-  alchemy bump is unshippable.
-- **Upstream's dev mode instead of the local target.** Would tie local dev's
-  iteration to upstream review cadence and replace a whole-layer seam that
-  already works with a per-provider one.
+- **Keep Composer's own resources.** Six Management API wrappers whose drift
+  Composer pays for alone, with a weaker deploy lifecycle than upstream's.
+- **The composite `Prisma.Compute`.** Rejected for the self-edge, the
+  environment-ownership map, and ADR-0005 (above).
+- **Vendor the provider's source into Composer.** Mechanically possible;
+  inherits its dependencies and permanent drift. Kept only as a fallback if
+  a future alchemy upgrade proves unshippable.
+- **Adopt upstream's built-in dev mode instead of the local target.** Would
+  replace a whole-layer seam that already works with per-provider
+  substitution, and tie local-dev iteration to an external release cadence.
+- **Detect environment changes instead of always redeploying.** Requires
+  either value hashes in state (a leak) or a change signal upstream does not
+  expose; both rejected above.
 
 ## References
 
-Upstream provider: alchemy-run/alchemy PR #416; Composer's contribution
-(buckets, `providers({dev})`/`liveProviders()`, Postgres state backend):
-PR #1061. Supersedes the resource inventory in ADR-0033's reading of
-`alchemy-lowering.md`; ADR-0005, ADR-0034, ADR-0039, ADR-0041 unchanged.
+- ADR-0005 (the framework never builds or bundles user code), ADR-0034
+  (hosted deploy state), ADR-0039 (a service's origin is a target-resolved
+  property), ADR-0041 (local dev runs the deploy pipeline against local
+  providers).
+- The provider: the `alchemy/Prisma` module of the `alchemy` package,
+  2.0.0-beta.67 or later.
+- `docs/design/05-prisma-cloud/alchemy-lowering.md` — the current
+  resource-by-resource lowering map.
+- `docs/guides/deploying.md` — operator-facing upgrade notes (one-time
+  deployment reship, branch-database renames, leftover placeholder rows).
