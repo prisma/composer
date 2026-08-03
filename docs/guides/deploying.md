@@ -284,39 +284,27 @@ changed value only takes effect through a new one. The deploy uploads the
 artifact it already has, starts it, moves the stable endpoint over, and
 removes the old deployment; your service's URL does not change.
 
-**`DATABASE_URL` and `DATABASE_URL_POOLED` are no longer overwritten.** The
-framework used to replace those variables' values with the placeholder `"-"`,
-so that nothing could depend on them by accident. It no longer touches them:
-they belong to Prisma Cloud, and the upstream provider refuses to manage a
-variable the platform marks as its own. Nothing you write can carry those names
-— `envSecret`/`envParam` still reject them — and every database URL your
-services use comes from the connection they declare.
+**`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the
+framework never modifies or deletes them.** At provision the framework claims
+both names (production and preview class, project level) with the placeholder,
+using create-only writes: if the variable already exists — yours, or one Prisma
+Cloud seeded — the claim does nothing. The placeholder is deliberate. Without
+it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a
+live credential to one of your app's own databases, and anything reading
+`process.env.DATABASE_URL` directly would quietly work against a database it
+was never wired to. With it, a direct read fails loudly. Nothing you declare
+can carry those names — `envSecret`/`envParam` reject them — and every database
+URL your services use comes from the connection they declare.
 
-On the first deploy after the upgrade, the framework **stops tracking** those
-two variables. The deploy log reports them as `retained`, which is exactly what
-happens: the entry is dropped from deploy state and **no call is made to Prisma
-Cloud**, so whatever value the variable holds today stays.
+On the first deploy after the upgrade, the framework also **stops tracking**
+the two variables in deploy state. The deploy log reports them as `retained`:
+the entry is dropped from state and no call is made to Prisma Cloud.
 
-**What that means for an environment the framework deployed before the
-upgrade**: the `"-"` placeholder it wrote is still there. An application that
-reads `process.env.DATABASE_URL` directly reads `"-"` until someone removes the
-variable. Cleaning it up is optional — nothing the framework deploys reads it —
-and it is a manual step, because the framework will not delete a variable it no
-longer manages:
-
-```bash
-# Find the variable (add &branchId=<branch> for a --stage environment).
-curl -s -H "Authorization: Bearer $PRISMA_SERVICE_TOKEN" \
-  "https://api.prisma.io/v1/environment-variables?projectId=<projectId>&key=DATABASE_URL"
-
-# Remove it, using the id from the response.
-curl -s -X DELETE -H "Authorization: Bearer $PRISMA_SERVICE_TOKEN" \
-  "https://api.prisma.io/v1/environment-variables/<envVarId>"
-```
-
-Repeat for `DATABASE_URL_POOLED`. Once removed, the platform's own template
-value applies again. In the Console the same variables are visible under the
-project's environment variables.
+Deleting the variables by hand is not useful: the next deploy's claim (or the
+platform's own template filler) recreates them. If you genuinely want a value
+there — for a tool outside the framework that insists on `DATABASE_URL` — set
+your own value in the Console; both the framework's claim and the platform's
+filler are create-only and will leave your value alone.
 
 **Stage (`--stage`) environments see two one-time effects on their first
 deploy after the upgrade**, because a branch-attached database can no longer

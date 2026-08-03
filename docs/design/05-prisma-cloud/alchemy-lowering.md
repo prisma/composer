@@ -51,28 +51,30 @@ a project's default database — a convenience for hand-provisioned single
 services, and precisely the kind of **implicit ambient config the framework
 exists to eliminate**. The framework never reads it and never depends on it.
 Framework-provisioned Projects are created with `createDatabase: false`, so no
-default database exists on them — but that does not keep the variable away:
-the platform self-heals a missing `DATABASE_URL` template on the first Compute
-deploy, wiring it from any ready database on the Project (default first, then
-oldest). On a Composer Project that is one of the app's own databases. Every
-database URL a service actually consumes is an explicit, per-service variable
-the pack's `serialize` writes under its own named key, inside the `COMPOSER_`
-namespace.
+default database exists on them — but that alone does not keep the variable
+away: the platform self-heals a missing `DATABASE_URL` template on the first
+Compute deploy, wiring it from any ready database on the Project (default
+first, then oldest) — on a Composer Project, one of the app's own databases.
 
-The framework used to go further and overwrite both platform variables with the
-placeholder `"-"`, so that a direct reader failed loudly. It no longer does. The
-platform marks those variables as its own, and alchemy's `EnvironmentVariable`
-refuses to manage one — an overwrite would fail the deploy rather than protect
-anyone. What remains is the ban at the authoring end: `param.ts` and `secret.ts`
-reject both names, so no Composer-written row can carry one.
+So the framework claims the keys first. `application.provision` writes
+`DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class,
+project-level) with the poison value `"-"` via create-only calls
+(`lowering/src/database-url-poison.ts`). The platform's writes are also
+create-only, so whoever writes first wins permanently: on a fresh Project the
+claim lands first and the self-heal never fires; on a Project whose variables
+the platform already seeded, the claim gets a 409 and no-ops. The rows are
+plain platform variables, never Alchemy resources — nothing enters deploy
+state and upstream's `EnvironmentVariable` never owns them. Alongside the
+claim, the authoring-side ban holds: `param.ts` and `secret.ts` reject both
+names, so no Composer-declared row can carry one. Every database URL a
+service actually consumes is an explicit, per-service variable the pack's
+`serialize` writes under its own named key, inside the `COMPOSER_` namespace.
 
 A service that reads `process.env.DATABASE_URL` behind the framework's back
-therefore reads whatever the platform holds — the self-healed template
-pointing at one of the app's own databases, or a leftover `"-"` placeholder on
-an environment deployed by earlier Composer versions, which retired the rows
-from deploy state without touching the variables
-([deploying.md](../../guides/deploying.md) has the manual cleanup). The
-authoring-side ban is what keeps framework services off it.
+therefore reads the poison `"-"` and fails loudly — or, on a Project the
+platform seeded before the framework ever deployed to it, the platform's own
+template ([deploying.md](../../guides/deploying.md) covers the leftover rows
+and manual cleanup).
 
 ## The resource inventory
 
