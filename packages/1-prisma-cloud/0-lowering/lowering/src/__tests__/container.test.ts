@@ -27,6 +27,7 @@ interface FakeState {
   projects: FakeProject[];
   branches: Record<string, FakeBranch[]>;
   projectCreateCalls: number;
+  projectCreateBodies: Record<string, unknown>[];
   branchCreateCalls: number;
   /** When set, the first create for this gitName 409s (racing create), after seeding the winner's branch as if a concurrent caller created it first. */
   raceGitName?: string;
@@ -43,6 +44,7 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   projects: [],
   branches: {},
   projectCreateCalls: 0,
+  projectCreateBodies: [],
   branchCreateCalls: 0,
   raced: false,
   deleteBranchCalls: [],
@@ -97,6 +99,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
   ) => {
     if (path === '/v1/projects') {
       state.projectCreateCalls++;
+      state.projectCreateBodies.push(init.body ?? {});
       const id = `proj-${state.projectCreateCalls}`;
       const project: FakeProject = {
         id,
@@ -183,6 +186,12 @@ describe('resolveContainer — Project resolution', () => {
     expect(result.projectId).toBe('proj-1');
     expect(state.projectCreateCalls).toBe(1);
     expect(state.projects[0]?.name).toBe('storefront');
+  });
+
+  test('project creation opts out of the platform default database', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(state.projectCreateBodies[0]?.['createDatabase']).toBe(false);
   });
 
   test('adopt-oldest: several projects share the name — the oldest is adopted, none created', async () => {
