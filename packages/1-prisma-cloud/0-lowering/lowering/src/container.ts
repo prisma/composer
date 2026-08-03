@@ -96,17 +96,18 @@ const resolveProject = (
     return created.data.id;
   });
 
-interface BranchSummary {
-  readonly id: string;
-  readonly isDefault: boolean;
-}
-
-const listAllBranches = (
+/**
+ * The project's implicit default Branch — every live Project owns exactly
+ * one (a platform invariant). The list endpoint has no `isDefault` filter,
+ * so this pages through the Branches and returns as soon as a page contains
+ * it. Never creates one: its absence means the platform's invariant is
+ * broken, which is not something a deploy can repair.
+ */
+export const resolveDefaultBranchId = (
   client: ManagementApiClient,
   projectId: string,
-): Effect.Effect<readonly BranchSummary[], PrismaApiError> =>
+): Effect.Effect<string, PrismaApiError> =>
   Effect.gen(function* () {
-    const branches: BranchSummary[] = [];
     let cursor: string | undefined;
     for (;;) {
       const query = cursor === undefined ? {} : { cursor };
@@ -115,28 +116,11 @@ const listAllBranches = (
           params: { path: { projectId }, query },
         }),
       );
-      branches.push(...page.data);
+      const found = page.data.find((b) => b.isDefault);
+      if (found !== undefined) return found.id;
       if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
       cursor = page.pagination.nextCursor;
     }
-    return branches;
-  });
-
-/**
- * The project's implicit default Branch — every live Project owns exactly
- * one (a platform invariant). The list endpoint has no `isDefault` filter, so
- * this pages through every Branch and picks it out client-side. Never creates
- * one: its absence means the platform's invariant is broken, which is not
- * something a deploy can repair.
- */
-export const resolveDefaultBranchId = (
-  client: ManagementApiClient,
-  projectId: string,
-): Effect.Effect<string, PrismaApiError> =>
-  Effect.gen(function* () {
-    const branches = yield* listAllBranches(client, projectId);
-    const found = branches.find((b) => b.isDefault);
-    if (found !== undefined) return found.id;
     return yield* Effect.fail(
       new PrismaApiError({
         status: 0,
