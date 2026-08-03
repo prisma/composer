@@ -162,8 +162,12 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
   create: (container) => {
-    const { projectId, branchId } = prismaCloudContainerOf(container);
-    return prismaStateLayer(branchId !== undefined ? { projectId, branchId } : { projectId });
+    const { projectId, branchId, defaultBranchId } = prismaCloudContainerOf(container);
+    return prismaStateLayer({
+      projectId,
+      ...(branchId !== undefined ? { branchId } : {}),
+      ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
+    });
   },
 });
 

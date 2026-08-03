@@ -23,4 +23,8 @@ describe('prismaStateLayer', () => {
   test('branchId is optional — a named-stage deploy passes it, the default stage omits it', () => {
     expect(prismaStateLayer({ projectId: 'prj_1', branchId: 'br_1' })).toBeDefined();
   });
+
+  test('defaultBranchId is optional — the default stage passes it so bootstrap skips re-resolving the default Branch', () => {
+    expect(prismaStateLayer({ projectId: 'prj_1', defaultBranchId: 'br_default' })).toBeDefined();
+  });
 });

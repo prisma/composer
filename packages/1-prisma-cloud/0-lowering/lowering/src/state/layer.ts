@@ -7,6 +7,7 @@ import * as Schedule from 'effect/Schedule';
 import postgres from 'postgres';
 import * as client from '../client.ts';
 import * as credentials from '../credentials.ts';
+import { adoptLegacyState } from './adoption.ts';
 import { bootstrapStateConnection } from './bootstrap.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import { acquireStateLock } from './lock.ts';
@@ -34,8 +35,10 @@ import { guardStateService, makePrismaStateService } from './service.ts';
 export const prismaStateLayer = (ids: {
   readonly projectId: string;
   readonly branchId?: string;
+  /** The project's default Branch id, when the deploy targets the default stage — lets bootstrap skip re-resolving it. */
+  readonly defaultBranchId?: string;
 }): Layer.Layer<State, never, StackServices> => {
-  const { projectId, branchId } = ids;
+  const { projectId, branchId, defaultBranchId } = ids;
 
   return Layer.effect(
     State,
@@ -45,7 +48,11 @@ export const prismaStateLayer = (ids: {
       const bootstrapError = (step: string) => (cause: unknown) =>
         hostedStateBootstrapError(container, step, cause);
 
-      const bootstrapInput = branchId === undefined ? { projectId } : { projectId, branchId };
+      const bootstrapInput = {
+        projectId,
+        ...(branchId !== undefined ? { branchId } : {}),
+        ...(defaultBranchId !== undefined ? { defaultBranchId } : {}),
+      };
       const { connectionString } = yield* bootstrapStateConnection(bootstrapInput).pipe(
         Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
         Effect.mapError(bootstrapError('resolving the state database on the stage branch')),
@@ -75,6 +82,12 @@ export const prismaStateLayer = (ids: {
         Effect.mapError(bootstrapError('lock acquisition')),
       );
       yield* Effect.addFinalizer(() => Effect.promise(() => lock.release()));
+
+      // Under the lock, before the service exists — so it precedes Alchemy's
+      // first state read and no concurrent deploy can adopt the same rows.
+      yield* adoptLegacyState(sql, stack.name, stack.stage).pipe(
+        Effect.mapError(bootstrapError('adopting legacy deploy state')),
+      );
 
       const service = guardStateService(makePrismaStateService(sql), lock.checkLive);
 
