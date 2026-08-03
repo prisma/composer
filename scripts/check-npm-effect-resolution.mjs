@@ -21,15 +21,26 @@
 // Usage: node scripts/check-npm-effect-resolution.mjs
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const repoRoot = resolve(dirname(new URL(import.meta.url).pathname), '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
 const prismaCloudDir = join(repoRoot, 'packages/9-public/composer-prisma-cloud');
+
+/** Scratch dir holding the packed tarballs and the shape installs. */
+let work;
 
 const pinnedEffect = JSON.parse(readFileSync(join(composerDir, 'package.json'), 'utf-8'))
   .dependencies.effect;
@@ -37,8 +48,13 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
+// `process.exit` skips the normal-path cleanup, so a failure deliberately
+// keeps the scratch installs and prints where they are for inspection.
 function fail(message) {
   process.stderr.write(`\nFAIL — ${message}\n`);
+  if (work !== undefined) {
+    process.stderr.write(`Keeping the scratch installs for inspection: ${work}\n`);
+  }
   process.exit(1);
 }
 
@@ -70,9 +86,9 @@ function collectEffectVersions(node, found = new Map()) {
   return found;
 }
 
-async function checkShape(label, tarballs, work) {
+async function checkShape(label, tarballs) {
   const appDir = join(work, label);
-  execFileSync('mkdir', ['-p', appDir]);
+  mkdirSync(appDir, { recursive: true });
   writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: label, private: true }));
   process.stderr.write(`\n[${label}] npm install ${tarballs.length} tarball(s)...\n`);
   execFileSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
@@ -111,15 +127,15 @@ async function checkShape(label, tarballs, work) {
   process.stderr.write(`[${label}] OK — single effect@${pinnedEffect}, Schedule.either present\n`);
 }
 
-const work = mkdtempSync(join(tmpdir(), 'npm-effect-check-'));
+work = mkdtempSync(join(tmpdir(), 'npm-effect-check-'));
 try {
   const tarballDir = join(work, 'tarballs');
-  execFileSync('mkdir', ['-p', tarballDir]);
+  mkdirSync(tarballDir, { recursive: true });
   const composerTgz = packInto(composerDir, tarballDir);
   const prismaCloudTgz = packInto(prismaCloudDir, tarballDir);
 
-  await checkShape('composer-only', [composerTgz], work);
-  await checkShape('composer-and-prisma-cloud', [composerTgz, prismaCloudTgz], work);
+  await checkShape('composer-only', [composerTgz]);
+  await checkShape('composer-and-prisma-cloud', [composerTgz, prismaCloudTgz]);
 
   process.stderr.write(`\nOK — npm dedupes to a single effect@${pinnedEffect} in both shapes.\n`);
 } finally {
