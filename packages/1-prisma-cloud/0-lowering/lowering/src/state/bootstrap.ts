@@ -41,6 +41,12 @@ export interface StateConnection {
  *
  * `isDefault` is left at the API's `false` default: the state database must
  * never be the stage's default database, which belongs to the user.
+ *
+ * The region is explicit: `'inherit'` copies the project default database's
+ * region, but composer creates Projects with `createDatabase: false`, so
+ * there is nothing to inherit from and the API rejects it. `us-east-1` is
+ * what `'inherit'` always resolved to before (composer never set a project
+ * region), and matches the target's DEFAULT_REGION.
  */
 const createStateDatabase = (
   client: ManagementApiClient,
@@ -49,7 +55,7 @@ const createStateDatabase = (
 ): Effect.Effect<DatabaseSummary, PrismaApiError> =>
   call(() =>
     client.POST('/v1/databases', {
-      body: { projectId, name: STATE_DATABASE_NAME, region: 'inherit', branchId },
+      body: { projectId, name: STATE_DATABASE_NAME, region: 'us-east-1', branchId },
     }),
   ).pipe(
     Effect.map((created) => ({
