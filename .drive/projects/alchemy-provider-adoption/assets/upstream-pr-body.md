@@ -46,6 +46,50 @@ Docs: `prisma/data/buckets` page + sidebar entry, mirroring connections.
 - `providers({ dev })` — the supplied layer replaces the built-in dev providers during `alchemy dev` only. `PrismaLocalProviders` is a structural type (the union of the twelve resource providers), and the test proves an embedder layer built from `Provider.succeed` typechecks with **no casts** — that's the seam's contract.
 - `liveProviders()` — the live layer exported for frameworks doing their own mode selection.
 
+What implementing the dev side actually looks like — a provider per resource you emulate, plain `Provider.succeed`, no casts:
+
+```ts
+const devDatabase = Provider.succeed(Prisma.Database, {
+  stables: ["databaseId"],
+  list: () => Effect.succeed([]),
+  diff: Effect.fn(function* () {
+    return { action: "update" } as const;
+  }),
+  read: Effect.fn(function* ({ output }) {
+    return output;
+  }),
+  reconcile: Effect.fn(function* ({ id, news }) {
+    // Start (or adopt) a local Postgres for this database and
+    // hand back the same attribute shape the live provider emits.
+    const server = yield* myDevPostgres.ensure(id);
+    return {
+      databaseId: server.instanceName,
+      databaseName: resolveId(news.project),
+      directConnectionString: Redacted.make(server.url),
+      databaseUrl: Redacted.make(server.url),
+      status: "ready",
+      // pooled/accelerate/origin fields are optional — omit what
+      // your emulator doesn't have.
+    };
+  }),
+  delete: Effect.fn(function* ({ output }) {
+    yield* myDevPostgres.destroy(output.databaseId);
+  }),
+});
+
+const myEmulatorProviders = (): Prisma.PrismaLocalProviders =>
+  Layer.mergeAll(devDatabase, devConnection, devCompute /* … */);
+
+// Deploy is untouched; `alchemy dev` runs on your emulators:
+Prisma.providers({ dev: myEmulatorProviders() });
+```
+
+And a framework that owns mode selection entirely skips `providers()` and composes the exported live layer with its own local one:
+
+```ts
+const providers = isDev ? myEmulatorProviders() : Prisma.liveProviders();
+```
+
 ## A locked state backend: `State/PostgresState`
 
 `Compute`'s recovery docs tell users to "use a durable, locked state backend" — and no in-tree backend has locking. This adds one on the dependency the repo already carries (`pg`):
