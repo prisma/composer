@@ -50,6 +50,13 @@ describe('bootstrapStateConnection', () => {
     expect(state.databases[0]?.branchId).toBe(DEFAULT_BRANCH_ID);
   });
 
+  test('production with a carried defaultBranchId uses it without re-resolving the default branch', async () => {
+    await run(state, neverCalled(), { projectId: PROJECT_ID, defaultBranchId: DEFAULT_BRANCH_ID });
+
+    expect(state.branchListCalls).toBe(0);
+    expect(state.databases[0]?.branchId).toBe(DEFAULT_BRANCH_ID);
+  });
+
   test('a named stage uses the branch it was given, without looking any up', async () => {
     state.databases.push(stateDatabase('db-existing', 'br-named'));
 

@@ -17,14 +17,16 @@ export interface DatabaseSummary {
   readonly createdAt: string;
 }
 
-/** A named stage carries its `branchId`; production omits it, and its state lives on the Project's default Branch. */
+/** A named stage carries its `branchId`; production carries `defaultBranchId` (its state lives on the Project's default Branch) — re-resolved only when neither is present. */
 export const resolveBranchId = (
   client: ManagementApiClient,
   container: ResolvedContainer,
-): Effect.Effect<string, PrismaApiError> =>
-  container.branchId !== undefined
-    ? Effect.succeed(container.branchId)
+): Effect.Effect<string, PrismaApiError> => {
+  const known = container.branchId ?? container.defaultBranchId;
+  return known !== undefined
+    ? Effect.succeed(known)
     : resolveDefaultBranchId(client, container.projectId);
+};
 
 /**
  * Every database on this Branch. Uses the flat `GET /v1/databases`, which
