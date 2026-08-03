@@ -3,7 +3,7 @@ import * as Redacted from 'effect/Redacted';
 import type { ManagementApiClient } from '../client.ts';
 import { type ResolvedContainer, resolveDefaultBranchId } from '../container.ts';
 import { call, PrismaApiError } from '../http.ts';
-import { drivePages } from '../pagination.ts';
+import { collectPages } from '../pagination.ts';
 
 /** The framework-owned database a stage's deploy state lives in — a child of that stage's Branch (ADR-0034). */
 export const STATE_DATABASE_NAME = 'prisma-composer-state';
@@ -39,26 +39,15 @@ const listAllDatabasesOnBranch = (
   projectId: string,
   branchId: string,
 ): Effect.Effect<readonly DatabaseSummary[], PrismaApiError> =>
-  Effect.gen(function* () {
-    const databases: DatabaseSummary[] = [];
-    yield* drivePages(
-      `databases on branch ${branchId}`,
-      (cursor) =>
-        call(() =>
-          client.GET('/v1/databases', {
-            params: {
-              query:
-                cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
-            },
-          }),
-        ),
-      (data) => {
-        databases.push(...data);
-        return false;
-      },
-    );
-    return databases;
-  });
+  collectPages(`databases on branch ${branchId}`, (cursor) =>
+    call(() =>
+      client.GET('/v1/databases', {
+        params: {
+          query: cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
+        },
+      }),
+    ),
+  );
 
 /**
  * Databases on this Branch named `prisma-composer-state`, oldest first,

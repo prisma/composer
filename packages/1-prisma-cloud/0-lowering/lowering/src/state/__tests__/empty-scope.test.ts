@@ -78,11 +78,12 @@ describe.skipIf(pg === undefined)('scopeOccupied', () => {
 
 describe('failOnEmptyScopeWithLiveApps', () => {
   const branchId = 'br-default';
+  const stack = 'demo-stack';
   const stage = 'br_test123';
 
   const check = (state = newFakeState()) =>
     Effect.runPromise(
-      failOnEmptyScopeWithLiveApps(PROJECT_ID, branchId, stage).pipe(
+      failOnEmptyScopeWithLiveApps(PROJECT_ID, branchId, stack, stage).pipe(
         Effect.provideService(ManagementClient, fakeClient(state)),
       ),
     );
@@ -122,6 +123,9 @@ describe('failOnEmptyScopeWithLiveApps', () => {
       'UPDATE the stage column of alchemy_resource_state and alchemy_stack_output',
     );
     expect(message).toContain(`to "${stage}"`);
+    // The UPDATE must be stack-filtered — the state database can hold other
+    // stacks' rows, which an unfiltered UPDATE would rewrite too.
+    expect(message).toContain(`WHERE stack = "${stack}"`);
     expect(message).toContain('delete the apps in the Prisma Console');
     expect(message).toContain('redeploy fresh');
     // The old first remedy was un-followable: destroy builds this same state

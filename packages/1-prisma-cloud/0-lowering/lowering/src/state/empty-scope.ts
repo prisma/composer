@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect';
 import type postgres from 'postgres';
 import { type ManagementApiClient, ManagementClient } from '../client.ts';
 import { call, PrismaApiError } from '../http.ts';
-import { drivePages } from '../pagination.ts';
+import { collectPages } from '../pagination.ts';
 import { toStateStoreError } from './errors.ts';
 
 /** Whether the (stack, stage) scope holds any rows in either state table. */
@@ -30,33 +30,22 @@ interface AppSummary {
   readonly name: string;
 }
 
+// Bounded (collectPages): this check runs under the deploy lock, so broken
+// pagination must fail loudly, never hang or pass on a partial listing.
 const listAppsOnBranch = (
   client: ManagementApiClient,
   projectId: string,
   branchId: string,
 ): Effect.Effect<readonly AppSummary[], PrismaApiError> =>
-  Effect.gen(function* () {
-    const apps: AppSummary[] = [];
-    // Bounded (drivePages): this check runs under the deploy lock, so broken
-    // pagination must fail loudly, never hang or pass on a partial listing.
-    yield* drivePages(
-      `apps on branch ${branchId}`,
-      (cursor) =>
-        call(() =>
-          client.GET('/v1/apps', {
-            params: {
-              query:
-                cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
-            },
-          }),
-        ),
-      (data) => {
-        apps.push(...data);
-        return false;
-      },
-    );
-    return apps;
-  });
+  collectPages(`apps on branch ${branchId}`, (cursor) =>
+    call(() =>
+      client.GET('/v1/apps', {
+        params: {
+          query: cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
+        },
+      }),
+    ),
+  );
 
 /**
  * The empty-scope-with-live-apps case: the branch-id scope holds no rows
@@ -75,6 +64,7 @@ const listAppsOnBranch = (
 export const failOnEmptyScopeWithLiveApps = (
   projectId: string,
   branchId: string,
+  stack: string,
   stage: string,
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
@@ -91,10 +81,11 @@ export const failOnEmptyScopeWithLiveApps = (
           'state, a deploy would recreate every resource and fail with already_exists, and a ' +
           'destroy would remove nothing. If those apps are a deployment from before the ' +
           'branch-id state scope, UPDATE the stage column of alchemy_resource_state and ' +
-          `alchemy_stack_output to "${stage}" in this branch's prisma-composer-state database ` +
-          '— or delete the apps in the Prisma Console (or via the Management API) and ' +
-          "redeploy fresh. If they are another deployment's, remove them or deploy into a " +
-          'different project. Then retry.',
+          `alchemy_stack_output to "${stage}" WHERE stack = "${stack}" (the same database can ` +
+          "hold other stacks' rows) in this branch's prisma-composer-state database — or " +
+          'delete the apps in the Prisma Console (or via the Management API) and redeploy ' +
+          "fresh. If they are another deployment's, remove them or deploy into a different " +
+          'project. Then retry.',
       }),
     );
   });
