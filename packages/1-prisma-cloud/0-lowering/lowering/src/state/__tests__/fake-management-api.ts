@@ -24,10 +24,18 @@ export interface FakeConnection {
   createdAt: string;
 }
 
+export interface FakeApp {
+  id: string;
+  name: string;
+  projectId: string;
+  branchId: string;
+}
+
 export interface FakeState {
   branches: Record<string, FakeBranch[]>;
   databases: FakeDatabase[];
   connections: Record<string, FakeConnection[]>;
+  apps: FakeApp[];
   createShouldFail: boolean;
   deleteShouldFailWith: number | undefined;
   branchListCalls: number;
@@ -41,6 +49,7 @@ export const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => (
   branches: {},
   databases: [],
   connections: {},
+  apps: [],
   createShouldFail: false,
   deleteShouldFailWith: undefined,
   branchListCalls: 0,
@@ -111,6 +120,17 @@ export const fakeClient = (state: FakeState): ManagementApiClient => {
           data: state.connections[databaseId] ?? [],
           pagination: { nextCursor: null, hasMore: false },
         }),
+      );
+    }
+    if (path === '/v1/apps') {
+      const query = init.params?.query ?? {};
+      const filtered = state.apps.filter(
+        (app) =>
+          (query['projectId'] === undefined || app.projectId === query['projectId']) &&
+          (query['branchId'] === undefined || app.branchId === query['branchId']),
+      );
+      return Promise.resolve(
+        okResponse({ data: filtered, pagination: { nextCursor: null, hasMore: false } }),
       );
     }
     throw new Error(`fakeClient: unexpected GET ${path}`);
