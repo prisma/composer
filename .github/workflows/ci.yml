@@ -122,6 +122,26 @@ jobs:
       - name: Cast ratchet (no new bare `as` casts vs base)
         run: pnpm lint:casts
 
+  npm-effect-resolution:
+    name: npm install effect dedupe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the public packages
+        run: pnpm turbo run build --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud
+      # Regression check for TML-3158: packs the public packages and installs
+      # the tarballs with real npm against the real registry; fails if more
+      # than one `effect` resolves or alchemy's position resolves a copy
+      # without `Schedule.either`. pnpm never surfaces this — only a
+      # standalone npm install does.
+      - name: Check npm resolves a single pinned effect
+        run: pnpm check:npm-effect-resolution
+
   build:
     name: Build
     runs-on: ubuntu-latest
