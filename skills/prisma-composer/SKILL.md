@@ -684,6 +684,12 @@ every shipped block supplies what it declares.
   locally where nothing is enforced.
 - **Cold starts reset service-to-service connections.** A call into a
   scaled-to-zero service can get `ECONNRESET`; retry it.
+- **`deploy`/`destroy`/`dev` stop at start-up on an `effect` version
+  conflict** (`Dependency conflict: alchemy resolves effect@...`). Another
+  dependency floated a newer `effect` and the package manager hoisted it over
+  Composer's pin. Do what the error says: add
+  `"overrides": { "effect": "<required>" }` to the app's `package.json`
+  (yarn: `resolutions`; pnpm: `pnpm.overrides`) and reinstall.
 - **The ingress buffers streaming responses.** An open SSE tail delivers
   nothing and times out at 60s — don't build on streamed HTTP responses.
 
