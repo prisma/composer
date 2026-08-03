@@ -26,13 +26,13 @@ import * as Layer from 'effect/Layer';
 
 export const PRISMA_CLOUD_EXTENSION_ID = '@prisma/composer-prisma-cloud';
 
-/** Alchemy's own `--stage` validation pattern (pinned 2.0.0-beta.59, `Cli/commands/_shared.ts`) — asserted before a Branch id is exposed as a stage. */
-const ALCHEMY_STAGE_PATTERN = /^[a-z0-9]+([-_a-z0-9]+)*$/i;
+/** Accepts exactly what Alchemy's own `--stage` validation accepts (pinned 2.0.0-beta.59, `Cli/commands/_shared.ts`), rewritten without overlapping quantifiers so it cannot backtrack catastrophically. Asserted before a Branch id is exposed as a stage. */
+const ALCHEMY_STAGE_PATTERN = /^[a-z0-9][-_a-z0-9]*$/i;
 
 function invalidAlchemyStageError(branchId: string): Error {
   return new Error(
     `${PRISMA_CLOUD_EXTENSION_ID}: the resolved Branch id "${branchId}" does not match Alchemy's ` +
-      'stage pattern ^[a-z0-9]+([-_a-z0-9]+)*$ (case-insensitive) — it cannot scope the deploy ' +
+      'stage pattern ^[a-z0-9][-_a-z0-9]*$ (case-insensitive) — it cannot scope the deploy ' +
       'state. The platform should never return such an id; contact support.',
   );
 }
