@@ -1,7 +1,7 @@
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import { type ManagementApiClient, ManagementClient } from './client.ts';
-import { call, callVoid, type PrismaApiError } from './http.ts';
+import { call, callVoid, PrismaApiError } from './http.ts';
 
 export interface ResolveContainerOptions {
   /** The workspace to resolve the Project in. */
@@ -24,6 +24,8 @@ export interface ResolvedContainer {
   readonly projectId: string;
   /** Set only when `stage` was given — the default stage has no Branch. */
   readonly branchId?: string;
+  /** Set only when `stage` was omitted — the project's default Branch's id (a read; the Branch is never created here). */
+  readonly defaultBranchId?: string;
 }
 
 interface ProjectSummary {
@@ -94,6 +96,55 @@ const resolveProject = (
     return created.data.id;
   });
 
+interface BranchSummary {
+  readonly id: string;
+  readonly isDefault: boolean;
+}
+
+const listAllBranches = (
+  client: ManagementApiClient,
+  projectId: string,
+): Effect.Effect<readonly BranchSummary[], PrismaApiError> =>
+  Effect.gen(function* () {
+    const branches: BranchSummary[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const query = cursor === undefined ? {} : { cursor };
+      const page = yield* call(() =>
+        client.GET('/v1/projects/{projectId}/branches', {
+          params: { path: { projectId }, query },
+        }),
+      );
+      branches.push(...page.data);
+      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
+      cursor = page.pagination.nextCursor;
+    }
+    return branches;
+  });
+
+/**
+ * The project's implicit default Branch — every live Project owns exactly
+ * one (a platform invariant). The list endpoint has no `isDefault` filter, so
+ * this pages through every Branch and picks it out client-side. Never creates
+ * one: its absence means the platform's invariant is broken, which is not
+ * something a deploy can repair.
+ */
+export const resolveDefaultBranchId = (
+  client: ManagementApiClient,
+  projectId: string,
+): Effect.Effect<string, PrismaApiError> =>
+  Effect.gen(function* () {
+    const branches = yield* listAllBranches(client, projectId);
+    const found = branches.find((b) => b.isDefault);
+    if (found !== undefined) return found.id;
+    return yield* Effect.fail(
+      new PrismaApiError({
+        status: 0,
+        message: `project ${projectId} has no default Branch — the platform guarantees every live Project owns one; contact support.`,
+      }),
+    );
+  });
+
 const findBranchId = (
   client: ManagementApiClient,
   projectId: string,
@@ -150,7 +201,8 @@ const resolveBranch = (
  * Resolves the two containers a stage's deploy runs into (ADR-0019): the
  * app's **Project**, found-or-created by name, and — for a named stage
  * only — its **Branch**, found-or-created by `gitName`. The default stage
- * (no `stage`) creates no Branch; `branchId` is omitted. With `ensure:
+ * (no `stage`) creates no Branch; `branchId` is omitted, and the project's
+ * default Branch's id is read into `defaultBranchId` instead. With `ensure:
  * false` (`destroy`), nothing is created — an absent Project or Branch
  * fails with `ContainerNotFoundError` instead.
  */
@@ -161,7 +213,10 @@ export const resolveContainer = (
     const client = yield* ManagementClient;
     const ensure = opts.ensure ?? true;
     const projectId = yield* resolveProject(client, opts.workspaceId, opts.appName, ensure);
-    if (opts.stage === undefined) return { projectId };
+    if (opts.stage === undefined) {
+      const defaultBranchId = yield* resolveDefaultBranchId(client, projectId);
+      return { projectId, defaultBranchId };
+    }
 
     const branchId = yield* resolveBranch(client, projectId, opts.stage, opts.appName, ensure);
     return { projectId, branchId };

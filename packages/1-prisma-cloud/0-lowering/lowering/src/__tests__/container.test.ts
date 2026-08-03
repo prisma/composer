@@ -20,6 +20,7 @@ interface FakeProject {
 interface FakeBranch {
   id: string;
   gitName: string;
+  isDefault: boolean;
   createdAt: string;
 }
 
@@ -108,6 +109,10 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
         workspace: { id: String(init.body?.['workspaceId']) },
       };
       state.projects.push(project);
+      // The platform creates every Project with its default Branch.
+      state.branches[id] = [
+        { id: `br-default-${id}`, gitName: 'main', isDefault: true, createdAt: project.createdAt },
+      ];
       return Promise.resolve(okResponse({ data: project }, 201));
     }
     if (path === '/v1/projects/{projectId}/branches') {
@@ -120,6 +125,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
         const winner: FakeBranch = {
           id: `br-race-${gitName}`,
           gitName,
+          isDefault: false,
           createdAt: new Date().toISOString(),
         };
         state.branches[projectId] = [...(state.branches[projectId] ?? []), winner];
@@ -129,6 +135,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       const branch: FakeBranch = {
         id: `br-${projectId}-${state.branchCreateCalls}`,
         gitName,
+        isDefault: (state.branches[projectId] ?? []).length === 0,
         createdAt: new Date().toISOString(),
       };
       state.branches[projectId] = [...(state.branches[projectId] ?? []), branch];
@@ -180,10 +187,11 @@ describe('resolveContainer — Project resolution', () => {
     state = newFakeState();
   });
 
-  test('no matching project creates one', async () => {
+  test('no matching project creates one, resolving its default Branch id', async () => {
     const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
 
     expect(result.projectId).toBe('proj-1');
+    expect(result.defaultBranchId).toBe('br-default-proj-1');
     expect(state.projectCreateCalls).toBe(1);
     expect(state.projects[0]?.name).toBe('storefront');
   });
@@ -215,6 +223,9 @@ describe('resolveContainer — Project resolution', () => {
         workspace: { id: 'ws-1' },
       },
     );
+    state.branches['proj-oldest'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
 
     const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
 
@@ -257,6 +268,9 @@ describe('resolveContainer — Project resolution', () => {
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'wksp_ws-1' },
     });
+    state.branches['proj-existing'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
 
     const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
 
@@ -278,15 +292,32 @@ describe('resolveContainer — Branch resolution', () => {
     });
   });
 
-  test('the default stage (no stage given) creates no Branch', async () => {
+  test('the default stage (no stage given) creates no Branch, resolving the existing default Branch id', async () => {
+    state.branches['proj-1'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
     const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
 
     expect(result.projectId).toBe('proj-1');
     expect(result.branchId).toBeUndefined();
+    expect(result.defaultBranchId).toBe('br-default');
     expect(state.branchCreateCalls).toBe(0);
   });
 
-  test('a named stage with no existing Branch creates one', async () => {
+  test('the default stage on a project with no default Branch fails naming the broken platform invariant', async () => {
+    state.branches['proj-1'] = [];
+
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('proj-1 has no default Branch');
+    expect(state.branchCreateCalls).toBe(0);
+  });
+
+  test('a named stage with no existing Branch creates one, and carries no defaultBranchId', async () => {
     const result = await run(state, {
       workspaceId: 'ws-1',
       appName: 'storefront',
@@ -295,13 +326,19 @@ describe('resolveContainer — Branch resolution', () => {
 
     expect(result.projectId).toBe('proj-1');
     expect(result.branchId).toBe('br-proj-1-1');
+    expect(result.defaultBranchId).toBeUndefined();
     expect(state.branchCreateCalls).toBe(1);
     expect(state.branches['proj-1']?.[0]?.gitName).toBe('staging');
   });
 
   test('a named stage with an existing Branch adopts it — create-if-absent is idempotent', async () => {
     state.branches['proj-1'] = [
-      { id: 'br-existing', gitName: 'staging', createdAt: new Date(1).toISOString() },
+      {
+        id: 'br-existing',
+        gitName: 'staging',
+        isDefault: false,
+        createdAt: new Date(1).toISOString(),
+      },
     ];
 
     const result = await run(state, {
@@ -393,7 +430,12 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
       workspace: { id: 'ws-1' },
     });
     state.branches['proj-1'] = [
-      { id: 'br-existing', gitName: 'staging', createdAt: new Date(1).toISOString() },
+      {
+        id: 'br-existing',
+        gitName: 'staging',
+        isDefault: false,
+        createdAt: new Date(1).toISOString(),
+      },
     ];
 
     const result = await run(state, {
@@ -416,12 +458,17 @@ describe('resolveContainer — ensure: false (find-only, used by destroy)', () =
       createdAt: new Date(1).toISOString(),
       workspace: { id: 'ws-1' },
     });
+    state.branches['proj-1'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
 
     const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront', ensure: false });
 
     expect(result.projectId).toBe('proj-1');
     expect(result.branchId).toBeUndefined();
+    expect(result.defaultBranchId).toBe('br-default');
     expect(state.projectCreateCalls).toBe(0);
+    expect(state.branchCreateCalls).toBe(0);
   });
 });
 

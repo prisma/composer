@@ -761,6 +761,35 @@ describe('run() — the full pipeline over fakes', () => {
       expect(teardownStages).toEqual([undefined]);
     });
 
+    test("with two container-bearing extensions, only the STATE extension's alchemyStage is used", async () => {
+      const app = makeAppDir('hello-two-containers');
+      process.chdir(app.dir);
+      const alchemyCalls: RunAlchemyInput[] = [];
+      const config = fakeConfig({}, { alchemyStage: 'br_state123' });
+
+      const status = await run(['deploy', app.entryPath], {
+        config: {
+          ...config,
+          extensions: [
+            ...config.extensions,
+            {
+              id: 'other-extension',
+              nodes: {},
+              container: fakeContainerDescriptor({ alchemyStage: 'br_other999' }),
+            },
+          ],
+        },
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          alchemyCalls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(alchemyCalls[0]?.stage).toBe('br_state123');
+    });
+
     test('without a container-supplied alchemyStage, the user stage passes through unchanged (undefined stays undefined)', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
