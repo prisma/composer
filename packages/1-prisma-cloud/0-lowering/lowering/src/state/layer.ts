@@ -94,7 +94,7 @@ export const prismaStateLayer = (ids: {
         Effect.mapError(bootstrapError('probing the deploy state scope')),
       );
       if (!occupied) {
-        yield* failOnEmptyScopeWithLiveApps(projectId, stateBranchId, stack.stage).pipe(
+        yield* failOnEmptyScopeWithLiveApps(projectId, stateBranchId, stack.name, stack.stage).pipe(
           Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
           Effect.mapError(bootstrapError('checking the empty deploy state scope')),
         );

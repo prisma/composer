@@ -24,6 +24,20 @@ const brokenPaginationError = (description: string, reason: string): PrismaApiEr
  * listing known to be incomplete. `onPage` receives each page's rows as they
  * arrive; returning `true` stops early (the caller found what it wanted).
  */
+/** {@link drivePages} in its most common shape: every page's rows, accumulated. */
+export const collectPages = <T>(
+  description: string,
+  fetchPage: (cursor: string | undefined) => Effect.Effect<Page<T>, PrismaApiError>,
+): Effect.Effect<readonly T[], PrismaApiError> =>
+  Effect.gen(function* () {
+    const rows: T[] = [];
+    yield* drivePages(description, fetchPage, (data) => {
+      rows.push(...data);
+      return false;
+    });
+    return rows;
+  });
+
 export const drivePages = <T>(
   description: string,
   fetchPage: (cursor: string | undefined) => Effect.Effect<Page<T>, PrismaApiError>,
