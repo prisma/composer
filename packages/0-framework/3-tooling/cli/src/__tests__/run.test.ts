@@ -424,6 +424,9 @@ describe('run() — the full pipeline over fakes', () => {
       const stackPath = path.join(app.dir, '.prisma-composer', 'alchemy.run.ts');
       const printed = errorSpy.mock.calls.map((args) => args.join(' ')).join('\n');
       expect(printed).toContain(stackPath);
+      // The repro command must carry the resolved stage — without it, alchemy
+      // would fall back to dev_$USER and read different deploy state.
+      expect(printed).toContain('--stage ci-7');
     } finally {
       errorSpy.mockRestore();
     }
