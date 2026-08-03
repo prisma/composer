@@ -86,7 +86,7 @@ describe('runAlchemy()', () => {
     expect(fs.realpathSync(captured.cwd)).toBe(dir);
   });
 
-  test('omits --stage when no stage is resolved (no user --stage, no container-supplied alchemyStage)', () => {
+  test('destroy always passes --stage too — the stage is required, never left to alchemy’s default', () => {
     const dir = makeTmpDir();
     const binDir = path.join(dir, 'node_modules', '.bin');
     fs.mkdirSync(binDir, { recursive: true });
@@ -105,13 +105,19 @@ describe('runAlchemy()', () => {
       command: 'destroy',
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
-      stage: undefined,
+      stage: 'br_test123',
       containerEnv: {},
       env: { ...process.env, CAPTURE_FILE: captureFile },
     });
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
-    expect(captured.argv).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes']);
+    expect(captured.argv).toEqual([
+      'destroy',
+      '.prisma-composer/alchemy.run.ts',
+      '--yes',
+      '--stage',
+      'br_test123',
+    ]);
   });
 
   test('argv is identical across USER env values and with USER/USERNAME unset (stage never comes from the environment)', () => {
@@ -216,7 +222,7 @@ describe('runAlchemy()', () => {
       command: 'deploy',
       stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
       cwd: dir,
-      stage: undefined,
+      stage: 'staging',
       containerEnv: {},
       env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
     });

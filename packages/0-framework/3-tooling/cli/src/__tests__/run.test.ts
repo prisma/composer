@@ -255,7 +255,7 @@ describe('run() — the full pipeline over fakes', () => {
     const alchemyCalls: RunAlchemyInput[] = [];
 
     const status = await run(['deploy', app.entryPath], {
-      config: fakeConfig({}, { calls: containerCalls }),
+      config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_default1' }),
       runAssembler: fakeAssembler,
       alchemy: (input) => {
         alchemyCalls.push(input);
@@ -414,7 +414,7 @@ describe('run() — the full pipeline over fakes', () => {
     process.chdir(app.dir);
     const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const status = await run(['deploy', app.entryPath], {
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
         config: fakeConfig(),
         runAssembler: fakeAssembler,
         alchemy: () => 42,
@@ -477,7 +477,7 @@ describe('run() — the full pipeline over fakes', () => {
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const status = await run(['destroy', app.entryPath, '--production'], {
-          config: fakeConfig(),
+          config: fakeConfig({}, { alchemyStage: 'br_prod' }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         });
@@ -500,7 +500,7 @@ describe('run() — the full pipeline over fakes', () => {
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         await run(['destroy', app.entryPath, '--production'], {
-          config: fakeConfig(),
+          config: fakeConfig({}, { alchemyStage: 'br_prod' }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         });
@@ -520,7 +520,7 @@ describe('run() — the full pipeline over fakes', () => {
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         await run(['destroy', app.entryPath, '--production'], {
-          config: fakeConfig(),
+          config: fakeConfig({}, { alchemyStage: 'br_prod' }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         });
@@ -537,7 +537,7 @@ describe('run() — the full pipeline over fakes', () => {
       const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
       try {
         await run(['deploy', app.entryPath], {
-          config: fakeConfig(),
+          config: fakeConfig({}, { alchemyStage: 'br_prod' }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         });
@@ -598,7 +598,7 @@ describe('run() — the full pipeline over fakes', () => {
       const alchemyCalls: RunAlchemyInput[] = [];
 
       const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig({}, { calls: containerCalls }),
+        config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_prod' }),
         runAssembler: fakeAssembler,
         alchemy: (input) => {
           alchemyCalls.push(input);
@@ -612,7 +612,7 @@ describe('run() — the full pipeline over fakes', () => {
       expect(containerCalls.map((c) => c.op)).toEqual(['locate', 'remove']);
       expect(containerCalls[0]?.input).toEqual({ appName: 'fixture-app', stage: undefined });
       expect(alchemyCalls).toHaveLength(1);
-      expect(alchemyCalls[0]?.stage).toBeUndefined();
+      expect(alchemyCalls[0]?.stage).toBe('br_prod');
       const serialized = JSON.parse(alchemyCalls[0]?.containerEnv[CONTAINER_VAR] ?? '{}');
       expect(serialized.containerScope).toBeUndefined();
     });
@@ -790,12 +790,12 @@ describe('run() — the full pipeline over fakes', () => {
       expect(alchemyCalls[0]?.stage).toBe('br_state123');
     });
 
-    test('without a container-supplied alchemyStage, the user stage passes through unchanged (undefined stays undefined)', async () => {
+    test('without a container-supplied alchemyStage, the user --stage passes through unchanged', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       const alchemyCalls: RunAlchemyInput[] = [];
 
-      const status = await run(['deploy', app.entryPath], {
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-7'], {
         config: fakeConfig(),
         runAssembler: fakeAssembler,
         alchemy: (input) => {
@@ -806,7 +806,50 @@ describe('run() — the full pipeline over fakes', () => {
 
       expect(status).toBe(0);
       expect(alchemyCalls).toHaveLength(1);
-      expect(alchemyCalls[0]?.stage).toBeUndefined();
+      expect(alchemyCalls[0]?.stage).toBe('ci-7');
+    });
+
+    test('no container-supplied alchemyStage AND no --stage is a CliError naming the fix, before alchemy runs', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      let alchemyRan = false;
+
+      const error: unknown = await run(['deploy', app.entryPath], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        alchemy: () => {
+          alchemyRan = true;
+          return 0;
+        },
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toContain('no deploy scope');
+      expect((error as CliError).message).toContain('--stage <name>');
+      expect(alchemyRan).toBe(false);
+      // Fails before the stack file is written — nothing side-effected.
+      expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
+    });
+
+    test('destroy --production without a container-supplied alchemyStage is the same CliError', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+      fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+      let alchemyRan = false;
+
+      const error: unknown = await run(['destroy', app.entryPath, '--production'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        alchemy: () => {
+          alchemyRan = true;
+          return 0;
+        },
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliError);
+      expect((error as CliError).message).toContain('no deploy scope');
+      expect(alchemyRan).toBe(false);
     });
   });
 
@@ -843,7 +886,7 @@ describe('run() — the full pipeline over fakes', () => {
       const containerCalls: ContainerCall[] = [];
 
       const status = await run(['destroy', app.entryPath, '--production'], {
-        config: fakeConfig({}, { calls: containerCalls }),
+        config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_prod' }),
         runAssembler: fakeAssembler,
         alchemy: () => 0,
       });
@@ -927,7 +970,7 @@ describe('run() — the full pipeline over fakes', () => {
               );
             },
           },
-          { onRemove: () => void order.push('remove') },
+          { onRemove: () => void order.push('remove'), alchemyStage: 'br_prod' },
         ),
         runAssembler: fakeAssembler,
         alchemy: () => {

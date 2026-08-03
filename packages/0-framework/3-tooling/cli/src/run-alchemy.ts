@@ -34,19 +34,18 @@ export interface RunAlchemyInput {
   /** The generated stack file's path, relative to `cwd`. */
   readonly stackFileRelativePath: string;
   readonly cwd: string;
-  /** The resolved Alchemy stage: the state-owning container's `alchemyStage` when it supplies one, else the user `--stage`. `undefined` omits the flag (alchemy's own default applies). */
-  readonly stage: string | undefined;
+  /** The resolved Alchemy stage: the state-owning container's `alchemyStage` when it supplies one, else the user `--stage`. Always required — alchemy's own default (`dev_$USER`) is machine-dependent and must never apply. */
+  readonly stage: string;
   /** Every extension's resolved container, serialized — one env var per extension (core's container-transport naming). Content-blind: the CLI never reads these values, only writes them. */
   readonly containerEnv: Readonly<Record<string, string>>;
   /** Defaults to `process.env`; overridable so tests can pin a fake bin's inputs. */
   readonly env?: NodeJS.ProcessEnv;
 }
 
-/** Runs `alchemy deploy|destroy <stack file> --yes [--stage <stage>]`, inheriting stdio + env, plus every extension's resolved container. */
+/** Runs `alchemy deploy|destroy <stack file> --yes --stage <stage>`, inheriting stdio + env, plus every extension's resolved container. */
 export function runAlchemy(input: RunAlchemyInput): number {
   const bin = resolveAlchemyBin(input.cwd);
-  const args = [input.command, input.stackFileRelativePath, '--yes'];
-  if (input.stage !== undefined) args.push('--stage', input.stage);
+  const args = [input.command, input.stackFileRelativePath, '--yes', '--stage', input.stage];
 
   const result = spawnSync(bin, args, {
     cwd: input.cwd,
