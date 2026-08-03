@@ -3,6 +3,7 @@ import * as Redacted from 'effect/Redacted';
 import type { ManagementApiClient } from '../client.ts';
 import { type ResolvedContainer, resolveDefaultBranchId } from '../container.ts';
 import { call, PrismaApiError } from '../http.ts';
+import { drivePages } from '../pagination.ts';
 
 /** The framework-owned database a stage's deploy state lives in — a child of that stage's Branch (ADR-0034). */
 export const STATE_DATABASE_NAME = 'prisma-composer-state';
@@ -29,9 +30,9 @@ export const resolveBranchId = (
 };
 
 /**
- * Every database on this Branch. Uses the flat `GET /v1/databases`, which
- * accepts `projectId` and `branchId` together — the project-scoped listing
- * has no branch filter at all.
+ * Every database on this Branch (bounded — drivePages). Uses the flat
+ * `GET /v1/databases`, which accepts `projectId` and `branchId` together —
+ * the project-scoped listing has no branch filter at all.
  */
 const listAllDatabasesOnBranch = (
   client: ManagementApiClient,
@@ -40,15 +41,22 @@ const listAllDatabasesOnBranch = (
 ): Effect.Effect<readonly DatabaseSummary[], PrismaApiError> =>
   Effect.gen(function* () {
     const databases: DatabaseSummary[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const query =
-        cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
-      const page = yield* call(() => client.GET('/v1/databases', { params: { query } }));
-      databases.push(...page.data);
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
-    }
+    yield* drivePages(
+      `databases on branch ${branchId}`,
+      (cursor) =>
+        call(() =>
+          client.GET('/v1/databases', {
+            params: {
+              query:
+                cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
+            },
+          }),
+        ),
+      (data) => {
+        databases.push(...data);
+        return false;
+      },
+    );
     return databases;
   });
 

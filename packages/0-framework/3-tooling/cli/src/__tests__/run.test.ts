@@ -848,7 +848,12 @@ describe('run() — the full pipeline over fakes', () => {
       }).catch((e: unknown) => e);
 
       expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toContain('no deploy scope');
+      const message = (error as CliError).message;
+      expect(message).toContain('no deploy scope');
+      // --stage is invalid alongside --production, so the deploy remedy must
+      // not be recommended here.
+      expect(message).not.toContain('--stage <name>');
+      expect(message).toContain('production deploy scope');
       expect(alchemyRan).toBe(false);
     });
   });

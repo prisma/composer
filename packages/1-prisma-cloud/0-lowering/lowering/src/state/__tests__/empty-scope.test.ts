@@ -148,9 +148,11 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     expect(message).toContain('"storefront.web"');
     expect(message).toContain('"storefront.worker"');
     expect(message).toContain('"storefront.jobs"');
+    // Each app appears exactly once — pagination never double-counts.
+    expect(message.match(/storefront\.web/g)).toHaveLength(1);
   });
 
-  test('a non-advancing cursor terminates instead of looping — the check still fails on the apps it saw', async () => {
+  test('a non-advancing cursor fails as broken pagination — never a verdict from a partial listing', async () => {
     const state = newFakeState({
       appsPageSize: 1,
       appsCursorStuck: true,
@@ -160,7 +162,18 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     const error: unknown = await check(state).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(PrismaApiError);
-    expect((error as PrismaApiError).message).toContain('"storefront.web"');
+    const message = (error as PrismaApiError).message;
+    expect(message).toContain('pagination appears broken');
+    expect(message).not.toContain('storefront.web');
+  });
+
+  test('a stuck EMPTY page (data: [], hasMore: true) also fails — it must not read as "no apps, proceed"', async () => {
+    const state = newFakeState({ appsPageSize: 1, appsCursorStuck: true, apps: [] });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('pagination appears broken');
   });
 
   test("apps on a DIFFERENT branch don't count — another stage's apps never block this one", async () => {
