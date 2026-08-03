@@ -400,9 +400,11 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     });
     if (status !== 0) {
       console.error(`\nGenerated stack file: ${stackPath}`);
+      // --stage is part of the repro: without it, alchemy falls back to its
+      // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
       console.error(
-        `Run \`alchemy ${args.command} ${GENERATED_STACK_RELATIVE_PATH} --yes\` from ` +
-          `${cwd} to reproduce this directly.`,
+        `Run \`alchemy ${args.command} ${GENERATED_STACK_RELATIVE_PATH} --yes ` +
+          `--stage ${alchemyStage}\` from ${cwd} to reproduce this directly.`,
       );
       return status;
     }

@@ -13,7 +13,7 @@
 export interface LocateContainerInput {
   /** The application name (root node's name, or `--name`). */
   readonly appName: string;
-  /** The USER-FACING stage name — `--stage <name>` as the user typed it (git-ref validated), or `undefined` for the default (production) stage. Never what Alchemy receives as its stage; that is `ContainerInstance.alchemyStage`. */
+  /** The USER-FACING stage name — `--stage <name>` as the user typed it (git-ref validated), or `undefined` for the default (production) stage. Alchemy's stage is the container's `alchemyStage` when supplied, with this value as the explicit-user-stage fallback; when neither exists, the CLI fails before Alchemy runs. */
   readonly stage: string | undefined;
 }
 

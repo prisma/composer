@@ -239,10 +239,12 @@ The CLI's quality lives in its errors; each failure names its fix:
   project's default Branch id when no `--stage` was given. This pins the
   deploy-state scope to the branch instead of Alchemy's `dev_$USER` default,
   so it no longer varies by machine. The user-facing `--stage` still selects
-  which Branch the containers/preflight/teardown target; only when the state
-  extension's container supplies no `alchemyStage` does the user value pass
-  through to `alchemy` unchanged (or the flag is omitted). The generated
-  stack file carries neither the stage nor any resolved container (ADR-0007).
+  which Branch the containers/preflight/teardown target. `alchemy` is ALWAYS
+  invoked with an explicit `--stage`: the container-supplied `alchemyStage`
+  when there is one, else the user's `--stage`; when neither exists the CLI
+  fails before invoking `alchemy` rather than let its machine-dependent
+  `dev_$USER` default scope the deploy state. The generated stack file
+  carries neither the stage nor any resolved container (ADR-0007).
 
 ## Known limitations
 
