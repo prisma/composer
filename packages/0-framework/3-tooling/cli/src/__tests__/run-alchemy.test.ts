@@ -86,7 +86,7 @@ describe('runAlchemy()', () => {
     expect(fs.realpathSync(captured.cwd)).toBe(dir);
   });
 
-  test('omits --stage when none is given', () => {
+  test('omits --stage when no stage is resolved (no user --stage, no container-supplied alchemyStage)', () => {
     const dir = makeTmpDir();
     const binDir = path.join(dir, 'node_modules', '.bin');
     fs.mkdirSync(binDir, { recursive: true });
@@ -112,6 +112,53 @@ describe('runAlchemy()', () => {
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
     expect(captured.argv).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes']);
+  });
+
+  test('argv is identical across USER env values and with USER/USERNAME unset (stage never comes from the environment)', () => {
+    const dir = makeTmpDir();
+    const binDir = path.join(dir, 'node_modules', '.bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const captureFile = path.join(dir, 'capture.json');
+    fs.writeFileSync(
+      path.join(binDir, 'alchemy'),
+      [
+        '#!/usr/bin/env node',
+        'const fs = require("node:fs");',
+        'fs.writeFileSync(process.env.CAPTURE_FILE, JSON.stringify({ argv: process.argv.slice(2) }));',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    const baseEnv: NodeJS.ProcessEnv = { ...process.env, CAPTURE_FILE: captureFile };
+    delete baseEnv['USER'];
+    delete baseEnv['USERNAME'];
+    const envs: NodeJS.ProcessEnv[] = [
+      { ...baseEnv, USER: 'alice' },
+      { ...baseEnv, USER: 'runner' },
+      baseEnv,
+    ];
+
+    const captures = envs.map((env) => {
+      runAlchemy({
+        command: 'deploy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        cwd: dir,
+        stage: 'br_test123',
+        containerEnv: {},
+        env,
+      });
+      return JSON.parse(fs.readFileSync(captureFile, 'utf8')).argv;
+    });
+
+    for (const argv of captures) {
+      expect(argv).toEqual([
+        'deploy',
+        '.prisma-composer/alchemy.run.ts',
+        '--yes',
+        '--stage',
+        'br_test123',
+      ]);
+    }
   });
 
   test('merges containerEnv over the base env on the child — one var per extension, content-blind', () => {
