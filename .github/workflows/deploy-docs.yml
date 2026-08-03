@@ -72,8 +72,6 @@ jobs:
       - name: Reset the production project (destroy-then-redeploy cutover)
         if: github.event_name == 'workflow_dispatch' && inputs.reset
         run: bun scripts/delete-project.ts composer-docs
-      - name: One-off TML-3157 state-scope migration (remove once the deploy is green)
-        run: bun scripts/migrate-docs-state-tml3157.ts
       # No --stage: this targets production. The CLI is invoked directly rather
       # than through the package's `deploy` script, which sources a local .env
       # that does not exist on a runner (the credentials are already in env).
