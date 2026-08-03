@@ -5,7 +5,7 @@
 Composer is built to be driven by an agent, and this is the whole setup:
 
 ```sh
-npx skills add prisma/composer --skill prisma-composer
+npx skills add prisma/composer
 ```
 
 Your agent now knows the entire API and arrives prepped with the building

@@ -16,7 +16,7 @@ Composer is built to be driven by an agent, so the first thing to do is give
 your agent the skill:
 
 ```sh
-npx skills add prisma/composer --skill prisma-composer
+npx skills add prisma/composer
 ```
 
 That's the whole setup. Your agent now knows the entire API and arrives
@@ -162,7 +162,7 @@ that name is how you (and your agent) find one. The ecosystem is new: the
 first-party set above is the whole catalogue today, and it's growing.
 
 The agent-facing version of the guides lives in [`skills/`](skills/) and
-installs with `npx skills add prisma/composer --skill prisma-composer`.
+installs with `npx skills add prisma/composer`.
 
 ## Design & internals
 
