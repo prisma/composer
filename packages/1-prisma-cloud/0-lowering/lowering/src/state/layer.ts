@@ -7,8 +7,8 @@ import * as Schedule from 'effect/Schedule';
 import postgres from 'postgres';
 import * as client from '../client.ts';
 import * as credentials from '../credentials.ts';
-import { adoptLegacyState, failOnEmptyScopeWithLiveApps } from './adoption.ts';
 import { bootstrapStateConnection } from './bootstrap.ts';
+import { failOnEmptyScopeWithLiveApps, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import { acquireStateLock } from './lock.ts';
 import { migratePrismaState } from './schema.ts';
@@ -85,14 +85,14 @@ export const prismaStateLayer = (ids: {
       );
       yield* Effect.addFinalizer(() => Effect.promise(() => lock.release()));
 
-      // Under the lock, before the service exists — so it precedes Alchemy's
-      // first state read and no concurrent deploy can adopt the same rows.
-      const { occupied } = yield* adoptLegacyState(sql, stack.name, stack.stage).pipe(
-        Effect.mapError(bootstrapError('adopting legacy deploy state')),
+      // Under the lock, before the service exists — so the check precedes
+      // Alchemy's first state read. An empty scope with live apps on the
+      // Branch means a pre-branch-id deployment (rows under a legacy scope —
+      // no automatic migration, operator decision TML-3157) or a foreign
+      // deployment: refuse before Alchemy mutates any resource.
+      const occupied = yield* scopeOccupied(sql, stack.name, stack.stage).pipe(
+        Effect.mapError(bootstrapError('probing the deploy state scope')),
       );
-
-      // Still empty after adoption: refuse to run against a Branch that
-      // already has live apps — before Alchemy mutates any resource.
       if (!occupied) {
         yield* failOnEmptyScopeWithLiveApps(projectId, stateBranchId, stack.stage).pipe(
           Effect.provide(client.layer().pipe(Layer.provide(credentials.fromEnv()))),
