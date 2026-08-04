@@ -333,9 +333,6 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
     ...('attr' in row ? { attr: migrateAttr(family, row['attr'], row['props']) } : {}),
   };
 
-  const poisonKey = poisonKeyOf(family, row['props'], row['attr']);
-  if (poisonKey !== undefined) return retirePoisonRow(migrated, poisonKey);
-
   // Replacement rows nest the displaced generation under `old` (a full row);
   // updating rows nest `{props, attr, bindings}`. Migrate both forms so no
   // stale shape survives anywhere in the chain.
@@ -350,6 +347,12 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
             ...('attr' in old ? { attr: migrateAttr(family, old['attr'], old['props']) } : {}),
           };
   }
+
+  // Retiring the row happens AFTER the `old` chain is rewritten: a replaced
+  // poison row still carries the displaced generation, and it must reach the
+  // engine in the upstream shape even though this row is on its way out.
+  const poisonKey = poisonKeyOf(family, row['props'], row['attr']);
+  if (poisonKey !== undefined) return retirePoisonRow(migrated, poisonKey);
 
   return migrated;
 };

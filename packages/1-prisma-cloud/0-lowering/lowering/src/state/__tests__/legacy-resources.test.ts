@@ -733,6 +733,37 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(migrated).toEqual(upstreamRow as unknown as MigratedRow);
   });
 
+  test('a REPLACED poison row migrates its displaced old generation before retiring itself', () => {
+    // The row on top is retired, but the generation it displaced still rides
+    // along under `old` and the engine reads it. It must arrive in the
+    // upstream shape, so the old chain is rewritten before the retirement.
+    const legacy = legacyEnvRow('DATABASE_URL');
+    const replaced = {
+      ...legacy,
+      status: 'replaced',
+      old: { props: legacy.props, attr: legacy.attr, bindings: [] },
+      deleteFirst: false,
+    } as unknown as ReplacedResourceState;
+    const migrated = migrateLegacyResourceState(replaced) as ReplacedResourceState & {
+      removalPolicy?: string;
+      attr: Record<string, unknown>;
+      old: { props: Record<string, unknown>; attr: Record<string, unknown> };
+    };
+    expect(migrated.removalPolicy).toBe('retain');
+    expect(migrated.attr).toEqual({
+      environmentVariableId: 'dev:legacy-poison-DATABASE_URL',
+      key: 'DATABASE_URL',
+    });
+    expect(migrated.old.attr).toMatchObject({
+      environmentVariableId: 'var-1',
+      projectId: 'proj-1',
+      key: 'DATABASE_URL',
+      isManagedBySystem: false,
+    });
+    expect(migrated.old.props).toMatchObject({ project: 'proj-1', key: 'DATABASE_URL' });
+    expect(Redacted.isRedacted(migrated.old.props['value'])).toBe(true);
+  });
+
   test('maps the unreleased PrismaComposer.* compute type-ids too', () => {
     const composerEra = {
       ...legacyAppRow('branch_1'),
