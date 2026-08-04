@@ -14,13 +14,23 @@
 // warns, so the break is invisible in-repo; this check installs the real
 // tarballs with real npm against the real registry.
 //
+// A third, adversarial shape reproduces the tree that broke 0.6.0 in the
+// field: the app ALSO depends on `@effect/platform-node-shared@^4.0.0-beta.93`,
+// which npm floats to the newest beta, dragging its newer `effect` peer to the
+// root — over our exact pins, with only a warning (empirically verified; a
+// peerDependency does not prevent it either). Nothing we declare can stop
+// that, so the acceptance there is the CLI's own start-up check: running the
+// built `prisma-composer` in that broken tree must exit non-zero with our
+// actionable error, not the Schedule TypeError. The healthy shapes assert the
+// inverse: the check must NOT trip on a good tree.
+//
 // Requires the two public packages to be built (`pnpm turbo build
 // --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud`) and
 // network access to the npm registry.
 //
 // Usage: node scripts/check-npm-effect-resolution.mjs
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -86,15 +96,71 @@ function collectEffectVersions(node, found = new Map()) {
   return found;
 }
 
-async function checkShape(label, tarballs) {
+/** The stable marker of the CLI's own start-up check (check-effect-resolution.ts). */
+const CLI_CHECK_MARKER = 'alchemy resolves effect@';
+
+/** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
+function installApp(label, tarballs, extraDependencies = {}) {
   const appDir = join(work, label);
   mkdirSync(appDir, { recursive: true });
-  writeFileSync(join(appDir, 'package.json'), JSON.stringify({ name: label, private: true }));
+  writeFileSync(
+    join(appDir, 'package.json'),
+    JSON.stringify({ name: label, private: true, dependencies: extraDependencies }),
+  );
   process.stderr.write(`\n[${label}] npm install ${tarballs.length} tarball(s)...\n`);
-  execFileSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
+  const result = spawnSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
     cwd: appDir,
-    stdio: ['ignore', 'ignore', 'inherit'],
+    encoding: 'utf-8',
   });
+  if (result.error) fail(`[${label}] failed to spawn npm: ${result.error}`);
+  process.stderr.write(result.stderr);
+  return { appDir, status: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/** The version of the `effect` that Node resolves from alchemy's installed position, plus its entry path. */
+function effectSeenByAlchemy(label, appDir) {
+  const alchemyDir = join(appDir, 'node_modules', 'alchemy');
+  if (!existsSync(alchemyDir)) fail(`[${label}] alchemy is not installed`);
+  const requireFromAlchemy = createRequire(join(alchemyDir, 'noop.js'));
+  const entry = requireFromAlchemy.resolve('effect');
+  let pkgDir = dirname(entry);
+  while (!existsSync(join(pkgDir, 'package.json'))) pkgDir = dirname(pkgDir);
+  const version = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8')).version;
+  return { version, entry };
+}
+
+/** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
+function runCli(label, appDir, args) {
+  const bin = join(appDir, 'node_modules', '.bin', 'prisma-composer');
+  if (!existsSync(bin)) fail(`[${label}] the prisma-composer bin is not installed`);
+  const result = spawnSync(bin, args, { cwd: appDir, encoding: 'utf-8' });
+  if (result.error) fail(`[${label}] failed to spawn the prisma-composer bin: ${result.error}`);
+  return { status: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/**
+ * Asserts the bundled bin starts and reaches its own usage output. The proof is
+ * the usage banner, not the exit code: a bare `--help` exits 1 on main too,
+ * because clipanion reports it as a missing command.
+ */
+function assertCliStarts(label, appDir) {
+  const help = runCli(label, appDir, ['--help']);
+  if (!help.output.includes('prisma-composer <command>')) {
+    fail(
+      `[${label}] \`prisma-composer --help\` did not reach its usage output in a healthy tree ` +
+        `(exit ${help.status}):\n${help.output}`,
+    );
+  }
+  if (/is not a function|Cannot find module/.test(help.output)) {
+    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${help.output}`);
+  }
+}
+
+async function checkShape(label, tarballs) {
+  const { appDir, status: installStatus, output: installOutput } = installApp(label, tarballs);
+  if (installStatus !== 0) {
+    fail(`[${label}] npm install failed (exit ${installStatus}):\n${installOutput}`);
+  }
 
   const tree = JSON.parse(
     execFileSync('npm', ['ls', 'effect', '--all', '--json'], { cwd: appDir, encoding: 'utf-8' }),
@@ -108,13 +174,7 @@ async function checkShape(label, tarballs) {
     );
   }
 
-  const alchemyDir = join(appDir, 'node_modules', 'alchemy');
-  if (!existsSync(alchemyDir)) fail(`[${label}] alchemy is not installed`);
-  const requireFromAlchemy = createRequire(join(alchemyDir, 'noop.js'));
-  const effectEntry = requireFromAlchemy.resolve('effect');
-  let pkgDir = dirname(effectEntry);
-  while (!existsSync(join(pkgDir, 'package.json'))) pkgDir = dirname(pkgDir);
-  const resolvedVersion = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8')).version;
+  const { version: resolvedVersion, entry: effectEntry } = effectSeenByAlchemy(label, appDir);
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion} (${effectEntry})\n`);
   if (resolvedVersion !== pinnedEffect) {
     fail(`[${label}] alchemy resolves effect@${resolvedVersion}, expected ${pinnedEffect}`);
@@ -124,7 +184,91 @@ async function checkShape(label, tarballs) {
   if (typeof Schedule.either !== 'function') {
     fail(`[${label}] Schedule.either is missing from the effect alchemy resolves`);
   }
+
+  // Positive proof the CLI actually starts in this healthy tree — without it,
+  // "the failure marker is absent" would also hold for a CLI that never ran.
+  assertCliStarts(label, appDir);
+
+  // The start-up check must NOT trip on this healthy tree — the deploy should
+  // get past it and fail on the app itself (no entry/config here), never on a
+  // broken module graph.
+  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
+  if (cli.output.includes(CLI_CHECK_MARKER)) {
+    fail(`[${label}] the CLI's effect check misfired on a healthy tree:\n${cli.output}`);
+  }
+  if (/is not a function|Cannot find module/.test(cli.output)) {
+    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${cli.output}`);
+  }
+
   process.stderr.write(`[${label}] OK — single effect@${pinnedEffect}, Schedule.either present\n`);
+}
+
+// The reported chain: an app dependency on `@effect/platform-node-shared`
+// whose own `effect` peer is newer than our pin, so npm hoists that newer
+// effect over us (the install still exits 0). In that tree the built CLI must
+// refuse to run with our clear error. The app there reached this version by
+// floating `^4.0.0-beta.93`; the fixture names it exactly so the shape stays
+// adversarial no matter what the registry publishes next.
+const ADVERSARIAL_NODE_SHARED = '4.0.0-beta.103';
+
+async function checkAdversarialShape(tarballs) {
+  const label = 'adversarial-node-shared-float';
+  const { appDir, status, output } = installApp(label, tarballs, {
+    '@effect/platform-node-shared': ADVERSARIAL_NODE_SHARED,
+  });
+  if (status !== 0) {
+    // Also acceptable: npm refuses the conflicted install outright — but ONLY
+    // when it actually failed on the dependency conflict. Any other failure
+    // (registry outage, a bug here) must fail the check, not silently pass it.
+    if (/ERESOLVE|Conflicting peer dependency|unable to resolve dependency tree/i.test(output)) {
+      process.stderr.write(`[${label}] OK — npm refused the conflicting install\n`);
+      return;
+    }
+    fail(`[${label}] npm install failed for a reason other than the conflict:\n${output}`);
+  }
+
+  const { version: resolvedVersion } = effectSeenByAlchemy(label, appDir);
+  process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion}\n`);
+  if (resolvedVersion === pinnedEffect) {
+    fail(
+      `[${label}] this shape no longer produces a mismatch, so it proves nothing: ` +
+        `@effect/platform-node-shared@${ADVERSARIAL_NODE_SHARED} now agrees with our ` +
+        `effect@${pinnedEffect}. Point ADVERSARIAL_NODE_SHARED at a release whose effect peer ` +
+        'is newer than the pin.',
+    );
+  }
+
+  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
+  if (cli.status === 0) {
+    fail(`[${label}] the CLI exited 0 in a tree where alchemy resolves effect@${resolvedVersion}`);
+  }
+  if (!cli.output.includes(CLI_CHECK_MARKER)) {
+    fail(
+      `[${label}] the CLI failed without the effect check's error (expected "${CLI_CHECK_MARKER}"):\n` +
+        cli.output,
+    );
+  }
+  if (/is not a function/.test(cli.output)) {
+    fail(`[${label}] the CLI crashed with a TypeError instead of the effect check:\n${cli.output}`);
+  }
+
+  // Every command loads the graph that crashes, so every command must hit the
+  // check first — `--help` included, or the user meets the raw TypeError there.
+  const help = runCli(label, appDir, ['--help']);
+  if (
+    help.status === 0 ||
+    !help.output.includes(CLI_CHECK_MARKER) ||
+    /is not a function/.test(help.output)
+  ) {
+    fail(
+      `[${label}] \`prisma-composer --help\` did not fail with the effect check in a broken tree ` +
+        `(exit ${help.status}):\n${help.output}`,
+    );
+  }
+
+  process.stderr.write(
+    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy and --help alike\n`,
+  );
 }
 
 work = mkdtempSync(join(tmpdir(), 'npm-effect-check-'));
@@ -136,8 +280,12 @@ try {
 
   await checkShape('composer-only', [composerTgz]);
   await checkShape('composer-and-prisma-cloud', [composerTgz, prismaCloudTgz]);
+  await checkAdversarialShape([composerTgz, prismaCloudTgz]);
 
-  process.stderr.write(`\nOK — npm dedupes to a single effect@${pinnedEffect} in both shapes.\n`);
+  process.stderr.write(
+    `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
+      'catches the adversarial tree at start-up.\n',
+  );
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

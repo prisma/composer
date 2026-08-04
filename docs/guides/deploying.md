@@ -182,6 +182,45 @@ You'll only meet this if you wrote the connection or the extension on one side
 of the wire — every block that ships with the framework supplies what it
 declares.
 
+## When a deploy stops on an effect version conflict
+
+Before doing anything else, every `prisma-composer` command verifies that the
+installed dependency tree gives alchemy (the deploy engine Composer drives)
+the exact `effect` version `@prisma/composer` pins. When it doesn't, the
+command stops immediately:
+
+```text
+Error: Dependency conflict: alchemy resolves effect@<found>, but
+@prisma/composer requires effect@<required>. Your package manager installed a
+second effect that alchemy picks up; deploying with it would crash inside
+alchemy.
+```
+
+This happens when another dependency in your app floats to a newer `effect`
+and your package manager hoists that copy where alchemy resolves it — npm
+allows this with only a warning, and without the check the deploy would crash
+mid-run with a `TypeError` from inside alchemy. The fix is the one the error
+prints — pin the version your package manager should use everywhere, in your
+app's `package.json`:
+
+```json
+"overrides": { "effect": "<required>" }
+```
+
+yarn spells it `resolutions`:
+
+```json
+"resolutions": { "effect": "<required>" }
+```
+
+and pnpm nests it under `pnpm`:
+
+```json
+"pnpm": { "overrides": { "effect": "<required>" } }
+```
+
+Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
+
 ## Production behavior
 
 What deployed apps actually run into, and what to do about it:
