@@ -16,7 +16,7 @@ enough for one skill; there is no router or per-topic cluster.
 ## Install
 
 ```bash
-npx skills add prisma/composer --skill prisma-composer
+npx skills add prisma/composer
 ```
 
 The [`skills` CLI](https://npmjs.com/package/skills) installs it at the

@@ -184,7 +184,7 @@ export function landingPage(guides: readonly Guide[]): string {
 <section class="hero">
   <h1>The <span class="hl">fastest</span>, <span class="hl">most reliable</span> way to <span class="hl">build an app</span> with your agent.</h1>
   <p>Start from scratch and deploy the whole thing — services, databases, and the wiring between them — to Prisma Cloud in minutes.</p>
-  <div class="install"><span class="prompt">$</span> npx skills add prisma/composer --skill prisma-composer</div>
+  <div class="install"><span class="prompt">$</span> npx skills add prisma/composer</div>
   <p class="sub">Start here. Your agent arrives knowing the whole API and the building blocks it can snap together — then you describe what you want.</p>
 </section>
 <div class="why">
