@@ -28,8 +28,9 @@
  *
  * This edge is the ORDERING half only. Getting a changed environment value
  * into the running app is the other half, and it is not this edge's job:
- * `alwaysRedeployArtifactPath` makes every deploy replace the deployment, so
- * the fresh deployment materializes the rows this edge ordered first.
+ * the environment fingerprint (`deploy-fingerprint.ts`) makes a deploy whose
+ * environment moved replace the deployment, so the fresh deployment
+ * materializes the rows this edge ordered first.
  */
 
 import * as Output from 'alchemy/Output';

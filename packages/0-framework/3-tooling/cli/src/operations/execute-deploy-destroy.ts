@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
-import { containerEnv } from '@internal/core/config';
+import { containerEnv, preflightEnv } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
@@ -107,6 +107,10 @@ async function runStackPipeline(
   let pipeline: PipelineResult;
   let containers: Map<ExtensionId, ContainerInstance>;
   let alchemyStage: string;
+  // What each preflight hands back, on its way to the alchemy child: preflight
+  // runs here, in the parent, and the child re-imports the config from scratch,
+  // so anything it learned reaches the lowering only through this transport.
+  const preflightPayloads = new Map<string, string>();
 
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
@@ -187,7 +191,12 @@ async function runStackPipeline(
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
         try {
-          await extension.preflight({ graph, container: containers.get(extension.id), stage });
+          const payload = await extension.preflight({
+            graph,
+            container: containers.get(extension.id),
+            stage,
+          });
+          if (payload !== undefined) preflightPayloads.set(extension.id, payload);
         } catch (error) {
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
@@ -242,6 +251,7 @@ async function runStackPipeline(
         cwd,
         stage: alchemyStage,
         containerEnv: containerEnv(containers),
+        preflightEnv: preflightEnv(preflightPayloads),
         env: { ...process.env, [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
       });
     } catch (error) {

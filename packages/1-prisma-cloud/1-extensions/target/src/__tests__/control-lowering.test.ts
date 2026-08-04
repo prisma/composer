@@ -172,10 +172,14 @@ mock.module('@internal/lowering', () => ({
     recorded.pkg.push([opts]);
     return { path: `/tmp/${opts.id}.tar.gz`, sha256: `sha-${opts.id}` };
   },
-  // The real one hard-links the artifact on disk; a marked pass-through keeps
-  // the data flow pure while letting deploy assertions pin that the hook
-  // routes the path through the per-deploy-generation seam.
-  alwaysRedeployArtifactPath: (artifactPath: string) => `${artifactPath}#per-deploy-generation`,
+  // The real one hard-links the artifact on disk; a pass-through that appends
+  // the fingerprint keeps the data flow pure while letting deploy assertions
+  // pin BOTH that the hook routes the path through the fingerprint seam and
+  // what it fingerprinted. The real hashing is pinned in @internal/lowering's
+  // own `deploy-fingerprint.test.ts`, so the stub hashes nothing.
+  deployEnvFingerprint: (entries: unknown) => JSON.stringify(entries),
+  fingerprintedArtifactPath: (artifactPath: string, fingerprint: string) =>
+    `${artifactPath}#${fingerprint}`,
 }));
 
 // PgWarm is a real Alchemy Resource (needs the Stack service); stub it so the
@@ -671,6 +675,18 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           key: 'COMPOSER_AUTH_ORIGIN',
         },
       ]);
+      // The same three rows as the deploy hook fingerprints them: the
+      // service's OWN literal param is config and is hashed as text; the
+      // dependency input's value is a provisioning ref (a connection string)
+      // and the provider param's may be a minted key, so both are withheld and
+      // named by the resources they are built from. Under these mocks a value
+      // is already resolved, so it has no upstream resources and the name is
+      // empty; the real Output machinery puts the resource names there.
+      expect(result.envFingerprint).toEqual([
+        { key: 'COMPOSER_AUTH_DB_URL', withheld: 'input.db:' },
+        { key: 'COMPOSER_AUTH_PORT', value: '3000' },
+        { key: 'COMPOSER_AUTH_ORIGIN', withheld: 'provider.ORIGIN:' },
+      ]);
       // serialize also surfaces the resolved listen port for deploy() — the
       // Deployment must route to whatever the app binds, not a constant.
       expect(result.port).toBe(3000);
@@ -834,6 +850,16 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // No serialized EnvironmentVariable output carries the secret's value.
         expect(JSON.stringify(writes)).not.toContain('sk_live');
+        // Neither does what the deploy hook fingerprints: the document is
+        // hashed as text (it is secret-free by construction) and the platform
+        // variable it points at is named, so its rotation timestamp can join
+        // the hash — the VALUE is nowhere near it.
+        expect(result.envFingerprint).toContainEqual({
+          key: 'COMPOSER_INGEST_INPUT',
+          value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+          pointers: ['STRIPE_SECRET_KEY'],
+        });
+        expect(JSON.stringify(result.envFingerprint)).not.toContain('sk_live');
         // The row also rides the serialize → deploy handoff, so deploy() can
         // put the document (secret-free by construction) on the report entity.
         expect(result.input).toEqual({
@@ -841,6 +867,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           value: '{"stripeEnabled":true,"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
           absent: [],
           generated: [],
+          // The pointed platform variable, so the deploy hook can fold its
+          // rotation timestamp into the environment fingerprint.
+          secrets: ['STRIPE_SECRET_KEY'],
         });
       },
     );
@@ -905,6 +934,17 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       expect(result.input?.generated).toEqual([
         { varName: 'COMPOSER_INGEST_SECRET_GENERATED', bytes: 48, redacted: true, path: 'secret' },
       ]);
+      // The generated row holds a minted random value, so the deploy hook
+      // fingerprints it as withheld — and NOT by its platform `updatedAt`
+      // either: Composer rewrites this row every deploy, so that timestamp
+      // would move every deploy and the fingerprint would never settle.
+      expect(result.envFingerprint).toContainEqual({
+        key: 'COMPOSER_INGEST_SECRET_GENERATED',
+        withheld: 'generated:48:true',
+      });
+      expect(JSON.stringify(result.envFingerprint)).not.toContain(
+        'generated-for-COMPOSER_INGEST_INPUT',
+      );
     });
   });
 
@@ -949,6 +989,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         value: '{}',
         absent: ['greeting → NOT_SET_GREETING_VAR'],
         generated: [],
+        secrets: [],
       });
     });
   });
@@ -991,7 +1032,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         const config = { service: { port: envParam('PLATFORM_PORT') }, inputs: {} };
         const before = recorded.envVar.length;
 
-        run<MockedSerialized>(
+        const result = run<MockedSerialized>(
           serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, config),
         );
 
@@ -1005,6 +1046,15 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         });
         // No serialized EnvironmentVariable output carries the actual value.
         expect(JSON.stringify(writes)).not.toContain('8443');
+        // The deploy hook fingerprints the pointer row by its text AND by the
+        // platform variable it names, so rotating PLATFORM_PORT out of band
+        // ships a new deployment even though the row itself never moves.
+        expect(result.envFingerprint).toContainEqual({
+          key: 'COMPOSER_WEB_PORT',
+          value: '@composer-param-pointer:PLATFORM_PORT',
+          pointers: ['PLATFORM_PORT'],
+        });
+        expect(JSON.stringify(result.envFingerprint)).not.toContain('8443');
       },
     );
   });
@@ -1179,6 +1229,9 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           key: 'COMPOSER_AUTH_DB_URL',
         },
       ],
+      // A dependency-input row: its value is a provisioning ref (a connection
+      // string), so serialize withholds the text and names what produces it.
+      envFingerprint: [{ key: 'COMPOSER_AUTH_DB_URL', withheld: 'input.db:db-postgres' }],
       // A non-default port from serialize must reach the Deployment verbatim.
       port: 8080,
     };
@@ -1197,7 +1250,8 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         'auth-deploy',
         {
           app: 'auth-svc#cloud-id',
-          artifactPath: '/tmp/auth.tar.gz#per-deploy-generation',
+          artifactPath:
+            '/tmp/auth.tar.gz#[{"key":"COMPOSER_AUTH_DB_URL","withheld":"input.db:db-postgres"}]',
           artifactContentType: 'application/gzip',
           portMapping: { http: 8080 },
           start: true,
@@ -1939,6 +1993,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
       const o: ResolvedCloudOptions = {
         workspaceId: 'ws_1',
         providerParams,
+        pointerUpdatedAt: () => undefined,
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {

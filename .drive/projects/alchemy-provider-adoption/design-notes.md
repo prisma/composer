@@ -112,43 +112,27 @@ reconcile re-used the existing deployment, and a value-only change reached the
 platform's variable row but not the running deployment until the next artifact
 change.
 
-**That regression is now closed Composer-side** (`compute/always-redeploy.ts`):
-the deploy hook hands upstream a fresh `artifactPath` every deploy run — the
-canonical content-addressed artifact hard-linked into a per-run
-`deploy-<generation>` directory, generation minted once per process. Upstream's
-resolved path comparison then plans a replace on EVERY deploy, restoring the
-old always-redeploy behaviour with no secret material (not even a hash) in
-state. The mechanism was picked over the alternatives we ruled out earlier,
-with their objections answered rather than ignored:
+**That regression is closed Composer-side** (`compute/deploy-fingerprint.ts`):
+the artifact hard-link directory is named from a hash of the service's
+environment material, so upstream's resolved-path comparison replaces the
+deployment exactly when the environment (or artifact) changed and reuses it
+otherwise. The material is non-secret by construction (ADR-0042 rows carry
+literals and pointers, never values); pointed platform variables contribute
+their `updatedAt` metadata, read at preflight and transported across the
+CLI→Alchemy process boundary on the framework preflight channel (the transport
+is load-tested end to end — the first implementation lost the timestamps at the
+process boundary and no in-process test could see it). Secret-bearing rows
+contribute wiring identity only; the module comment records the accepted
+narrowing (a value re-issued under a stable resource identity waits for the
+next fingerprint-moving change) and the flows it affects. `redeployOn`
+(upstream, in review) is the eventual carrier at the marked seam.
 
-- Feeding values into the artifact fingerprint stays rejected — "a hash of a
-  secret is itself a leak" still holds; the generation path never sees a value.
-- Riding an `EnvironmentVariable` attribute through a Deployment replacement
-  prop cannot work: the row's diff plans an update on every deploy (it
-  re-applies values to heal drift) and `updatedAt` is not in the variable's
-  stables (`stables: ["environmentVariableId"]`), so a plan-time reference to
-  it is an unresolved expression — which collapses upstream's replacement
-  block to "no opinion" and reintroduces the silent artifact skip the
-  deployment-edge fix closed. (`updatedAt` also moves on every deploy, so even
-  resolved it would encode always-redeploy, not value-change detection.)
-- The recorded objection to the hard-link route — upstream could drop its
-  path-string comparison and the fix would vanish silently — is now guarded:
-  `deployment-edge.test.ts`'s always-redeploy block drives upstream's REAL
-  diff and fails the moment a same-bytes/new-path deploy stops planning a
-  replace.
-
-The cost is deliberate and precise: every deploy replaces every service's
-deployment (create → start → promote → delete old) where the swap's steady
-state re-used it — the reuse upstream's fingerprinting was built to save is
-given up. The ordering edge (`app`, `deployment-edge.ts`) is untouched; the
-generation path is a plain string, so the replacement block stays resolved at
-plan time.
-
-This is a stopgap with a named exit: upstream `Prisma.Deployment` gains
-`redeployOn` (inputs a deployment must be recreated for; a companion upstream
-commit is in flight). When the pinned alchemy version includes it,
-`alwaysRedeployArtifactPath` is deleted and the environment rows go on
-`redeployOn` — one edit, in `descriptors/compute.ts`.
+The mechanisms ruled out and why: value hashes in state (offline-guessing
+target — the rule survives, refined to "non-secret material only");
+`EnvironmentVariable.updatedAt` through a Deployment replacement prop (not in
+the variable's stables, and it moves on every deploy anyway); a per-run
+generation path (shipped briefly — restored the old always-redeploy behavior
+at the cost of all reuse; superseded by the fingerprint).
 
 ## The poison DATABASE_URL rows are gone
 
@@ -204,10 +188,11 @@ every deploy.** The gap and its Composer-side fix, its cost, and the
 
 - **A `Prisma.Deployment` prop for "recreate when these inputs change"
   (`redeployOn`; companion upstream commit in flight).** Until it ships,
-  Composer pays for change propagation by replacing every deployment on every
-  deploy (`always-redeploy.ts`). `Compute` already folds `env` into its
-  fingerprint and stores that fingerprint `Redacted`; the low-level resource
-  needs the same seam.
+  Composer detects change itself via the deploy fingerprint
+  (`deploy-fingerprint.ts`), which cannot see a value re-issued under a stable
+  resource identity. `Compute` already folds `env` into its fingerprint and
+  stores it `Redacted`; the low-level resource needs the same seam to close
+  that last gap.
 - **Raise or make configurable the App delete-retry budget** (or drain the
   app's deployments before deleting it).
 - **Export `PrismaUploadClient` / open the `alchemy/Prisma/Internal/*` subpath.**
@@ -234,7 +219,7 @@ value moves":
 The durable statement: **the only attribute that moves at all fires on every
 deploy** — and it is not in the variable's stables, so it cannot even ride a
 plan-time diff. Any real fix must come from the deployment side, which is
-where the always-redeploy generation path (and eventually `redeployOn`) sits.
+where the deploy fingerprint (and eventually `redeployOn`) sits.
 
 ## Open questions
 

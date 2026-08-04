@@ -40,6 +40,7 @@ import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
+import { pointerUpdatedAtLookup, serializePointerUpdatedAt } from './pointer-timestamps.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -282,7 +283,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * anything else — required for `prisma-composer dev`, which never sets
  * `PRISMA_REGION` and must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
+function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -310,17 +311,31 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
  * environment present, since it also builds the `localTarget` descriptor, which must
  * never require `PRISMA_WORKSPACE_ID`/`PRISMA_REGION`/`PRISMA_SERVICE_TOKEN`.
  */
-function lazyOptions(opts: PrismaCloudOptions): () => ResolvedCloudOptions {
+function lazyOptions(
+  opts: PrismaCloudOptions,
+  pointerUpdatedAt: Prisma.PointerUpdatedAt,
+): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= resolveOptions(opts);
+    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
     return cached;
   };
 }
 
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  const o = lazyOptions(opts);
+  // When each platform variable a Composer row POINTS at was last written —
+  // filled by the deploy preflight below (the one step that reads those rows),
+  // read by the compute descriptor's environment fingerprint. Held in this
+  // factory's closure rather than a module variable so two `prismaCloud()`
+  // extensions in one process cannot see each other's, and left empty by
+  // `prisma-composer dev`, which runs the local preflight instead.
+  //
+  // In the ALCHEMY process this map is always empty — that process re-imports
+  // the config from scratch and runs no preflight — so the lookup falls back
+  // to what the CLI process transported (pointer-timestamps.ts).
+  const preflightTimestamps = new Map<string, string>();
+  const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -342,7 +357,14 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
-    preflight: (input) => runPreflight(input),
+    // The timestamps it reads are kept for this process AND handed to the
+    // framework's preflight transport, which is how they reach the alchemy
+    // process that actually builds the fingerprint (pointer-timestamps.ts).
+    preflight: (input) =>
+      runPreflight(input).then((timestamps) => {
+        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
+        return serializePointerUpdatedAt(timestamps);
+      }),
 
     // No teardown: deploy state lives behind the platform state API, scoped
     // to the stage's Branch — deleting the Branch/Project deletes it

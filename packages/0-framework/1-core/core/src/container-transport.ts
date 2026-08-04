@@ -51,13 +51,17 @@ export interface ContainerDescriptor<I extends ContainerInstance = ContainerInst
   deserialize(serialized: string): I;
 }
 
-/** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_CONTAINER_PRISMA_COMPOSER_PRISMA_CLOUD' */
-export function containerEnvVarName(extensionId: string): string {
-  const mangled = extensionId
+/** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_PRISMA_CLOUD' — the env-var-safe form of an extension id, shared by every CLI→alchemy process transport (containers here, preflight payloads in preflight-transport.ts). */
+export function mangleExtensionId(extensionId: string): string {
+  return extensionId
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
-  return `PRISMA_COMPOSER_CONTAINER_${mangled}`;
+}
+
+/** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_CONTAINER_PRISMA_COMPOSER_PRISMA_CLOUD' */
+export function containerEnvVarName(extensionId: string): string {
+  return `PRISMA_COMPOSER_CONTAINER_${mangleExtensionId(extensionId)}`;
 }
 
 function collisionError(a: string, b: string, varName: string): Error {

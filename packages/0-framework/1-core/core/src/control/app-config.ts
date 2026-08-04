@@ -2,6 +2,7 @@
 import type * as Layer from 'effect/Layer';
 import type { ContainerDescriptor, ContainerInstance } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
+import type { PreflightPayload } from '../preflight-transport.ts';
 import type {
   AlchemyStateLayer,
   ApplicationDescriptor,
@@ -22,6 +23,12 @@ export {
   containerEnvVarName,
   deserializeContainers,
 } from '../container-transport.ts';
+export type { PreflightPayload } from '../preflight-transport.ts';
+export {
+  preflightEnv,
+  preflightEnvVarName,
+  readPreflightPayload,
+} from '../preflight-transport.ts';
 
 /**
  * One extension's control-plane registry: everything the deploy pipeline may
@@ -45,8 +52,15 @@ export interface ExtensionDescriptor {
    * runs. A target uses it to verify platform prerequisites (e.g. that every
    * secret env var in the provision manifest exists for the resolved stage) and
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
+   *
+   * What it returns is carried to the alchemy process for this same extension
+   * to read back there (preflight-transport.ts) — preflight runs in the CLI
+   * parent, and the alchemy child re-imports the config from scratch, so
+   * anything the lowering needs from it must ride that transport. The payload
+   * is the extension's own opaque string; the framework never reads it, and a
+   * secret value must never go in it.
    */
-  readonly preflight?: (input: PreflightInput) => Promise<void>;
+  readonly preflight?: (input: PreflightInput) => Promise<PreflightPayload>;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
    * succeeds and BEFORE the stage's Project/Branch are removed. A target uses

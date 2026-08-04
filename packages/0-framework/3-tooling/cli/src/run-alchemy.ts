@@ -39,11 +39,13 @@ export interface RunAlchemyInput {
   readonly stage: string;
   /** Every extension's resolved container, serialized — one env var per extension (core's container-transport naming). Content-blind: the CLI never reads these values, only writes them. */
   readonly containerEnv: Readonly<Record<string, string>>;
+  /** What each extension's deploy preflight handed back, serialized — one env var per extension (core's preflight-transport naming). Absent for destroy, which runs no preflight. Content-blind, like `containerEnv`. */
+  readonly preflightEnv?: Readonly<Record<string, string>>;
   /** Defaults to `process.env`; overridable so tests can pin a fake bin's inputs. */
   readonly env?: NodeJS.ProcessEnv;
 }
 
-/** Runs `alchemy deploy|destroy <stack file> --yes --stage <stage>`, inheriting stdio + env, plus every extension's resolved container. */
+/** Runs `alchemy deploy|destroy <stack file> --yes --stage <stage>`, inheriting stdio + env, plus every extension's resolved container and preflight payload. */
 export function runAlchemy(input: RunAlchemyInput): number {
   const bin = resolveAlchemyBin(input.cwd);
   const args = [input.command, input.stackFileRelativePath, '--yes', '--stage', input.stage];
@@ -54,6 +56,7 @@ export function runAlchemy(input: RunAlchemyInput): number {
     env: {
       ...(input.env ?? process.env),
       ...input.containerEnv,
+      ...input.preflightEnv,
     },
   });
 

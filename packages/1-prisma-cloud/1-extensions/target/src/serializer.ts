@@ -462,6 +462,13 @@ export interface InputDocumentRow {
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
+  /**
+   * The platform variable each `$secret` pointer in the document names —
+   * operator-provisioned, never written by Composer. The deploy hook folds
+   * each one's `updatedAt` into the environment fingerprint, so rotating a
+   * secret out of band ships a new deployment.
+   */
+  readonly secrets: readonly string[];
 }
 
 /**
@@ -508,7 +515,13 @@ export function serializeInput(
     );
   }
   const document = substitutePointers(validated, sentinels, generated, address);
-  return { key: inputKey(address), value: JSON.stringify(document), absent, generated };
+  return {
+    key: inputKey(address),
+    value: JSON.stringify(document),
+    absent,
+    generated,
+    secrets: [...sentinels.values()],
+  };
 }
 
 /**

@@ -24,7 +24,15 @@ interface Row {
   class: 'production' | 'preview';
   key: string;
   branchId: string | null;
+  /** Defaulted by the fake client — only the rotation tests below care what it is. */
+  updatedAt?: string;
 }
+
+/** What a row the test did not date reads as. */
+const DEFAULT_UPDATED_AT = '2026-01-01T00:00:00.000Z';
+
+/** What the fake platform stamps on a row preflight creates from the deploy shell. */
+const CREATED_UPDATED_AT = '2026-03-03T00:00:00.000Z';
 
 interface FakeState {
   gets: Record<string, string>[];
@@ -66,7 +74,10 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
                   hasMore: offset + data.length < rows.length,
                 };
       return {
-        data: { data, pagination },
+        data: {
+          data: data.map((r) => ({ ...r, updatedAt: r.updatedAt ?? DEFAULT_UPDATED_AT })),
+          pagination,
+        },
         error: undefined,
         response: new Response(null, { status: 200 }),
       };
@@ -81,7 +92,9 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
         };
       }
       return {
-        data: { data: { id: 'ev-new', key: init.body['key'] } },
+        data: {
+          data: { id: 'ev-new', key: init.body['key'], updatedAt: CREATED_UPDATED_AT },
+        },
         error: undefined,
         response: new Response(null, { status: 201 }),
       };
@@ -509,6 +522,128 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
           { client: fakeClient(state) },
         ),
       ).rejects.toThrow(/reported more pages but returned no cursor/);
+    });
+  });
+
+  describe('the rotation timestamps it hands back', () => {
+    test('a name present on the platform reports when it was last written', async () => {
+      state.rows = [
+        {
+          projectId: 'proj',
+          class: 'production',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: null,
+          updatedAt: '2026-05-05T12:00:00.000Z',
+        },
+      ];
+
+      const timestamps = await runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        { client: fakeClient(state) },
+      );
+
+      expect([...timestamps]).toEqual([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']]);
+    });
+
+    test('with a template and a branch override in scope, the NEWER row wins', async () => {
+      state.rows = [
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: null,
+          updatedAt: '2026-05-05T12:00:00.000Z',
+        },
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: 'br-1',
+          updatedAt: '2026-07-07T12:00:00.000Z',
+        },
+      ];
+
+      const timestamps = await runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { client: fakeClient(state) },
+      );
+
+      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
+    });
+
+    test('a row belonging to ANOTHER branch is not in scope and does not date this one', async () => {
+      state.rows = [
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: null,
+          updatedAt: '2026-05-05T12:00:00.000Z',
+        },
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: 'br-other',
+          updatedAt: '2026-09-09T12:00:00.000Z',
+        },
+      ];
+
+      const timestamps = await runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { client: fakeClient(state) },
+      );
+
+      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-05-05T12:00:00.000Z');
+    });
+
+    test('a name preflight fills from the shell reports the created row\u2019s time', async () => {
+      state.rows = [];
+
+      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      );
+
+      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe(CREATED_UPDATED_AT);
+    });
+
+    test('a fill that lost the race (409) reports no time, so the next deploy redeploys once', async () => {
+      state.rows = [];
+      state.postStatus = 409;
+
+      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, () =>
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      );
+
+      expect(timestamps.has('STRIPE_SECRET_KEY')).toBe(false);
+    });
+
+    test('a graph with nothing to check hands back an empty map', async () => {
+      const timestamps = await runPreflight(
+        { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        { client: fakeClient(state) },
+      );
+
+      expect(timestamps.size).toBe(0);
+    });
+
+    test('no VALUE is ever handed back — the API returns none and preflight asks for none', async () => {
+      state.rows = [];
+
+      const timestamps = await withEnv({ STRIPE_SECRET_KEY: 'sk_live_sentinel' }, () =>
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      );
+
+      expect(JSON.stringify([...timestamps])).not.toContain('sk_live_sentinel');
     });
   });
 });

@@ -34,7 +34,11 @@ import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { alwaysRedeployArtifactPath } from '../always-redeploy.ts';
+import {
+  deployEnvFingerprint,
+  type EnvFingerprintEntry,
+  fingerprintedArtifactPath,
+} from '../deploy-fingerprint.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
 
 /** A stack the resource constructors register into; nothing ever applies it. */
@@ -197,48 +201,86 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
     expect(diff).toEqual({ action: 'replace' });
   });
 
-  test('an identical artifactPath plans no replacement — the reuse always-redeploy opts out of', async () => {
+  test('an identical artifactPath plans no replacement', async () => {
     const diff = await diffAgainst(persistedOutput(await artifactFingerprint()));
     // An update, not a replace: with the SAME path and bytes, upstream reuses
     // the deployment and only re-asserts start/promote. The platform never
-    // re-reads environment rows into a reused deployment, so this is exactly
-    // the plan Composer must never let a real deploy reach —
-    // `alwaysRedeployArtifactPath` hands upstream a fresh path every run.
+    // re-reads environment rows into a reused deployment, so a real deploy may
+    // only reach this plan when its environment is unchanged too — which is
+    // what folding the environment into the path enforces.
     expect(diff).toEqual({ action: 'update' });
   });
 });
 
-describe('always-redeploy: the per-deploy generation path, against upstream diff', () => {
-  test('same bytes, a new deploy run — replace is planned, so env values reach the app', async () => {
-    const previousRun = alwaysRedeployArtifactPath(artifactPath, 'run-1');
-    const thisRun = alwaysRedeployArtifactPath(artifactPath, 'run-2');
-    // The fingerprint has NOT moved — the path alone carries the replace.
-    // This is the pinned always-redeploy choice, not an accident: an
-    // environment-value-only change (invisible to every Deployment prop, the
-    // platform never returns values) and a no-change redeploy are the same
-    // deploy to upstream, and BOTH must ship a fresh deployment because the
-    // platform materializes env rows only at deployment create (PRO-211).
+/**
+ * What each environment produces as a path, and what upstream plans for it.
+ * The environment-value-only change is the case that has no other signal at
+ * all: no Deployment prop moves, and the platform never returns a value — so
+ * the fingerprint is the ONLY thing that can tell upstream to ship a fresh
+ * deployment, which the platform requires because it materializes env rows
+ * only at deployment create (PRO-211).
+ */
+const envRows = (port: string): readonly EnvFingerprintEntry[] => [
+  { key: 'COMPOSER_AUTH_PORT', value: port },
+  {
+    key: 'COMPOSER_AUTH_INPUT',
+    value: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
+    pointers: ['STRIPE_KEY'],
+  },
+];
+
+const rotatedAt = (updatedAt: string) => () => updatedAt;
+
+const pathForEnvironment = (
+  entries: readonly EnvFingerprintEntry[],
+  updatedAt = '2026-01-02T00:00:00.000Z',
+): string =>
+  fingerprintedArtifactPath(artifactPath, deployEnvFingerprint(entries, rotatedAt(updatedAt)));
+
+describe('the environment fingerprint, against upstream diff', () => {
+  test('nothing changed — upstream reuses the deployment rather than replacing it', async () => {
+    const unchanged = pathForEnvironment(envRows('3000'));
     const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
-      oldPath: previousRun,
-      newPath: thisRun,
+      oldPath: unchanged,
+      newPath: unchanged,
+    });
+    // An update, not a replace: same path, same bytes, so upstream keeps the
+    // running deployment and only re-asserts start/promote. This is the reuse
+    // the per-deploy-generation path gave up and the fingerprint restores.
+    expect(diff).toEqual({ action: 'update' });
+  });
+
+  test('a changed environment VALUE plans a replace, though the bytes are identical', async () => {
+    const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
+      oldPath: pathForEnvironment(envRows('3000')),
+      newPath: pathForEnvironment(envRows('8080')),
     });
     expect(diff).toEqual({ action: 'replace' });
   });
 
-  test('a changed artifact on a new deploy run still plans a replace', async () => {
-    const diff = await diffAgainst(persistedOutput('the-previous-generations-fingerprint'), {
-      oldPath: alwaysRedeployArtifactPath(artifactPath, 'run-1'),
-      newPath: alwaysRedeployArtifactPath(artifactPath, 'run-2'),
+  test('a rotated POINTED platform variable plans a replace, though every row is identical', async () => {
+    const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
+      oldPath: pathForEnvironment(envRows('3000'), '2026-01-02T00:00:00.000Z'),
+      newPath: pathForEnvironment(envRows('3000'), '2026-06-30T09:15:00.000Z'),
     });
     expect(diff).toEqual({ action: 'replace' });
   });
 
-  test('the generation path stays a plain value — the diff never degrades to update', () => {
+  test('a changed artifact plans a replace under an unchanged environment', async () => {
+    const unchanged = pathForEnvironment(envRows('3000'));
+    const diff = await diffAgainst(persistedOutput('the-previous-artifacts-fingerprint'), {
+      oldPath: unchanged,
+      newPath: unchanged,
+    });
+    expect(diff).toEqual({ action: 'replace' });
+  });
+
+  test('the fingerprinted path stays a plain value — the diff never degrades to update', () => {
     // The replacement block {portMapping, skipCodeUpload, artifactPath,
     // artifactContentType} must be RESOLVED at plan time or upstream returns
     // no opinion and the engine falls back to a plain update — the silent
-    // artifact skip all over again. The generation path is a string computed
-    // before lowering, never an Output.
-    expect(Output.isOutput(alwaysRedeployArtifactPath(artifactPath, 'run-3'))).toBe(false);
+    // artifact skip all over again. The fingerprinted path is a string
+    // computed before lowering, never an Output.
+    expect(Output.isOutput(pathForEnvironment(envRows('3000')))).toBe(false);
   });
 });

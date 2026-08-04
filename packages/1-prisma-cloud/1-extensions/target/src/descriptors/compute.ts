@@ -3,8 +3,10 @@
 import { isParamSource, type ServiceNode } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
-  alwaysRedeployArtifactPath,
   appAfterEnvironment,
+  deployEnvFingerprint,
+  type EnvFingerprintEntry,
+  fingerprintedArtifactPath,
   packageComputeArtifact,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
@@ -16,9 +18,11 @@ import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
 import {
   configKey,
+  decodeParamPointer,
   encode,
   encodeParamPointer,
   type InputDocumentRow,
+  isParamPointerRow,
   paramEntries,
   serializeInput,
 } from '../serializer.ts';
@@ -49,9 +53,11 @@ export interface ComputeProvisioned {
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
-/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
+/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, one fingerprint entry per row, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
 export interface ComputeSerialized {
   readonly environment: readonly Prisma.EnvironmentVariable[];
+  /** What the deploy hook fingerprints the environment by — one entry per row of `environment`, in the same order. */
+  readonly envFingerprint: readonly EnvFingerprintEntry[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
@@ -67,6 +73,17 @@ const envValue = (
   value: string | Output.Output<string>,
 ): Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>> =>
   Output.isOutput(value) ? Output.map(value, Redacted.make) : Redacted.make(value);
+
+/**
+ * The fingerprint stand-in for a row whose text this descriptor must NOT hash:
+ * `kind` says which channel the row came from, and the sorted names of the
+ * resources the value is built from say what produces it, so rewiring the row
+ * to a different resource moves the fingerprint. `Output.upstreamAny` is the
+ * same walker Alchemy builds its dependency graph with, so the names are the
+ * planner's own — no guessing at what a reference points to.
+ */
+const withheldSource = (kind: string, value: unknown): string =>
+  `${kind}:${Object.keys(Output.upstreamAny(value)).sort().join(',')}`;
 
 /**
  * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
@@ -109,6 +126,11 @@ export function computeDescriptor(
         const projectId = provisioned.projectId;
         const svc = node as ServiceNode;
         const records = [];
+        // One entry per row, appended in step with `records`. Every entry that
+        // carries text carries text that is secret-free BY CONSTRUCTION; the
+        // rest are `withheld` and have nowhere to put a value — see
+        // `deploy-fingerprint.ts`.
+        const fingerprint: EnvFingerprintEntry[] = [];
 
         for (const d of paramEntries(svc)) {
           const value =
@@ -135,6 +157,23 @@ export function computeDescriptor(
               ...branch,
             }),
           );
+          // A service's OWN param is config, never a secret (a secret reaches
+          // a service only through the input document, ADR-0042), so its row
+          // text is hashed as-is — a literal is JSON, a pointer row is the
+          // platform NAME it points at, and that name's rotation timestamp
+          // joins the fingerprint through `pointers`. A dependency input's
+          // value is a provisioning ref: a connection string or a minted
+          // per-binding token, so its text is withheld.
+          if (d.owner === 'service') {
+            const pointer = isParamPointerRow(rowValue) ? decodeParamPointer(rowValue) : undefined;
+            fingerprint.push({
+              key,
+              value: rowValue,
+              ...(pointer !== undefined ? { pointers: [pointer] } : {}),
+            });
+          } else {
+            fingerprint.push({ key, withheld: withheldSource(`input.${d.owner.input}`, value) });
+          }
         }
 
         const inputRow = serializeInput(
@@ -155,6 +194,15 @@ export function computeDescriptor(
               ...branch,
             }),
           );
+          // The document itself is secret-free by construction, so it is
+          // hashed verbatim; each `$secret` pointer names an OPERATOR-owned
+          // platform variable Composer never writes, so its rotation shows up
+          // only as that variable's `updatedAt`.
+          fingerprint.push({
+            key: inputRow.key,
+            value: inputRow.value,
+            pointers: inputRow.secrets,
+          });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
           // under the framework var the document's `$generated` pointer names.
@@ -173,6 +221,16 @@ export function computeDescriptor(
                 ...branch,
               }),
             );
+            // A minted random value — withheld. Its `updatedAt` is no signal
+            // either: Composer writes this row on every deploy, so the
+            // timestamp would move every deploy. The value is stable by
+            // construction (`GeneratedParam` persists it), and the document's
+            // `$generated` pointer — already hashed above — carries the leaf's
+            // name and its redacted facet.
+            fingerprint.push({
+              key: leaf.varName,
+              withheld: `generated:${String(leaf.bytes)}:${String(leaf.redacted)}`,
+            });
           }
         }
 
@@ -238,6 +296,12 @@ export function computeDescriptor(
               ...branch,
             }),
           );
+          // A provider param's value may be a minted key (rpc, streams), so
+          // every one is withheld regardless of the brand — this descriptor is
+          // brand-blind and must not have to know which brands mint secrets.
+          // Wiring a consumer in or out changes the resources the value is
+          // built from, which is what moves the fingerprint.
+          fingerprint.push({ key, withheld: withheldSource(`provider.${entry.name}`, raw) });
         }
 
         // Carries the resolved port to deploy(); falls back to 3000 if unset.
@@ -246,6 +310,7 @@ export function computeDescriptor(
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return {
           environment: records,
+          envFingerprint: fingerprint,
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -265,16 +330,25 @@ export function computeDescriptor(
 
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
+        // Answers "unknown" for every name under `prisma-composer dev`: dev runs
+        // no platform preflight, so no rotation timestamps exist. That costs
+        // nothing — the local Deployment provider reconciles unconditionally.
+        const pointerUpdatedAt = o().pointerUpdatedAt;
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
           // only prop that can (PRO-211).
           app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
-          // A fresh per-deploy-run path for the SAME bytes, so upstream plans
-          // a replace on every deploy and a changed environment value always
-          // reaches the running app — see `alwaysRedeployArtifactPath` for the
-          // mechanism, its cost, and the hand-off to upstream's `redeployOn`.
-          artifactPath: alwaysRedeployArtifactPath(artifact.path),
+          // The SAME bytes under a path named by a hash of this service's
+          // environment, so upstream plans a replace exactly when the
+          // environment (or the code) moved and reuses the deployment
+          // otherwise — see `deploy-fingerprint.ts` for what the hash covers,
+          // why no secret reaches it, and the hand-off to upstream's
+          // `redeployOn`.
+          artifactPath: fingerprintedArtifactPath(
+            artifact.path,
+            deployEnvFingerprint(serialized.envFingerprint, pointerUpdatedAt),
+          ),
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.

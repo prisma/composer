@@ -209,21 +209,24 @@ which would skip the artifact comparison and silently drop a code change.
 `compute/deployment-edge.ts` records the full argument and its test drives
 upstream's real diff.
 
-**Change propagation is wired by replacing the deployment on every deploy.**
-The platform freezes a deployment's environment at create, so a *value* change
-(a rotated URL) reaches a running service only through a new deployment — and
-the fingerprint upstream recreates on cannot include the values without
-persisting a hash of them in state (a hash of a secret is itself a leak).
-Instead, the deploy hook hands upstream a fresh per-deploy-run artifact path —
-the content-addressed artifact hard-linked into a per-run generation directory
-(`compute/always-redeploy.ts`) — so upstream's path comparison plans a replace
-on every deploy: same bytes, new path, no value and no hash in state. The
-deliberate cost is that an unchanged service replaces (create, start, promote,
-delete old) instead of nooping. This is a stopgap: when upstream's
-`Prisma.Deployment` gains `redeployOn` (inputs a deployment must be recreated
-for) and the pinned alchemy version includes it, the generation path is
-removed and the environment rows ride `redeployOn` (see the
-[config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets)).
+**Change propagation is wired by an environment fingerprint in the artifact
+path.** The platform freezes a deployment's environment at create, so a
+*value* change (a rotated URL) reaches a running service only through a new
+deployment. The deploy hook names the artifact hard-link directory from a hash
+of the service's environment material (`compute/deploy-fingerprint.ts`), so
+the resolved path upstream compares moves exactly when the environment does:
+unchanged service → identical path → reuse; changed environment or artifact →
+new path → replace. The hashed material is non-secret by construction —
+environment rows carry config literals and pointers, never secret values (see
+the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets))
+— and out-of-band rotation of a pointed platform variable is detected via its
+`updatedAt` metadata, read at preflight and carried across the CLI→Alchemy
+process boundary on the framework's preflight-transport channel. Secret-bearing
+rows contribute wiring identity only; a value re-issued under a stable resource
+identity does not move the fingerprint (the module comment records the
+accepted narrowing). When upstream's `Prisma.Deployment` gains `redeployOn`
+(inputs a deployment must be recreated for) and the pinned alchemy version
+includes it, the fingerprint moves onto that prop at the marked seam.
 
 The framework's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack

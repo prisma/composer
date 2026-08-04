@@ -12,6 +12,13 @@
  * Control-plane only (imported by control.ts → prisma-composer.config.ts); runs
  * in the CLI parent, so it builds its own Management API client from env — the
  * same credential path `container.ts`'s `ensure`/`locate` use.
+ *
+ * It also returns WHEN each of those names was last written. This is the only
+ * place in a deploy that reads those rows off the platform, so it is where the
+ * reading belongs; the compute deploy hook folds the timestamps into its
+ * environment fingerprint so that rotating a secret or an env-sourced param
+ * out of band ships a new deployment. A timestamp, never a value: env-var
+ * values are write-only and the API never returns one.
  */
 import type { Graph } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
@@ -36,15 +43,12 @@ type EnvClass = 'production' | 'preview';
 const classFor = (branchId: string | undefined): EnvClass =>
   branchId === undefined ? 'production' : 'preview';
 
-/**
- * Does `key` exist for the target stage's scope? Default stage → any
- * production-class template. Named stage → a preview template (branchId null)
- * OR this branch's own override — the platform's preview materialization
- * (pdp-data-model.md). Metadata read only; env-var values are write-only.
- */
 /** The fields of one env-var list page that preflight consumes (metadata only; values are write-only). */
 interface EnvVarListPage {
-  readonly data: readonly { readonly branchId: string | null }[];
+  readonly data: readonly {
+    readonly branchId: string | null;
+    readonly updatedAt: string;
+  }[];
   readonly pagination: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
 interface EnvVarListResult {
@@ -76,24 +80,45 @@ async function listEnvVars(
   >(res);
 }
 
-async function existsOnPlatform(
+/** What the platform holds for one name: whether it is there at all, and when it last changed. */
+interface PlatformVariable {
+  readonly exists: boolean;
+  /** The latest `updatedAt` across every row visible to this stage — undefined when the name is absent. */
+  readonly updatedAt?: string;
+}
+
+/**
+ * What the platform holds for `key` in the target stage's scope. Default stage
+ * → any production-class template. Named stage → a preview template (branchId
+ * null) OR this branch's own override — the platform's preview materialization
+ * (pdp-data-model.md). Metadata read only; env-var values are write-only.
+ *
+ * The whole list is walked rather than short-circuiting on the first visible
+ * row, because the newest `updatedAt` across every visible row is the rotation
+ * signal the compute deploy hook fingerprints on: stopping early would make
+ * that timestamp depend on where the page boundary happened to fall, and a
+ * fingerprint that moves for that reason would redeploy for no reason. A key
+ * with more rows than one page (a template plus many per-branch overrides) is
+ * rare, so this costs one request in practice.
+ */
+async function readPlatformVariable(
   client: ManagementApiClient,
   projectId: string,
   branchId: string | undefined,
   key: string,
-): Promise<boolean> {
+): Promise<PlatformVariable> {
   const cls = classFor(branchId);
-  // Default stage → any production template counts; named stage → a preview
-  // template (branchId null) OR this branch's own override.
   const visible = (row: { branchId: string | null }): boolean =>
     branchId === undefined || row.branchId === null || row.branchId === branchId;
 
   // The list is paginated: a key with more preview rows (template + many
   // per-branch overrides) than one page must be followed to the end, or a
-  // present name is falsely reported missing. Short-circuits as soon as a
-  // visible row is seen; bounded (drivePagesAsync) so broken pagination
+  // present name is falsely reported missing. Walked to the end (no
+  // short-circuit) because the LATEST updatedAt across visible rows feeds
+  // the deploy fingerprint; bounded (drivePagesAsync) so broken pagination
   // fails loudly instead of looping.
-  let found = false;
+  let exists = false;
+  let latest: string | undefined;
   await drivePagesAsync(
     `environment variables named "${key}"`,
     async (cursor) => {
@@ -107,11 +132,15 @@ async function existsOnPlatform(
       return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
     },
     (data) => {
-      found = data.some(visible);
-      return found;
+      for (const row of data) {
+        if (!visible(row)) continue;
+        exists = true;
+        if (latest === undefined || row.updatedAt > latest) latest = row.updatedAt;
+      }
+      return false;
     },
   );
-  return found;
+  return latest === undefined ? { exists } : { exists, updatedAt: latest };
 }
 
 /**
@@ -128,7 +157,7 @@ async function fillMissing(
   branchId: string | undefined,
   key: string,
   value: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const res = await client.POST('/v1/environment-variables', {
     body: {
       projectId,
@@ -141,6 +170,11 @@ async function fillMissing(
   if (res.error !== undefined && res.response.status !== 409) {
     throw fillFailedError(key, res.error);
   }
+  // The created row's timestamp, so this deploy fingerprints on the same value
+  // the next one will read back. A 409 (a concurrent deploy won the race)
+  // returns no row: the name reads as unknown for this run and the next deploy
+  // picks its timestamp up, which redeploys once — the safe direction.
+  return res.data?.data.updatedAt;
 }
 
 interface MissingBinding {
@@ -205,7 +239,7 @@ async function managementClient(): Promise<ManagementApiClient> {
 export async function runPreflight(
   input: PreflightInput,
   deps?: { readonly client?: ManagementApiClient },
-): Promise<void> {
+): Promise<ReadonlyMap<string, string>> {
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
   // One check per platform NAME (many leaves/services, secret or param, may
@@ -219,20 +253,27 @@ export async function runPreflight(
   for (const meta of [...collected.secrets, ...collected.envParams]) {
     if (!names.has(meta.name)) names.set(meta.name, meta);
   }
-  if (names.size === 0) return;
+  if (names.size === 0) return new Map();
 
   const client = deps?.client ?? (await managementClient());
   const missing: MissingBinding[] = [];
+  const updatedAt = new Map<string, string>();
   for (const meta of names.values()) {
-    if (await existsOnPlatform(client, projectId, branchId, meta.name)) continue;
+    const platform = await readPlatformVariable(client, projectId, branchId, meta.name);
+    if (platform.exists) {
+      if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
+      continue;
+    }
     const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
-      await fillMissing(client, projectId, branchId, meta.name, shellValue);
+      const filled = await fillMissing(client, projectId, branchId, meta.name, shellValue);
+      if (filled !== undefined) updatedAt.set(meta.name, filled);
       continue;
     }
     missing.push(meta);
   }
   if (missing.length > 0) throw missingError(missing, branchId, input.stage);
+  return updatedAt;
 }
 
 /**

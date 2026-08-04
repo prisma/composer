@@ -101,29 +101,31 @@ did. The `app` prop sits outside that block and tolerates being unresolved.
 `compute/__tests__/deployment-edge.test.ts` drives upstream's real diff and
 real Output machinery and fails if the edge ever moves back.
 
-## Every deploy replaces the deployment
+## A deployment is replaced when its environment changes
 
 The platform bakes environment values into a deployment at create, and
 upstream reuses a deployment whose artifact is unchanged — so a value-only
 change (a rotated secret) would update the platform's variable row and never
-reach the running app. Composer instead guarantees that a deploy ships what
-was declared: the deploy hook hard-links the content-addressed artifact into
-a per-deploy-generation path (`compute/always-redeploy.ts`), the resolved
-path differs every run, and upstream plans a replace — create, start,
-promote, delete the old — for every service on every deploy.
+reach the running app. Composer closes this with a deploy fingerprint
+(`compute/deploy-fingerprint.ts`): the artifact hard-link directory is named
+from a hash of the service's environment material, so the resolved
+`artifactPath` upstream compares moves exactly when the environment does —
+unchanged service, identical path, deployment reused; changed environment or
+artifact, new path, replace.
 
-No value or hash of a value lands in deploy state. The alternatives are
-worse: hashing values into state leaks (a hash of a secret is itself a
-leak), and no upstream environment-variable attribute distinguishes "the
-value changed" from "a deploy ran" (values are re-applied every deploy to
-heal drift).
-
-The cost is deliberate: the deployment reuse upstream's fingerprinting
-provides is given up. The exit is named in the code: when the pinned alchemy
-version includes `Deployment.redeployOn` (inputs a deployment is recreated
-for, fingerprinted `Redacted` upstream), the generation path is deleted and
-the environment rows move onto that prop — one edit in
-`descriptors/compute.ts`.
+The fingerprint hashes only non-secret material. Composer's environment rows
+carry none (ADR-0042: secrets are pointers to platform variables, not
+values); secret-bearing rows contribute their wiring identity, not a value.
+Out-of-band rotation of a pointed platform variable is detected through its
+`updatedAt` metadata, read at preflight and carried to the Alchemy process
+over the framework's preflight-transport channel (a timestamp, never a
+value). One accepted narrowing, recorded in the module: a value re-issued
+under a stable resource identity (a connection rotated in place, a re-minted
+service key) does not move the fingerprint; the deployment ships it on the
+next change that does. Upstream's `Deployment.redeployOn` closes that
+properly once released — alchemy resolves and diffs those inputs inside its
+own encrypted state — and the fingerprint then moves onto it at a marked
+seam.
 
 ## Consequences
 
@@ -173,9 +175,13 @@ the environment rows move onto that prop — one edit in
 - **Adopt upstream's built-in dev mode instead of the local target.** Would
   replace a whole-layer seam that already works with per-provider
   substitution, and tie local-dev iteration to an external release cadence.
-- **Detect environment changes instead of always redeploying.** Requires
-  either value hashes in state (a leak) or a change signal upstream does not
-  expose; both rejected above.
+- **Replace the deployment on every deploy** (the pre-adoption behavior).
+  Ships every change by brute force but gives up upstream's reuse entirely;
+  superseded by the fingerprint, which detects changes from non-secret
+  material only.
+- **Hash environment values into the fingerprint.** A hash of a secret in
+  plaintext state is an offline-guessing target; rejected. The fingerprint
+  hashes only material that is non-secret by construction.
 
 ## References
 

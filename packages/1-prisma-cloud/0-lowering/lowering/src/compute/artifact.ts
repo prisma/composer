@@ -182,8 +182,8 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   // The output path must be content-addressed AND per-user. Content-addressed
   // so the local dev loop can memoize on it (a converge re-hashes and
   // re-extracts nothing when the bytes didn't move) — this is the CANONICAL
-  // path; the deploy hook derives the per-deploy-run path the hosted
-  // Deployment is handed from it (`alwaysRedeployArtifactPath`). Per-user
+  // path; the deploy hook derives the environment-fingerprinted path the
+  // hosted Deployment is handed from it (`fingerprintedArtifactPath`). Per-user
   // because a fixed shared dir under os.tmpdir() is owned by whichever OS
   // user creates it first — everyone else's writes fail EACCES. uid is -1
   // on Windows — still a valid, deterministic directory name.
