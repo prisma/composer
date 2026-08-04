@@ -26,19 +26,7 @@ import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
 import { envStore, secretsStore } from './dev-store.ts';
-
-const DEV_TIMESTAMP = '1970-01-01T00:00:00.000Z';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/** Reads a project id from upstream's `project` input: a plain string or a resolved `Prisma.Project` attributes record. */
-function projectIdOfInput(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (isRecord(value) && typeof value['projectId'] === 'string') return value['projectId'];
-  return 'local';
-}
+import { DEV_TIMESTAMP, isRecord, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads an app id from upstream's `app` input: a plain string or a resolved `Prisma.App` attributes record. */
 function appIdOfInput(value: unknown): string {
