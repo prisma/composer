@@ -63,3 +63,32 @@ export const drivePages = <T>(
       cursor = next;
     }
   });
+
+/**
+ * {@link drivePages} for Promise-based callers (e.g. target's preflight,
+ * which speaks the SDK's `{data, error}` shape directly). Same guard, same
+ * errors; deliberately a sibling loop rather than a wrapper, because routing
+ * a Promise fetch through Effect and back (`Effect.tryPromise` +
+ * `runPromise`) would re-wrap the caller's own thrown errors. `fetchPage`
+ * rejections propagate untouched.
+ */
+export async function drivePagesAsync<T>(
+  description: string,
+  fetchPage: (cursor: string | undefined) => Promise<Page<T>>,
+  onPage: (data: readonly T[]) => boolean,
+): Promise<void> {
+  let cursor: string | undefined;
+  for (let pageCount = 0; ; pageCount++) {
+    if (pageCount >= MAX_PAGES) {
+      throw brokenPaginationError(description, `did not finish within ${String(MAX_PAGES)} pages`);
+    }
+    const page = await fetchPage(cursor);
+    if (onPage(page.data)) return;
+    const next = page.pagination.nextCursor;
+    if (!page.pagination.hasMore || next === null) return;
+    if (next === cursor) {
+      throw brokenPaginationError(description, 'returned a non-advancing cursor');
+    }
+    cursor = next;
+  }
+}

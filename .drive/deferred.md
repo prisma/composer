@@ -175,3 +175,9 @@ registry). What we deliberately didn't do:
   `@effect/vitest: ">=4.0.0-beta.84 || >=4.0.0"` (hard dep), which is what let
   npm float to an incompatible beta in the first place. Worth an upstream issue
   asking alchemy to tighten to the betas it actually works with.
+
+## Remove the composer-demo CI USER workaround (after TML-3157 ships)
+`prisma/composer-demo-composer`'s GitHub Actions workflow pins `USER: composer-demo-ci` to dodge the $USER-scoped deploy state bug fixed in prisma/composer#195. Once a release containing that PR is out and the demo upgrades to it, delete the pin — users should never need to know about it. Origin: TML-3157 close-out, 2026-08-03.
+
+## Convert the remaining Management API listing loops to drivePages
+prisma/composer#195 added a bounded page driver (`packages/1-prisma-cloud/0-lowering/lowering/src/pagination.ts`) and converted the three listing loops that PR touched. Three more hand-rolled, unbounded loops remain on the deploy path: `listAllProjects` (`lowering/src/container.ts`), `listAllConnections` (`lowering/src/state/bootstrap.ts`), and the env-var listing in `target/src/preflight.ts`. Straightforward conversion now the driver exists. Origin: reviewer observation, PR #195 round 8, 2026-08-03. DONE in this PR (`fix/bound-remaining-pagination`): all three converted; preflight got a Promise-based `drivePagesAsync` twin.

@@ -11,6 +11,7 @@ export {
 } from '../client.ts';
 export * from '../container.ts';
 export * from '../credentials.ts';
+export * from '../pagination.ts';
 export * from '../providers.ts';
 export * from './buckets.ts';
 export * from './compute.ts';

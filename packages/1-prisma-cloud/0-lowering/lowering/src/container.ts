@@ -2,7 +2,7 @@ import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import { type ManagementApiClient, ManagementClient } from './client.ts';
 import { call, callVoid, PrismaApiError } from './http.ts';
-import { drivePages } from './pagination.ts';
+import { collectPages, drivePages } from './pagination.ts';
 
 export interface ResolveContainerOptions {
   /** The workspace to resolve the Project in. */
@@ -39,18 +39,13 @@ interface ProjectSummary {
 const listAllProjects = (
   client: ManagementApiClient,
 ): Effect.Effect<readonly ProjectSummary[], PrismaApiError> =>
-  Effect.gen(function* () {
-    const projects: ProjectSummary[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const query = cursor === undefined ? {} : { cursor };
-      const page = yield* call(() => client.GET('/v1/projects', { params: { query } }));
-      projects.push(...page.data);
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
-    }
-    return projects;
-  });
+  collectPages('projects', (cursor) =>
+    call(() =>
+      client.GET('/v1/projects', {
+        params: { query: cursor === undefined ? {} : { cursor } },
+      }),
+    ),
+  );
 
 /**
  * Workspace ids circulate in two shapes: `wksp_`-prefixed and bare. Compare

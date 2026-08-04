@@ -39,6 +39,12 @@ interface FakeState {
   deleteProjectCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
   deleteProjectResponseStatus?: number;
+  /** Page size for GET /v1/projects — unset serves everything in one page. */
+  projectsPageSize?: number;
+  /** When set, GET /v1/projects reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
+  projectsCursorStuck?: boolean;
+  /** When set, GET /v1/projects always reports hasMore with an ever-advancing nextCursor — pagination that never ends. */
+  projectsCursorRunaway?: boolean;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -78,8 +84,27 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
     init: { params?: { path?: Record<string, string>; query?: Record<string, string> } } = {},
   ) => {
     if (path === '/v1/projects') {
+      const offset =
+        init.params?.query?.['cursor'] === undefined ? 0 : Number(init.params.query['cursor']);
+      const pageSize = state.projectsPageSize ?? state.projects.length;
+      const data = state.projects.slice(offset, offset + pageSize);
+      if (state.projectsCursorStuck === true) {
+        return Promise.resolve(
+          okResponse({ data, pagination: { nextCursor: String(offset), hasMore: true } }),
+        );
+      }
+      if (state.projectsCursorRunaway === true) {
+        return Promise.resolve(
+          okResponse({ data, pagination: { nextCursor: String(offset + 1), hasMore: true } }),
+        );
+      }
+      const nextOffset = offset + data.length;
+      const hasMore = nextOffset < state.projects.length;
       return Promise.resolve(
-        okResponse({ data: state.projects, pagination: { nextCursor: null, hasMore: false } }),
+        okResponse({
+          data,
+          pagination: { nextCursor: hasMore ? String(nextOffset) : null, hasMore },
+        }),
       );
     }
     if (path === '/v1/projects/{projectId}/branches') {
@@ -276,6 +301,63 @@ describe('resolveContainer — Project resolution', () => {
 
     expect(result.projectId).toBe('proj-existing');
     expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('a project beyond the first listing page is still found', async () => {
+    state.projectsPageSize = 1;
+    state.projects.push(
+      {
+        id: 'proj-other',
+        name: 'other-app',
+        createdAt: new Date(1).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+      {
+        id: 'proj-wanted',
+        name: 'storefront',
+        createdAt: new Date(2).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+    );
+    state.branches['proj-wanted'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(2).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-wanted');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('a non-advancing project-listing cursor fails as broken pagination instead of looping', async () => {
+    state.projectsPageSize = 1;
+    state.projectsCursorStuck = true;
+    state.projects.push({
+      id: 'proj-1',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('pagination appears broken');
+    expect((error as PrismaApiError).message).toContain('non-advancing cursor');
+  });
+
+  test('project-listing pagination that never ends fails at the page cap instead of hanging', async () => {
+    state.projectsPageSize = 1;
+    state.projectsCursorRunaway = true;
+
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('did not finish within 1000 pages');
   });
 });
 

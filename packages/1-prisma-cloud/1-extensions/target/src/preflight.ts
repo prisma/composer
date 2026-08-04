@@ -17,6 +17,7 @@ import type { Graph } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import {
+  drivePagesAsync,
   fromEnv,
   type ManagementApiClient,
   ManagementClient,
@@ -89,21 +90,28 @@ async function existsOnPlatform(
 
   // The list is paginated: a key with more preview rows (template + many
   // per-branch overrides) than one page must be followed to the end, or a
-  // present name is falsely reported missing. Short-circuit as soon as a
-  // visible row is seen.
-  let cursor: string | null = null;
-  do {
-    const res = await listEnvVars(
-      client,
-      cursor === null ? { projectId, class: cls, key } : { projectId, class: cls, key, cursor },
-    );
-    if (res.error !== undefined) throw listFailedError(key, res.error);
-    const page = res.data;
-    if (page === undefined) return false;
-    if (page.data.some(visible)) return true;
-    cursor = page.pagination.hasMore ? page.pagination.nextCursor : null;
-  } while (cursor !== null);
-  return false;
+  // present name is falsely reported missing. Short-circuits as soon as a
+  // visible row is seen; bounded (drivePagesAsync) so broken pagination
+  // fails loudly instead of looping.
+  let found = false;
+  await drivePagesAsync(
+    `environment variables named "${key}"`,
+    async (cursor) => {
+      const res = await listEnvVars(
+        client,
+        cursor === undefined
+          ? { projectId, class: cls, key }
+          : { projectId, class: cls, key, cursor },
+      );
+      if (res.error !== undefined) throw listFailedError(key, res.error);
+      return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
+    },
+    (data) => {
+      found = data.some(visible);
+      return found;
+    },
+  );
+  return found;
 }
 
 /**
