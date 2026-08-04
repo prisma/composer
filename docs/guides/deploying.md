@@ -200,14 +200,26 @@ This happens when another dependency in your app floats to a newer `effect`
 and your package manager hoists that copy where alchemy resolves it — npm
 allows this with only a warning, and without the check the deploy would crash
 mid-run with a `TypeError` from inside alchemy. The fix is the one the error
-prints: add to your app's `package.json`, then reinstall:
+prints — pin the version your package manager should use everywhere, in your
+app's `package.json`:
 
 ```json
 "overrides": { "effect": "<required>" }
 ```
 
-(npm calls this `overrides`; yarn calls it `resolutions`, pnpm
-`pnpm.overrides`.)
+yarn spells it `resolutions`:
+
+```json
+"resolutions": { "effect": "<required>" }
+```
+
+and pnpm nests it under `pnpm`:
+
+```json
+"pnpm": { "overrides": { "effect": "<required>" } }
+```
+
+Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
 
 ## Production behavior
 
