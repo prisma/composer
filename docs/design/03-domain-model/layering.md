@@ -35,7 +35,7 @@ resource graph, which deploys to the cloud.
 | Authoring (Prisma Composer) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
 | --- | --- | --- |
 | **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its ports | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
-| **Service** (your code; entrypoint + ingress) | Platform (compute Resource running the bundle) | App → Deployment (tar.gz bundle + manifest + endpoint) |
+| **Service** (your code; entrypoint + ingress) | App + Deployment (ordinary Resources) | App → Deployment (tar.gz bundle + manifest + endpoint) |
 | **Resource** (managed lifecycle, state-first) | Alchemy Resource + Provider (`reconcile`/`delete`/…); Postgres via the Prisma Postgres provider | a Database (1:1 in an Environment), bucket, cache, or provisioned third-party |
 | **Input/Output — communication** (request/response, stream) | Binding (RPC/HTTP client; stream pub/sub) | endpoint URL + injected client; stream |
 | **Data Input** (method TCP/HTTP + contract) | data binding to a Postgres Resource | connection injected, scoped by contract |

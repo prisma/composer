@@ -11,7 +11,9 @@
 
 ## The model
 
-One provider (upstream's), two provider *layers* on Composer's side:
+Upstream's provider for the postgres and compute families (buckets stay
+Composer-provided until the upstream release ships them); two provider
+*layers* on Composer's side:
 
 - deploy: upstream's live providers (needs the `liveProviderLayer` export or a
   local rebuild of its wiring — client layer + individual `*Provider()`s).

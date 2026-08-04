@@ -50,8 +50,10 @@ instances and data before starting.
 app's local dev state — the symptom is a plan-time error naming an
 unregistered resource type (for example
 `No provider is registered for resource type 'PrismaComposer.Database'`).
-Local dev state is never migrated across framework versions; wiping it is
-always safe because everything local is rebuilt on the next start.
+Local dev state is never migrated across framework versions. Note `--fresh`
+wipes local *data* too — database contents, bucket objects, instance state —
+not just the resource bookkeeping; the next start rebuilds empty resources.
+Use it when the local data is disposable, which in a dev loop it usually is.
 
 ## Logs
 

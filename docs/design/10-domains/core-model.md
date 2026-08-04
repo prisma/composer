@@ -728,13 +728,14 @@ PDP's own dataflow restored (the deployment-create call literally contains the
 materialized env map). See the lowering graphs in
 [`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md).
 This is what makes the fresh-deploy config race (PRO-211) structurally impossible
-on every target — the edge's **ordering** job. Its second job, **propagating** a
-wire whose value genuinely changes, is not wired: a deployment is recreated only
-when its artifact changes, and an env-var resource exposes no attribute a value
-change moves. The fix belongs on the deployment resource (inputs it must be
-recreated for), never on a hash of the values, and is a deferred follow-up —
-narrow in practice, since promoted service endpoints are stable across producer
-redeploys.
+on every target — the edge's **ordering** job. Its second job, **propagating**
+a wire whose value genuinely changes, is wired by the deploy hook: a deploy
+whose environment differs from the running deployment's replaces the
+deployment, so changed values reach the running service. Secret *values* are
+never hashed or persisted for this — the mechanism keys off the non-secret
+material Composer's rows carry (ADR-0042 pointers) and platform metadata. The
+long-term carrier is the deployment resource itself (inputs it must be
+recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
 the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 

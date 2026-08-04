@@ -147,8 +147,8 @@ providers with its own local providers — today it is private and only
   hosted store) vs `Provider.aliases` (beta.65+ mechanism) vs
   destroy-and-recreate per stage? Decide in the migration slice after testing
   aliases against a scratch stage.
-- **Which released beta** first contains the provider (beta.66 expected within
-  days of the spike; verify at slice start).
+- ~~Which released beta first contains the provider~~ — resolved:
+  `alchemy@2.0.0-beta.67` is the adopted pin.
 
 # References
 
