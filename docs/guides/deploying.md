@@ -184,7 +184,7 @@ declares.
 
 ## When a deploy stops on an effect version conflict
 
-Before doing anything else, `deploy`, `destroy`, and `dev` verify that the
+Before doing anything else, every `prisma-composer` command verifies that the
 installed dependency tree gives alchemy (the deploy engine Composer drives)
 the exact `effect` version `@prisma/composer` pins. When it doesn't, the
 command stops immediately:

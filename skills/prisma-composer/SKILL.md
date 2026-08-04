@@ -684,7 +684,7 @@ every shipped block supplies what it declares.
   locally where nothing is enforced.
 - **Cold starts reset service-to-service connections.** A call into a
   scaled-to-zero service can get `ECONNRESET`; retry it.
-- **`deploy`/`destroy`/`dev` stop at start-up on an `effect` version
+- **Every `prisma-composer` command stops at start-up on an `effect` version
   conflict** (`Dependency conflict: alchemy resolves effect@...`). Another
   dependency floated a newer `effect` and the package manager hoisted it over
   Composer's pin. Do what the error says: add

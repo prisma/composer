@@ -99,6 +99,7 @@ function collectEffectVersions(node, found = new Map()) {
 /** The stable marker of the CLI's own start-up check (check-effect-resolution.ts). */
 const CLI_CHECK_MARKER = 'alchemy resolves effect@';
 
+/** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
 function installApp(label, tarballs, extraDependencies = {}) {
   const appDir = join(work, label);
   mkdirSync(appDir, { recursive: true });
@@ -107,11 +108,13 @@ function installApp(label, tarballs, extraDependencies = {}) {
     JSON.stringify({ name: label, private: true, dependencies: extraDependencies }),
   );
   process.stderr.write(`\n[${label}] npm install ${tarballs.length} tarball(s)...\n`);
-  execFileSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
+  const result = spawnSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
     cwd: appDir,
-    stdio: ['ignore', 'ignore', 'inherit'],
+    encoding: 'utf-8',
   });
-  return appDir;
+  if (result.error) fail(`[${label}] failed to spawn npm: ${result.error}`);
+  process.stderr.write(result.stderr);
+  return { appDir, status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /** The version of the `effect` that Node resolves from alchemy's installed position, plus its entry path. */
@@ -126,17 +129,38 @@ function effectSeenByAlchemy(label, appDir) {
   return { version, entry };
 }
 
-/** Runs the built prisma-composer bin with `deploy app.ts` in the scratch app; returns { status, output }. */
-function runCli(label, appDir) {
+/** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
+function runCli(label, appDir, args) {
   const bin = join(appDir, 'node_modules', '.bin', 'prisma-composer');
   if (!existsSync(bin)) fail(`[${label}] the prisma-composer bin is not installed`);
-  const result = spawnSync(bin, ['deploy', 'app.ts'], { cwd: appDir, encoding: 'utf-8' });
+  const result = spawnSync(bin, args, { cwd: appDir, encoding: 'utf-8' });
   if (result.error) fail(`[${label}] failed to spawn the prisma-composer bin: ${result.error}`);
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
+/**
+ * Asserts the bundled bin starts and reaches its own usage output. The proof is
+ * the usage banner, not the exit code: a bare `--help` exits 1 on main too,
+ * because clipanion reports it as a missing command.
+ */
+function assertCliStarts(label, appDir) {
+  const help = runCli(label, appDir, ['--help']);
+  if (!help.output.includes('prisma-composer <command>')) {
+    fail(
+      `[${label}] \`prisma-composer --help\` did not reach its usage output in a healthy tree ` +
+        `(exit ${help.status}):\n${help.output}`,
+    );
+  }
+  if (/is not a function|Cannot find module/.test(help.output)) {
+    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${help.output}`);
+  }
+}
+
 async function checkShape(label, tarballs) {
-  const appDir = installApp(label, tarballs);
+  const { appDir, status: installStatus, output: installOutput } = installApp(label, tarballs);
+  if (installStatus !== 0) {
+    fail(`[${label}] npm install failed (exit ${installStatus}):\n${installOutput}`);
+  }
 
   const tree = JSON.parse(
     execFileSync('npm', ['ls', 'effect', '--all', '--json'], { cwd: appDir, encoding: 'utf-8' }),
@@ -161,11 +185,19 @@ async function checkShape(label, tarballs) {
     fail(`[${label}] Schedule.either is missing from the effect alchemy resolves`);
   }
 
-  // The CLI's start-up check must NOT trip on this healthy tree — the deploy
-  // should get past it and fail on the app itself (no entry/config here).
-  const cli = runCli(label, appDir);
+  // Positive proof the CLI actually starts in this healthy tree — without it,
+  // "the failure marker is absent" would also hold for a CLI that never ran.
+  assertCliStarts(label, appDir);
+
+  // The start-up check must NOT trip on this healthy tree — the deploy should
+  // get past it and fail on the app itself (no entry/config here), never on a
+  // broken module graph.
+  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
   if (cli.output.includes(CLI_CHECK_MARKER)) {
     fail(`[${label}] the CLI's effect check misfired on a healthy tree:\n${cli.output}`);
+  }
+  if (/is not a function|Cannot find module/.test(cli.output)) {
+    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${cli.output}`);
   }
 
   process.stderr.write(`[${label}] OK — single effect@${pinnedEffect}, Schedule.either present\n`);
@@ -177,15 +209,18 @@ async function checkShape(label, tarballs) {
 // that tree the built CLI must refuse to deploy with our clear error.
 async function checkAdversarialShape(tarballs) {
   const label = 'adversarial-node-shared-float';
-  let appDir;
-  try {
-    appDir = installApp(label, tarballs, {
-      '@effect/platform-node-shared': '^4.0.0-beta.93',
-    });
-  } catch {
-    // Also acceptable: npm refuses the conflicted install outright.
-    process.stderr.write(`[${label}] OK — npm refused the conflicting install\n`);
-    return;
+  const { appDir, status, output } = installApp(label, tarballs, {
+    '@effect/platform-node-shared': '^4.0.0-beta.93',
+  });
+  if (status !== 0) {
+    // Also acceptable: npm refuses the conflicted install outright — but ONLY
+    // when it actually failed on the dependency conflict. Any other failure
+    // (registry outage, a bug here) must fail the check, not silently pass it.
+    if (/ERESOLVE|Conflicting peer dependency|unable to resolve dependency tree/i.test(output)) {
+      process.stderr.write(`[${label}] OK — npm refused the conflicting install\n`);
+      return;
+    }
+    fail(`[${label}] npm install failed for a reason other than the conflict:\n${output}`);
   }
 
   const { version: resolvedVersion } = effectSeenByAlchemy(label, appDir);
@@ -198,7 +233,7 @@ async function checkAdversarialShape(tarballs) {
     return;
   }
 
-  const cli = runCli(label, appDir);
+  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
   if (cli.status === 0) {
     fail(`[${label}] the CLI exited 0 in a tree where alchemy resolves effect@${resolvedVersion}`);
   }
@@ -211,8 +246,19 @@ async function checkAdversarialShape(tarballs) {
   if (/is not a function/.test(cli.output)) {
     fail(`[${label}] the CLI crashed with a TypeError instead of the effect check:\n${cli.output}`);
   }
+
+  // Every command loads the graph that crashes, so every command must hit the
+  // check first — `--help` included, or the user meets the raw TypeError there.
+  const help = runCli(label, appDir, ['--help']);
+  if (!help.output.includes(CLI_CHECK_MARKER) || /is not a function/.test(help.output)) {
+    fail(
+      `[${label}] \`prisma-composer --help\` did not report the effect check in a broken tree ` +
+        `(exit ${help.status}):\n${help.output}`,
+    );
+  }
+
   process.stderr.write(
-    `[${label}] OK — broken tree detected at start-up with the actionable error\n`,
+    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy and --help alike\n`,
   );
 }
 

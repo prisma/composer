@@ -56,6 +56,10 @@ export function resolveEffectVersionFrom(packageDir: string): string | undefined
  * package.json — the single source of truth; never hardcoded here. Undefined
  * when @prisma/composer is not resolvable from `startDir` (e.g. the CLI is
  * driven some other way), in which case the check skips.
+ *
+ * Assumes the pin is an exact version — effectMismatchError compares with
+ * `===`, which scripts/check-npm-effect-resolution.mjs enforces in CI;
+ * relaxing the pin to a range means revisiting that comparison.
  */
 export function requiredEffectVersion(startDir: string): string | undefined {
   let manifestPath: string;
