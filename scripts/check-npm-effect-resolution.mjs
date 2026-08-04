@@ -203,14 +203,18 @@ async function checkShape(label, tarballs) {
   process.stderr.write(`[${label}] OK — single effect@${pinnedEffect}, Schedule.either present\n`);
 }
 
-// The operator's failing chain: a direct dependency on
-// `@effect/platform-node-shared@^4.0.0-beta.93` floats to the newest beta and
-// hoists its newer `effect` peer over our pins (install still exits 0). In
-// that tree the built CLI must refuse to deploy with our clear error.
+// The reported chain: an app dependency on `@effect/platform-node-shared`
+// whose own `effect` peer is newer than our pin, so npm hoists that newer
+// effect over us (the install still exits 0). In that tree the built CLI must
+// refuse to run with our clear error. The app there reached this version by
+// floating `^4.0.0-beta.93`; the fixture names it exactly so the shape stays
+// adversarial no matter what the registry publishes next.
+const ADVERSARIAL_NODE_SHARED = '4.0.0-beta.103';
+
 async function checkAdversarialShape(tarballs) {
   const label = 'adversarial-node-shared-float';
   const { appDir, status, output } = installApp(label, tarballs, {
-    '@effect/platform-node-shared': '^4.0.0-beta.93',
+    '@effect/platform-node-shared': ADVERSARIAL_NODE_SHARED,
   });
   if (status !== 0) {
     // Also acceptable: npm refuses the conflicted install outright — but ONLY
@@ -226,11 +230,12 @@ async function checkAdversarialShape(tarballs) {
   const { version: resolvedVersion } = effectSeenByAlchemy(label, appDir);
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion}\n`);
   if (resolvedVersion === pinnedEffect) {
-    process.stderr.write(
-      `[${label}] note: npm kept the pinned effect at alchemy's position — the shape is no ` +
-        'longer adversarial under this npm version\n',
+    fail(
+      `[${label}] this shape no longer produces a mismatch, so it proves nothing: ` +
+        `@effect/platform-node-shared@${ADVERSARIAL_NODE_SHARED} now agrees with our ` +
+        `effect@${pinnedEffect}. Point ADVERSARIAL_NODE_SHARED at a release whose effect peer ` +
+        'is newer than the pin.',
     );
-    return;
   }
 
   const cli = runCli(label, appDir, ['deploy', 'app.ts']);
@@ -250,9 +255,13 @@ async function checkAdversarialShape(tarballs) {
   // Every command loads the graph that crashes, so every command must hit the
   // check first — `--help` included, or the user meets the raw TypeError there.
   const help = runCli(label, appDir, ['--help']);
-  if (!help.output.includes(CLI_CHECK_MARKER) || /is not a function/.test(help.output)) {
+  if (
+    help.status === 0 ||
+    !help.output.includes(CLI_CHECK_MARKER) ||
+    /is not a function/.test(help.output)
+  ) {
     fail(
-      `[${label}] \`prisma-composer --help\` did not report the effect check in a broken tree ` +
+      `[${label}] \`prisma-composer --help\` did not fail with the effect check in a broken tree ` +
         `(exit ${help.status}):\n${help.output}`,
     );
   }

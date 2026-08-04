@@ -9,6 +9,7 @@ import {
   requiredEffectVersion,
   resolveEffectVersionFrom,
 } from '../check-effect-resolution.ts';
+import { CliError } from '../cli-error.ts';
 
 const tmpDirs: string[] = [];
 
@@ -155,6 +156,7 @@ describe('checkEffectResolution()', () => {
         dependencies: { effect: '4.0.0-beta.93' },
       }),
     );
+    expect(() => checkEffectResolution(root)).toThrow(CliError);
     expect(() => checkEffectResolution(root)).toThrow(
       /alchemy resolves effect@4\.0\.0-beta\.102, but @prisma\/composer requires effect@4\.0\.0-beta\.93/,
     );
@@ -175,6 +177,7 @@ describe('checkEffectResolution()', () => {
     );
     const nested = path.join(root, 'apps', 'my-app');
     fs.mkdirSync(nested, { recursive: true });
+    expect(() => checkEffectResolution(nested)).toThrow(CliError);
     expect(() => checkEffectResolution(nested)).toThrow(/Dependency conflict/);
   });
 });

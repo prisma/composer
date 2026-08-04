@@ -189,7 +189,7 @@ installed dependency tree gives alchemy (the deploy engine Composer drives)
 the exact `effect` version `@prisma/composer` pins. When it doesn't, the
 command stops immediately:
 
-```
+```text
 Error: Dependency conflict: alchemy resolves effect@<found>, but
 @prisma/composer requires effect@<required>. Your package manager installed a
 second effect that alchemy picks up; deploying with it would crash inside
