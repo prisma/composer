@@ -152,6 +152,7 @@ describe.skipIf(pg === undefined)('PnMigration reconcile routes through applyPnM
   const reconcile = (contractJson: unknown) =>
     pnMigrationProviderService.reconcile({
       id: 'db',
+      fqn: 'db',
       instanceId: 'db',
       news: {
         url,

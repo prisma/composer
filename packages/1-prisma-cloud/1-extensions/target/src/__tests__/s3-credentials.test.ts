@@ -19,6 +19,7 @@ import {
 const reconcile = (output: S3CredentialsAttributes | undefined) =>
   s3CredentialsProviderService.reconcile({
     id: 'creds',
+    fqn: 'creds',
     instanceId: 'creds',
     news: {},
     olds: output === undefined ? undefined : {},

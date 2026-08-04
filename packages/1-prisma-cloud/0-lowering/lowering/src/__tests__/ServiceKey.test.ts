@@ -17,6 +17,7 @@ import {
 const reconcile = (output: ServiceKeyAttributes | undefined) =>
   serviceKeyProviderService.reconcile({
     id: 'key',
+    fqn: 'key',
     instanceId: 'key',
     news: {},
     olds: output === undefined ? undefined : {},

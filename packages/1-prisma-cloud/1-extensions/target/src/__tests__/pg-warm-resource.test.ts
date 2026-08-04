@@ -34,6 +34,7 @@ describe.skipIf(pg === undefined)('PgWarm reconcile warms a real database', () =
   const reconcile = (url: string) =>
     pgWarmProviderService.reconcile({
       id: 'db',
+      fqn: 'db',
       instanceId: 'db',
       news: { url },
       olds: undefined,

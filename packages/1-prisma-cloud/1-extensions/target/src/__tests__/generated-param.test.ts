@@ -19,6 +19,7 @@ import { envSecret } from '../secret.ts';
 const reconcile = (bytes: number, output: GeneratedParamAttributes | undefined) =>
   generatedParamProviderService.reconcile({
     id: 'gen',
+    fqn: 'gen',
     instanceId: 'gen',
     news: { bytes },
     olds: output === undefined ? undefined : { bytes },
