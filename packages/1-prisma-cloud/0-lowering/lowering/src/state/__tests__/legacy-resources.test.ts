@@ -698,6 +698,41 @@ describe('legacy compute-family rows against upstream providers', () => {
     );
   });
 
+  test('an UPSTREAM-shaped DATABASE_URL row is left alone: the props shape, not the key, decides', () => {
+    // Upstream's own EnvironmentVariable rows carry the same type-id as the
+    // legacy ones, so only the props shape tells them apart. A live variable
+    // upstream manages must survive every state read untouched — retiring it
+    // would drop a real resource from state on each deploy.
+    const upstreamRow: CreatedResourceState = {
+      ...legacyEnvRow('DATABASE_URL'),
+      props: {
+        project: 'proj-1',
+        key: 'DATABASE_URL',
+        class: 'production',
+        value: Redacted.make('postgres://live'),
+      },
+      attr: {
+        environmentVariableId: 'var-9',
+        projectId: 'proj-1',
+        branchId: null,
+        class: 'production',
+        key: 'DATABASE_URL',
+        isManagedBySystem: false,
+      },
+    } as CreatedResourceState;
+    const migrated = migrateLegacyResourceState(upstreamRow) as MigratedRow;
+    expect(migrated['removalPolicy']).toBeUndefined();
+    expect(migrated.attr).toEqual({
+      environmentVariableId: 'var-9',
+      projectId: 'proj-1',
+      branchId: null,
+      class: 'production',
+      key: 'DATABASE_URL',
+      isManagedBySystem: false,
+    });
+    expect(migrated).toEqual(upstreamRow as unknown as MigratedRow);
+  });
+
   test('maps the unreleased PrismaComposer.* compute type-ids too', () => {
     const composerEra = {
       ...legacyAppRow('branch_1'),

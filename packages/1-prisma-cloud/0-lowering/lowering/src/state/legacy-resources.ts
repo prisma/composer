@@ -207,9 +207,15 @@ const retirePoisonRow = (row: Record<string, unknown>, key: string) => ({
   attr: { environmentVariableId: `dev:legacy-poison-${key}`, key },
 });
 
-/** The key a poison row named, from whichever half of the row still carries it. */
+/**
+ * The key a poison row named, from whichever half of the row still carries it
+ * — for LEGACY rows only. Upstream's own `EnvironmentVariable` rows share this
+ * type-id, so without the props-shape check a live, upstream-managed
+ * `DATABASE_URL` variable would be retired from state on every read.
+ */
 const poisonKeyOf = (family: Family, props: unknown, attr: unknown): string | undefined => {
   if (family !== 'EnvironmentVariable') return undefined;
+  if (!isRecord(props) || !isLegacyProps(family, props)) return undefined;
   const fromAttr = isRecord(attr) ? attr['key'] : undefined;
   const fromProps = isRecord(props) ? props['key'] : undefined;
   const key = typeof fromAttr === 'string' ? fromAttr : fromProps;
@@ -344,6 +350,7 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
             ...('attr' in old ? { attr: migrateAttr(family, old['attr'], old['props']) } : {}),
           };
   }
+
   return migrated;
 };
 
