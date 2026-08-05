@@ -37,6 +37,8 @@ interface FakeState {
   cursorStuck?: boolean;
   /** When set, the listing always reports hasMore with an ever-advancing nextCursor — pagination that never ends. */
   cursorRunaway?: boolean;
+  /** When set, the listing reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
+  cursorMissing?: boolean;
 }
 
 /** A stubbed Management API client — test file, exempt from the no-bare-cast rule. */
@@ -56,11 +58,13 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
           ? { nextCursor: String(offset), hasMore: true }
           : state.cursorRunaway === true
             ? { nextCursor: String(offset + 1), hasMore: true }
-            : {
-                nextCursor:
-                  offset + data.length < rows.length ? String(offset + data.length) : null,
-                hasMore: offset + data.length < rows.length,
-              };
+            : state.cursorMissing === true
+              ? { nextCursor: null, hasMore: true }
+              : {
+                  nextCursor:
+                    offset + data.length < rows.length ? String(offset + data.length) : null,
+                  hasMore: offset + data.length < rows.length,
+                };
       return {
         data: { data, pagination },
         error: undefined,
@@ -493,6 +497,18 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
           { client: fakeClient(state) },
         ),
       ).rejects.toThrow(/did not finish within 1000 pages/);
+    });
+
+    test('more pages reported without a cursor fails instead of accepting a partial listing', async () => {
+      state.pageSize = 1;
+      state.cursorMissing = true;
+
+      await expect(
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      ).rejects.toThrow(/reported more pages but returned no cursor/);
     });
   });
 });

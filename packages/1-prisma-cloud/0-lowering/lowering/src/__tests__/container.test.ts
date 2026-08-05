@@ -45,6 +45,8 @@ interface FakeState {
   projectsCursorStuck?: boolean;
   /** When set, GET /v1/projects always reports hasMore with an ever-advancing nextCursor — pagination that never ends. */
   projectsCursorRunaway?: boolean;
+  /** When set, GET /v1/projects reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
+  projectsCursorMissing?: boolean;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -96,6 +98,11 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
       if (state.projectsCursorRunaway === true) {
         return Promise.resolve(
           okResponse({ data, pagination: { nextCursor: String(offset + 1), hasMore: true } }),
+        );
+      }
+      if (state.projectsCursorMissing === true) {
+        return Promise.resolve(
+          okResponse({ data, pagination: { nextCursor: null, hasMore: true } }),
         );
       }
       const nextOffset = offset + data.length;
@@ -358,6 +365,27 @@ describe('resolveContainer — Project resolution', () => {
 
     expect(error).toBeInstanceOf(PrismaApiError);
     expect((error as PrismaApiError).message).toContain('did not finish within 1000 pages');
+  });
+
+  test('a project listing reporting more pages without a cursor fails instead of returning a partial listing', async () => {
+    state.projectsPageSize = 1;
+    state.projectsCursorMissing = true;
+    state.projects.push({
+      id: 'proj-1',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('pagination appears broken');
+    expect((error as PrismaApiError).message).toContain(
+      'reported more pages but returned no cursor',
+    );
   });
 });
 
