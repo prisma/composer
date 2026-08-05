@@ -37,17 +37,20 @@ fix. Reach for workarounds only after that check says otherwise.
 ## Why the versions move as a set
 
 `effect` and its companions — `@effect/platform-node`, `@effect/platform-bun`,
-`@effect/platform-node-shared`, `@effect/vitest` — each declare a peer on their
-**own exact version**:
+`@effect/platform-node-shared`, `@effect/vitest` — each declare a peer that is
+**floored at their own version**:
 
 ```jsonc
 // @effect/platform-bun@4.0.0-beta.103
 "peerDependencies": { "effect": "^4.0.0-beta.103" }
 ```
 
-So a companion one beta ahead of `effect` is unsatisfiable, and npm resolves it
-by installing a *second* `effect`. Every pin in this repo must name the same
-beta. Treat them as one constellation, never as individual bumps.
+That caret is a range, not an exact pin: it accepts `4.0.0-beta.104` and stable
+`4.x`, but nothing below `4.0.0-beta.103`. So an `effect` **older** than any
+companion in the tree is unsatisfiable, and npm resolves that by installing a
+*second* `effect`. Pinning every package in this repo to the same beta is the
+simple way to stay above every floor at once. Treat them as one constellation,
+never as individual bumps.
 
 alchemy sits on top with a deliberately loose range (`>=4.0.0-beta.100 ||
 >=4.0.0` at beta.67). That range is what lets a stray dependency drag a
@@ -72,6 +75,7 @@ tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
 
 1. **Pick the target.** Read alchemy's latest peer range, then choose the
    newest beta where *every* companion publishes a matching version:
+
    ```bash
    npm view alchemy dist-tags
    npm view alchemy@<version> peerDependencies
@@ -80,21 +84,29 @@ tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
      echo "$p $(npm view $p dist-tags.beta)"
    done
    ```
+
 2. **Find every pin.** They are spread across public packages, framework
    packages, examples, `test/integration`, and `website`:
+
    ```bash
    grep -rln '"alchemy"\|@effect/\|"effect"' --include=package.json . | grep -v node_modules
    ```
-3. **Bump all of them to the same versions**, then `pnpm install`. Nothing may
+
+3. **Clear the patch key first.** `pnpm.patchedDependencies` is keyed by the
+   exact version, so an alchemy bump leaves it pointing at a version that is no
+   longer installed and the next install fails or silently skips the patch.
+   Remove the entry now and re-create it in step 5 once you know whether it is
+   still needed.
+4. **Bump all of them to the same versions**, then `pnpm install`. Nothing may
    be left behind — a single stale companion reintroduces the second `effect`.
-4. **Revisit the patch** (see below). `patchedDependencies` is keyed by exact
-   version, so the old key is now wrong either way.
-5. **`pnpm typecheck`.** Expect real API breakage; see the classes below. Note
+5. **Decide the patch** (see below): typecheck without it, and only re-create
+   it against the new version if upstream still needs the fix.
+6. **`pnpm typecheck`.** Expect real API breakage; see the classes below. Note
    that turbo stops at the first failing package, so run `pnpm exec tsc
    --noEmit` per package to see the true scope.
-6. **`pnpm check:npm-effect-resolution`** (after building the two public
+7. **`pnpm check:npm-effect-resolution`** (after building the two public
    packages). This is the consumer-facing proof.
-7. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
+8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
 ## Breakage classes seen in practice
@@ -126,19 +138,23 @@ roughly twenty sites, and narrowing the argument type also destroys inference
 for the second argument, which surfaces a fresh wave of errors. Adding
 `| undefined` to the optional property fixes all of them at the source.
 
-On every upgrade, check whether upstream has fixed it:
+On every upgrade, check whether upstream has fixed it. With the
+`pnpm.patchedDependencies` entry already removed in step 3:
 
 ```bash
-# with patchedDependencies removed from the root package.json
 pnpm install && (cd packages/1-prisma-cloud/0-lowering/lowering && pnpm exec tsc --noEmit)
 ```
 
-Clean means delete the patch and the `pnpm.patchedDependencies` entry. Still
-failing means re-create it against the new version:
+Clean means the patch is obsolete: delete `patches/alchemy@<old>.patch` and
+leave the config entry out. Still failing means re-create it against the new
+version:
 
 ```bash
 pnpm patch alchemy@<version>   # edit lib/Resource.d.ts, then patch-commit
 ```
+
+At the time of writing this is still required: on alchemy 2.0.0-beta.67,
+`lowering` alone reports 17 errors without the patch and none with it.
 
 ## Keeping the regression check honest
 

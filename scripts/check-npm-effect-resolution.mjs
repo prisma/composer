@@ -12,13 +12,16 @@
 // this workspace only warns, so the break is invisible in-repo; this check
 // installs the real tarballs with real npm against the real registry.
 //
-// A third, adversarial shape reproduces the tree that broke 0.6.0 in the
-// field: the app ALSO depends on a `@effect/platform-node-shared` whose own
-// `effect` peer differs from our pin, dragging that `effect` to the root over
-// our exact pins, with only a warning (empirically verified; a peerDependency
-// does not prevent it either). Nothing we declare can stop that, so the
-// acceptance there is the CLI's own start-up check: running the built
-// `prisma-composer` in that broken tree must exit non-zero with our actionable
+// A third, adversarial shape puts an `effect` we did not pin where alchemy
+// resolves it. In the field (0.6.0) that happened by hoisting: an app
+// dependency whose own `effect` peer sat above our pin dragged its version to
+// the root over our exact pins, with only a warning — empirically verified,
+// and a peerDependency does not prevent it either. This shape builds the same
+// end state with an npm `override` instead, because the hoisting route only
+// reproduces while a suitable release exists relative to our pin, which made
+// the check hostage to the registry. Nothing we declare can stop a consumer's
+// tree going wrong, so the acceptance is the CLI's own start-up check: running
+// the built `prisma-composer` there must exit non-zero with our actionable
 // error rather than crashing inside alchemy. The healthy shapes assert the
 // inverse: the check must NOT trip on a good tree, and the built bin must
 // still start — which is what proves the resolved `effect` genuinely satisfies
