@@ -31,6 +31,14 @@ interface FakeState {
   posts: Record<string, unknown>[];
   rows: Row[];
   postStatus: number;
+  /** Page size for the env-var listing — unset serves everything in one page. */
+  pageSize?: number;
+  /** When set, the listing reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
+  cursorStuck?: boolean;
+  /** When set, the listing always reports hasMore with an ever-advancing nextCursor — pagination that never ends. */
+  cursorRunaway?: boolean;
+  /** When set, the listing reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
+  cursorMissing?: boolean;
 }
 
 /** A stubbed Management API client — test file, exempt from the no-bare-cast rule. */
@@ -42,8 +50,23 @@ const fakeClient = (state: FakeState): ManagementApiClient =>
       const rows = state.rows.filter(
         (r) => r.projectId === q['projectId'] && r.class === q['class'] && r.key === q['key'],
       );
+      const offset = q['cursor'] === undefined ? 0 : Number(q['cursor']);
+      const pageSize = state.pageSize ?? rows.length;
+      const data = rows.slice(offset, offset + pageSize);
+      const pagination =
+        state.cursorStuck === true
+          ? { nextCursor: String(offset), hasMore: true }
+          : state.cursorRunaway === true
+            ? { nextCursor: String(offset + 1), hasMore: true }
+            : state.cursorMissing === true
+              ? { nextCursor: null, hasMore: true }
+              : {
+                  nextCursor:
+                    offset + data.length < rows.length ? String(offset + data.length) : null,
+                  hasMore: offset + data.length < rows.length,
+                };
       return {
-        data: { data: rows, pagination: { nextCursor: null, hasMore: false } },
+        data: { data, pagination },
         error: undefined,
         response: new Response(null, { status: 200 }),
       };
@@ -431,5 +454,61 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(state.gets).toEqual([]);
     expect(state.posts).toEqual([]);
+  });
+
+  describe('env-var listing pagination (bounded — drivePagesAsync)', () => {
+    test('a visible row beyond the first page still counts as present', async () => {
+      state.pageSize = 1;
+      state.rows = [
+        { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: 'br-other' },
+        { projectId: 'proj', class: 'preview', key: 'STRIPE_SECRET_KEY', branchId: null },
+      ];
+
+      await runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'pr-1' },
+        { client: fakeClient(state) },
+      );
+
+      expect(state.gets).toHaveLength(2);
+      expect(state.posts).toEqual([]);
+    });
+
+    test('a non-advancing cursor fails as broken pagination instead of looping', async () => {
+      // No matching rows: every page is empty, so the search never
+      // short-circuits and the stuck cursor is what ends it.
+      state.pageSize = 1;
+      state.cursorStuck = true;
+
+      await expect(
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      ).rejects.toThrow(/pagination appears broken.*possibly incomplete listing/);
+    });
+
+    test('pagination that never ends fails at the page cap instead of hanging', async () => {
+      state.pageSize = 1;
+      state.cursorRunaway = true;
+
+      await expect(
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      ).rejects.toThrow(/did not finish within 1000 pages/);
+    });
+
+    test('more pages reported without a cursor fails instead of accepting a partial listing', async () => {
+      state.pageSize = 1;
+      state.cursorMissing = true;
+
+      await expect(
+        runPreflight(
+          { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+          { client: fakeClient(state) },
+        ),
+      ).rejects.toThrow(/reported more pages but returned no cursor/);
+    });
   });
 });

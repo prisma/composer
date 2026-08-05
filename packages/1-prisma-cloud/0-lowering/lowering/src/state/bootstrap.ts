@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import { type ManagementApiClient, ManagementClient } from '../client.ts';
 import type { ResolvedContainer } from '../container.ts';
 import { call, callVoid, PrismaApiError } from '../http.ts';
+import { collectPages } from '../pagination.ts';
 import {
   CONNECTION_NAME_PREFIX,
   createConnection,
@@ -74,22 +75,13 @@ const listAllConnections = (
   client: ManagementApiClient,
   databaseId: string,
 ): Effect.Effect<readonly ConnectionSummary[], PrismaApiError> =>
-  Effect.gen(function* () {
-    const connections: ConnectionSummary[] = [];
-    let cursor: string | undefined;
-    for (;;) {
-      const query = cursor === undefined ? {} : { cursor };
-      const page = yield* call(() =>
-        client.GET('/v1/databases/{databaseId}/connections', {
-          params: { path: { databaseId }, query },
-        }),
-      );
-      connections.push(...page.data);
-      if (!page.pagination.hasMore || page.pagination.nextCursor === null) break;
-      cursor = page.pagination.nextCursor;
-    }
-    return connections;
-  });
+  collectPages(`connections of database ${databaseId}`, (cursor) =>
+    call(() =>
+      client.GET('/v1/databases/{databaseId}/connections', {
+        params: { path: { databaseId }, query: cursor === undefined ? {} : { cursor } },
+      }),
+    ),
+  );
 
 const deleteConnection = (
   client: ManagementApiClient,

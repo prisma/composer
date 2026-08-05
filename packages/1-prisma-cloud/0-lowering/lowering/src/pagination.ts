@@ -33,10 +33,11 @@ export const collectPages = <T>(
 
 /**
  * Drives a cursor-paginated Management API listing with a guard against
- * broken pagination: a cursor that does not advance, or more than
- * {@link MAX_PAGES} pages, FAILS instead of hanging forever or returning a
- * listing known to be incomplete. `onPage` receives each page's rows as they
- * arrive; returning `true` stops early (the caller found what it wanted).
+ * broken pagination: a cursor that does not advance, more pages reported
+ * without a cursor to fetch them with, or more than {@link MAX_PAGES} pages,
+ * FAILS instead of hanging forever or returning a listing known to be
+ * incomplete. `onPage` receives each page's rows as they arrive; returning
+ * `true` stops early (the caller found what it wanted).
  */
 export const drivePages = <T>(
   description: string,
@@ -53,8 +54,13 @@ export const drivePages = <T>(
       }
       const page = yield* fetchPage(cursor);
       if (onPage(page.data)) return;
+      if (!page.pagination.hasMore) return;
       const next = page.pagination.nextCursor;
-      if (!page.pagination.hasMore || next === null) return;
+      if (next === null) {
+        return yield* Effect.fail(
+          brokenPaginationError(description, 'reported more pages but returned no cursor'),
+        );
+      }
       if (next === cursor) {
         return yield* Effect.fail(
           brokenPaginationError(description, 'returned a non-advancing cursor'),
@@ -63,3 +69,35 @@ export const drivePages = <T>(
       cursor = next;
     }
   });
+
+/**
+ * {@link drivePages} for Promise-based callers (e.g. target's preflight,
+ * which speaks the SDK's `{data, error}` shape directly). Same guard, same
+ * errors; deliberately a sibling loop rather than a wrapper, because routing
+ * a Promise fetch through Effect and back (`Effect.tryPromise` +
+ * `runPromise`) would re-wrap the caller's own thrown errors. `fetchPage`
+ * rejections propagate untouched.
+ */
+export async function drivePagesAsync<T>(
+  description: string,
+  fetchPage: (cursor: string | undefined) => Promise<Page<T>>,
+  onPage: (data: readonly T[]) => boolean,
+): Promise<void> {
+  let cursor: string | undefined;
+  for (let pageCount = 0; ; pageCount++) {
+    if (pageCount >= MAX_PAGES) {
+      throw brokenPaginationError(description, `did not finish within ${String(MAX_PAGES)} pages`);
+    }
+    const page = await fetchPage(cursor);
+    if (onPage(page.data)) return;
+    if (!page.pagination.hasMore) return;
+    const next = page.pagination.nextCursor;
+    if (next === null) {
+      throw brokenPaginationError(description, 'reported more pages but returned no cursor');
+    }
+    if (next === cursor) {
+      throw brokenPaginationError(description, 'returned a non-advancing cursor');
+    }
+    cursor = next;
+  }
+}
