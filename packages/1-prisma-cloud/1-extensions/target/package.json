@@ -35,9 +35,9 @@
     "@prisma-next/postgres": "0.16.0",
     "@prisma-next/sql-contract": "0.16.0",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.59",
+    "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
-    "effect": "4.0.0-beta.93",
+    "effect": "4.0.0-beta.103",
     "pathe": "^2.0.3",
     "pg": "8.22.0"
   },

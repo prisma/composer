@@ -46,9 +46,8 @@ export const isColdStartConnectError = (error: unknown): boolean => {
 };
 
 /** The same ~2-minute budget the bootstrap migration uses (`layer.ts`): retry every 5s, up to 2 minutes. */
-const COLD_START_SCHEDULE = Schedule.both(
-  Schedule.spaced('5 seconds'),
-  Schedule.during('2 minutes'),
+const COLD_START_SCHEDULE = Schedule.spaced('5 seconds').pipe(
+  Schedule.upTo({ duration: '2 minutes' }),
 );
 
 /**

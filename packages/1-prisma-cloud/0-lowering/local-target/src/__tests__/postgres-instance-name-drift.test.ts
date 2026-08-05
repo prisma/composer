@@ -88,6 +88,7 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const databaseAttributes = await Effect.runPromise(
           databaseService.reconcile({
             id: 'db',
+            fqn: 'db',
             instanceId: 'db',
             news: { projectId: 'p', name: DATABASE_ID, region: 'us-east-1' },
             olds: undefined,
@@ -114,6 +115,7 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const connectionAttributes = await Effect.runPromise(
           connectionService.reconcile({
             id: 'conn',
+            fqn: 'conn',
             instanceId: 'conn',
             news: { databaseId: databaseAttributes.id, name: 'conn' },
             olds: undefined,
@@ -158,6 +160,7 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const databaseAttributes = await Effect.runPromise(
           databaseService.reconcile({
             id: 'db',
+            fqn: 'db',
             instanceId: 'db',
             news: { projectId: 'p', name: DOTTED_ID, region: 'us-east-1' },
             olds: undefined,
@@ -178,6 +181,7 @@ describe('instance-name drift (delta review finding A, #160)', () => {
         const connectionAttributes = await Effect.runPromise(
           connectionService.reconcile({
             id: 'conn',
+            fqn: 'conn',
             instanceId: 'conn',
             news: { databaseId: databaseAttributes.id, name: 'conn' },
             olds: undefined,

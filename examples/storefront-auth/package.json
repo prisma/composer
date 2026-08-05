@@ -11,14 +11,14 @@
     "test": "bun test module.test.ts"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.0-beta.97",
+    "@effect/platform-bun": "4.0.0-beta.103",
     "@prisma/composer": "workspace:0.6.0",
     "@prisma/composer-prisma-cloud": "workspace:0.6.0",
     "@storefront-auth/auth": "workspace:0.6.0",
     "@storefront-auth/storefront": "workspace:0.6.0",
-    "alchemy": "2.0.0-beta.59",
+    "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
-    "effect": "4.0.0-beta.93"
+    "effect": "4.0.0-beta.103"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.6.0",

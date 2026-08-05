@@ -21,9 +21,8 @@ export const isDeleteNotSafeYet = (error: PrismaApiError): boolean =>
  * for the platform to finish stopping the deployment, short enough to still
  * fail loudly (rather than hang forever) if it never does.
  */
-export const deleteSafeRetrySchedule = Schedule.both(
-  Schedule.exponential('2 seconds', 2),
-  Schedule.during('5 minutes'),
+export const deleteSafeRetrySchedule = Schedule.exponential('2 seconds', 2).pipe(
+  Schedule.upTo({ duration: '5 minutes' }),
 );
 
 /** Every region Prisma Compute serves — the runtime source of truth; `ComputeRegion` is derived from it so the two can never drift. */

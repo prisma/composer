@@ -1,0 +1,13 @@
+diff --git a/lib/Resource.d.ts b/lib/Resource.d.ts
+index 4ddd84f22ded4d39f6690da7bffe19de527a2db8..e7b23ba27bf4c3837690acb9b866f56c0264a772 100644
+--- a/lib/Resource.d.ts
++++ b/lib/Resource.d.ts
+@@ -35,7 +35,7 @@ export interface ResourceClassLike<R extends ResourceLike> {
+      * `ProviderService` by `Provider.succeed`/`Provider.effect` so provider
+      * lookup can resolve state persisted under a pre-rename type.
+      */
+-    Aliases?: readonly string[];
++    Aliases?: readonly string[] | undefined;
+ }
+ export type ResourceClass<R extends ResourceLike> = ResourceConstructor<R, R["Providers"] extends undefined ? Provider<R> : R["Providers"]> & Effect.Effect<ResourceConstructor<R>> & {
+     Self: Self<R>;

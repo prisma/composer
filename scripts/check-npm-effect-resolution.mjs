@@ -1,28 +1,31 @@
 #!/usr/bin/env node
 // Regression check for TML-3158: a standalone `npm install` of the public
 // packages must resolve exactly ONE `effect` — the version the packages pin —
-// and alchemy's position in the tree must resolve that copy (with
-// `Schedule.either`, removed in later betas, still present).
+// and alchemy's position in the tree must resolve that copy.
 //
 // Why: alchemy declares floating ranges on the effect ecosystem
-// (`@effect/vitest`, optional platform peers, `effect` itself as
-// `>=4.0.0-beta.84 || >=4.0.0`). Without exact, mutually consistent pins of
-// the whole constellation in the public packages, npm installs a second,
-// newer `effect` and hoists it where alchemy resolves it — the first
-// `prisma-composer deploy` then dies with
-// `TypeError: Schedule.either is not a function`. pnpm in this workspace only
-// warns, so the break is invisible in-repo; this check installs the real
-// tarballs with real npm against the real registry.
+// (`@effect/vitest`, optional platform peers, `effect` itself). Without exact,
+// mutually consistent pins of the whole constellation in the public packages,
+// npm installs a second `effect` and hoists it where alchemy resolves it — the
+// first `prisma-composer deploy` then dies inside a provider it never asked
+// for, with a `TypeError` naming a combinator that version removed. pnpm in
+// this workspace only warns, so the break is invisible in-repo; this check
+// installs the real tarballs with real npm against the real registry.
 //
-// A third, adversarial shape reproduces the tree that broke 0.6.0 in the
-// field: the app ALSO depends on `@effect/platform-node-shared@^4.0.0-beta.93`,
-// which npm floats to the newest beta, dragging its newer `effect` peer to the
-// root — over our exact pins, with only a warning (empirically verified; a
-// peerDependency does not prevent it either). Nothing we declare can stop
-// that, so the acceptance there is the CLI's own start-up check: running the
-// built `prisma-composer` in that broken tree must exit non-zero with our
-// actionable error, not the Schedule TypeError. The healthy shapes assert the
-// inverse: the check must NOT trip on a good tree.
+// A third, adversarial shape puts an `effect` we did not pin where alchemy
+// resolves it. In the field (0.6.0) that happened by hoisting: an app
+// dependency whose own `effect` peer sat above our pin dragged its version to
+// the root over our exact pins, with only a warning — empirically verified,
+// and a peerDependency does not prevent it either. This shape builds the same
+// end state with an npm `override` instead, because the hoisting route only
+// reproduces while a suitable release exists relative to our pin, which made
+// the check hostage to the registry. Nothing we declare can stop a consumer's
+// tree going wrong, so the acceptance is the CLI's own start-up check: running
+// the built `prisma-composer` there must exit non-zero with our actionable
+// error rather than crashing inside alchemy. The healthy shapes assert the
+// inverse: the check must NOT trip on a good tree, and the built bin must
+// still start — which is what proves the resolved `effect` genuinely satisfies
+// alchemy, since starting loads alchemy's provider tree.
 //
 // Requires the two public packages to be built (`pnpm turbo build
 // --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud`) and
@@ -43,7 +46,7 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
@@ -100,12 +103,17 @@ function collectEffectVersions(node, found = new Map()) {
 const CLI_CHECK_MARKER = 'alchemy resolves effect@';
 
 /** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
-function installApp(label, tarballs, extraDependencies = {}) {
+function installApp(label, tarballs, extraDependencies = {}, overrides = undefined) {
   const appDir = join(work, label);
   mkdirSync(appDir, { recursive: true });
   writeFileSync(
     join(appDir, 'package.json'),
-    JSON.stringify({ name: label, private: true, dependencies: extraDependencies }),
+    JSON.stringify({
+      name: label,
+      private: true,
+      dependencies: extraDependencies,
+      ...(overrides === undefined ? {} : { overrides }),
+    }),
   );
   process.stderr.write(`\n[${label}] npm install ${tarballs.length} tarball(s)...\n`);
   const result = spawnSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
@@ -180,10 +188,11 @@ async function checkShape(label, tarballs) {
     fail(`[${label}] alchemy resolves effect@${resolvedVersion}, expected ${pinnedEffect}`);
   }
 
-  const { Schedule } = await import(pathToFileURL(effectEntry).href);
-  if (typeof Schedule.either !== 'function') {
-    fail(`[${label}] Schedule.either is missing from the effect alchemy resolves`);
-  }
+  // Proof the resolved effect actually satisfies alchemy, not just that the
+  // version string matches: importing the bin loads alchemy's provider tree,
+  // which is where a wrong effect blows up. `assertCliStarts` below does that
+  // against the built bin — a stronger check than probing for any single
+  // combinator, which only ever stood in for "alchemy can run on this".
 
   // Positive proof the CLI actually starts in this healthy tree — without it,
   // "the failure marker is absent" would also hold for a CLI that never ran.
@@ -200,22 +209,25 @@ async function checkShape(label, tarballs) {
     fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${cli.output}`);
   }
 
-  process.stderr.write(`[${label}] OK — single effect@${pinnedEffect}, Schedule.either present\n`);
+  process.stderr.write(
+    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, CLI starts\n`,
+  );
 }
 
-// The reported chain: an app dependency on `@effect/platform-node-shared`
-// whose own `effect` peer is newer than our pin, so npm hoists that newer
-// effect over us (the install still exits 0). In that tree the built CLI must
-// refuse to run with our clear error. The app there reached this version by
-// floating `^4.0.0-beta.93`; the fixture names it exactly so the shape stays
-// adversarial no matter what the registry publishes next.
-const ADVERSARIAL_NODE_SHARED = '4.0.0-beta.103';
+/**
+ * A published `effect` that is NOT our pin. In the field the wrong copy arrived
+ * by hoisting — an app dependency whose own `effect` peer differed from ours
+ * dragged its version to the root. That mechanism only reproduces while a
+ * suitable release exists relative to wherever our pin sits, which made the
+ * test hostage to the registry. This shape builds the same end state directly,
+ * with an override, so it keeps proving the thing that matters: when alchemy
+ * resolves an `effect` we did not pin, the CLI says so instead of crashing.
+ */
+const WRONG_EFFECT = '4.0.0-beta.93';
 
 async function checkAdversarialShape(tarballs) {
-  const label = 'adversarial-node-shared-float';
-  const { appDir, status, output } = installApp(label, tarballs, {
-    '@effect/platform-node-shared': ADVERSARIAL_NODE_SHARED,
-  });
+  const label = 'adversarial-wrong-effect';
+  const { appDir, status, output } = installApp(label, tarballs, {}, { effect: WRONG_EFFECT });
   if (status !== 0) {
     // Also acceptable: npm refuses the conflicted install outright — but ONLY
     // when it actually failed on the dependency conflict. Any other failure
@@ -231,10 +243,9 @@ async function checkAdversarialShape(tarballs) {
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion}\n`);
   if (resolvedVersion === pinnedEffect) {
     fail(
-      `[${label}] this shape no longer produces a mismatch, so it proves nothing: ` +
-        `@effect/platform-node-shared@${ADVERSARIAL_NODE_SHARED} now agrees with our ` +
-        `effect@${pinnedEffect}. Point ADVERSARIAL_NODE_SHARED at a release whose effect peer ` +
-        'is newer than the pin.',
+      `[${label}] the override did not take: alchemy still resolves our pinned ` +
+        `effect@${pinnedEffect}, so this shape proves nothing. Point WRONG_EFFECT at a ` +
+        'published version other than the pin.',
     );
   }
 
