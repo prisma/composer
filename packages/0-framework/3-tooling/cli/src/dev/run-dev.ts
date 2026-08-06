@@ -7,7 +7,7 @@
  * converge, attach, watch loop) lives in the operation.
  */
 import { CliError } from '../cli-error.ts';
-import { dev } from '../operations/dev.ts';
+import { devWithDeps } from '../operations/dev.ts';
 import type { OperationDeps } from '../operations/shared.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `dev` command. */
@@ -46,46 +46,48 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   // lines are held back until the hint has printed.
   let hintPrinted = false;
   const pendingUnwatchable: string[] = [];
-  const result = await dev({
-    entry: args.entry,
-    name: args.name,
-    fresh: args.fresh,
-    onEvent: (event) => {
-      switch (event.kind) {
-        case 'ready':
-          printFrontDoor(event.endpoints);
-          break;
-        case 'unwatchable': {
-          const line = `[dev] ${event.address} has no watchable inputs`;
-          if (hintPrinted) console.log(line);
-          else pendingUnwatchable.push(line);
-          break;
+  const result = await devWithDeps(
+    {
+      entry: args.entry,
+      name: args.name,
+      fresh: args.fresh,
+      onEvent: (event) => {
+        switch (event.kind) {
+          case 'ready':
+            printFrontDoor(event.endpoints);
+            break;
+          case 'unwatchable': {
+            const line = `[dev] ${event.address} has no watchable inputs`;
+            if (hintPrinted) console.log(line);
+            else pendingUnwatchable.push(line);
+            break;
+          }
+          case 'converge-failed':
+            console.error('[dev] converge failed — the running app is untouched; still watching.');
+            console.error(`\nGenerated stack file: ${event.stackFilePath}`);
+            console.error(
+              `Run \`${event.reproduceCommand}\` from ${event.cwd} to reproduce this directly.`,
+            );
+            break;
+          case 'rebuild-failed':
+            console.error(`[dev] rebuild failed: ${event.message}`);
+            break;
+          case 'watch-error':
+            console.error(`[dev] watch error: ${event.message}`);
+            break;
+          case 'stopping':
+            console.log(
+              "[dev] stopping — the app's services are stopping; emulators and data stay up.",
+            );
+            break;
+          case 'stopped':
+            console.log('[dev] stopped.');
+            break;
         }
-        case 'converge-failed':
-          console.error('[dev] converge failed — the running app is untouched; still watching.');
-          console.error(`\nGenerated stack file: ${event.stackFilePath}`);
-          console.error(
-            `Run \`${event.reproduceCommand}\` from ${event.cwd} to reproduce this directly.`,
-          );
-          break;
-        case 'rebuild-failed':
-          console.error(`[dev] rebuild failed: ${event.message}`);
-          break;
-        case 'watch-error':
-          console.error(`[dev] watch error: ${event.message}`);
-          break;
-        case 'stopping':
-          console.log(
-            "[dev] stopping — the app's services are stopping; emulators and data stay up.",
-          );
-          break;
-        case 'stopped':
-          console.log('[dev] stopped.');
-          break;
-      }
+      },
     },
     deps,
-  });
+  );
 
   if (result.outcome === 'failed') {
     const failure = result.failure;

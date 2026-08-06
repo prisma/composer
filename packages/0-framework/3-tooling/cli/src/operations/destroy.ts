@@ -24,7 +24,6 @@ export interface DestroyInput {
   readonly cwd?: string | undefined;
   /** Mid-operation notifications, in real time. Rendering is the host's. */
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
-  readonly deps?: OperationDeps | undefined;
 }
 
 export type DestroyResult =
@@ -32,6 +31,16 @@ export type DestroyResult =
   | { readonly outcome: 'failed'; readonly failure: OperationFailure };
 
 export async function destroy(input: DestroyInput): Promise<DestroyResult> {
+  return destroyWithDeps(input, {});
+}
+
+/** In-package variant threading the injection seam (the CLI's RunDeps, unit
+ * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
+ * internal types and is not part of the published surface. */
+export async function destroyWithDeps(
+  input: DestroyInput,
+  deps: OperationDeps,
+): Promise<DestroyResult> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
@@ -39,5 +48,5 @@ export async function destroy(input: DestroyInput): Promise<DestroyResult> {
   } catch (error) {
     return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
   }
-  return executor.executeDestroy(input, cwd);
+  return executor.executeDestroy(input, deps, cwd);
 }

@@ -22,11 +22,10 @@ export type LogEvent =
    * `count` oldest lines were dropped since the last delivered line. */
   | { readonly kind: 'lines-dropped'; readonly count: number };
 
-/**
- * @internal Test seam — lets the CLI's own tests drive `log` without a real
- * config evaluation or entry module. No stability guarantee.
- */
+/** The log operation's in-package injection seam (the CLI's LogRunDeps, unit
+ * tests) — threaded through logWithDeps, never part of the published surface. */
 export interface LogDeps {
+  /** Substituted for the c12 evaluation of the discovered config file (discovery still runs). */
   readonly config?: PrismaAppConfig | undefined;
   /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
   readonly identity?: AppIdentity | undefined;
@@ -44,7 +43,6 @@ export interface LogInput {
   /** Ends the stream when aborted. The host owns SIGINT/SIGTERM → abort. */
   readonly signal?: AbortSignal | undefined;
   readonly onEvent?: ((event: LogEvent) => void) | undefined;
-  readonly deps?: LogDeps | undefined;
 }
 
 export type LogResult =
@@ -61,6 +59,13 @@ export type LogResult =
   | { readonly outcome: 'failed'; readonly failure: OperationFailure };
 
 export async function log(input: LogInput): Promise<LogResult> {
+  return logWithDeps(input, {});
+}
+
+/** In-package variant threading the injection seam (the CLI's LogRunDeps,
+ * unit tests). Deliberately NOT re-exported through `./control` — the seam
+ * mirrors internal types and is not part of the published surface. */
+export async function logWithDeps(input: LogInput, deps: LogDeps): Promise<LogResult> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-log.ts');
   try {
@@ -68,5 +73,5 @@ export async function log(input: LogInput): Promise<LogResult> {
   } catch (error) {
     return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
   }
-  return executor.executeLog(input, cwd);
+  return executor.executeLog(input, deps, cwd);
 }

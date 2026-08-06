@@ -18,7 +18,6 @@ export interface DeployInput {
   readonly stage?: string | undefined;
   /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
   readonly cwd?: string | undefined;
-  readonly deps?: OperationDeps | undefined;
 }
 
 export type DeployResult =
@@ -31,6 +30,16 @@ export type DeployResult =
   | { readonly outcome: 'failed'; readonly failure: OperationFailure };
 
 export async function deploy(input: DeployInput): Promise<DeployResult> {
+  return deployWithDeps(input, {});
+}
+
+/** In-package variant threading the injection seam (the CLI's RunDeps, unit
+ * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
+ * internal types and is not part of the published surface. */
+export async function deployWithDeps(
+  input: DeployInput,
+  deps: OperationDeps,
+): Promise<DeployResult> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
@@ -38,5 +47,5 @@ export async function deploy(input: DeployInput): Promise<DeployResult> {
   } catch (error) {
     return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
   }
-  return executor.executeDeploy(input, cwd);
+  return executor.executeDeploy(input, deps, cwd);
 }

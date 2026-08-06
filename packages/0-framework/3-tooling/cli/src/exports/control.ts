@@ -20,11 +20,10 @@ export type {
 export { destroy } from '../operations/destroy.ts';
 export type { DevEvent, DevInput, DevSession, DevStartResult } from '../operations/dev.ts';
 export { dev } from '../operations/dev.ts';
-export type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from '../operations/log.ts';
+export type { LogEvent, LogInput, LogLine, LogResult } from '../operations/log.ts';
 export { log } from '../operations/log.ts';
 export type {
   ExecutionDiagnostics,
-  OperationDeps,
   OperationFailure,
   ServiceEndpoint,
 } from '../operations/shared.ts';

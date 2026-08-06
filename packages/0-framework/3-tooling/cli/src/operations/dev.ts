@@ -39,7 +39,6 @@ export interface DevInput {
   readonly fresh?: boolean | undefined;
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
-  readonly deps?: OperationDeps | undefined;
 }
 
 /** A running dev session. The operation NEVER touches process signal handlers —
@@ -60,6 +59,13 @@ export type DevStartResult =
   | { readonly outcome: 'failed'; readonly failure: OperationFailure };
 
 export async function dev(input: DevInput): Promise<DevStartResult> {
+  return devWithDeps(input, {});
+}
+
+/** In-package variant threading the injection seam (the CLI's RunDeps, unit
+ * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
+ * internal types and is not part of the published surface. */
+export async function devWithDeps(input: DevInput, deps: OperationDeps): Promise<DevStartResult> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-dev.ts');
   try {
@@ -67,5 +73,5 @@ export async function dev(input: DevInput): Promise<DevStartResult> {
   } catch (error) {
     return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
   }
-  return executor.executeDev(input, cwd);
+  return executor.executeDev(input, deps, cwd);
 }

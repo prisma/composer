@@ -7,8 +7,8 @@ import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
 import { runDev } from './dev/run-dev.ts';
 import { runLog } from './log/run-log.ts';
-import { deploy } from './operations/deploy.ts';
-import { type DestroyTarget, destroy } from './operations/destroy.ts';
+import { deployWithDeps } from './operations/deploy.ts';
+import { type DestroyTarget, destroyWithDeps } from './operations/destroy.ts';
 import type { OperationDeps, OperationFailure } from './operations/shared.ts';
 
 const BINARY_NAME = 'prisma-composer';
@@ -268,12 +268,10 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
         '--production is only valid with `destroy`; `deploy` targets production by default (omit --stage).',
       );
     }
-    const result = await deploy({
-      entry: args.entry,
-      name: args.name,
-      stage: args.stage,
+    const result = await deployWithDeps(
+      { entry: args.entry, name: args.name, stage: args.stage },
       deps,
-    });
+    );
     if (result.outcome === 'deployed') return 0;
     return renderDeployDestroyFailure(result.failure);
   }
@@ -290,20 +288,22 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   const target: DestroyTarget =
     args.stage !== undefined ? { kind: 'stage', stage: args.stage } : { kind: 'production' };
 
-  const result = await destroy({
-    entry: args.entry,
-    name: args.name,
-    target,
-    onEvent: (event) => {
-      if (event.kind === 'no-local-deploy-state') {
-        console.warn(
-          `\nNo prior deploy state under ${event.cwd} — if you deployed from a different directory, run ` +
-            'destroy from there; otherwise this is a no-op.',
-        );
-      }
+  const result = await destroyWithDeps(
+    {
+      entry: args.entry,
+      name: args.name,
+      target,
+      onEvent: (event) => {
+        if (event.kind === 'no-local-deploy-state') {
+          console.warn(
+            `\nNo prior deploy state under ${event.cwd} — if you deployed from a different directory, run ` +
+              'destroy from there; otherwise this is a no-op.',
+          );
+        }
+      },
     },
     deps,
-  });
+  );
   if (result.outcome === 'destroyed') return 0;
   return renderDeployDestroyFailure(result.failure);
 }

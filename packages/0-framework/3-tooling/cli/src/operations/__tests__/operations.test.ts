@@ -25,10 +25,10 @@ import { CliError } from '../../cli-error.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { RunAlchemyInput } from '../../run-alchemy.ts';
-import { deploy } from '../deploy.ts';
-import { destroy } from '../destroy.ts';
-import { dev } from '../dev.ts';
-import { type LogLine, log } from '../log.ts';
+import { deployWithDeps } from '../deploy.ts';
+import { destroyWithDeps } from '../destroy.ts';
+import { devWithDeps } from '../dev.ts';
+import { type LogLine, logWithDeps } from '../log.ts';
 
 const tmpDirs: string[] = [];
 
@@ -203,11 +203,13 @@ describe('deploy()', () => {
     const calls: RunAlchemyInput[] = [];
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: (input) => {
@@ -217,7 +219,7 @@ describe('deploy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(calls).toHaveLength(1);
@@ -229,12 +231,14 @@ describe('deploy()', () => {
     const app = makeAppDir('hello-ops');
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
-      }),
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+      ),
     );
 
     expect(result).toEqual({ outcome: 'deployed', summary: undefined });
@@ -244,11 +248,13 @@ describe('deploy()', () => {
     const app = makeAppDir('hello-ops');
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: (input) => {
@@ -257,7 +263,7 @@ describe('deploy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(result).toEqual({ outcome: 'deployed', summary: undefined });
@@ -270,11 +276,13 @@ describe('deploy()', () => {
     let existedAtSpawn: boolean | undefined;
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: () => {
@@ -282,7 +290,7 @@ describe('deploy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(existedAtSpawn).toBe(false);
@@ -294,16 +302,18 @@ describe('deploy()', () => {
     const containerCalls: ContainerCall[] = [];
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'bad..ref',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'bad..ref',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig({}, { calls: containerCalls }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         },
-      }),
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -318,11 +328,13 @@ describe('deploy()', () => {
     const app = makeAppDir('no-config', { config: false });
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        cwd: app.dir,
-        deps: { runAssembler: fakeAssembler, alchemy: () => 0 },
-      }),
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        { runAssembler: fakeAssembler, alchemy: () => 0 },
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -337,11 +349,13 @@ describe('deploy()', () => {
     let alchemyRan = false;
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig({
             preflight: async () => {
               throw new Error('SECRET_X is not provisioned');
@@ -353,7 +367,7 @@ describe('deploy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -368,12 +382,14 @@ describe('deploy()', () => {
     const app = makeAppDir();
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 42 },
-      }),
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 42 },
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -396,11 +412,13 @@ describe('deploy()', () => {
     let alchemyRan = false;
 
     const result = await silently(() =>
-      deploy({
-        entry: app.entryPath,
-        stage: 'ci-7',
-        cwd: app.dir,
-        deps: {
+      deployWithDeps(
+        {
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: () => {
@@ -408,7 +426,7 @@ describe('deploy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -505,16 +523,18 @@ describe('destroy()', () => {
       const containerCalls: ContainerCall[] = [];
 
       const result = await silently(() =>
-        destroy({
-          entry: app.entryPath,
-          target,
-          cwd: app.dir,
-          deps: {
+        destroyWithDeps(
+          {
+            entry: app.entryPath,
+            target,
+            cwd: app.dir,
+          },
+          {
             config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' }),
             runAssembler: fakeAssembler,
             alchemy: () => 0,
           },
-        }),
+        ),
       );
 
       expect(result).toEqual({ outcome: 'destroyed' });
@@ -531,16 +551,18 @@ describe('destroy()', () => {
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
 
     const result = await silently(() =>
-      destroy({
-        entry: app.entryPath,
-        target: { kind: 'stage', stage: 'staging' },
-        cwd: app.dir,
-        deps: {
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig({}, { notFound: true }),
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         },
-      }),
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -558,11 +580,13 @@ describe('destroy()', () => {
     const order: string[] = [];
 
     const result = await silently(() =>
-      destroy({
-        entry: app.entryPath,
-        target: { kind: 'stage', stage: 'staging' },
-        cwd: app.dir,
-        deps: {
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+        },
+        {
           config: fakeConfig(
             { teardown: async () => void order.push('teardown') },
             { onRemove: () => void order.push('remove') },
@@ -573,7 +597,7 @@ describe('destroy()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(result).toEqual({ outcome: 'destroyed' });
@@ -585,12 +609,14 @@ describe('destroy()', () => {
     const order: string[] = [];
 
     const result = await silently(() =>
-      destroy({
-        entry: app.entryPath,
-        target: { kind: 'stage', stage: 'staging' },
-        cwd: app.dir,
-        onEvent: (event) => void order.push(event.kind),
-        deps: {
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+          onEvent: (event) => void order.push(event.kind),
+        },
+        {
           config: fakeConfig(),
           runAssembler: async (node) => {
             order.push('assemble');
@@ -598,7 +624,7 @@ describe('destroy()', () => {
           },
           alchemy: () => 0,
         },
-      }),
+      ),
     );
 
     expect(result).toEqual({ outcome: 'destroyed' });
@@ -612,13 +638,15 @@ describe('destroy()', () => {
     const events: string[] = [];
 
     await silently(() =>
-      destroy({
-        entry: app.entryPath,
-        target: { kind: 'stage', stage: 'staging' },
-        cwd: app.dir,
-        onEvent: (event) => void events.push(event.kind),
-        deps: { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
-      }),
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event.kind),
+        },
+        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+      ),
     );
 
     expect(events).toEqual([]);
@@ -744,11 +772,13 @@ describe('dev()', () => {
     };
 
     const result = await silently(() =>
-      dev({
-        entry: app.entryPath,
-        cwd: app.dir,
-        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
-      }),
+      devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -769,12 +799,14 @@ describe('dev()', () => {
     const events: string[] = [];
 
     const result = await silently(async () => {
-      const start = await dev({
-        entry: app.entryPath,
-        cwd: app.dir,
-        onEvent: (event) => void events.push(event.kind),
-        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
-      });
+      const start = await devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event.kind),
+        },
+        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      );
       if (start.outcome !== 'started') throw new Error('expected a started session');
       await start.session.stop();
       await start.session.closed;
@@ -795,14 +827,16 @@ describe('dev()', () => {
     };
 
     const result = await silently(async () => {
-      const start = await dev({
-        entry: app.entryPath,
-        cwd: app.dir,
-        onEvent: () => {
-          throw new Error('host renderer blew up');
+      const start = await devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: () => {
+            throw new Error('host renderer blew up');
+          },
         },
-        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
-      });
+        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      );
       if (start.outcome !== 'started') throw new Error('expected a started session');
       await start.session.stop();
       await start.session.closed;
@@ -824,10 +858,12 @@ describe('dev()', () => {
     let alchemyRan = false;
 
     const result = await silently(() =>
-      dev({
-        entry: app.entryPath,
-        cwd: app.dir,
-        deps: {
+      devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
           config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: () => {
@@ -835,7 +871,7 @@ describe('dev()', () => {
             return 0;
           },
         },
-      }),
+      ),
     );
 
     expect(result.outcome).toBe('failed');
@@ -853,7 +889,7 @@ describe('log()', () => {
     ];
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', deps: { identity: identityFor(attachments) } }),
+      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
     );
 
     expect(result.outcome).toBe('attached');
@@ -883,7 +919,7 @@ describe('log()', () => {
     ];
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', address: 'a', deps: { identity: identityFor(attachments) } }),
+      logWithDeps({ entry: 'service.ts', address: 'a' }, { identity: identityFor(attachments) }),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -894,7 +930,7 @@ describe('log()', () => {
     const attachments = [linesAttachment([{ address: 'a', url: 'http://a' }], [])];
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', address: 'nope', deps: { identity: identityFor(attachments) } }),
+      logWithDeps({ entry: 'service.ts', address: 'nope' }, { identity: identityFor(attachments) }),
     );
 
     expect(result.outcome).toBe('failed');
@@ -907,7 +943,7 @@ describe('log()', () => {
     const attachments = [linesAttachment([], [])];
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', deps: { identity: identityFor(attachments) } }),
+      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
     );
 
     expect(result.outcome).toBe('attached');
@@ -927,11 +963,13 @@ describe('log()', () => {
     const controller = new AbortController();
 
     const result = await silently(() =>
-      log({
-        entry: 'service.ts',
-        signal: controller.signal,
-        deps: { identity: identityFor([live]) },
-      }),
+      logWithDeps(
+        {
+          entry: 'service.ts',
+          signal: controller.signal,
+        },
+        { identity: identityFor([live]) },
+      ),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -957,7 +995,7 @@ describe('log()', () => {
     };
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', deps: { identity: identityFor([flaky]) } }),
+      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([flaky]) }),
     );
 
     expect(result.outcome).toBe('attached');
@@ -973,7 +1011,7 @@ describe('log()', () => {
     });
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', deps: { identity: identityFor([stubborn]) } }),
+      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -992,7 +1030,7 @@ describe('log()', () => {
     });
 
     const result = await silently(() =>
-      log({ entry: 'service.ts', deps: { identity: identityFor([stubborn]) } }),
+      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -1009,13 +1047,15 @@ describe('log()', () => {
     const droppedCounts: number[] = [];
 
     const result = await silently(() =>
-      log({
-        entry: 'service.ts',
-        onEvent: (event) => {
-          if (event.kind === 'lines-dropped') droppedCounts.push(event.count);
+      logWithDeps(
+        {
+          entry: 'service.ts',
+          onEvent: (event) => {
+            if (event.kind === 'lines-dropped') droppedCounts.push(event.count);
+          },
         },
-        deps: { identity: identityFor([flood]) },
-      }),
+        { identity: identityFor([flood]) },
+      ),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -1043,11 +1083,13 @@ describe('log()', () => {
     const events: string[] = [];
 
     const result = await silently(() =>
-      log({
-        entry: 'service.ts',
-        onEvent: (event) => void events.push(event.kind),
-        deps: { identity: identityFor([lateFailer]) },
-      }),
+      logWithDeps(
+        {
+          entry: 'service.ts',
+          onEvent: (event) => void events.push(event.kind),
+        },
+        { identity: identityFor([lateFailer]) },
+      ),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');
@@ -1072,13 +1114,15 @@ describe('log()', () => {
     const events: string[] = [];
 
     const result = await silently(() =>
-      log({
-        entry: 'service.ts',
-        onEvent: (event) => {
-          if (event.kind === 'stream-failed') events.push(event.message);
+      logWithDeps(
+        {
+          entry: 'service.ts',
+          onEvent: (event) => {
+            if (event.kind === 'stream-failed') events.push(event.message);
+          },
         },
-        deps: { identity: identityFor([failing, healthy]) },
-      }),
+        { identity: identityFor([failing, healthy]) },
+      ),
     );
 
     if (result.outcome !== 'attached') throw new Error('expected attached');

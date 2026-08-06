@@ -41,30 +41,38 @@ interface StackPipelineOptions {
   readonly stage: string | undefined;
   readonly cwd: string;
   readonly onEvent: ((event: DestroyEvent) => void) | undefined;
-  readonly deps: OperationDeps | undefined;
+  readonly deps: OperationDeps;
 }
 
-export async function executeDeploy(input: DeployInput, cwd: string): Promise<DeployResult> {
+export async function executeDeploy(
+  input: DeployInput,
+  deps: OperationDeps,
+  cwd: string,
+): Promise<DeployResult> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     name: input.name,
     stage: input.stage,
     cwd,
     onEvent: undefined,
-    deps: input.deps,
+    deps,
   });
   if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
   return { outcome: 'deployed', summary: outcome.summary };
 }
 
-export async function executeDestroy(input: DestroyInput, cwd: string): Promise<DestroyResult> {
+export async function executeDestroy(
+  input: DestroyInput,
+  deps: OperationDeps,
+  cwd: string,
+): Promise<DestroyResult> {
   const outcome = await runStackPipeline('destroy', {
     entry: input.entry,
     name: input.name,
     stage: input.target.kind === 'stage' ? input.target.stage : undefined,
     cwd,
     onEvent: input.onEvent,
-    deps: input.deps,
+    deps,
   });
   if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
   return { outcome: 'destroyed' };
@@ -112,7 +120,7 @@ async function runStackPipeline(
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliError =>
@@ -226,7 +234,7 @@ async function runStackPipeline(
   // Shell out to alchemy against the generated file.
   let status: number;
   try {
-    status = (deps?.alchemy ?? runAlchemy)({
+    status = (deps.alchemy ?? runAlchemy)({
       command: action,
       stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
       cwd,

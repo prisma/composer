@@ -12,7 +12,7 @@ import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
 import { CliError } from '../cli-error.ts';
 import { resolveAppIdentity } from '../pipeline.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
-import type { LogEvent, LogInput, LogLine, LogResult } from './log.ts';
+import type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from './log.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError
@@ -124,7 +124,7 @@ async function* mergeLogStreams(
 }
 
 /** Resolves the running app and attaches to its log streams; the caller consumes `lines`. */
-export async function executeLog(input: LogInput, cwd: string): Promise<LogResult> {
+export async function executeLog(input: LogInput, deps: LogDeps, cwd: string): Promise<LogResult> {
   if (process.platform === 'win32') {
     return {
       outcome: 'failed',
@@ -143,8 +143,8 @@ export async function executeLog(input: LogInput, cwd: string): Promise<LogResul
 
   try {
     const identity =
-      input.deps?.identity ??
-      (await resolveAppIdentity(input.entry, input.name, cwd, { config: input.deps?.config }));
+      deps.identity ??
+      (await resolveAppIdentity(input.entry, input.name, cwd, { config: deps.config }));
     name = identity.name;
 
     let resolved: ReadonlyMap<string, LocalTargetDescriptor>;

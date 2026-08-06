@@ -8,7 +8,7 @@
  * live.
  */
 import { CliError } from '../cli-error.ts';
-import { type LogDeps, log } from '../operations/log.ts';
+import { type LogDeps, logWithDeps } from '../operations/log.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `log` command. */
 export interface LogArgs {
@@ -31,19 +31,21 @@ export async function runLog(args: LogArgs, deps: LogRunDeps = {}): Promise<numb
   process.on('SIGTERM', finish);
 
   try {
-    const result = await log({
-      entry: args.entry,
-      name: args.name,
-      address: args.address,
-      tail: args.tail,
-      signal: controller.signal,
-      onEvent: (event) => {
-        if (event.kind === 'stream-failed') {
-          console.error(`[log] stream failed: ${event.message}`);
-        }
+    const result = await logWithDeps(
+      {
+        entry: args.entry,
+        name: args.name,
+        address: args.address,
+        tail: args.tail,
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.kind === 'stream-failed') {
+            console.error(`[log] stream failed: ${event.message}`);
+          }
+        },
       },
-      deps: { config: deps.config, identity: deps.identity },
-    });
+      { config: deps.config, identity: deps.identity },
+    );
 
     if (result.outcome === 'failed') {
       throw result.failure.cause instanceof Error

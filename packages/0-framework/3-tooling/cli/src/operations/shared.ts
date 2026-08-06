@@ -21,9 +21,10 @@ export interface ServiceEndpoint {
 }
 
 /**
- * @internal Test seam — lets the CLI's own tests drive the operations without
- * a real wrapper build, config evaluation, or alchemy process. No stability
- * guarantee: the fields mirror internal types and can change in any release.
+ * The operations' in-package injection seam — lets the CLI's own tests drive
+ * them without a real wrapper build, config evaluation, or alchemy process.
+ * Threaded through the *WithDeps variants, never part of the published
+ * surface: the fields mirror internal types.
  */
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;

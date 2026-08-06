@@ -18,7 +18,7 @@ import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import type { DevEvent, DevInput, DevSession, DevStartResult } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
-import type { ExtensionId, ServiceEndpoint } from './shared.ts';
+import type { ExtensionId, OperationDeps, ServiceEndpoint } from './shared.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError
@@ -38,7 +38,11 @@ async function mergedEndpoints(
 }
 
 /** Runs the full dev pipeline; resolves to a running session or a structured failure. */
-export async function executeDev(input: DevInput, cwd: string): Promise<DevStartResult> {
+export async function executeDev(
+  input: DevInput,
+  deps: OperationDeps,
+  cwd: string,
+): Promise<DevStartResult> {
   if (process.platform === 'win32') {
     return {
       outcome: 'failed',
@@ -49,7 +53,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
     };
   }
 
-  const { onEvent, deps } = input;
+  const { onEvent } = input;
   const devDir = path.join(cwd, DEV_DIR);
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
@@ -59,7 +63,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
     pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
     const { config, graph, name } = pipeline;
 
@@ -131,7 +135,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       name: pipeline.name,
       assembled: pipeline.assembled,
     });
-    const status = (deps?.alchemy ?? runAlchemy)({
+    const status = (deps.alchemy ?? runAlchemy)({
       command: 'deploy',
       stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
       cwd,
@@ -213,7 +217,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
+    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
     watch = startWatch(
       targets,
       () => {
@@ -231,7 +235,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
               name: rePipeline.name,
               assembled: rePipeline.assembled,
             });
-            const status = (deps?.alchemy ?? runAlchemy)({
+            const status = (deps.alchemy ?? runAlchemy)({
               command: 'deploy',
               stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
               cwd,
