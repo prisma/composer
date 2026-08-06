@@ -328,21 +328,30 @@ What to know before embedding it:
   (anything between loading the deploy stack and the deploy engine — including
   the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
   reported with the same fix-naming message the CLI prints), or `execution`
-  (the engine ran and failed — carrying its exit code and an exact reproduce
-  command). Importing the module executes nothing until you call an operation.
+  (the engine ran and failed). An `execution` failure's optional
+  `diagnostics` object carries the exit code and an exact reproduce command —
+  details of the current execution mechanism, handy for printing a hint but
+  not something to build on; branch on `message`/`cause` for anything
+  durable. Importing the module executes nothing until you call an operation.
 - **`summary` is best-effort.** It rides a result file the deploy engine's
   child process writes; a deploy that converged without writing one still
   succeeds, with `summary: undefined`.
-- **The engine's own output still streams to your process's stdio.** The
-  operations return structured results but don't capture the live deploy
-  output; run them where that output belongs, or with stdio redirected.
-- **`dev` returns a session, not an exit code** — `{ endpoints, stop(),
-  closed }`, with progress (`ready`, `converge-failed`, …) delivered through
+- **The engine's own output still streams to your process's stdio.** That is
+  the current mechanism, not a promise: the operations return structured
+  results but don't capture the live deploy output; run them where that
+  output belongs, or with stdio redirected. Capturing it would be a new
+  option on the operations.
+- **`dev` resolves to `{ outcome: 'started', session }` or a failure** —
+  never an exit code. The session is `{ endpoints, stop(), closed }`, with
+  progress (`ready`, `converge-failed`, `watch-error`, …) delivered through
   `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
   `session.stop()` is yours.
-- **`log` returns the running services and an `AsyncIterable` of lines**,
-  ended by an `AbortSignal` you own. Zero running services is a valid result
-  (empty `services`, finished stream), not an error.
+- **`log` resolves to `{ outcome: 'attached', appName, services, lines }` or
+  a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
+  own (stopping early — `break`, `lines.return()` — also ends it cleanly).
+  Zero running services is a valid result (empty `services`, finished
+  stream), not an error. A consumer that falls behind loses oldest lines
+  past a bounded queue and is told via a `lines-dropped` event.
 
 ## The full picture
 

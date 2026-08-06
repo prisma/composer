@@ -681,19 +681,24 @@ const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
 
 - Failures come back as `{ outcome: 'failed', failure }` with
   `failure.kind` ∈ `invalid-input` | `unsupported-platform` | `pipeline` | `execution`
-  and the same fix-naming `message` the CLI prints. The effect version
-  conflict is a `pipeline` failure carrying the same diagnostic, and importing
-  the module executes nothing until an operation runs.
+  and the same fix-naming `message` the CLI prints. An `execution` failure's
+  optional `diagnostics` (exit code, reproduce command) describes the current
+  execution mechanism — branch on `message`/`cause` for anything durable.
+  The effect version conflict is a `pipeline` failure carrying the same
+  diagnostic, and importing the module executes nothing until an operation
+  runs.
 - `destroy` takes `target: { kind: 'production' } | { kind: 'stage', stage }`
   — explicit, never defaulted.
 - `deploy`'s `summary` (the deployed topology) is best-effort; `undefined` on
   a successful deploy is normal.
 - The deploy engine's live output still streams to the host process's stdio —
-  the operations don't capture it.
-- `dev` resolves to a session `{ endpoints, stop(), closed }` with progress
-  via `onEvent`; the host owns signal handling. `log` resolves to
-  `{ appName, services, lines }` where `lines` is an `AsyncIterable` ended by
-  a caller-owned `AbortSignal`; zero running services is a valid result, not
+  the current mechanism; the operations don't capture it.
+- `dev` resolves to `{ outcome: 'started', session }` or a failure; the
+  session is `{ endpoints, stop(), closed }` with progress via `onEvent`, and
+  the host owns signal handling. `log` resolves to
+  `{ outcome: 'attached', appName, services, lines }` or a failure, where
+  `lines` is an `AsyncIterable` ended by a caller-owned `AbortSignal` (or by
+  the consumer stopping early); zero running services is a valid result, not
   an error.
 
 ## Production pitfalls

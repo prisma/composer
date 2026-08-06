@@ -2,7 +2,7 @@
 
 ## Decision
 
-Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv, never print to the console, and never call `process.exit`. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart.
+Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart.
 
 A host — another CLI embedding Composer, a CI tool, a test — uses it like this:
 
@@ -25,7 +25,7 @@ if (result.outcome === 'deployed') {
 }
 ```
 
-Failures are values, not exceptions: every way a deploy can go wrong comes back as a discriminated `failure` the caller can branch on, carrying the same human-readable message the CLI prints plus, where it exists, machine-usable context (the alchemy exit code, the generated stack-file path, the exact command to reproduce the run).
+Failures are values, not exceptions: every way a deploy can go wrong comes back as a discriminated `failure` the caller can branch on, carrying the same human-readable message the CLI prints plus the original error as `cause`. An `execution` failure may also carry an optional `diagnostics` object (exit code, generated stack-file path, reproduce command, cwd) — details of the current execution mechanism, useful for printing a hint but deliberately outside the durable contract.
 
 ## Why a programmatic surface
 
@@ -33,9 +33,9 @@ Failures are values, not exceptions: every way a deploy can go wrong comes back 
 
 Because the CLI's commands are renderers over the same operations, there is exactly one implementation of deploy orchestration. A fix or feature in the operation is a fix or feature in both surfaces; neither can gain behavior the other lacks.
 
-## Importing the subpath is always safe
+## Importing the subpath executes nothing
 
-The `./control` entry's static import graph is import-light: types, the result definitions, and two small helpers. Each operation lazily `import()`s the executor that reaches the pipeline and alchemy, so importing the subpath executes nothing — consistent with the repo's no-import-side-effects stance — and a host pays for the deploy stack only when it calls an operation.
+The `./control` entry's static import graph is import-light: types, the result definitions, and two small helpers. Each operation lazily `import()`s the executor that reaches the pipeline and alchemy, so importing the subpath executes nothing — consistent with the repo's no-import-side-effects stance — and a host pays for the deploy stack only when it calls an operation. The property is pinned structurally: a test imports the entry in a fresh process with every heavy module poisoned and fails if the static graph ever reaches one.
 
 A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured `pipeline` failure whose message names the problem (the operation diagnoses the failed load with the same check the CLI's `bin.ts` runs at start-up). The host stays alive and gets a result it can branch on, never an import-time crash.
 
@@ -45,9 +45,9 @@ Deploy execution happens in a **spawned alchemy child process** driving a genera
 
 The operation therefore uses the narrowest channel that works:
 
-- `render-deployment.ts` defines **`DeploymentSummary`** — the serializable projection of a result: the app name and, per node, its `address` and deployed `entities`.
-- When the environment variable **`PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`** names a file, the report hook writes the summary there as JSON, in addition to its normal console rendering.
-- The deploy operation sets that variable on the child, removes any stale file before spawning, and reads the file back after a zero exit.
+- `deployment-summary.ts` owns the protocol whole: **`DeploymentSummary`** — the serializable projection of a result (the app name and, per node, its `address` and deployed `entities`) — plus the env var, the writer, and the reader.
+- When the environment variable `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE` names a file, the report hook writes the summary there as JSON (best-effort — a write failure never fails a converged deploy), in addition to its normal console rendering. The variable is internal to the two halves; it is not exported from `./control`.
+- The deploy operation points that variable at a file whose name is unique per run — concurrent deploys sharing a working directory cannot read or delete each other's summary — reads it back after a zero exit, and deletes it.
 
 The child's own stdout/stderr still stream to the host's terminal (`stdio: 'inherit'`) — the user watches alchemy work exactly as they would from the CLI, and the result file rides alongside rather than being scraped out of that stream. The file lives under the tool-owned `.prisma-composer/` directory (ADR-0004).
 
@@ -64,7 +64,8 @@ The subpath is named `control` because that is the architecture plane these sour
 - **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from loading the deploy stack and config discovery through assembly and container preparation; `invalid-input`, `unsupported-platform`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
 - **`dev` returns a session handle** (`endpoints`, `stop()`, `closed`, an event callback) and **never touches process signal handlers**. Signal ownership — including evicting alchemy's import-time SIGINT/SIGTERM listeners — belongs to the host; the CLI adapter shows the pattern.
 - **`log` returns the running services plus an `AsyncIterable` of lines** ended by a caller-owned `AbortSignal`; one stream failing surfaces as an event without ending the others. Zero running services is a valid, non-failure result with an already-finished iterable.
-- **The alchemy child's output is not capturable through this API** — `stdio: 'inherit'` is part of the surface's contract. A host that must capture or redirect execution output needs a new option on the operations, not a workaround.
+- **The alchemy child's output is not capturable through this API.** The current mechanism streams the deploy engine's output to the host's own stdio; capturing or redirecting it needs a new option on the operations, not a workaround. The mechanism itself (a spawned child, `stdio: 'inherit'`) is how composer deploys today, not a promise the surface makes — which is also why the spawn-shaped failure fields live in the optional `diagnostics` object rather than on the failure itself.
+- **`@internal/cli` now contains a surface that is not a CLI.** The package name is narrower than its contents: the operations are control-plane orchestration that the CLI also happens to render. That is the accepted cost of not creating a package with nothing on the other side of its boundary.
 
 ## Alternatives considered
 
