@@ -16,6 +16,10 @@ import type {
   DeployResult,
   DestroyInput,
   DestroyResult,
+  DevInput,
+  DevStartResult,
+  LogInput,
+  LogResult,
   OperationFailure,
 } from './results.ts';
 
@@ -46,4 +50,20 @@ export async function destroy(input: DestroyInput): Promise<DestroyResult> {
   if (preflight !== undefined) return { outcome: 'failed', failure: preflight };
   const { executeDestroy } = await import('./execute-deploy-destroy.ts');
   return executeDestroy(input, cwd);
+}
+
+export async function dev(input: DevInput): Promise<DevStartResult> {
+  const cwd = input.cwd ?? process.cwd();
+  const preflight = runEffectPreflight(cwd);
+  if (preflight !== undefined) return { outcome: 'failed', failure: preflight };
+  const { executeDev } = await import('./execute-dev.ts');
+  return executeDev(input, cwd);
+}
+
+export async function log(input: LogInput): Promise<LogResult> {
+  const cwd = input.cwd ?? process.cwd();
+  const preflight = runEffectPreflight(cwd);
+  if (preflight !== undefined) return { outcome: 'failed', failure: preflight };
+  const { executeLog } = await import('./execute-log.ts');
+  return executeLog(input, cwd);
 }
