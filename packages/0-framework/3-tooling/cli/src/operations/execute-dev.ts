@@ -159,8 +159,18 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
     return { status, stackPath };
   };
 
-  // Write the dev stack file and converge.
-  const first = converge();
+  // Write the dev stack file and converge. Inside the try: a stray
+  // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
+  // back as a failure result, not a rejection out of dev().
+  let first: { status: number; stackPath: string };
+  try {
+    first = converge();
+  } catch (error) {
+    return {
+      outcome: 'failed',
+      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+    };
+  }
   if (first.status !== 0) {
     return {
       outcome: 'failed',

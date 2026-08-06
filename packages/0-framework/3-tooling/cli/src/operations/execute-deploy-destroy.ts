@@ -196,21 +196,32 @@ async function runStackPipeline(
     };
   }
 
-  // Generate .prisma-composer/alchemy.run.ts (tool state lives where you run the tool).
-  const stackPath = writeStackFile({
-    entryPath: pipeline.entryModule.path,
-    cwd,
-    configPath: pipeline.configPath,
-    name: pipeline.name,
-    assembled: pipeline.assembled,
-  });
+  // Generate .prisma-composer/alchemy.run.ts (tool state lives where you run
+  // the tool). Inside the try: a stray `.prisma-composer` FILE, a read-only or
+  // full disk, or a permissions problem must come back as a failure result —
+  // "failures are values" covers stack generation too, not just the pipeline.
+  let stackPath: string;
+  const resultFilePath = path.join(cwd, '.prisma-composer', 'deployment-result.json');
+  try {
+    stackPath = writeStackFile({
+      entryPath: pipeline.entryModule.path,
+      cwd,
+      configPath: pipeline.configPath,
+      name: pipeline.name,
+      assembled: pipeline.assembled,
+    });
+
+    // Stale-result guard: remove any previous run's result file so a summary is
+    // only ever read from THIS child's report hook.
+    fs.rmSync(resultFilePath, { force: true });
+  } catch (error) {
+    return {
+      kind: 'failed',
+      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+    };
+  }
 
   const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
-
-  // Stale-result guard: remove any previous run's result file so a summary is
-  // only ever read from THIS child's report hook.
-  const resultFilePath = path.join(cwd, '.prisma-composer', 'deployment-result.json');
-  fs.rmSync(resultFilePath, { force: true });
 
   // Shell out to alchemy against the generated file.
   let status: number;

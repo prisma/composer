@@ -390,6 +390,33 @@ describe('deploy()', () => {
     });
   });
 
+  test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {
+    const app = makeAppDir('hello-ops');
+    fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
+    let alchemyRan = false;
+
+    const result = await silently(() =>
+      deploy({
+        entry: app.entryPath,
+        stage: 'ci-7',
+        cwd: app.dir,
+        deps: {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: () => {
+            alchemyRan = true;
+            return 0;
+          },
+        },
+      }),
+    );
+
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') throw new Error('unreachable');
+    expect(result.failure.kind).toBe('pipeline');
+    expect(alchemyRan).toBe(false);
+  });
+
   test('a broken effect tree is a pipeline failure naming the mismatch — the executor cannot load, the host stays alive', () => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
@@ -669,6 +696,39 @@ async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
   return out;
 }
 
+/** A config whose one extension both deploys the fixture nodes and offers a local target — what dev() needs end to end. */
+function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
+  const descriptor: LocalTargetDescriptor = {
+    providers: () => Layer.empty,
+    container: {
+      ensure: () => Promise.resolve(localContainer()),
+      locate: () => Promise.resolve(undefined),
+      remove: () => Promise.resolve(),
+      deserialize: () => localContainer(),
+    },
+    attach: () => Promise.resolve(attachment),
+  };
+  return {
+    extensions: [
+      {
+        id: 'fixture-extension',
+        nodes: {
+          'fixture/compute': {
+            kind: 'service',
+            provision: unused,
+            serialize: unused,
+            package: unused,
+            deploy: unused,
+          },
+        },
+        localTarget: () => Promise.resolve(descriptor),
+      },
+      { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
+    ],
+    state: { extension: 'fixture-extension', create: unused },
+  };
+}
+
 describe('dev()', () => {
   test('a throw after services start (endpoint merge) is a pipeline failure, not a rejection', async () => {
     const app = makeAppDir('hello-dev');
@@ -678,41 +738,12 @@ describe('dev()', () => {
       endpoints: () => Promise.reject(new Error('emulator admin refused the connection')),
       logs: async function* () {},
     };
-    const descriptor: LocalTargetDescriptor = {
-      providers: () => Layer.empty,
-      container: {
-        ensure: () => Promise.resolve(localContainer()),
-        locate: () => Promise.resolve(undefined),
-        remove: () => Promise.resolve(),
-        deserialize: () => localContainer(),
-      },
-      attach: () => Promise.resolve(attachment),
-    };
-    const config: PrismaAppConfig = {
-      extensions: [
-        {
-          id: 'fixture-extension',
-          nodes: {
-            'fixture/compute': {
-              kind: 'service',
-              provision: unused,
-              serialize: unused,
-              package: unused,
-              deploy: unused,
-            },
-          },
-          localTarget: () => Promise.resolve(descriptor),
-        },
-        { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
-      ],
-      state: { extension: 'fixture-extension', create: unused },
-    };
 
     const result = await silently(() =>
       dev({
         entry: app.entryPath,
         cwd: app.dir,
-        deps: { config, runAssembler: fakeAssembler, alchemy: () => 0 },
+        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
       }),
     );
 
@@ -720,6 +751,38 @@ describe('dev()', () => {
     if (result.outcome !== 'failed') throw new Error('unreachable');
     expect(result.failure.kind).toBe('pipeline');
     expect(result.failure.message).toBe('emulator admin refused the connection');
+  }, 15_000);
+
+  test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {
+    const app = makeAppDir('hello-dev');
+    fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    let alchemyRan = false;
+
+    const result = await silently(() =>
+      dev({
+        entry: app.entryPath,
+        cwd: app.dir,
+        deps: {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: () => {
+            alchemyRan = true;
+            return 0;
+          },
+        },
+      }),
+    );
+
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') throw new Error('unreachable');
+    expect(result.failure.kind).toBe('pipeline');
+    expect(alchemyRan).toBe(false);
   }, 15_000);
 });
 
