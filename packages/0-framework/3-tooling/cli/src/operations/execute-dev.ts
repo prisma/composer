@@ -192,82 +192,81 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
         throw toCliError(error);
       }
     }
+    const endpoints = await mergedEndpoints(attachments);
+    onEvent?.({ kind: 'ready', endpoints });
+
+    // 9. Watch loop until the session is stopped: rebuild → re-assemble →
+    // re-converge; a converge failure keeps the running app and keeps watching.
+    const { targets, unwatchable } = watchTargetsFrom(pipeline.assembled.bundles);
+    for (const address of unwatchable) {
+      onEvent?.({ kind: 'unwatchable', address });
+    }
+
+    const watchDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
+    const watch = startWatch(targets, () => {
+      // The whole rebuild is inside one try/catch: this runs fire-and-forget,
+      // so anything escaping it would be an unhandled rejection killing the
+      // process — the exact opposite of "a converge failure keeps the running
+      // app and keeps watching".
+      void (async () => {
+        try {
+          const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+          const stackPath = writeDevStackFile({
+            entryPath: rePipeline.entryModule.path,
+            cwd,
+            configPath: rePipeline.configPath,
+            name: rePipeline.name,
+            assembled: rePipeline.assembled,
+          });
+          const status = (deps?.alchemy ?? runAlchemy)({
+            command: 'deploy',
+            stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+            cwd,
+            stage: 'dev',
+            containerEnv: containerEnv(containers),
+          });
+          if (status !== 0) {
+            onEvent?.({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
+            return;
+          }
+          onEvent?.({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+        } catch (error) {
+          onEvent?.({ kind: 'rebuild-failed', message: failureMessage(error) });
+        }
+      })();
+    });
+    // A rebuild finishing before the OS-level watches attach would otherwise
+    // be missed entirely — wait until watching is real before handing over.
+    await watch.ready;
+
+    let stopping = false;
+    let resolveClosed: () => void = () => undefined;
+    const closed = new Promise<void>((resolve) => {
+      resolveClosed = resolve;
+    });
+
+    const stop = (): Promise<void> => {
+      if (!stopping) {
+        stopping = true;
+        onEvent?.({ kind: 'stopping' });
+        watch.stop();
+        void (async () => {
+          for (const attachment of attachments) {
+            await attachment.stopServices().catch(() => undefined);
+          }
+          onEvent?.({ kind: 'stopped' });
+          resolveClosed();
+        })();
+      }
+      return closed;
+    };
+
+    const session: DevSession = { endpoints, stop, closed };
+    return { outcome: 'started', session };
   } catch (error) {
     return {
       outcome: 'failed',
       failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
     };
   }
-
-  const endpoints = await mergedEndpoints(attachments);
-  onEvent?.({ kind: 'ready', endpoints });
-
-  // 9. Watch loop until the session is stopped: rebuild → re-assemble →
-  // re-converge; a converge failure keeps the running app and keeps watching.
-  const { targets, unwatchable } = watchTargetsFrom(pipeline.assembled.bundles);
-  for (const address of unwatchable) {
-    onEvent?.({ kind: 'unwatchable', address });
-  }
-
-  const pipelineDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
-  const watch = startWatch(targets, () => {
-    // The whole rebuild is inside one try/catch: this runs fire-and-forget,
-    // so anything escaping it would be an unhandled rejection killing the
-    // process — the exact opposite of "a converge failure keeps the running
-    // app and keeps watching".
-    void (async () => {
-      try {
-        const rePipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
-        const stackPath = writeDevStackFile({
-          entryPath: rePipeline.entryModule.path,
-          cwd,
-          configPath: rePipeline.configPath,
-          name: rePipeline.name,
-          assembled: rePipeline.assembled,
-        });
-        const status = (deps?.alchemy ?? runAlchemy)({
-          command: 'deploy',
-          stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-          cwd,
-          stage: 'dev',
-          containerEnv: containerEnv(containers),
-        });
-        if (status !== 0) {
-          onEvent?.({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
-          return;
-        }
-        onEvent?.({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
-      } catch (error) {
-        onEvent?.({ kind: 'rebuild-failed', message: failureMessage(error) });
-      }
-    })();
-  });
-  // A rebuild finishing before the OS-level watches attach would otherwise
-  // be missed entirely — wait until watching is real before handing over.
-  await watch.ready;
-
-  let stopping = false;
-  let resolveClosed: () => void = () => undefined;
-  const closed = new Promise<void>((resolve) => {
-    resolveClosed = resolve;
-  });
-
-  const stop = (): Promise<void> => {
-    if (!stopping) {
-      stopping = true;
-      onEvent?.({ kind: 'stopping' });
-      watch.stop();
-      void (async () => {
-        for (const attachment of attachments) {
-          await attachment.stopServices().catch(() => undefined);
-        }
-        onEvent?.({ kind: 'stopped' });
-        resolveClosed();
-      })();
-    }
-    return closed;
-  };
-
-  const session: DevSession = { endpoints, stop, closed };
-  return { outcome: 'started', session };
 }

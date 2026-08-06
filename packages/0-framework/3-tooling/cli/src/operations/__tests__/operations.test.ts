@@ -24,7 +24,7 @@ import { CliError } from '../../cli-error.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../render-deployment.ts';
 import type { RunAlchemyInput } from '../../run-alchemy.ts';
-import { deploy, destroy, log } from '../operations.ts';
+import { deploy, destroy, dev, log } from '../operations.ts';
 import type { LogLine } from '../results.ts';
 
 const tmpDirs: string[] = [];
@@ -632,6 +632,60 @@ async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
   for await (const line of lines) out.push(line);
   return out;
 }
+
+describe('dev()', () => {
+  test('a throw after services start (endpoint merge) is a pipeline failure, not a rejection', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.reject(new Error('emulator admin refused the connection')),
+      logs: async function* () {},
+    };
+    const descriptor: LocalTargetDescriptor = {
+      providers: () => Layer.empty,
+      container: {
+        ensure: () => Promise.resolve(localContainer()),
+        locate: () => Promise.resolve(undefined),
+        remove: () => Promise.resolve(),
+        deserialize: () => localContainer(),
+      },
+      attach: () => Promise.resolve(attachment),
+    };
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          id: 'fixture-extension',
+          nodes: {
+            'fixture/compute': {
+              kind: 'service',
+              provision: unused,
+              serialize: unused,
+              package: unused,
+              deploy: unused,
+            },
+          },
+          localTarget: () => Promise.resolve(descriptor),
+        },
+        { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
+      ],
+      state: { extension: 'fixture-extension', create: unused },
+    };
+
+    const result = await silently(() =>
+      dev({
+        entry: app.entryPath,
+        cwd: app.dir,
+        deps: { config, runAssembler: fakeAssembler, alchemy: () => 0 },
+      }),
+    );
+
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') throw new Error('unreachable');
+    expect(result.failure.kind).toBe('pipeline');
+    expect(result.failure.message).toBe('emulator admin refused the connection');
+  }, 15_000);
+});
 
 describe('log()', () => {
   test('merges every attachment into one stream and reports the running services', async () => {
