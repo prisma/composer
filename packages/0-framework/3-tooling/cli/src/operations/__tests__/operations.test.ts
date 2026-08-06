@@ -147,7 +147,7 @@ const coreIndex = path.resolve(
 function makeAppDir(
   name = 'fixture-app',
   opts: { config?: boolean } = {},
-): { dir: string; entryPath: string; resultFilePath: string } {
+): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
@@ -180,11 +180,7 @@ function makeAppDir(
       '',
     ].join('\n'),
   );
-  return {
-    dir,
-    entryPath,
-    resultFilePath: path.join(dir, '.prisma-composer', 'deployment-result.json'),
-  };
+  return { dir, entryPath };
 }
 
 const fakeAssembler = async (node: ServiceNode) => ({
@@ -223,8 +219,12 @@ describe('deploy()', () => {
     );
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.env?.[DEPLOYMENT_RESULT_FILE_ENV]).toBe(app.resultFilePath);
+    const resultFile = calls[0]?.env?.[DEPLOYMENT_RESULT_FILE_ENV];
+    expect(resultFile).toStartWith(path.join(app.dir, '.prisma-composer', 'deployment-result-'));
+    expect(resultFile).toEndWith('.json');
     expect(result).toEqual({ outcome: 'deployed', summary: summaryFixture });
+    // Read once, then removed — nothing left for a later run to misread.
+    expect(fs.existsSync(resultFile ?? '')).toBe(false);
   });
 
   test('a deploy whose child wrote no result file still succeeds, with an undefined summary', async () => {
@@ -269,33 +269,71 @@ describe('deploy()', () => {
     expect(result).toEqual({ outcome: 'deployed', summary: undefined });
   });
 
-  test("a previous run's stale result file is removed before alchemy spawns", async () => {
+  test("each run's result file is its own — a stale file from another run is never read, and two runs never share a path", async () => {
     const app = makeAppDir('hello-ops');
-    fs.mkdirSync(path.dirname(app.resultFilePath), { recursive: true });
-    fs.writeFileSync(app.resultFilePath, JSON.stringify(summaryFixture));
-    let existedAtSpawn: boolean | undefined;
+    fs.mkdirSync(path.join(app.dir, '.prisma-composer'), { recursive: true });
+    fs.writeFileSync(
+      path.join(app.dir, '.prisma-composer', 'deployment-result-99999-stale.json'),
+      JSON.stringify(summaryFixture),
+    );
+    const resultFiles: (string | undefined)[] = [];
+    const deps = {
+      config: fakeConfig(),
+      runAssembler: fakeAssembler,
+      alchemy: (input: RunAlchemyInput) => {
+        resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
+        return 0;
+      },
+    };
+
+    const first = await silently(() =>
+      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+    );
+    const second = await silently(() =>
+      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+    );
+
+    expect(first).toEqual({ outcome: 'deployed', summary: undefined });
+    expect(second).toEqual({ outcome: 'deployed', summary: undefined });
+    expect(resultFiles).toHaveLength(2);
+    expect(resultFiles[0]).not.toBe(resultFiles[1]);
+  });
+
+  test('the summary round-trips through a real child process writing via the report writer', async () => {
+    const app = makeAppDir('hello-ops');
+    const writerPath = fileURLToPath(new URL('../../deployment-summary.ts', import.meta.url));
+    const childPath = path.join(app.dir, 'report-child.ts');
+    fs.writeFileSync(
+      childPath,
+      `import { writeDeploymentSummaryFile } from ${JSON.stringify(writerPath)};\n` +
+        'const result = {\n' +
+        "  app: 'hello-ops',\n" +
+        "  nodes: [{ address: 'app', node: undefined, entities: [{ kind: 'compute-service', id: 'cps_1' }] }],\n" +
+        '} as never;\n' +
+        'writeDeploymentSummaryFile(result);\n',
+    );
 
     const result = await silently(() =>
       deployWithDeps(
-        {
-          entry: app.entryPath,
-          stage: 'ci-7',
-          cwd: app.dir,
-        },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: () => {
-            existedAtSpawn = fs.existsSync(app.resultFilePath);
-            return 0;
+          alchemy: (input) => {
+            const child = spawnSync(process.execPath, [childPath], {
+              cwd: app.dir,
+              env: input.env,
+              encoding: 'utf-8',
+            });
+            expect(child.stderr).toBe('');
+            return child.status ?? 1;
           },
         },
       ),
     );
 
-    expect(existedAtSpawn).toBe(false);
-    expect(result).toEqual({ outcome: 'deployed', summary: undefined });
-  });
+    expect(result).toEqual({ outcome: 'deployed', summary: summaryFixture });
+  }, 15_000);
 
   test('an invalid stage ref is an invalid-input failure, before any container call', async () => {
     const app = makeAppDir();

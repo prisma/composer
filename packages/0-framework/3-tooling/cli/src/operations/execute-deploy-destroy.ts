@@ -5,6 +5,7 @@
  * static graph transitively loads alchemy's provider tree, so the control
  * entry must never import it statically.
  */
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
@@ -208,8 +209,16 @@ async function runStackPipeline(
   // the tool). Inside the try: a stray `.prisma-composer` FILE, a read-only or
   // full disk, or a permissions problem must come back as a failure result —
   // "failures are values" covers stack generation too, not just the pipeline.
+  //
+  // The result file's name is unique per run, so a summary is only ever read
+  // from THIS child's report hook: concurrent runs sharing a cwd (two stages
+  // deployed from one checkout) cannot read or delete each other's file.
   let stackPath: string;
-  const resultFilePath = path.join(cwd, '.prisma-composer', 'deployment-result.json');
+  const resultFilePath = path.join(
+    cwd,
+    '.prisma-composer',
+    `deployment-result-${String(process.pid)}-${randomUUID()}.json`,
+  );
   try {
     stackPath = writeStackFile({
       entryPath: pipeline.entryModule.path,
@@ -218,10 +227,6 @@ async function runStackPipeline(
       name: pipeline.name,
       assembled: pipeline.assembled,
     });
-
-    // Stale-result guard: remove any previous run's result file so a summary is
-    // only ever read from THIS child's report hook.
-    fs.rmSync(resultFilePath, { force: true });
   } catch (error) {
     return {
       kind: 'failed',
@@ -307,7 +312,13 @@ async function runStackPipeline(
   }
 
   if (action === 'deploy') {
-    return { kind: 'succeeded', summary: readDeploymentSummary(resultFilePath) };
+    const summary = readDeploymentSummary(resultFilePath);
+    try {
+      fs.rmSync(resultFilePath, { force: true });
+    } catch {
+      // Best-effort cleanup — the summary is already in hand.
+    }
+    return { kind: 'succeeded', summary };
   }
   return { kind: 'succeeded', summary: undefined };
 }
