@@ -17,7 +17,10 @@ export interface LogLine {
 
 export type LogEvent =
   /** One attachment's stream died; the others continue. */
-  { readonly kind: 'stream-failed'; readonly message: string };
+  | { readonly kind: 'stream-failed'; readonly message: string }
+  /** The consumer fell behind and the bounded merge queue overflowed:
+   * `count` oldest lines were dropped since the last delivered line. */
+  | { readonly kind: 'lines-dropped'; readonly count: number };
 
 /**
  * @internal Test seam — lets the CLI's own tests drive `log` without a real

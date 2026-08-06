@@ -884,6 +884,123 @@ describe('log()', () => {
     expect(seen).toEqual(['one']);
   });
 
+  test('a transient endpoints() refusal right after a converge is retried, not a failure', async () => {
+    let attempts = 0;
+    const flaky: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => {
+        attempts += 1;
+        if (attempts === 1) return Promise.reject(new Error('ECONNREFUSED'));
+        return Promise.resolve([{ address: 'a', url: 'http://a' }]);
+      },
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      log({ entry: 'service.ts', deps: { identity: identityFor([flaky]) } }),
+    );
+
+    expect(result.outcome).toBe('attached');
+    if (result.outcome !== 'attached') throw new Error('unreachable');
+    expect(result.services).toEqual([{ address: 'a', url: 'http://a' }]);
+    expect(attempts).toBe(2);
+  }, 10_000);
+
+  test('breaking out of the merged stream returns promptly even when a source ignores the signal', async () => {
+    const stubborn = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
+      yield { service: 'a', line: 'one' };
+      await new Promise<void>(() => undefined);
+    });
+
+    const result = await silently(() =>
+      log({ entry: 'service.ts', deps: { identity: identityFor([stubborn]) } }),
+    );
+
+    if (result.outcome !== 'attached') throw new Error('expected attached');
+    const seen: string[] = [];
+    for await (const { line } of result.lines) {
+      seen.push(line);
+      break;
+    }
+    expect(seen).toEqual(['one']);
+  }, 5_000);
+
+  test('lines.return() ends the stream promptly without aborting first', async () => {
+    const stubborn = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
+      yield { service: 'a', line: 'one' };
+      await new Promise<void>(() => undefined);
+    });
+
+    const result = await silently(() =>
+      log({ entry: 'service.ts', deps: { identity: identityFor([stubborn]) } }),
+    );
+
+    if (result.outcome !== 'attached') throw new Error('expected attached');
+    const iterator = result.lines[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toEqual({ service: 'a', line: 'one' });
+    expect(await iterator.return?.(undefined)).toEqual({ done: true, value: undefined });
+  }, 5_000);
+
+  test('a consumer that falls behind gets a bounded queue: oldest lines drop, a lines-dropped event says how many', async () => {
+    const TOTAL = 10_150;
+    const flood = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
+      for (let i = 0; i < TOTAL; i += 1) yield { service: 'a', line: String(i) };
+    });
+    const droppedCounts: number[] = [];
+
+    const result = await silently(() =>
+      log({
+        entry: 'service.ts',
+        onEvent: (event) => {
+          if (event.kind === 'lines-dropped') droppedCounts.push(event.count);
+        },
+        deps: { identity: identityFor([flood]) },
+      }),
+    );
+
+    if (result.outcome !== 'attached') throw new Error('expected attached');
+    const seen: LogLine[] = [];
+    for await (const line of result.lines) {
+      seen.push(line);
+      if (seen.length === 1) {
+        // Stall once so the pump floods the queue past its bound.
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    }
+    const droppedTotal = droppedCounts.reduce((sum, count) => sum + count, 0);
+    expect(droppedTotal).toBeGreaterThan(0);
+    expect(seen.length + droppedTotal).toBe(TOTAL);
+  }, 15_000);
+
+  test('no event is delivered after the merged iterable has ended', async () => {
+    let failLate: (() => void) | undefined;
+    const lateFailer = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
+      yield { service: 'a', line: 'one' };
+      await new Promise<void>((_resolve, reject) => {
+        failLate = () => reject(new Error('daemon went away late'));
+      });
+    });
+    const events: string[] = [];
+
+    const result = await silently(() =>
+      log({
+        entry: 'service.ts',
+        onEvent: (event) => void events.push(event.kind),
+        deps: { identity: identityFor([lateFailer]) },
+      }),
+    );
+
+    if (result.outcome !== 'attached') throw new Error('expected attached');
+    for await (const line of result.lines) {
+      void line;
+      break;
+    }
+    failLate?.();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(events).toEqual([]);
+  }, 5_000);
+
   test("one stream's failure raises a stream-failed event and leaves the other streams running", async () => {
     const failing = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
       yield { service: 'a', line: 'before-crash' };
@@ -898,7 +1015,9 @@ describe('log()', () => {
     const result = await silently(() =>
       log({
         entry: 'service.ts',
-        onEvent: (event) => void events.push(event.message),
+        onEvent: (event) => {
+          if (event.kind === 'stream-failed') events.push(event.message);
+        },
         deps: { identity: identityFor([failing, healthy]) },
       }),
     );

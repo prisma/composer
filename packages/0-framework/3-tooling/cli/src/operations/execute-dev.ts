@@ -17,35 +17,17 @@ import { startWatch, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import type { DevInput, DevSession, DevStartResult } from './dev.ts';
+import { withEmulatorRetry } from './emulator-retry.ts';
 import type { ExtensionId, ServiceEndpoint } from './shared.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError
     ? error
-    : new CliError(error instanceof Error ? error.message : String(error));
+    : new CliError(error instanceof Error ? error.message : String(error), { cause: error });
 }
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-const EMULATOR_RETRY_ATTEMPTS = 5;
-const EMULATOR_RETRY_DELAY_MS = 500;
-
-/** An emulator admin call right after a converge that just PUT dozens of resources through the same daemon can hit a transient refused/reset connection — a brief loopback hiccup under load, not a real failure. Retried before giving up. Applies to every attach admin call the dev session makes (`startServices`, `endpoints`). */
-async function withEmulatorRetry<T>(call: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= EMULATOR_RETRY_ATTEMPTS; attempt += 1) {
-    try {
-      return await call();
-    } catch (error) {
-      lastError = error;
-      if (attempt < EMULATOR_RETRY_ATTEMPTS) {
-        await new Promise((resolve) => setTimeout(resolve, EMULATOR_RETRY_DELAY_MS));
-      }
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function mergedEndpoints(
