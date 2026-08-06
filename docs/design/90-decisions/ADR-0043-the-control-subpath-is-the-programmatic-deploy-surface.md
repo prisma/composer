@@ -17,10 +17,9 @@ if (result.outcome === 'deployed') {
   }
 } else {
   switch (result.failure.kind) {
-    case 'effect-resolution': // the app's dependency tree can't load alchemy safely
-    case 'invalid-input':     // e.g. a stage name git would reject
-    case 'pipeline':          // config discovery through assembly failed
-    case 'execution':         // alchemy ran and exited nonzero
+    case 'invalid-input': // e.g. a stage name git would reject
+    case 'pipeline':      // loading the deploy stack through assembly failed
+    case 'execution':     // alchemy ran and exited nonzero
       report(result.failure.message);
   }
 }
@@ -36,14 +35,9 @@ Because the CLI's commands are renderers over the same operations, there is exac
 
 ## Importing the subpath is always safe
 
-Composer executes deploys through [alchemy](https://alchemy.run), whose module tree depends on `effect`. When the app's `node_modules` resolves a mismatched `effect` version, alchemy's modules **throw at import time** — before any function is called. A naive API module that statically imported the pipeline would therefore crash the host process the moment the host imported it, even if the host never called an operation.
+The `./control` entry's static import graph is import-light: types, the result definitions, and two small helpers. Each operation lazily `import()`s the executor that reaches the pipeline and alchemy, so importing the subpath executes nothing — consistent with the repo's no-import-side-effects stance — and a host pays for the deploy stack only when it calls an operation.
 
-The `./control` entry defends against this structurally:
-
-1. Its **static import graph contains no alchemy-reachable module** — only types, the resolution checker, and the result definitions. Importing the subpath executes nothing dangerous, even inside a broken tree. An adversarial fixture in `scripts/check-npm-effect-resolution.mjs` pins this against a real package-manager install: importing `@prisma/composer/control` from a tree with a seeded `effect` mismatch must succeed.
-2. Each operation first runs `checkEffectResolution(cwd)` against the **target app's** directory (not the host's own), and reports a mismatch as a `{ kind: 'effect-resolution' }` failure result. Only after the check passes does it dynamically `import()` the executor that reaches the pipeline and alchemy.
-
-So a broken app tree yields a structured failure from a live, functioning host — never an import-time crash.
+A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured `pipeline` failure whose message names the problem (the operation diagnoses the failed load with the same check the CLI's `bin.ts` runs at start-up). The host stays alive and gets a result it can branch on, never an import-time crash.
 
 ## The deploy result crosses a process boundary
 
@@ -67,7 +61,7 @@ The subpath is named `control` because that is the architecture plane these sour
 
 ## Consequences
 
-- **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from config discovery through assembly and container preparation; `effect-resolution`, `invalid-input`, `unsupported`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
+- **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from loading the deploy stack and config discovery through assembly and container preparation; `invalid-input`, `unsupported`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
 - **`dev` returns a session handle** (`endpoints`, `stop()`, `closed`, an event callback) and **never touches process signal handlers**. Signal ownership — including evicting alchemy's import-time SIGINT/SIGTERM listeners — belongs to the host; the CLI adapter shows the pattern.
 - **`log` returns the running services plus an `AsyncIterable` of lines** ended by a caller-owned `AbortSignal`; one stream failing surfaces as an event without ending the others. Zero running services is a valid, non-failure result with an already-finished iterable.
 - **The alchemy child's output is not capturable through this API** — `stdio: 'inherit'` is part of the surface's contract. A host that must capture or redirect execution output needs a new option on the operations, not a workaround.

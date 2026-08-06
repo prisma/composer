@@ -680,10 +680,10 @@ const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
 ```
 
 - Failures come back as `{ outcome: 'failed', failure }` with
-  `failure.kind` ∈ `effect-resolution` | `invalid-input` | `unsupported` |
-  `pipeline` | `execution` and the same fix-naming `message` the CLI prints.
-  The effect version conflict is a structured result here, and importing the
-  module is safe even in a broken dependency tree.
+  `failure.kind` ∈ `invalid-input` | `unsupported` | `pipeline` | `execution`
+  and the same fix-naming `message` the CLI prints. The effect version
+  conflict is a `pipeline` failure carrying the same diagnostic, and importing
+  the module executes nothing until an operation runs.
 - `destroy` takes `target: { kind: 'production' } | { kind: 'stage', stage }`
   — explicit, never defaulted.
 - `deploy`'s `summary` (the deployed topology) is best-effort; `undefined` on

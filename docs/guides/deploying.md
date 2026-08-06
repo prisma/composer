@@ -324,12 +324,12 @@ What to know before embedding it:
   silent default to production and no flag-combination footgun.
 - **Failures are results, not throws.** Every operation resolves to either
   its success shape or `{ outcome: 'failed', failure }`, where
-  `failure.kind` is one of `effect-resolution` (the
-  [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
-  caught before anything heavy loads — importing the module is safe even in a
-  broken tree), `invalid-input`, `unsupported`, `pipeline` (anything between
-  config discovery and the deploy engine), or `execution` (the engine ran and
-  failed — carrying its exit code and an exact reproduce command).
+  `failure.kind` is one of `invalid-input`, `unsupported`, `pipeline`
+  (anything between loading the deploy stack and the deploy engine — including
+  the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
+  reported with the same fix-naming message the CLI prints), or `execution`
+  (the engine ran and failed — carrying its exit code and an exact reproduce
+  command). Importing the module executes nothing until you call an operation.
 - **`summary` is best-effort.** It rides a result file the deploy engine's
   child process writes; a deploy that converged without writing one still
   succeeds, with `summary: undefined`.
