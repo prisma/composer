@@ -855,6 +855,51 @@ describe('dev()', () => {
     expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
   }, 15_000);
 
+  test('the DevSession contract: closed settles only via stop(), stop() is idempotent, and no process signal handler is ever registered', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([{ address: 'app', url: 'http://localhost:3000' }]),
+      logs: async function* () {},
+    };
+    const sigintBefore = process.listenerCount('SIGINT');
+    const sigtermBefore = process.listenerCount('SIGTERM');
+    const events: string[] = [];
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event.kind),
+        },
+        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      );
+      if (start.outcome !== 'started') throw new Error('expected a started session');
+      expect(start.session.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
+
+      let settled = false;
+      void start.session.closed.then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(settled).toBe(false);
+
+      const firstStop = start.session.stop();
+      const secondStop = start.session.stop();
+      await firstStop;
+      await secondStop;
+      await start.session.closed;
+      expect(settled).toBe(true);
+    });
+
+    expect(events.filter((kind) => kind === 'stopping')).toHaveLength(1);
+    expect(events.filter((kind) => kind === 'stopped')).toHaveLength(1);
+    expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
+    expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
+  }, 15_000);
+
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
