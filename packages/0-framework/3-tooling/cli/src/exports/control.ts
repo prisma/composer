@@ -17,16 +17,10 @@ export type {
   DestroyTarget,
 } from '../operations/destroy.ts';
 export { destroy } from '../operations/destroy.ts';
-export type {
-  DevEndpoint,
-  DevEvent,
-  DevInput,
-  DevSession,
-  DevStartResult,
-} from '../operations/dev.ts';
+export type { DevEvent, DevInput, DevSession, DevStartResult } from '../operations/dev.ts';
 export { dev } from '../operations/dev.ts';
 export type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from '../operations/log.ts';
 export { log } from '../operations/log.ts';
-export type { OperationDeps, OperationFailure } from '../operations/shared.ts';
+export type { OperationDeps, OperationFailure, ServiceEndpoint } from '../operations/shared.ts';
 export type { DeployedNodeSummary, DeploymentSummary } from '../render-deployment.ts';
 export { DEPLOYMENT_RESULT_FILE_ENV } from '../render-deployment.ts';

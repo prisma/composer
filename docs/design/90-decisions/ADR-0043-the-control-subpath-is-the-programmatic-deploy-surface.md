@@ -61,7 +61,7 @@ The subpath is named `control` because that is the architecture plane these sour
 
 ## Consequences
 
-- **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from loading the deploy stack and config discovery through assembly and container preparation; `invalid-input`, `unsupported`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
+- **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from loading the deploy stack and config discovery through assembly and container preparation; `invalid-input`, `unsupported-platform`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
 - **`dev` returns a session handle** (`endpoints`, `stop()`, `closed`, an event callback) and **never touches process signal handlers**. Signal ownership — including evicting alchemy's import-time SIGINT/SIGTERM listeners — belongs to the host; the CLI adapter shows the pattern.
 - **`log` returns the running services plus an `AsyncIterable` of lines** ended by a caller-owned `AbortSignal`; one stream failing surfaces as an event without ending the others. Zero running services is a valid, non-failure result with an already-finished iterable.
 - **The alchemy child's output is not capturable through this API** — `stdio: 'inherit'` is part of the surface's contract. A host that must capture or redirect execution output needs a new option on the operations, not a workaround.

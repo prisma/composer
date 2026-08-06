@@ -13,6 +13,13 @@ import type { RunAlchemyInput } from '../run-alchemy.ts';
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
 
+/** A running service's dotted address plus its local URL — what `dev` reports
+ * as the front door and `log` reports as the tailable services. */
+export interface ServiceEndpoint {
+  readonly address: string;
+  readonly url: string;
+}
+
 /**
  * @internal Test seam — lets the CLI's own tests drive the operations without
  * a real wrapper build, config evaluation, or alchemy process. No stability
@@ -30,7 +37,7 @@ export type OperationFailure =
   /** A typed input was rejected (invalid --stage ref name, unknown log address). */
   | { readonly kind: 'invalid-input'; readonly message: string; readonly cause?: unknown }
   /** The host platform cannot run this operation (dev/log on win32). */
-  | { readonly kind: 'unsupported'; readonly message: string; readonly cause?: unknown }
+  | { readonly kind: 'unsupported-platform'; readonly message: string; readonly cause?: unknown }
   /** Any failure between loading the execution stack and the alchemy spawn:
    * a dependency tree the executor cannot load in, missing config, bad entry
    * export, LoadError, coverage miss, assemble, container, extension preflight.

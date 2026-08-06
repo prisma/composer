@@ -8,8 +8,7 @@
  */
 import type { PrismaAppConfig } from '@internal/core/config';
 import type { AppIdentity } from '../pipeline.ts';
-import type { DevEndpoint } from './dev.ts';
-import { executorLoadFailure, type OperationFailure } from './shared.ts';
+import { executorLoadFailure, type OperationFailure, type ServiceEndpoint } from './shared.ts';
 
 export interface LogLine {
   readonly service: string;
@@ -52,7 +51,7 @@ export type LogResult =
       readonly appName: string;
       /** Every running service. EMPTY means nothing is running — a valid, non-failure state;
        * `lines` is then an already-finished iterable. */
-      readonly services: readonly DevEndpoint[];
+      readonly services: readonly ServiceEndpoint[];
       /** Merged, address-filtered stream; ends on signal abort or when every source ends. */
       readonly lines: AsyncIterable<LogLine>;
     }

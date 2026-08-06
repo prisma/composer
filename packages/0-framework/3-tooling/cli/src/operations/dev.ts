@@ -7,16 +7,16 @@
  * nothing; an executor that fails to load comes back as a structured
  * `pipeline` failure, never a throw out of the host.
  */
-import { executorLoadFailure, type OperationDeps, type OperationFailure } from './shared.ts';
-
-export interface DevEndpoint {
-  readonly address: string;
-  readonly url: string;
-}
+import {
+  executorLoadFailure,
+  type OperationDeps,
+  type OperationFailure,
+  type ServiceEndpoint,
+} from './shared.ts';
 
 export type DevEvent =
   /** Initial front door + after each successful re-converge. */
-  | { readonly kind: 'ready'; readonly endpoints: readonly DevEndpoint[] }
+  | { readonly kind: 'ready'; readonly endpoints: readonly ServiceEndpoint[] }
   | { readonly kind: 'unwatchable'; readonly address: string }
   | { readonly kind: 'rebuild-failed'; readonly message: string }
   /** The app keeps running, still watching. */
@@ -43,7 +43,7 @@ export interface DevInput {
  * listeners before installing its own; see run-dev.ts). */
 export interface DevSession {
   /** The initial front door, already merged across attachments. */
-  readonly endpoints: readonly DevEndpoint[];
+  readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
    * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. */
   stop(): Promise<void>;

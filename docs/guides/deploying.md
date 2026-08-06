@@ -324,7 +324,7 @@ What to know before embedding it:
   silent default to production and no flag-combination footgun.
 - **Failures are results, not throws.** Every operation resolves to either
   its success shape or `{ outcome: 'failed', failure }`, where
-  `failure.kind` is one of `invalid-input`, `unsupported`, `pipeline`
+  `failure.kind` is one of `invalid-input`, `unsupported-platform`, `pipeline`
   (anything between loading the deploy stack and the deploy engine — including
   the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
   reported with the same fix-naming message the CLI prints), or `execution`

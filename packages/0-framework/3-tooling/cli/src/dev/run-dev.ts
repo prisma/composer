@@ -6,11 +6,9 @@
  * (capability check, containers, `--fresh` teardown, preflight, emulators,
  * converge, attach, watch loop) lives in the operation.
  */
-import type { RunAssembler } from '@internal/assemble';
-import type { PrismaAppConfig } from '@internal/core/config';
 import { CliError } from '../cli-error.ts';
 import { dev } from '../operations/dev.ts';
-import type { RunAlchemyInput } from '../run-alchemy.ts';
+import type { OperationDeps } from '../operations/shared.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `dev` command. */
 export interface DevArgs {
@@ -19,12 +17,8 @@ export interface DevArgs {
   readonly fresh: boolean;
 }
 
-/** Injectable seams — the same shapes `run()`'s `RunDeps` offers deploy/destroy. */
-export interface DevRunDeps {
-  readonly runAssembler?: RunAssembler | undefined;
-  readonly alchemy?: ((input: RunAlchemyInput) => number) | undefined;
-  readonly config?: PrismaAppConfig | undefined;
-}
+/** Injectable seams — the operations' own OperationDeps, under this adapter's historical name. */
+export type DevRunDeps = OperationDeps;
 
 /** `[dev] ready:` then one line per endpoint, ordered by address depth (fewest dots first) then lexicographic. Exported for tests. */
 export function renderFrontDoor(

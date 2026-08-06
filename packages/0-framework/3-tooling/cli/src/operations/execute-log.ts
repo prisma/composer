@@ -87,7 +87,10 @@ export async function executeLog(input: LogInput, cwd: string): Promise<LogResul
   if (process.platform === 'win32') {
     return {
       outcome: 'failed',
-      failure: { kind: 'unsupported', message: 'local dev is not supported on Windows yet.' },
+      failure: {
+        kind: 'unsupported-platform',
+        message: 'local dev is not supported on Windows yet.',
+      },
     };
   }
 

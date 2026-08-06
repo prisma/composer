@@ -7,10 +7,8 @@
  * front door once it supervises more than one service); this is where logs
  * live.
  */
-import type { PrismaAppConfig } from '@internal/core/config';
 import { CliError } from '../cli-error.ts';
-import { log } from '../operations/log.ts';
-import type { AppIdentity } from '../pipeline.ts';
+import { type LogDeps, log } from '../operations/log.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `log` command. */
 export interface LogArgs {
@@ -22,12 +20,8 @@ export interface LogArgs {
   readonly tail: number;
 }
 
-export interface LogRunDeps {
-  /** Substituted for the c12 evaluation of the discovered config file (discovery still runs). */
-  readonly config?: PrismaAppConfig | undefined;
-  /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
-  readonly identity?: AppIdentity | undefined;
-}
+/** Injectable seams — the log operation's own LogDeps, under this adapter's historical name. */
+export type LogRunDeps = LogDeps;
 
 /** Runs the log tail until interrupted; returns the process exit code. */
 export async function runLog(args: LogArgs, deps: LogRunDeps = {}): Promise<number> {

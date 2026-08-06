@@ -680,7 +680,7 @@ const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
 ```
 
 - Failures come back as `{ outcome: 'failed', failure }` with
-  `failure.kind` ∈ `invalid-input` | `unsupported` | `pipeline` | `execution`
+  `failure.kind` ∈ `invalid-input` | `unsupported-platform` | `pipeline` | `execution`
   and the same fix-naming `message` the CLI prints. The effect version
   conflict is a `pipeline` failure carrying the same diagnostic, and importing
   the module executes nothing until an operation runs.

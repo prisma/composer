@@ -16,8 +16,8 @@ import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-
 import { startWatch, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
-import type { DevEndpoint, DevInput, DevSession, DevStartResult } from './dev.ts';
-import type { ExtensionId } from './shared.ts';
+import type { DevInput, DevSession, DevStartResult } from './dev.ts';
+import type { ExtensionId, ServiceEndpoint } from './shared.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError
@@ -50,7 +50,7 @@ async function withEmulatorRetry<T>(call: () => Promise<T>): Promise<T> {
 
 async function mergedEndpoints(
   attachments: readonly LocalTargetAttachment[],
-): Promise<readonly DevEndpoint[]> {
+): Promise<readonly ServiceEndpoint[]> {
   const lists = await Promise.all(attachments.map((a) => withEmulatorRetry(() => a.endpoints())));
   return lists.flat();
 }
@@ -60,7 +60,10 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
   if (process.platform === 'win32') {
     return {
       outcome: 'failed',
-      failure: { kind: 'unsupported', message: 'local dev is not supported on Windows yet.' },
+      failure: {
+        kind: 'unsupported-platform',
+        message: 'local dev is not supported on Windows yet.',
+      },
     };
   }
 
