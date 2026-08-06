@@ -26,9 +26,9 @@ export interface DevArgs {
 
 /** Injectable seams — the same shapes `run()`'s `RunDeps` offers deploy/destroy. */
 export interface DevRunDeps {
-  readonly runAssembler?: RunAssembler;
-  readonly alchemy?: (input: RunAlchemyInput) => number;
-  readonly config?: PrismaAppConfig;
+  readonly runAssembler?: RunAssembler | undefined;
+  readonly alchemy?: ((input: RunAlchemyInput) => number) | undefined;
+  readonly config?: PrismaAppConfig | undefined;
 }
 
 function toCliError(error: unknown): CliError {
