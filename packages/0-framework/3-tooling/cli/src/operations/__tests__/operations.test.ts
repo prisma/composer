@@ -730,11 +730,15 @@ function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
 }
 
 describe('dev()', () => {
-  test('a throw after services start (endpoint merge) is a pipeline failure, not a rejection', async () => {
+  test('a throw after services start (endpoint merge) is a pipeline failure, and the started services are stopped again', async () => {
     const app = makeAppDir('hello-dev');
+    let stops = 0;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopServices: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
       endpoints: () => Promise.reject(new Error('emulator admin refused the connection')),
       logs: async function* () {},
     };
@@ -751,6 +755,61 @@ describe('dev()', () => {
     if (result.outcome !== 'failed') throw new Error('unreachable');
     expect(result.failure.kind).toBe('pipeline');
     expect(result.failure.message).toBe('emulator admin refused the connection');
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('stop() surfaces a service that refuses to stop as a stop-error event, and still finishes', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.reject(new Error('service pid 123 will not die')),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const events: string[] = [];
+
+    const result = await silently(async () => {
+      const start = await dev({
+        entry: app.entryPath,
+        cwd: app.dir,
+        onEvent: (event) => void events.push(event.kind),
+        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      });
+      if (start.outcome !== 'started') throw new Error('expected a started session');
+      await start.session.stop();
+      await start.session.closed;
+      return start;
+    });
+
+    expect(result.outcome).toBe('started');
+    expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
+  }, 15_000);
+
+  test('a host onEvent that throws cannot prevent closed from settling', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(async () => {
+      const start = await dev({
+        entry: app.entryPath,
+        cwd: app.dir,
+        onEvent: () => {
+          throw new Error('host renderer blew up');
+        },
+        deps: { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      });
+      if (start.outcome !== 'started') throw new Error('expected a started session');
+      await start.session.stop();
+      await start.session.closed;
+      return start;
+    });
+
+    expect(result.outcome).toBe('started');
   }, 15_000);
 
   test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {

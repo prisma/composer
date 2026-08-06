@@ -63,9 +63,16 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
         }
         case 'converge-failed':
           console.error('[dev] converge failed — the running app is untouched; still watching.');
+          console.error(`\nGenerated stack file: ${event.stackFilePath}`);
+          console.error(
+            `Run \`${event.reproduceCommand}\` from ${event.cwd} to reproduce this directly.`,
+          );
           break;
         case 'rebuild-failed':
           console.error(`[dev] rebuild failed: ${event.message}`);
+          break;
+        case 'watch-error':
+          console.error(`[dev] watch error: ${event.message}`);
           break;
         case 'stopping':
           console.log(
@@ -119,5 +126,7 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   process.on('SIGTERM', finish);
 
   await session.closed;
+  process.off('SIGINT', finish);
+  process.off('SIGTERM', finish);
   return 0;
 }

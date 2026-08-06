@@ -19,6 +19,8 @@ export type DevEvent =
   | { readonly kind: 'ready'; readonly endpoints: readonly ServiceEndpoint[] }
   | { readonly kind: 'unwatchable'; readonly address: string }
   | { readonly kind: 'rebuild-failed'; readonly message: string }
+  /** The file watcher itself errored (EMFILE, a vanished directory); the session keeps running. */
+  | { readonly kind: 'watch-error'; readonly message: string }
   /** The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
@@ -27,6 +29,8 @@ export type DevEvent =
       readonly cwd: string;
     }
   | { readonly kind: 'stopping' }
+  /** One service refused to stop during stop(); teardown continues and `stopped` still follows. */
+  | { readonly kind: 'stop-error'; readonly message: string }
   | { readonly kind: 'stopped' };
 
 export interface DevInput {

@@ -66,7 +66,11 @@ export interface WatchHandle {
  * nonexistent path is treated as a file target, so it starts reporting the
  * moment something creates it.
  */
-export function startWatch(targets: readonly WatchTarget[], onChange: () => void): WatchHandle {
+export function startWatch(
+  targets: readonly WatchTarget[],
+  onChange: () => void,
+  onError?: (error: unknown) => void,
+): WatchHandle {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const trigger = (): void => {
@@ -100,9 +104,10 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
 
   // An 'error' emitted with no listener throws and would take the whole dev
   // session down — a watch error (EMFILE, a vanished directory) is worth a
-  // line, not the process.
+  // report to the caller, not the process. Rendering is the caller's:
+  // this module never touches the console (the dev OPERATION reaches it).
   const reportError = (error: unknown): void => {
-    console.error(`[dev] watch error: ${error instanceof Error ? error.message : String(error)}`);
+    onError?.(error);
   };
 
   const watchers: FSWatcher[] = [];
