@@ -1,7 +1,7 @@
 /**
- * The deploy/destroy executor — main.ts's pipeline orchestration (steps 0–9.75)
- * with argv, console, and exit codes removed: typed inputs in, structured
- * results out. Reached only by lazy import from operations.ts — this module's
+ * The deploy/destroy executor — main.ts's pipeline orchestration with argv,
+ * console, and exit codes removed: typed inputs in, structured results out.
+ * Reached only by lazy import from deploy.ts/destroy.ts — this module's
  * static graph transitively loads alchemy's provider tree, so the control
  * entry must never import it statically.
  */
@@ -16,15 +16,9 @@ import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../render-deployment.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import { validateStageName } from '../validate-stage.ts';
-import type {
-  DeployInput,
-  DeployResult,
-  DestroyEvent,
-  DestroyInput,
-  DestroyResult,
-  OperationDeps,
-  OperationFailure,
-} from './results.ts';
+import type { DeployInput, DeployResult } from './deploy.ts';
+import type { DestroyEvent, DestroyInput, DestroyResult } from './destroy.ts';
+import type { ExtensionId, OperationDeps, OperationFailure } from './shared.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -87,7 +81,7 @@ export function readDeploymentSummary(resultFilePath: string): DeploymentSummary
   >(parsed);
 }
 
-interface ExecuteOptions {
+interface StackPipelineOptions {
   readonly entry: string;
   readonly name: string | undefined;
   readonly stage: string | undefined;
@@ -97,7 +91,7 @@ interface ExecuteOptions {
 }
 
 export async function executeDeploy(input: DeployInput, cwd: string): Promise<DeployResult> {
-  const outcome = await executeDeployOrDestroy('deploy', {
+  const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     name: input.name,
     stage: input.stage,
@@ -105,12 +99,12 @@ export async function executeDeploy(input: DeployInput, cwd: string): Promise<De
     onEvent: undefined,
     deps: input.deps,
   });
-  if (outcome.failure !== undefined) return { outcome: 'failed', failure: outcome.failure };
+  if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
   return { outcome: 'deployed', summary: outcome.summary };
 }
 
 export async function executeDestroy(input: DestroyInput, cwd: string): Promise<DestroyResult> {
-  const outcome = await executeDeployOrDestroy('destroy', {
+  const outcome = await runStackPipeline('destroy', {
     entry: input.entry,
     name: input.name,
     stage: input.target.kind === 'stage' ? input.target.stage : undefined,
@@ -118,19 +112,21 @@ export async function executeDestroy(input: DestroyInput, cwd: string): Promise<
     onEvent: input.onEvent,
     deps: input.deps,
   });
-  if (outcome.failure !== undefined) return { outcome: 'failed', failure: outcome.failure };
+  if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
   return { outcome: 'destroyed' };
 }
 
-interface ExecuteOutcome {
-  readonly failure?: OperationFailure | undefined;
-  readonly summary?: DeploymentSummary | undefined;
-}
+type StackPipelineOutcome =
+  | { readonly kind: 'succeeded'; readonly summary: DeploymentSummary | undefined }
+  | { readonly kind: 'failed'; readonly failure: OperationFailure };
 
-async function executeDeployOrDestroy(
+/** The pipeline both actions share: validate, resolve containers, preflight,
+ * write the stack file, run alchemy against it, then the destroy-only
+ * teardown/removal suffix. `summary` is only ever populated for deploy. */
+async function runStackPipeline(
   action: 'deploy' | 'destroy',
-  opts: ExecuteOptions,
-): Promise<ExecuteOutcome> {
+  opts: StackPipelineOptions,
+): Promise<StackPipelineOutcome> {
   const { entry, name, stage, cwd, onEvent, deps } = opts;
 
   if (stage !== undefined) {
@@ -138,13 +134,16 @@ async function executeDeployOrDestroy(
       validateStageName(stage);
     } catch (error) {
       if (error instanceof CliError) {
-        return { failure: { kind: 'invalid-input', message: error.message, cause: error } };
+        return {
+          kind: 'failed',
+          failure: { kind: 'invalid-input', message: error.message, cause: error },
+        };
       }
       throw error;
     }
   }
 
-  // 0. destroy-only guardrail — first, ahead of every other step, so it
+  // Destroy-only guardrail — first, ahead of every other step, so it
   // surfaces even when the rest of the pipeline goes on to fail for an
   // unrelated reason (missing config, missing built output — both common
   // companions of "nothing was ever deployed from here").
@@ -153,11 +152,11 @@ async function executeDeployOrDestroy(
   }
 
   let pipeline: PipelineResult;
-  let containers: Map<string, ContainerInstance>;
+  let containers: Map<ExtensionId, ContainerInstance>;
   let alchemyStage: string;
 
   try {
-    // 1–6. The shared prefix (pipeline.ts): config discovery/load, entry load,
+    // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
     const onAssembleError =
@@ -171,11 +170,11 @@ async function executeDeployOrDestroy(
     pipeline = await runPipeline(entry, name, cwd, pipelineDeps, onAssembleError);
     const { config, graph, name: resolvedName } = pipeline;
 
-    // 7. Resolve each extension's own container (e.g. Prisma Cloud's Project +
+    // Resolve each extension's own container (e.g. Prisma Cloud's Project +
     // named-stage Branch) via its own descriptor — deploy ensures (creates if
     // absent), destroy locates only — after assembly succeeds, so a deploy
     // that cannot assemble never creates anything on any platform.
-    containers = new Map<string, ContainerInstance>();
+    containers = new Map<ExtensionId, ContainerInstance>();
     for (const extension of config.extensions) {
       if (extension.container === undefined) continue;
       try {
@@ -200,7 +199,7 @@ async function executeDeployOrDestroy(
       }
     }
 
-    // 7.3 The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
+    // The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
     // — machine-dependent, the TML-3157 incident): the state-owning extension's
     // container (same selection as core's resolveStateLayer) pins it, else an
     // explicit --stage must.
@@ -220,7 +219,7 @@ async function executeDeployOrDestroy(
     }
     alchemyStage = pinnedStage;
 
-    // 7.5 Preflight (deploy only): each extension verifies its platform
+    // Preflight (deploy only): each extension verifies its platform
     // prerequisites — e.g. that every secret env var in the provision manifest
     // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
     // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
@@ -237,10 +236,13 @@ async function executeDeployOrDestroy(
       }
     }
   } catch (error) {
-    return { failure: { kind: 'pipeline', message: failureMessage(error), cause: error } };
+    return {
+      kind: 'failed',
+      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+    };
   }
 
-  // 8. Generate .prisma-composer/alchemy.run.ts (tool state lives where you run the tool).
+  // Generate .prisma-composer/alchemy.run.ts (tool state lives where you run the tool).
   const stackPath = writeStackFile({
     entryPath: pipeline.entryModule.path,
     cwd,
@@ -256,7 +258,7 @@ async function executeDeployOrDestroy(
   const resultFilePath = path.join(cwd, '.prisma-composer', 'deployment-result.json');
   fs.rmSync(resultFilePath, { force: true });
 
-  // 9. Shell out to alchemy against the generated file.
+  // Shell out to alchemy against the generated file.
   let status: number;
   try {
     status = (deps?.alchemy ?? runAlchemy)({
@@ -269,6 +271,7 @@ async function executeDeployOrDestroy(
     });
   } catch (error) {
     return {
+      kind: 'failed',
       failure: {
         kind: 'execution',
         message: failureMessage(error),
@@ -282,6 +285,7 @@ async function executeDeployOrDestroy(
   }
   if (status !== 0) {
     return {
+      kind: 'failed',
       failure: {
         kind: 'execution',
         message: `alchemy ${action} exited with status ${status}.`,
@@ -294,7 +298,7 @@ async function executeDeployOrDestroy(
   }
 
   try {
-    // 9.5 Teardown (destroy only): each extension removes infrastructure it
+    // Teardown (destroy only): each extension removes infrastructure it
     // owns outside the stack — the destroy above may still have been reading
     // it, and the containers below may refuse to go while it exists. What that
     // infrastructure is, and whether losing it should fail the command, is the
@@ -311,7 +315,7 @@ async function executeDeployOrDestroy(
         }
       }
 
-      // 9.75 Container removal (destroy only, after every teardown): the CLI's
+      // Container removal (destroy only, after every teardown): the CLI's
       // two-loop order — all teardowns, then all removes — is what structurally
       // preserves ADR-0034's guarantee that a stage's state database is deleted
       // before its Branch (a Branch with an attached database refuses deletion).
@@ -329,11 +333,14 @@ async function executeDeployOrDestroy(
       }
     }
   } catch (error) {
-    return { failure: { kind: 'pipeline', message: failureMessage(error), cause: error } };
+    return {
+      kind: 'failed',
+      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+    };
   }
 
   if (action === 'deploy') {
-    return { summary: readDeploymentSummary(resultFilePath) };
+    return { kind: 'succeeded', summary: readDeploymentSummary(resultFilePath) };
   }
-  return {};
+  return { kind: 'succeeded', summary: undefined };
 }

@@ -7,25 +7,26 @@
  * `prisma-composer.config.ts`): this subpath is for hosts driving the deploy
  * pipeline in-process.
  */
-export { deploy, destroy, dev, log } from '../operations/operations.ts';
+
+export type { DeployInput, DeployResult } from '../operations/deploy.ts';
+export { deploy } from '../operations/deploy.ts';
 export type {
-  DeployInput,
-  DeployResult,
   DestroyEvent,
   DestroyInput,
   DestroyResult,
   DestroyTarget,
+} from '../operations/destroy.ts';
+export { destroy } from '../operations/destroy.ts';
+export type {
   DevEndpoint,
   DevEvent,
   DevInput,
   DevSession,
   DevStartResult,
-  LogEvent,
-  LogInput,
-  LogLine,
-  LogResult,
-  OperationDeps,
-  OperationFailure,
-} from '../operations/results.ts';
+} from '../operations/dev.ts';
+export { dev } from '../operations/dev.ts';
+export type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from '../operations/log.ts';
+export { log } from '../operations/log.ts';
+export type { OperationDeps, OperationFailure } from '../operations/shared.ts';
 export type { DeployedNodeSummary, DeploymentSummary } from '../render-deployment.ts';
 export { DEPLOYMENT_RESULT_FILE_ENV } from '../render-deployment.ts';

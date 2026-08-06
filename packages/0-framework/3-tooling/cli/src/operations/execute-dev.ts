@@ -3,9 +3,8 @@
  * and signal handling removed: events out through `onEvent`, lifetime owned by
  * the returned DevSession. The operation NEVER touches process signal
  * handlers — the host does (see run-dev.ts). Reached only by lazy import
- * from operations.ts — this module's static graph transitively loads
- * alchemy's provider tree, so the control entry must never import it
- * statically.
+ * from dev.ts — this module's static graph transitively loads alchemy's
+ * provider tree, so the control entry must never import it statically.
  */
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
@@ -17,7 +16,8 @@ import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-
 import { startWatch, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
-import type { DevEndpoint, DevInput, DevSession, DevStartResult } from './results.ts';
+import type { DevEndpoint, DevInput, DevSession, DevStartResult } from './dev.ts';
+import type { ExtensionId } from './shared.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError
@@ -69,16 +69,16 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
 
   let pipeline: Awaited<ReturnType<typeof runPipeline>>;
   let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
-  const containers = new Map<string, ContainerInstance>();
+  const containers = new Map<ExtensionId, ContainerInstance>();
 
   try {
-    // 1–6. The shared prefix (pipeline.ts): config discovery/load, entry load,
+    // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps?.runAssembler, config: deps?.config };
     pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
     const { config, graph, name } = pipeline;
 
-    // 2. Dev-capability check — resolve every non-build-only extension's lazy
+    // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
     // names any extension without local-target support, and build-only
     // extensions are exempt inside it. Every subsequent hook call runs off
@@ -89,7 +89,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       throw toCliError(error);
     }
 
-    // 3. Containers — purely local, resolved before anything else can fail.
+    // Containers — purely local, resolved before anything else can fail.
     for (const [id, dev] of resolved) {
       try {
         containers.set(id, await dev.container.ensure({ appName: name, stage: undefined }));
@@ -98,7 +98,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       }
     }
 
-    // 4. `--fresh`: teardown every participant's dev instance, then continue cold.
+    // `--fresh`: teardown every participant's dev instance, then continue cold.
     if (input.fresh === true) {
       for (const [id, dev] of resolved) {
         if (dev.teardown === undefined) continue;
@@ -110,7 +110,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       }
     }
 
-    // 5. Preflight — always (dev has no deploy/destroy split).
+    // Preflight — always (dev has no deploy/destroy split).
     for (const [id, dev] of resolved) {
       if (dev.preflight === undefined) continue;
       try {
@@ -120,7 +120,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       }
     }
 
-    // 6. Emulators — ensure the daemons this topology's node kinds need.
+    // Emulators — ensure the daemons this topology's node kinds need.
     for (const [id, dev] of resolved) {
       if (dev.emulators === undefined) continue;
       try {
@@ -156,7 +156,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
     return { status, stackPath };
   };
 
-  // 7. Write the dev stack file and converge.
+  // Write the dev stack file and converge.
   const first = converge();
   if (first.status !== 0) {
     return {
@@ -172,7 +172,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
     };
   }
 
-  // 8. Attach: start every stopped service (session resume — a no-op converge
+  // Attach: start every stopped service (session resume — a no-op converge
   // cannot restart what a previous session's Ctrl-C stopped), then report the
   // front door.
   const attachments: LocalTargetAttachment[] = [];
@@ -196,7 +196,7 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
     const endpoints = await mergedEndpoints(attachments);
     onEvent?.({ kind: 'ready', endpoints });
 
-    // 9. Watch loop until the session is stopped: rebuild → re-assemble →
+    // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.
     const { targets, unwatchable } = watchTargetsFrom(pipeline.assembled.bundles);
     for (const address of unwatchable) {

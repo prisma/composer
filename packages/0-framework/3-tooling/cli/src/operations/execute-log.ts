@@ -2,7 +2,7 @@
  * The log executor — run-log.ts's attach-and-tail (config → localTarget →
  * container → attach → logs) with console and signal handling removed: the
  * merged stream comes back as an AsyncIterable, ended by the caller's
- * AbortSignal. Reached only by lazy import from operations.ts — this module's
+ * AbortSignal. Reached only by lazy import from log.ts — this module's
  * static graph transitively loads alchemy's provider tree, so the control
  * entry must never import it statically.
  */
@@ -11,7 +11,7 @@ import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/cor
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
 import { CliError } from '../cli-error.ts';
 import { resolveAppIdentity } from '../pipeline.ts';
-import type { LogInput, LogLine, LogResult } from './results.ts';
+import type { LogInput, LogLine, LogResult } from './log.ts';
 
 function toCliError(error: unknown): CliError {
   return error instanceof CliError

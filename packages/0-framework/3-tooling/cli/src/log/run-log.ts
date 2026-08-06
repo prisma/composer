@@ -9,7 +9,7 @@
  */
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliError } from '../cli-error.ts';
-import { log } from '../operations/operations.ts';
+import { log } from '../operations/log.ts';
 import type { AppIdentity } from '../pipeline.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `log` command. */

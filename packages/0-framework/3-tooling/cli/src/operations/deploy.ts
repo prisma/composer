@@ -1,0 +1,42 @@
+/**
+ * The programmatic `deploy` operation (`@prisma/composer/control`): typed
+ * input, structured result, no argv, no console, no process.exit. The
+ * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
+ * loads lazily, so importing this module executes nothing; an executor that
+ * fails to load comes back as a structured `pipeline` failure, never a throw
+ * out of the host.
+ */
+import type { DeploymentSummary } from '../render-deployment.ts';
+import { executorLoadFailure, type OperationDeps, type OperationFailure } from './shared.ts';
+
+export interface DeployInput {
+  /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
+  readonly entry: string;
+  /** Override the root node's name (the `--name` flag's slot). */
+  readonly name?: string | undefined;
+  /** Target stage. ABSENT = production — bare deploy targets production (main.ts effectiveStage). */
+  readonly stage?: string | undefined;
+  /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
+  readonly cwd?: string | undefined;
+  readonly deps?: OperationDeps | undefined;
+}
+
+export type DeployResult =
+  | {
+      readonly outcome: 'deployed';
+      /** Parsed from the alchemy child's result file. Undefined when the child
+       * did not write one (injected fake alchemy, or a report-less apply). */
+      readonly summary: DeploymentSummary | undefined;
+    }
+  | { readonly outcome: 'failed'; readonly failure: OperationFailure };
+
+export async function deploy(input: DeployInput): Promise<DeployResult> {
+  const cwd = input.cwd ?? process.cwd();
+  let executor: typeof import('./execute-deploy-destroy.ts');
+  try {
+    executor = await import('./execute-deploy-destroy.ts');
+  } catch (error) {
+    return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
+  }
+  return executor.executeDeploy(input, cwd);
+}

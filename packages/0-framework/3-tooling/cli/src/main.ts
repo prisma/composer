@@ -7,8 +7,9 @@ import { Cli, Command, Option, UsageError } from 'clipanion';
 import { CliError } from './cli-error.ts';
 import { runDev } from './dev/run-dev.ts';
 import { runLog } from './log/run-log.ts';
-import { deploy, destroy } from './operations/operations.ts';
-import type { DestroyTarget, OperationDeps, OperationFailure } from './operations/results.ts';
+import { deploy } from './operations/deploy.ts';
+import { type DestroyTarget, destroy } from './operations/destroy.ts';
+import type { OperationDeps, OperationFailure } from './operations/shared.ts';
 
 const BINARY_NAME = 'prisma-composer';
 

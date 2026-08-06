@@ -9,7 +9,7 @@
 import type { RunAssembler } from '@internal/assemble';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliError } from '../cli-error.ts';
-import { dev } from '../operations/operations.ts';
+import { dev } from '../operations/dev.ts';
 import type { RunAlchemyInput } from '../run-alchemy.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `dev` command. */

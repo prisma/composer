@@ -25,8 +25,10 @@ import { CliError } from '../../cli-error.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../render-deployment.ts';
 import type { RunAlchemyInput } from '../../run-alchemy.ts';
-import { deploy, destroy, dev, log } from '../operations.ts';
-import type { LogLine } from '../results.ts';
+import { deploy } from '../deploy.ts';
+import { destroy } from '../destroy.ts';
+import { dev } from '../dev.ts';
+import { type LogLine, log } from '../log.ts';
 
 const tmpDirs: string[] = [];
 
@@ -412,7 +414,7 @@ describe('deploy()', () => {
     // tree is healthy, so a fresh bun process reproduces that throw with a
     // plugin that fails the executor's load; deploy() must diagnose it against
     // `cwd`'s tree and return a structured failure — silent stdio, exit 0.
-    const operationsPath = fileURLToPath(new URL('../operations.ts', import.meta.url));
+    const operationsPath = fileURLToPath(new URL('../deploy.ts', import.meta.url));
     const breakerPath = path.join(dir, 'break-executor.ts');
     fs.writeFileSync(
       breakerPath,
