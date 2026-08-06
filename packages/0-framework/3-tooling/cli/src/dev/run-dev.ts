@@ -47,6 +47,11 @@ function printFrontDoor(
 
 /** Runs the full dev pipeline; returns the process exit code. */
 export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<number> {
+  // Shipped output order: front door → `[dev] logs:` hint → unwatchable lines.
+  // The operation emits 'unwatchable' before it returns the session, so those
+  // lines are held back until the hint has printed.
+  let hintPrinted = false;
+  const pendingUnwatchable: string[] = [];
   const result = await dev({
     entry: args.entry,
     name: args.name,
@@ -56,9 +61,12 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
         case 'ready':
           printFrontDoor(event.endpoints);
           break;
-        case 'unwatchable':
-          console.log(`[dev] ${event.address} has no watchable inputs`);
+        case 'unwatchable': {
+          const line = `[dev] ${event.address} has no watchable inputs`;
+          if (hintPrinted) console.log(line);
+          else pendingUnwatchable.push(line);
           break;
+        }
         case 'converge-failed':
           console.error('[dev] converge failed — the running app is untouched; still watching.');
           break;
@@ -95,6 +103,8 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   // processes and streaming them all inline drowns the front door and the
   // rebuild notices. `prisma-composer log` tails them on demand.
   console.log(`[dev] logs: prisma-composer log ${args.entry}`);
+  hintPrinted = true;
+  for (const line of pendingUnwatchable.splice(0)) console.log(line);
 
   const finish = (): void => {
     void session.stop();
