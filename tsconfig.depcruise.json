@@ -40,6 +40,7 @@
       "@internal/cli/report": [
         "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
       ],
+      "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/exports/index.ts"],
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"
@@ -153,6 +154,7 @@
         "./packages/9-public/composer-prisma-cloud/src/exports/index.ts"
       ],
       "@prisma/composer/report": ["./packages/9-public/composer/src/exports/report.ts"],
+      "@prisma/composer/control": ["./packages/9-public/composer/src/exports/control.ts"],
       "@prisma/composer": ["./packages/9-public/composer/src/exports/index.ts"]
     }
   }

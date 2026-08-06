@@ -5,6 +5,7 @@
   "description": "The `prisma-composer` deploy CLI.",
   "exports": {
     ".": "./dist/index.mjs",
+    "./control": "./dist/control.mjs",
     "./report": "./dist/report.mjs",
     "./package.json": "./package.json"
   },

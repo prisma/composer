@@ -9,6 +9,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
+    "./control": "./dist/control.mjs",
     "./deploy": "./dist/deploy.mjs",
     "./local-target": "./dist/local-target.mjs",
     "./report": "./dist/report.mjs",

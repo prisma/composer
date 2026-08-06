@@ -16,6 +16,7 @@ export default defineConfig({
     index: 'src/exports/index.ts',
     bin: 'src/bin.ts',
     report: 'src/exports/render-deployment.ts',
+    control: 'src/exports/control.ts',
   },
   exports:
     typeof baseConfig.exports === 'object'
