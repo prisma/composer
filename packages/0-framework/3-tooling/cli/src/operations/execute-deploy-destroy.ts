@@ -1,9 +1,9 @@
 /**
  * The deploy/destroy executor — main.ts's pipeline orchestration (steps 0–9.75)
  * with argv, console, and exit codes removed: typed inputs in, structured
- * results out. Reached only by dynamic import from operations.ts, after the
- * effect-resolution preflight — this module's static graph transitively loads
- * alchemy's provider tree.
+ * results out. Reached only by lazy import from operations.ts — this module's
+ * static graph transitively loads alchemy's provider tree, so the control
+ * entry must never import it statically.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';

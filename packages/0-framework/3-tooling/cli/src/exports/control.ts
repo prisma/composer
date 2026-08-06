@@ -1,8 +1,8 @@
 /**
  * Public surface (the `./control` subpath): the programmatic
  * deploy/destroy/dev/log operations. Implementation lives in ../operations/.
- * Import-safe in a broken effect tree — the heavy pipeline loads only behind
- * each operation's own preflight. Distinct from an EXTENSION's `/control`
+ * Importing it executes nothing — the heavy pipeline loads lazily inside
+ * each operation. Distinct from an EXTENSION's `/control`
  * entry (ADR-0017's control-plane descriptors, importable only from
  * `prisma-composer.config.ts`): this subpath is for hosts driving the deploy
  * pipeline in-process.

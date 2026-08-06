@@ -2,9 +2,9 @@
  * The log executor — run-log.ts's attach-and-tail (config → localTarget →
  * container → attach → logs) with console and signal handling removed: the
  * merged stream comes back as an AsyncIterable, ended by the caller's
- * AbortSignal. Reached only by dynamic import from operations.ts, after the
- * effect-resolution preflight — this module's static graph transitively loads
- * alchemy's provider tree.
+ * AbortSignal. Reached only by lazy import from operations.ts — this module's
+ * static graph transitively loads alchemy's provider tree, so the control
+ * entry must never import it statically.
  */
 import * as path from 'node:path';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';

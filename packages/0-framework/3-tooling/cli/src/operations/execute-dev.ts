@@ -2,9 +2,10 @@
  * The dev executor — run-dev.ts's pipeline (local-dev spec § 6) with console
  * and signal handling removed: events out through `onEvent`, lifetime owned by
  * the returned DevSession. The operation NEVER touches process signal
- * handlers — the host does (see run-dev.ts). Reached only by dynamic import
- * from operations.ts, after the effect-resolution preflight — this module's
- * static graph transitively loads alchemy's provider tree.
+ * handlers — the host does (see run-dev.ts). Reached only by lazy import
+ * from operations.ts — this module's static graph transitively loads
+ * alchemy's provider tree, so the control entry must never import it
+ * statically.
  */
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';

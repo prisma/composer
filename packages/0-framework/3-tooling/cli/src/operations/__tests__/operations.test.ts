@@ -6,6 +6,7 @@
  * the host.
  */
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -385,7 +386,7 @@ describe('deploy()', () => {
     });
   });
 
-  test('a broken effect tree is an effect-resolution failure — nothing heavier is imported, nothing runs', async () => {
+  test('a broken effect tree is a pipeline failure naming the mismatch — the executor cannot load, the host stays alive', () => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
     );
@@ -406,27 +407,58 @@ describe('deploy()', () => {
       version: '0.0.0',
       dependencies: { effect: '4.0.0-beta.93' },
     });
-    let assemblerRan = false;
 
-    const result = await silently(() =>
-      deploy({
-        entry: 'service.ts',
-        cwd: dir,
-        deps: {
-          runAssembler: async (node) => {
-            assemblerRan = true;
-            return fakeAssembler(node);
-          },
-        },
-      }),
+    // In a broken tree the executor's own import of alchemy throws. The repo's
+    // tree is healthy, so a fresh bun process reproduces that throw with a
+    // plugin that fails the executor's load; deploy() must diagnose it against
+    // `cwd`'s tree and return a structured failure — silent stdio, exit 0.
+    const operationsPath = fileURLToPath(new URL('../operations.ts', import.meta.url));
+    const breakerPath = path.join(dir, 'break-executor.ts');
+    fs.writeFileSync(
+      breakerPath,
+      'Bun.plugin({\n' +
+        "  name: 'break-executor',\n" +
+        '  setup(build) {\n' +
+        '    build.onLoad({ filter: /execute-deploy-destroy\\.ts$/ }, () => {\n' +
+        "      throw new Error('Schedule.either is not a function');\n" +
+        '    });\n' +
+        '  },\n' +
+        '});\n',
+    );
+    const probePath = path.join(dir, 'probe.ts');
+    const resultPath = path.join(dir, 'result.json');
+    fs.writeFileSync(
+      probePath,
+      `import { deploy } from ${JSON.stringify(operationsPath)};\n` +
+        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)} });\n` +
+        'await Bun.write(\n' +
+        `  ${JSON.stringify(resultPath)},\n` +
+        '  JSON.stringify(result, (_key, value) =>\n' +
+        '    value instanceof Error ? { name: value.name, message: value.message } : value,\n' +
+        '  ),\n' +
+        ');\n',
     );
 
+    const probe = spawnSync(process.execPath, ['--preload', breakerPath, probePath], {
+      cwd: dir,
+      encoding: 'utf-8',
+    });
+    expect(probe.error).toBeUndefined();
+    expect(probe.stdout).toBe('');
+    expect(probe.stderr).toBe('');
+    expect(probe.status).toBe(0);
+
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8')) as {
+      outcome: string;
+      failure: { kind: string; message: string; cause: { name: string; message: string } };
+    };
     expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('effect-resolution');
+    expect(result.failure.kind).toBe('pipeline');
     expect(result.failure.message).toContain('alchemy resolves effect@4.0.0-beta.102');
-    expect(result.failure.cause).toBeInstanceOf(CliError);
-    expect(assemblerRan).toBe(false);
+    expect(result.failure.cause).toEqual({
+      name: 'Error',
+      message: 'Schedule.either is not a function',
+    });
   });
 });
 

@@ -1,8 +1,7 @@
 /**
  * Typed inputs and structured results for the programmatic operations
- * (`@prisma/composer/control`). Zero runtime imports from the heavy
- * alchemy-touching tree — everything here is `import type`, erased in the
- * build, so this module is import-safe in a broken effect tree (TML-3158).
+ * (`@prisma/composer/control`). Everything here is `import type`, erased in
+ * the build — importing this module loads no runtime code.
  */
 import type { RunAssembler } from '@internal/assemble';
 import type { PrismaAppConfig } from '@internal/core/config';
@@ -21,14 +20,13 @@ export interface OperationDeps {
 /** Why an operation did not complete. `message` is the same fix-naming text the
  * CLI prints today; `cause` is the original thrown error. */
 export type OperationFailure =
-  /** TML-3158: alchemy would resolve a mismatched `effect`; nothing was imported, nothing ran. */
-  | { readonly kind: 'effect-resolution'; readonly message: string; readonly cause?: unknown }
   /** A typed input was rejected (invalid --stage ref name, unknown log address). */
   | { readonly kind: 'invalid-input'; readonly message: string; readonly cause?: unknown }
   /** The host platform cannot run this operation (dev/log on win32). */
   | { readonly kind: 'unsupported'; readonly message: string; readonly cause?: unknown }
-  /** Any failure between config discovery and the alchemy spawn: missing config,
-   * bad entry export, LoadError, coverage miss, assemble, container, extension preflight.
+  /** Any failure between loading the execution stack and the alchemy spawn:
+   * a dependency tree the executor cannot load in, missing config, bad entry
+   * export, LoadError, coverage miss, assemble, container, extension preflight.
    * (Finer-grained diagnostics are the next slice.) */
   | { readonly kind: 'pipeline'; readonly message: string; readonly cause?: unknown }
   /** The alchemy child ran and failed. `exitCode` undefined means the spawn itself threw. */
