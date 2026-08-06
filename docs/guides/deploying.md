@@ -296,6 +296,54 @@ next deploy recreates everything under fresh state — either:
 Recreated apps get new generated URLs; anything pointing at the old ones
 needs updating.
 
+## Driving deploys from code
+
+Everything the CLI does is also callable in-process, from
+`@prisma/composer/control`: typed `deploy`, `destroy`, `dev`, and `log`
+operations that return structured results instead of printing and exiting.
+The `prisma-composer` commands are thin renderers over these same operations,
+so the two surfaces can't drift.
+
+```ts
+import { deploy } from '@prisma/composer/control';
+
+const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
+if (result.outcome === 'deployed') {
+  // result.summary — the deployed topology (app name + each node's
+  // address and entities), when the deploy engine reported one.
+} else {
+  console.error(result.failure.message); // same fix-naming text the CLI prints
+}
+```
+
+What to know before embedding it:
+
+- **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
+  exactly like the CLI. `destroy` takes a discriminated target —
+  `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
+  silent default to production and no flag-combination footgun.
+- **Failures are results, not throws.** Every operation resolves to either
+  its success shape or `{ outcome: 'failed', failure }`, where
+  `failure.kind` is one of `effect-resolution` (the
+  [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
+  caught before anything heavy loads — importing the module is safe even in a
+  broken tree), `invalid-input`, `unsupported`, `pipeline` (anything between
+  config discovery and the deploy engine), or `execution` (the engine ran and
+  failed — carrying its exit code and an exact reproduce command).
+- **`summary` is best-effort.** It rides a result file the deploy engine's
+  child process writes; a deploy that converged without writing one still
+  succeeds, with `summary: undefined`.
+- **The engine's own output still streams to your process's stdio.** The
+  operations return structured results but don't capture the live deploy
+  output; run them where that output belongs, or with stdio redirected.
+- **`dev` returns a session, not an exit code** — `{ endpoints, stop(),
+  closed }`, with progress (`ready`, `converge-failed`, …) delivered through
+  `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
+  `session.stop()` is yours.
+- **`log` returns the running services and an `AsyncIterable` of lines**,
+  ended by an `AbortSignal` you own. Zero running services is a valid result
+  (empty `services`, finished stream), not an error.
+
 ## The full picture
 
 [`docs/design/10-domains/deploy-cli.md`](../design/10-domains/deploy-cli.md)

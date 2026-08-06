@@ -667,6 +667,35 @@ the silent `undefined`.
 Only reachable if you authored the connection or the extension on one side —
 every shipped block supplies what it declares.
 
+### Driving deploys from code
+
+`@prisma/composer/control` exposes the CLI's operations in-process: typed
+`deploy`, `destroy`, `dev`, and `log` returning structured results — no argv,
+no console output, no exit codes. The CLI itself is a renderer over them.
+
+```ts
+import { deploy } from '@prisma/composer/control';
+const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
+// result: { outcome: 'deployed', summary? } | { outcome: 'failed', failure }
+```
+
+- Failures come back as `{ outcome: 'failed', failure }` with
+  `failure.kind` ∈ `effect-resolution` | `invalid-input` | `unsupported` |
+  `pipeline` | `execution` and the same fix-naming `message` the CLI prints.
+  The effect version conflict is a structured result here, and importing the
+  module is safe even in a broken dependency tree.
+- `destroy` takes `target: { kind: 'production' } | { kind: 'stage', stage }`
+  — explicit, never defaulted.
+- `deploy`'s `summary` (the deployed topology) is best-effort; `undefined` on
+  a successful deploy is normal.
+- The deploy engine's live output still streams to the host process's stdio —
+  the operations don't capture it.
+- `dev` resolves to a session `{ endpoints, stop(), closed }` with progress
+  via `onEvent`; the host owns signal handling. `log` resolves to
+  `{ appName, services, lines }` where `lines` is an `AsyncIterable` ended by
+  a caller-owned `AbortSignal`; zero running services is a valid result, not
+  an error.
+
 ## Production pitfalls
 
 - **Scale-to-zero closes idle database connections.** A persistent client
