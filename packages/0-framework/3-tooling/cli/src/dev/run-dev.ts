@@ -82,12 +82,11 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
 
   if (result.outcome === 'failed') {
     const failure = result.failure;
-    if (failure.kind === 'execution') {
-      console.error(`\nGenerated stack file: ${failure.stackFilePath}`);
-      console.error(
-        `Run \`${failure.reproduceCommand}\` from ${failure.cwd} to reproduce this directly.`,
-      );
-      return failure.exitCode ?? 1;
+    if (failure.kind === 'execution' && failure.diagnostics !== undefined) {
+      const { exitCode, stackFilePath, reproduceCommand, cwd } = failure.diagnostics;
+      console.error(`\nGenerated stack file: ${stackFilePath}`);
+      console.error(`Run \`${reproduceCommand}\` from ${cwd} to reproduce this directly.`);
+      return exitCode ?? 1;
     }
     throw failure.cause instanceof Error ? failure.cause : new CliError(failure.message);
   }

@@ -22,8 +22,8 @@ import type {
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
 import { CliError } from '../../cli-error.ts';
+import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../render-deployment.ts';
 import type { RunAlchemyInput } from '../../run-alchemy.ts';
 import { deploy } from '../deploy.ts';
 import { destroy } from '../destroy.ts';
@@ -381,10 +381,12 @@ describe('deploy()', () => {
     expect(result.failure).toEqual({
       kind: 'execution',
       message: 'alchemy deploy exited with status 42.',
-      exitCode: 42,
-      stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
-      reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
-      cwd: app.dir,
+      diagnostics: {
+        exitCode: 42,
+        stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
+        reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
+        cwd: app.dir,
+      },
     });
   });
 

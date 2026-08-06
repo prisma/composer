@@ -4,12 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { service } from '@internal/core';
 import type { DeployedNode, DeploymentResult } from '@internal/core/deploy';
-import {
-  DEPLOYMENT_RESULT_FILE_ENV,
-  deploymentReport,
-  renderDeployment,
-  toDeploymentSummary,
-} from '../render-deployment.ts';
+import { DEPLOYMENT_RESULT_FILE_ENV, toDeploymentSummary } from '../deployment-summary.ts';
+import { deploymentReport, renderDeployment } from '../render-deployment.ts';
 
 /**
  * The renderer reads only `address` and `entities` — `node` is along for the

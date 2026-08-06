@@ -167,10 +167,12 @@ export async function executeDev(input: DevInput, cwd: string): Promise<DevStart
       failure: {
         kind: 'execution',
         message: `alchemy deploy exited with status ${first.status}.`,
-        exitCode: first.status,
-        stackFilePath: first.stackPath,
-        reproduceCommand,
-        cwd,
+        diagnostics: {
+          exitCode: first.status,
+          stackFilePath: first.stackPath,
+          reproduceCommand,
+          cwd,
+        },
       },
     };
   }

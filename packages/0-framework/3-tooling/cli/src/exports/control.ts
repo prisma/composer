@@ -8,6 +8,7 @@
  * pipeline in-process.
  */
 
+export type { DeployedNodeSummary, DeploymentSummary } from '../deployment-summary.ts';
 export type { DeployInput, DeployResult } from '../operations/deploy.ts';
 export { deploy } from '../operations/deploy.ts';
 export type {
@@ -21,6 +22,9 @@ export type { DevEvent, DevInput, DevSession, DevStartResult } from '../operatio
 export { dev } from '../operations/dev.ts';
 export type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from '../operations/log.ts';
 export { log } from '../operations/log.ts';
-export type { OperationDeps, OperationFailure, ServiceEndpoint } from '../operations/shared.ts';
-export type { DeployedNodeSummary, DeploymentSummary } from '../render-deployment.ts';
-export { DEPLOYMENT_RESULT_FILE_ENV } from '../render-deployment.ts';
+export type {
+  ExecutionDiagnostics,
+  OperationDeps,
+  OperationFailure,
+  ServiceEndpoint,
+} from '../operations/shared.ts';

@@ -31,6 +31,22 @@ export interface OperationDeps {
   readonly config?: PrismaAppConfig | undefined;
 }
 
+/**
+ * Where a failed execution left its artifacts — details of the CURRENT
+ * execution mechanism (a spawned deploy-engine child driving a generated
+ * stack file), for hosts that want to print a reproduce hint. The mechanism
+ * is not part of the surface's contract, so these fields may change or
+ * disappear if the mechanism does; branch on `message`/`cause` for anything
+ * durable.
+ */
+export interface ExecutionDiagnostics {
+  /** The child's exit status; undefined means the spawn itself threw. */
+  readonly exitCode: number | undefined;
+  readonly stackFilePath: string;
+  readonly reproduceCommand: string;
+  readonly cwd: string;
+}
+
 /** Why an operation did not complete. `message` is the same fix-naming text the
  * CLI prints today; `cause` is the original thrown error. */
 export type OperationFailure =
@@ -43,15 +59,12 @@ export type OperationFailure =
    * export, LoadError, coverage miss, assemble, container, extension preflight.
    * (Finer-grained diagnostics are the next slice.) */
   | { readonly kind: 'pipeline'; readonly message: string; readonly cause?: unknown }
-  /** The alchemy child ran and failed. `exitCode` undefined means the spawn itself threw. */
+  /** The deploy engine ran and failed. */
   | {
       readonly kind: 'execution';
       readonly message: string;
-      readonly exitCode: number | undefined;
-      readonly stackFilePath: string;
-      readonly reproduceCommand: string;
-      readonly cwd: string;
       readonly cause?: unknown;
+      readonly diagnostics?: ExecutionDiagnostics | undefined;
     };
 
 /** Diagnoses a failed executor import: when the app's tree resolves a

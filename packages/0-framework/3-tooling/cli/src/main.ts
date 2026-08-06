@@ -217,17 +217,15 @@ export type RunDeps = OperationDeps;
  * LoadError, …) so cli.ts formats it unchanged.
  */
 function renderDeployDestroyFailure(failure: OperationFailure): number {
-  if (failure.kind === 'execution') {
-    console.error(`\nGenerated stack file: ${failure.stackFilePath}`);
-    if (failure.exitCode !== undefined) {
+  if (failure.kind === 'execution' && failure.diagnostics !== undefined) {
+    const { exitCode, stackFilePath, reproduceCommand, cwd } = failure.diagnostics;
+    console.error(`\nGenerated stack file: ${stackFilePath}`);
+    if (exitCode !== undefined) {
       // --stage is part of the repro: without it, alchemy falls back to its
       // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
-      console.error(
-        `Run \`${failure.reproduceCommand}\` from ${failure.cwd} to reproduce this directly.`,
-      );
-      return failure.exitCode;
+      console.error(`Run \`${reproduceCommand}\` from ${cwd} to reproduce this directly.`);
+      return exitCode;
     }
-    throw failure.cause;
   }
   throw failure.cause instanceof Error ? failure.cause : new CliError(failure.message);
 }

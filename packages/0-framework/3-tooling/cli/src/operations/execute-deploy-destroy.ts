@@ -9,11 +9,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
-import { blindCast } from '@internal/foundation/casts';
 import { CliError } from '../cli-error.ts';
+import {
+  DEPLOYMENT_RESULT_FILE_ENV,
+  type DeploymentSummary,
+  readDeploymentSummary,
+} from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../render-deployment.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import { validateStageName } from '../validate-stage.ts';
 import type { DeployInput, DeployResult } from './deploy.ts';
@@ -30,55 +33,6 @@ function hasNoLocalDeployState(cwd: string): boolean {
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/**
- * Reads the alchemy child's result file (written by deploymentReport when
- * DEPLOYMENT_RESULT_FILE_ENV is set). Absent or malformed → undefined — the
- * summary is best-effort, never a deploy failure.
- */
-export function readDeploymentSummary(resultFilePath: string): DeploymentSummary | undefined {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(resultFilePath, 'utf8');
-  } catch {
-    return undefined;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (!isRecord(parsed) || typeof parsed['app'] !== 'string' || !Array.isArray(parsed['nodes'])) {
-    return undefined;
-  }
-  for (const node of parsed['nodes']) {
-    if (
-      !isRecord(node) ||
-      typeof node['address'] !== 'string' ||
-      !Array.isArray(node['entities'])
-    ) {
-      return undefined;
-    }
-    for (const entity of node['entities']) {
-      if (
-        !isRecord(entity) ||
-        typeof entity['kind'] !== 'string' ||
-        typeof entity['id'] !== 'string'
-      ) {
-        return undefined;
-      }
-    }
-  }
-  return blindCast<
-    DeploymentSummary,
-    'the field-by-field checks above validate the runtime shape (string app, nodes with string addresses and kind/id-carrying entities); optional entity fields (url, details) are presentation-only strings the writer serialized from the same type'
-  >(parsed);
 }
 
 interface StackPipelineOptions {
@@ -275,11 +229,8 @@ async function runStackPipeline(
       failure: {
         kind: 'execution',
         message: failureMessage(error),
-        exitCode: undefined,
-        stackFilePath: stackPath,
-        reproduceCommand,
-        cwd,
         cause: error,
+        diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
       },
     };
   }
@@ -289,10 +240,7 @@ async function runStackPipeline(
       failure: {
         kind: 'execution',
         message: `alchemy ${action} exited with status ${status}.`,
-        exitCode: status,
-        stackFilePath: stackPath,
-        reproduceCommand,
-        cwd,
+        diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
       },
     };
   }

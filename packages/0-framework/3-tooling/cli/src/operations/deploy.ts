@@ -6,7 +6,7 @@
  * fails to load comes back as a structured `pipeline` failure, never a throw
  * out of the host.
  */
-import type { DeploymentSummary } from '../render-deployment.ts';
+import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps, type OperationFailure } from './shared.ts';
 
 export interface DeployInput {
