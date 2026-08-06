@@ -7,7 +7,32 @@
  * resolved; nothing here is scraped from a node's outputs, which are checked
  * for presence but never for truth.
  */
+import * as fs from 'node:fs';
 import type { DeployedEntity, DeployedNode, DeploymentResult } from '@internal/core/deploy';
+
+/** Env var the deploy operation sets on the alchemy child: when present,
+ * deploymentReport also writes the JSON DeploymentSummary there. */
+export const DEPLOYMENT_RESULT_FILE_ENV = 'PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE';
+
+/** The serializable projection of DeploymentResult — what CAN cross the process
+ * boundary. Writer (report hook) and reader (deploy operation) share this shape. */
+export interface DeployedNodeSummary {
+  readonly address: string;
+  readonly entities: readonly DeployedEntity[];
+}
+
+export interface DeploymentSummary {
+  readonly app: string;
+  readonly nodes: readonly DeployedNodeSummary[];
+}
+
+/** Pure projection: keeps app + each node's address/entities, drops the in-process `node`. */
+export function toDeploymentSummary(result: DeploymentResult): DeploymentSummary {
+  return {
+    app: result.app,
+    nodes: result.nodes.map((node) => ({ address: node.address, entities: node.entities })),
+  };
+}
 
 /** Gap between the deepest tree label and the entity column. */
 const LABEL_GAP = 3;
@@ -121,4 +146,8 @@ export function renderDeployment(result: DeploymentResult): string {
 export function deploymentReport(result: DeploymentResult): void {
   console.log('');
   console.log(renderDeployment(result));
+  const file = process.env[DEPLOYMENT_RESULT_FILE_ENV];
+  if (file !== undefined && file.length > 0) {
+    fs.writeFileSync(file, JSON.stringify(toDeploymentSummary(result)));
+  }
 }

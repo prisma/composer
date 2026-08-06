@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { service } from '@internal/core';
 import type { DeployedNode, DeploymentResult } from '@internal/core/deploy';
-import { deploymentReport, renderDeployment } from '../render-deployment.ts';
+import {
+  DEPLOYMENT_RESULT_FILE_ENV,
+  deploymentReport,
+  renderDeployment,
+  toDeploymentSummary,
+} from '../render-deployment.ts';
 
 /**
  * The renderer reads only `address` and `entities` — `node` is along for the
@@ -165,8 +173,50 @@ describe('renderDeployment', () => {
   });
 });
 
+describe('toDeploymentSummary', () => {
+  test('projects app + per-node address/entities, dropping the in-process node', () => {
+    const input = result('app', [
+      deployed('auth.api', [
+        { kind: 'compute-service', id: 'cps_1', url: 'https://a.example' },
+        { kind: 'postgres-database', id: 'pdb_1' },
+      ]),
+      deployed('db', []),
+    ]);
+
+    const summary = toDeploymentSummary(input);
+
+    expect(summary).toEqual({
+      app: 'app',
+      nodes: [
+        {
+          address: 'auth.api',
+          entities: [
+            { kind: 'compute-service', id: 'cps_1', url: 'https://a.example' },
+            { kind: 'postgres-database', id: 'pdb_1' },
+          ],
+        },
+        { address: 'db', entities: [] },
+      ],
+    });
+    expect(JSON.parse(JSON.stringify(summary))).toEqual(summary);
+    for (const node of summary.nodes) {
+      expect('node' in node).toBe(false);
+    }
+  });
+});
+
 describe('deploymentReport', () => {
+  const envKeeper = process.env[DEPLOYMENT_RESULT_FILE_ENV];
+  afterEach(() => {
+    if (envKeeper === undefined) {
+      delete process.env[DEPLOYMENT_RESULT_FILE_ENV];
+    } else {
+      process.env[DEPLOYMENT_RESULT_FILE_ENV] = envKeeper;
+    }
+  });
+
   test('prints a leading blank line then the rendered tree', () => {
+    delete process.env[DEPLOYMENT_RESULT_FILE_ENV];
     const lines: unknown[] = [];
     const original = console.log;
     console.log = (value?: unknown) => {
@@ -181,5 +231,42 @@ describe('deploymentReport', () => {
     }
 
     expect(lines).toEqual(['', 'app\n└─ db   postgres-database pdb_1']);
+  });
+
+  test(`writes the JSON summary to the file named by ${DEPLOYMENT_RESULT_FILE_ENV}, printing the same output`, () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-report-'));
+    const file = path.join(dir, 'deployment-result.json');
+    process.env[DEPLOYMENT_RESULT_FILE_ENV] = file;
+    const input = result('app', [deployed('db', [{ kind: 'postgres-database', id: 'pdb_1' }])]);
+    const lines: unknown[] = [];
+    const original = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(value);
+    };
+    try {
+      deploymentReport(input);
+    } finally {
+      console.log = original;
+    }
+
+    expect(lines).toEqual(['', 'app\n└─ db   postgres-database pdb_1']);
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    expect(parsed).toEqual(toDeploymentSummary(input) as never);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('writes no file when the env var is unset', () => {
+    delete process.env[DEPLOYMENT_RESULT_FILE_ENV];
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-report-'));
+    const original = console.log;
+    console.log = () => {};
+    try {
+      deploymentReport(result('app', []));
+    } finally {
+      console.log = original;
+    }
+
+    expect(fs.readdirSync(dir)).toEqual([]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 });
