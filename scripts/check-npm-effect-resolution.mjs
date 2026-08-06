@@ -277,8 +277,53 @@ async function checkAdversarialShape(tarballs) {
     );
   }
 
+  // The programmatic surface must catch the same broken tree structurally:
+  // importing `@prisma/composer/control` stays crash-free (its static graph
+  // keeps the alchemy tree behind each operation's own preflight), and
+  // deploy() reports the mismatch as a `{ kind: 'effect-resolution' }`
+  // failure result — exit 0, no throw.
+  const controlProbe = spawnSync(
+    process.execPath,
+    [
+      '-e',
+      `import('@prisma/composer/control')
+        .then(({ deploy }) => deploy({ entry: 'service.ts' }))
+        .then((result) => {
+          if (result.outcome !== 'failed' || result.failure.kind !== 'effect-resolution') {
+            console.error('unexpected result: ' + JSON.stringify(result));
+            process.exit(1);
+          }
+          process.stdout.write(result.failure.message);
+        });`,
+    ],
+    { cwd: appDir, encoding: 'utf-8' },
+  );
+  if (controlProbe.error) {
+    fail(`[${label}] failed to spawn node for the control-surface probe: ${controlProbe.error}`);
+  }
+  const controlOutput = `${controlProbe.stdout}${controlProbe.stderr}`;
+  if (controlProbe.status !== 0) {
+    fail(
+      `[${label}] the programmatic deploy() did not return a structured effect-resolution ` +
+        `failure in a broken tree (exit ${controlProbe.status}):\n${controlOutput}`,
+    );
+  }
+  if (!controlOutput.includes(CLI_CHECK_MARKER)) {
+    fail(
+      `[${label}] deploy()'s effect-resolution failure is missing the check's message ` +
+        `(expected "${CLI_CHECK_MARKER}"):\n${controlOutput}`,
+    );
+  }
+  if (/is not a function/.test(controlOutput)) {
+    fail(
+      `[${label}] importing @prisma/composer/control crashed inside alchemy's tree instead of ` +
+        `reporting the structured failure:\n${controlOutput}`,
+    );
+  }
+
   process.stderr.write(
-    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy and --help alike\n`,
+    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy, --help, ` +
+      'and the programmatic control surface alike\n',
   );
 }
 
