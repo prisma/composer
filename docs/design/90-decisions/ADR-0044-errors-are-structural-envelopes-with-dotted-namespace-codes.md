@@ -15,7 +15,7 @@ if (!descriptor) {
 }
 ```
 
-Every consumer — the CLI, a host driving `@prisma/composer/control`, CI parsing output — branches on exactly two fields, for every operation:
+Every in-process consumer — the CLI's own adapters, a host driving `@prisma/composer/control` — branches on exactly two fields, for every operation (a `Result` never crosses a process boundary; CI and other out-of-process consumers see the rendered envelope on stderr and the exit code instead):
 
 ```ts
 const result = await deploy(options);
@@ -28,7 +28,7 @@ if (!result.ok) {
 }
 ```
 
-Nothing between the two snippets transforms the error. The value raised at the origin is the value the consumer holds, whether it arrived by throw or as a `Result` failure.
+A structured error is never transformed between the two snippets: the value raised at the origin is the value the consumer holds, whether it arrived by throw or as a `Result` failure. A *foreign* error (a rejecting build, a throwing extension hook) is wrapped exactly once — at the site that understands it, into a structured error carrying the original as `cause` — and from there the same no-transformation rule applies.
 
 ## Decision
 
@@ -100,14 +100,18 @@ this ADR.
 
 ## Exit codes and the human layout
 
-The exit-code rule is the shared one (prisma/prisma's CLI Style Guide): `0` OK,
-`1` internal error/bug ONLY, `2` expected failure (usage errors and structured
-failures alike), `3` user abort, `130`/`143` signals.
+The exit-code rule is the shared one (prisma/prisma's CLI Style Guide), and it
+governs statuses the CLI itself generates: `0` OK, `1` internal error/bug ONLY,
+`2` expected failure (usage errors and structured failures alike), `3` user
+abort, `130`/`143` signals.
 
 **Documented exception:** when the spawned deploy engine (alchemy) exits
 nonzero, the CLI prints the two reproduce-hint lines and passes the child's own
 exit status through unchanged — the child's status is the operator's signal and
-renumbering it would erase information.
+renumbering it would erase information. A passthrough status is the child's
+number, not a statement in the CLI's own code space: an expected engine failure
+may therefore surface as `1` (or any other value) without contradicting the
+rule above.
 
 The human rendering of an envelope (`render-error.ts`) is the shared layout:
 
