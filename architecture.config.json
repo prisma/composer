@@ -307,12 +307,6 @@
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/teardown.ts",
-      "domain": "prisma-cloud",
-      "layer": "extensions",
-      "plane": "control"
-    },
-    {
       "glob": "packages/1-prisma-cloud/1-extensions/target/src/container.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",

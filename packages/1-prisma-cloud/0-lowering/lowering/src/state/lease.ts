@@ -1,12 +1,27 @@
 import * as os from 'node:os';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import * as Headers from 'effect/unstable/http/Headers';
 import type { ManagementApiClient } from '../client.ts';
 import { PrismaApiError } from '../http.ts';
 
 /** The header every state operation and lease call carries. Its value is a capability token — never log it. */
 export const LEASE_HEADER = 'Alchemy-State-Lease-Id';
+
+/**
+ * Adds the lease header to effect's redacted header names (alongside the
+ * defaults such as `authorization`), so a logged failed request renders the
+ * lease id as `<redacted>`. Merged into the state layer's outputs.
+ */
+export const redactLeaseHeader: Layer.Layer<never> = Layer.effect(
+  Headers.CurrentRedactedNames,
+  Effect.gen(function* () {
+    const names = yield* Headers.CurrentRedactedNames;
+    return [...names, LEASE_HEADER];
+  }),
+);
 
 const LEASE_PATH = '/v1/projects/{projectId}/branches/{branchId}/alchemy-state/lease';
 

@@ -14,6 +14,7 @@ import {
   acquireDeployLease,
   heartbeatDeployLease,
   LEASE_HEADER,
+  redactLeaseHeader,
   releaseDeployLease,
 } from './lease.ts';
 
@@ -110,5 +111,5 @@ export const stateLayerAgainst = (
 
       return Effect.succeed(service);
     }).pipe(Effect.provide(dependencies)),
-  ).pipe(Layer.orDie);
+  ).pipe(Layer.orDie, Layer.merge(redactLeaseHeader));
 };

@@ -4,6 +4,7 @@ import { Stack } from 'alchemy';
 import {
   type CreatedResourceState,
   makeHttpStateStore,
+  type ReplacedResourceState,
   State,
   type StateService,
 } from 'alchemy/State';
@@ -12,6 +13,7 @@ import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
+import * as Headers from 'effect/unstable/http/Headers';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import { stateLayerAgainst } from '../layer.ts';
 import {
@@ -20,6 +22,7 @@ import {
   heartbeatDeployLease,
   LEASE_HEADER,
   type LeaseScope,
+  redactLeaseHeader,
   releaseDeployLease,
 } from '../lease.ts';
 import { FakeStateApi } from './fake-state-api.ts';
@@ -162,13 +165,22 @@ describe('the stock state client against the platform state API', () => {
   test('getReplacedResources returns only replaced-status states', async () => {
     const service = await buildStore(await acquire());
     const created = createdResource({ fqn: 'app/created' });
+    const replaced: ReplacedResourceState = {
+      ...createdResource({ fqn: 'app/replaced' }),
+      status: 'replaced',
+      old: createdResource({ fqn: 'app/replaced' }),
+      deleteFirst: false,
+    };
     await Effect.runPromise(
       service.set({ stack: STACK, stage: STAGE, fqn: created.fqn, value: created }),
+    );
+    await Effect.runPromise(
+      service.set({ stack: STACK, stage: STAGE, fqn: replaced.fqn, value: replaced }),
     );
 
     expect(
       await Effect.runPromise(service.getReplacedResources({ stack: STACK, stage: STAGE })),
-    ).toEqual([]);
+    ).toEqual([replaced]);
   });
 
   test('losing the lease mid-run fails the next operation WITHOUT retries — exactly one request', async () => {
@@ -190,6 +202,19 @@ describe('the stock state client against the platform state API', () => {
 });
 
 describe('the deploy lease', () => {
+  test('the lease header renders redacted when the state layer’s redaction entry is in context', async () => {
+    const headers = Headers.fromInput({ [LEASE_HEADER]: 'lease-secret-1' });
+
+    const withEntry = await Effect.runPromise(
+      Effect.sync(() => JSON.stringify(headers)).pipe(Effect.provide(redactLeaseHeader)),
+    );
+    const withoutEntry = await Effect.runPromise(Effect.sync(() => JSON.stringify(headers)));
+
+    expect(withEntry).not.toContain('lease-secret-1');
+    expect(withEntry).toContain('<redacted>');
+    expect(withoutEntry).toContain('lease-secret-1');
+  });
+
   test('a second acquire for the same (stack, stage) fails fast naming the holder — no retry, no queueing', async () => {
     await acquire();
     fake.requests.length = 0;
