@@ -37,6 +37,51 @@ function toCliError(error: unknown): CliError {
     : new CliError(error instanceof Error ? error.message : String(error));
 }
 
+type DevShutdownSignal = 'SIGINT' | 'SIGTERM';
+
+export interface DevShutdownController {
+  /** Resolves after the graceful cleanup started by the first signal completes. */
+  readonly done: Promise<void>;
+  /** Starts graceful cleanup, or forces termination when cleanup is already in progress. */
+  handle(signal: DevShutdownSignal): void;
+}
+
+/**
+ * Makes the first signal graceful and the second decisive. A stuck watcher or
+ * attachment must never leave a dev process that swallows every later Ctrl-C.
+ */
+export function createDevShutdownController(
+  cleanup: () => Promise<void>,
+  forceExit: (code: number) => void = (code) => process.exit(code),
+): DevShutdownController {
+  let state: 'idle' | 'stopping' | 'stopped' = 'idle';
+  let handle: (signal: DevShutdownSignal) => void = () => {};
+
+  const done = new Promise<void>((resolve, reject) => {
+    handle = (signal) => {
+      if (state === 'stopped') return;
+      if (state === 'stopping') {
+        forceExit(signal === 'SIGINT' ? 130 : 143);
+        return;
+      }
+
+      state = 'stopping';
+      void cleanup().then(
+        () => {
+          state = 'stopped';
+          resolve();
+        },
+        (error: unknown) => {
+          state = 'stopped';
+          reject(error);
+        },
+      );
+    };
+  });
+
+  return { done, handle };
+}
+
 /** `[dev] ready:` then one line per endpoint, ordered by address depth (fewest dots first) then lexicographic. Exported for tests. */
 export function renderFrontDoor(
   endpoints: readonly { readonly address: string; readonly url: string }[],
@@ -255,38 +300,43 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
   // be missed entirely — wait until watching is real before handing over.
   await watch.ready;
 
-  await new Promise<void>((resolve) => {
-    let stopping = false;
-
-    const finish = (): void => {
-      if (stopping) return;
-      stopping = true;
-      console.log("[dev] stopping — the app's services are stopping; emulators and data stay up.");
-      watch.stop();
-      void (async () => {
+  const shutdown = createDevShutdownController(async () => {
+    console.log("[dev] stopping — the app's services are stopping; emulators and data stay up.");
+    await Promise.all([
+      watch.stop(),
+      (async () => {
         for (const attachment of attachments) {
           await attachment.stopServices().catch(() => undefined);
         }
-        console.log('[dev] stopped.');
-        resolve();
-      })();
-    };
-
-    // alchemy's own library code (imported transitively while loading the
-    // app's config/providers) registers its own process-level SIGINT/SIGTERM
-    // listeners for ITS OWN in-process resource bookkeeping — irrelevant
-    // here, since the actual converge runs in a separate spawned `alchemy`
-    // child process (run-alchemy.ts), never in this one. Left in place,
-    // whichever of its listeners runs first can call process.exit()
-    // synchronously and tear this process down before the watch loop's own
-    // async cleanup (stopping the app's services) ever gets a turn. This is
-    // this process's OWN signal handling from here on: strip whatever else
-    // is registered and become the only listener.
-    process.removeAllListeners('SIGINT');
-    process.removeAllListeners('SIGTERM');
-    process.on('SIGINT', finish);
-    process.on('SIGTERM', finish);
+      })(),
+    ]);
+    console.log('[dev] stopped.');
   });
+
+  const onSigint = (): void => shutdown.handle('SIGINT');
+  const onSigterm = (): void => shutdown.handle('SIGTERM');
+
+  // alchemy's own library code (imported transitively while loading the
+  // app's config/providers) registers its own process-level SIGINT/SIGTERM
+  // listeners for ITS OWN in-process resource bookkeeping — irrelevant
+  // here, since the actual converge runs in a separate spawned `alchemy`
+  // child process (run-alchemy.ts), never in this one. Left in place,
+  // whichever of its listeners runs first can call process.exit()
+  // synchronously and tear this process down before the watch loop's own
+  // async cleanup (stopping the app's services) ever gets a turn. This is
+  // this process's OWN signal handling from here on: strip whatever else
+  // is registered and become the only listener.
+  process.removeAllListeners('SIGINT');
+  process.removeAllListeners('SIGTERM');
+  process.on('SIGINT', onSigint);
+  process.on('SIGTERM', onSigterm);
+
+  try {
+    await shutdown.done;
+  } finally {
+    process.off('SIGINT', onSigint);
+    process.off('SIGTERM', onSigterm);
+  }
 
   return 0;
 }
