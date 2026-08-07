@@ -41,6 +41,10 @@ export async function runLog(args: LogArgs, deps: LogRunDeps = {}): Promise<numb
         onEvent: (event) => {
           if (event.kind === 'stream-failed') {
             console.error(`[log] stream failed: ${event.message}`);
+          } else if (event.kind === 'lines-dropped') {
+            console.error(
+              `[log] falling behind — dropped the ${String(event.count)} oldest lines.`,
+            );
           }
         },
       },
