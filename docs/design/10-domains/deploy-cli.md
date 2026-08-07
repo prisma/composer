@@ -199,13 +199,16 @@ every node already carries:
   as a thin renderer over them
   ([ADR-0043](../90-decisions/ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md)).
   So assemble's public surface carries no CLI
-  concepts (no `CliError`, no argv/usage anything). It throws its own
-  `AssembleError`; the CLI's `main.ts` maps it (the existing destroy-path
-  wrapping already does, since `AssembleError extends Error`).
+  concepts (no argv/usage anything). It throws its own `AssembleError` — a
+  structured error with `ASSEMBLE.*` codes (ADR-0044) — which the CLI
+  renders like any other structured failure (the destroy path re-codes an
+  assemble failure to `DEPLOY.BUILD_REQUIRED` with the original as `cause`).
 
 ## Error surface
 
-The CLI's quality lives in its errors; each failure names its fix:
+The CLI's quality lives in its errors; each failure is a structured error with
+a dotted `NAMESPACE.SUBCODE` code (ADR-0044) rendered as
+`✖ summary (CODE)` plus Why/Fix/Where lines, and each names its fix:
 
 | Failure | Error tells the user |
 | --- | --- |

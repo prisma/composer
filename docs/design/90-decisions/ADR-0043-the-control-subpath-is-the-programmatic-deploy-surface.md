@@ -11,21 +11,31 @@ import { deploy } from '@prisma/composer/control';
 
 const result = await deploy({ entry: 'module.ts', stage: 'feat-auth' });
 
-if (result.outcome === 'deployed') {
-  for (const node of result.summary?.nodes ?? []) {
+if (result.ok) {
+  for (const node of result.value.summary?.nodes ?? []) {
     console.log(node.address, node.entities);
   }
 } else {
-  switch (result.failure.kind) {
-    case 'invalid-input': // e.g. a stage name git would reject
-    case 'pipeline':      // loading the deploy stack through assembly failed
-    case 'execution':     // alchemy ran and exited nonzero
+  switch (result.failure.code) {
+    case 'DEPLOY.STAGE_INVALID': // e.g. a stage name git would reject
+    case 'ASSEMBLE.BUILD_FAILED': // the app's built output is missing
+    case 'DEPLOY.ENGINE_FAILED': // alchemy ran and exited nonzero
       report(result.failure.message);
   }
 }
 ```
 
-Failures are values, not exceptions: every way a deploy can go wrong comes back as a discriminated `failure` the caller can branch on, carrying the same human-readable message the CLI prints plus the original error as `cause`. An `execution` failure may also carry an optional `diagnostics` object (exit code, generated stack-file path, reproduce command, cwd) — details of the current execution mechanism, useful for printing a hint but deliberately outside the durable contract.
+Failures are values, not exceptions, on the shared `Result` shape
+(`{ ok: true, value } | { ok: false, failure }`): every way a deploy can go
+wrong comes back as a `CliStructuredError` — the dotted `code` is the
+branching surface (ADR-0044's closed registry), `message`/`why`/`fix` carry
+the same guidance the CLI renders, and the original error rides as `cause`. A
+non-structured error escaping an operation is by definition a bug and rejects
+the returned promise rather than being laundered into a coded failure. An
+engine failure additionally carries `meta.diagnostics` (exit code, generated
+stack-file path, reproduce command, cwd), read via the exported
+`executionDiagnostics()` helper — details of the current execution mechanism,
+useful for printing a hint but deliberately outside the durable contract.
 
 ## Why a programmatic surface
 
@@ -37,7 +47,7 @@ Because the CLI's commands are renderers over the same operations, there is exac
 
 The `./control` entry's static import graph is import-light: types, the result definitions, and two small helpers. Each operation lazily `import()`s the executor that reaches the pipeline and alchemy, so importing the subpath executes nothing — consistent with the repo's no-import-side-effects stance — and a host pays for the deploy stack only when it calls an operation. The property is pinned structurally: a test imports the entry in a fresh process with every heavy module poisoned and fails if the static graph ever reaches one.
 
-A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured `pipeline` failure whose message names the problem (the operation diagnoses the failed load with the same check the CLI's `bin.ts` runs at start-up). The host stays alive and gets a result it can branch on, never an import-time crash.
+A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured failure whose code names the problem (`DEPS.EFFECT_VERSION_CONFLICT` when the operation's diagnosis — the same check the CLI's `bin.ts` runs at start-up — recognizes the tree, `DEPS.EXECUTOR_UNLOADABLE` otherwise). The host stays alive and gets a result it can branch on, never an import-time crash.
 
 ## The deploy result crosses a process boundary
 
@@ -61,7 +71,7 @@ The subpath is named `control` because that is the architecture plane these sour
 
 ## Consequences
 
-- **The failure taxonomy is deliberately coarse at the pipeline stage.** One `pipeline` kind spans everything from loading the deploy stack and config discovery through assembly and container preparation; `invalid-input`, `unsupported-platform`, and `execution` are distinct. Callers needing to distinguish pipeline sub-failures must parse messages until a finer taxonomy exists.
+- **The failure taxonomy is ADR-0044's closed code registry.** Callers branch on `failure.code`; a coarse "which stage failed" view is derivable from the code's namespace prefix (`CONFIG`/`COMPOSE`/`ASSEMBLE` load the stack, `DEPLOY`/`DEV`/`LOG` execute it, `DEPS` is the installed tree). `meta.diagnostics` carries the engine-failure mechanism details. A `Result` is in-process only (frozen, getter-backed) — it is not JSON-serializable; serialize `failure.toEnvelope()` when a failure must cross a process boundary.
 - **`dev` returns a session handle** (`endpoints`, `stop()`, `closed`, an event callback) and **never touches process signal handlers**. Signal ownership — including evicting alchemy's import-time SIGINT/SIGTERM listeners — belongs to the host; the CLI adapter shows the pattern.
 - **`log` returns the running services plus an `AsyncIterable` of lines** ended by a caller-owned `AbortSignal`; one stream failing surfaces as an event without ending the others. Zero running services is a valid, non-failure result with an already-finished iterable.
 - **The alchemy child's output is not capturable through this API.** The current mechanism streams the deploy engine's output to the host's own stdio; capturing or redirecting it needs a new option on the operations, not a workaround. The mechanism itself (a spawned child, `stdio: 'inherit'`) is how composer deploys today, not a promise the surface makes — which is also why the spawn-shaped failure fields live in the optional `diagnostics` object rather than on the failure itself.

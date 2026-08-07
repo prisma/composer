@@ -676,27 +676,30 @@ no console output, no exit codes. The CLI itself is a renderer over them.
 ```ts
 import { deploy } from '@prisma/composer/control';
 const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
-// result: { outcome: 'deployed', summary? } | { outcome: 'failed', failure }
+// result: { ok: true, value: { summary? } } | { ok: false, failure }
 ```
 
-- Failures come back as `{ outcome: 'failed', failure }` with
-  `failure.kind` ∈ `invalid-input` | `unsupported-platform` | `pipeline` | `execution`
-  and the same fix-naming `message` the CLI prints. An `execution` failure's
-  optional `diagnostics` (exit code, reproduce command) describes the current
-  execution mechanism — branch on `message`/`cause` for anything durable.
-  The effect version conflict is a `pipeline` failure carrying the same
-  diagnostic, and importing the module executes nothing until an operation
-  runs.
+- Failures come back as `{ ok: false, failure }` where `failure` is a
+  structured error: branch on its dotted `failure.code` (e.g.
+  `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED` — ADR-0044's closed
+  registry), with the same fix-naming `message`/`why`/`fix` the CLI renders.
+  An engine failure's `meta.diagnostics` (exit code, reproduce command; read
+  it with the exported `executionDiagnostics(failure)`) describes the current
+  execution mechanism — branch on `code`/`message`/`cause` for anything
+  durable. The effect version conflict is `DEPS.EFFECT_VERSION_CONFLICT`, and
+  importing the module executes nothing until an operation runs. A
+  non-structured rejection out of an operation is a bug in composer, not an
+  expected failure.
 - `destroy` takes `target: { kind: 'production' } | { kind: 'stage', stage }`
   — explicit, never defaulted.
 - `deploy`'s `summary` (the deployed topology) is best-effort; `undefined` on
   a successful deploy is normal.
 - The deploy engine's live output still streams to the host process's stdio —
   the current mechanism; the operations don't capture it.
-- `dev` resolves to `{ outcome: 'started', session }` or a failure; the
+- `dev` resolves to `{ ok: true, value: session }` or a failure; the
   session is `{ endpoints, stop(), closed }` with progress via `onEvent`, and
   the host owns signal handling. `log` resolves to
-  `{ outcome: 'attached', appName, services, lines }` or a failure, where
+  `{ ok: true, value: { appName, services, lines } }` or a failure, where
   `lines` is an `AsyncIterable` ended by a caller-owned `AbortSignal` (or by
   the consumer stopping early); zero running services is a valid result, not
   an error.
