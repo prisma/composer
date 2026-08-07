@@ -671,7 +671,9 @@ every shipped block supplies what it declares.
 
 `@prisma/composer/control` exposes the CLI's operations in-process: typed
 `deploy`, `destroy`, `dev`, and `log` returning structured results — no argv,
-no console output, no exit codes. The CLI itself is a renderer over them.
+no CLI rendering, no exit codes (the spawned deploy engine's own inherited
+output can still reach the host terminal). The CLI itself is a renderer over
+them.
 
 ```ts
 import { deploy } from '@prisma/composer/control';

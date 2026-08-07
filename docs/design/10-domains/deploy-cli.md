@@ -208,7 +208,8 @@ every node already carries:
 
 The CLI's quality lives in its errors; each failure is a structured error with
 a dotted `NAMESPACE.SUBCODE` code (ADR-0044) rendered as
-`✖ summary (CODE)` plus Why/Fix/Where lines, and each names its fix:
+`✖ summary (CODE)`, with Why/Fix/Where lines whenever the error provides
+them:
 
 | Failure | Error tells the user |
 | --- | --- |

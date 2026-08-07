@@ -83,7 +83,7 @@ renumbering it would erase information.
 
 The human rendering of an envelope (`render-error.ts`) is the shared layout:
 
-```
+```text
 ✖ <summary> (<CODE>)
   Why: <why>
   Fix: <fix>
