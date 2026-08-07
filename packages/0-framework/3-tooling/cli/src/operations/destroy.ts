@@ -28,9 +28,7 @@ export interface DestroyInput {
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
 }
 
-export type DestroyResult = Result<void, CliStructuredError>;
-
-export async function destroy(input: DestroyInput): Promise<DestroyResult> {
+export async function destroy(input: DestroyInput): Promise<Result<void, CliStructuredError>> {
   return destroyWithDeps(input, {});
 }
 
@@ -40,7 +38,7 @@ export async function destroy(input: DestroyInput): Promise<DestroyResult> {
 export async function destroyWithDeps(
   input: DestroyInput,
   deps: OperationDeps,
-): Promise<DestroyResult> {
+): Promise<Result<void, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {

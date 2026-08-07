@@ -21,8 +21,8 @@ import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import { validateStageName } from '../validate-stage.ts';
-import type { DeployInput, DeployResult } from './deploy.ts';
-import type { DestroyEvent, DestroyInput, DestroyResult } from './destroy.ts';
+import type { DeployInput, DeploySuccess } from './deploy.ts';
+import type { DestroyEvent, DestroyInput } from './destroy.ts';
 import { type ExtensionId, type OperationDeps, toStructured } from './shared.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
@@ -46,7 +46,7 @@ export async function executeDeploy(
   input: DeployInput,
   deps: OperationDeps,
   cwd: string,
-): Promise<DeployResult> {
+): Promise<Result<DeploySuccess, CliStructuredError>> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     name: input.name,
@@ -63,7 +63,7 @@ export async function executeDestroy(
   input: DestroyInput,
   deps: OperationDeps,
   cwd: string,
-): Promise<DestroyResult> {
+): Promise<Result<void, CliStructuredError>> {
   const outcome = await runStackPipeline('destroy', {
     entry: input.entry,
     name: input.name,

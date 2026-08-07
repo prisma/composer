@@ -28,9 +28,9 @@ export interface DeploySuccess {
   readonly summary: DeploymentSummary | undefined;
 }
 
-export type DeployResult = Result<DeploySuccess, CliStructuredError>;
-
-export async function deploy(input: DeployInput): Promise<DeployResult> {
+export async function deploy(
+  input: DeployInput,
+): Promise<Result<DeploySuccess, CliStructuredError>> {
   return deployWithDeps(input, {});
 }
 
@@ -40,7 +40,7 @@ export async function deploy(input: DeployInput): Promise<DeployResult> {
 export async function deployWithDeps(
   input: DeployInput,
   deps: OperationDeps,
-): Promise<DeployResult> {
+): Promise<Result<DeploySuccess, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {

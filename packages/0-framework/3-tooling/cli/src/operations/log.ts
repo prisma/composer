@@ -57,16 +57,17 @@ export interface LogAttached {
   readonly lines: AsyncIterable<LogLine>;
 }
 
-export type LogResult = Result<LogAttached, CliStructuredError>;
-
-export async function log(input: LogInput): Promise<LogResult> {
+export async function log(input: LogInput): Promise<Result<LogAttached, CliStructuredError>> {
   return logWithDeps(input, {});
 }
 
 /** In-package variant threading the injection seam (the CLI's LogRunDeps,
  * unit tests). Deliberately NOT re-exported through `./control` — the seam
  * mirrors internal types and is not part of the published surface. */
-export async function logWithDeps(input: LogInput, deps: LogDeps): Promise<LogResult> {
+export async function logWithDeps(
+  input: LogInput,
+  deps: LogDeps,
+): Promise<Result<LogAttached, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-log.ts');
   try {

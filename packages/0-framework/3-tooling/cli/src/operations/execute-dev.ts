@@ -12,12 +12,12 @@ import { containerEnv } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { notOk, ok } from '@internal/foundation/result';
+import { notOk, ok, type Result } from '@internal/foundation/result';
 import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import { startWatch, type WatchHandle, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
-import type { DevEvent, DevInput, DevSession, DevStartResult } from './dev.ts';
+import type { DevEvent, DevInput, DevSession } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
   type ExtensionId,
@@ -42,7 +42,7 @@ export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
   cwd: string,
-): Promise<DevStartResult> {
+): Promise<Result<DevSession, CliStructuredError>> {
   if (process.platform === 'win32') {
     return notOk(
       new CliStructuredError(

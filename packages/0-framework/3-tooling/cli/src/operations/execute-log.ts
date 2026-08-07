@@ -10,10 +10,10 @@ import * as path from 'node:path';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { notOk, ok } from '@internal/foundation/result';
+import { notOk, ok, type Result } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
-import type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from './log.ts';
+import type { LogAttached, LogDeps, LogEvent, LogInput, LogLine } from './log.ts';
 import { toStructured } from './shared.ts';
 
 function failureMessage(error: unknown): string {
@@ -127,7 +127,11 @@ async function* mergeLogStreams(
 }
 
 /** Resolves the running app and attaches to its log streams; the caller consumes `lines`. */
-export async function executeLog(input: LogInput, deps: LogDeps, cwd: string): Promise<LogResult> {
+export async function executeLog(
+  input: LogInput,
+  deps: LogDeps,
+  cwd: string,
+): Promise<Result<LogAttached, CliStructuredError>> {
   if (process.platform === 'win32') {
     return notOk(
       new CliStructuredError(

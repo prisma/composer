@@ -51,16 +51,17 @@ export interface DevSession {
   readonly closed: Promise<void>;
 }
 
-export type DevStartResult = Result<DevSession, CliStructuredError>;
-
-export async function dev(input: DevInput): Promise<DevStartResult> {
+export async function dev(input: DevInput): Promise<Result<DevSession, CliStructuredError>> {
   return devWithDeps(input, {});
 }
 
 /** In-package variant threading the injection seam (the CLI's RunDeps, unit
  * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
  * internal types and is not part of the published surface. */
-export async function devWithDeps(input: DevInput, deps: OperationDeps): Promise<DevStartResult> {
+export async function devWithDeps(
+  input: DevInput,
+  deps: OperationDeps,
+): Promise<Result<DevSession, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-dev.ts');
   try {
