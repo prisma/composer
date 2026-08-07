@@ -9,16 +9,12 @@
 import * as path from 'node:path';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, ok } from '@internal/foundation/result';
 import { resolveAppIdentity } from '../pipeline.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import type { LogDeps, LogEvent, LogInput, LogLine, LogResult } from './log.ts';
-
-function toCliError(error: unknown): CliError {
-  return error instanceof CliError
-    ? error
-    : new CliError(error instanceof Error ? error.message : String(error), { cause: error });
-}
+import { toStructured } from './shared.ts';
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -133,13 +129,12 @@ async function* mergeLogStreams(
 /** Resolves the running app and attaches to its log streams; the caller consumes `lines`. */
 export async function executeLog(input: LogInput, deps: LogDeps, cwd: string): Promise<LogResult> {
   if (process.platform === 'win32') {
-    return {
-      outcome: 'failed',
-      failure: {
-        kind: 'unsupported-platform',
-        message: 'local dev is not supported on Windows yet.',
-      },
-    };
+    return notOk(
+      new CliStructuredError(
+        'LOG.PLATFORM_UNSUPPORTED',
+        'local dev is not supported on Windows yet.',
+      ),
+    );
   }
 
   const devDir = path.join(cwd, DEV_DIR);
@@ -154,56 +149,56 @@ export async function executeLog(input: LogInput, deps: LogDeps, cwd: string): P
       (await resolveAppIdentity(input.entry, input.name, cwd, { config: deps.config }));
     name = identity.name;
 
-    let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
-    try {
-      resolved = await resolveLocalTargets(identity.config);
-    } catch (error) {
-      throw toCliError(error);
-    }
+    // The no-dev-support refusal is structured at origin in core
+    // (DEV.TARGET_UNSUPPORTED) — no wrap here.
+    const resolved: ReadonlyMap<string, LocalTargetDescriptor> = await resolveLocalTargets(
+      identity.config,
+    );
 
     for (const target of resolved.values()) {
       try {
         const container = await target.container.ensure({ appName: name, stage: undefined });
         attachments.push(await withEmulatorRetry(() => target.attach({ container, devDir })));
       } catch (error) {
-        throw toCliError(error);
+        throw toStructured('LOG.ATTACH_FAILED', error);
       }
     }
 
-    services = (
-      await Promise.all(attachments.map((a) => withEmulatorRetry(() => a.endpoints())))
-    ).flat();
+    try {
+      services = (
+        await Promise.all(attachments.map((a) => withEmulatorRetry(() => a.endpoints())))
+      ).flat();
+    } catch (error) {
+      throw toStructured('LOG.ATTACH_FAILED', error);
+    }
   } catch (error) {
-    return {
-      outcome: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
+    // Everything user-surfaced above is structured at origin or by a
+    // site-specific wrap; a non-structured error here is a bug (rule 6).
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 
   if (services.length === 0) {
-    return {
-      outcome: 'attached',
+    return ok({
       appName: name,
       services: [],
       lines: mergeLogStreams([], input),
-    };
+    });
   }
   if (input.address !== undefined && !services.some((s) => s.address === input.address)) {
-    return {
-      outcome: 'failed',
-      failure: {
-        kind: 'invalid-input',
-        message: `no service "${input.address}" in "${name}" — running services: ${services
+    return notOk(
+      new CliStructuredError(
+        'LOG.ADDRESS_UNKNOWN',
+        `no service "${input.address}" in "${name}" — running services: ${services
           .map((s) => s.address)
           .join(', ')}.`,
-      },
-    };
+      ),
+    );
   }
 
-  return {
-    outcome: 'attached',
+  return ok({
     appName: name,
     services,
     lines: mergeLogStreams(attachments, input),
-  };
+  });
 }

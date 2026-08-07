@@ -11,20 +11,20 @@ import type { ContainerInstance } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, ok } from '@internal/foundation/result';
 import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import { startWatch, type WatchHandle, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
 import { runAlchemy } from '../run-alchemy.ts';
 import type { DevEvent, DevInput, DevSession, DevStartResult } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
-import type { ExtensionId, OperationDeps, ServiceEndpoint } from './shared.ts';
-
-function toCliError(error: unknown): CliError {
-  return error instanceof CliError
-    ? error
-    : new CliError(error instanceof Error ? error.message : String(error), { cause: error });
-}
+import {
+  type ExtensionId,
+  type OperationDeps,
+  type ServiceEndpoint,
+  toStructured,
+} from './shared.ts';
 
 function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -44,13 +44,12 @@ export async function executeDev(
   cwd: string,
 ): Promise<DevStartResult> {
   if (process.platform === 'win32') {
-    return {
-      outcome: 'failed',
-      failure: {
-        kind: 'unsupported-platform',
-        message: 'local dev is not supported on Windows yet.',
-      },
-    };
+    return notOk(
+      new CliStructuredError(
+        'DEV.PLATFORM_UNSUPPORTED',
+        'local dev is not supported on Windows yet.',
+      ),
+    );
   }
 
   const { onEvent } = input;
@@ -69,21 +68,17 @@ export async function executeDev(
 
     // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
-    // names any extension without local-target support, and build-only
+    // is structured at origin in core (DEV.TARGET_UNSUPPORTED), and build-only
     // extensions are exempt inside it. Every subsequent hook call runs off
     // this resolved map.
-    try {
-      resolved = await resolveLocalTargets(config);
-    } catch (error) {
-      throw toCliError(error);
-    }
+    resolved = await resolveLocalTargets(config);
 
     // Containers — purely local, resolved before anything else can fail.
     for (const [id, dev] of resolved) {
       try {
         containers.set(id, await dev.container.ensure({ appName: name, stage: undefined }));
       } catch (error) {
-        throw toCliError(error);
+        throw toStructured('DEV.CONTAINER_FAILED', error);
       }
     }
 
@@ -94,7 +89,7 @@ export async function executeDev(
         try {
           await dev.teardown({ container: containers.get(id), stage: undefined });
         } catch (error) {
-          throw toCliError(error);
+          throw toStructured('DEV.TEARDOWN_FAILED', error);
         }
       }
     }
@@ -105,7 +100,7 @@ export async function executeDev(
       try {
         await dev.preflight({ graph, container: containers.get(id), stage: undefined });
       } catch (error) {
-        throw toCliError(error);
+        throw toStructured('DEV.PREFLIGHT_FAILED', error);
       }
     }
 
@@ -115,33 +110,50 @@ export async function executeDev(
       try {
         await dev.emulators({ graph, container: containers.get(id), devDir });
       } catch (error) {
-        throw toCliError(error);
+        throw toStructured('DEV.EMULATOR_FAILED', error);
       }
     }
   } catch (error) {
-    return {
-      outcome: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
+    // Every user-surfaced failure above is structured at its origin or by a
+    // site-specific wrap; a non-structured error here is a bug (rule 6).
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 
   const reproduceCommand = `alchemy deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`;
 
   const converge = (): { status: number; stackPath: string } => {
-    const stackPath = writeDevStackFile({
-      entryPath: pipeline.entryModule.path,
-      cwd,
-      configPath: pipeline.configPath,
-      name: pipeline.name,
-      assembled: pipeline.assembled,
-    });
-    const status = (deps.alchemy ?? runAlchemy)({
-      command: 'deploy',
-      stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-      cwd,
-      stage: 'dev',
-      containerEnv: containerEnv(containers),
-    });
+    let stackPath: string;
+    try {
+      stackPath = writeDevStackFile({
+        entryPath: pipeline.entryModule.path,
+        cwd,
+        configPath: pipeline.configPath,
+        name: pipeline.name,
+        assembled: pipeline.assembled,
+      });
+    } catch (error) {
+      // Stack-file write I/O is structured at the catch that knows (rule 6).
+      throw toStructured('DEV.STACK_WRITE_FAILED', error);
+    }
+    let status: number;
+    try {
+      status = (deps.alchemy ?? runAlchemy)({
+        command: 'deploy',
+        stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+        cwd,
+        stage: 'dev',
+        containerEnv: containerEnv(containers),
+      });
+    } catch (error) {
+      if (CliStructuredError.is(error)) throw error;
+      throw new CliStructuredError('DEV.CONVERGE_FAILED', failureMessage(error), {
+        cause: error,
+        meta: {
+          diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
+        },
+      });
+    }
     return { status, stackPath };
   };
 
@@ -152,25 +164,27 @@ export async function executeDev(
   try {
     first = converge();
   } catch (error) {
-    return {
-      outcome: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
   if (first.status !== 0) {
-    return {
-      outcome: 'failed',
-      failure: {
-        kind: 'execution',
-        message: `alchemy deploy exited with status ${first.status}.`,
-        diagnostics: {
-          exitCode: first.status,
-          stackFilePath: first.stackPath,
-          reproduceCommand,
-          cwd,
+    return notOk(
+      new CliStructuredError(
+        'DEV.CONVERGE_FAILED',
+        `alchemy deploy exited with status ${first.status}.`,
+        {
+          meta: {
+            exitCode: first.status,
+            diagnostics: {
+              exitCode: first.status,
+              stackFilePath: first.stackPath,
+              reproduceCommand,
+              cwd,
+            },
+          },
         },
-      },
-    };
+      ),
+    );
   }
 
   // A host onEvent that throws is the host's bug, but it must not kill the
@@ -190,24 +204,33 @@ export async function executeDev(
   // front door. On ANY failure before the session is handed over — a partial
   // startServices, the endpoint merge, watch setup — put the machine back the
   // way a previous Ctrl-C left it: stop the watcher (if it started) and every
-  // service that started, THEN return the failure. A session that never began
+  // service that started, THEN surface the failure. A session that never began
   // must not leave anything half-running.
   const attachments: LocalTargetAttachment[] = [];
   const started: LocalTargetAttachment[] = [];
   let watch: WatchHandle | undefined;
   try {
     for (const [id, dev] of resolved) {
-      attachments.push(await dev.attach({ container: containers.get(id), devDir }));
+      try {
+        attachments.push(await dev.attach({ container: containers.get(id), devDir }));
+      } catch (error) {
+        throw toStructured('DEV.ATTACH_FAILED', error);
+      }
     }
     for (const attachment of attachments) {
       try {
         await withEmulatorRetry(() => attachment.startServices());
         started.push(attachment);
       } catch (error) {
-        throw toCliError(error);
+        throw toStructured('DEV.SERVICE_START_FAILED', error);
       }
     }
-    const endpoints = await mergedEndpoints(attachments);
+    let endpoints: readonly ServiceEndpoint[];
+    try {
+      endpoints = await mergedEndpoints(attachments);
+    } catch (error) {
+      throw toStructured('DEV.ATTACH_FAILED', error);
+    }
     emit({ kind: 'ready', endpoints });
 
     // Watch loop until the session is stopped: rebuild → re-assemble →
@@ -288,13 +311,13 @@ export async function executeDev(
     };
 
     const session: DevSession = { endpoints, stop, closed };
-    return { outcome: 'started', session };
+    return ok(session);
   } catch (error) {
+    // Cleanup runs whatever the error's shape; only structured failures come
+    // back as values — a non-structured escape is a bug and throws (rule 6).
     watch?.stop();
     await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
-    return {
-      outcome: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 }

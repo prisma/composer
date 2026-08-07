@@ -23,9 +23,9 @@ describe('@prisma/composer/control — programmatic deploy over the real extensi
   test('resolves both /control entries for real and fails structurally at the missing built entry, not at resolution', async () => {
     const result = await deploy({ entry: fixtureEntry, cwd: integrationDir });
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('ASSEMBLE.BUILD_FAILED');
     expect(result.failure.message).toContain('no built entry at');
     expect(result.failure.message).toContain('run your build first');
   }, 30_000);

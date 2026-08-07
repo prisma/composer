@@ -3,13 +3,13 @@
  * prisma-next/packages/1-framework/3-tooling/cli/src/migration-cli.ts) +
  * orchestration of deploy-cli.md § The pipeline.
  */
+import { CliStructuredError } from '@internal/foundation/errors';
 import { Cli, Command, Option, UsageError } from 'clipanion';
-import { CliError } from './cli-error.ts';
 import { runDev } from './dev/run-dev.ts';
 import { runLog } from './log/run-log.ts';
 import { deployWithDeps } from './operations/deploy.ts';
 import { type DestroyTarget, destroyWithDeps } from './operations/destroy.ts';
-import type { OperationDeps, OperationFailure } from './operations/shared.ts';
+import { executionDiagnostics, type OperationDeps } from './operations/shared.ts';
 
 const BINARY_NAME = 'prisma-composer';
 
@@ -213,21 +213,21 @@ export type RunDeps = OperationDeps;
 /**
  * Renders a deploy/destroy operation failure the way run() always has: an
  * alchemy exit becomes the two console.error hint lines and the child's own
- * status; everything else rethrows the original error class (CliError,
- * LoadError, …) so cli.ts formats it unchanged.
+ * status (the documented ADR-0044 child-status exception); everything else
+ * rethrows the structured failure so cli.ts renders its envelope.
  */
-function renderDeployDestroyFailure(failure: OperationFailure): number {
-  if (failure.kind === 'execution' && failure.diagnostics !== undefined) {
-    const { exitCode, stackFilePath, reproduceCommand, cwd } = failure.diagnostics;
-    console.error(`\nGenerated stack file: ${stackFilePath}`);
-    if (exitCode !== undefined) {
-      // --stage is part of the repro: without it, alchemy falls back to its
-      // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
-      console.error(`Run \`${reproduceCommand}\` from ${cwd} to reproduce this directly.`);
-      return exitCode;
-    }
+function renderDeployDestroyFailure(failure: CliStructuredError): number {
+  const diagnostics = executionDiagnostics(failure);
+  if (diagnostics !== undefined && diagnostics.exitCode !== undefined) {
+    console.error(`\nGenerated stack file: ${diagnostics.stackFilePath}`);
+    // --stage is part of the repro: without it, alchemy falls back to its
+    // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
+    console.error(
+      `Run \`${diagnostics.reproduceCommand}\` from ${diagnostics.cwd} to reproduce this directly.`,
+    );
+    return diagnostics.exitCode;
   }
-  throw failure.cause instanceof Error ? failure.cause : new CliError(failure.message);
+  throw failure;
 }
 
 /** Runs the full pipeline; returns the process exit code. */
@@ -264,25 +264,37 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
   // run() has always thrown (spec §10 — destroy must name its target).
   if (args.command === 'deploy') {
     if (args.production) {
-      throw new CliError(
-        '--production is only valid with `destroy`; `deploy` targets production by default (omit --stage).',
+      throw new CliStructuredError(
+        'DEPLOY.FLAG_INVALID',
+        '--production is only valid with `destroy`.',
+        {
+          fix: '`deploy` targets production by default (omit --stage).',
+        },
       );
     }
     const result = await deployWithDeps(
       { entry: args.entry, name: args.name, stage: args.stage },
       deps,
     );
-    if (result.outcome === 'deployed') return 0;
+    if (result.ok) return 0;
     return renderDeployDestroyFailure(result.failure);
   }
 
   if (args.stage !== undefined && args.production) {
-    throw new CliError('Pass either --stage <name> or --production to `destroy`, not both.');
+    throw new CliStructuredError(
+      'DEPLOY.TARGET_CONFLICT',
+      'Pass either --stage <name> or --production to `destroy`, not both.',
+    );
   }
   if (args.stage === undefined && !args.production) {
-    throw new CliError(
-      '`destroy` requires an explicit target: --stage <name> to tear down a branch ' +
-        'environment, or --production to tear down the production environment.',
+    throw new CliStructuredError(
+      'DEPLOY.TARGET_MISSING',
+      '`destroy` requires an explicit target.',
+      {
+        fix:
+          'Pass --stage <name> to tear down a branch environment, or --production to tear ' +
+          'down the production environment.',
+      },
     );
   }
   const target: DestroyTarget =
@@ -304,6 +316,6 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     },
     deps,
   );
-  if (result.outcome === 'destroyed') return 0;
+  if (result.ok) return 0;
   return renderDeployDestroyFailure(result.failure);
 }

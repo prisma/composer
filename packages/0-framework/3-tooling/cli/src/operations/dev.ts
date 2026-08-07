@@ -5,14 +5,11 @@
  * handling (the host owns signals; the CLI adapter dev/run-dev.ts shows the
  * pattern). The executor loads lazily, so importing this module executes
  * nothing; an executor that fails to load comes back as a structured
- * `pipeline` failure, never a throw out of the host.
+ * failure, never a throw out of the host.
  */
-import {
-  executorLoadFailure,
-  type OperationDeps,
-  type OperationFailure,
-  type ServiceEndpoint,
-} from './shared.ts';
+import type { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, type Result } from '@internal/foundation/result';
+import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
 
 export type DevEvent =
   /** Initial front door + after each successful re-converge. */
@@ -54,9 +51,7 @@ export interface DevSession {
   readonly closed: Promise<void>;
 }
 
-export type DevStartResult =
-  | { readonly outcome: 'started'; readonly session: DevSession }
-  | { readonly outcome: 'failed'; readonly failure: OperationFailure };
+export type DevStartResult = Result<DevSession, CliStructuredError>;
 
 export async function dev(input: DevInput): Promise<DevStartResult> {
   return devWithDeps(input, {});
@@ -71,7 +66,7 @@ export async function devWithDeps(input: DevInput, deps: OperationDeps): Promise
   try {
     executor = await import('./execute-dev.ts');
   } catch (error) {
-    return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
+    return notOk(executorLoadFailure(error, cwd));
   }
   return executor.executeDev(input, deps, cwd);
 }

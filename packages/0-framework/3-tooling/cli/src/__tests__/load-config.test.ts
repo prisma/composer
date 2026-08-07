@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import {
   CONFIG_FILENAME,
   findConfigPathForEntry,
@@ -102,14 +102,35 @@ describe('loadAppConfig() — real c12 evaluation', () => {
 
     await expect(loadAppConfig(configPath)).rejects.toThrow(/EXAMPLE_API_TOKEN/);
   });
+
+  test('a throwing config module is CONFIG.EVALUATION_FAILED carrying the config path and the cause', async () => {
+    const dir = makeTree();
+    const configPath = path.join(dir, CONFIG_FILENAME);
+    fs.writeFileSync(configPath, "throw new Error('config module blew up');\n");
+
+    const error: unknown = await loadAppConfig(configPath).catch((e: unknown) => e);
+
+    expect(CliStructuredError.is(error)).toBe(true);
+    if (!CliStructuredError.is(error)) throw new Error('unreachable');
+    expect(error.code).toBe('CONFIG.EVALUATION_FAILED');
+    expect(error.message).toContain('config module blew up');
+    expect(error.where?.path).toBe(configPath);
+    expect(error.cause).toBeInstanceOf(Error);
+  });
 });
 
 describe('validateConfigShape() — field-by-field CliErrors', () => {
   const configPath = '/repo/app/prisma-composer.config.ts';
 
-  test('an empty export is a CliError naming defineConfig', () => {
-    expect(() => validateConfigShape({}, configPath)).toThrow(CliError);
-    expect(() => validateConfigShape({}, configPath)).toThrow(/defineConfig/);
+  test('an empty export is a structured error whose fix names defineConfig', () => {
+    expect(() => validateConfigShape({}, configPath)).toThrow(CliStructuredError);
+    try {
+      validateConfigShape({}, configPath);
+    } catch (error) {
+      if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+      expect(error.code).toBe('CONFIG.EXPORT_INVALID');
+      expect(error.fix).toContain('defineConfig');
+    }
   });
 
   test('a non-array `extensions` is a CliError naming the field', () => {

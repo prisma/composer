@@ -3,11 +3,13 @@
  * input, structured result, no argv, no console, no process.exit. The
  * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
  * loads lazily, so importing this module executes nothing; an executor that
- * fails to load comes back as a structured `pipeline` failure, never a throw
- * out of the host.
+ * fails to load comes back as a structured failure, never a throw out of
+ * the host.
  */
+import type { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, type Result } from '@internal/foundation/result';
 import type { DeploymentSummary } from '../deployment-summary.ts';
-import { executorLoadFailure, type OperationDeps, type OperationFailure } from './shared.ts';
+import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
 export interface DeployInput {
   /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
@@ -20,14 +22,13 @@ export interface DeployInput {
   readonly cwd?: string | undefined;
 }
 
-export type DeployResult =
-  | {
-      readonly outcome: 'deployed';
-      /** Parsed from the alchemy child's result file. Undefined when the child
-       * did not write one (injected fake alchemy, or a report-less apply). */
-      readonly summary: DeploymentSummary | undefined;
-    }
-  | { readonly outcome: 'failed'; readonly failure: OperationFailure };
+export interface DeploySuccess {
+  /** Parsed from the alchemy child's result file. Undefined when the child
+   * did not write one (injected fake alchemy, or a report-less apply). */
+  readonly summary: DeploymentSummary | undefined;
+}
+
+export type DeployResult = Result<DeploySuccess, CliStructuredError>;
 
 export async function deploy(input: DeployInput): Promise<DeployResult> {
   return deployWithDeps(input, {});
@@ -45,7 +46,7 @@ export async function deployWithDeps(
   try {
     executor = await import('./execute-deploy-destroy.ts');
   } catch (error) {
-    return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
+    return notOk(executorLoadFailure(error, cwd));
   }
   return executor.executeDeploy(input, deps, cwd);
 }

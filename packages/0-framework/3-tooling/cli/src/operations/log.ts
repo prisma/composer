@@ -3,12 +3,14 @@
  * the merged stream back as an AsyncIterable ended by the caller's
  * AbortSignal — no argv, no console, no process.exit. The executor loads
  * lazily, so importing this module executes nothing; an executor that fails
- * to load comes back as a structured `pipeline` failure, never a throw out
- * of the host.
+ * to load comes back as a structured failure, never a throw out of the
+ * host.
  */
 import type { PrismaAppConfig } from '@internal/core/config';
+import type { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, type Result } from '@internal/foundation/result';
 import type { AppIdentity } from '../pipeline.ts';
-import { executorLoadFailure, type OperationFailure, type ServiceEndpoint } from './shared.ts';
+import { executorLoadFailure, type ServiceEndpoint } from './shared.ts';
 
 export interface LogLine {
   readonly service: string;
@@ -45,18 +47,17 @@ export interface LogInput {
   readonly onEvent?: ((event: LogEvent) => void) | undefined;
 }
 
-export type LogResult =
-  | {
-      readonly outcome: 'attached';
-      /** For the adapter's empty-services notice. */
-      readonly appName: string;
-      /** Every running service. EMPTY means nothing is running — a valid, non-failure state;
-       * `lines` is then an already-finished iterable. */
-      readonly services: readonly ServiceEndpoint[];
-      /** Merged, address-filtered stream; ends on signal abort or when every source ends. */
-      readonly lines: AsyncIterable<LogLine>;
-    }
-  | { readonly outcome: 'failed'; readonly failure: OperationFailure };
+export interface LogAttached {
+  /** For the adapter's empty-services notice. */
+  readonly appName: string;
+  /** Every running service. EMPTY means nothing is running — a valid, non-failure state;
+   * `lines` is then an already-finished iterable. */
+  readonly services: readonly ServiceEndpoint[];
+  /** Merged, address-filtered stream; ends on signal abort or when every source ends. */
+  readonly lines: AsyncIterable<LogLine>;
+}
+
+export type LogResult = Result<LogAttached, CliStructuredError>;
 
 export async function log(input: LogInput): Promise<LogResult> {
   return logWithDeps(input, {});
@@ -71,7 +72,7 @@ export async function logWithDeps(input: LogInput, deps: LogDeps): Promise<LogRe
   try {
     executor = await import('./execute-log.ts');
   } catch (error) {
-    return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
+    return notOk(executorLoadFailure(error, cwd));
   }
   return executor.executeLog(input, deps, cwd);
 }

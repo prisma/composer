@@ -8,7 +8,7 @@
  */
 import type { Graph } from '@internal/core';
 import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from '@internal/core/config';
-import { CliError } from './cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { CONFIG_FILENAME } from './load-config.ts';
 
 function lookup(
@@ -20,27 +20,39 @@ function lookup(
 ): void {
   const ext = extensions.get(extension);
   if (ext === undefined) {
-    throw new CliError(
-      `No extension "${extension}" is configured (needed by ${what}) — add it to ` +
-        `${CONFIG_FILENAME}'s \`extensions\` (import its /control entry and list its descriptor).`,
+    throw new CliStructuredError(
+      'CONFIG.EXTENSION_MISSING',
+      `No extension "${extension}" is configured (needed by ${what}).`,
+      {
+        fix:
+          `Add it to ${CONFIG_FILENAME}'s \`extensions\` ` +
+          '(import its /control entry and list its descriptor).',
+        meta: { extension, type },
+      },
     );
   }
   const descriptor = ext.nodes[type];
   if (descriptor === undefined) {
-    throw new CliError(
-      `Extension "${extension}" has no descriptor for node type "${type}" (needed by ${what}; ` +
-        `known: ${Object.keys(ext.nodes).join(', ')}).`,
+    throw new CliStructuredError(
+      'CONFIG.DESCRIPTOR_MISSING',
+      `Extension "${extension}" has no descriptor for node type "${type}" (needed by ${what}).`,
+      {
+        why: `Known types: ${Object.keys(ext.nodes).join(', ')}.`,
+        meta: { extension, type },
+      },
     );
   }
   if (descriptor.kind !== expectedKind) {
-    throw new CliError(
+    throw new CliStructuredError(
+      'CONFIG.DESCRIPTOR_KIND_MISMATCH',
       `Extension "${extension}"'s descriptor for node type "${type}" is a "${descriptor.kind}" ` +
         `descriptor — ${what} needs a "${expectedKind}" descriptor.`,
+      { meta: { extension, type, kind: descriptor.kind } },
     );
   }
 }
 
-/** Throws a CliError on the first uncovered `(extension, type)`; silent when the config covers the whole graph. */
+/** Throws a structured CONFIG.* error on the first uncovered `(extension, type)`; silent when the config covers the whole graph. */
 export function validateRegistryCoverage(graph: Graph, config: PrismaAppConfig): void {
   const extensions = new Map(config.extensions.map((descriptor) => [descriptor.id, descriptor]));
 

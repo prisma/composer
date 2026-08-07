@@ -28,7 +28,7 @@ import type {
   PrismaAppConfig,
 } from '@internal/core/config';
 import { containerEnvVarName } from '@internal/core/config';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { run } from '../main.ts';
 import type { RunAlchemyInput } from '../run-alchemy.ts';
 
@@ -273,7 +273,7 @@ describe('run() — the full pipeline over fakes', () => {
     expect(serialized.containerScope).toBeUndefined();
   });
 
-  test('a missing prisma-composer.config.ts is a CliError naming the filename and the required export', async () => {
+  test('a missing prisma-composer.config.ts is a CliStructuredError naming the filename and the required export', async () => {
     const app = makeAppDir('no-config', { config: false });
     process.chdir(app.dir);
 
@@ -282,13 +282,14 @@ describe('run() — the full pipeline over fakes', () => {
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(CliError);
-    const message = (error as CliError).message;
-    expect(message).toContain('prisma-composer.config.ts');
-    expect(message).toContain('defineConfig');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    const failure = error as CliStructuredError;
+    expect(failure.code).toBe('CONFIG.FILE_MISSING');
+    expect(failure.message).toContain('prisma-composer.config.ts');
+    expect(failure.fix).toContain('defineConfig');
   });
 
-  test("a node whose extension isn't configured is a CliError naming the extension and the config fix, before assembly", async () => {
+  test("a node whose extension isn't configured is a CliStructuredError naming the extension and the config fix, before assembly", async () => {
     const app = makeAppDir('uncovered');
     process.chdir(app.dir);
     const config = fakeConfig();
@@ -306,14 +307,15 @@ describe('run() — the full pipeline over fakes', () => {
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(CliError);
-    const message = (error as CliError).message;
-    expect(message).toContain('fixture-extension');
-    expect(message).toContain('prisma-composer.config.ts');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    const failure = error as CliStructuredError;
+    expect(failure.code).toBe('CONFIG.EXTENSION_MISSING');
+    expect(failure.message).toContain('fixture-extension');
+    expect(failure.fix).toContain('prisma-composer.config.ts');
     expect(assemblerCalls).toEqual([]);
   });
 
-  test("a build descriptor whose extension isn't configured is a CliError naming it", async () => {
+  test("a build descriptor whose extension isn't configured is a CliStructuredError naming it", async () => {
     const app = makeAppDir('uncovered-build');
     process.chdir(app.dir);
     const config = fakeConfig();
@@ -324,28 +326,24 @@ describe('run() — the full pipeline over fakes', () => {
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(CliError);
-    expect((error as CliError).message).toContain('fixture-build');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    expect((error as CliStructuredError).message).toContain('fixture-build');
   });
 
-  test('--name with an empty value is a CliError naming the fix', async () => {
+  test('--name with an empty value is a CliStructuredError naming the fix', async () => {
     const app = makeAppDir();
     process.chdir(app.dir);
 
-    await expect(
-      run(['deploy', app.entryPath, '--name', ''], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        alchemy: () => 0,
-      }),
-    ).rejects.toThrow(CliError);
-    await expect(
-      run(['deploy', app.entryPath, '--name', ''], {
-        config: fakeConfig(),
-        runAssembler: fakeAssembler,
-        alchemy: () => 0,
-      }),
-    ).rejects.toThrow(/name it at authoring, or pass --name/);
+    const error: unknown = await run(['deploy', app.entryPath, '--name', ''], {
+      config: fakeConfig(),
+      runAssembler: fakeAssembler,
+      alchemy: () => 0,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(CliStructuredError);
+    const failure = error as CliStructuredError;
+    expect(failure.code).toBe('COMPOSE.NAME_MISSING');
+    expect(failure.fix).toMatch(/name it at authoring, or pass --name/i);
   });
 
   test('invokes each extension preflight with the resolved container, before alchemy runs', async () => {
@@ -384,7 +382,7 @@ describe('run() — the full pipeline over fakes', () => {
     expect(preflightCalls[0]!.nodeCount).toBeGreaterThan(0);
   });
 
-  test('a preflight failure aborts as a CliError before any stack file is written or alchemy runs', async () => {
+  test('a preflight failure aborts as a CliStructuredError before any stack file is written or alchemy runs', async () => {
     const app = makeAppDir('hello-preflight-fail');
     process.chdir(app.dir);
     let alchemyRan = false;
@@ -402,8 +400,9 @@ describe('run() — the full pipeline over fakes', () => {
       },
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(CliError);
-    expect((error as CliError).message).toContain('SECRET_X is not provisioned');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    expect((error as CliStructuredError).code).toBe('DEPLOY.PREFLIGHT_FAILED');
+    expect((error as CliStructuredError).message).toContain('SECRET_X is not provisioned');
     expect(alchemyRan).toBe(false);
     // Preflight (step 7.5) runs before writeStackFile (step 8) — nothing side-effected.
     expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
@@ -447,11 +446,16 @@ describe('run() — the full pipeline over fakes', () => {
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(CliError);
-    const message = (error as CliError).message;
-    expect(message).toContain('no built entry at');
-    expect(message).toContain('destroy evaluates the same stack program as deploy');
-    expect(message).toContain('Run the build, then retry the destroy.');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    const failure = error as CliStructuredError;
+    expect(failure.code).toBe('DEPLOY.BUILD_REQUIRED');
+    expect(failure.message).toContain('no built entry at');
+    expect(failure.why).toContain('destroy evaluates the same stack program as deploy');
+    expect(failure.fix).toBe('Run the build, then retry the destroy.');
+    expect(CliStructuredError.is(failure.cause)).toBe(true);
+    if (CliStructuredError.is(failure.cause)) {
+      expect(failure.cause.code).toBe('ASSEMBLE.BUILD_FAILED');
+    }
   });
 
   test('the same assembly failure on deploy keeps its original message, without the destroy note', async () => {
@@ -467,10 +471,11 @@ describe('run() — the full pipeline over fakes', () => {
       alchemy: () => 0,
     }).catch((e: unknown) => e);
 
-    expect(error).toBeInstanceOf(Error);
-    const message = (error as Error).message;
-    expect(message).toContain('no built entry at');
-    expect(message).not.toContain('destroy evaluates');
+    expect(error).toBeInstanceOf(CliStructuredError);
+    const failure = error as CliStructuredError;
+    expect(failure.code).toBe('ASSEMBLE.BUILD_FAILED');
+    expect(failure.message).toContain('no built entry at');
+    expect(failure.message).not.toContain('destroy evaluates');
   });
 
   describe('destroy with no local .alchemy state (R2a-review guardrail)', () => {
@@ -553,30 +558,32 @@ describe('run() — the full pipeline over fakes', () => {
   });
 
   describe('destroy target selection (--stage / --production, spec §10)', () => {
-    test('a bare destroy with no --stage and no --production is a CliError naming the required target', async () => {
-      await expect(run(['destroy', 'src/service.ts'])).rejects.toThrow(CliError);
+    test('a bare destroy with no --stage and no --production is a CliStructuredError naming the required target', async () => {
+      await expect(run(['destroy', 'src/service.ts'])).rejects.toThrow(CliStructuredError);
       await expect(run(['destroy', 'src/service.ts'])).rejects.toThrow(
         /requires an explicit target/,
       );
     });
 
-    test('destroy --stage x --production together is a CliError (mutually exclusive)', async () => {
+    test('destroy --stage x --production together is a CliStructuredError (mutually exclusive)', async () => {
       await expect(
         run(['destroy', 'src/service.ts', '--stage', 'staging', '--production']),
-      ).rejects.toThrow(CliError);
+      ).rejects.toThrow(CliStructuredError);
       await expect(
         run(['destroy', 'src/service.ts', '--stage', 'staging', '--production']),
       ).rejects.toThrow(/not both/);
     });
 
-    test('deploy --production is a CliError (--production is destroy-only)', async () => {
-      await expect(run(['deploy', 'src/service.ts', '--production'])).rejects.toThrow(CliError);
+    test('deploy --production is a CliStructuredError (--production is destroy-only)', async () => {
+      await expect(run(['deploy', 'src/service.ts', '--production'])).rejects.toThrow(
+        CliStructuredError,
+      );
       await expect(run(['deploy', 'src/service.ts', '--production'])).rejects.toThrow(
         /only valid with `destroy`/,
       );
     });
 
-    test('an invalid --stage is a CliError from validateStageName, before any container call', async () => {
+    test('an invalid --stage is a CliStructuredError from validateStageName, before any container call', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       const containerCalls: ContainerCall[] = [];
@@ -587,8 +594,8 @@ describe('run() — the full pipeline over fakes', () => {
         alchemy: () => 0,
       }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toContain('Invalid --stage');
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect((error as CliStructuredError).message).toContain('Invalid --stage');
       expect(containerCalls).toEqual([]);
     });
 
@@ -647,7 +654,7 @@ describe('run() — the full pipeline over fakes', () => {
       expect(serialized.containerScope).toBe('branch-staging');
     });
 
-    test('destroy against nothing deployed is a CliError naming the app and stage, from `locate` returning undefined', async () => {
+    test('destroy against nothing deployed is a CliStructuredError naming the app and stage, from `locate` returning undefined', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
 
@@ -657,10 +664,12 @@ describe('run() — the full pipeline over fakes', () => {
         alchemy: () => 0,
       }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe(
-        'Nothing deployed for fixture-app/staging — deploy it first.',
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect((error as CliStructuredError).code).toBe('DEPLOY.TARGET_NOT_FOUND');
+      expect((error as CliStructuredError).message).toBe(
+        'Nothing deployed for fixture-app/staging.',
       );
+      expect((error as CliStructuredError).fix).toBe('Deploy it first.');
     });
 
     test('destroy against nothing deployed for the default stage names no stage suffix', async () => {
@@ -673,10 +682,9 @@ describe('run() — the full pipeline over fakes', () => {
         alchemy: () => 0,
       }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toBe(
-        'Nothing deployed for fixture-app — deploy it first.',
-      );
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect((error as CliStructuredError).message).toBe('Nothing deployed for fixture-app.');
+      expect((error as CliStructuredError).fix).toBe('Deploy it first.');
     });
   });
 
@@ -812,7 +820,7 @@ describe('run() — the full pipeline over fakes', () => {
       expect(alchemyCalls[0]?.stage).toBe('ci-7');
     });
 
-    test('no container-supplied alchemyStage AND no --stage is a CliError naming the fix, before alchemy runs', async () => {
+    test('no container-supplied alchemyStage AND no --stage is a CliStructuredError naming the fix, before alchemy runs', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       let alchemyRan = false;
@@ -826,15 +834,16 @@ describe('run() — the full pipeline over fakes', () => {
         },
       }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(CliError);
-      expect((error as CliError).message).toContain('no deploy scope');
-      expect((error as CliError).message).toContain('--stage <name>');
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect((error as CliStructuredError).code).toBe('DEPLOY.SCOPE_MISSING');
+      expect((error as CliStructuredError).message).toContain('no deploy scope');
+      expect((error as CliStructuredError).fix).toContain('--stage <name>');
       expect(alchemyRan).toBe(false);
       // Fails before the stack file is written — nothing side-effected.
       expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
     });
 
-    test('destroy --production without a container-supplied alchemyStage is the same CliError', async () => {
+    test('destroy --production without a container-supplied alchemyStage is the same CliStructuredError', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
       fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
@@ -850,13 +859,13 @@ describe('run() — the full pipeline over fakes', () => {
         },
       }).catch((e: unknown) => e);
 
-      expect(error).toBeInstanceOf(CliError);
-      const message = (error as CliError).message;
-      expect(message).toContain('no deploy scope');
+      expect(error).toBeInstanceOf(CliStructuredError);
+      const failure = error as CliStructuredError;
+      expect(failure.message).toContain('no deploy scope');
       // --stage is invalid alongside --production, so the deploy remedy must
       // not be recommended here.
-      expect(message).not.toContain('--stage <name>');
-      expect(message).toContain('production deploy scope');
+      expect(failure.fix).not.toContain('--stage <name>');
+      expect(failure.fix).toContain('production deploy scope');
       expect(alchemyRan).toBe(false);
     });
   });
@@ -1018,7 +1027,7 @@ describe('run() — the full pipeline over fakes', () => {
       expect(removed).toBe(false);
     });
 
-    test('a teardown failure surfaces as a CliError', async () => {
+    test('a teardown failure surfaces as a CliStructuredError', async () => {
       const app = makeAppDir();
       process.chdir(app.dir);
 
@@ -1032,7 +1041,7 @@ describe('run() — the full pipeline over fakes', () => {
           runAssembler: fakeAssembler,
           alchemy: () => 0,
         }),
-      ).rejects.toBeInstanceOf(CliError);
+      ).rejects.toBeInstanceOf(CliStructuredError);
     });
 
     test('a FAILED alchemy destroy runs no teardown', async () => {

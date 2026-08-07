@@ -3,10 +3,12 @@
  * input, structured result, no argv, no console, no process.exit. The
  * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
  * loads lazily, so importing this module executes nothing; an executor that
- * fails to load comes back as a structured `pipeline` failure, never a throw
- * out of the host.
+ * fails to load comes back as a structured failure, never a throw out of
+ * the host.
  */
-import { executorLoadFailure, type OperationDeps, type OperationFailure } from './shared.ts';
+import type { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, type Result } from '@internal/foundation/result';
+import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
 /** Destroy must name its target explicitly — no silent default to production. Encoded, not re-derived from flags. */
 export type DestroyTarget =
@@ -26,9 +28,7 @@ export interface DestroyInput {
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
 }
 
-export type DestroyResult =
-  | { readonly outcome: 'destroyed' }
-  | { readonly outcome: 'failed'; readonly failure: OperationFailure };
+export type DestroyResult = Result<void, CliStructuredError>;
 
 export async function destroy(input: DestroyInput): Promise<DestroyResult> {
   return destroyWithDeps(input, {});
@@ -46,7 +46,7 @@ export async function destroyWithDeps(
   try {
     executor = await import('./execute-deploy-destroy.ts');
   } catch (error) {
-    return { outcome: 'failed', failure: executorLoadFailure(error, cwd) };
+    return notOk(executorLoadFailure(error, cwd));
   }
   return executor.executeDestroy(input, deps, cwd);
 }

@@ -10,7 +10,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -22,7 +23,7 @@ import { runAlchemy } from '../run-alchemy.ts';
 import { validateStageName } from '../validate-stage.ts';
 import type { DeployInput, DeployResult } from './deploy.ts';
 import type { DestroyEvent, DestroyInput, DestroyResult } from './destroy.ts';
-import type { ExtensionId, OperationDeps, OperationFailure } from './shared.ts';
+import { type ExtensionId, type OperationDeps, toStructured } from './shared.ts';
 
 const ALCHEMY_STATE_DIR = '.alchemy';
 
@@ -30,10 +31,6 @@ const ALCHEMY_STATE_DIR = '.alchemy';
 function hasNoLocalDeployState(cwd: string): boolean {
   const stateDir = path.join(cwd, ALCHEMY_STATE_DIR);
   return !(fs.existsSync(stateDir) && fs.readdirSync(stateDir).length > 0);
-}
-
-function failureMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 interface StackPipelineOptions {
@@ -58,8 +55,8 @@ export async function executeDeploy(
     onEvent: undefined,
     deps,
   });
-  if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
-  return { outcome: 'deployed', summary: outcome.summary };
+  if (!outcome.ok) return outcome;
+  return ok({ summary: outcome.value });
 }
 
 export async function executeDestroy(
@@ -75,33 +72,26 @@ export async function executeDestroy(
     onEvent: input.onEvent,
     deps,
   });
-  if (outcome.kind === 'failed') return { outcome: 'failed', failure: outcome.failure };
-  return { outcome: 'destroyed' };
+  if (!outcome.ok) return outcome;
+  return okVoid();
 }
-
-type StackPipelineOutcome =
-  | { readonly kind: 'succeeded'; readonly summary: DeploymentSummary | undefined }
-  | { readonly kind: 'failed'; readonly failure: OperationFailure };
 
 /** The pipeline both actions share: validate, resolve containers, preflight,
  * write the stack file, run alchemy against it, then the destroy-only
- * teardown/removal suffix. `summary` is only ever populated for deploy. */
+ * teardown/removal suffix. The value is only ever a summary for deploy. */
 async function runStackPipeline(
   action: 'deploy' | 'destroy',
   opts: StackPipelineOptions,
-): Promise<StackPipelineOutcome> {
+): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
   const { entry, name, stage, cwd, onEvent, deps } = opts;
 
   if (stage !== undefined) {
     try {
       validateStageName(stage);
     } catch (error) {
-      if (error instanceof CliError) {
-        return {
-          kind: 'failed',
-          failure: { kind: 'invalid-input', message: error.message, cause: error },
-        };
-      }
+      // validateStageName raises structured errors at origin; anything else
+      // escaping it is a bug and must throw (base-type rule 6).
+      if (CliStructuredError.is(error)) return notOk(error);
       throw error;
     }
   }
@@ -124,11 +114,14 @@ async function runStackPipeline(
     const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
     const onAssembleError =
       action === 'destroy'
-        ? (error: Error): CliError =>
-            new CliError(
-              `${error.message}\n\ndestroy evaluates the same stack program as deploy, which packages ` +
-                'the built artifacts — so the app must be built first. Run the build, then retry the destroy.',
-            )
+        ? (error: Error): CliStructuredError =>
+            new CliStructuredError('DEPLOY.BUILD_REQUIRED', error.message, {
+              why:
+                'destroy evaluates the same stack program as deploy, which packages ' +
+                'the built artifacts — so the app must be built first.',
+              fix: 'Run the build, then retry the destroy.',
+              cause: error,
+            })
         : undefined;
     pipeline = await runPipeline(entry, name, cwd, pipelineDeps, onAssembleError);
     const { config, graph, name: resolvedName } = pipeline;
@@ -149,16 +142,16 @@ async function runStackPipeline(
         } else {
           const instance = await extension.container.locate({ appName: resolvedName, stage });
           if (instance === undefined) {
-            throw new CliError(
-              `Nothing deployed for ${resolvedName}${stage !== undefined ? `/${stage}` : ''} — deploy it first.`,
+            throw new CliStructuredError(
+              'DEPLOY.TARGET_NOT_FOUND',
+              `Nothing deployed for ${resolvedName}${stage !== undefined ? `/${stage}` : ''}.`,
+              { fix: 'Deploy it first.' },
             );
           }
           containers.set(extension.id, instance);
         }
       } catch (error) {
-        throw error instanceof CliError
-          ? error
-          : new CliError(error instanceof Error ? error.message : String(error));
+        throw toStructured('DEPLOY.CONTAINER_FAILED', error);
       }
     }
 
@@ -171,13 +164,17 @@ async function runStackPipeline(
       // Reachable only for deploy without --stage, and destroy --production
       // (destroy --stage always has a user stage) — so the remedy can be
       // command-specific without a third branch.
-      throw new CliError(
+      throw new CliStructuredError(
+        'DEPLOY.SCOPE_MISSING',
         'The configured deploy target supplied no deploy scope (its container defines no ' +
-          'alchemyStage), so Alchemy has no stage to run under. ' +
-          (action === 'deploy'
-            ? 'Pass --stage <name> to choose the deploy scope explicitly.'
-            : 'destroy --production needs a target whose container supplies the production ' +
-              'deploy scope.'),
+          'alchemyStage), so Alchemy has no stage to run under.',
+        {
+          fix:
+            action === 'deploy'
+              ? 'Pass --stage <name> to choose the deploy scope explicitly.'
+              : 'destroy --production needs a target whose container supplies the production ' +
+                'deploy scope.',
+        },
       );
     }
     alchemyStage = pinnedStage;
@@ -192,17 +189,13 @@ async function runStackPipeline(
         try {
           await extension.preflight({ graph, container: containers.get(extension.id), stage });
         } catch (error) {
-          throw error instanceof CliError
-            ? error
-            : new CliError(error instanceof Error ? error.message : String(error));
+          throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
     }
   } catch (error) {
-    return {
-      kind: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 
   // Generate .prisma-composer/alchemy.run.ts (tool state lives where you run
@@ -233,10 +226,9 @@ async function runStackPipeline(
         assembled: pipeline.assembled,
       });
     } catch (error) {
-      return {
-        kind: 'failed',
-        failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-      };
+      // Stack-file write I/O is structured here, at the catch that knows
+      // which file was being written (base-type rule 6).
+      return notOk(toStructured('DEPLOY.STACK_WRITE_FAILED', error));
     }
 
     const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
@@ -253,25 +245,33 @@ async function runStackPipeline(
         env: { ...process.env, [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
       });
     } catch (error) {
-      return {
-        kind: 'failed',
-        failure: {
-          kind: 'execution',
-          message: failureMessage(error),
-          cause: error,
-          diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
-        },
-      };
+      if (CliStructuredError.is(error)) return notOk(error);
+      return notOk(
+        new CliStructuredError(
+          'DEPLOY.ENGINE_FAILED',
+          error instanceof Error ? error.message : String(error),
+          {
+            cause: error,
+            meta: {
+              diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
+            },
+          },
+        ),
+      );
     }
     if (status !== 0) {
-      return {
-        kind: 'failed',
-        failure: {
-          kind: 'execution',
-          message: `alchemy ${action} exited with status ${status}.`,
-          diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
-        },
-      };
+      return notOk(
+        new CliStructuredError(
+          'DEPLOY.ENGINE_FAILED',
+          `alchemy ${action} exited with status ${status}.`,
+          {
+            meta: {
+              exitCode: status,
+              diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
+            },
+          },
+        ),
+      );
     }
 
     try {
@@ -286,9 +286,7 @@ async function runStackPipeline(
           try {
             await extension.teardown({ container: containers.get(extension.id), stage });
           } catch (error) {
-            throw error instanceof CliError
-              ? error
-              : new CliError(error instanceof Error ? error.message : String(error));
+            throw toStructured('DEPLOY.TEARDOWN_FAILED', error);
           }
         }
 
@@ -303,23 +301,19 @@ async function runStackPipeline(
           try {
             await extension.container.remove(instance);
           } catch (error) {
-            throw error instanceof CliError
-              ? error
-              : new CliError(error instanceof Error ? error.message : String(error));
+            throw toStructured('DEPLOY.CONTAINER_REMOVE_FAILED', error);
           }
         }
       }
     } catch (error) {
-      return {
-        kind: 'failed',
-        failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-      };
+      if (CliStructuredError.is(error)) return notOk(error);
+      throw error;
     }
 
     if (action === 'deploy') {
-      return { kind: 'succeeded', summary: readDeploymentSummary(resultFilePath) };
+      return ok(readDeploymentSummary(resultFilePath));
     }
-    return { kind: 'succeeded', summary: undefined };
+    return ok(undefined);
   } finally {
     try {
       fs.rmSync(resultFilePath, { force: true });

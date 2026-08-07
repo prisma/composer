@@ -13,7 +13,7 @@ import { type AssembledServices, assembleServices, type RunAssembler } from '@in
 import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
-import { CliError } from './cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
@@ -62,7 +62,9 @@ export async function resolveAppIdentity(
   const entryModule = await loadEntry(entry, cwd);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
-    throw new CliError('The root node has no name — name it at authoring, or pass --name.');
+    throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
+      fix: 'Name it at authoring, or pass --name.',
+    });
   }
   return { configPath, config, name };
 }
@@ -95,10 +97,11 @@ export async function runPipeline(
   // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root);
   if (graph.root.node.kind !== 'module') {
-    throw new CliError(
-      'The deploy root must be a module — wrap your service, e.g. ' +
+    throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
+      fix:
+        'Wrap your service, e.g. ' +
         "export default module('name', ({ provision }) => { provision(service); }).",
-    );
+    });
   }
 
   // 4. Registry coverage: every node/build in the graph has a matching descriptor in the config.
@@ -107,7 +110,9 @@ export async function runPipeline(
   // 5. Resolve the name.
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
-    throw new CliError('The root node has no name — name it at authoring, or pass --name.');
+    throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
+      fix: 'Name it at authoring, or pass --name.',
+    });
   }
 
   // 6. Assemble each service through the config's registries.

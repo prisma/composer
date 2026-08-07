@@ -6,9 +6,8 @@
  * (capability check, containers, `--fresh` teardown, preflight, emulators,
  * converge, attach, watch loop) lives in the operation.
  */
-import { CliError } from '../cli-error.ts';
 import { devWithDeps } from '../operations/dev.ts';
-import type { OperationDeps } from '../operations/shared.ts';
+import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `dev` command. */
 export interface DevArgs {
@@ -92,18 +91,22 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
     deps,
   );
 
-  if (result.outcome === 'failed') {
+  if (!result.ok) {
     const failure = result.failure;
-    if (failure.kind === 'execution' && failure.diagnostics !== undefined) {
-      const { exitCode, stackFilePath, reproduceCommand, cwd } = failure.diagnostics;
-      console.error(`\nGenerated stack file: ${stackFilePath}`);
-      console.error(`Run \`${reproduceCommand}\` from ${cwd} to reproduce this directly.`);
-      return exitCode ?? 1;
+    const diagnostics = executionDiagnostics(failure);
+    if (diagnostics !== undefined && diagnostics.exitCode !== undefined) {
+      // The documented ADR-0044 child-status exception: pass the deploy
+      // engine's own exit status through, with the two reproduce hint lines.
+      console.error(`\nGenerated stack file: ${diagnostics.stackFilePath}`);
+      console.error(
+        `Run \`${diagnostics.reproduceCommand}\` from ${diagnostics.cwd} to reproduce this directly.`,
+      );
+      return diagnostics.exitCode;
     }
-    throw failure.cause instanceof Error ? failure.cause : new CliError(failure.message);
+    throw failure;
   }
 
-  const session = result.session;
+  const session = result.value;
   // Logs are a separate command, not this view: `dev` supervises many service
   // processes and streaming them all inline drowns the front door and the
   // rebuild notices. `prisma-composer log` tails them on demand.

@@ -21,7 +21,6 @@ import type {
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
-import { CliError } from '../../cli-error.ts';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { RunAlchemyInput } from '../../run-alchemy.ts';
@@ -30,6 +29,7 @@ import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
+import { executionDiagnostics } from '../shared.ts';
 
 const tmpDirs: string[] = [];
 
@@ -223,7 +223,9 @@ describe('deploy()', () => {
     const resultFile = calls[0]?.env?.[DEPLOYMENT_RESULT_FILE_ENV];
     expect(resultFile).toStartWith(path.join(app.dir, '.prisma-composer', 'deployment-result-'));
     expect(resultFile).toEndWith('.json');
-    expect(result).toEqual({ outcome: 'deployed', summary: summaryFixture });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.summary).toEqual(summaryFixture);
     // Read once, then removed — nothing left for a later run to misread.
     expect(fs.existsSync(resultFile ?? '')).toBe(false);
   });
@@ -242,7 +244,9 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result).toEqual({ outcome: 'deployed', summary: undefined });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.summary).toBeUndefined();
   });
 
   test('a malformed result file is treated as absent, never a deploy failure', async () => {
@@ -267,7 +271,9 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result).toEqual({ outcome: 'deployed', summary: undefined });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.summary).toBeUndefined();
   });
 
   test("each run's result file is its own — a stale file from another run is never read, and two runs never share a path", async () => {
@@ -294,8 +300,8 @@ describe('deploy()', () => {
       deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
     );
 
-    expect(first).toEqual({ outcome: 'deployed', summary: undefined });
-    expect(second).toEqual({ outcome: 'deployed', summary: undefined });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
     expect(resultFiles).toHaveLength(2);
     expect(resultFiles[0]).not.toBe(resultFiles[1]);
   });
@@ -321,7 +327,7 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
+    expect(result.ok).toBe(false);
     expect(resultFile).toBeDefined();
     expect(fs.existsSync(resultFile ?? '')).toBe(false);
   });
@@ -359,7 +365,9 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result).toEqual({ outcome: 'deployed', summary: summaryFixture });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.summary).toEqual(summaryFixture);
   }, 15_000);
 
   test('an invalid stage ref is an invalid-input failure, before any container call', async () => {
@@ -381,11 +389,10 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure).toMatchObject({ kind: 'invalid-input' });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.STAGE_INVALID');
     expect(result.failure.message).toContain('Invalid --stage');
-    expect(result.failure.cause).toBeInstanceOf(CliError);
     expect(containerCalls).toEqual([]);
   });
 
@@ -402,11 +409,10 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('CONFIG.FILE_MISSING');
     expect(result.failure.message).toContain('prisma-composer.config.ts');
-    expect(result.failure.cause).toBeInstanceOf(CliError);
   });
 
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
@@ -435,9 +441,9 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.PREFLIGHT_FAILED');
     expect(result.failure.message).toContain('SECRET_X is not provisioned');
     expect(alchemyRan).toBe(false);
     expect(fs.existsSync(path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'))).toBe(false);
@@ -457,17 +463,15 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure).toEqual({
-      kind: 'execution',
-      message: 'alchemy deploy exited with status 42.',
-      diagnostics: {
-        exitCode: 42,
-        stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
-        reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
-        cwd: app.dir,
-      },
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toBe('alchemy deploy exited with status 42.');
+    expect(executionDiagnostics(result.failure)).toEqual({
+      exitCode: 42,
+      stackFilePath: path.join(app.dir, '.prisma-composer', 'alchemy.run.ts'),
+      reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
+      cwd: app.dir,
     });
   });
 
@@ -494,13 +498,13 @@ describe('deploy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.STACK_WRITE_FAILED');
     expect(alchemyRan).toBe(false);
   });
 
-  test('a broken effect tree is a pipeline failure naming the mismatch — the executor cannot load, the host stays alive', () => {
+  test('a broken effect tree is a structured failure naming the mismatch — the executor cannot load, the host stays alive', () => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
     );
@@ -539,17 +543,23 @@ describe('deploy()', () => {
         '  },\n' +
         '});\n',
     );
+    // A Result is in-process only (frozen, getter-backed — not
+    // JSON-serializable), so the probe serializes the failure's envelope plus
+    // a {name, message} projection of its cause.
     const probePath = path.join(dir, 'probe.ts');
     const resultPath = path.join(dir, 'result.json');
     fs.writeFileSync(
       probePath,
       `import { deploy } from ${JSON.stringify(operationsPath)};\n` +
         `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)} });\n` +
+        "if (result.ok) throw new Error('expected a failure');\n" +
+        'const cause = result.failure.cause;\n' +
         'await Bun.write(\n' +
         `  ${JSON.stringify(resultPath)},\n` +
-        '  JSON.stringify(result, (_key, value) =>\n' +
-        '    value instanceof Error ? { name: value.name, message: value.message } : value,\n' +
-        '  ),\n' +
+        '  JSON.stringify({\n' +
+        '    envelope: result.failure.toEnvelope(),\n' +
+        '    cause: cause instanceof Error ? { name: cause.name, message: cause.message } : cause,\n' +
+        '  }),\n' +
         ');\n',
     );
 
@@ -563,13 +573,12 @@ describe('deploy()', () => {
     expect(probe.status).toBe(0);
 
     const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8')) as {
-      outcome: string;
-      failure: { kind: string; message: string; cause: { name: string; message: string } };
+      envelope: { code: string; summary: string };
+      cause: { name: string; message: string };
     };
-    expect(result.outcome).toBe('failed');
-    expect(result.failure.kind).toBe('pipeline');
-    expect(result.failure.message).toContain('alchemy resolves effect@4.0.0-beta.102');
-    expect(result.failure.cause).toEqual({
+    expect(result.envelope.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
+    expect(result.envelope.summary).toContain('alchemy resolves effect@4.0.0-beta.102');
+    expect(result.cause).toEqual({
       name: 'Error',
       message: 'Schedule.either is not a function',
     });
@@ -602,7 +611,7 @@ describe('destroy()', () => {
         ),
       );
 
-      expect(result).toEqual({ outcome: 'destroyed' });
+      expect(result.ok).toBe(true);
       expect(containerCalls[0]).toEqual({
         op: 'locate',
         input: { appName: 'fixture-app', stage: expectedStage },
@@ -610,7 +619,7 @@ describe('destroy()', () => {
     }
   });
 
-  test('locate returning undefined is a pipeline failure naming the app and stage', async () => {
+  test('locate returning undefined is a structured failure naming the app and stage', async () => {
     const app = makeAppDir();
     fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
     fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
@@ -630,12 +639,11 @@ describe('destroy()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
-    expect(result.failure.message).toBe(
-      'Nothing deployed for fixture-app/staging — deploy it first.',
-    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.TARGET_NOT_FOUND');
+    expect(result.failure.message).toBe('Nothing deployed for fixture-app/staging.');
+    expect(result.failure.fix).toBe('Deploy it first.');
   });
 
   test('a successful destroy runs alchemy, then every teardown, then every container removal', async () => {
@@ -665,7 +673,7 @@ describe('destroy()', () => {
       ),
     );
 
-    expect(result).toEqual({ outcome: 'destroyed' });
+    expect(result.ok).toBe(true);
     expect(order).toEqual(['alchemy', 'teardown', 'remove']);
   });
 
@@ -692,7 +700,7 @@ describe('destroy()', () => {
       ),
     );
 
-    expect(result).toEqual({ outcome: 'destroyed' });
+    expect(result.ok).toBe(true);
     expect(order).toEqual(['no-local-deploy-state', 'assemble']);
   });
 
@@ -846,9 +854,9 @@ describe('dev()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.ATTACH_FAILED');
     expect(result.failure.message).toBe('emulator admin refused the connection');
     expect(stops).toBe(1);
   }, 15_000);
@@ -872,13 +880,13 @@ describe('dev()', () => {
         },
         { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
       );
-      if (start.outcome !== 'started') throw new Error('expected a started session');
-      await start.session.stop();
-      await start.session.closed;
+      if (!start.ok) throw new Error('expected a started session');
+      await start.value.stop();
+      await start.value.closed;
       return start;
     });
 
-    expect(result.outcome).toBe('started');
+    expect(result.ok).toBe(true);
     expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
   }, 15_000);
 
@@ -903,21 +911,21 @@ describe('dev()', () => {
         },
         { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
       );
-      if (start.outcome !== 'started') throw new Error('expected a started session');
-      expect(start.session.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
+      if (!start.ok) throw new Error('expected a started session');
+      expect(start.value.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
 
       let settled = false;
-      void start.session.closed.then(() => {
+      void start.value.closed.then(() => {
         settled = true;
       });
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(settled).toBe(false);
 
-      const firstStop = start.session.stop();
-      const secondStop = start.session.stop();
+      const firstStop = start.value.stop();
+      const secondStop = start.value.stop();
       await firstStop;
       await secondStop;
-      await start.session.closed;
+      await start.value.closed;
       expect(settled).toBe(true);
     });
 
@@ -947,13 +955,13 @@ describe('dev()', () => {
         },
         { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
       );
-      if (start.outcome !== 'started') throw new Error('expected a started session');
-      await start.session.stop();
-      await start.session.closed;
+      if (!start.ok) throw new Error('expected a started session');
+      await start.value.stop();
+      await start.value.closed;
       return start;
     });
 
-    expect(result.outcome).toBe('started');
+    expect(result.ok).toBe(true);
   }, 15_000);
 
   test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {
@@ -984,9 +992,9 @@ describe('dev()', () => {
       ),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('pipeline');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.STACK_WRITE_FAILED');
     expect(alchemyRan).toBe(false);
   }, 15_000);
 });
@@ -1002,14 +1010,14 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
     );
 
-    expect(result.outcome).toBe('attached');
-    if (result.outcome !== 'attached') throw new Error('unreachable');
-    expect(result.appName).toBe('app');
-    expect([...result.services].sort((x, y) => x.address.localeCompare(y.address))).toEqual([
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.appName).toBe('app');
+    expect([...result.value.services].sort((x, y) => x.address.localeCompare(y.address))).toEqual([
       { address: 'a', url: 'http://a' },
       { address: 'b', url: 'http://b' },
     ]);
-    const lines = await collect(result.lines);
+    const lines = await collect(result.value.lines);
     expect(lines).toContainEqual({ service: 'a', line: 'from-a' });
     expect(lines).toContainEqual({ service: 'b', line: 'from-b' });
   });
@@ -1032,8 +1040,8 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts', address: 'a' }, { identity: identityFor(attachments) }),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
-    expect(await collect(result.lines)).toEqual([{ service: 'a', line: 'from-a' }]);
+    if (!result.ok) throw new Error('expected attached');
+    expect(await collect(result.value.lines)).toEqual([{ service: 'a', line: 'from-a' }]);
   });
 
   test('an unknown address is an invalid-input failure naming the running services', async () => {
@@ -1043,9 +1051,9 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts', address: 'nope' }, { identity: identityFor(attachments) }),
     );
 
-    expect(result.outcome).toBe('failed');
-    if (result.outcome !== 'failed') throw new Error('unreachable');
-    expect(result.failure.kind).toBe('invalid-input');
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('LOG.ADDRESS_UNKNOWN');
     expect(result.failure.message).toBe('no service "nope" in "app" — running services: a.');
   });
 
@@ -1056,11 +1064,11 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
     );
 
-    expect(result.outcome).toBe('attached');
-    if (result.outcome !== 'attached') throw new Error('unreachable');
-    expect(result.appName).toBe('app');
-    expect(result.services).toEqual([]);
-    expect(await collect(result.lines)).toEqual([]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.appName).toBe('app');
+    expect(result.value.services).toEqual([]);
+    expect(await collect(result.value.lines)).toEqual([]);
   });
 
   test('aborting the signal ends the merged iterable while a source is still live', async () => {
@@ -1082,9 +1090,9 @@ describe('log()', () => {
       ),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
+    if (!result.ok) throw new Error('expected attached');
     const seen: string[] = [];
-    for await (const { line } of result.lines) {
+    for await (const { line } of result.value.lines) {
       seen.push(line);
       controller.abort();
     }
@@ -1108,9 +1116,9 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts' }, { identity: identityFor([flaky]) }),
     );
 
-    expect(result.outcome).toBe('attached');
-    if (result.outcome !== 'attached') throw new Error('unreachable');
-    expect(result.services).toEqual([{ address: 'a', url: 'http://a' }]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.services).toEqual([{ address: 'a', url: 'http://a' }]);
     expect(attempts).toBe(2);
   }, 10_000);
 
@@ -1124,9 +1132,9 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
+    if (!result.ok) throw new Error('expected attached');
     const seen: string[] = [];
-    for await (const { line } of result.lines) {
+    for await (const { line } of result.value.lines) {
       seen.push(line);
       break;
     }
@@ -1143,8 +1151,8 @@ describe('log()', () => {
       logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
-    const iterator = result.lines[Symbol.asyncIterator]();
+    if (!result.ok) throw new Error('expected attached');
+    const iterator = result.value.lines[Symbol.asyncIterator]();
     expect((await iterator.next()).value).toEqual({ service: 'a', line: 'one' });
     expect(await iterator.return?.(undefined)).toEqual({ done: true, value: undefined });
   }, 5_000);
@@ -1168,9 +1176,9 @@ describe('log()', () => {
       ),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
+    if (!result.ok) throw new Error('expected attached');
     const seen: LogLine[] = [];
-    for await (const line of result.lines) {
+    for await (const line of result.value.lines) {
       seen.push(line);
       if (seen.length === 1) {
         // Stall once so the pump floods the queue past its bound.
@@ -1202,8 +1210,8 @@ describe('log()', () => {
       ),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
-    for await (const line of result.lines) {
+    if (!result.ok) throw new Error('expected attached');
+    for await (const line of result.value.lines) {
       void line;
       break;
     }
@@ -1235,8 +1243,8 @@ describe('log()', () => {
       ),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
-    const lines = await collect(result.lines);
+    if (!result.ok) throw new Error('expected attached');
+    const lines = await collect(result.value.lines);
     expect(lines).toContainEqual({ service: 'a', line: 'before-crash' });
     expect(lines).toContainEqual({ service: 'b', line: 'still-here' });
   });
@@ -1264,8 +1272,8 @@ describe('log()', () => {
       ),
     );
 
-    if (result.outcome !== 'attached') throw new Error('expected attached');
-    const lines = await collect(result.lines);
+    if (!result.ok) throw new Error('expected attached');
+    const lines = await collect(result.value.lines);
     expect(lines).toContainEqual({ service: 'a', line: 'before-crash' });
     expect(lines).toContainEqual({ service: 'b', line: 'still-here' });
     expect(events).toEqual(['daemon went away']);

@@ -7,7 +7,6 @@
  * front door once it supervises more than one service); this is where logs
  * live.
  */
-import { CliError } from '../cli-error.ts';
 import { type LogDeps, logWithDeps } from '../operations/log.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `log` command. */
@@ -51,20 +50,19 @@ export async function runLog(args: LogArgs, deps: LogRunDeps = {}): Promise<numb
       { config: deps.config, identity: deps.identity },
     );
 
-    if (result.outcome === 'failed') {
-      throw result.failure.cause instanceof Error
-        ? result.failure.cause
-        : new CliError(result.failure.message);
+    if (!result.ok) {
+      throw result.failure;
     }
 
-    if (result.services.length === 0) {
+    const attached = result.value;
+    if (attached.services.length === 0) {
       console.error(
-        `[log] no running services for "${result.appName}" — start it first with \`prisma-composer dev ${args.entry}\`.`,
+        `[log] no running services for "${attached.appName}" — start it first with \`prisma-composer dev ${args.entry}\`.`,
       );
       return 0;
     }
 
-    for await (const { service, line } of result.lines) {
+    for await (const { service, line } of attached.lines) {
       console.log(`[${service}] ${line}`);
     }
   } finally {

@@ -5,15 +5,15 @@
  * loading is c12 with that explicit path (rc/global/package.json lookups
  * disabled), so the config file's own static imports resolve from the app
  * root by whatever package manager runs — no specifier construction, no
- * anchoring. The loaded shape is validated field-by-field with CliErrors
- * naming the field.
+ * anchoring. The loaded shape is validated field-by-field with structured
+ * errors naming the field.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ExtensionDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as c12 from 'c12';
-import { CliError } from './cli-error.ts';
 
 export const CONFIG_FILENAME = 'prisma-composer.config.ts';
 
@@ -35,17 +35,29 @@ export function findConfigPathForEntry(entryPath: string): string | undefined {
   }
 }
 
-export function missingConfigError(entryPath: string): CliError {
-  return new CliError(
-    `No ${CONFIG_FILENAME} found walking up from "${path.dirname(path.resolve(entryPath))}" — ` +
-      "the deploy needs the app's config file. Create one next to (or above) the entry, " +
-      "default-exporting defineConfig({ extensions: [...], state: ... }) from '@prisma/composer/config'.",
+export function missingConfigError(entryPath: string): CliStructuredError {
+  const searchedFrom = path.dirname(path.resolve(entryPath));
+  return new CliStructuredError(
+    'CONFIG.FILE_MISSING',
+    `No ${CONFIG_FILENAME} found walking up from "${searchedFrom}".`,
+    {
+      why: "The deploy needs the app's config file.",
+      fix:
+        'Create one next to (or above) the entry, default-exporting ' +
+        "defineConfig({ extensions: [...], state: ... }) from '@prisma/composer/config'.",
+      where: { path: searchedFrom },
+    },
   );
 }
 
-function fieldError(field: string, requirement: string): CliError {
-  return new CliError(
-    `${CONFIG_FILENAME}: \`${field}\` ${requirement} — see defineConfig() in '@prisma/composer/config'.`,
+function fieldError(field: string, requirement: string): CliStructuredError {
+  return new CliStructuredError(
+    'CONFIG.FIELD_INVALID',
+    `${CONFIG_FILENAME}: \`${field}\` ${requirement}.`,
+    {
+      fix: "See defineConfig() in '@prisma/composer/config'.",
+      meta: { field },
+    },
   );
 }
 
@@ -55,15 +67,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Field-by-field validation of the loaded default export — deliberately no
- * schema library: each check is a CliError naming the offending field.
+ * schema library: each check is a structured error naming the offending field.
  * Returns the same object, typed.
  */
 export function validateConfigShape(loaded: unknown, configPath: string): PrismaAppConfig {
   if (!isRecord(loaded) || Object.keys(loaded).length === 0) {
-    throw new CliError(
-      `"${configPath}" exported no config — it must default-export ` +
+    throw new CliStructuredError('CONFIG.EXPORT_INVALID', `"${configPath}" exported no config.`, {
+      fix:
+        'It must default-export ' +
         "defineConfig({ extensions: [...], state: ... }) from '@prisma/composer/config'.",
-    );
+      where: { path: configPath },
+    });
   }
 
   const extensions = loaded['extensions'];
@@ -89,7 +103,8 @@ export function validateConfigShape(loaded: unknown, configPath: string): Prisma
       );
     }
     if (seen.has(id)) {
-      throw new CliError(
+      throw new CliStructuredError(
+        'CONFIG.EXTENSION_DUPLICATE',
         `${CONFIG_FILENAME}: extension "${id}" is listed more than once in \`extensions\`.`,
       );
     }
@@ -117,23 +132,39 @@ export function validateConfigShape(loaded: unknown, configPath: string): Prisma
  * findConfigPathForEntry).
  */
 export async function loadAppConfig(configPath: string): Promise<LoadedAppConfig> {
-  const result = await c12.loadConfig({
-    name: 'prisma-composer',
-    configFile: configPath,
-    cwd: path.dirname(configPath),
-    rcFile: false,
-    globalRc: false,
-    packageJson: false,
-  });
+  let result: Awaited<ReturnType<typeof c12.loadConfig>>;
+  try {
+    result = await c12.loadConfig({
+      name: 'prisma-composer',
+      configFile: configPath,
+      cwd: path.dirname(configPath),
+      rcFile: false,
+      globalRc: false,
+      packageJson: false,
+    });
+  } catch (error) {
+    // The config module's own evaluation threw (a missing env var, a syntax
+    // error, a throwing factory) — structured here, at the one site that
+    // knows which file was evaluated (base-type rule 6).
+    throw new CliStructuredError(
+      'CONFIG.EVALUATION_FAILED',
+      `Evaluating "${configPath}" failed: ${error instanceof Error ? error.message : String(error)}`,
+      { where: { path: configPath }, cause: error },
+    );
+  }
 
   const loadedFile = result.configFile;
   if (
     typeof loadedFile !== 'string' ||
     fs.realpathSync(loadedFile) !== fs.realpathSync(configPath)
   ) {
-    throw new CliError(
-      `Config loading resolved "${String(loadedFile)}" instead of the discovered ` +
-        `"${configPath}" — refusing to deploy against a different file.`,
+    throw new CliStructuredError(
+      'CONFIG.PATH_MISMATCH',
+      `Config loading resolved "${String(loadedFile)}" instead of the discovered "${configPath}".`,
+      {
+        why: 'Refusing to deploy against a different file.',
+        where: { path: configPath },
+      },
     );
   }
 
