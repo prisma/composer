@@ -1,5 +1,12 @@
 # ADR-0034: Deploy state lives in a framework-owned database in the stage's Branch
 
+> Superseded in part by
+> [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md):
+> the container and lifetime reasoning stands — state is still a child of the
+> stage's Branch, deleted with it — but the storage mechanism is replaced.
+> State lives behind the platform state API; the visible per-stage
+> `prisma-composer-state` database is gone.
+
 ## Decision
 
 Each stage's deploy state — the provisioning engine's record of what exists in

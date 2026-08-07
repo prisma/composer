@@ -1,5 +1,12 @@
 # ADR-0010: Deploys hold a session advisory lock per stack and stage
 
+> Superseded by
+> [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md):
+> the per-`(stack, stage)` deploy lease is now held server-side against the
+> platform state API (TTL + heartbeat), not as a Postgres session advisory
+> lock. The fail-fast contention behavior — refuse immediately, name the
+> holder, never queue — is preserved.
+
 ## Decision
 
 A deploy acquires a Postgres session advisory lock on the stage's hosted

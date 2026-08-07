@@ -474,7 +474,7 @@ Retry the same DSN a few seconds later and the real, permanent cause appears:
 Failed to identify your database: Your account has restrictions: planLimitReached
 ```
 
-The Management API is no help: the project and database both read `status: "ready"`. Through Prisma Composer's hosted state store the failure surfaces two layers from its cause — `HostedStateBootstrapError: … finding/creating the prisma-composer-state project — ownership verification failed: … not configured correctly yet` — which points at the state store's own bootstrap rather than at the account.
+The Management API is no help: the project and database both read `status: "ready"`. At the time, Prisma Composer's state store was itself a workspace database (since replaced by the platform state API, ADR-0045), so the failure surfaced two layers from its cause — `HostedStateBootstrapError: … finding/creating the prisma-composer-state project — ownership verification failed: … not configured correctly yet` — pointing at the state store's bootstrap rather than at the account. Any database connection in the workspace hits the same wall.
 
 **Cause.** Two unrelated conditions share one error prefix and the first one wins on a cold database. The generic "not configured correctly yet" text is the same message [FT-5226](https://linear.app/prisma-company/issue/FT-5226) documents for a cold upstream; the plan restriction is only reported once the upstream is warm. The two want **opposite** responses — FT-5226 says retry, `planLimitReached` says stop and reclaim a database — so the message that arrives first tells you to do the wrong thing. Worse, any bounded cold-start retry (the documented FT-5226 workaround, and what deploy-time code does) spends its whole budget re-showing the misleading message and then reports the misleading message.
 
@@ -491,7 +491,7 @@ The Management API is no help: the project and database both read `status: "read
 
 - Upstream: [FT-5227](https://linear.app/prisma-company/issue/FT-5227/planlimitreached-is-masked-by-the-cold-start-not-configured-correctly)
 - Related: [FT-5226](https://linear.app/prisma-company/issue/FT-5226) (the cold-start message this is confused with, and whose retry workaround this defeats), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (the same API's habit of reporting the wrong field)
-- Surfaced through: [`packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts) (`verifyOwnership`)
+- Surfaced through: the state store's former database bootstrap (`verifyOwnership` in `packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts`, removed when state moved behind the platform state API — ADR-0045). The platform behavior itself is unchanged.
 
 ---
 
