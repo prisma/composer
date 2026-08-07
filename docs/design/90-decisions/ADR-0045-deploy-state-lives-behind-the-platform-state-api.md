@@ -49,10 +49,14 @@ Because the server speaks Alchemy's stock wire contract verbatim, the client
 side is not ours to write. Composer builds Alchemy's own `makeHttpStateStore`
 with the scope's URL, the workspace service token, and one request transform
 that adds the lease header. There is no SQL, no driver, no schema, and no
-store test suite of our own to maintain — the contract is Alchemy's, proven by
-Alchemy. What remains in composer is scope resolution (a URL needs a concrete
-`branchId`; production resolves the Project's default Branch), the lease
-client, and operator-facing error wrapping.
+store of our own whose storage correctness we must prove — the contract is
+Alchemy's, proven by Alchemy. Composer does keep an in-process fake of the
+wire contract to test its own wiring (the lease lifecycle, the guard, the
+client pointed at our URL shape); a fake can drift from the contract it
+mirrors and must track it. What remains in composer beyond that is scope
+resolution (a URL needs a concrete `branchId`; production resolves the
+Project's default Branch), the lease client, and operator-facing error
+wrapping.
 
 The lease replaces the advisory lock because the lock's substrate is gone.
 ADR-0010 chose a Postgres session lock precisely because it was a lease the
@@ -60,8 +64,9 @@ store's own database provided for free — bound to a connection, released on
 crash. With no database there is no session, so the lease moves to where the
 state now lives: the server. A deploy acquires it before the first state
 operation (60-second TTL by default; the server clamps requested TTLs to
-30–300 seconds), heartbeats it on a forked fiber every 20 seconds, and
-releases it as a finalizer. Contention keeps ADR-0010's exact behavior: a
+30–300 seconds — a server-side rule, checkable only in its implementation,
+prisma/pdp-control-plane#4817), heartbeats it on a forked fiber every 20
+seconds, and releases it as a finalizer. Contention keeps ADR-0010's exact behavior: a
 second deploy of the same `(stack, stage)` fails immediately with the server's
 message naming the current holder — it never queues.
 
@@ -78,10 +83,11 @@ children of the Branch: delete the Branch (CLI, Console, any platform surface)
 and the stage's state goes with it; production's state sits on the implicit
 default Branch. Auth is unchanged too — the same workspace service token the
 deploy already holds, with no minted per-run connection strings and no
-ownership markers, because there is no database to prove ownership of. On the
-server the rows are encrypted at rest under the per-project data-encryption
-key, and the server enforces bounds on key lengths (stack, stage, fqn), so
-malformed scopes fail loudly at the API rather than landing in storage.
+ownership markers, because there is no database to prove ownership of. Per
+the server implementation (prisma/pdp-control-plane#4816/#4817), the rows are
+encrypted at rest under the per-project data-encryption key, and the server
+enforces bounds on key lengths (stack, stage, fqn), so malformed scopes fail
+loudly at the API rather than landing in storage.
 
 One naming wrinkle is deliberate: the store still registers itself with
 Alchemy's telemetry as `id: 'prisma-postgres'`. That slug identifies the state
@@ -119,9 +125,14 @@ deleted by hand — a documented cleanup, not an automated one.
   within a client-side trust window. The stock client's fatal treatment of
   409 is what makes this hold; if the client's retry policy ever changes,
   this property must be re-verified.
-- **The routes are experimental.** The platform may still move them; composer
-  pins its Alchemy version, so a coordinated change is a normal dependency
-  bump, not a live break.
+- **The routes are experimental, and a route move is a live break.** The
+  state URL is baked into every published composer version and the platform
+  serves one live API to all of them, so if the routes move, already
+  installed versions fail at deploy time until each user upgrades. Alchemy's
+  contract carries an unauthenticated `/version` probe that can detect
+  contract drift, but detection only names the break — it does not prevent
+  it. Accepted while the surface stabilizes; moving the routes is a platform
+  decision that must weigh this cost.
 - **No migration.** Legacy stages refuse to deploy until destroyed or
   deleted (see the deploying guide); their state databases are cleaned up by
   Branch deletion or by hand, never by this version's code.
