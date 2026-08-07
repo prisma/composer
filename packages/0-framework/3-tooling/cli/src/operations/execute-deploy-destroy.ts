@@ -219,106 +219,112 @@ async function runStackPipeline(
     '.prisma-composer',
     `deployment-result-${String(process.pid)}-${randomUUID()}.json`,
   );
+  // Every return below funnels through the finally: the child can write the
+  // result file via the report hook before a later step fails, so failure
+  // paths must remove it too — otherwise each failed run leaves resource
+  // ids/URLs on disk and the files accumulate.
   try {
-    stackPath = writeStackFile({
-      entryPath: pipeline.entryModule.path,
-      cwd,
-      configPath: pipeline.configPath,
-      name: pipeline.name,
-      assembled: pipeline.assembled,
-    });
-  } catch (error) {
-    return {
-      kind: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
-  }
-
-  const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
-
-  // Shell out to alchemy against the generated file.
-  let status: number;
-  try {
-    status = (deps.alchemy ?? runAlchemy)({
-      command: action,
-      stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-      cwd,
-      stage: alchemyStage,
-      containerEnv: containerEnv(containers),
-      env: { ...process.env, [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
-    });
-  } catch (error) {
-    return {
-      kind: 'failed',
-      failure: {
-        kind: 'execution',
-        message: failureMessage(error),
-        cause: error,
-        diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
-      },
-    };
-  }
-  if (status !== 0) {
-    return {
-      kind: 'failed',
-      failure: {
-        kind: 'execution',
-        message: `alchemy ${action} exited with status ${status}.`,
-        diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
-      },
-    };
-  }
-
-  try {
-    // Teardown (destroy only): each extension removes infrastructure it
-    // owns outside the stack — the destroy above may still have been reading
-    // it, and the containers below may refuse to go while it exists. What that
-    // infrastructure is, and whether losing it should fail the command, is the
-    // extension's business, not this module's.
-    if (action === 'destroy') {
-      for (const extension of pipeline.config.extensions) {
-        if (extension.teardown === undefined) continue;
-        try {
-          await extension.teardown({ container: containers.get(extension.id), stage });
-        } catch (error) {
-          throw error instanceof CliError
-            ? error
-            : new CliError(error instanceof Error ? error.message : String(error));
-        }
-      }
-
-      // Container removal (destroy only, after every teardown): the CLI's
-      // two-loop order — all teardowns, then all removes — is what structurally
-      // preserves ADR-0034's guarantee that a stage's state database is deleted
-      // before its Branch (a Branch with an attached database refuses deletion).
-      for (const extension of pipeline.config.extensions) {
-        if (extension.container === undefined) continue;
-        const instance = containers.get(extension.id);
-        if (instance === undefined) continue;
-        try {
-          await extension.container.remove(instance);
-        } catch (error) {
-          throw error instanceof CliError
-            ? error
-            : new CliError(error instanceof Error ? error.message : String(error));
-        }
-      }
+    try {
+      stackPath = writeStackFile({
+        entryPath: pipeline.entryModule.path,
+        cwd,
+        configPath: pipeline.configPath,
+        name: pipeline.name,
+        assembled: pipeline.assembled,
+      });
+    } catch (error) {
+      return {
+        kind: 'failed',
+        failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+      };
     }
-  } catch (error) {
-    return {
-      kind: 'failed',
-      failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
-    };
-  }
 
-  if (action === 'deploy') {
-    const summary = readDeploymentSummary(resultFilePath);
+    const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
+
+    // Shell out to alchemy against the generated file.
+    let status: number;
+    try {
+      status = (deps.alchemy ?? runAlchemy)({
+        command: action,
+        stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+        cwd,
+        stage: alchemyStage,
+        containerEnv: containerEnv(containers),
+        env: { ...process.env, [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
+      });
+    } catch (error) {
+      return {
+        kind: 'failed',
+        failure: {
+          kind: 'execution',
+          message: failureMessage(error),
+          cause: error,
+          diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
+        },
+      };
+    }
+    if (status !== 0) {
+      return {
+        kind: 'failed',
+        failure: {
+          kind: 'execution',
+          message: `alchemy ${action} exited with status ${status}.`,
+          diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
+        },
+      };
+    }
+
+    try {
+      // Teardown (destroy only): each extension removes infrastructure it
+      // owns outside the stack — the destroy above may still have been reading
+      // it, and the containers below may refuse to go while it exists. What that
+      // infrastructure is, and whether losing it should fail the command, is the
+      // extension's business, not this module's.
+      if (action === 'destroy') {
+        for (const extension of pipeline.config.extensions) {
+          if (extension.teardown === undefined) continue;
+          try {
+            await extension.teardown({ container: containers.get(extension.id), stage });
+          } catch (error) {
+            throw error instanceof CliError
+              ? error
+              : new CliError(error instanceof Error ? error.message : String(error));
+          }
+        }
+
+        // Container removal (destroy only, after every teardown): the CLI's
+        // two-loop order — all teardowns, then all removes — is what structurally
+        // preserves ADR-0034's guarantee that a stage's state database is deleted
+        // before its Branch (a Branch with an attached database refuses deletion).
+        for (const extension of pipeline.config.extensions) {
+          if (extension.container === undefined) continue;
+          const instance = containers.get(extension.id);
+          if (instance === undefined) continue;
+          try {
+            await extension.container.remove(instance);
+          } catch (error) {
+            throw error instanceof CliError
+              ? error
+              : new CliError(error instanceof Error ? error.message : String(error));
+          }
+        }
+      }
+    } catch (error) {
+      return {
+        kind: 'failed',
+        failure: { kind: 'pipeline', message: failureMessage(error), cause: error },
+      };
+    }
+
+    if (action === 'deploy') {
+      return { kind: 'succeeded', summary: readDeploymentSummary(resultFilePath) };
+    }
+    return { kind: 'succeeded', summary: undefined };
+  } finally {
     try {
       fs.rmSync(resultFilePath, { force: true });
     } catch {
-      // Best-effort cleanup — the summary is already in hand.
+      // Best-effort cleanup — never masks the result it wraps.
     }
-    return { kind: 'succeeded', summary };
   }
-  return { kind: 'succeeded', summary: undefined };
 }

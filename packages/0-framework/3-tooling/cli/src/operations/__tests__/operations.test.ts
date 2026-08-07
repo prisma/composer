@@ -300,6 +300,32 @@ describe('deploy()', () => {
     expect(resultFiles[0]).not.toBe(resultFiles[1]);
   });
 
+  test('a failed deploy removes the result file the child already wrote', async () => {
+    const app = makeAppDir('hello-ops');
+    let resultFile: string | undefined;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: (input) => {
+            resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
+            if (typeof resultFile === 'string') {
+              fs.writeFileSync(resultFile, JSON.stringify(summaryFixture));
+            }
+            return 1;
+          },
+        },
+      ),
+    );
+
+    expect(result.outcome).toBe('failed');
+    expect(resultFile).toBeDefined();
+    expect(fs.existsSync(resultFile ?? '')).toBe(false);
+  });
+
   test('the summary round-trips through a real child process writing via the report writer', async () => {
     const app = makeAppDir('hello-ops');
     const writerPath = fileURLToPath(new URL('../../deployment-summary.ts', import.meta.url));
