@@ -1,3 +1,4 @@
+import { blindCast } from '@internal/foundation/casts';
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -45,7 +46,7 @@ export const EnvironmentVariableProvider = () =>
 
       return {
         stables: ['id'],
-        list: () => Effect.succeed([] as EnvironmentVariableAttributes[]),
+        list: () => Effect.succeed<EnvironmentVariableAttributes[]>([]),
         reconcile: Effect.fn(function* ({ news, output }) {
           const cls = news.class ?? 'production';
           // Value is write-only, so we PATCH, never diff. Adopt our own prior
@@ -66,16 +67,35 @@ export const EnvironmentVariableProvider = () =>
             const match = yield* call(() =>
               client.GET('/v1/environment-variables', {
                 params: {
-                  query: { projectId: news.projectId, class: cls, key: news.key } as never,
+                  query: blindCast<
+                    never,
+                    'openapi-fetch mistypes this query as never; the endpoint accepts projectId/class/key/branchId'
+                  >({
+                    projectId: news.projectId,
+                    class: cls,
+                    key: news.key,
+                    ...(news.branchId !== undefined ? { branchId: news.branchId } : {}),
+                  }),
                 },
               }),
             );
-            const matchId = (match as { data?: Array<{ id: string }> }).data?.[0]?.id;
+            // Only the exact write scope is a collision; "branchId is null" is not expressible as a query filter, hence the local compare.
+            const rows = blindCast<
+              { data?: readonly { id: string; branchId?: string | null }[] },
+              'query-never defeats response inference; project to the fields reconcile reads'
+            >(match).data;
+            const matchId = rows?.find(
+              (row) => (row.branchId ?? null) === (news.branchId ?? null),
+            )?.id;
             if (matchId !== undefined) {
               const isPoison = news.key === 'DATABASE_URL' || news.key === 'DATABASE_URL_POOLED';
               if (!isPoison) {
+                const scope =
+                  news.branchId !== undefined
+                    ? `class "${cls}", branch "${news.branchId}"`
+                    : `class "${cls}"`;
                 throw new Error(
-                  `EnvironmentVariable "${news.key}" (project "${news.projectId}", class "${cls}") ` +
+                  `EnvironmentVariable "${news.key}" (project "${news.projectId}", ${scope}) ` +
                     'exists but is untracked in this deploy state — refusing to overwrite a reserved ' +
                     "COMPOSER_ key. Restore this deploy's hosted state, or remove the variable to let " +
                     'this deploy recreate it.',
