@@ -69,7 +69,7 @@ export const EnvironmentVariableProvider = () =>
                 params: {
                   query: blindCast<
                     never,
-                    'openapi-fetch types this list query as never (an SDK path/operation mismatch); the endpoint accepts projectId/class/key/branchId'
+                    'openapi-fetch mistypes this query as never; the endpoint accepts projectId/class/key/branchId'
                   >({
                     projectId: news.projectId,
                     class: cls,
@@ -79,17 +79,10 @@ export const EnvironmentVariableProvider = () =>
                 },
               }),
             );
-            // The platform keys rows on (project, branch, class, key), so only a
-            // row in the exact scope this deploy writes — same branch, or the
-            // project scope when branchId is unset — is a collision. A sibling
-            // preview branch's row or a project-level preview template legally
-            // coexists with the row this deploy is about to create. The query
-            // above narrows server-side by branchId; the comparison here also
-            // excludes template rows ("branchId is null" is not expressible as a
-            // query filter).
+            // Only the exact write scope is a collision; "branchId is null" is not expressible as a query filter, hence the local compare.
             const rows = blindCast<
               { data?: readonly { id: string; branchId?: string | null }[] },
-              'the query-never workaround defeats response inference; project the list response to the fields reconcile reads'
+              'query-never defeats response inference; project to the fields reconcile reads'
             >(match).data;
             const matchId = rows?.find(
               (row) => (row.branchId ?? null) === (news.branchId ?? null),
