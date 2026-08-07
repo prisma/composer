@@ -1,3 +1,4 @@
+import { CliStructuredError } from '@internal/foundation/errors';
 import type { DependencyEnd, InputBinding, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
@@ -63,10 +64,14 @@ export interface Graph {
   readonly params: readonly ParamBinding[];
 }
 
-/** Thrown by Load when the graph is malformed. */
-export class LoadError extends Error {
+/**
+ * Thrown by Load when the graph is malformed. Structured at origin
+ * (base-type rule 6): one type-level code covers every raise site until a
+ * finer per-site taxonomy is carved out. The `name` stays
+ * `CliStructuredError` — structural recognition depends on it.
+ */
+export class LoadError extends CliStructuredError {
   constructor(message: string) {
-    super(message);
-    this.name = 'LoadError';
+    super('COMPOSE.GRAPH_INVALID', message);
   }
 }

@@ -14,7 +14,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.6.0"
+    "@internal/core": "workspace:0.6.0",
+    "@internal/foundation": "workspace:0.6.0"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.6.0",

@@ -12,6 +12,11 @@ describe('the pipeline surfaces core Load() errors as-is (deploy-cli.md step 2)'
     expect(() => Load(entry.root)).toThrow(LoadError);
     expect(() => Load(entry.root)).toThrow(/unwired dependency input "auth"/);
     expect(() => Load(entry.root)).toThrow(/deploy the module instead/);
+    try {
+      Load(entry.root);
+    } catch (error) {
+      expect((error as LoadError).code).toBe('COMPOSE.GRAPH_INVALID');
+    }
   });
 
   test('a module root loads its provisioned services under their provision ids', async () => {
