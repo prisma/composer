@@ -218,9 +218,13 @@ export async function executeDev(
       }
     }
     for (const attachment of attachments) {
+      // Recorded BEFORE the call: startServices can start some services and
+      // then throw, and a partially-started attachment must be rolled back by
+      // the catch below too (stopServices failures are already swallowed
+      // there, so stopping a never-started attachment is harmless).
+      started.push(attachment);
       try {
         await withEmulatorRetry(() => attachment.startServices());
-        started.push(attachment);
       } catch (error) {
         throw toStructured('DEV.SERVICE_START_FAILED', error);
       }
