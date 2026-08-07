@@ -8,6 +8,7 @@
  * for presence but never for truth.
  */
 import type { DeployedEntity, DeployedNode, DeploymentResult } from '@internal/core/deploy';
+import { writeDeploymentSummaryFile } from './deployment-summary.ts';
 
 /** Gap between the deepest tree label and the entity column. */
 const LABEL_GAP = 3;
@@ -116,9 +117,11 @@ export function renderDeployment(result: DeploymentResult): string {
 
 /**
  * The report hook the generated stack file wires into `LowerOptions`. Prints a
- * leading blank line so the summary separates from alchemy's own apply output.
+ * leading blank line so the summary separates from alchemy's own apply output,
+ * then hands the result to the cross-process writer (deployment-summary.ts).
  */
 export function deploymentReport(result: DeploymentResult): void {
   console.log('');
   console.log(renderDeployment(result));
+  writeDeploymentSummaryFile(result);
 }

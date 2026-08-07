@@ -10,7 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { CliError } from './cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
 export function resolveAlchemyBin(startDir: string): string {
@@ -20,9 +20,10 @@ export function resolveAlchemyBin(startDir: string): string {
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) {
-      throw new CliError(
-        `Could not find an installed \`alchemy\` bin above "${startDir}" — add "alchemy" as a ` +
-          'dependency of your app.',
+      throw new CliStructuredError(
+        'DEPLOY.ALCHEMY_BIN_MISSING',
+        `Could not find an installed \`alchemy\` bin above "${startDir}".`,
+        { fix: 'Add "alchemy" as a dependency of your app.' },
       );
     }
     dir = parent;

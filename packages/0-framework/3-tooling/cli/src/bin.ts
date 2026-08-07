@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { CliStructuredError } from '@internal/foundation/errors';
 import { checkEffectResolution } from './check-effect-resolution.ts';
-import { CliError } from './cli-error.ts';
+import { renderErrorEnvelope } from './render-error.ts';
 
 // The effect preflight (TML-3158) must run BEFORE the rest of the CLI loads:
 // the command modules transitively import alchemy's provider tree, which
@@ -13,9 +14,9 @@ import { CliError } from './cli-error.ts';
 try {
   checkEffectResolution(process.cwd());
 } catch (error) {
-  if (error instanceof CliError) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
+  if (CliStructuredError.is(error)) {
+    console.error(renderErrorEnvelope(error.toEnvelope()));
+    process.exit(2);
   }
   throw error;
 }

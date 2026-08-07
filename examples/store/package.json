@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'nothing to build for this package itself — the modules build via turbo ^build, from the workspace deps below'",
+    "build": "echo 'nothing to build for this package itself \u2014 the modules build via turbo ^build, from the workspace deps below'",
     "dev": "bun run scripts/dev.ts",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
@@ -25,5 +25,14 @@
   "devDependencies": {
     "@types/bun": "^1.3.13",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "effect": "4.0.0-beta.103",
+    "@effect/sql-d1": "4.0.0-beta.103",
+    "@effect/sql-pg": "4.0.0-beta.103",
+    "@effect/vitest": "4.0.0-beta.103",
+    "@effect/platform-bun": "4.0.0-beta.103",
+    "@effect/platform-node": "4.0.0-beta.103",
+    "@effect/platform-node-shared": "4.0.0-beta.103"
   }
 }

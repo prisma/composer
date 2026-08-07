@@ -1,17 +1,13 @@
 /**
- * `prisma-composer log <entry> [address]` — tail the merged logs of an
- * already-running local app. It resolves the app the way `dev` does (config →
- * localTarget → container → attach) but calls only the attachment's `logs()`
- * view: it neither builds, provisions, starts, nor stops anything. `dev` no
- * longer streams logs inline (that drowned the front door once it supervises
- * more than one service); this is where logs live.
+ * `prisma-composer log <entry> [address]` — the CLI adapter over the
+ * programmatic `log()` operation (../operations/execute-log.ts): it owns the
+ * SIGINT/SIGTERM → abort wiring, the empty-services notice, and the
+ * `[service] line` rendering. Resolution, attach, and the merged stream live
+ * in the operation. `dev` no longer streams logs inline (that drowned the
+ * front door once it supervises more than one service); this is where logs
+ * live.
  */
-import * as path from 'node:path';
-import type { PrismaAppConfig } from '@internal/core/config';
-import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
-import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
-import { CliError } from '../cli-error.ts';
-import { type AppIdentity, resolveAppIdentity } from '../pipeline.ts';
+import { type LogDeps, logWithDeps } from '../operations/log.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `log` command. */
 export interface LogArgs {
@@ -23,89 +19,52 @@ export interface LogArgs {
   readonly tail: number;
 }
 
-export interface LogRunDeps {
-  /** Substituted for the c12 evaluation of the discovered config file (discovery still runs). */
-  readonly config?: PrismaAppConfig | undefined;
-  /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
-  readonly identity?: AppIdentity | undefined;
-}
-
-function toCliError(error: unknown): CliError {
-  return error instanceof CliError
-    ? error
-    : new CliError(error instanceof Error ? error.message : String(error));
-}
+/** Injectable seams — the log operation's own LogDeps, under this adapter's historical name. */
+export type LogRunDeps = LogDeps;
 
 /** Runs the log tail until interrupted; returns the process exit code. */
 export async function runLog(args: LogArgs, deps: LogRunDeps = {}): Promise<number> {
-  if (process.platform === 'win32') {
-    throw new CliError('local dev is not supported on Windows yet.');
-  }
-
-  const cwd = process.cwd();
-  const devDir = path.join(cwd, DEV_DIR);
-
-  const { config, name } =
-    deps.identity ??
-    (await resolveAppIdentity(args.entry, args.name, cwd, { config: deps.config }));
-
-  let resolved: ReadonlyMap<string, LocalTargetDescriptor>;
-  try {
-    resolved = await resolveLocalTargets(config);
-  } catch (error) {
-    throw toCliError(error);
-  }
-
-  const attachments: LocalTargetAttachment[] = [];
-  for (const target of resolved.values()) {
-    try {
-      const container = await target.container.ensure({ appName: name, stage: undefined });
-      attachments.push(await target.attach({ container, devDir }));
-    } catch (error) {
-      throw toCliError(error);
-    }
-  }
-
-  const services = (await Promise.all(attachments.map((a) => a.endpoints()))).flat();
-  if (services.length === 0) {
-    console.error(
-      `[log] no running services for "${name}" — start it first with \`prisma-composer dev ${args.entry}\`.`,
-    );
-    return 0;
-  }
-  if (args.address !== undefined && !services.some((s) => s.address === args.address)) {
-    throw new CliError(
-      `no service "${args.address}" in "${name}" — running services: ${services
-        .map((s) => s.address)
-        .join(', ')}.`,
-    );
-  }
-
   const controller = new AbortController();
   const finish = (): void => controller.abort();
   process.on('SIGINT', finish);
   process.on('SIGTERM', finish);
 
   try {
-    await Promise.all(
-      attachments.map(async (attachment) => {
-        try {
-          for await (const { service, line } of attachment.logs(controller.signal, {
-            tail: args.tail,
-          })) {
-            if (controller.signal.aborted) return;
-            if (args.address !== undefined && service !== args.address) continue;
-            console.log(`[${service}] ${line}`);
-          }
-        } catch (error) {
-          if (!controller.signal.aborted) {
+    const result = await logWithDeps(
+      {
+        entry: args.entry,
+        name: args.name,
+        address: args.address,
+        tail: args.tail,
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.kind === 'stream-failed') {
+            console.error(`[log] stream failed: ${event.message}`);
+          } else if (event.kind === 'lines-dropped') {
             console.error(
-              `[log] stream failed: ${error instanceof Error ? error.message : String(error)}`,
+              `[log] falling behind — dropped the ${String(event.count)} oldest lines.`,
             );
           }
-        }
-      }),
+        },
+      },
+      { config: deps.config, identity: deps.identity },
     );
+
+    if (!result.ok) {
+      throw result.failure;
+    }
+
+    const attached = result.value;
+    if (attached.services.length === 0) {
+      console.error(
+        `[log] no running services for "${attached.appName}" — start it first with \`prisma-composer dev ${args.entry}\`.`,
+      );
+      return 0;
+    }
+
+    for await (const { service, line } of attached.lines) {
+      console.log(`[${service}] ${line}`);
+    }
   } finally {
     process.off('SIGINT', finish);
     process.off('SIGTERM', finish);

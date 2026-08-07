@@ -199,27 +199,32 @@ alchemy.
 This happens when another dependency in your app floats to a newer `effect`
 and your package manager hoists that copy where alchemy resolves it — npm
 allows this with only a warning, and without the check the deploy would crash
-mid-run with a `TypeError` from inside alchemy. The fix is the one the error
-prints — pin the version your package manager should use everywhere, in your
-app's `package.json`:
+mid-run with a `TypeError` from inside alchemy. Today the floating dependency
+is alchemy itself: its own `effect`-family dependency and peer ranges
+(`@effect/sql-d1`, `@effect/sql-pg`, `@effect/vitest`, `@effect/platform-*`)
+float past the versions its shipped code supports — an upstream alchemy bug
+(the `TaggedErrorClass` drift, reported upstream), so every consumer app needs
+the constellation pinned until alchemy fixes its ranges. The fix is to pin the
+whole `effect` constellation to `@prisma/composer`'s exact pin, in your app's
+`package.json`:
 
 ```json
-"overrides": { "effect": "<required>" }
+"overrides": {
+  "effect": "<required>",
+  "@effect/sql-d1": "<required>",
+  "@effect/sql-pg": "<required>",
+  "@effect/vitest": "<required>",
+  "@effect/platform-bun": "<required>",
+  "@effect/platform-node": "<required>",
+  "@effect/platform-node-shared": "<required>"
+}
 ```
 
-yarn spells it `resolutions`:
-
-```json
-"resolutions": { "effect": "<required>" }
-```
-
-and pnpm nests it under `pnpm`:
-
-```json
-"pnpm": { "overrides": { "effect": "<required>" } }
-```
+yarn spells the block `resolutions`, and pnpm nests it under
+`"pnpm": { "overrides": ... }`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
+The repo's `examples/*` manifests carry this exact block.
 
 ## Production behavior
 
@@ -295,6 +300,63 @@ next deploy recreates everything under fresh state — either:
 
 Recreated apps get new generated URLs; anything pointing at the old ones
 needs updating.
+
+## Driving deploys from code
+
+Everything the CLI does is also callable in-process, from
+`@prisma/composer/control`: typed `deploy`, `destroy`, `dev`, and `log`
+operations that return structured results instead of printing and exiting.
+The `prisma-composer` commands are thin renderers over these same operations,
+so the two surfaces can't drift.
+
+```ts
+import { deploy } from '@prisma/composer/control';
+
+const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
+if (result.outcome === 'deployed') {
+  // result.summary — the deployed topology (app name + each node's
+  // address and entities), when the deploy engine reported one.
+} else {
+  console.error(result.failure.message); // same fix-naming text the CLI prints
+}
+```
+
+What to know before embedding it:
+
+- **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
+  exactly like the CLI. `destroy` takes a discriminated target —
+  `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
+  silent default to production and no flag-combination footgun.
+- **Failures are results, not throws.** Every operation resolves to either
+  its success shape or `{ outcome: 'failed', failure }`, where
+  `failure.kind` is one of `invalid-input`, `unsupported-platform`, `pipeline`
+  (anything between loading the deploy stack and the deploy engine — including
+  the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
+  reported with the same fix-naming message the CLI prints), or `execution`
+  (the engine ran and failed). An `execution` failure's optional
+  `diagnostics` object carries the exit code and an exact reproduce command —
+  details of the current execution mechanism, handy for printing a hint but
+  not something to build on; branch on `message`/`cause` for anything
+  durable. Importing the module executes nothing until you call an operation.
+- **`summary` is best-effort.** It rides a result file the deploy engine's
+  child process writes; a deploy that converged without writing one still
+  succeeds, with `summary: undefined`.
+- **The engine's own output still streams to your process's stdio.** That is
+  the current mechanism, not a promise: the operations return structured
+  results but don't capture the live deploy output; run them where that
+  output belongs, or with stdio redirected. Capturing it would be a new
+  option on the operations.
+- **`dev` resolves to `{ outcome: 'started', session }` or a failure** —
+  never an exit code. The session is `{ endpoints, stop(), closed }`, with
+  progress (`ready`, `converge-failed`, `watch-error`, …) delivered through
+  `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
+  `session.stop()` is yours.
+- **`log` resolves to `{ outcome: 'attached', appName, services, lines }` or
+  a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
+  own (stopping early — `break`, `lines.return()` — also ends it cleanly).
+  Zero running services is a valid result (empty `services`, finished
+  stream), not an error. A consumer that falls behind loses oldest lines
+  past a bounded queue and is told via a `lines-dropped` event.
 
 ## The full picture
 

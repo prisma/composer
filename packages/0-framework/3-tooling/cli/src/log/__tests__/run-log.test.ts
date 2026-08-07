@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
-import { CliError } from '../../cli-error.ts';
 import { runLog } from '../run-log.ts';
 
 interface Endpoint {
@@ -133,7 +133,7 @@ describe('runLog()', () => {
       runLog(args({ address: 'nope' }), {
         identity: { configPath: 'c', config: configWith(attachment), name: 'app' },
       }),
-    ).rejects.toThrow(CliError);
+    ).rejects.toThrow(CliStructuredError);
   });
 
   test('no running services prints a hint and exits 0', async () => {

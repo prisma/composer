@@ -139,9 +139,13 @@ describe('assembleServices()', () => {
     });
     const graph = Load(root);
 
-    await expect(assembleServices(graph, emptyConfig, CWD)).rejects.toThrow(
-      /No extension "@fixture\/node-adapter" is configured .*prisma-composer\.config\.ts/,
-    );
+    const error: unknown = await assembleServices(graph, emptyConfig, CWD).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AssembleError);
+    if (!(error instanceof AssembleError)) throw new Error('unreachable');
+    expect(error.code).toBe('ASSEMBLE.EXTENSION_MISSING');
+    expect(error.message).toMatch(/No extension "@fixture\/node-adapter" is configured/);
+    expect(error.fix).toContain('prisma-composer.config.ts');
   });
 
   test('a build routed to a non-build descriptor throws AssembleError naming the kinds', async () => {
@@ -161,8 +165,55 @@ describe('assembleServices()', () => {
     });
     const graph = Load(root);
 
-    await expect(assembleServices(graph, config, CWD)).rejects.toThrow(
-      /is a "resource" descriptor — assembling a service build needs a "build" descriptor/,
+    const error: unknown = await assembleServices(graph, config, CWD).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(AssembleError);
+    if (!(error instanceof AssembleError)) throw new Error('unreachable');
+    expect(error.code).toBe('ASSEMBLE.DESCRIPTOR_KIND_MISMATCH');
+    expect(error.message).toMatch(/is a "resource" descriptor/);
+    expect(error.why).toContain('needs a "build" descriptor');
+  });
+
+  test('a rejecting RunAssembler is structured as ASSEMBLE.BUILD_FAILED carrying the address and the cause', async () => {
+    const cause = new Error('no built entry at /some/dist/server.js');
+    const failingRun = async () => {
+      throw cause;
+    };
+    const root = module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('auth'), { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    const error: unknown = await assembleServices(graph, emptyConfig, CWD, failingRun).catch(
+      (e: unknown) => e,
     );
+
+    expect(error).toBeInstanceOf(AssembleError);
+    if (!(error instanceof AssembleError)) throw new Error('unreachable');
+    expect(error.code).toBe('ASSEMBLE.BUILD_FAILED');
+    expect(error.message).toBe('no built entry at /some/dist/server.js');
+    expect(error.meta).toEqual({ address: 'auth' });
+    expect(error.cause).toBe(cause);
+  });
+
+  test('a RunAssembler throwing an already-structured error passes it through unwrapped', async () => {
+    const structured = new AssembleError('ASSEMBLE.BUILD_FAILED', 'already structured', {
+      meta: { address: 'auth' },
+    });
+    const failingRun = async () => {
+      throw structured;
+    };
+    const root = module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('auth'), { id: 'auth' });
+      return {};
+    });
+    const graph = Load(root);
+
+    const error: unknown = await assembleServices(graph, emptyConfig, CWD, failingRun).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBe(structured);
   });
 });

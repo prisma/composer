@@ -57,6 +57,31 @@ pnpm add @prisma/composer @prisma/composer-prisma-cloud arktype
 pnpm add -D typescript @types/bun
 ```
 
+Then pin the `effect` constellation in your `package.json` — a workaround for
+an upstream bug in alchemy (Composer's deploy engine), whose own
+`effect`-family version ranges float past the versions its code supports, so
+a fresh install without the pins ends up with two conflicting copies of
+`effect` (Composer's CLI detects that and refuses to run). Match the exact
+version to the one `@prisma/composer` pins (see its `dependencies.effect`;
+the repo's examples carry the same block). npm reads `overrides`, yarn calls
+it `resolutions`, pnpm nests it under `"pnpm"`:
+
+```jsonc
+// package.json
+"overrides": {
+  "effect": "4.0.0-beta.103",
+  "@effect/sql-d1": "4.0.0-beta.103",
+  "@effect/sql-pg": "4.0.0-beta.103",
+  "@effect/vitest": "4.0.0-beta.103",
+  "@effect/platform-bun": "4.0.0-beta.103",
+  "@effect/platform-node": "4.0.0-beta.103",
+  "@effect/platform-node-shared": "4.0.0-beta.103"
+}
+```
+
+Reinstall after adding it. This block disappears once alchemy's ranges match
+its code.
+
 ```jsonc
 // tsconfig.json
 {

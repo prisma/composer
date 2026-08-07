@@ -3,19 +3,14 @@
  * prisma-next/packages/1-framework/3-tooling/cli/src/migration-cli.ts) +
  * orchestration of deploy-cli.md § The pipeline.
  */
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import type { RunAssembler } from '@internal/assemble';
-import type { ContainerInstance, PrismaAppConfig } from '@internal/core/config';
-import { containerEnv } from '@internal/core/config';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { Cli, Command, Option, UsageError } from 'clipanion';
-import { CliError } from './cli-error.ts';
 import { runDev } from './dev/run-dev.ts';
-import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from './generate-stack.ts';
 import { runLog } from './log/run-log.ts';
-import { type PipelineDeps, runPipeline } from './pipeline.ts';
-import { type RunAlchemyInput, runAlchemy } from './run-alchemy.ts';
-import { validateStageName } from './validate-stage.ts';
+import { deployWithDeps } from './operations/deploy.ts';
+import { type DestroyTarget, destroyWithDeps } from './operations/destroy.ts';
+import type { OperationDeps } from './operations/shared.ts';
+import { renderChildStatusHints } from './render-error.ts';
 
 const BINARY_NAME = 'prisma-composer';
 
@@ -213,49 +208,19 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   throw new UsageError(cli.usage(null, { detailed: true }));
 }
 
-/** Injectable seams so tests can drive run() without a real wrapper build, config evaluation, or alchemy process. */
-export interface RunDeps {
-  /** Substituted into assembleServices — see @internal/assemble's RunAssembler. */
-  readonly runAssembler?: RunAssembler;
-  readonly alchemy?: (input: RunAlchemyInput) => number;
-  /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs — the generated stack file needs the real path). Container lifecycle is stubbed via each extension's own `container` descriptor on this config. */
-  readonly config?: PrismaAppConfig;
-}
+/** Injectable seams so tests can drive run() without a real wrapper build, config evaluation, or alchemy process — the operations' own OperationDeps, under the CLI's historical name. */
+export type RunDeps = OperationDeps;
 
-/** Destroy must name its target explicitly — no silent default to production (spec §10). */
-function effectiveStage(args: ParsedArgs): string | undefined {
-  if (args.command === 'deploy') {
-    if (args.production) {
-      throw new CliError(
-        '--production is only valid with `destroy`; `deploy` targets production by default (omit --stage).',
-      );
-    }
-    return args.stage;
-  }
-  if (args.stage !== undefined && args.production) {
-    throw new CliError('Pass either --stage <name> or --production to `destroy`, not both.');
-  }
-  if (args.stage === undefined && !args.production) {
-    throw new CliError(
-      '`destroy` requires an explicit target: --stage <name> to tear down a branch ' +
-        'environment, or --production to tear down the production environment.',
-    );
-  }
-  return args.production ? undefined : args.stage;
-}
-
-const ALCHEMY_STATE_DIR = '.alchemy';
-
-/** Warns (doesn't fail) when destroy finds no local deploy state under cwd — likely wrong directory or nothing deployed yet. */
-function warnIfNoLocalDeployState(cwd: string): void {
-  const stateDir = path.join(cwd, ALCHEMY_STATE_DIR);
-  const hasState = fs.existsSync(stateDir) && fs.readdirSync(stateDir).length > 0;
-  if (!hasState) {
-    console.warn(
-      `\nNo prior deploy state under ${cwd} — if you deployed from a different directory, run ` +
-        'destroy from there; otherwise this is a no-op.',
-    );
-  }
+/**
+ * Renders a deploy/destroy operation failure the way run() always has: an
+ * alchemy exit becomes the two console.error hint lines and the child's own
+ * status (the documented ADR-0044 child-status exception); everything else
+ * rethrows the structured failure so cli.ts renders its envelope.
+ */
+function renderDeployDestroyFailure(failure: CliStructuredError): number {
+  const status = renderChildStatusHints(failure);
+  if (status !== undefined) return status;
+  throw failure;
 }
 
 /** Runs the full pipeline; returns the process exit code. */
@@ -287,165 +252,63 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
     );
   }
 
-  const stage = effectiveStage(args);
-  if (stage !== undefined) validateStageName(stage);
-  const cwd = process.cwd();
-
-  // 0. destroy-only guardrail — first, ahead of every other step, so it
-  // surfaces even when the rest of the pipeline goes on to fail for an
-  // unrelated reason (missing config, missing built output — both common
-  // companions of "nothing was ever deployed from here").
-  if (args.command === 'destroy') {
-    warnIfNoLocalDeployState(cwd);
-  }
-
-  // 1–6. The shared prefix (pipeline.ts): config discovery/load, entry load,
-  // Load, registry coverage, name resolution, assemble.
-  const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
-  const onAssembleError =
-    args.command === 'destroy'
-      ? (error: Error): CliError =>
-          new CliError(
-            `${error.message}\n\ndestroy evaluates the same stack program as deploy, which packages ` +
-              'the built artifacts — so the app must be built first. Run the build, then retry the destroy.',
-          )
-      : undefined;
-  const { configPath, config, entryModule, graph, name, assembled } = await runPipeline(
-    args.entry,
-    args.name,
-    cwd,
-    pipelineDeps,
-    onAssembleError,
-  );
-
-  // 7. Resolve each extension's own container (e.g. Prisma Cloud's Project +
-  // named-stage Branch) via its own descriptor — deploy ensures (creates if
-  // absent), destroy locates only — after assembly succeeds, so a deploy
-  // that cannot assemble never creates anything on any platform.
-  const containers = new Map<string, ContainerInstance>();
-  for (const extension of config.extensions) {
-    if (extension.container === undefined) continue;
-    try {
-      if (args.command === 'deploy') {
-        containers.set(extension.id, await extension.container.ensure({ appName: name, stage }));
-      } else {
-        const instance = await extension.container.locate({ appName: name, stage });
-        if (instance === undefined) {
-          throw new CliError(
-            `Nothing deployed for ${name}${stage !== undefined ? `/${stage}` : ''} — deploy it first.`,
-          );
-        }
-        containers.set(extension.id, instance);
-      }
-    } catch (error) {
-      throw error instanceof CliError
-        ? error
-        : new CliError(error instanceof Error ? error.message : String(error));
+  // Flag semantics stay the CLI's: the operations take discriminated inputs,
+  // so the string-flag combinations are validated here, with the same errors
+  // run() has always thrown (spec §10 — destroy must name its target).
+  if (args.command === 'deploy') {
+    if (args.production) {
+      throw new CliStructuredError(
+        'DEPLOY.FLAG_INVALID',
+        '--production is only valid with `destroy`.',
+        {
+          fix: '`deploy` targets production by default (omit --stage).',
+        },
+      );
     }
+    const result = await deployWithDeps(
+      { entry: args.entry, name: args.name, stage: args.stage },
+      deps,
+    );
+    if (result.ok) return 0;
+    return renderDeployDestroyFailure(result.failure);
   }
 
-  // 7.3 The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
-  // — machine-dependent, the TML-3157 incident): the state-owning extension's
-  // container (same selection as core's resolveStateLayer) pins it, else an
-  // explicit --stage must.
-  const alchemyStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
-  if (alchemyStage === undefined) {
-    // Reachable only for deploy without --stage, and destroy --production
-    // (destroy --stage always has a user stage) — so the remedy can be
-    // command-specific without a third branch.
-    throw new CliError(
-      'The configured deploy target supplied no deploy scope (its container defines no ' +
-        'alchemyStage), so Alchemy has no stage to run under. ' +
-        (args.command === 'deploy'
-          ? 'Pass --stage <name> to choose the deploy scope explicitly.'
-          : 'destroy --production needs a target whose container supplies the production ' +
-            'deploy scope.'),
+  if (args.stage !== undefined && args.production) {
+    throw new CliStructuredError(
+      'DEPLOY.TARGET_CONFLICT',
+      'Pass either --stage <name> or --production to `destroy`, not both.',
     );
   }
-
-  // 7.5 Preflight (deploy only): each extension verifies its platform
-  // prerequisites — e.g. that every secret env var in the provision manifest
-  // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
-  // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
-  if (args.command === 'deploy') {
-    for (const extension of config.extensions) {
-      if (extension.preflight === undefined) continue;
-      try {
-        await extension.preflight({ graph, container: containers.get(extension.id), stage });
-      } catch (error) {
-        throw error instanceof CliError
-          ? error
-          : new CliError(error instanceof Error ? error.message : String(error));
-      }
-    }
+  if (args.stage === undefined && !args.production) {
+    throw new CliStructuredError(
+      'DEPLOY.TARGET_MISSING',
+      '`destroy` requires an explicit target.',
+      {
+        fix:
+          'Pass --stage <name> to tear down a branch environment, or --production to tear ' +
+          'down the production environment.',
+      },
+    );
   }
+  const target: DestroyTarget =
+    args.stage !== undefined ? { kind: 'stage', stage: args.stage } : { kind: 'production' };
 
-  // 8. Generate .prisma-composer/alchemy.run.ts (tool state lives where you run the tool).
-  const stackPath = writeStackFile({
-    entryPath: entryModule.path,
-    cwd,
-    configPath,
-    name,
-    assembled,
-  });
-
-  // 9. Shell out to alchemy against the generated file.
-  try {
-    const status = (deps.alchemy ?? runAlchemy)({
-      command: args.command,
-      stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-      cwd,
-      stage: alchemyStage,
-      containerEnv: containerEnv(containers),
-    });
-    if (status !== 0) {
-      console.error(`\nGenerated stack file: ${stackPath}`);
-      // --stage is part of the repro: without it, alchemy falls back to its
-      // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
-      console.error(
-        `Run \`alchemy ${args.command} ${GENERATED_STACK_RELATIVE_PATH} --yes ` +
-          `--stage ${alchemyStage}\` from ${cwd} to reproduce this directly.`,
-      );
-      return status;
-    }
-    // 9.5 Teardown (destroy only): each extension removes infrastructure it
-    // owns outside the stack — the destroy above may still have been reading
-    // it, and the containers below may refuse to go while it exists. What that
-    // infrastructure is, and whether losing it should fail the command, is the
-    // extension's business, not this module's.
-    if (args.command === 'destroy') {
-      for (const extension of config.extensions) {
-        if (extension.teardown === undefined) continue;
-        try {
-          await extension.teardown({ container: containers.get(extension.id), stage });
-        } catch (error) {
-          throw error instanceof CliError
-            ? error
-            : new CliError(error instanceof Error ? error.message : String(error));
+  const result = await destroyWithDeps(
+    {
+      entry: args.entry,
+      name: args.name,
+      target,
+      onEvent: (event) => {
+        if (event.kind === 'no-local-deploy-state') {
+          console.warn(
+            `\nNo prior deploy state under ${event.cwd} — if you deployed from a different directory, run ` +
+              'destroy from there; otherwise this is a no-op.',
+          );
         }
-      }
-
-      // 9.75 Container removal (destroy only, after every teardown): the CLI's
-      // two-loop order — all teardowns, then all removes — is what structurally
-      // preserves ADR-0034's guarantee that a stage's state database is deleted
-      // before its Branch (a Branch with an attached database refuses deletion).
-      for (const extension of config.extensions) {
-        if (extension.container === undefined) continue;
-        const instance = containers.get(extension.id);
-        if (instance === undefined) continue;
-        try {
-          await extension.container.remove(instance);
-        } catch (error) {
-          throw error instanceof CliError
-            ? error
-            : new CliError(error instanceof Error ? error.message : String(error));
-        }
-      }
-    }
-
-    return status;
-  } catch (error) {
-    console.error(`\nGenerated stack file: ${stackPath}`);
-    throw error;
-  }
+      },
+    },
+    deps,
+  );
+  if (result.ok) return 0;
+  return renderDeployDestroyFailure(result.failure);
 }

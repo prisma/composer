@@ -193,15 +193,23 @@ every node already carries:
 - **`@internal/assemble`** owns the orchestration this seam drives: routing
   every service node in the loaded graph to its registry's assemble entry
   (one bundle per full address — the root is always a Module). The CLI is
-  its first consumer; the future
-  programmatic deploy API is its second — so its public surface carries no CLI
-  concepts (no `CliError`, no argv/usage anything). It throws its own
-  `AssembleError`; the CLI's `main.ts` maps it (the existing destroy-path
-  wrapping already does, since `AssembleError extends Error`).
+  its first consumer; the programmatic control API is its second —
+  `@prisma/composer/control`'s typed `deploy`/`destroy`/`dev`/`log`
+  operations, implemented in `@internal/cli`'s `src/operations/` with the CLI
+  as a thin renderer over them
+  ([ADR-0043](../90-decisions/ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md)).
+  So assemble's public surface carries no CLI
+  concepts (no argv/usage anything). It throws its own `AssembleError` — a
+  structured error with `ASSEMBLE.*` codes (ADR-0044) — which the CLI
+  renders like any other structured failure (the destroy path re-codes an
+  assemble failure to `DEPLOY.BUILD_REQUIRED` with the original as `cause`).
 
 ## Error surface
 
-The CLI's quality lives in its errors; each failure names its fix:
+The CLI's quality lives in its errors; each failure is a structured error with
+a dotted `NAMESPACE.SUBCODE` code (ADR-0044) rendered as
+`✖ summary (CODE)`, with Why/Fix/Where lines whenever the error provides
+them:
 
 | Failure | Error tells the user |
 | --- | --- |

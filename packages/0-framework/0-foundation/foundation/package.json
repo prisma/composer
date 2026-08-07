@@ -8,6 +8,8 @@
     "./arktype": "./dist/arktype.mjs",
     "./assertions": "./dist/assertions.mjs",
     "./casts": "./dist/casts.mjs",
+    "./errors": "./dist/errors.mjs",
+    "./result": "./dist/result.mjs",
     "./secret": "./dist/secret.mjs",
     "./package.json": "./package.json"
   },

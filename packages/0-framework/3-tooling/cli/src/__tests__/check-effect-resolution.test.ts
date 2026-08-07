@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { CliStructuredError } from '@internal/foundation/errors';
 import {
   checkEffectResolution,
   effectMismatchError,
@@ -9,7 +10,6 @@ import {
   requiredEffectVersion,
   resolveEffectVersionFrom,
 } from '../check-effect-resolution.ts';
-import { CliError } from '../cli-error.ts';
 
 const tmpDirs: string[] = [];
 
@@ -123,10 +123,11 @@ describe('effectMismatchError()', () => {
   });
 
   test('mismatch names found + required versions and the overrides fix, rendered from the pin', () => {
-    const message = effectMismatchError('4.0.0-beta.102', '4.0.0-beta.93');
-    expect(message).toContain('alchemy resolves effect@4.0.0-beta.102');
-    expect(message).toContain('requires effect@4.0.0-beta.93');
-    expect(message).toContain('"overrides": { "effect": "4.0.0-beta.93" }');
+    const parts = effectMismatchError('4.0.0-beta.102', '4.0.0-beta.93');
+    expect(parts?.summary).toContain('alchemy resolves effect@4.0.0-beta.102');
+    expect(parts?.summary).toContain('requires effect@4.0.0-beta.93');
+    expect(parts?.fix).toContain('"overrides": { "effect": "4.0.0-beta.93" }');
+    expect(parts?.meta).toEqual({ found: '4.0.0-beta.102', required: '4.0.0-beta.93' });
   });
 });
 
@@ -156,10 +157,16 @@ describe('checkEffectResolution()', () => {
         dependencies: { effect: '4.0.0-beta.93' },
       }),
     );
-    expect(() => checkEffectResolution(root)).toThrow(CliError);
+    expect(() => checkEffectResolution(root)).toThrow(CliStructuredError);
     expect(() => checkEffectResolution(root)).toThrow(
       /alchemy resolves effect@4\.0\.0-beta\.102, but @prisma\/composer requires effect@4\.0\.0-beta\.93/,
     );
+    try {
+      checkEffectResolution(root);
+    } catch (error) {
+      expect(CliStructuredError.is(error)).toBe(true);
+      if (CliStructuredError.is(error)) expect(error.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
+    }
   });
 
   test('runs from a nested app directory below the install root', () => {
@@ -177,7 +184,7 @@ describe('checkEffectResolution()', () => {
     );
     const nested = path.join(root, 'apps', 'my-app');
     fs.mkdirSync(nested, { recursive: true });
-    expect(() => checkEffectResolution(nested)).toThrow(CliError);
+    expect(() => checkEffectResolution(nested)).toThrow(CliStructuredError);
     expect(() => checkEffectResolution(nested)).toThrow(/Dependency conflict/);
   });
 });

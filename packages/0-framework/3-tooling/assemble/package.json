@@ -14,7 +14,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.6.0"
+    "@internal/core": "workspace:0.6.0",
+    "@internal/foundation": "workspace:0.6.0"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.6.0",
@@ -26,7 +27,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/prisma/compose.git",
+    "url": "https://github.com/prisma/composer.git",
     "directory": "packages/0-framework/3-tooling/assemble"
   },
   "engines": {

@@ -652,6 +652,9 @@ importers:
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
+      '@internal/foundation':
+        specifier: workspace:0.6.0
+        version: link:../../0-foundation/foundation
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.6.0
