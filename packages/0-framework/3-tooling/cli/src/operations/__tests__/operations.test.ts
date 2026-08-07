@@ -1181,6 +1181,7 @@ describe('log()', () => {
       void line;
       break;
     }
+    expect(failLate).toBeDefined();
     failLate?.();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(events).toEqual([]);
