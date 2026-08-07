@@ -64,7 +64,7 @@ describe('startWatch()', () => {
       await until(() => calls === 1, 2000);
       expect(calls).toBe(1);
     } finally {
-      watch.stop();
+      await watch.stop();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 10_000);
@@ -78,7 +78,7 @@ describe('startWatch()', () => {
     const watch = startWatch([{ address: 'a', paths: [file] }], () => {
       calls += 1;
     });
-    watch.stop();
+    await watch.stop();
 
     fs.writeFileSync(file, 'a2');
     await sleep(500);
@@ -123,7 +123,7 @@ describe('startWatch()', () => {
       await until(() => calls === 2, 3000);
       expect(calls).toBe(2);
     } finally {
-      watch.stop();
+      await watch.stop();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 10_000);
