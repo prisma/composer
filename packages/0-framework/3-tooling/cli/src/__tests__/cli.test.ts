@@ -11,17 +11,18 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cli } from '../cli.ts';
 
-const originalExitCode = process.exitCode;
-
 afterEach(() => {
-  process.exitCode = originalExitCode;
+  // Reset to a concrete 0 — assigning `undefined` does not clear an
+  // already-set exit code under bun, and a leaked nonzero exitCode fails the
+  // whole `bun test` run despite 0 failing tests.
+  process.exitCode = 0;
 });
 
 async function runCli(
   argv: readonly string[],
 ): Promise<{ code: number | undefined; stderr: string }> {
   const errorSpy = spyOn(console, 'error').mockImplementation(() => {});
-  process.exitCode = undefined;
+  process.exitCode = 0;
   try {
     await cli(argv);
     return {
