@@ -1,17 +1,9 @@
-import { StateStoreError } from 'alchemy/State';
 import * as Data from 'effect/Data';
-
-/** Collapses any thrown value (postgres.js failures included) into a {@link StateStoreError}. */
-export const toStateStoreError = (cause: unknown): StateStoreError =>
-  cause instanceof Error
-    ? new StateStoreError({ message: cause.message, cause })
-    : new StateStoreError({ message: String(cause) });
 
 /**
  * An operator-facing failure from the hosted-state bootstrap pipeline
- * (branch/database discovery, connection creation, schema migration, or lock
- * acquisition) — what a deployer actually sees, instead of a raw Effect
- * defect.
+ * (branch resolution, lease acquisition, or the migration guard) — what a
+ * deployer actually sees, instead of a raw Effect defect.
  */
 export class HostedStateBootstrapError extends Data.TaggedError('HostedStateBootstrapError')<{
   /** The container the state store lives in: a Project id, or `projectId/branchId` for a named stage. */
@@ -26,10 +18,9 @@ export class HostedStateBootstrapError extends Data.TaggedError('HostedStateBoot
 
 /**
  * Builds a {@link HostedStateBootstrapError} from whatever the failed step
- * threw. Never retains the raw driver/API error object as `cause`: a
- * postgres.js connection failure's `.message`/properties are not verified to
- * omit the DSN or credentials, so only the extracted message text survives
- * into the operator-facing error.
+ * threw. Never retains the raw API error object as `cause`: only the
+ * extracted message text survives into the operator-facing error, so a
+ * credential or lease id carried on the raw error can never leak.
  */
 export const hostedStateBootstrapError = (
   container: string,

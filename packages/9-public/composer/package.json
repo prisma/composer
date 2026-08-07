@@ -42,8 +42,7 @@
     "clipanion": "^3.2.1",
     "effect": "4.0.0-beta.103",
     "esbuild": "^0.28.1",
-    "postgres": "^3.4.9",
-    "@prisma/management-api-sdk": "^1.50.0"
+    "@prisma/management-api-sdk": "^1.57.0"
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.6.0",
