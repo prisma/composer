@@ -8,7 +8,7 @@ import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
 import * as credentials from '../credentials.ts';
-import { failOnEmptyScopeWithLiveApps, scopeOccupied } from './empty-scope.ts';
+import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
 import {
   acquireDeployLease,
@@ -88,14 +88,19 @@ export const stateLayerAgainst = (
       yield* Effect.forkScoped(heartbeatDeployLease(mgmt, scope, lease));
 
       // Before the store exists — so the check precedes Alchemy's first state
-      // read. An empty scope with live apps on the Branch means the stage
-      // predates the platform state API (or a foreign deployment): refuse
-      // before Alchemy mutates any resource.
+      // read. An empty scope with live resources (apps, databases, buckets)
+      // on the Branch means the stage predates the platform state API (or a
+      // foreign deployment): refuse before Alchemy mutates any resource.
       const occupied = yield* scopeOccupied(mgmt, scope, lease).pipe(
         Effect.mapError(bootstrapError('probing the deploy state scope')),
       );
       if (!occupied) {
-        yield* failOnEmptyScopeWithLiveApps(projectId, stateBranchId, stack.name, stack.stage).pipe(
+        yield* failOnEmptyScopeWithLiveResources(
+          projectId,
+          stateBranchId,
+          stack.name,
+          stack.stage,
+        ).pipe(
           Effect.provideService(client.ManagementClient, mgmt),
           Effect.mapError(bootstrapError('checking the empty deploy state scope')),
         );

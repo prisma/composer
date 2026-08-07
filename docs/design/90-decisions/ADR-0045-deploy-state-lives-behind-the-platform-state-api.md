@@ -100,7 +100,8 @@ deployed under the database store starts from empty API state, and deploying
 over it blind would recreate every resource and die in `already_exists`
 failures. So the state layer keeps its empty-scope check, re-pointed: after
 acquiring the lease, if the API holds no resources for `(stack, stage)` but
-the Branch already runs live Compute apps, the deploy refuses with
+the Branch already holds live resources (Compute apps, databases, or
+buckets), the deploy refuses with
 instructions — destroy the stage with the previous composer version, or
 delete the stage's Branch (the Project, for production), then redeploy fresh.
 Legacy `prisma-composer-state` databases are never read and never deleted by

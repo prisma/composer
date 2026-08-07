@@ -151,14 +151,20 @@ export const releaseDeployLease = (
       },
     }),
   ).pipe(
-    Effect.flatMap((r) =>
-      r.response.status === 404
-        ? Effect.logWarning(
-            `releasing the deploy lease for stage "${scope.stage}" returned 404 — ` +
-              'it had already expired or been replaced.',
-          )
-        : Effect.void,
-    ),
+    Effect.flatMap((r) => {
+      const status = r.response.status;
+      if (status === 404) {
+        return Effect.logWarning(
+          `releasing the deploy lease for stage "${scope.stage}" returned 404 — ` +
+            'it had already expired or been replaced.',
+        );
+      }
+      if (status >= 200 && status < 300) return Effect.void;
+      return Effect.logWarning(
+        `releasing the deploy lease for stage "${scope.stage}" returned HTTP ${String(status)} — ` +
+          'the lease stays live until its TTL expires.',
+      );
+    }),
     Effect.catch((cause) =>
       Effect.logWarning(
         `releasing the deploy lease for stage "${scope.stage}" failed: ${String(cause)}`,

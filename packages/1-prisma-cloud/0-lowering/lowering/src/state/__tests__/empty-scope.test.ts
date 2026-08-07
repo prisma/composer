@@ -2,17 +2,17 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import { ManagementClient } from '../../client.ts';
 import { PrismaApiError } from '../../http.ts';
-import { failOnEmptyScopeWithLiveApps } from '../empty-scope.ts';
+import { failOnEmptyScopeWithLiveResources } from '../empty-scope.ts';
 import { fakeClient, newFakeState, PROJECT_ID } from './fake-management-api.ts';
 
-describe('failOnEmptyScopeWithLiveApps', () => {
+describe('failOnEmptyScopeWithLiveResources', () => {
   const branchId = 'br-default';
   const stack = 'demo-stack';
   const stage = 'br_test123';
 
   const check = (state = newFakeState()) =>
     Effect.runPromise(
-      failOnEmptyScopeWithLiveApps(PROJECT_ID, branchId, stack, stage).pipe(
+      failOnEmptyScopeWithLiveResources(PROJECT_ID, branchId, stack, stage).pipe(
         Effect.provideService(ManagementClient, fakeClient(state)),
       ),
     );
@@ -35,9 +35,50 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     const message = (error as PrismaApiError).message;
     expect(message).toContain(`no deploy state for stage "${stage}"`);
     expect(message).toContain(branchId);
-    expect(message).toContain('"storefront.web"');
-    expect(message).toContain('"storefront.worker"');
+    expect(message).toContain('app "storefront.web"');
+    expect(message).toContain('app "storefront.worker"');
     expect(message).toContain('already_exists');
+  });
+
+  test('a database-only legacy stage fails too — a legacy prisma-composer-state database alone trips the guard', async () => {
+    const state = newFakeState({
+      databases: [{ id: 'db-1', name: 'prisma-composer-state', projectId: PROJECT_ID, branchId }],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    const message = (error as PrismaApiError).message;
+    expect(message).toContain('1 resource(s)');
+    expect(message).toContain('database "prisma-composer-state"');
+    expect(message).toContain('predates the platform state API');
+  });
+
+  test('a bucket-only branch fails too', async () => {
+    const state = newFakeState({
+      buckets: [{ id: 'bkt-1', name: 'files', projectId: PROJECT_ID, branchId }],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).message).toContain('bucket "files"');
+  });
+
+  test('mixed kinds are all named, each with its kind', async () => {
+    const state = newFakeState({
+      apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId }],
+      databases: [{ id: 'db-1', name: 'database', projectId: PROJECT_ID, branchId }],
+      buckets: [{ id: 'bkt-1', name: 'files', projectId: PROJECT_ID, branchId }],
+    });
+
+    const error: unknown = await check(state).catch((e: unknown) => e);
+
+    const message = (error as PrismaApiError).message;
+    expect(message).toContain('3 resource(s)');
+    expect(message).toContain('app "storefront.web"');
+    expect(message).toContain('database "database"');
+    expect(message).toContain('bucket "files"');
   });
 
   test('the message says the stage predates the platform state API and how to cut over', async () => {
@@ -69,10 +110,10 @@ describe('failOnEmptyScopeWithLiveApps', () => {
 
     expect(error).toBeInstanceOf(PrismaApiError);
     const message = (error as PrismaApiError).message;
-    expect(message).toContain('3 app(s)');
-    expect(message).toContain('"storefront.web"');
-    expect(message).toContain('"storefront.worker"');
-    expect(message).toContain('"storefront.jobs"');
+    expect(message).toContain('3 resource(s)');
+    expect(message).toContain('app "storefront.web"');
+    expect(message).toContain('app "storefront.worker"');
+    expect(message).toContain('app "storefront.jobs"');
     // Each app appears exactly once — pagination never double-counts.
     expect(message.match(/storefront\.web/g)).toHaveLength(1);
   });
@@ -101,17 +142,20 @@ describe('failOnEmptyScopeWithLiveApps', () => {
     expect((error as PrismaApiError).message).toContain('pagination appears broken');
   });
 
-  test("apps on a DIFFERENT branch don't count — another stage's apps never block this one", async () => {
+  test("resources on a DIFFERENT branch don't count — another stage's resources never block this one", async () => {
     const state = newFakeState({
       apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId: 'br-other' }],
+      databases: [{ id: 'db-1', name: 'database', projectId: PROJECT_ID, branchId: 'br-other' }],
+      buckets: [{ id: 'bkt-1', name: 'files', projectId: PROJECT_ID, branchId: 'br-other' }],
     });
 
     await expect(check(state)).resolves.toBeUndefined();
   });
 
-  test("another project's apps don't count", async () => {
+  test("another project's resources don't count", async () => {
     const state = newFakeState({
       apps: [{ id: 'app-1', name: 'storefront.web', projectId: 'proj-other', branchId }],
+      databases: [{ id: 'db-1', name: 'database', projectId: 'proj-other', branchId }],
     });
 
     await expect(check(state)).resolves.toBeUndefined();

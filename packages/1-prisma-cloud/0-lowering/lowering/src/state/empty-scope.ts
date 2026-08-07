@@ -32,41 +32,59 @@ export const scopeOccupied = (
     ),
   ).pipe(Effect.map((fqns) => fqns.length > 0));
 
-interface AppSummary {
+interface NamedResource {
   readonly id: string;
   readonly name: string;
 }
 
-// Bounded (collectPages): this check runs under the deploy lease, so broken
+// Bounded (collectPages): these checks run under the deploy lease, so broken
 // pagination must fail loudly, never hang or pass on a partial listing.
-const listAppsOnBranch = (
+// Connections are deliberately not listed — they are children of databases,
+// so the database listing already covers every stage that has one.
+const listBranchResources = (
   client: ManagementApiClient,
   projectId: string,
   branchId: string,
-): Effect.Effect<readonly AppSummary[], PrismaApiError> =>
-  collectPages(`apps on branch ${branchId}`, (cursor) =>
-    call(() =>
-      client.GET('/v1/apps', {
-        params: {
-          query: cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor },
-        },
-      }),
-    ),
-  );
+): Effect.Effect<
+  readonly { kind: 'app' | 'database' | 'bucket'; name: string }[],
+  PrismaApiError
+> =>
+  Effect.gen(function* () {
+    const query = (cursor: string | undefined) =>
+      cursor === undefined ? { projectId, branchId } : { projectId, branchId, cursor };
+    const apps: readonly NamedResource[] = yield* collectPages(
+      `apps on branch ${branchId}`,
+      (cursor) => call(() => client.GET('/v1/apps', { params: { query: query(cursor) } })),
+    );
+    const databases: readonly NamedResource[] = yield* collectPages(
+      `databases on branch ${branchId}`,
+      (cursor) => call(() => client.GET('/v1/databases', { params: { query: query(cursor) } })),
+    );
+    const buckets: readonly NamedResource[] = yield* collectPages(
+      `buckets on branch ${branchId}`,
+      (cursor) => call(() => client.GET('/v1/buckets', { params: { query: query(cursor) } })),
+    );
+    return [
+      ...apps.map((r) => ({ kind: 'app' as const, name: r.name })),
+      ...databases.map((r) => ({ kind: 'database' as const, name: r.name })),
+      ...buckets.map((r) => ({ kind: 'bucket' as const, name: r.name })),
+    ];
+  });
 
 /**
- * The empty-scope-with-live-apps case: the platform state API holds no
- * resources for (stack, stage) while the platform already runs Compute apps
- * on the target Branch — this stage predates the platform state API (its
- * state lives in a legacy `prisma-composer-state` database, which is never
- * read; there is no automatic migration), or the deploy targets a project
- * that already runs apps. Deploying would recreate every resource and die in
- * per-resource `already_exists` failures — so fail once, up front. A
- * genuinely fresh deploy sees an empty Branch and passes. Local dev never
- * reaches this — the dev stack pins `state: localState()`
- * (generate-dev-stack.ts).
+ * The empty-scope-with-live-resources case: the platform state API holds no
+ * resources for (stack, stage) while the platform already has Compute apps,
+ * databases, or buckets on the target Branch — this stage predates the
+ * platform state API (its state lives in a legacy `prisma-composer-state`
+ * database, which is never read; there is no automatic migration), or the
+ * deploy targets a project that already runs something. Deploying would
+ * recreate every resource and die in per-resource `already_exists` failures —
+ * so fail once, up front. A genuinely fresh deploy sees an empty Branch and
+ * passes. Connections are not counted: they are children of databases, which
+ * are. Local dev never reaches this — the dev stack pins
+ * `state: localState()` (generate-dev-stack.ts).
  */
-export const failOnEmptyScopeWithLiveApps = (
+export const failOnEmptyScopeWithLiveResources = (
   projectId: string,
   branchId: string,
   stack: string,
@@ -74,20 +92,20 @@ export const failOnEmptyScopeWithLiveApps = (
 ): Effect.Effect<void, PrismaApiError, ManagementClient> =>
   Effect.gen(function* () {
     const client = yield* ManagementClient;
-    const apps = yield* listAppsOnBranch(client, projectId, branchId);
-    if (apps.length === 0) return;
-    const names = apps.map((app) => `"${app.name}"`).join(', ');
+    const resources = yield* listBranchResources(client, projectId, branchId);
+    if (resources.length === 0) return;
+    const names = resources.map((r) => `${r.kind} "${r.name}"`).join(', ');
     return yield* Effect.fail(
       new PrismaApiError({
         status: 0,
         message:
           `the platform state API holds no deploy state for stage "${stage}" (stack "${stack}"), but the ` +
-          `platform already runs ${String(apps.length)} app(s) on the target branch ${branchId}: ${names}. ` +
+          `platform already has ${String(resources.length)} resource(s) on the target branch ${branchId}: ${names}. ` +
           'This stage predates the platform state API. With no state, a deploy would recreate every ' +
           'resource and fail with already_exists, and a destroy would remove nothing. Destroy the stage ' +
           'with the previous version of composer, or delete the stage (its branch — or the project, for ' +
           'production) in the Prisma Console or via the Management API — then redeploy fresh. If those ' +
-          "apps are another deployment's, remove them or deploy into a different project. Then retry.",
+          "resources are another deployment's, remove them or deploy into a different project. Then retry.",
       }),
     );
   });

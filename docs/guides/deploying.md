@@ -274,7 +274,8 @@ store — there is no automated migration. The cutover is the same for both
 generations: destroy, upgrade, redeploy.
 
 Deploying over a live legacy environment is refused up front. The deploy
-finds no API-hosted state but sees apps already running on the Branch, and
+finds no API-hosted state but sees resources (apps, databases, or buckets)
+already on the Branch, and
 stops with an error saying the stage predates the platform state API —
 instead of blindly recreating every resource and failing halfway. Cut over
 per app:

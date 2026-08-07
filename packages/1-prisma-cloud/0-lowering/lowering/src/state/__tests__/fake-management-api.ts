@@ -1,7 +1,7 @@
 import { blindCast } from '@internal/foundation/casts';
 import type { ManagementApiClient } from '../../client.ts';
 
-export interface FakeApp {
+export interface FakeBranchResource {
   id: string;
   name: string;
   projectId: string;
@@ -9,7 +9,9 @@ export interface FakeApp {
 }
 
 export interface FakeState {
-  apps: FakeApp[];
+  apps: FakeBranchResource[];
+  databases: FakeBranchResource[];
+  buckets: FakeBranchResource[];
   /** Page size for GET /v1/apps — unset serves everything in one page. */
   appsPageSize?: number;
   /** When set, GET /v1/apps reports hasMore with a nextCursor equal to the request's cursor — a broken, non-advancing pagination. */
@@ -18,6 +20,8 @@ export interface FakeState {
 
 export const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   apps: [],
+  databases: [],
+  buckets: [],
   ...overrides,
 });
 
@@ -33,12 +37,27 @@ type FakeInit = {
 
 /**
  * A stubbed `ManagementApiClient` — just enough of the Management API to
- * exercise the empty-scope guard's app listing without touching the cloud.
+ * exercise the empty-scope guard's branch listings (apps, databases,
+ * buckets) without touching the cloud. Pagination quirks (page size, stuck
+ * cursor) are modelled on /v1/apps only; the guard drives all three listings
+ * through the same pagination helper.
  */
 export const fakeClient = (state: FakeState): ManagementApiClient => {
+  const singlePage = (rows: FakeBranchResource[], query: Record<string, string>) => {
+    const filtered = rows.filter(
+      (row) =>
+        (query['projectId'] === undefined || row.projectId === query['projectId']) &&
+        (query['branchId'] === undefined || row.branchId === query['branchId']),
+    );
+    return okResponse({
+      data: filtered,
+      pagination: { nextCursor: null, hasMore: false },
+    });
+  };
+
   const GET = (path: string, init: FakeInit = {}) => {
+    const query = init.params?.query ?? {};
     if (path === '/v1/apps') {
-      const query = init.params?.query ?? {};
       const filtered = state.apps.filter(
         (app) =>
           (query['projectId'] === undefined || app.projectId === query['projectId']) &&
@@ -61,6 +80,8 @@ export const fakeClient = (state: FakeState): ManagementApiClient => {
         }),
       );
     }
+    if (path === '/v1/databases') return Promise.resolve(singlePage(state.databases, query));
+    if (path === '/v1/buckets') return Promise.resolve(singlePage(state.buckets, query));
     throw new Error(`fakeClient: unexpected GET ${path}`);
   };
 

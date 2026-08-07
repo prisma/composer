@@ -1,11 +1,13 @@
 import * as http from 'node:http';
+import type * as net from 'node:net';
 
 /**
  * An in-process fake of the platform Alchemy state API: the alchemy
  * `HttpStateApi` wire contract (see node_modules/alchemy/src/state/
  * HttpStateApi.ts) mounted under `/v1/projects/{p}/branches/{b}/alchemy-state`,
- * plus the deploy-lease endpoints and the two Management API listings the
- * state layer touches (`/v1/apps`, `/v1/projects/{p}/branches`).
+ * plus the deploy-lease endpoints and the Management API listings the state
+ * layer touches (`/v1/apps`, `/v1/databases`, `/v1/buckets`,
+ * `/v1/projects/{p}/branches`).
  *
  * Wire fidelity the tests depend on: absent values answer 200 with a JSON
  * `null` body (not 204); PUT echoes its payload; DELETE answers 204; the fqn
@@ -78,6 +80,7 @@ export class FakeStateApi {
   private readonly leases = new Map<string, Lease>();
   private leaseCounter = 0;
   private server: http.Server | undefined;
+  private readonly sockets = new Set<net.Socket>();
   private originValue = '';
 
   get origin(): string {
@@ -88,6 +91,10 @@ export class FakeStateApi {
     this.server = http.createServer((req, res) => {
       void this.handle(req, res);
     });
+    this.server.on('connection', (socket) => {
+      this.sockets.add(socket);
+      socket.on('close', () => this.sockets.delete(socket));
+    });
     await new Promise<void>((resolve) => this.server?.listen(0, '127.0.0.1', resolve));
     const address = this.server.address();
     if (address === null || typeof address === 'string') {
@@ -96,9 +103,15 @@ export class FakeStateApi {
     this.originValue = `http://127.0.0.1:${String(address.port)}`;
   }
 
+  /** Deterministic shutdown: no server resolves immediately; open keep-alive sockets are destroyed so close() cannot hang. */
   async stop(): Promise<void> {
+    const server = this.server;
+    if (server === undefined) return;
+    this.server = undefined;
+    for (const socket of this.sockets) socket.destroy();
+    this.sockets.clear();
     await new Promise<void>((resolve, reject) => {
-      this.server?.close((err) => (err ? reject(err) : resolve()));
+      server.close((err) => (err ? reject(err) : resolve()));
     });
   }
 
@@ -155,6 +168,11 @@ export class FakeStateApi {
           (branchId === null || a.branchId === branchId),
       );
       return json(res, 200, { data, pagination: { nextCursor: null, hasMore: false } });
+    }
+
+    // The guard also lists databases and buckets; these suites seed neither.
+    if ((segments[1] === 'databases' || segments[1] === 'buckets') && method === 'GET') {
+      return json(res, 200, { data: [], pagination: { nextCursor: null, hasMore: false } });
     }
 
     if (
