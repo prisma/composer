@@ -1,10 +1,38 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
+## The shape of a failure, end to end
+
+The site that detects a failure builds the complete error, because it is the only place that knows the context:
+
+```ts
+// @internal/assemble — a raise site
+if (!descriptor) {
+  throw new AssembleError('ASSEMBLE.DESCRIPTOR_MISSING', `No deploy descriptor for "${address}"`, {
+    why: `Extension "${extensionName}" declares no descriptor for this service kind.`,
+    fix: 'Add a deploy descriptor to the extension, or remove the service from the graph.',
+    meta: { address },
+  });
+}
+```
+
+Every in-process consumer — the CLI's own adapters, a host driving `@prisma/composer/control` — branches on exactly two fields, for every operation (a `Result` never crosses a process boundary; CI and other out-of-process consumers see the rendered envelope on stderr and the exit code instead):
+
+```ts
+const result = await deploy(options);
+if (!result.ok) {
+  switch (result.failure.code) {
+    case 'ASSEMBLE.DESCRIPTOR_MISSING': /* actionable: fix the extension */
+    case 'DEPS.EFFECT_VERSION_CONFLICT': /* actionable: fix the install */
+    default: /* render the envelope; exit 2 */
+  }
+}
+```
+
+A structured error is never transformed between the two snippets: the value raised at the origin is the value the consumer holds, whether it arrived by throw or as a `Result` failure. A *foreign* error (a rejecting build, a throwing extension hook) is wrapped exactly once — at the site that understands it, into a structured error carrying the original as `cause` — and from there the same no-transformation rule applies.
+
 ## Decision
 
-Composer adopts the shared CLI error foundation from prisma/prisma (its ADR 239
-lineage), duplicated verbatim into `@internal/foundation` pending extraction
-into a shared package:
+Composer uses the shared CLI error foundation (prisma/prisma's ADR 239 / ADR 245 lineage), carried in `@internal/foundation`:
 
 - Every user-surfaced failure is a **`CliStructuredError`**: `code` is a dotted
   `NAMESPACE.SUBCODE` string, `message` is the summary, and the optional
@@ -15,8 +43,8 @@ into a shared package:
   library type meant to surface (core's `LoadError`, assemble's
   `AssembleError`, a config-evaluation failure, an I/O failure the tool can
   name) is a structured error where it is raised. Site-specific wraps of
-  foreign causes (an extension hook, the environment) are legal; boundary
-  fallbacks like "pipeline failed" are banned.
+  foreign causes (an extension hook, the environment) are legal and attach the
+  original as `cause`; boundary fallbacks like "pipeline failed" are banned.
 - **Bugs carry no code.** A non-structured error reaching a process boundary is
   by definition a bug: the CLI prints `Error: <message>` plus a report hint and
   exits 1. `InternalError` marks known invariants; nothing maps bugs onto the
@@ -72,14 +100,18 @@ this ADR.
 
 ## Exit codes and the human layout
 
-The exit-code rule is the shared one (prisma/prisma's CLI Style Guide): `0` OK,
-`1` internal error/bug ONLY, `2` expected failure (usage errors and structured
-failures alike), `3` user abort, `130`/`143` signals.
+The exit-code rule is the shared one (prisma/prisma's CLI Style Guide), and it
+governs statuses the CLI itself generates: `0` OK, `1` internal error/bug ONLY,
+`2` expected failure (usage errors and structured failures alike), `3` user
+abort, `130`/`143` signals.
 
 **Documented exception:** when the spawned deploy engine (alchemy) exits
 nonzero, the CLI prints the two reproduce-hint lines and passes the child's own
 exit status through unchanged — the child's status is the operator's signal and
-renumbering it would erase information.
+renumbering it would erase information. A passthrough status is the child's
+number, not a statement in the CLI's own code space: an expected engine failure
+may therefore surface as `1` (or any other value) without contradicting the
+rule above.
 
 The human rendering of an envelope (`render-error.ts`) is the shared layout:
 
@@ -95,24 +127,22 @@ The human rendering of an envelope (`render-error.ts`) is the shared layout:
 The `code` is the machine-branching surface: hosts driving
 `@prisma/composer/control`, agents, and CI branch on `failure.code` instead of
 parsing message strings. Structuring at origin keeps every raise site honest —
-the site that knows the context supplies the why/fix — and deleting the
-fallback codes makes an unnamed failure loud (a bug, exit 1) instead of
-laundering it through a vague catch-all. Structural recognition is what lets
-the duplicated foundation copies interoperate until the shared package is
-extracted.
+the site that knows the context supplies the why/fix — and banning fallback
+codes makes an unnamed failure loud (a bug, exit 1) instead of laundering it
+through a vague catch-all. Structural recognition is what lets composer's copy
+of the foundation interoperate with any other copy of it.
 
 ## Consequences
 
-- The former `OperationFailure` union and its `kind` taxonomy are gone; the
-  registry above is the taxonomy, and a coarse "which stage" view is derivable
-  from the namespace prefix.
+- The registry above is the failure taxonomy. A coarse "which stage failed"
+  view is derivable from the namespace prefix; no separate stage discriminant
+  is stored on failures.
 - An engine failure carries `meta.diagnostics` (exit code, generated
   stack-file path, reproduce command, cwd), read via the
   `executionDiagnostics()` helper — mechanism details outside the durable
   contract.
-- Composer's exit codes split bug (1) from expected failure (2); "everything
-  nonzero" consumers are unaffected, consumers branching on `1` must move to
-  the code on stderr's envelope line.
+- Exit codes distinguish a bug (1) from an expected failure (2); "any nonzero
+  means failure" consumers are unaffected either way.
 
 ## Alternatives considered
 
@@ -122,16 +152,22 @@ extracted.
 - **Renumbering the alchemy child-status passthrough onto the 2=failure rule**
   — rejected: the child's own exit status is information the operator and CI
   already use; collapsing it to 2 erases it.
-- **Per-command fallback codes (`*.PIPELINE_FAILED`)** — rejected by
-  base-type rule 6: fallback codes launder unnamed failures; a failure worth
-  surfacing gets its own code at its origin.
+- **Per-command fallback codes (`*.PIPELINE_FAILED`)** — rejected: fallback
+  codes launder unnamed failures; a failure worth surfacing gets its own code
+  at its origin.
+- **A stored per-operation `kind` discriminant on failures** — rejected: a
+  second vocabulary restating what the namespace prefix and the `ok`
+  discriminator already say.
 - **`instanceof` recognition** — rejected: it breaks across duplicated
   copies, plane splits, and JSON boundaries.
 
 ## Related
 
-- The shared base-types design in the prisma/prisma consolidate-clis decision
-  record (rules 1–7); prisma/prisma's ADR 239 is the code-structure parent.
+- prisma/prisma's [ADR 239](https://github.com/prisma/prisma/blob/main/docs/architecture%20docs/adrs/ADR%20239%20-%20Errors%20are%20structural%20envelopes%20with%20dotted%20namespace%20codes.md)
+  (the envelope and code convention) and
+  [ADR 245](https://github.com/prisma/prisma/blob/main/docs/architecture%20docs/adrs/ADR%20245%20-%20Errors%20are%20structured%20at%20origin%3B%20results%20carry%20one%20ok%20discriminator.md)
+  (origin structuring and the single `ok` discriminator) — the parents of the
+  rules recorded here.
 - [ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md) —
   the programmatic surface these failures cross.
 - [ADR-0007](ADR-0007-deploy-drives-alchemy-through-a-generated-stack-file.md) —
