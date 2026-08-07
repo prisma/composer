@@ -29,7 +29,7 @@ import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
-import { executionDiagnostics } from '../shared.ts';
+import { executionDiagnostics, executorLoadFailure } from '../shared.ts';
 
 const tmpDirs: string[] = [];
 
@@ -585,6 +585,22 @@ describe('deploy()', () => {
   });
 });
 
+describe('executorLoadFailure()', () => {
+  test("an undiagnosed load failure names the failing operation in DEPS.EXECUTOR_UNLOADABLE's summary and why", () => {
+    const dir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-load-')),
+    );
+    tmpDirs.push(dir);
+
+    for (const operation of ['deploy', 'destroy', 'dev', 'log'] as const) {
+      const failure = executorLoadFailure(operation, new Error('import blew up'), dir);
+      expect(failure.code).toBe('DEPS.EXECUTOR_UNLOADABLE');
+      expect(failure.message).toBe(`Could not load the ${operation} executor: import blew up`);
+      expect(failure.why).toContain(`The ${operation} operation's executor`);
+    }
+  });
+});
+
 describe('destroy()', () => {
   test('a stage target locates the container with that stage; production locates with stage undefined', async () => {
     for (const [target, expectedStage] of [
@@ -858,6 +874,39 @@ describe('dev()', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('DEV.ATTACH_FAILED');
     expect(result.failure.message).toBe('emulator admin refused the connection');
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('a startServices that throws mid-start is rolled back: the partially-started attachment is stopped again', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      // Models a partial start: some services came up before the throw, so
+      // the rollback must stop this attachment even though startServices
+      // never returned.
+      startServices: () => Promise.reject(new Error('service two failed to bind its port')),
+      stopServices: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
+    expect(result.failure.message).toBe('service two failed to bind its port');
     expect(stops).toBe(1);
   }, 15_000);
 

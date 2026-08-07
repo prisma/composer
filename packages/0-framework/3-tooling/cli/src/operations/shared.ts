@@ -86,12 +86,20 @@ export function toStructured(code: `${string}.${string}`, error: unknown): CliSt
       });
 }
 
+/** The operation whose executor failed to load — named in the failure so a
+ * host driving several operations can tell which one broke. */
+export type OperationName = 'deploy' | 'destroy' | 'dev' | 'log';
+
 /** Diagnoses a failed executor import: when the app's tree resolves a
  * mismatched `effect` (the known way that import breaks), the failure is the
  * fix-naming DEPS.EFFECT_VERSION_CONFLICT from checkEffectResolution with the
  * import error riding as cause; otherwise DEPS.EXECUTOR_UNLOADABLE — an
  * environmental failure of the consumer's installed tree, not a bug here. */
-export function executorLoadFailure(error: unknown, cwd: string): CliStructuredError {
+export function executorLoadFailure(
+  operation: OperationName,
+  error: unknown,
+  cwd: string,
+): CliStructuredError {
   try {
     checkEffectResolution(cwd);
   } catch (diagnostic) {
@@ -106,11 +114,11 @@ export function executorLoadFailure(error: unknown, cwd: string): CliStructuredE
   }
   return new CliStructuredError(
     'DEPS.EXECUTOR_UNLOADABLE',
-    `Could not load the deploy executor: ${error instanceof Error ? error.message : String(error)}`,
+    `Could not load the ${operation} executor: ${error instanceof Error ? error.message : String(error)}`,
     {
       why:
-        "The executor imports the deploy engine's provider tree from your app's installed " +
-        'dependencies, and that import failed.',
+        `The ${operation} operation's executor imports the deploy engine's provider tree from ` +
+        "your app's installed dependencies, and that import failed.",
       fix: 'Reinstall your dependencies, and check that `alchemy` is installed and loadable from your app.',
       cause: error,
     },

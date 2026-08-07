@@ -73,7 +73,7 @@ export async function logWithDeps(
   try {
     executor = await import('./execute-log.ts');
   } catch (error) {
-    return notOk(executorLoadFailure(error, cwd));
+    return notOk(executorLoadFailure('log', error, cwd));
   }
   return executor.executeLog(input, deps, cwd);
 }

@@ -46,7 +46,7 @@ export async function deployWithDeps(
   try {
     executor = await import('./execute-deploy-destroy.ts');
   } catch (error) {
-    return notOk(executorLoadFailure(error, cwd));
+    return notOk(executorLoadFailure('deploy', error, cwd));
   }
   return executor.executeDeploy(input, deps, cwd);
 }
