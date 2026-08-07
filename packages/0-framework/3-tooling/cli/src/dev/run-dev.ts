@@ -75,6 +75,9 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
           case 'watch-error':
             console.error(`[dev] watch error: ${event.message}`);
             break;
+          case 'stop-error':
+            console.error(`[dev] a service refused to stop: ${event.message}`);
+            break;
           case 'stopping':
             console.log(
               "[dev] stopping — the app's services are stopping; emulators and data stay up.",
