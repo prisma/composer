@@ -6,6 +6,12 @@
       "@internal/foundation/casts": [
         "./packages/0-framework/0-foundation/foundation/src/exports/casts.ts"
       ],
+      "@internal/foundation/errors": [
+        "./packages/0-framework/0-foundation/foundation/src/exports/errors.ts"
+      ],
+      "@internal/foundation/result": [
+        "./packages/0-framework/0-foundation/foundation/src/exports/result.ts"
+      ],
       "@internal/foundation/assertions": [
         "./packages/0-framework/0-foundation/foundation/src/exports/assertions.ts"
       ],
