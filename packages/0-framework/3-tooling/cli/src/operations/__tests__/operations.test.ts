@@ -28,6 +28,7 @@ import type { RunAlchemyInput } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
+import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
 
 const tmpDirs: string[] = [];
@@ -1123,7 +1124,7 @@ describe('log()', () => {
   }, 5_000);
 
   test('a consumer that falls behind gets a bounded queue: oldest lines drop, a lines-dropped event says how many', async () => {
-    const TOTAL = 10_150;
+    const TOTAL = LOG_QUEUE_LIMIT * 2;
     const flood = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
       for (let i = 0; i < TOTAL; i += 1) yield { service: 'a', line: String(i) };
     });

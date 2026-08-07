@@ -26,8 +26,9 @@ function failureMessage(error: unknown): string {
 
 /** The merge queue's bound: past this, the oldest line is dropped and the
  * consumer is told via a `lines-dropped` event — a log viewer tolerates loss
- * better than the host tolerates unbounded memory growth. */
-const LOG_QUEUE_LIMIT = 10_000;
+ * better than the host tolerates unbounded memory growth. Exported so tests
+ * can size their floods relative to the bound. */
+export const LOG_QUEUE_LIMIT = 10_000;
 
 /**
  * Merges every attachment's log stream into one iterable: one pump per
