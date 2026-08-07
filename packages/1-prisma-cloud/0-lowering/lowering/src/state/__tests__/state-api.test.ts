@@ -22,7 +22,6 @@ import {
   heartbeatDeployLease,
   LEASE_HEADER,
   type LeaseScope,
-  redactLeaseHeader,
   releaseDeployLease,
 } from '../lease.ts';
 import { FakeStateApi } from './fake-state-api.ts';
@@ -202,17 +201,12 @@ describe('the stock state client against the platform state API', () => {
 });
 
 describe('the deploy lease', () => {
-  test('the lease header renders redacted when the state layer’s redaction entry is in context', async () => {
+  test('effect’s default redaction does NOT cover the lease header — the state layer must add it', async () => {
     const headers = Headers.fromInput({ [LEASE_HEADER]: 'lease-secret-1' });
 
-    const withEntry = await Effect.runPromise(
-      Effect.sync(() => JSON.stringify(headers)).pipe(Effect.provide(redactLeaseHeader)),
-    );
-    const withoutEntry = await Effect.runPromise(Effect.sync(() => JSON.stringify(headers)));
+    const rendered = await Effect.runPromise(Effect.sync(() => JSON.stringify(headers)));
 
-    expect(withEntry).not.toContain('lease-secret-1');
-    expect(withEntry).toContain('<redacted>');
-    expect(withoutEntry).toContain('lease-secret-1');
+    expect(rendered).toContain('lease-secret-1');
   });
 
   test('a second acquire for the same (stack, stage) fails fast naming the holder — no retry, no queueing', async () => {
@@ -323,6 +317,15 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(fetched).toEqual(value);
     // The scope's finalizer released the lease.
     expect(fake.liveLeaseIds()).toEqual([]);
+  });
+
+  test('the layer’s merged redaction entry hides the lease header from anything rendered in its context', async () => {
+    const rendered = await runLayer(() =>
+      Effect.sync(() => JSON.stringify(Headers.fromInput({ [LEASE_HEADER]: 'lease-secret-1' }))),
+    );
+
+    expect(rendered).not.toContain('lease-secret-1');
+    expect(rendered).toContain('<redacted>');
   });
 
   test('a concurrent second deploy of the same stage fails immediately, naming the holder', async () => {
