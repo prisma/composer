@@ -109,6 +109,27 @@ tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
+## The consumer overrides block
+
+Until alchemy's `effect`-family ranges match its code (the upstream
+`TaggedErrorClass` drift: its dependency/peer ranges float to effect versions
+that removed APIs its shipped code still calls), every consumer tree carries a
+constellation `overrides` block pinning `effect`, `@effect/sql-d1`,
+`@effect/sql-pg`, `@effect/vitest`, and `@effect/platform-bun`/`-node`/
+`-node-shared` to `@prisma/composer`'s exact pin. It lives in three kinds of
+places — keep them in lockstep when the pin moves:
+
+- `examples/*/package.json` — the consumer-shaped fixtures (literal versions).
+- The docs that show a consumer `package.json`:
+  `docs/guides/getting-started.md` (literal versions) and
+  `docs/guides/deploying.md`.
+- `scripts/check-npm-effect-resolution.mjs` — its healthy shapes install with
+  the same block (`CONSTELLATION_OVERRIDES`, derived from the pin
+  automatically; only the package-name list can go stale).
+
+When alchemy fixes its ranges, delete the block everywhere at once — a
+half-removed block is the same drift hazard as a stale companion pin.
+
 ## Breakage classes seen in practice
 
 - **Removed `effect` combinators.** `Schedule.both`/`Schedule.either`

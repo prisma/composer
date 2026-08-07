@@ -726,9 +726,13 @@ const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
 - **Every `prisma-composer` command stops at start-up on an `effect` version
   conflict** (`Dependency conflict: alchemy resolves effect@...`). Another
   dependency floated a newer `effect` and the package manager hoisted it over
-  Composer's pin. Do what the error says: add
-  `"overrides": { "effect": "<required>" }` to the app's `package.json`
-  (yarn: `resolutions`; pnpm: `pnpm.overrides`) and reinstall.
+  Composer's pin. Do what the error says: pin the whole `effect`
+  constellation in the app's `package.json` `overrides` (yarn: `resolutions`;
+  pnpm: `pnpm.overrides`) — `effect` plus `@effect/sql-d1`, `@effect/sql-pg`,
+  `@effect/vitest`, and `@effect/platform-bun`/`-node`/`-node-shared`, all at
+  Composer's exact pin — and reinstall. (A workaround for an upstream alchemy
+  bug: its own effect-family ranges float past what its code supports. The
+  repo's examples carry the block.)
 - **The ingress buffers streaming responses.** An open SSE tail delivers
   nothing and times out at 60s — don't build on streamed HTTP responses.
 

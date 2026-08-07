@@ -61,6 +61,25 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
+// The consumer-side workaround for the upstream alchemy bug (the
+// "TaggedErrorClass" drift): alchemy's own `effect`-family dependency and
+// peer ranges float (`>=4.0.0-beta.100 || >=4.0.0`) past the versions its
+// shipped code can actually run, so a fresh npm install resolves the floaters
+// to the newest beta, whose peer floors reject our pin and drag in a second
+// `effect`. Until alchemy fixes its ranges, every consumer tree (the
+// examples, the getting-started guide, and the healthy shapes here) pins the
+// whole constellation with this overrides block; delete it — here, in
+// examples/*, and in the docs — when alchemy's ranges match its code.
+const CONSTELLATION_OVERRIDES = {
+  effect: pinnedEffect,
+  '@effect/sql-d1': pinnedEffect,
+  '@effect/sql-pg': pinnedEffect,
+  '@effect/vitest': pinnedEffect,
+  '@effect/platform-bun': pinnedEffect,
+  '@effect/platform-node': pinnedEffect,
+  '@effect/platform-node-shared': pinnedEffect,
+};
+
 // `process.exit` skips the normal-path cleanup, so a failure deliberately
 // keeps the scratch installs and prints where they are for inspection.
 function fail(message) {
@@ -165,7 +184,14 @@ function assertCliStarts(label, appDir) {
 }
 
 async function checkShape(label, tarballs) {
-  const { appDir, status: installStatus, output: installOutput } = installApp(label, tarballs);
+  // Healthy shapes install the way a scaffolded consumer does: with the
+  // constellation overrides block the examples and getting-started guide
+  // ship. The check proves that shape genuinely dedupes.
+  const {
+    appDir,
+    status: installStatus,
+    output: installOutput,
+  } = installApp(label, tarballs, {}, CONSTELLATION_OVERRIDES);
   if (installStatus !== 0) {
     fail(`[${label}] npm install failed (exit ${installStatus}):\n${installOutput}`);
   }

@@ -199,27 +199,32 @@ alchemy.
 This happens when another dependency in your app floats to a newer `effect`
 and your package manager hoists that copy where alchemy resolves it — npm
 allows this with only a warning, and without the check the deploy would crash
-mid-run with a `TypeError` from inside alchemy. The fix is the one the error
-prints — pin the version your package manager should use everywhere, in your
-app's `package.json`:
+mid-run with a `TypeError` from inside alchemy. Today the floating dependency
+is alchemy itself: its own `effect`-family dependency and peer ranges
+(`@effect/sql-d1`, `@effect/sql-pg`, `@effect/vitest`, `@effect/platform-*`)
+float past the versions its shipped code supports — an upstream alchemy bug
+(the `TaggedErrorClass` drift, reported upstream), so every consumer app needs
+the constellation pinned until alchemy fixes its ranges. The fix is to pin the
+whole `effect` constellation to `@prisma/composer`'s exact pin, in your app's
+`package.json`:
 
 ```json
-"overrides": { "effect": "<required>" }
+"overrides": {
+  "effect": "<required>",
+  "@effect/sql-d1": "<required>",
+  "@effect/sql-pg": "<required>",
+  "@effect/vitest": "<required>",
+  "@effect/platform-bun": "<required>",
+  "@effect/platform-node": "<required>",
+  "@effect/platform-node-shared": "<required>"
+}
 ```
 
-yarn spells it `resolutions`:
-
-```json
-"resolutions": { "effect": "<required>" }
-```
-
-and pnpm nests it under `pnpm`:
-
-```json
-"pnpm": { "overrides": { "effect": "<required>" } }
-```
+yarn spells the block `resolutions`, and pnpm nests it under
+`"pnpm": { "overrides": ... }`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
+The repo's `examples/*` manifests carry this exact block.
 
 ## Production behavior
 

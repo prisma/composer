@@ -28,5 +28,14 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "effect": "4.0.0-beta.103",
+    "@effect/sql-d1": "4.0.0-beta.103",
+    "@effect/sql-pg": "4.0.0-beta.103",
+    "@effect/vitest": "4.0.0-beta.103",
+    "@effect/platform-bun": "4.0.0-beta.103",
+    "@effect/platform-node": "4.0.0-beta.103",
+    "@effect/platform-node-shared": "4.0.0-beta.103"
   }
 }
