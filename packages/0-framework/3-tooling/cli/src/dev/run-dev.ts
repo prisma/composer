@@ -7,7 +7,8 @@
  * converge, attach, watch loop) lives in the operation.
  */
 import { devWithDeps } from '../operations/dev.ts';
-import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
+import type { OperationDeps } from '../operations/shared.ts';
+import { renderChildStatusHints } from '../render-error.ts';
 
 /** The subset of `ParsedArgs` `run()` hands off for the `dev` command. */
 export interface DevArgs {
@@ -93,16 +94,8 @@ export async function runDev(args: DevArgs, deps: DevRunDeps = {}): Promise<numb
 
   if (!result.ok) {
     const failure = result.failure;
-    const diagnostics = executionDiagnostics(failure);
-    if (diagnostics !== undefined && diagnostics.exitCode !== undefined) {
-      // The documented ADR-0044 child-status exception: pass the deploy
-      // engine's own exit status through, with the two reproduce hint lines.
-      console.error(`\nGenerated stack file: ${diagnostics.stackFilePath}`);
-      console.error(
-        `Run \`${diagnostics.reproduceCommand}\` from ${diagnostics.cwd} to reproduce this directly.`,
-      );
-      return diagnostics.exitCode;
-    }
+    const status = renderChildStatusHints(failure);
+    if (status !== undefined) return status;
     throw failure;
   }
 

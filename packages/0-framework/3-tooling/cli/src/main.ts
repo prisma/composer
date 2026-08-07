@@ -9,7 +9,8 @@ import { runDev } from './dev/run-dev.ts';
 import { runLog } from './log/run-log.ts';
 import { deployWithDeps } from './operations/deploy.ts';
 import { type DestroyTarget, destroyWithDeps } from './operations/destroy.ts';
-import { executionDiagnostics, type OperationDeps } from './operations/shared.ts';
+import type { OperationDeps } from './operations/shared.ts';
+import { renderChildStatusHints } from './render-error.ts';
 
 const BINARY_NAME = 'prisma-composer';
 
@@ -217,16 +218,8 @@ export type RunDeps = OperationDeps;
  * rethrows the structured failure so cli.ts renders its envelope.
  */
 function renderDeployDestroyFailure(failure: CliStructuredError): number {
-  const diagnostics = executionDiagnostics(failure);
-  if (diagnostics !== undefined && diagnostics.exitCode !== undefined) {
-    console.error(`\nGenerated stack file: ${diagnostics.stackFilePath}`);
-    // --stage is part of the repro: without it, alchemy falls back to its
-    // machine-dependent dev_$USER default and reads DIFFERENT deploy state.
-    console.error(
-      `Run \`${diagnostics.reproduceCommand}\` from ${diagnostics.cwd} to reproduce this directly.`,
-    );
-    return diagnostics.exitCode;
-  }
+  const status = renderChildStatusHints(failure);
+  if (status !== undefined) return status;
   throw failure;
 }
 
