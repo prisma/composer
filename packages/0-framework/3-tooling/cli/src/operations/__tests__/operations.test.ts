@@ -1187,6 +1187,34 @@ describe('log()', () => {
     expect(events).toEqual([]);
   }, 5_000);
 
+  test('a host onEvent that throws does not end the stream or reject a pump', async () => {
+    const failing = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
+      yield { service: 'a', line: 'before-crash' };
+      throw new Error('daemon went away');
+    });
+    const healthy = linesAttachment(
+      [{ address: 'b', url: 'http://b' }],
+      [{ service: 'b', line: 'still-here' }],
+    );
+
+    const result = await silently(() =>
+      logWithDeps(
+        {
+          entry: 'service.ts',
+          onEvent: () => {
+            throw new Error('host renderer blew up');
+          },
+        },
+        { identity: identityFor([failing, healthy]) },
+      ),
+    );
+
+    if (result.outcome !== 'attached') throw new Error('expected attached');
+    const lines = await collect(result.lines);
+    expect(lines).toContainEqual({ service: 'a', line: 'before-crash' });
+    expect(lines).toContainEqual({ service: 'b', line: 'still-here' });
+  });
+
   test("one stream's failure raises a stream-failed event and leaves the other streams running", async () => {
     const failing = fakeAttachment([{ address: 'a', url: 'http://a' }], async function* () {
       yield { service: 'a', line: 'before-crash' };

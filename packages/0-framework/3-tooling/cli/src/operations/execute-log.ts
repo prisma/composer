@@ -65,7 +65,13 @@ async function* mergeLogStreams(
   signal.addEventListener('abort', notify, { once: true });
 
   const emit = (event: LogEvent): void => {
-    if (!done) input.onEvent?.(event);
+    if (done) return;
+    try {
+      input.onEvent?.(event);
+    } catch {
+      // A throwing host callback must not reject a fire-and-forget pump or
+      // tear down the merged iterable — events are advisory.
+    }
   };
 
   // The pumps are fire-and-forget by design: they never reject (fully
