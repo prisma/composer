@@ -44,7 +44,32 @@ process.on('unhandledRejection', (reason) => {
 
 const API = 'https://api.prisma.io/v1';
 const REGION = 'us-east-1';
-const SAMPLES = Number(process.env['COLD_CONNECT_SAMPLES'] ?? '5');
+
+/**
+ * A misspelt override would otherwise become NaN, and NaN quietly disables the
+ * very things it names: `setTimeout(NaN)` fires at once, killing the spacing,
+ * and every comparison against a NaN budget is false, so the run never stops
+ * itself. Refuse to start instead — non-blocking, like every other way this
+ * canary can fail to reach a verdict.
+ */
+function positiveNumber(name: string, fallback: number, integer = false): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  const ok = Number.isFinite(value) && value > 0 && (!integer || Number.isSafeInteger(value));
+  if (!ok) {
+    const wanted = integer ? 'a positive whole number' : 'a positive number';
+    console.error(`${name} must be ${wanted}; got "${raw}".`);
+    console.log(
+      `::warning title=Cold-connect canary (FT-5226) could not run::${name} must be ${wanted}; ` +
+        `got "${raw}" — no FT-5226 verdict this run; not blocking.`,
+    );
+    process.exit(0);
+  }
+  return value;
+}
+
+const SAMPLES = positiveNumber('COLD_CONNECT_SAMPLES', 5, true);
 /**
  * Spacing between samples. Back-to-back sampling produced a false bug-gone
  * verdict on 2026-08-09 (run 31330072181, 14/14 successes) while runs minutes
@@ -60,9 +85,9 @@ const SAMPLES = Number(process.env['COLD_CONNECT_SAMPLES'] ?? '5');
  * The pause belongs BETWEEN samples. Never put one between provisioning a
  * database and connecting to it: that warms the very thing under test.
  */
-const SAMPLE_INTERVAL_MS = Number(process.env['COLD_CONNECT_SAMPLE_INTERVAL_MS'] ?? '60000');
+const SAMPLE_INTERVAL_MS = positiveNumber('COLD_CONNECT_SAMPLE_INTERVAL_MS', 60_000);
 /** The run's own wall-clock budget, below the job's timeout so the script stops itself and still reports. */
-const MAX_RUN_MS = Number(process.env['COLD_CONNECT_MAX_RUN_MS'] ?? '900000');
+const MAX_RUN_MS = positiveNumber('COLD_CONNECT_MAX_RUN_MS', 900_000);
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

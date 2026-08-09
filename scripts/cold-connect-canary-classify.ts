@@ -177,15 +177,25 @@ export async function collectColdConnectSamples(
     samples.length < opts.minSamples ||
     (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
   ) {
-    if (opts.now() - startedAt > opts.maxRunMs) {
-      opts.log(
-        `  stopping after ${samples.length} sample(s): the run's own ${opts.maxRunMs}ms budget is spent.`,
-      );
+    const elapsed = opts.now() - startedAt;
+    const stop = (why: string) => {
+      opts.log(`  stopping after ${samples.length} sample(s): ${why}`);
+    };
+    if (elapsed >= opts.maxRunMs) {
+      stop(`the run's own ${opts.maxRunMs}ms budget is spent.`);
       break;
     }
     // Never before the first sample — that would just delay the run without
     // making anything colder.
     if (samples.length > 0) {
+      // Don't start a wait the budget cannot cover. Without this the loop can
+      // begin a full interval with a second left and then sample on the far
+      // side of it, overrunning the budget by more than the interval itself.
+      // Checking here also makes a recheck after the sleep redundant.
+      if (elapsed + opts.intervalMs >= opts.maxRunMs) {
+        stop(`no room in the ${opts.maxRunMs}ms budget for another ${opts.intervalMs}ms wait.`);
+        break;
+      }
       opts.log(`  waiting ${opts.intervalMs}ms before sample #${samples.length}…`);
       await opts.sleep(opts.intervalMs);
     }

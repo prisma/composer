@@ -155,12 +155,16 @@ describe('collectColdConnectSamples', () => {
     assert.ok(samples.every((s) => s === 'success'));
   });
 
-  it('stops on the run budget, and the short all-success run is not a bug-gone verdict', async () => {
-    // 1s per sample + 60s per gap, so a 200s budget stops it well short of 14.
+  it('stops on the run budget rather than overrunning it, and that is not a bug-gone verdict', async () => {
+    // 1s per sample + 60s per gap. A 200s budget covers samples at 0s, 61s,
+    // 122s and 183s; a fifth would need a wait ending at 244s, past the
+    // budget, so the loop must decline to start that wait rather than sample
+    // on the far side of it.
     const d = driver([]);
     const samples = await d.run({ maxRunMs: 200_000 });
-    assert.ok(samples.length < MIN_BUG_GONE_SAMPLES, `stopped early, got ${samples.length}`);
-    assert.ok(d.logs.some((l) => l.includes('budget is spent')));
+    assert.equal(samples.length, 4);
+    assert.deepEqual(d.waits, [60_000, 60_000, 60_000]);
+    assert.ok(d.logs.some((l) => l.includes('no room in the 200000ms budget')));
     // The reason stopping early is safe: it cannot manufacture the forcing signal.
     assert.equal(classifyColdConnectRun(samples).verdict, 'inconclusive');
   });
