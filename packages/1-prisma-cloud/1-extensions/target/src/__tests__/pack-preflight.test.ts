@@ -62,11 +62,19 @@ const graphWith = (packId: string, headHash: string, provider: ResourceNode): Gr
     { id: 'root' },
   );
 
-const pnDb = () =>
+const spacelessConfig = path.join(
+  import.meta.dir,
+  'fixtures',
+  'packed-contract',
+  'source',
+  'prisma-next.spaceless.config.ts',
+);
+
+const pnDb = (config: string = packedConfig) =>
   pnPostgres({
     name: 'db',
     contract: pnContract(widgetContractJson),
-    config: packedConfig,
+    config,
   });
 
 describe('runPackPreflight', () => {
@@ -100,6 +108,17 @@ describe('runPackPreflight', () => {
       'prisma-next database "db" does not list extension pack "auth" in its ' +
         'prisma-next.config.ts extensions — service "api" requires it. ' +
         'Add the pack and run migration plan.',
+    );
+  });
+
+  test('fails naming the absent contract space when the listed pack declares none', async () => {
+    // A pack with no contractSpace carries no head, so it can never satisfy a
+    // required one — the message says that rather than printing "undefined".
+    const graph = graphWith(GADGET_PACK_ID, 'a-required-head', pnDb(spacelessConfig));
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `prisma-next database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        '(no contract space), but service "api" requires a-required-head. ' +
+        'Upgrade the pack and run migration plan.',
     );
   });
 

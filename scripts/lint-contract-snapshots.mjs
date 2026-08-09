@@ -53,10 +53,13 @@ for (const file of trackedJson()) {
   }
   if (typeof parsed?.storage?.storageHash !== 'string') continue;
   const types = join(dirname(file), 'contract.d.ts');
-  if (!existsSync(types)) continue;
   const key = canonical(parsed);
   const group = byContract.get(key) ?? [];
-  if (!group.some((member) => member.types === types)) group.push({ file, types });
+  // A copy with no emitted types beside it is recorded rather than skipped:
+  // deleting one is the same drift this checks for, and skipping would shrink
+  // the group below the two members a comparison needs — passing silently.
+  const entry = { file, types: existsSync(types) ? types : undefined };
+  if (!group.some((member) => member.file === entry.file)) group.push(entry);
   byContract.set(key, group);
 }
 
@@ -66,7 +69,19 @@ let compared = 0;
 for (const members of byContract.values()) {
   if (members.length < 2) continue;
   compared += 1;
-  const [first, ...rest] = members;
+  const typed = members.filter((member) => member.types !== undefined);
+  const untyped = members.filter((member) => member.types === undefined);
+
+  if (typed.length > 0) {
+    for (const member of untyped) {
+      problems.push(
+        `${member.file}\n    has no contract.d.ts beside it, but the same contract at ${typed[0].file} does`,
+      );
+    }
+  }
+  if (typed.length < 2) continue;
+
+  const [first, ...rest] = typed;
   const expected = readFileSync(first.types, 'utf8');
   for (const member of rest) {
     if (readFileSync(member.types, 'utf8') !== expected) {

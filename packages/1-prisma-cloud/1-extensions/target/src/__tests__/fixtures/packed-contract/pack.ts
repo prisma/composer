@@ -34,3 +34,13 @@ export const gadgetPack: PgPack = {
   contractSpace,
   create: () => ({ familyId: 'sql', targetId: 'postgres' }),
 };
+
+/** The same pack declaring no migratable contract space, so it carries no head. */
+export const spacelessPack: PgPack = {
+  kind: 'extension',
+  id: GADGET_PACK_ID,
+  familyId: 'sql',
+  targetId: 'postgres',
+  version: '0.0.1',
+  create: () => ({ familyId: 'sql', targetId: 'postgres' }),
+};
