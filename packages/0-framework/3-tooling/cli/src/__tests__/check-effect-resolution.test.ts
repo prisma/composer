@@ -10,6 +10,10 @@ import {
   requiredEffectVersion,
   resolveEffectVersionFrom,
 } from '../check-effect-resolution.ts';
+import { deploy } from '../operations/deploy.ts';
+import { destroy } from '../operations/destroy.ts';
+import { dev } from '../operations/dev.ts';
+import { log } from '../operations/log.ts';
 
 const tmpDirs: string[] = [];
 
@@ -187,4 +191,44 @@ describe('checkEffectResolution()', () => {
     expect(() => checkEffectResolution(nested)).toThrow(CliStructuredError);
     expect(() => checkEffectResolution(nested)).toThrow(/Dependency conflict/);
   });
+});
+
+describe('the operations run the preflight at dispatch', () => {
+  function writeBrokenTree(): string {
+    const root = makeTmpDir();
+    writeHealthyTree(root, '4.0.0-beta.102');
+    const composerDir = path.join(root, 'node_modules', '@prisma', 'composer');
+    fs.writeFileSync(
+      path.join(composerDir, 'package.json'),
+      JSON.stringify({
+        name: '@prisma/composer',
+        version: '0.0.0',
+        main: 'index.js',
+        dependencies: { effect: '4.0.0-beta.93' },
+      }),
+    );
+    return root;
+  }
+
+  // No config file, no entry module exists in the fixture tree: the
+  // diagnostic must come back BEFORE config discovery or any pipeline work —
+  // a broken tree's first and only failure is the one naming the fix.
+  test.each([
+    ['deploy', () => deploy({ entry: 'app.ts', cwd: writeBrokenTree() })],
+    [
+      'destroy',
+      () => destroy({ entry: 'app.ts', target: { kind: 'production' }, cwd: writeBrokenTree() }),
+    ],
+    ['dev', () => dev({ entry: 'app.ts', cwd: writeBrokenTree() })],
+    ['log', () => log({ entry: 'app.ts', cwd: writeBrokenTree() })],
+  ] as const)(
+    '%s returns DEPS.EFFECT_VERSION_CONFLICT from a broken tree',
+    async (_name, invoke) => {
+      const result = await invoke();
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
+      expect(result.failure.message).toContain('alchemy resolves effect@4.0.0-beta.102');
+    },
+  );
 });

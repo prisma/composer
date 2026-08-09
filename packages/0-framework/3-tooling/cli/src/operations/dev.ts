@@ -9,7 +9,12 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
-import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
+import {
+  effectResolutionFailure,
+  executorLoadFailure,
+  type OperationDeps,
+  type ServiceEndpoint,
+} from './shared.ts';
 
 export type DevEvent =
   /** Initial front door + after each successful re-converge. */
@@ -63,6 +68,8 @@ export async function devWithDeps(
   deps: OperationDeps,
 ): Promise<Result<DevSession, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
+  const preflight = effectResolutionFailure(cwd);
+  if (preflight !== undefined) return notOk(preflight);
   let executor: typeof import('./execute-dev.ts');
   try {
     executor = await import('./execute-dev.ts');

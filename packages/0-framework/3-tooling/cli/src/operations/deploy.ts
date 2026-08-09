@@ -9,7 +9,7 @@
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { DeploymentSummary } from '../deployment-summary.ts';
-import { executorLoadFailure, type OperationDeps } from './shared.ts';
+import { effectResolutionFailure, executorLoadFailure, type OperationDeps } from './shared.ts';
 
 export interface DeployInput {
   /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
@@ -42,6 +42,8 @@ export async function deployWithDeps(
   deps: OperationDeps,
 ): Promise<Result<DeploySuccess, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
+  const preflight = effectResolutionFailure(cwd);
+  if (preflight !== undefined) return notOk(preflight);
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
     executor = await import('./execute-deploy-destroy.ts');

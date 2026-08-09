@@ -8,7 +8,7 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
-import { executorLoadFailure, type OperationDeps } from './shared.ts';
+import { effectResolutionFailure, executorLoadFailure, type OperationDeps } from './shared.ts';
 
 /** Destroy must name its target explicitly — no silent default to production. Encoded, not re-derived from flags. */
 export type DestroyTarget =
@@ -40,6 +40,8 @@ export async function destroyWithDeps(
   deps: OperationDeps,
 ): Promise<Result<void, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
+  const preflight = effectResolutionFailure(cwd);
+  if (preflight !== undefined) return notOk(preflight);
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
     executor = await import('./execute-deploy-destroy.ts');

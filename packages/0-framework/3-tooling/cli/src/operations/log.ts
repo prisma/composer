@@ -10,7 +10,7 @@ import type { PrismaAppConfig } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { AppIdentity } from '../pipeline.ts';
-import { executorLoadFailure, type ServiceEndpoint } from './shared.ts';
+import { effectResolutionFailure, executorLoadFailure, type ServiceEndpoint } from './shared.ts';
 
 export interface LogLine {
   readonly service: string;
@@ -69,6 +69,8 @@ export async function logWithDeps(
   deps: LogDeps,
 ): Promise<Result<LogAttached, CliStructuredError>> {
   const cwd = input.cwd ?? process.cwd();
+  const preflight = effectResolutionFailure(cwd);
+  if (preflight !== undefined) return notOk(preflight);
   let executor: typeof import('./execute-log.ts');
   try {
     executor = await import('./execute-log.ts');

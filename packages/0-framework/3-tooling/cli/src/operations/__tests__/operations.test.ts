@@ -504,7 +504,7 @@ describe('deploy()', () => {
     expect(alchemyRan).toBe(false);
   });
 
-  test('a broken effect tree is a structured failure naming the mismatch — the executor cannot load, the host stays alive', () => {
+  test('a broken effect tree is a structured failure naming the mismatch — the dispatch preflight fires before the executor ever loads', () => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
     );
@@ -526,10 +526,11 @@ describe('deploy()', () => {
       dependencies: { effect: '4.0.0-beta.93' },
     });
 
-    // In a broken tree the executor's own import of alchemy throws. The repo's
-    // tree is healthy, so a fresh bun process reproduces that throw with a
-    // plugin that fails the executor's load; deploy() must diagnose it against
-    // `cwd`'s tree and return a structured failure — silent stdio, exit 0.
+    // deploy() runs the effect preflight at dispatch, so in a broken tree it
+    // must return the diagnostic WITHOUT importing the executor. The poison
+    // plugin below proves that order: if the executor were imported, its load
+    // would throw and the failure would carry that error as `cause` — the
+    // asserted absence of a cause is the proof the preflight fired first.
     const operationsPath = fileURLToPath(new URL('../deploy.ts', import.meta.url));
     const breakerPath = path.join(dir, 'break-executor.ts');
     fs.writeFileSync(
@@ -574,14 +575,11 @@ describe('deploy()', () => {
 
     const result = JSON.parse(fs.readFileSync(resultPath, 'utf-8')) as {
       envelope: { code: string; summary: string };
-      cause: { name: string; message: string };
+      cause?: { name: string; message: string };
     };
     expect(result.envelope.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
     expect(result.envelope.summary).toContain('alchemy resolves effect@4.0.0-beta.102');
-    expect(result.cause).toEqual({
-      name: 'Error',
-      message: 'Schedule.either is not a function',
-    });
+    expect(result.cause).toBeUndefined();
   });
 });
 

@@ -90,6 +90,27 @@ export function toStructured(code: `${string}.${string}`, error: unknown): CliSt
  * host driving several operations can tell which one broke. */
 export type OperationName = 'deploy' | 'destroy' | 'dev' | 'log';
 
+/**
+ * Dispatch-time effect preflight (TML-3158) for the executor-loading
+ * operations: the DEPS.EFFECT_VERSION_CONFLICT diagnostic when the consumer's
+ * tree resolves a mismatched `effect` for alchemy, undefined when the tree is
+ * healthy (or unjudgeable). Runs BEFORE the executor import — before config
+ * discovery, entry loading, or any other work — so the fix-naming diagnostic
+ * is the first and only thing a broken tree produces. Commands that never
+ * load an executor (--help) never run it.
+ */
+export function effectResolutionFailure(cwd: string): CliStructuredError | undefined {
+  try {
+    checkEffectResolution(cwd);
+    return undefined;
+  } catch (error) {
+    // checkEffectResolution raises its structured diagnostic at origin;
+    // anything else escaping it is a bug and must throw (base-type rule 6).
+    if (CliStructuredError.is(error)) return error;
+    throw error;
+  }
+}
+
 /** Diagnoses a failed executor import: when the app's tree resolves a
  * mismatched `effect` (the known way that import breaks), the failure is the
  * fix-naming DEPS.EFFECT_VERSION_CONFLICT from checkEffectResolution with the

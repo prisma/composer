@@ -20,12 +20,13 @@
 // end state with an npm `override` instead, because the hoisting route only
 // reproduces while a suitable release exists relative to our pin, which made
 // the check hostage to the registry. Nothing we declare can stop a consumer's
-// tree going wrong, so the acceptance is the CLI's own start-up check: running
-// the built `prisma-composer` there must exit non-zero with our actionable
-// error rather than crashing inside alchemy. The healthy shapes assert the
-// inverse: the check must NOT trip on a good tree, and the built bin must
-// still start — which is what proves the resolved `effect` genuinely satisfies
-// alchemy, since starting loads alchemy's provider tree.
+// tree going wrong, so the acceptance is the CLI's own dispatch-time check:
+// running a deploy with the built `prisma-composer` there must exit non-zero
+// with our actionable error rather than crashing inside alchemy — while
+// `--help`, which loads no executor, keeps working. The healthy shapes assert
+// the inverse: the check must NOT trip on a good tree, and a deploy must get
+// past it — which is what proves the resolved `effect` genuinely satisfies
+// alchemy, since the deploy path loads alchemy's provider tree.
 //
 // Requires the two public packages to be built (`pnpm turbo build
 // --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud`) and
@@ -118,7 +119,7 @@ function collectEffectVersions(node, found = new Map()) {
   return found;
 }
 
-/** The stable marker of the CLI's own start-up check (check-effect-resolution.ts). */
+/** The stable marker of the CLI's own dispatch-time effect check (check-effect-resolution.ts). */
 const CLI_CHECK_MARKER = 'alchemy resolves effect@';
 
 /** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
@@ -224,7 +225,7 @@ async function checkShape(label, tarballs) {
   // "the failure marker is absent" would also hold for a CLI that never ran.
   assertCliStarts(label, appDir);
 
-  // The start-up check must NOT trip on this healthy tree — the deploy should
+  // The dispatch-time check must NOT trip on this healthy tree — the deploy should
   // get past it and fail on the app itself (no entry/config here), never on a
   // broken module graph.
   const cli = runCli(label, appDir, ['deploy', 'app.ts']);
@@ -289,22 +290,24 @@ async function checkAdversarialShape(tarballs) {
     fail(`[${label}] the CLI crashed with a TypeError instead of the effect check:\n${cli.output}`);
   }
 
-  // Every command loads the graph that crashes, so every command must hit the
-  // check first — `--help` included, or the user meets the raw TypeError there.
+  // Commands that never load the deploy executor keep working in the broken
+  // tree: the CLI's static import graph carries no alchemy/effect code, and
+  // the effect check runs at operation dispatch, not start-up. `--help` must
+  // reach its usage output — not the check's error, and never a raw TypeError.
   const help = runCli(label, appDir, ['--help']);
   if (
-    help.status === 0 ||
-    !help.output.includes(CLI_CHECK_MARKER) ||
-    /is not a function/.test(help.output)
+    !help.output.includes('prisma-composer <command>') ||
+    help.output.includes(CLI_CHECK_MARKER) ||
+    /is not a function|Cannot find module/.test(help.output)
   ) {
     fail(
-      `[${label}] \`prisma-composer --help\` did not fail with the effect check in a broken tree ` +
+      `[${label}] \`prisma-composer --help\` did not reach its usage output in a broken tree ` +
         `(exit ${help.status}):\n${help.output}`,
     );
   }
 
   process.stderr.write(
-    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy and --help alike\n`,
+    `[${label}] OK — broken tree: deploy caught at dispatch with the actionable error, --help still works\n`,
   );
 }
 
@@ -321,7 +324,7 @@ try {
 
   process.stderr.write(
     `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
-      'catches the adversarial tree at start-up.\n',
+      'catches the adversarial tree at dispatch.\n',
   );
 } finally {
   rmSync(work, { recursive: true, force: true });

@@ -6,7 +6,10 @@
  * `@effect/*` range anywhere in the consumer's tree can hoist a newer effect
  * to the root, where alchemy picks it up and crashes mid-deploy
  * (`TypeError: Schedule.either is not a function`). This check turns that
- * silent break into a start-up error naming the fix.
+ * silent break into a fix-naming diagnostic, raised at operation dispatch —
+ * before the executor import — by the executor-loading operations
+ * (operations/shared.ts's effectResolutionFailure), and again as the
+ * diagnosis when an executor import fails anyway (executorLoadFailure).
  */
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
