@@ -89,16 +89,16 @@ export const pnMigrationProviderService: Provider.ProviderService<PnMigration> =
         // in Alchemy state and a descriptor is live code. Loaded only when
         // the key says packs are declared, so a pack-free project never pays
         // (or depends on) the config load at apply time.
-        const extensions =
+        const extensionPacks =
           news.packHeadRefHashes.length > 0
-            ? (await resolvePrismaNextConfig(news.configPath)).extensions
+            ? (await resolvePrismaNextConfig(news.configPath)).extensionPacks
             : [];
         return applyPnMigration({
           url: news.url,
           contractJson: news.contractJson,
           migrationsDir: news.migrationsDir,
           ref: { hash: news.targetHash, invariants: news.invariants },
-          extensions,
+          extensionPacks,
           ...(news.refName !== undefined ? { refName: news.refName } : {}),
         });
       },

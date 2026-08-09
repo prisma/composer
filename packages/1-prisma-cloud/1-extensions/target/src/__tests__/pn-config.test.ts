@@ -47,13 +47,13 @@ describe('resolvePrismaNextConfig', () => {
 
   test('a config with no extension packs yields []', async () => {
     const project = await resolvePrismaNextConfig(widgetConfig);
-    expect(project.extensions).toEqual([]);
+    expect(project.extensionPacks).toEqual([]);
   });
 
   test('surfaces declared extension packs with their contract-space heads', async () => {
     const project = await resolvePrismaNextConfig(packedConfig);
-    expect(project.extensions.map((p) => p.id)).toEqual([GADGET_PACK_ID]);
-    expect(project.extensions[0]?.contractSpace?.headRef.hash).toBe(GADGET_PACK_HEAD_HASH);
+    expect(project.extensionPacks.map((p) => p.id)).toEqual([GADGET_PACK_ID]);
+    expect(project.extensionPacks[0]?.contractSpace?.headRef.hash).toBe(GADGET_PACK_HEAD_HASH);
   });
 
   test('resolveMigrationsDir stays the migrationsDir projection of resolvePrismaNextConfig', async () => {

@@ -270,8 +270,8 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
       );
     }
 
-    const { extensions } = await resolvePrismaNextConfig(provider.config);
-    const pack = extensions.find((p) => p.id === requirement.packId);
+    const { extensionPacks } = await resolvePrismaNextConfig(provider.config);
+    const pack = extensionPacks.find((p) => p.id === requirement.packId);
     if (pack === undefined) {
       throw new Error(
         `prisma-next database "${provider.name}" does not list extension pack ` +

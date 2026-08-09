@@ -180,7 +180,9 @@ describe.skipIf(pgServer === undefined)(
         } finally {
           await client.end();
         }
-        await expect(ensureLocalAuthSchema(db.url)).rejects.toThrow(/extensions/);
+        await expect(ensureLocalAuthSchema(db.url)).rejects.toThrow(
+          /only initialises databases it owns entirely/,
+        );
       } finally {
         await db.drop().catch(() => {});
       }

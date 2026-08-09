@@ -179,7 +179,7 @@ export async function applyPnMigration(opts: {
   readonly ref: PnTargetRef;
   readonly refName?: string;
   /** The project's declared extension packs — threaded into PN's aggregate (multi-space) pipeline. */
-  readonly extensions?: readonly PnExtensionPack[];
+  readonly extensionPacks?: readonly PnExtensionPack[];
 }): Promise<PnMigrationOutcome> {
   const connection = normalizeSslMode(opts.url);
   // Retry the connect+operation past PPG's cold-start (see withConnectionRetry).
@@ -193,7 +193,7 @@ export async function applyPnMigration(opts: {
         opts.migrationsDir,
         opts.ref,
         opts.refName,
-        opts.extensions ?? [],
+        opts.extensionPacks ?? [],
       ),
     { shouldRetry: (error) => !(error instanceof PnMigrationError) },
   );
@@ -205,9 +205,9 @@ async function runMigration(
   migrationsDir: string,
   ref: PnTargetRef,
   refName: string | undefined,
-  extensions: readonly PnExtensionPack[],
+  extensionPacks: readonly PnExtensionPack[],
 ): Promise<PnMigrationOutcome> {
-  const client = createPostgresControlClient({ connection, extensions });
+  const client = createPostgresControlClient({ connection, extensions: extensionPacks });
   await client.connect();
   try {
     const marker = await client.readMarker();
@@ -219,7 +219,7 @@ async function runMigration(
     // no extension packs are declared; with packs, fall through to `migrate`,
     // whose per-space path resolution no-ops each space already at its head.
     if (action === 'noop') {
-      if (extensions.length === 0) {
+      if (extensionPacks.length === 0) {
         return { action, targetHash: ref.hash, markerHashBefore };
       }
       action = 'migrate';

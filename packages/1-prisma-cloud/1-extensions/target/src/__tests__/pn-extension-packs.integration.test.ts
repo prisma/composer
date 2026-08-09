@@ -184,7 +184,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
       contractJson: widgetContractJson,
       migrationsDir,
       ref: { hash: widgetHash, invariants: [] },
-      extensions: [gadgetPack],
+      extensionPacks: [gadgetPack],
     });
 
     expect(outcome.action).toBe('init');
@@ -203,7 +203,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
       contractJson: widgetContractJson,
       migrationsDir,
       ref: { hash: widgetHash, invariants: [] },
-      extensions: [gadgetPack],
+      extensionPacks: [gadgetPack],
     });
 
     // The app marker alone cannot vouch for the pack spaces, so the decision
