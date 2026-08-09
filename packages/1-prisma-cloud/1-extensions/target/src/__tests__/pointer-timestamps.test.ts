@@ -1,22 +1,11 @@
 /**
- * The rotation signal has to survive a PROCESS BOUNDARY: the deploy preflight
- * reads a pointed variable's last-written time in the CLI process, and the
- * environment fingerprint that decides whether a new deployment ships is built
- * in the alchemy child process, which re-imports the app config from scratch.
- *
- * Every test here runs both halves — the CLI half produces a payload from a
- * real `runPreflight` against a fake platform, the framework transport carries
- * it as env vars, and the alchemy half rebuilds the lookup from nothing but
- * those env vars and fingerprints with it. Injecting a lookup directly (as the
- * fingerprint's own tests do) would pass even if nothing were transported at
- * all.
- *
- * The assertions are on the exact text the fingerprint hashes
- * (`deployEnvFingerprintMaterial`) rather than on the digest: the digest is a
- * pure function of that text (`deployEnvFingerprint` is its sha256, pinned in
- * @internal/lowering's own deploy-fingerprint.test.ts), and the digest function
- * itself is not callable here — a sibling test file replaces it with a stub
- * through `mock.module`, which is process-global in `bun test`.
+ * Runs BOTH halves of the rotation-timestamp transport: the CLI half
+ * produces a payload from a real `runPreflight`, the framework transport
+ * carries it as env vars, and the alchemy half rebuilds the lookup from
+ * those vars alone — injecting a lookup directly would pass even if nothing
+ * were transported. Assertions are on `deployEnvFingerprintMaterial` (the
+ * exact hashed text); the digest itself is stubbed process-globally by a
+ * sibling test via `mock.module`.
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';

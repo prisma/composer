@@ -1,24 +1,11 @@
 /**
  * The environment→deployment ordering edge, against the REAL Output machinery
- * and upstream's REAL `Prisma.Deployment` provider — no stubbed `Output.all` /
- * `Output.flatMap`, because the failure this guards against lives in the
- * unresolved half of Alchemy's planning, which an eager-collapse stub cannot
- * represent.
- *
- * Two properties, both about the deploy that ADDS a variable and changes the
- * code in the same run:
- *
- *   1. Every variable write, and the app itself, is upstream of the
- *      deployment — checked with the same walker the planner builds its graph
- *      with, not by reading the prop values by hand.
- *   2. The artifact comparison still runs while the brand-new variable is
- *      unresolved. Upstream reads `{portMapping, skipCodeUpload, artifactPath,
- *      artifactContentType}` as one block and gives no opinion the moment any
- *      of them is unresolved, which the engine turns into a plain update: the
- *      running deployment would be kept while the new artifact's fingerprint
- *      was recorded as deployed, dropping the code change for good, and every
- *      later deploy would agree it had already shipped. Carrying the edge on
- *      `app` is what keeps that block resolved.
+ * and upstream's REAL `Prisma.Deployment` provider (an eager-collapse stub
+ * cannot represent the unresolved half of planning). Two properties on the
+ * deploy that adds a variable and changes code in one run: every variable
+ * write and the app are upstream of the deployment, and the artifact
+ * comparison still runs while the new variable is unresolved (see
+ * deployment-edge.ts for why only the `app` prop keeps that true).
  */
 
 import { afterAll, describe, expect, test } from 'bun:test';

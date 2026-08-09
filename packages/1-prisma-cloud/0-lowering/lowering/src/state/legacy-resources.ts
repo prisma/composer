@@ -1,62 +1,16 @@
 /**
  * One-time, on-read rewrite of legacy Composer state rows into the shapes
- * upstream alchemy's `Prisma.*` providers expect — the postgres family
- * (`Project`, `Database`, `Connection`) and the compute family (`App`,
- * `Deployment`, `EnvironmentVariable`).
+ * upstream alchemy's `Prisma.*` providers expect, so their `read`/`diff`
+ * adopts the deployed resources instead of planning a create. Old rows carry
+ * hand-rolled attributes (`{id, name}`, `{id, connectionString}`, …); upstream
+ * expects `{projectId, …}` / `{databaseId, …}` / etc. Fields old rows never
+ * carried are left absent — upstream recomputes them from observed API state.
+ * Legacy `DATABASE_URL` claim rows are retired ({@link retireDatabaseUrlClaimRow}).
  *
- * Composer's own resources persisted rows under the type-ids `Prisma.Database`
- * / `Prisma.Connection` / `Prisma.Project` / `Prisma.ComputeService` /
- * `Prisma.Deployment` / `Prisma.EnvironmentVariable` (and, for one unreleased
- * window, `PrismaComposer.*`) with hand-rolled attribute shapes: `{id, name}`
- * (project/database/compute service), `{id, connectionString}` (connection),
- * `{deploymentId, deployedUrl}` (deployment), `{id, key}` (environment
- * variable). Upstream's classes carry the same type-ids — `ComputeService`
- * becomes `App` — but expect `{projectId, …}` / `{databaseId, …}` /
- * `{connectionId, …}` / `{appId, …}` / `{deploymentId, appId, …}` /
- * `{environmentVariableId, …}`. This module maps old rows to the upstream
- * shape as they are read out of the hosted state store, so upstream's
- * providers adopt them (their `read`/`diff` key off those ids) instead of
- * planning a create.
- *
- * The legacy connection string was captured direct-preferred (pooled only as
- * a fallback the API never actually took), so it maps to
- * `directConnectionString` — and to `databaseUrl`, which is what the string
- * was used as. Fields the old rows never carried (pooled/accelerate strings,
- * host/user/password, origins) are left absent; upstream recomputes them from
- * observed API state on the next reconcile that needs them.
- *
- * Operator-visible effects of the first deploy after migration, documented in
- * docs/guides/deploying.md:
- *
- *   · BRANCH-STAGE databases are renamed to a generated physical name and the
- *     database's DEFAULT connection credentials rotate once (the branch-stage
- *     descriptor passes no display name). The framework's own named
- *     Connection — the one services use — is not rotated. Production database
- *     rows converge with no action.
- *   · Every service ships ONE fresh deployment. Upstream keys a deployment's
- *     replacement on an artifact fingerprint that hashes the artifact digest
- *     together with the upload content type, which a legacy row's bare digest
- *     cannot reproduce, so the first plan sees a fingerprint it has never
- *     recorded and replaces: the same upload → start → promote a code change
- *     takes, with the same artifact bytes.
- *   · PRODUCTION apps plan an update (never a replace): the legacy row records
- *     no branch id and the project's default branch id is not derivable
- *     offline, so upstream re-reads the App and repairs the attribute in
- *     place. Branch-stage apps recorded their branch id and converge silently.
- *   · The poison `DATABASE_URL`/`DATABASE_URL_POOLED` rows are RETIRED FROM
- *     STATE, and the variables they named are left on the platform exactly as
- *     they are — including the `"-"` placeholder value Composer wrote there
- *     before the migration. The deploy reports them as `retained`, which is
- *     what happened: no Management API call is made for them, ever. An
- *     operator who wants the placeholder gone deletes the variable by hand
- *     (docs/guides/deploying.md gives the call); until then, a service that
- *     reads `process.env.DATABASE_URL` on a migrated stage still reads `"-"`.
- *     See {@link retirePoisonRow}.
- *
- * Scope: the HOSTED state store only. Local dev state (alchemy's local
- * store) is never migrated — a stale local row under an unregistered type-id
- * fails at plan time with alchemy's missing-provider error, and
- * `prisma-composer dev --fresh` clears it (see docs/guides/running-locally.md).
+ * Operator-visible one-time effects of the first migrated deploy (branch-stage
+ * database rename + default-connection rotation, one fresh deployment per
+ * service) are documented in docs/guides/deploying.md. Hosted state only:
+ * local dev state is cleared with `prisma-composer dev --fresh` instead.
  */
 
 import * as Redacted from 'effect/Redacted';
@@ -79,7 +33,11 @@ const ARTIFACT_CONTENT_TYPE = 'application/gzip';
  * those writes are gone (see control/extension.ts) and the rows they left
  * behind are disposed of here.
  */
-const POISON_KEYS: ReadonlySet<string> = new Set(['DATABASE_URL', 'DATABASE_URL_POOLED']);
+/** The reserved keys older Composer versions claimed through EnvironmentVariable resources (see database-url-claim.ts). */
+const CLAIMED_DATABASE_URL_KEYS: ReadonlySet<string> = new Set([
+  'DATABASE_URL',
+  'DATABASE_URL_POOLED',
+]);
 
 type Family = 'Project' | 'Database' | 'Connection' | 'App' | 'Deployment' | 'EnvironmentVariable';
 
@@ -182,7 +140,9 @@ const migrateProps = (family: Family, props: unknown): unknown => {
 };
 
 /**
- * A poison-key row named a variable Composer must stop managing. Deleting one
+ * A legacy claim row (an EnvironmentVariable resource an older Composer
+ * persisted for a reserved DATABASE_URL key) names a variable Composer must
+ * stop managing. Deleting one
  * for real is not safe: the legacy adoption matched on `{projectId, class,
  * key}` with no branch id, so the recorded scope may not equal the live
  * variable's, and upstream's delete refuses — loudly, mid-deploy — on a scope
@@ -201,25 +161,25 @@ const migrateProps = (family: Family, props: unknown): unknown => {
  *     (`isPrismaDevId`). This governs what the PROVIDER would do if it were
  *     ever handed these attributes on some other path: nothing.
  */
-const retirePoisonRow = (row: Record<string, unknown>, key: string) => ({
+const retireDatabaseUrlClaimRow = (row: Record<string, unknown>, key: string) => ({
   ...row,
   removalPolicy: 'retain',
-  attr: { environmentVariableId: `dev:legacy-poison-${key}`, key },
+  attr: { environmentVariableId: `dev:legacy-claim-${key}`, key },
 });
 
 /**
- * The key a poison row named, from whichever half of the row still carries it
+ * The reserved key a legacy claim row named, from whichever half of the row still carries it
  * — for LEGACY rows only. Upstream's own `EnvironmentVariable` rows share this
  * type-id, so without the props-shape check a live, upstream-managed
  * `DATABASE_URL` variable would be retired from state on every read.
  */
-const poisonKeyOf = (family: Family, props: unknown, attr: unknown): string | undefined => {
+const claimedKeyOf = (family: Family, props: unknown, attr: unknown): string | undefined => {
   if (family !== 'EnvironmentVariable') return undefined;
   if (!isRecord(props) || !isLegacyProps(family, props)) return undefined;
   const fromAttr = isRecord(attr) ? attr['key'] : undefined;
   const fromProps = isRecord(props) ? props['key'] : undefined;
   const key = typeof fromAttr === 'string' ? fromAttr : fromProps;
-  return typeof key === 'string' && POISON_KEYS.has(key) ? key : undefined;
+  return typeof key === 'string' && CLAIMED_DATABASE_URL_KEYS.has(key) ? key : undefined;
 };
 
 const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => {
@@ -349,10 +309,10 @@ const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknow
   }
 
   // Retiring the row happens AFTER the `old` chain is rewritten: a replaced
-  // poison row still carries the displaced generation, and it must reach the
+  // claim row still carries the displaced generation, and it must reach the
   // engine in the upstream shape even though this row is on its way out.
-  const poisonKey = poisonKeyOf(family, row['props'], row['attr']);
-  if (poisonKey !== undefined) return retirePoisonRow(migrated, poisonKey);
+  const claimedKey = claimedKeyOf(family, row['props'], row['attr']);
+  if (claimedKey !== undefined) return retireDatabaseUrlClaimRow(migrated, claimedKey);
 
   return migrated;
 };

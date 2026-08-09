@@ -1,31 +1,13 @@
 /**
- * Local postgres-cluster providers (local-dev spec § 4, REVISED — operator
- * review of #162): upstream alchemy's `Prisma.Database` and
- * `Prisma.Connection` become clients of the `postgres-main` emulator daemon,
- * which hosts `@prisma/dev`'s programmatic `startPrismaDevServer` — one
- * named, persistent server per `Database` resource. The CLI shell-out is
- * gone: no bin walk-up, no stdout URL parsing, no `prisma dev stop/rm` glob
- * teardown. `PgWarm` and `PnMigration` are NOT here; the hosted ones run
- * unchanged against whichever URL they are handed.
- *
- * The emitted attributes match upstream's shapes ({@link Prisma.Database}
- * `{databaseId, …}`, {@link Prisma.Connection} `{connectionId, …}` with
- * Redacted secrets). The daemon returns a DIRECT connection string; it maps
- * to `directConnectionString` (and `databaseUrl`, since direct is all local
- * dev has). Pooled/accelerate strings, host/user/password, and the parsed
- * origins are left `undefined` — upstream's attribute types allow it and
- * nothing local consumes them.
- *
- * Instance-name derivation is NOT duplicated here (delta review finding A,
- * #160): a locally re-derived slug drifted from the daemon's own
- * `instanceNameFor` (no leading/trailing-dash trim), so a database id or
- * app name with a leading/trailing non-alphanumeric character (e.g.
- * `_orders`) produced a DIFFERENT name here than the one the daemon
- * actually created the server under — `Connection`'s lookup by that
- * drifted name then threw `noRecordedInstanceError` even though the
- * server existed. `instanceNameFor` is imported directly from
- * `@internal/dev-emulators` instead, so there is exactly one
- * implementation.
+ * Local postgres-cluster providers: upstream alchemy's `Prisma.Database` and
+ * `Prisma.Connection` become clients of the `postgres-main` emulator daemon
+ * (one named, persistent `@prisma/dev` server per `Database` resource).
+ * `PgWarm`/`PnMigration` are not here — the hosted ones run against whatever
+ * URL they are handed. Attributes match upstream's shapes; the daemon's
+ * DIRECT connection string maps to `directConnectionString` and
+ * `databaseUrl`, everything else is left absent. Instance names come from
+ * `@internal/dev-emulators`' own `instanceNameFor` — a locally re-derived
+ * slug drifted from the daemon's and broke `Connection`'s lookup.
  */
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
@@ -35,14 +17,16 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
+import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import { DEV_TIMESTAMP, isRecord, projectIdOfInput } from './upstream-attributes.ts';
+import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads a database id from upstream's `database` input: a plain string or a resolved `Prisma.Database` attributes record. */
 function databaseIdOfInput(value: unknown): string | undefined {
   if (typeof value === 'string') return value;
-  if (isRecord(value) && typeof value['databaseId'] === 'string') return value['databaseId'];
+  if (Predicate.isObject(value) && typeof value['databaseId'] === 'string')
+    return value['databaseId'];
   return undefined;
 }
 

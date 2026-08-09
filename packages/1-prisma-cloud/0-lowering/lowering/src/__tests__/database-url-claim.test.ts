@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Effect from 'effect/Effect';
 import type { ManagementApiClient } from '../client.ts';
 import { ManagementClient } from '../client.ts';
-import { claimPoisonDatabaseUrl } from '../database-url-poison.ts';
+import { claimDatabaseUrlKeys } from '../database-url-claim.ts';
 import { PrismaApiError } from '../http.ts';
 
 interface PostCall {
@@ -65,12 +65,12 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
 
 const run = (projectId: string, state: FakeState) =>
   Effect.runPromise(
-    claimPoisonDatabaseUrl(projectId).pipe(
+    claimDatabaseUrlKeys(projectId).pipe(
       Effect.provideService(ManagementClient, fakeClient(state)),
     ),
   );
 
-describe('claimPoisonDatabaseUrl', () => {
+describe('claimDatabaseUrlKeys', () => {
   test('creates both keys in both classes at project level, with a value that cannot connect', async () => {
     const state = newFakeState();
 
@@ -117,7 +117,7 @@ describe('claimPoisonDatabaseUrl', () => {
     const state = newFakeState({ failWith: 422 });
 
     const exit = await Effect.runPromise(
-      claimPoisonDatabaseUrl('proj_1').pipe(
+      claimDatabaseUrlKeys('proj_1').pipe(
         Effect.provideService(ManagementClient, fakeClient(state)),
         Effect.flip,
       ),
@@ -130,6 +130,6 @@ describe('claimPoisonDatabaseUrl', () => {
   });
 
   test('no Management API client in context — the local target — claims nothing', async () => {
-    await expect(Effect.runPromise(claimPoisonDatabaseUrl('local'))).resolves.toBeUndefined();
+    await expect(Effect.runPromise(claimDatabaseUrlKeys('local'))).resolves.toBeUndefined();
   });
 });

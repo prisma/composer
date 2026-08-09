@@ -1,17 +1,11 @@
 /**
- * Local compute-cluster providers (local-dev spec § 4): upstream alchemy's
- * `Prisma.App` and `Prisma.Deployment` become clients of the machine-scoped
- * Compute emulator; `Prisma.EnvironmentVariable` becomes a row in the dev env
- * store; `Prisma.Project` is a total-but-unused identity stand-in (no lowering
- * yields one today). Every factory takes `LocalTargetProvidersInput` — the app
- * name is `input.container`'s `input.appName` (see `app-name.ts`), `devDir` is
- * `input.devDir`; nothing here reads `process.cwd()` or the environment.
- *
- * The emitted attributes match upstream's shapes. Fields the emulator has no
- * answer for are left `null`/`undefined` where upstream's types allow it and
- * nothing local reads them; the two that ARE read — the App's
- * `appEndpointDomain` and the Deployment's — carry the emulator's local URL,
- * which is what the deployed shapes carry too.
+ * Local compute-cluster providers: upstream alchemy's `Prisma.App` and
+ * `Prisma.Deployment` become clients of the machine-scoped Compute emulator;
+ * `Prisma.EnvironmentVariable` becomes a row in the dev env store;
+ * `Prisma.Project` is an identity stand-in. Attributes match upstream's
+ * shapes; fields the emulator cannot answer are left absent, and both
+ * `appEndpointDomain`s carry the emulator's local URL. Nothing here reads
+ * `process.cwd()` or the environment.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -22,29 +16,25 @@ import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
+import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
 import { envStore, secretsStore } from './dev-store.ts';
-import { DEV_TIMESTAMP, isRecord, projectIdOfInput } from './upstream-attributes.ts';
+import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads an app id from upstream's `app` input: a plain string or a resolved `Prisma.App` attributes record. */
 function appIdOfInput(value: unknown): string {
   if (typeof value === 'string') return value;
-  if (isRecord(value) && typeof value['appId'] === 'string') return value['appId'];
+  if (Predicate.isObject(value) && typeof value['appId'] === 'string') return value['appId'];
   throw new Error(`local Deployment received an app reference it cannot read: ${String(value)}`);
 }
 
 /**
- * The artifact's own sha256, streamed from its bytes. Upstream's
- * `Prisma.Deployment` carries no artifact-hash prop (it fingerprints the file
- * inside the provider), so the emulator hashes the file it is handed — the
- * same digest `packageComputeArtifact` derived the path from, which is what
- * names the unpacked artifact directory and identifies the deployment.
- *
- * Memoized on the file's identity (path, size, mtime): a converge re-runs
- * every provider, artifacts run to hundreds of megabytes, and the watch loop
- * converges on every save.
+ * The artifact's own sha256, streamed from its bytes — the digest that names
+ * the unpacked artifact directory and identifies the deployment. Memoized on
+ * (path, size, mtime): every converge re-runs providers and artifacts run to
+ * hundreds of megabytes.
  */
 const artifactHashes = new Map<string, string>();
 
@@ -93,19 +83,11 @@ function ownEnvKeyPrefix(address: string): string {
 const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 
 /**
- * Scopes `env.json` to what THIS service is allowed to see: rows it owns
- * (`COMPOSER_<its address>_*`) plus every row OUTSIDE the `COMPOSER_`
- * namespace entirely — an unprefixed row is a platform-owned name, app-wide
- * by nature (local-dev spec § 4's pinned parity note). The hosted platform
- * materializes the app-wide row set into every
- * deployment but DIFFS a deployment only on its own referenced rows; an
- * app-wide LOCAL materialization restart-amplifies instead — an
- * early-deployed service's snapshot is incomplete on the first converge,
- * "completes" on the second, and diffs as changed. Scoping the content here
- * aligns local restart behavior with the platform's diff scope. The dropped
- * sibling rows have no sanctioned reader: `run()`/`load()` consume only
- * own-address rows, and an ambient sibling read is exactly the mistake the
- * COMPOSER_ namespace exists to make impossible.
+ * Scopes `env.json` to what THIS service may see: rows it owns
+ * (`COMPOSER_<its address>_*`) plus every unprefixed (platform-owned,
+ * app-wide) row. Materializing the app-wide set locally restart-amplifies —
+ * an early service's snapshot "completes" on the second converge and diffs
+ * as changed — and the dropped sibling rows have no sanctioned reader.
  */
 export function scopedEnvRows(
   allRows: Readonly<Record<string, string>>,
@@ -166,16 +148,10 @@ function readManifestAddress(artifactDir: string): string {
 }
 
 /**
- * The Compute emulator's `<id>` path segment must match
- * `/^[a-z0-9][a-z0-9-]*$/` (its API hygiene rule, local-dev spec § 2) — but a
- * service's own address (`news.name`/`news.computeServiceId`) is
- * hierarchical and dot-separated (e.g. `"orders.service"`, a nested
- * module's service). This is the seam: every dot (or other disallowed char)
- * becomes a dash, runs collapse, and the result is what both `ensureService`
- * and `putDeployment` address the emulator with — the REAL address still
- * rides the deployment body's `address` field untouched, so the front door
- * and every listing still show it verbatim (compute-main.ts's `svc.address`
- * is set from that field, not from the id).
+ * A service address is dot-separated (`"orders.service"`) but the emulator's
+ * `<id>` segment must match `/^[a-z0-9][a-z0-9-]*$/`: disallowed characters
+ * become dashes, runs collapse. The real address still rides the deployment
+ * body's `address` field untouched, so listings show it verbatim.
  */
 function slugServiceId(address: string): string {
   const slug = address

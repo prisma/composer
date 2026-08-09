@@ -134,7 +134,7 @@ seam.
   `'PrismaComposer'` and its own resources are `PrismaComposer.*`. Rows
   persisted under retired Composer type-ids are rewritten on read by the
   hosted state store (`state/legacy-resources.ts`): ids, attribute shapes,
-  and the retirement of the poison rows below. The module is the durable
+  and the retirement of the legacy claim rows below. The module is the durable
   compatibility boundary for state written by earlier Composer versions.
 - **Branch-stage databases carry generated physical names.** Upstream
   refuses an explicit name combined with branch attachment at create — and

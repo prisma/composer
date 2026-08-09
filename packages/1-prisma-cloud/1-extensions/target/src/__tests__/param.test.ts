@@ -12,7 +12,7 @@ describe('envParam (Prisma Cloud param source)', () => {
     );
   });
 
-  test('rejects empty, COMPOSER_-prefixed, and poisoned names — parity with envSecret', () => {
+  test('rejects empty, COMPOSER_-prefixed, and reserved DATABASE_URL names — parity with envSecret', () => {
     expect(() => envParam('')).toThrow(/non-empty/);
     expect(() => envParam('COMPOSER_X')).toThrow(/COMPOSER_/);
     expect(() => envParam('DATABASE_URL')).toThrow(/reserved/);

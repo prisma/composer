@@ -51,8 +51,8 @@ export interface ContainerDescriptor<I extends ContainerInstance = ContainerInst
   deserialize(serialized: string): I;
 }
 
-/** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_PRISMA_CLOUD' — the env-var-safe form of an extension id, shared by every CLI→alchemy process transport (containers here, preflight payloads in preflight-transport.ts). */
-export function mangleExtensionId(extensionId: string): string {
+/** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_PRISMA_CLOUD': uppercased, every non-alphanumeric run replaced by one underscore. */
+export function envVarSafeExtensionId(extensionId: string): string {
   return extensionId
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
@@ -61,12 +61,12 @@ export function mangleExtensionId(extensionId: string): string {
 
 /** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_CONTAINER_PRISMA_COMPOSER_PRISMA_CLOUD' */
 export function containerEnvVarName(extensionId: string): string {
-  return `PRISMA_COMPOSER_CONTAINER_${mangleExtensionId(extensionId)}`;
+  return `PRISMA_COMPOSER_CONTAINER_${envVarSafeExtensionId(extensionId)}`;
 }
 
 function collisionError(a: string, b: string, varName: string): Error {
   return new Error(
-    `Extension ids "${a}" and "${b}" both mangle to the container transport variable ` +
+    `Extension ids "${a}" and "${b}" both map to the container transport variable ` +
       `"${varName}" — rename one of the extensions.`,
   );
 }

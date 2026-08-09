@@ -83,7 +83,7 @@ const resolveProject = (
     if (!ensure) return yield* Effect.fail(new ContainerNotFoundError({ appName }));
 
     // createDatabase: false — the platform default database is never used
-    // (composer poisons DATABASE_URL at provision), so don't create it. The
+    // (composer claims DATABASE_URL with a placeholder at provision), so don't create it. The
     // API 403s this for user actors, but deploys authenticate as workspace
     // actors (service tokens), which are allowed.
     const created = yield* call(() =>

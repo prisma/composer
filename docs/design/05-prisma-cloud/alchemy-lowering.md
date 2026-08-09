@@ -58,8 +58,8 @@ first, then oldest) — on a Composer Project, one of the app's own databases.
 
 So the framework claims the keys first. `application.provision` writes
 `DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class,
-project-level) with the poison value `"-"` via create-only calls
-(`lowering/src/database-url-poison.ts`). The platform's writes are also
+project-level) with the placeholder value `"-"` via create-only calls
+(`lowering/src/database-url-claim.ts`). The platform's writes are also
 create-only, so whoever writes first wins permanently: on a fresh Project the
 claim lands first and the self-heal never fires; on a Project whose variables
 the platform already seeded, the claim gets a 409 and no-ops. The rows are
@@ -71,7 +71,7 @@ service actually consumes is an explicit, per-service variable the pack's
 `serialize` writes under its own named key, inside the `COMPOSER_` namespace.
 
 A service that reads `process.env.DATABASE_URL` behind the framework's back
-therefore reads the poison `"-"` and fails loudly — or, on a Project the
+therefore reads the placeholder `"-"` and fails loudly — or, on a Project the
 platform seeded before the framework ever deployed to it, the platform's own
 template ([deploying.md](../../guides/deploying.md) covers the leftover rows
 and manual cleanup).

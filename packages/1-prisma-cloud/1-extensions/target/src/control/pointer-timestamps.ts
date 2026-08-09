@@ -1,20 +1,10 @@
 /**
- * When each platform variable a Composer row POINTS at was last written, from
- * the CLI process to the alchemy process.
- *
- * The deploy preflight reads those times off the platform, and the compute
- * deploy hook folds them into its environment fingerprint so that rotating a
- * secret out of band ships a new deployment. Those two steps run in DIFFERENT
- * PROCESSES: preflight runs in the CLI parent, then the CLI spawns alchemy
- * against the generated stack file, which re-imports the app config from
- * scratch and so calls `prismaCloud()` again with none of the parent's state.
- * Without this transport every name would read as unknown in the alchemy
- * process and an out-of-band rotation would never move the fingerprint.
- *
- * The payload rides the framework's preflight transport (one env var per
- * extension, the same channel resolved containers use). It carries ISO
- * TIMESTAMPS ONLY — the Management API never returns an env-var value, and the
- * alchemy child's environment is not a place to put one.
+ * Carries, on the framework's preflight transport, when each platform
+ * variable a Composer row points at was last written — read by preflight in
+ * the CLI process, needed by the environment fingerprint in the alchemy
+ * process (which re-imports the config from scratch). ISO timestamps only,
+ * never values: the Management API returns none and the child's environment
+ * is not a place to put one.
  */
 import { readPreflightPayload } from '@internal/core/config';
 import type { PointerUpdatedAt } from '@internal/lowering';

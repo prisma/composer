@@ -36,7 +36,7 @@ describe('preflightEnv()', () => {
     expect(preflightEnv(new Map())).toEqual({});
   });
 
-  test('two ids that mangle to the same var name fail loudly, naming both', () => {
+  test('two ids that map to the same var name fail loudly, naming both', () => {
     expect(() =>
       preflightEnv(
         new Map([
@@ -44,7 +44,7 @@ describe('preflightEnv()', () => {
           ['acme/widgets', 'b'],
         ]),
       ),
-    ).toThrow(/both mangle to the preflight transport variable/);
+    ).toThrow(/both map to the preflight transport variable/);
   });
 });
 

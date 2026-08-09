@@ -1,87 +1,22 @@
 /**
- * The environment fingerprint that decides whether a deploy ships a NEW
- * deployment — the guarantee that a changed environment value reaches the
- * running app, without giving up reuse when nothing changed.
+ * The environment is folded into `artifactPath`: the artifact is hard-linked
+ * into a sibling directory named by a hash of the environment. The platform
+ * materializes env rows into a deployment at create time and never re-reads
+ * them (PRO-211), and nothing an `EnvironmentVariable` exposes can ride
+ * upstream `Prisma.Deployment`'s replacement block — so a changed environment
+ * must move `artifactPath` to ship a new deployment, and an unchanged one
+ * must not, so the deployment is reused.
  *
- * The platform materializes environment rows into a deployment at create time
- * and never re-reads them (gotchas.md, PRO-211), so a changed value reaches the
- * running app only through a NEW deployment. Upstream's `Prisma.Deployment`
- * recreates only when a prop in its replacement block moves, and nothing an
- * `EnvironmentVariable` exposes can ride that block: values are write-only, and
- * the one attribute that moves at all (`updatedAt`) is not in the variable's
- * stables — with the row planned as an update every deploy (it re-applies
- * values to heal drift), a reference to it is an unresolved expression at plan
- * time, which collapses upstream's diff to a plain update and reintroduces the
- * silent artifact skip `appAfterEnvironment` closed.
+ * No secret ever enters the hash: rows that are secret-free by construction
+ * (ADR-0042 literals and pointers) contribute their text; every other row is
+ * `withheld` and contributes only its key and what produces its value.
+ * Platform variables a row points at (and Composer never writes) contribute
+ * their `updatedAt`, so an out-of-band rotation redeploys. Accepted blind
+ * spot: a value re-minted in place by the SAME resources does not move the
+ * fingerprint — there is no leak-free signal for it at plan time.
  *
- * So the environment is folded into `artifactPath` instead: the canonical
- * content-addressed artifact is hard-linked into a sibling directory NAMED BY
- * A HASH OF THE ENVIRONMENT. Same environment and same artifact produce the
- * same path, so upstream reuses the deployment (noop/update); a changed value,
- * a rotated platform variable, or changed code produces a different path, and
- * upstream's resolved path comparison plans a replace.
- *
- * WHAT GOES INTO THE HASH — and what deliberately does not. Composer's env
- * rows carry secret POINTERS, not secret values (ADR-0042), so hashing a
- * row's stored text is leak-free for every row whose text is secret-free BY
- * CONSTRUCTION. The rows that are not — a minted generated value, a dependency
- * connection string, a minted service key — hand over no text at all: the
- * `withheld` entry variant has nowhere to put one. It contributes the row's
- * key and a description of what PRODUCES the row (its upstream resources), so
- * rewiring still moves the fingerprint while no secret byte, and no hash of
- * one, is ever computed. See `EnvFingerprintEntry`.
- *
- * Platform variables a row POINTS at are the operator's, not Composer's:
- * Composer never writes them, so an out-of-band rotation is invisible in the
- * row text. Each pointer therefore contributes the pointed variable's
- * `updatedAt` TIMESTAMP — metadata, never a value. A variable Composer itself
- * writes must never contribute its `updatedAt`: alchemy re-applies those rows
- * on every deploy, so their timestamp moves every deploy and would make the
- * fingerprint churn forever.
- *
- * WHAT A WITHHELD ROW CANNOT SEE — an accepted limit, not an oversight. A
- * withheld row's whole change signal is the set of upstream resources its
- * value is built from, so it moves when the row is wired to different
- * resources and stands still when the SAME resources hand back a DIFFERENT
- * value. Three flows can do that:
- *
- *   · a dependency connection rotated in place — the same Postgres resource
- *     issues new credentials, so the connection string changes under a stable
- *     resource name;
- *   · a provider param's key re-minted in place — a `ServiceKey`-backed value
- *     (rpc peer keys, streams API keys) re-issued for the same resource;
- *   · a generated param re-minted in place — `GeneratedParam` persists its
- *     value precisely so this does not normally happen, but a deliberate
- *     rotation of the stored value would not move the fingerprint either.
- *
- * In each case the new value is written to the env row, but the running
- * deployment keeps the value it materialized at create time until something
- * else moves the fingerprint (a code change, a rewiring, a config change) or
- * the deployment is replaced by hand.
- *
- * There is no cheap leak-free signal to close this with. The one thing that
- * always tracks such a change is the resolved VALUE, and hashing possibly-
- * secret resolved values into deploy state is forbidden here — salted or not.
- * The obvious non-secret stand-ins are not available either: the value is an
- * unresolved alchemy `Output` when this hash is computed (the path handed to
- * `Prisma.Deployment` must be a plain resolved string, or upstream's diff
- * collapses to a plain update — the same trap the top of this file describes),
- * so no attribute of the producing resource, including its own last-changed
- * time, can be read at this point. Closing it properly is upstream's
- * `redeployOn` seam below: alchemy resolves those inputs itself and diffs them
- * inside its own state, where a value that must not enter Composer's deploy
- * state is not Composer's to hold.
- *
- * `prisma-composer dev` has no platform behind it, so no pointer timestamp is
- * available; the lookup returns undefined for every name and that part of the
- * material is a constant. Nothing is lost: the local Deployment provider
- * reconciles unconditionally, so a dev converge restarts the app regardless.
- *
- * THE SEAM: upstream `Prisma.Deployment` gains `redeployOn` (inputs a
- * deployment must be recreated for); when the pinned alchemy version includes
- * it, replace this — pass the canonical `artifact.path` verbatim again and put
- * this fingerprint on `redeployOn`. The one call site is
- * `descriptors/compute.ts`'s deploy hook.
+ * Replace this with upstream `Prisma.Deployment`'s `redeployOn` once the
+ * pinned alchemy has it; the one call site is `descriptors/compute.ts`.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';

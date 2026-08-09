@@ -53,7 +53,7 @@ const recorded: {
   bucket: Array<[string, unknown]>;
   bucketKey: Array<[string, unknown]>;
   generated: Array<[string, unknown]>;
-  poisonClaims: string[];
+  databaseUrlClaims: string[];
 } = {
   envVar: [],
   envVarProps: [],
@@ -68,7 +68,7 @@ const recorded: {
   bucket: [],
   bucketKey: [],
   generated: [],
-  poisonClaims: [],
+  databaseUrlClaims: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -141,8 +141,8 @@ mock.module('@internal/lowering', () => ({
   // stubbed so the application hook runs purely. The projectId it claims for
   // is recorded — what the claim POSTs is pinned by its own test in
   // @internal/lowering.
-  claimPoisonDatabaseUrl: (projectId: string) => {
-    recorded.poisonClaims.push(projectId);
+  claimDatabaseUrlKeys: (projectId: string) => {
+    recorded.databaseUrlClaims.push(projectId);
     return Effect.void;
   },
   // A real Alchemy Resource (needs the Stack service); stubbed so
@@ -358,7 +358,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
   test('default stage: references the resolved container project (no Project minted) and claims the DATABASE_URL keys', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
-    const beforeClaims = recorded.poisonClaims.length;
+    const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', stage: undefined },
       'shop-project-id',
@@ -373,7 +373,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     );
 
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: undefined });
-    expect(recorded.poisonClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
+    expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
     // The claim is a direct Management API create, NOT an alchemy resource:
     // Composer must never plan a write or a delete for either variable, and a
     // state row would do exactly that. So no EnvironmentVariable is declared
@@ -384,7 +384,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
   test('named stage: claims the same project-level keys, and still declares no environment variable', () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const beforeEnv = recorded.envVar.length;
-    const beforeClaims = recorded.poisonClaims.length;
+    const beforeClaims = recorded.databaseUrlClaims.length;
     const container = new PrismaCloudContainer(
       { appName: 'shop', stage: 'staging' },
       'shop-project-id',
@@ -401,7 +401,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
     expect(result).toEqual({ projectId: 'shop-project-id', branchId: 'branch_1' });
     // The branch id never reaches the claim: the rows are project-level, so
     // one claim covers every stage of the project.
-    expect(recorded.poisonClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
+    expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
     expect(recorded.envVar.slice(beforeEnv)).toEqual([]);
   });
 

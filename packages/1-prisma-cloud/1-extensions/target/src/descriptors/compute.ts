@@ -157,13 +157,9 @@ export function computeDescriptor(
               ...branch,
             }),
           );
-          // A service's OWN param is config, never a secret (a secret reaches
-          // a service only through the input document, ADR-0042), so its row
-          // text is hashed as-is — a literal is JSON, a pointer row is the
-          // platform NAME it points at, and that name's rotation timestamp
-          // joins the fingerprint through `pointers`. A dependency input's
-          // value is a provisioning ref: a connection string or a minted
-          // per-binding token, so its text is withheld.
+          // An own param is config, never a secret (ADR-0042): hash its text,
+          // and a pointer row's platform name joins `pointers`. A dependency
+          // input may carry a connection string or minted token: withheld.
           if (d.owner === 'service') {
             const pointer = isParamPointerRow(rowValue) ? decodeParamPointer(rowValue) : undefined;
             fingerprint.push({
@@ -221,12 +217,9 @@ export function computeDescriptor(
                 ...branch,
               }),
             );
-            // A minted random value — withheld. Its `updatedAt` is no signal
-            // either: Composer writes this row on every deploy, so the
-            // timestamp would move every deploy. The value is stable by
-            // construction (`GeneratedParam` persists it), and the document's
-            // `$generated` pointer — already hashed above — carries the leaf's
-            // name and its redacted facet.
+            // A minted random value — withheld, and no `updatedAt` either:
+            // Composer rewrites this row every deploy, so the timestamp
+            // would churn the fingerprint.
             fingerprint.push({
               key: leaf.varName,
               withheld: `generated:${String(leaf.bytes)}:${String(leaf.redacted)}`,
@@ -296,11 +289,9 @@ export function computeDescriptor(
               ...branch,
             }),
           );
-          // A provider param's value may be a minted key (rpc, streams), so
-          // every one is withheld regardless of the brand — this descriptor is
-          // brand-blind and must not have to know which brands mint secrets.
-          // Wiring a consumer in or out changes the resources the value is
-          // built from, which is what moves the fingerprint.
+          // May be a minted key (rpc, streams), so withheld regardless of
+          // brand; rewiring changes the producing resources, which is what
+          // moves the fingerprint.
           fingerprint.push({ key, withheld: withheldSource(`provider.${entry.name}`, raw) });
         }
 

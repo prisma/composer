@@ -1,36 +1,14 @@
 /**
- * The dependency edge that orders a deployment AFTER the environment rows it
- * boots with.
- *
- * The platform materializes a branch's environment variables INTO a deployment
- * when the deployment is created, and never re-reads them (gotchas.md,
- * PRO-211): a deployment created before its rows exist boots without them, for
- * as long as it lives. So the write must be scheduled first, and Alchemy
- * schedules on one thing only — the resource references a prop's VALUE is
- * built from.
- *
- * Upstream's `Prisma.Deployment` has no prop for the environment, so the edge
- * rides `app`: the app id is threaded through every variable's id, and the
- * value the platform receives is the app id itself.
- *
- * `app` is the only prop this can ride. Upstream's diff reads
- * `{portMapping, skipCodeUpload, artifactPath, artifactContentType}` as one
- * block and gives up — returning "no opinion", which the engine turns into a
- * plain update — as soon as ANY of them is unresolved. A brand-new variable
- * has no persisted state, so its reference resolves to a bare resource
- * expression rather than a value; threading it through one of those four props
- * would leave the whole block unresolved on exactly the deploys that add a
- * variable, skipping the artifact comparison. The deployment would then be
- * reused while the new artifact's fingerprint was recorded as deployed — so
- * the code change would be silently dropped, and every later deploy would
- * agree it had already shipped. `app` sits outside that block, and its own
- * check treats an unresolved app as "unchanged" rather than as a change.
- *
- * This edge is the ORDERING half only. Getting a changed environment value
- * into the running app is the other half, and it is not this edge's job:
- * the environment fingerprint (`deploy-fingerprint.ts`) makes a deploy whose
- * environment moved replace the deployment, so the fresh deployment
- * materializes the rows this edge ordered first.
+ * Orders a deployment AFTER the environment rows it boots with: the platform
+ * materializes rows into a deployment at create time and never re-reads them
+ * (PRO-211). Alchemy schedules only on resource references inside prop
+ * values, and upstream's `Prisma.Deployment` has no environment prop, so the
+ * edge rides `app`: every variable's id threads through it, and the platform
+ * still receives the app id. `app` is the ONLY safe prop — upstream's diff
+ * treats `{portMapping, skipCodeUpload, artifactPath, artifactContentType}`
+ * as one block and returns "no opinion" if any is unresolved (a brand-new
+ * variable always is), which would silently skip the artifact comparison.
+ * Ordering only: shipping a CHANGED value is deploy-fingerprint.ts's job.
  */
 
 import * as Output from 'alchemy/Output';

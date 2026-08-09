@@ -66,24 +66,13 @@ const upstreamPrismaProviders = () =>
  * client, and env-based credentials. Plug into a stack with
  * `{ providers: Prisma.providers() }`.
  *
- * The node transport is ALSO exposed as the bundle's ambient `HttpClient`,
- * overriding the stack's fetch client. Upstream's `Deployment` PUTs the
- * artifact to a presigned URL, which requires an explicit Content-Length on a
- * file-backed body — what node's transport sends and fetch's chunked streaming
- * does not. Upstream serves that from a Prisma-scoped service whose package
- * subpath (`alchemy/Prisma/Internal/*`) is exported as `null`, so it cannot be
- * composed in privately from outside; upstream documents the ambient client as
- * the supported fallback, which is what this makes correct.
- *
- * The invariant that keeps this safe, and that new code must preserve: **no
- * Composer provider may resolve the ambient `HttpClient`**. Every one of them
- * carries its own client — the Management API client (openapi-fetch), the
- * bucket resources through it, `PgWarm`/`PnMigration` over postgres.js — so
- * this layer's override reaches only upstream's artifact upload. A provider
- * that starts taking `HttpClient.HttpClient` would silently be handed the node
- * transport by this line. Filed upstream: export the scoped upload client (or
- * open the Internal subpath), after which this becomes a private
- * `PrismaUploadClientLive` and the invariant can be retired.
+ * The node transport is also the bundle's ambient `HttpClient`: upstream's
+ * `Deployment` artifact upload needs node's explicit Content-Length (fetch
+ * streams chunked), and upstream documents the ambient client as the
+ * supported way to provide it. Invariant: no Composer provider may resolve
+ * the ambient `HttpClient` — each carries its own client — or it would
+ * silently get this override. Filed upstream: export the scoped upload
+ * client, after which this becomes a private layer.
  */
 export const providers = () =>
   Layer.effect(

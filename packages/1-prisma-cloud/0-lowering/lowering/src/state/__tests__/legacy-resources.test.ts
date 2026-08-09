@@ -665,7 +665,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(diff).toEqual({ action: 'update' });
   });
 
-  test('a poison DATABASE_URL row is RETAINED, not deleted: state row retired, platform variable untouched', async () => {
+  test('a legacy DATABASE_URL claim row is RETAINED, not deleted: state row retired, platform variable untouched', async () => {
     const migrated = migrateLegacyResourceState(legacyEnvRow('DATABASE_URL')) as MigratedRow;
     // `retain` is what makes the engine drop the state row, skip the provider
     // entirely, and report the resource as `retained` — the truthful verb for
@@ -673,7 +673,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     // operator the platform variable is gone when it is still there.
     expect(migrated['removalPolicy']).toBe('retain');
     expect(migrated.attr).toEqual({
-      environmentVariableId: 'dev:legacy-poison-DATABASE_URL',
+      environmentVariableId: 'dev:legacy-claim-DATABASE_URL',
       key: 'DATABASE_URL',
     });
     expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
@@ -728,7 +728,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(migrated).toEqual(upstreamRow as unknown as MigratedRow);
   });
 
-  test('a REPLACED poison row migrates its displaced old generation before retiring itself', () => {
+  test('a REPLACED claim row migrates its displaced old generation before retiring itself', () => {
     // The row on top is retired, but the generation it displaced still rides
     // along under `old` and the engine reads it. It must arrive in the
     // upstream shape, so the old chain is rewritten before the retirement.
@@ -746,7 +746,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     };
     expect(migrated.removalPolicy).toBe('retain');
     expect(migrated.attr).toEqual({
-      environmentVariableId: 'dev:legacy-poison-DATABASE_URL',
+      environmentVariableId: 'dev:legacy-claim-DATABASE_URL',
       key: 'DATABASE_URL',
     });
     expect(migrated.old.attr).toMatchObject({
@@ -774,13 +774,13 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect((migrateLegacyResourceState(composerEnv) as MigratedRow).resourceType).toBe(
       'Prisma.EnvironmentVariable',
     );
-    const composerPoison = {
+    const composerClaimRow = {
       ...legacyEnvRow('DATABASE_URL_POOLED'),
       resourceType: 'PrismaComposer.EnvironmentVariable',
     };
-    const migratedPoison = migrateLegacyResourceState(composerPoison) as MigratedRow;
-    expect(migratedPoison.resourceType).toBe('Prisma.EnvironmentVariable');
-    expect(migratedPoison['removalPolicy']).toBe('retain');
+    const migratedClaimRow = migrateLegacyResourceState(composerClaimRow) as MigratedRow;
+    expect(migratedClaimRow.resourceType).toBe('Prisma.EnvironmentVariable');
+    expect(migratedClaimRow['removalPolicy']).toBe('retain');
   });
 });
 

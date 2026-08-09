@@ -324,16 +324,11 @@ function lazyOptions(
 
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  // When each platform variable a Composer row POINTS at was last written —
-  // filled by the deploy preflight below (the one step that reads those rows),
-  // read by the compute descriptor's environment fingerprint. Held in this
-  // factory's closure rather than a module variable so two `prismaCloud()`
-  // extensions in one process cannot see each other's, and left empty by
-  // `prisma-composer dev`, which runs the local preflight instead.
-  //
-  // In the ALCHEMY process this map is always empty — that process re-imports
-  // the config from scratch and runs no preflight — so the lookup falls back
-  // to what the CLI process transported (pointer-timestamps.ts).
+  // When each pointed-at platform variable was last written — filled by the
+  // deploy preflight, read by the environment fingerprint. A closure, not a
+  // module variable, so two `prismaCloud()` extensions cannot share it. In
+  // the alchemy process (no preflight) the lookup falls back to what the CLI
+  // transported (pointer-timestamps.ts).
   const preflightTimestamps = new Map<string, string>();
   const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
 
@@ -357,9 +352,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
-    // The timestamps it reads are kept for this process AND handed to the
-    // framework's preflight transport, which is how they reach the alchemy
-    // process that actually builds the fingerprint (pointer-timestamps.ts).
+    // Timestamps are kept for this process AND serialized onto the preflight
+    // transport for the alchemy process.
     preflight: (input) =>
       runPreflight(input).then((timestamps) => {
         for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
@@ -370,22 +364,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // to the stage's Branch — deleting the Branch/Project deletes it
     // platform-side.
 
-    // Runs once per lowering, before any service: it resolves the CLI-ensured
-    // Project into the application handle every descriptor reads, and claims
-    // the project's `DATABASE_URL`/`DATABASE_URL_POOLED` with a value that
-    // cannot connect, so Prisma Cloud never fills them in with one of the
-    // app's own databases (`claimPoisonDatabaseUrl` explains the whole
-    // mechanism). The claim is create-only and is NOT part of the resource
-    // graph: alchemy owns nothing here, so nothing plans a write or a delete
-    // for either variable. Binding them at the authoring end stays rejected by
-    // `param.ts`/`secret.ts`. Per-binding service keys are not minted here
-    // (ADR-0031): core's provision phase invokes `provisions` below,
-    // graph-wide, before any service lowers.
+    // Runs once per lowering, before any service: resolves the CLI-ensured
+    // Project into the application handle, and claims the project's
+    // `DATABASE_URL`/`DATABASE_URL_POOLED` with a placeholder
+    // (`claimDatabaseUrlKeys` explains why). Create-only and outside the
+    // resource graph — alchemy never plans a write or delete for them.
     application: {
       provision: (ctx) =>
         Effect.gen(function* () {
           const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
-          yield* Prisma.claimPoisonDatabaseUrl(projectId);
+          yield* Prisma.claimDatabaseUrlKeys(projectId);
           return { projectId, branchId } satisfies CloudApplication;
         }),
     },

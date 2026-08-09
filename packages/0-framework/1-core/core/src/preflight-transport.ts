@@ -1,34 +1,18 @@
 /**
- * Carries what an extension's deploy preflight learned from the CLI process
- * into the alchemy process — the same two-process problem, and the same
- * channel, as resolved containers (ADR-0037, container-transport.ts).
- *
- * Preflight runs in the CLI parent, because it is the step that talks to the
- * platform. Alchemy then runs as a child process against the generated stack
- * file, which re-imports the app config from scratch: every extension factory
- * is called again, with none of the parent's state. Anything preflight learned
- * that the lowering needs is therefore gone unless it is transported, and env
- * vars are the only channel between the two processes. So the CLI writes each
- * extension's preflight payload into one env var, and the extension reads its
- * own var back in the alchemy process. The framework owns the vars; it never
- * reads their contents.
- *
- * An extension must never put a SECRET VALUE in a payload: the alchemy child's
- * environment is not a secret store, and the payload is not encrypted. Carry
- * metadata (e.g. when a platform variable was last written), never values.
+ * Carries an extension's deploy-preflight payload from the CLI process to the
+ * alchemy child (which re-imports the config from scratch) — one env var per
+ * extension, same channel as containers (container-transport.ts). The
+ * framework never reads the contents. Payloads carry metadata only, never
+ * secret values: the child's environment is not a secret store.
  */
-import { mangleExtensionId } from './container-transport.ts';
+import { envVarSafeExtensionId } from './container-transport.ts';
 
-/**
- * What an extension's `preflight` hands back for the transport: a string only
- * that extension reads, or `undefined` when it has nothing to carry (the usual
- * case for an extension whose preflight only checks prerequisites).
- */
+/** A string only this extension reads back, or `undefined` when it has nothing to carry. */
 export type PreflightPayload = string | undefined;
 
 /** '@prisma/composer-prisma-cloud' → 'PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD' */
 export function preflightEnvVarName(extensionId: string): string {
-  return `PRISMA_COMPOSER_PREFLIGHT_${mangleExtensionId(extensionId)}`;
+  return `PRISMA_COMPOSER_PREFLIGHT_${envVarSafeExtensionId(extensionId)}`;
 }
 
 /** The env entries the CLI sets on the alchemy process: `{ [preflightEnvVarName(id)]: payload }` for every extension whose preflight returned one. */
@@ -41,7 +25,7 @@ export function preflightEnv(payloads: ReadonlyMap<string, string>): Record<stri
     const owner = ownerByVarName.get(varName);
     if (owner !== undefined) {
       throw new Error(
-        `Extension ids "${owner}" and "${extensionId}" both mangle to the preflight transport ` +
+        `Extension ids "${owner}" and "${extensionId}" both map to the preflight transport ` +
           `variable "${varName}" — rename one of the extensions.`,
       );
     }
