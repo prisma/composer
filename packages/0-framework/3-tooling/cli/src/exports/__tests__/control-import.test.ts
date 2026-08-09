@@ -12,13 +12,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-describe('the ./control entry', () => {
+describe.each([
+  ['./control', '../control.ts'],
+  ['./control/testing', '../control-testing.ts'],
+])('the %s entry', (_subpath, relativeEntry) => {
   test('statically imports none of the heavy pipeline modules', () => {
     const dir = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-control-import-')),
     );
     try {
-      const controlPath = fileURLToPath(new URL('../control.ts', import.meta.url));
+      const controlPath = fileURLToPath(new URL(relativeEntry, import.meta.url));
       const breakerPath = path.join(dir, 'poison-heavy-modules.ts');
       fs.writeFileSync(
         breakerPath,

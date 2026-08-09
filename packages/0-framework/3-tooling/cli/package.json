@@ -6,6 +6,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
+    "./control-testing": "./dist/control-testing.mjs",
     "./report": "./dist/report.mjs",
     "./package.json": "./package.json"
   },
