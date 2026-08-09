@@ -807,17 +807,14 @@ importers:
         specifier: workspace:0.6.0
         version: link:../../../0-framework/0-foundation/foundation
       '@prisma/management-api-sdk':
-        specifier: ^1.50.0
-        version: 1.50.0
+        specifier: ^1.57.0
+        version: 1.57.0
       alchemy:
         specifier: 2.0.0-beta.67
         version: 2.0.0-beta.67(patch_hash=b4f53c9c951c28d72ce7373ac88b38bd85718e114e5001fa7b2a8f7f869d6fac)(@effect/platform-bun@4.0.0-beta.103(effect@4.0.0-beta.103))(@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103)(ioredis@5.11.1))(@types/node@26.1.1)(@types/react@19.2.17)(effect@4.0.0-beta.103)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260704.1)(ws@8.21.1)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.6.0
@@ -1186,8 +1183,8 @@ importers:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))
       '@prisma/management-api-sdk':
-        specifier: ^1.50.0
-        version: 1.50.0
+        specifier: ^1.57.0
+        version: 1.57.0
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -1209,9 +1206,6 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
     devDependencies:
       '@internal/assemble':
         specifier: workspace:0.6.0
@@ -1283,8 +1277,8 @@ importers:
         specifier: workspace:0.6.0
         version: link:../composer
       '@prisma/management-api-sdk':
-        specifier: ^1.50.0
-        version: 1.50.0
+        specifier: ^1.57.0
+        version: 1.57.0
       '@standard-schema/spec':
         specifier: ^1.1.0
         version: 1.1.0
@@ -1306,9 +1300,6 @@ importers:
       pg:
         specifier: 8.22.0
         version: 8.22.0
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
       tsdown:
         specifier: ^0.22.7
         version: 0.22.12(typescript@6.0.3)
@@ -2786,6 +2777,9 @@ packages:
 
   '@prisma/management-api-sdk@1.50.0':
     resolution: {integrity: sha512-xTg2xCKCwH1h6ZXzT8ieRmypINvFB5RIMAuWEuk2LpfsHUFs0RFuyRNw1CeYGVXnxWckkA8dWFQVLyjolZlDeA==}
+
+  '@prisma/management-api-sdk@1.57.0':
+    resolution: {integrity: sha512-NrTnL41BKj1XEs0sLsSUuxG6t4n1Qh1JldFnNpeLgTdTasfXYech4u8bCcfInxKkkPvFwDM759wpb9cSySK1Fw==}
 
   '@prisma/query-plan-executor@7.2.0':
     resolution: {integrity: sha512-EOZmNzcV8uJ0mae3DhTsiHgoNCuu1J9mULQpGCh62zN3PxPTd+qI9tJvk5jOst8WHKQNwJWR3b39t0XvfBB0WQ==}
@@ -5016,10 +5010,6 @@ packages:
 
   postgres@3.4.7:
     resolution: {integrity: sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw==}
-    engines: {node: '>=12'}
-
-  postgres@3.4.9:
-    resolution: {integrity: sha512-GD3qdB0x1z9xgFI6cdRD6xu2Sp2WCOEoe3mtnyB5Ee0XrrL5Pe+e4CCnJrRMnL1zYtRDZmQQVbvOttLnKDLnaw==}
     engines: {node: '>=12'}
 
   prettier@3.9.5:
@@ -7269,6 +7259,10 @@ snapshots:
     dependencies:
       openapi-fetch: 0.14.0
 
+  '@prisma/management-api-sdk@1.57.0':
+    dependencies:
+      openapi-fetch: 0.14.0
+
   '@prisma/query-plan-executor@7.2.0': {}
 
   '@prisma/streams-local@0.1.11':
@@ -9350,8 +9344,6 @@ snapshots:
       xtend: 4.0.2
 
   postgres@3.4.7: {}
-
-  postgres@3.4.9: {}
 
   prettier@3.9.5: {}
 

@@ -36,16 +36,7 @@ build produced:
 turbo run build && prisma-composer deploy module.ts
 ```
 
-Deploy state (what's already provisioned, so re-deploys diff instead of
-recreate) is stored with the environment it describes, not on your machine —
-that's the `prismaState()` line in `prisma-composer.config.ts`. Each
-environment keeps a small framework-owned database named
-`prisma-composer-state` inside the app's Project, attached to that
-environment's Branch. Everyone deploying the app shares it, your laptop and
-CI see the same world, and two concurrent deploys of the same environment
-lock each other out instead of corrupting it. Destroying or deleting an
-environment removes its state with it — don't delete the state database by
-hand, or the next deploy will re-provision from scratch.
+Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `prismaState()` line in `prisma-composer.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
 
 ## Production and stages
 
@@ -116,12 +107,7 @@ prisma-composer destroy module.ts --stage staging  # staging only; production un
 prisma-composer destroy module.ts --production     # production's resources
 ```
 
-`--stage` and `--production` together is an error too. Destroying a stage
-removes its resources, then its state database, then deletes its Branch;
-destroying production removes the resources and its state database, but the
-production Branch itself always survives.
-Destroy never creates: tearing down a stage that was never deployed fails
-with "nothing deployed" rather than provisioning one first.
+`--stage` and `--production` together is an error too. The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
 Destroying production also removes the app's Project once nothing is left in
 it, so hand-run stacks don't pile up as empty Projects in your workspace. If
@@ -264,42 +250,23 @@ When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
 
-## Upgrading from workspace-hosted state
+## Upgrading from an older state store
 
-Older framework versions kept deploy state in a workspace-level
-`prisma-composer-state` project instead of inside each environment. There is
-no automated migration — a deploy under the new store starts from empty state
-and would re-provision resources it can't see. Cut over per app:
+Older framework versions stored deploy state differently: first in a workspace-level `prisma-composer-state` project, later in a small `prisma-composer-state` database on each environment's Branch. The current version stores state behind the platform's API and never reads either legacy store — there is no automated migration. The cutover is the same for both generations: destroy, upgrade, redeploy.
 
-1. On the **old** framework version, destroy every environment: each
-   `--stage`, then `--production`.
+Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the stage predates the platform state API — instead of blindly recreating every resource and failing halfway. Cut over per app:
+
+1. On the **old** framework version, destroy every environment: each `--stage`, then `--production`. (Equivalent: delete the stage's Branch — or the whole Project, for production — in the Console or via the Management API.)
 2. Upgrade the framework packages.
-3. Deploy again — each environment provisions fresh state in its own Branch.
-4. Delete the workspace-level `prisma-composer-state` project from the
-   Console whenever convenient; nothing reads it after the upgrade.
-
-### If you upgraded before destroying
-
-A deploy on the new version starts from empty state, finds the resources the
-old state was tracking, and refuses to touch them:
-
-```
-PrismaApiError: {"error":{"code":"app:already_exists", ...}}
-EnvironmentVariable "COMPOSER_..." exists but is untracked in this deploy
-state — refusing to overwrite a reserved COMPOSER_ key.
-```
-
-The old state cannot be read back. Recover by removing the leftovers so the
-next deploy recreates everything under fresh state — either:
-
-- Delete the app's Project in the Console (everything in it goes: apps,
-  databases, environment variables), then deploy again. Simplest, and right
-  whenever the Project holds nothing you created outside the framework.
-- Or downgrade the framework packages, run the destroys from step 1, upgrade
-  again, and deploy.
+3. Deploy again — each environment starts fresh, hosted behind the platform state API.
 
 Recreated apps get new generated URLs; anything pointing at the old ones
 needs updating.
+
+Legacy leftovers are inert and safe to remove whenever convenient — nothing reads them after the upgrade, and each costs only a database quota slot:
+
+- Branch-hosted generation: destroying on the old version already removed the environment's `prisma-composer-state` database. If you skipped that and deleted Branches by hand instead, each Branch took its database with it — but production's, on the default Branch, survives: delete it in the Console.
+- Workspace-hosted generation: delete the workspace-level `prisma-composer-state` project from the Console.
 
 ## Driving deploys from code
 

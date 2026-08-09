@@ -15,8 +15,8 @@ describe('prismaStateLayer', () => {
 
   test('constructing the layer is inert — a projectId builds a Layer without touching the network', () => {
     // Layer.effect(...) only builds a lazy Effect description — no Management
-    // API call, no Postgres connection, no PRISMA_SERVICE_TOKEN read — until
-    // something actually provides/runs the layer, which this test never does.
+    // API call, no PRISMA_SERVICE_TOKEN read — until something actually
+    // provides/runs the layer, which this test never does.
     expect(prismaStateLayer({ projectId: 'prj_1' })).toBeDefined();
   });
 

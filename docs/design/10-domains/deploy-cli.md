@@ -130,26 +130,9 @@ targets **production**; `--stage <name>` targets a **named stage**.
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
   environment.
-- **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or
-  `--production`; a bare `destroy` is an error, so an omitted or mistyped
-  stage can never silently tear down production. `destroy` resolves
-  find-only (no container is ever created); after `alchemy destroy` succeeds
-  and after every extension's `teardown` has run, the CLI removes each
-  resolved container. That two-loop order — every teardown, then every
-  removal — is what keeps a stage's deploy state deleted before its
-  container goes.
+- **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or `--production`; a bare `destroy` is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
 
-**Prisma Cloud's own containers** are its app's **Project** and, for a named
-stage, that stage's **Branch** — found by name, created if absent on deploy,
-never created on destroy; each stage's deploy state lives in a
-framework-owned `prisma-composer-state` database attached to its Branch
-(production's on the Project's implicit default Branch). See
-[ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
-(App = one Project, Stage = Branch),
-[ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
-(stage resolution mechanics), and
-[ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)
-(deploy state lives on the stage's Branch).
+**Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — found by name, created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
 
 ## Build ownership
 

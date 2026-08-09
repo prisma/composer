@@ -7,6 +7,9 @@ import { PrismaCredentials } from './credentials.ts';
 
 export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
 
+/** The origin every Management API call targets — also the origin the hosted Alchemy state API lives under. */
+export const MANAGEMENT_API_ORIGIN = 'https://api.prisma.io';
+
 /**
  * The typed Prisma Management API client, built once from the resolved
  * credentials. Providers yield this in their outer Effect and call it inside
@@ -16,11 +19,16 @@ export class ManagementClient extends Context.Service<ManagementClient, Manageme
   'PrismaManagementClient',
 ) {}
 
-export const layer = (): Layer.Layer<ManagementClient, never, PrismaCredentials> =>
+export const layer = (options?: {
+  readonly apiOrigin?: string;
+}): Layer.Layer<ManagementClient, never, PrismaCredentials> =>
   Layer.effect(
     ManagementClient,
     Effect.gen(function* () {
       const { token } = yield* PrismaCredentials;
-      return createManagementApiClient({ token: Redacted.value(token) });
+      return createManagementApiClient({
+        token: Redacted.value(token),
+        baseUrl: options?.apiOrigin ?? MANAGEMENT_API_ORIGIN,
+      });
     }),
   );

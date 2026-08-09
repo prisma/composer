@@ -44,9 +44,10 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    # Backs the prisma-alchemy state/lock suites (packages/prisma-alchemy/src/state/__tests__).
-    # Without this, harness.ts finds no Postgres and those suites — the
-    # load-bearing coverage for the hosted state store — would silently skip.
+    # Backs the suites that need a real Postgres via STATE_TEST_DATABASE_URL:
+    # examples/auth and examples/storage (tests/pg-harness.ts) and the target
+    # extension's integration tests (src/__tests__/postgres-harness.ts).
+    # Without it those harnesses find no Postgres and the suites silently skip.
     services:
       postgres:
         image: postgres:16

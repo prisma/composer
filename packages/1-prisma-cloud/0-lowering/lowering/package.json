@@ -19,10 +19,9 @@
   "dependencies": {
     "@internal/core": "workspace:0.6.0",
     "@internal/foundation": "workspace:0.6.0",
-    "@prisma/management-api-sdk": "^1.50.0",
+    "@prisma/management-api-sdk": "^1.57.0",
     "alchemy": "2.0.0-beta.67",
-    "effect": "4.0.0-beta.103",
-    "postgres": "^3.4.9"
+    "effect": "4.0.0-beta.103"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.6.0",
