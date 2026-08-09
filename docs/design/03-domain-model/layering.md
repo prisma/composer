@@ -120,33 +120,12 @@ reproduce-in-the-emulator goal (see `../00-purpose/goals.md`).
 
 ## Provisioning & state
 
-Provisioning runs through **Alchemy's engine**, invoked from the client or a
-privileged CD environment (see claim 3). The engine keeps a **state store** —
-the source of truth for what's provisioned. State sits on a spectrum from
-local, to platform-hosted (where we are), to eventually platform-run:
+Provisioning runs through **Alchemy's engine**, invoked from the client or a privileged CD environment (see claim 3). The engine keeps a **state store** — the source of truth for what's provisioned. State sits on a spectrum from local, to platform-hosted (where we are), to eventually platform-run:
 
 - **Local** — Alchemy's local or Cloudflare-backed state. Fine for a solo
   developer; nothing else needs to see it.
-- **Platform-hosted** — the Management API implements Alchemy's own HTTP
-  `StateApi` wire contract per Branch of the app's own Project
-  (`…/branches/{branchId}/alchemy-state`, ADR-0045), and the framework's
-  state layer (`@internal/lowering/state`) is Alchemy's stock HTTP client
-  pointed at it — Pulumi/Terraform-Cloud-style hosted state, native to the
-  Workspace → Project → Branch hierarchy, with no BYO-state bootstrap and no
-  visible state database. A deployer needs nothing beyond the service token
-  it already has, and the state's lifetime is the environment's — deleting
-  the Branch or Project deletes it. Concurrency is a server-side
-  per-`(stack, stage)` deploy lease held around the run, so two deployers
-  can never race the same stack. `prismaCloud()` supplies this as the
-  default deploy state for every service and Module; an explicit state layer
-  always overrides it. Like hosted-state backends generally, it also holds
-  state for the user's BYO resources in other clouds, and it lets the
-  platform answer "what's provisioned in this project" natively (the
-  platform side of the inspectable-topology goal).
-- **Server-side runs** — the platform executes the apply loop itself
-  (git-push-style deploys). With state already platform-hosted, moving the
-  engine server-side is incremental — the same evolution Pulumi/Terraform
-  Cloud followed.
+- **Platform-hosted** — the Management API implements Alchemy's own HTTP `StateApi` wire contract per Branch of the app's own Project (`…/branches/{branchId}/alchemy-state`, ADR-0045), and the framework's state layer (`@internal/lowering/state`) is Alchemy's stock HTTP client pointed at it — Pulumi/Terraform-Cloud-style hosted state, native to the Workspace → Project → Branch hierarchy, with no BYO-state bootstrap and no visible state database. A deployer needs nothing beyond the service token it already has, and the state's lifetime is the environment's — deleting the Branch or Project deletes it. Concurrency is a server-side per-`(stack, stage)` deploy lease held around the run, so two deployers can never race the same stack. `prismaCloud()` supplies this as the default deploy state for every service and Module; an explicit state layer always overrides it. Like hosted-state backends generally, it also holds state for the user's BYO resources in other clouds, and it lets the platform answer "what's provisioned in this project" natively (the platform side of the inspectable-topology goal).
+- **Server-side runs** — the platform executes the apply loop itself (git-push-style deploys). With state already platform-hosted, moving the engine server-side is incremental — the same evolution Pulumi/Terraform Cloud followed.
 
 ## Open questions
 

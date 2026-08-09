@@ -397,11 +397,7 @@ is in `layering.md`; this is the term-by-term catalogue.
   *above* providers, not inside them.
 - **Stage** — an isolated instance of a Stack (`dev`, `staging`, `prod`,
   `pr-42`) with its own state and physical names. `→` **Environment**.
-- **State store** — persists each Resource's state per stack+stage so the engine
-  can diff the next deploy. `prismaCloud()` defaults every deploy to
-  platform-hosted state behind the Management API, scoped to the stage's
-  Branch (`@internal/lowering/state`, ADR-0045); an explicit state layer
-  always overrides it. Control-plane infra, never a topology node.
+- **State store** — persists each Resource's state per stack+stage so the engine can diff the next deploy. `prismaCloud()` defaults every deploy to platform-hosted state behind the Management API, scoped to the stage's Branch (`@internal/lowering/state`, ADR-0045); an explicit state layer always overrides it. Control-plane infra, never a topology node.
 
 ### Alchemy — engine verbs (provider lifecycle)
 

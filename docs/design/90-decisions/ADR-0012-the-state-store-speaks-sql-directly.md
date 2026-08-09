@@ -1,10 +1,6 @@
 # ADR-0012: The state store speaks SQL directly; Prisma Next adoption is deferred
 
-> Closed as obsolete by
-> [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md),
-> via this record's own pick-up trigger: the platform-side state API landed,
-> the SQL store is gone, and composer speaks the API through Alchemy's stock
-> HTTP client — there is no store data layer left to adopt Prisma Next for.
+> Closed as obsolete by [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md), via this record's own pick-up trigger: the platform-side state API landed, the SQL store is gone, and composer speaks the API through Alchemy's stock HTTP client — there is no store data layer left to adopt Prisma Next for.
 
 ## Decision
 
