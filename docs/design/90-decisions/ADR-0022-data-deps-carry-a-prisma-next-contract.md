@@ -155,10 +155,10 @@ closes both.
 - Services get schema-typed data access with the schema version enforced at the
   type level, at Load, and at deploy — three checkpoints, the same shape as RPC
   contracts.
-- `@prisma/composer-prisma-cloud` takes `@prisma/orm-postgres` (and transitively
-  `pg`) as a peer dependency — the app installs the facade itself, so the two
-  cannot end up with two copies of the ORM; runtime weight is carried only by
-  importers of the subpath.
+- `@prisma/composer-prisma-cloud` requires the application to install the Prisma
+  Next facade (and transitively `pg`); runtime weight is carried only by
+  importers of the subpath. How that requirement is expressed — a peer
+  dependency at one exact version — is [ADR-0046](ADR-0046-the-orm-facade-is-a-peer-dependency.md).
 - The deploy pipeline becomes schema-aware: contract changes without an authored
   migration path are deploy failures, surfaced before any DB change.
 - A shared database exposes the whole contract to every consumer; per-consumer
