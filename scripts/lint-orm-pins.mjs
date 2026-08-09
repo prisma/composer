@@ -64,7 +64,9 @@ if (versions.size > 1) {
   problems.push(
     `the workspace names ${versions.size} different @prisma/orm-* versions:\n` +
       [...versions]
-        .map(([version, sites]) => `      ${version}\n${sites.map((s) => `        ${s}`).join('\n')}`)
+        .map(
+          ([version, sites]) => `      ${version}\n${sites.map((s) => `        ${s}`).join('\n')}`,
+        )
         .join('\n'),
   );
 }
