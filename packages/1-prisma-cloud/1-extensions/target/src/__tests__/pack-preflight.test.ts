@@ -62,11 +62,19 @@ const graphWith = (packId: string, headHash: string, provider: ResourceNode): Gr
     { id: 'root' },
   );
 
-const pnDb = () =>
+const spacelessConfig = path.join(
+  import.meta.dir,
+  'fixtures',
+  'packed-contract',
+  'source',
+  'prisma-next.spaceless.config.ts',
+);
+
+const pnDb = (config: string = packedConfig) =>
   pnPostgres({
     name: 'db',
     contract: pnContract(widgetContractJson),
-    config: packedConfig,
+    config,
   });
 
 describe('runPackPreflight', () => {
@@ -95,11 +103,34 @@ describe('runPackPreflight', () => {
   });
 
   test('fails naming resource, pack, and consumer when the config does not list the pack', async () => {
-    const graph = graphWith('auth', 'sha256:auth-head', pnDb());
+    const graph = graphWith('auth', 'auth-head', pnDb());
     await expect(runPackPreflight(graph)).rejects.toThrow(
       'prisma-next database "db" does not list extension pack "auth" in its ' +
-        'prisma-next.config.ts extensionPacks — service "api" requires it. ' +
+        'prisma-next.config.ts extensions — service "api" requires it. ' +
         'Add the pack and run migration plan.',
+    );
+  });
+
+  test('fails naming the absent contract space when the listed pack declares none', async () => {
+    // A pack with no contractSpace carries no head, so it can never satisfy a
+    // required one — the message says that rather than printing "undefined".
+    const graph = graphWith(GADGET_PACK_ID, 'a-required-head', pnDb(spacelessConfig));
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `prisma-next database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        '(no contract space), but service "api" requires a-required-head. ' +
+        'Upgrade the pack and run migration plan.',
+    );
+  });
+
+  test('fails naming both heads when the config lists the pack at a different head', async () => {
+    // The pack IS listed, so the missing-pack check above passes it through —
+    // only comparing heads catches a database whose migration step would take
+    // it to a head the service is not typed against.
+    const graph = graphWith(GADGET_PACK_ID, 'a-different-head', pnDb());
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `prisma-next database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        `${GADGET_PACK_HEAD_HASH}, but service "api" requires a-different-head. ` +
+        'Upgrade the pack and run migration plan.',
     );
   });
 
@@ -115,10 +146,10 @@ describe('runPackPreflight', () => {
     const graph = Load(
       module('root', {}, ({ provision }) => {
         const db = provision(lookalike, { id: 'db' });
-        provision(
-          compute({ name: 'api', deps: { db: packDep('auth', 'sha256:auth-head') }, build }),
-          { id: 'api', deps: { db } },
-        );
+        provision(compute({ name: 'api', deps: { db: packDep('auth', 'auth-head') }, build }), {
+          id: 'api',
+          deps: { db },
+        });
         return {};
       }),
       { id: 'root' },

@@ -9,7 +9,7 @@
 // live in the `auth` Postgres schema (PSL namespace → PG schema).
 
 types {
-  Tstz = DateTime @db.Timestamptz
+  Tstz = Timestamptz
 }
 
 namespace auth {

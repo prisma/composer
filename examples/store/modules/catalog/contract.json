@@ -2,7 +2,7 @@
   "schemaVersion": "1",
   "targetFamily": "sql",
   "target": "postgres",
-  "profileHash": "sha256:9c8aa3114e84ed3b7ea2bd57526d9c2e1bf7c5292be694e9d3801f566fda7ccb",
+  "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
   "roots": {
     "product": {
       "model": "Product",
@@ -164,7 +164,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "sha256:454ca6e7e026e7ea3664b651ff39b82c327191d7cb6e55f5314b157d223305e9"
+    "storageHash": "6e17ba1a02b94d229e945c92406158ed240eeb2afb84ab890413c4b0d1774a16"
   },
   "capabilities": {
     "postgres": {
@@ -179,10 +179,11 @@
       "defaultInInsert": true,
       "enums": true,
       "lateral": true,
-      "returning": true
+      "returning": true,
+      "scalarList": true
     }
   },
-  "extensionPacks": {},
+  "extensions": {},
   "meta": {},
   "_generated": {
     "warning": "⚠️  GENERATED FILE - DO NOT EDIT",

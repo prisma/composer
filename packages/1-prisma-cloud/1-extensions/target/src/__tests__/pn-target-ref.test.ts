@@ -15,21 +15,21 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { writeRef } from '@prisma-next/migration-tools/refs';
+import { writeRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
   spaceMigrationDirectory,
   spaceRefsDirectory,
-} from '@prisma-next/migration-tools/spaces';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import {
   decideMigrationAction,
   PnMigrationError,
   resolveTargetRef,
 } from '../prisma-next-migrate.ts';
 
-// Real-format hashes — PN's ref writer validates `sha256:<64 hex>`.
-const A = `sha256:${'a'.repeat(64)}`;
-const B = `sha256:${'b'.repeat(64)}`;
+// Real-format hashes — PN's ref writer validates a bare 64-hex digest.
+const A = 'a'.repeat(64);
+const B = 'b'.repeat(64);
 
 describe('decideMigrationAction — the decision matrix', () => {
   test('marker at ref hash with all invariants → noop', () => {

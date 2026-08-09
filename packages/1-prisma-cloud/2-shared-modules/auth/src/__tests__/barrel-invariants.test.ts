@@ -29,7 +29,7 @@ describe('authoring barrel', () => {
       'new SQL(',
       'from "bun"',
       '"node:', // a node:-scheme import always appears quoted in a bundle
-      '@prisma-next/', // the pn runtime (and pg under it) must stay opt-in
+      '@prisma/orm-', // the pn runtime (and pg under it) must stay opt-in
       'better-auth', // the library belongs to the service/embedded side, never the consumer barrel
     ]) {
       expect({ token, present: js.includes(token) }).toEqual({ token, present: false });

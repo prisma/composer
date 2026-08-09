@@ -3,9 +3,9 @@
  * database carries an extension pack at a given contract-space head. In its
  * own module so a module's authoring surface (e.g. `@internal/auth`'s
  * `authDb()`) can import it from the MAIN barrel without dragging
- * `./prisma-next`'s runtime dependencies (`@prisma-next/postgres/runtime`,
+ * `./prisma-next`'s runtime dependencies (`@prisma/orm-postgres/runtime`,
  * `pg` — both carrying `node:` imports) into a runtime bundle. Deliberately
- * self-contained — invariant 7 keeps every `prisma-next`/`@prisma-next`
+ * self-contained — invariant 7 keeps every `prisma-next`/`@prisma/orm-`
  * import specifier (type-only included) out of the main barrel's reachable
  * graph, so the cmp shape is declared here rather than imported; it is
  * assignable to `PnPostgresContract`'s `PnCmp` by construction, and

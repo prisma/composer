@@ -4,7 +4,7 @@
  * against a real local Postgres, from both directions the module relies on:
  *
  *  1. THE DEPLOY PATH: migrate a scratch DB the way a consumer deploy does —
- *     PN control client with `extensionPacks: [authPack]`, pack space
+ *     PN control client with `extensions: [authPack]`, pack space
  *     materialised on disk from the descriptor's own shipped data (what
  *     `migration plan` does in a consumer project) — then point Better
  *     Auth's own migration generator (`getMigrations`, the engine behind
@@ -21,12 +21,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { materialiseExtensionMigrationPackageIfMissing } from '@prisma-next/migration-tools/io';
+import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { materialiseExtensionMigrationPackageIfMissing } from '@prisma/orm-toolchain/migration-tools/io';
 import {
-  emitContractSpaceArtefacts,
+  emitContractSpaceArtifacts,
   spaceMigrationDirectory,
-} from '@prisma-next/migration-tools/spaces';
-import { createPostgresControlClient } from '@prisma-next/postgres/control';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import { getMigrations } from 'better-auth/db/migration';
 import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
@@ -92,7 +92,7 @@ describe.skipIf(pgServer === undefined)('auth pack schema conformance', () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-auth-pack-'));
     const space = authPack.contractSpace;
     if (space === undefined) throw new Error('authPack has no contractSpace');
-    await emitContractSpaceArtefacts(migrationsDir, AUTH_PACK_ID, {
+    await emitContractSpaceArtifacts(migrationsDir, AUTH_PACK_ID, {
       contract: space.contractJson,
       contractDts: fs.readFileSync(path.join(packDir, 'contract.d.ts'), 'utf8'),
       headRef: space.headRef,
@@ -112,7 +112,7 @@ describe.skipIf(pgServer === undefined)('auth pack schema conformance', () => {
   test('a deploy-path migration (empty app space + authPack) leaves Better Auth with zero pending changes', async () => {
     const client = createPostgresControlClient({
       connection: db.url,
-      extensionPacks: [authPack],
+      extensions: [authPack],
     });
     await client.connect();
     try {
@@ -176,13 +176,13 @@ describe.skipIf(pgServer === undefined)(
           await client.query(
             'CREATE TABLE prisma_contract.marker (space text PRIMARY KEY, core_hash text NOT NULL)',
           );
-          await client.query(
-            "INSERT INTO prisma_contract.marker VALUES ('app', 'sha256:some-app')",
-          );
+          await client.query("INSERT INTO prisma_contract.marker VALUES ('app', 'some-app')");
         } finally {
           await client.end();
         }
-        await expect(ensureLocalAuthSchema(db.url)).rejects.toThrow(/extensionPacks/);
+        await expect(ensureLocalAuthSchema(db.url)).rejects.toThrow(
+          /only initialises databases it owns entirely/,
+        );
       } finally {
         await db.drop().catch(() => {});
       }

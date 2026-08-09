@@ -2,7 +2,7 @@
   "schemaVersion": "1",
   "targetFamily": "sql",
   "target": "postgres",
-  "profileHash": "sha256:9c8aa3114e84ed3b7ea2bd57526d9c2e1bf7c5292be694e9d3801f566fda7ccb",
+  "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
   "roots": {
     "order": {
       "model": "Order",
@@ -18,11 +18,8 @@
               "id": {
                 "nullable": false,
                 "type": {
-                  "codecId": "sql/char@1",
-                  "kind": "scalar",
-                  "typeParams": {
-                    "length": 36
-                  }
+                  "codecId": "pg/text@1",
+                  "kind": "scalar"
                 }
               },
               "placedAt": {
@@ -99,12 +96,9 @@
             "order": {
               "columns": {
                 "id": {
-                  "codecId": "sql/char@1",
-                  "nativeType": "character",
-                  "nullable": false,
-                  "typeParams": {
-                    "length": 36
-                  }
+                  "codecId": "pg/text@1",
+                  "nativeType": "text",
+                  "nullable": false
                 },
                 "placedAt": {
                   "codecId": "pg/timestamptz@1",
@@ -149,10 +143,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "sha256:c02a1b8e5e4db4eb71986673487f007e103ac093f5af4d5f4c6bb5b4ef84b5ce"
+    "storageHash": "eee8ad6db4dca6d22c79a724f3d2a6086ffe08fd32b8b778dd2d0d6c464b25b4"
   },
   "execution": {
-    "executionHash": "sha256:8e2d88824468b3baf7490ecbfc7147357b480cb98c89fab4b471b1300cec0f00",
+    "executionHash": "b5c434581da9e8e337c5f3b6c33380510ec06e99563a75042cc746221f8de695",
     "mutations": {
       "defaults": [
         {
@@ -182,10 +176,11 @@
       "defaultInInsert": true,
       "enums": true,
       "lateral": true,
-      "returning": true
+      "returning": true,
+      "scalarList": true
     }
   },
-  "extensionPacks": {},
+  "extensions": {},
   "meta": {},
   "_generated": {
     "warning": "⚠️  GENERATED FILE - DO NOT EDIT",

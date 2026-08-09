@@ -2,7 +2,7 @@
   "schemaVersion": "1",
   "targetFamily": "sql",
   "target": "postgres",
-  "profileHash": "sha256:9c8aa3114e84ed3b7ea2bd57526d9c2e1bf7c5292be694e9d3801f566fda7ccb",
+  "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
   "roots": {
     "account": {
       "model": "Account",
@@ -674,8 +674,6 @@
               },
               "foreignKeys": [
                 {
-                  "constraint": true,
-                  "index": true,
                   "onDelete": "cascade",
                   "source": {
                     "columns": [
@@ -698,7 +696,8 @@
                   "columns": [
                     "userId"
                   ],
-                  "name": "account_userId_idx"
+                  "name": "account_userId_idx",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -804,8 +803,6 @@
               },
               "foreignKeys": [
                 {
-                  "constraint": true,
-                  "index": true,
                   "onDelete": "cascade",
                   "source": {
                     "columns": [
@@ -828,7 +825,8 @@
                   "columns": [
                     "userId"
                   ],
-                  "name": "session_userId_idx"
+                  "name": "session_userId_idx",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -978,7 +976,8 @@
                   "columns": [
                     "identifier"
                   ],
-                  "name": "verification_identifier_idx"
+                  "name": "verification_identifier_idx",
+                  "unique": false
                 }
               ],
               "primaryKey": {
@@ -1001,7 +1000,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "sha256:521a3026743b2c962da0c84b0fb2c417d3175306a88c288526cddf7e285c4b71",
+    "storageHash": "6bbd4dc1c19c8aa5e0d60c9755e0f8ea07ba1c01d20c48cf3aa7226e4ee7d33f",
     "types": {
       "Tstz": {
         "codecId": "pg/timestamptz@1",
@@ -1027,7 +1026,7 @@
       "scalarList": true
     }
   },
-  "extensionPacks": {},
+  "extensions": {},
   "meta": {},
   "_generated": {
     "warning": "⚠️  GENERATED FILE - DO NOT EDIT",

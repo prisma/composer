@@ -12,13 +12,21 @@
  * `node:` import — the same discipline `control.ts` already follows by
  * delegating fs/tar to `@internal/lowering` (invariant 5).
  */
-import { loadConfig, type PrismaNextConfig } from '@prisma-next/config-loader';
+import { loadConfig, type PrismaNextConfig } from '@prisma/orm-toolchain/config-loader';
 import { resolve } from 'pathe';
 
 /** One declared extension pack, as PN's validated config carries it. */
-export type PnExtensionPack = NonNullable<PrismaNextConfig['extensionPacks']>[number];
+export type PnExtensionPack = NonNullable<PrismaNextConfig['extensions']>[number];
 
-/** What the deploy reads out of one `prisma-next.config.ts`. */
+/**
+ * What the deploy reads out of one `prisma-next.config.ts`.
+ *
+ * The packs are `extensionPacks` here, not `extensions`: Prisma Next calls the
+ * key the user types `extensions`, but `extensions` is already Composer's word
+ * for the things listed in `prisma-composer.config.ts` (`prismaCloud()`,
+ * `nodeBuild()`), and `1-extensions/` is a layer name. This type is Composer's
+ * side of the boundary, so it uses Composer's word.
+ */
 export interface ResolvedPrismaNextConfig {
   /** The absolute migrations directory PN reads authored migration packages from. */
   readonly migrationsDir: string;
@@ -35,7 +43,7 @@ export async function resolvePrismaNextConfig(
     // `resolve(configPath, '..')` is the config file's directory; the
     // migrations root is `migrations.dir` (or the default) relative to it.
     migrationsDir: resolve(configPath, '..', config.migrations?.dir ?? 'migrations'),
-    extensionPacks: config.extensionPacks ?? [],
+    extensionPacks: config.extensions ?? [],
   };
 }
 
@@ -52,8 +60,6 @@ export async function resolveMigrationsDir(configPath: string): Promise<string> 
  * `contractSpace` contributes `"-"` for its head — it declares no migratable
  * space, but its presence still belongs in the key.
  */
-export function packHeadRefHashes(extensionPacks: readonly PnExtensionPack[]): readonly string[] {
-  return extensionPacks
-    .map((pack) => `${pack.id}:${pack.contractSpace?.headRef.hash ?? '-'}`)
-    .sort();
+export function packHeadRefHashes(packs: readonly PnExtensionPack[]): readonly string[] {
+  return packs.map((pack) => `${pack.id}:${pack.contractSpace?.headRef.hash ?? '-'}`).sort();
 }

@@ -275,8 +275,20 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     if (pack === undefined) {
       throw new Error(
         `prisma-next database "${provider.name}" does not list extension pack ` +
-          `"${requirement.packId}" in its prisma-next.config.ts extensionPacks — service ` +
+          `"${requirement.packId}" in its prisma-next.config.ts extensions — service ` +
           `"${edge.to}" requires it. Add the pack and run migration plan.`,
+      );
+    }
+    // A pack listed at the wrong head is the failure this check exists for:
+    // the migration step would take the database to the configured head while
+    // the service is typed against a different one.
+    const head = pack.contractSpace?.headRef.hash;
+    if (head !== requirement.headHash) {
+      throw new Error(
+        `prisma-next database "${provider.name}" lists extension pack ` +
+          `"${requirement.packId}" at head ${head ?? '(no contract space)'}, but service ` +
+          `"${edge.to}" requires ${requirement.headHash}. Upgrade the pack and run ` +
+          'migration plan.',
       );
     }
   }

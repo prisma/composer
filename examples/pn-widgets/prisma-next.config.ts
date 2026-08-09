@@ -1,4 +1,4 @@
-import { defineConfig } from '@prisma-next/postgres/config';
+import { defineConfig } from '@prisma/orm-postgres/config';
 
 // The Prisma Next config anchors the contract source and the migrations
 // directory on the filesystem. The deploy lowering loads it (by path, from the

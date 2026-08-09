@@ -2,7 +2,7 @@
   "schemaVersion": "1",
   "targetFamily": "sql",
   "target": "postgres",
-  "profileHash": "sha256:9c8aa3114e84ed3b7ea2bd57526d9c2e1bf7c5292be694e9d3801f566fda7ccb",
+  "profileHash": "3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2",
   "roots": {
     "Widget": {
       "model": "Widget",
@@ -87,10 +87,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "sha256:f269d6251ab8c7c142448981686dc59d0c35f98c3971dcd0ed37585391bae668"
+    "storageHash": "6d63ff5784d780f7f8858becf843959dccf1e3272eab21ce3396dca9d255bd16"
   },
   "execution": {
-    "executionHash": "sha256:c1073d26d2de37004dd7f1d65441c672074fcc86a2cb9c9079483a14ced78016",
+    "executionHash": "eeaf1f4046a71ed6f02d863393397a283adf15b8666139245223083206542e82",
     "mutations": {
       "defaults": [
         {
@@ -120,10 +120,11 @@
       "defaultInInsert": true,
       "enums": true,
       "lateral": true,
-      "returning": true
+      "returning": true,
+      "scalarList": true
     }
   },
-  "extensionPacks": {},
+  "extensions": {},
   "meta": {},
   "_generated": {
     "warning": "⚠️  GENERATED FILE - DO NOT EDIT",

@@ -14,7 +14,7 @@
  * PnMigrationProvider())`), and Alchemy resolves it at apply via a direct
  * provider-tag lookup (`tryFindProviderByType`) — no change to `@internal/lowering`.
  *
- * Deploy-time only: imports `@prisma-next/postgres/control` (via the helper) +
+ * Deploy-time only: imports `@prisma/orm-postgres/control` (via the helper) +
  * `alchemy`. Imported by `control.ts` and tests, never by `index.ts` / the
  * `./prisma-next` authoring entry — index isolation holds.
  */

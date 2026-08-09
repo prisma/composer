@@ -233,7 +233,7 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
 
 describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-next entry', () => {
   test('no module reachable from src/index.ts imports the /prisma-next entry — Prisma Next stays opt-in', () => {
-    // prisma-next.ts (and transitively @prisma-next/postgres + pg) is
+    // prisma-next.ts (and transitively @prisma/orm-postgres + pg) is
     // imported only by an app that explicitly imports the ./prisma-next
     // subpath. A reachable import from the authoring barrel would drag that
     // dependency tree into every service, defeating the whole point of the
@@ -267,7 +267,7 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     for (const [file, specs] of seen) {
       const offending = specs.filter(
         (spec) =>
-          /\/prisma-next(\.ts)?$/.test(spec) || spec.startsWith('@prisma-next/') || spec === 'pg',
+          /\/prisma-next(\.ts)?$/.test(spec) || spec.startsWith('@prisma/orm-') || spec === 'pg',
       );
       expect({ file: path.relative(srcDir, file), offending }).toEqual({
         file: path.relative(srcDir, file),
@@ -276,15 +276,15 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     }
   });
 
-  test('the built dist/index.mjs graph contains no @prisma-next/* or pg tokens', () => {
+  test('the built dist/index.mjs graph contains no @prisma/orm-* or pg tokens', () => {
     const built = builtEntryGraph('index.mjs');
     expect(built.length).toBeGreaterThan(0);
-    expect(built).not.toContain('@prisma-next/');
+    expect(built).not.toContain('@prisma/orm-');
     expect(built.includes('"pg"') || built.includes("'pg'")).toBe(false);
   });
 
   // The ./prisma-next authoring entry legitimately bundles
-  // @prisma-next/postgres/runtime (the typed client) and pg (its runtime
+  // @prisma/orm-postgres/runtime (the typed client) and pg (its runtime
   // connect-retry, slice 3). But the deploy-only machinery — the CLI config
   // loader, the control client, and the migration/config/resource/warm modules
   // — must NEVER leak into it, or every service using pnPostgres would pull the
@@ -295,9 +295,9 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     const built = builtEntryGraph('prisma-next.mjs');
     // Positive marker: the graph reached the real runtime code in the chunk,
     // so the forbidden-token checks below are not vacuous.
-    expect(built).toContain('@prisma-next/postgres/runtime');
+    expect(built).toContain('@prisma/orm-postgres/runtime');
     for (const token of [
-      '@prisma-next/cli',
+      '@prisma/orm-toolchain/cli',
       'postgres/control',
       'pn-config',
       'pn-migration-resource',
