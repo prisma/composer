@@ -36,17 +36,30 @@ export type PgWarm = Resource<'PrismaCloud.PgWarm', PgWarmProps, PgWarmAttribute
 /** The `PgWarm` resource constructor — `yield* PgWarm(id, { url })` in a lowering. */
 export const PgWarm = Resource<PgWarm>('PrismaCloud.PgWarm');
 
-/** Connect (retrying the cold-start) and run `select 1`, then release the connection. */
-async function warmDatabase(url: string): Promise<void> {
+/**
+ * Connect (retrying the cold-start) and run `select 1`, then release the
+ * connection. Exported so tests can drive it directly; `retry` overrides the
+ * bounded retry's defaults.
+ */
+export async function warmDatabase(
+  url: string,
+  retry: { readonly attempts?: number; readonly delayMs?: number } = {},
+): Promise<void> {
   await withConnectionRetry(async () => {
     const client = new pg.Client({ connectionString: normalizeSslMode(url) });
+    // A cold upstream can accept the connect and then drop the socket (FT-5226's
+    // second shape). pg reports that by emitting 'error' on the client, which is
+    // an uncaught exception with no listener — raised outside this promise, so
+    // the retry above never sees it and it would kill the deploy instead. The
+    // query/end rejection is what the retry acts on.
+    client.on('error', (error) => console.error('pg warm client socket error', error));
     await client.connect();
     try {
       await client.query('select 1');
     } finally {
       await client.end();
     }
-  });
+  }, retry);
 }
 
 /**

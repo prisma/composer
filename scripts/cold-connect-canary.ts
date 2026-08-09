@@ -13,15 +13,34 @@
  * canary; inconclusive → exit 0 with a CI warning annotation, so a flake
  * never blocks unrelated PRs. Sampling is adaptive: the first rejection ends
  * the run, and only an all-success streak keeps going to the full depth.
+ *
+ * Exit 1 is therefore a live instruction to delete production code, so it must
+ * mean a bug-gone verdict and nothing else. Every other outcome — a canary that
+ * cannot provision, a teardown that fails, a stray async error — exits 0 with
+ * the reason logged. See the uncaught-error handlers below for why that needs
+ * explicit work under bun.
  */
 import pg from 'pg';
 import { deleteProjectDeep, type HttpCall, type ProjectRef } from './ci-cleanup-utils.ts';
 import {
   type ColdConnectSample,
+  type ColdConnectVerdict,
   classifyColdConnectRun,
   classifyColdConnectSample,
   MIN_BUG_GONE_SAMPLES,
 } from './cold-connect-canary-classify.ts';
+
+// bun exits 1 on any uncaught error or unhandled rejection, whatever
+// process.exitCode says — which silently turns a stray socket error into this
+// script's "delete withConnectionRetry" signal. Absorbing them here keeps the
+// exit code equal to the verdict; the run's own failures are caught below, so
+// nothing that decides the verdict reaches these handlers.
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught error — logged only, the verdict decides the exit code:', error);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection — logged only, the verdict decides the exit code:', reason);
+});
 
 const API = 'https://api.prisma.io/v1';
 const REGION = 'us-east-1';
@@ -30,8 +49,14 @@ const SAMPLES = Number(process.env['COLD_CONNECT_SAMPLES'] ?? '5');
 const token = process.env['PRISMA_SERVICE_TOKEN'];
 const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
 if (!token || !workspaceId) {
+  // Exit 0, not 1: a run with no credentials sampled nothing, and exit 1 would
+  // tell the reader to delete withConnectionRetry on the strength of it.
   console.error('PRISMA_SERVICE_TOKEN and PRISMA_WORKSPACE_ID are required');
-  process.exit(1);
+  console.log(
+    '::warning title=Cold-connect canary (FT-5226) could not run::PRISMA_SERVICE_TOKEN and ' +
+      'PRISMA_WORKSPACE_ID are required — no FT-5226 verdict this run; not blocking.',
+  );
+  process.exit(0);
 }
 
 const runId = process.env['GITHUB_RUN_ID'] ?? `${process.pid}${Math.floor(Math.random() * 1000)}`;
@@ -104,6 +129,13 @@ async function sampleColdConnect(projectId: string, index: number): Promise<Cold
   if (!dsn) throw new Error('connection returned no direct/pooled connection string');
 
   const client = new pg.Client({ connectionString: dsn, connectionTimeoutMillis: 10_000 });
+  // PPg sometimes accepts the connect and then drops the socket. pg reports
+  // that as an 'error' event on the client, and an 'error' event with no
+  // listener is an uncaught exception. The connect/query failure below is what
+  // classifies the sample; this listener only keeps the report from killing us.
+  client.on('error', (error: Error) => {
+    console.log(`  sample #${index}: client reported a socket error — ${error.message}`);
+  });
   let connectError: unknown;
   const started = Date.now();
   try {
@@ -126,16 +158,18 @@ async function sampleColdConnect(projectId: string, index: number): Promise<Cold
 
 let project: ProjectRef | undefined;
 
-try {
+/** Provisions the project, samples until the verdict is settled, and reports it. */
+async function runCanary(): Promise<ColdConnectVerdict> {
   const createdProject = await apiData('POST', '/projects', {
     name: projectName,
     workspaceId,
   });
-  project = {
+  const created: ProjectRef = {
     id: requireString(createdProject, 'id'),
     name: requireString(createdProject, 'name'),
   };
-  console.log(`Created project "${project.name}" (${project.id}); sampling ${SAMPLES} cold DBs…`);
+  project = created;
+  console.log(`Created project "${created.name}" (${created.id}); sampling ${SAMPLES} cold DBs…`);
 
   // One rejection settles the verdict, so stop there. An all-success streak
   // keeps sampling up to MIN_BUG_GONE_SAMPLES — below that, all-success is
@@ -145,7 +179,7 @@ try {
     samples.length < SAMPLES ||
     (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
   ) {
-    const sample = await sampleColdConnect(project.id, samples.length);
+    const sample = await sampleColdConnect(created.id, samples.length);
     samples.push(sample);
     if (sample === 'rejected') break;
   }
@@ -158,15 +192,42 @@ try {
       `::warning title=Cold-connect canary (FT-5226) inconclusive::${result.message} [${detail}]`,
     );
   }
-  process.exitCode = result.verdict === 'bug-gone' ? 1 : 0;
-} finally {
-  if (project) {
-    console.log(`Deleting project "${project.name}" (${project.id})…`);
+  return result.verdict;
+}
+
+/**
+ * Teardown is best-effort: a leftover project costs one workspace slot until
+ * the CI cleanup job's next sweep of the `canary` prefix, which is not worth
+ * overturning a verdict the run already reached.
+ */
+async function deleteCanaryProject(): Promise<void> {
+  if (!project) return;
+  console.log(`Deleting project "${project.name}" (${project.id})…`);
+  const leaked = `canary project "${project.name}" (${project.id}) — the CI cleanup job sweeps the "canary" prefix.`;
+  try {
     const deleted = await deleteProjectDeep(http, project, { log: (line) => console.error(line) });
-    if (!deleted) {
-      console.error(
-        `Failed to delete canary project "${project.name}" (${project.id}) — check for a leak.`,
-      );
-    }
+    if (!deleted) console.error(`Could not delete ${leaked}`);
+  } catch (error) {
+    console.error(`Deleting ${leaked}\n  the delete threw:`, error);
   }
 }
+
+let verdict: ColdConnectVerdict;
+try {
+  verdict = await runCanary();
+} catch (error) {
+  // No samples means no verdict, so there is nothing to report about FT-5226 —
+  // and claiming bug-gone here would tell someone to delete a workaround this
+  // run never tested. Same treatment as inconclusive: loud, but not blocking.
+  console.error('Cold-connect canary failed before reaching a verdict:', error);
+  const detail = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ');
+  console.log(
+    `::warning title=Cold-connect canary (FT-5226) could not run::${detail} — no FT-5226 ` +
+      'verdict this run; not blocking. Keep withConnectionRetry.',
+  );
+  verdict = 'inconclusive';
+} finally {
+  await deleteCanaryProject();
+}
+
+process.exitCode = verdict === 'bug-gone' ? 1 : 0;
