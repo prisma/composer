@@ -42,6 +42,15 @@ const scope: LeaseScope = {
 
 let fake: FakeStateApi;
 
+/** Resolves once `condition` holds, so a test waits for work instead of racing a fixed sleep against it. */
+async function until(condition: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) throw new Error(`condition still false after ${timeoutMs}ms`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 beforeAll(async () => {
   fake = new FakeStateApi();
   await fake.start();
@@ -246,7 +255,10 @@ describe('the deploy lease', () => {
         const fiber = yield* Effect.forkChild(
           heartbeatDeployLease(sdkClient(), scope, lease, '10 millis'),
         );
-        yield* Effect.sleep('100 millis');
+        // Wait for the second heartbeat rather than sleeping a fixed span and
+        // hoping it fits: a loaded machine can starve the interval for longer
+        // than any sleep worth writing here, which is what made this flake.
+        yield* Effect.promise(() => until(() => fake.countRequests(/PATCH .*\/lease/) >= 2));
         yield* Fiber.interrupt(fiber);
       }),
     );

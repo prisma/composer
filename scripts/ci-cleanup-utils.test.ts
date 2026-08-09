@@ -131,6 +131,33 @@ describe('deleteProjectDeep', () => {
     }
   });
 
+  it('reports a thrown transport error as "not gone" instead of propagating it', async () => {
+    // The sweep in ci-cleanup.ts deletes projects in a loop, so a thrown
+    // error here would abandon every project after this one.
+    const log: string[] = [];
+    const throwing: HttpCall = () => Promise.reject(new Error('socket hang up'));
+    assert.equal(await deleteProjectDeep(throwing, PROJECT, fastOpts(log)), false);
+    assert.ok(log.some((l) => l.includes('socket hang up')));
+  });
+
+  it('retries past a transport blip in the post-teardown project delete', async () => {
+    const NO_SERVICES: HttpResponse = { status: 200, ok: true, body: '{"data":[]}' };
+    const steps: (HttpResponse | Error)[] = [
+      ACTIVE_DEPLOYMENT, // DELETE /projects — live compute blocks it
+      NO_SERVICES, // GET /apps
+      new Error('ECONNRESET'), // DELETE /projects — the blip
+      OK, // DELETE /projects — the retry
+    ];
+    let i = 0;
+    const flaky: HttpCall = () => {
+      const next = steps[i++];
+      if (next === undefined) throw new Error('unscripted call');
+      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+    };
+    assert.equal(await deleteProjectDeep(flaky, PROJECT, fastOpts()), true);
+    assert.equal(i, 4);
+  });
+
   it('on 409 active-deployment: lists services, deletes each, then retries the project delete', async () => {
     const log: string[] = [];
     const { http, calls } = scriptedHttp({

@@ -70,7 +70,11 @@ describe('database lifecycle', () => {
 
     await client.deleteApp('pgtest-lifecycle');
     expect(await client.listDatabases('pgtest-lifecycle')).toHaveLength(0);
-  }, 30_000);
+    // 60s, not 30s: this boots a real Postgres and every step is awaited, so
+    // there is no race to fix here — it is simply slow, and 30s left no room
+    // for a loaded CI runner (observed timing out at 30151ms against a ~8s
+    // normal run). The heavier tests below already sit at 45-120s.
+  }, 60_000);
 
   test('ensure is idempotent — a second call returns the same URL without restarting', async () => {
     await ensureFreshDaemon('postgres', registryRoot);
@@ -81,7 +85,8 @@ describe('database lifecycle', () => {
     expect(second.url).toBe(first.url);
 
     await client.deleteApp('pgtest-idempotent');
-  }, 30_000);
+    // Same daemon-boot cost as the test above, so the same budget.
+  }, 60_000);
 });
 
 describe('port stability across a daemon restart', () => {

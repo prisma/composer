@@ -120,7 +120,19 @@ export async function deleteProjectDeep(
   const projectAttempts = opts.projectDeleteAttempts ?? 6;
   const projectDelayMs = opts.projectDeleteDelayMs ?? 5_000;
 
-  const first = await http('DELETE', `/projects/${project.id}`);
+  // A sweep deletes many projects in a loop, so a thrown transport error
+  // would abandon every project after this one. Reported as an unusable
+  // response instead: "gone or not gone" is all a caller can act on, and the
+  // project-delete retry below then treats a blip as worth another attempt.
+  const call = async (method: 'GET' | 'DELETE', path: string): Promise<HttpResponse> => {
+    try {
+      return await http(method, path);
+    } catch (error) {
+      return { status: 0, ok: false, body: `transport error: ${String(error)}` };
+    }
+  };
+
+  const first = await call('DELETE', `/projects/${project.id}`);
   if (first.ok || first.status === 404) return true;
   if (!isActiveDeployment409(first)) {
     opts.log(
@@ -131,7 +143,7 @@ export async function deleteProjectDeep(
 
   // Live compute blocks the project delete — enumerate and tear down.
   opts.log(`  "${project.name}" has an active deployment — tearing its apps down…`);
-  const listed = await http('GET', `/apps?projectId=${project.id}&limit=100`);
+  const listed = await call('GET', `/apps?projectId=${project.id}&limit=100`);
   if (!listed.ok) {
     opts.log(`  could not list apps for "${project.name}": ${listed.status} ${listed.body}`);
     return false;
@@ -139,7 +151,7 @@ export async function deleteProjectDeep(
   for (const service of parseServiceRows(listed.body)) {
     opts.log(`    deleting app "${service.name}" (${service.id})…`);
     for (let attempt = 1; attempt <= serviceAttempts; attempt++) {
-      const res = await http('DELETE', `/apps/${service.id}`);
+      const res = await call('DELETE', `/apps/${service.id}`);
       if (res.ok || res.status === 404) break;
       if (isDeleteNotSafeYet409(res) && attempt < serviceAttempts) {
         // The deployment is still winding down — the one retryable state.
@@ -153,7 +165,7 @@ export async function deleteProjectDeep(
 
   // Services gone (or as gone as they get) — re-try the project delete.
   for (let attempt = 1; attempt <= projectAttempts; attempt++) {
-    const res = await http('DELETE', `/projects/${project.id}`);
+    const res = await call('DELETE', `/projects/${project.id}`);
     if (res.ok || res.status === 404) return true;
     if (attempt < projectAttempts) {
       await sleep(projectDelayMs);
