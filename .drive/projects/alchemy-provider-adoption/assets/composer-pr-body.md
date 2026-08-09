@@ -14,7 +14,7 @@ Layer.mergeAll(
 )
 ```
 
-Why: upstream tracks the Management API so we don't, and its deploy lifecycle is better than ours was — cleanup of failed deployments, terminal-status fast-fail, post-promote endpoint observation. Decision record: ADR-0043.
+Why: upstream tracks the Management API so we don't, and its deploy lifecycle is better than ours was — cleanup of failed deployments, terminal-status fast-fail, post-promote endpoint observation. Decision record: ADR-0046.
 
 ## What changed
 

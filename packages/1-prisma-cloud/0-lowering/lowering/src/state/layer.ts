@@ -17,7 +17,6 @@ import { resolveDefaultBranchId } from '../container.ts';
 import * as credentials from '../credentials.ts';
 import { failOnEmptyScopeWithLiveResources, scopeOccupied } from './empty-scope.ts';
 import { hostedStateBootstrapError } from './errors.ts';
-import { migrateLegacyResourceState } from './legacy-resources.ts';
 import {
   acquireDeployLease,
   heartbeatDeployLease,
@@ -25,6 +24,7 @@ import {
   redactLeaseHeader,
   releaseDeployLease,
 } from './lease.ts';
+import { migrateLegacyResourceState } from './legacy-resources.ts';
 
 /**
  * The hosted Alchemy state store: alchemy's stock HTTP state client pointed

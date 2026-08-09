@@ -21,26 +21,21 @@ import * as Prisma from 'alchemy/Prisma';
 import type * as Provider from 'alchemy/Provider';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
-import type { CreatedResourceState, ReplacedResourceState } from 'alchemy/State';
+import {
+  type CreatedResourceState,
+  type ReplacedResourceState,
+  State,
+  type StateService,
+} from 'alchemy/State';
 import { PlatformServices } from 'alchemy/Util/PlatformServices';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import postgres from 'postgres';
+import { stateLayerAgainst } from '../layer.ts';
 import { migrateLegacyResourceState } from '../legacy-resources.ts';
-import { migratePrismaState } from '../schema.ts';
-import { makePrismaStateService } from '../service.ts';
-import { startTestPostgres, type TestPostgres } from './harness.ts';
+import { FakeStateApi } from './fake-state-api.ts';
 
-const pg: TestPostgres | undefined = startTestPostgres();
-
-if (pg === undefined) {
-  console.warn(
-    '[alchemy/state] skipping legacy-state migration tests: no Postgres available. ' +
-      'Set STATE_TEST_DATABASE_URL to point at one, or install initdb/pg_ctl ' +
-      '(e.g. `brew install postgresql@15`) on PATH.',
-  );
-}
+process.env['PRISMA_SERVICE_TOKEN'] ??= 'test-service-token';
 
 const DIRECT_URL = 'postgres://user:pass@db.prisma.io:5432/postgres';
 
@@ -789,30 +784,50 @@ describe('legacy compute-family rows against upstream providers', () => {
   });
 });
 
-describe.skipIf(pg === undefined)('state service round-trip of legacy rows', () => {
-  if (pg === undefined) return;
-
-  const sql = postgres(pg.url, { max: 5, onnotice: () => {} });
-  const service = makePrismaStateService(sql);
+describe('state round-trip of legacy rows through the hosted state layer', () => {
+  // The REAL layer (stateLayerAgainst → stock HTTP client → on-read
+  // migration) against an in-process fake of the platform state API — the
+  // same wiring a deploy uses, so this proves the layer applies the
+  // migration, not just that the pure function works.
+  const fake = new FakeStateApi();
   const stack = 'legacy-state-stack';
-  const stage = 'legacy-state-stage';
+  const stage = 'br_legacy';
 
   beforeAll(async () => {
-    await Effect.runPromise(migratePrismaState(sql));
+    await fake.start();
   });
 
   afterAll(async () => {
-    await Effect.runPromise(service.deleteStack({ stack }));
-    await sql.end({ timeout: 1 });
-    pg.stop();
+    await fake.stop();
   });
 
-  test('an old-shape Database row persisted as-is is read back in the upstream shape', async () => {
-    await Effect.runPromise(
-      service.set({ stack, stage, fqn: 'data-db', value: legacyDatabaseRow() }),
+  const stackContext = Layer.succeed(Stack, {
+    name: stack,
+    stage,
+    resources: {},
+    bindings: {},
+    actions: {},
+  });
+
+  const runLayer = <A>(use: (service: StateService) => Effect.Effect<A, unknown>): Promise<A> => {
+    const layer = stateLayerAgainst(fake.origin, {
+      projectId: 'proj-legacy',
+      branchId: 'br-legacy',
+    }).pipe(Layer.provide(stackContext)) as unknown as Layer.Layer<State>;
+    return Effect.runPromise(
+      Effect.gen(function* () {
+        const service = yield* yield* State;
+        return yield* use(service).pipe(Effect.orDie);
+      }).pipe(Effect.provide(layer)) as Effect.Effect<A>,
     );
-    const row = (await Effect.runPromise(
-      service.get({ stack, stage, fqn: 'data-db' }),
+  };
+
+  test('an old-shape Database row persisted as-is is read back in the upstream shape', async () => {
+    const row = (await runLayer((service) =>
+      Effect.gen(function* () {
+        yield* service.set({ stack, stage, fqn: 'data-db', value: legacyDatabaseRow() });
+        return yield* service.get({ stack, stage, fqn: 'data-db' });
+      }),
     )) as MigratedRow;
     expect(row.resourceType).toBe('Prisma.Database');
     expect(row.attr).toMatchObject({ databaseId: 'db-1', databaseName: 'data' });
@@ -820,11 +835,11 @@ describe.skipIf(pg === undefined)('state service round-trip of legacy rows', () 
   });
 
   test('an old-shape Connection row round-trips with the Redacted secret intact', async () => {
-    await Effect.runPromise(
-      service.set({ stack, stage, fqn: 'data-conn', value: legacyConnectionRow() }),
-    );
-    const row = (await Effect.runPromise(
-      service.get({ stack, stage, fqn: 'data-conn' }),
+    const row = (await runLayer((service) =>
+      Effect.gen(function* () {
+        yield* service.set({ stack, stage, fqn: 'data-conn', value: legacyConnectionRow() });
+        return yield* service.get({ stack, stage, fqn: 'data-conn' });
+      }),
     )) as MigratedRow;
     expect(row.resourceType).toBe('Prisma.Connection');
     expect(row.attr).toMatchObject({ connectionId: 'conn-1', databaseId: 'db-1' });

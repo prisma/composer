@@ -6,7 +6,6 @@
     ".": "./dist/index.mjs",
     "./buckets": "./dist/buckets.mjs",
     "./compute": "./dist/compute.mjs",
-    "./postgres": "./dist/postgres.mjs",
     "./state": "./dist/state.mjs",
     "./package.json": "./package.json"
   },
