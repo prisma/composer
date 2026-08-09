@@ -103,6 +103,18 @@ describe('runPackPreflight', () => {
     );
   });
 
+  test('fails naming both heads when the config lists the pack at a different head', async () => {
+    // The pack IS listed, so the missing-pack check above passes it through —
+    // only comparing heads catches a database whose migration step would take
+    // it to a head the service is not typed against.
+    const graph = graphWith(GADGET_PACK_ID, 'a-different-head', pnDb());
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `prisma-next database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        `${GADGET_PACK_HEAD_HASH}, but service "api" requires a-different-head. ` +
+        'Upgrade the pack and run migration plan.',
+    );
+  });
+
   test('fails when a pack-requirement edge is wired to a non-pnPostgres provider', async () => {
     // A resource that PROVIDES a prisma-next contract (so the wiring
     // satisfies) but is not a pnPostgres resource node — it has no config to
