@@ -21,12 +21,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { computeMigrationHash } from '@prisma-next/migration-tools/hash';
-import { writeMigrationPackage } from '@prisma-next/migration-tools/io';
+import { computeMigrationHash } from '@prisma/orm-toolchain/migration-tools/hash';
+import { writeMigrationPackage } from '@prisma/orm-toolchain/migration-tools/io';
 import {
-  emitContractSpaceArtefacts,
+  emitContractSpaceArtifacts,
   spaceMigrationDirectory,
-} from '@prisma-next/migration-tools/spaces';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import pg from 'pg';
 import type { PnExtensionPack } from '../pn-config.ts';
 import { applyPnMigration, targetStorageHash } from '../prisma-next-migrate.ts';
@@ -81,7 +81,7 @@ async function materialisePackSpace(migrationsDir: string): Promise<void> {
     path.join(import.meta.dir, 'fixtures', 'gadget-contract', 'emitted', 'contract.d.ts'),
     'utf8',
   );
-  await emitContractSpaceArtefacts(migrationsDir, PACK_SPACE_ID, {
+  await emitContractSpaceArtifacts(migrationsDir, PACK_SPACE_ID, {
     contract: gadgetContractJson,
     contractDts,
     headRef: { hash: gadgetHash, invariants: [] },
@@ -184,7 +184,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
       contractJson: widgetContractJson,
       migrationsDir,
       ref: { hash: widgetHash, invariants: [] },
-      extensionPacks: [gadgetPack],
+      extensions: [gadgetPack],
     });
 
     expect(outcome.action).toBe('init');
@@ -203,7 +203,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
       contractJson: widgetContractJson,
       migrationsDir,
       ref: { hash: widgetHash, invariants: [] },
-      extensionPacks: [gadgetPack],
+      extensions: [gadgetPack],
     });
 
     // The app marker alone cannot vouch for the pack spaces, so the decision

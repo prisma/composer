@@ -1,5 +1,22 @@
 [
   {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
     "id": "table.order",
     "label": "Create table \"order\"",
     "summary": "Creates table \"order\"",
@@ -24,7 +41,7 @@
     "execute": [
       {
         "description": "create table \"order\"",
-        "sql": "CREATE TABLE \"public\".\"order\" (\n  \"id\" character(36) NOT NULL,\n  \"placedAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"productId\" text NOT NULL,\n  \"productName\" text NOT NULL,\n  \"quantity\" int4 NOT NULL,\n  \"totalCents\" int4 NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"public\".\"order\" (\n  \"id\" text NOT NULL,\n  \"placedAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"productId\" text NOT NULL,\n  \"productName\" text NOT NULL,\n  \"quantity\" int4 NOT NULL,\n  \"totalCents\" int4 NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],

@@ -45,7 +45,7 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
         throw new Error(`prisma-next lowering received a non-prisma-next node (${id}).`);
       }
       const contractJson = node.provides.__cmp.contractJson;
-      const { migrationsDir, extensionPacks } = yield* Effect.promise(() =>
+      const { migrationsDir, extensions } = yield* Effect.promise(() =>
         resolvePrismaNextConfig(node.config),
       );
       // The target REF (node's named `targetRef`, or head by default) is
@@ -72,7 +72,7 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
         migrationsDir,
         targetHash: ref.hash,
         invariants: [...ref.invariants].sort(),
-        packHeadRefHashes: packHeadRefHashes(extensionPacks),
+        packHeadRefHashes: packHeadRefHashes(extensions),
         configPath: node.config,
         ...(node.targetRef !== undefined ? { refName: node.targetRef } : {}),
       });

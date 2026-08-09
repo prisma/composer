@@ -12,18 +12,18 @@
  * `node:` import — the same discipline `control.ts` already follows by
  * delegating fs/tar to `@internal/lowering` (invariant 5).
  */
-import { loadConfig, type PrismaNextConfig } from '@prisma-next/config-loader';
+import { loadConfig, type PrismaNextConfig } from '@prisma/orm-toolchain/config-loader';
 import { resolve } from 'pathe';
 
 /** One declared extension pack, as PN's validated config carries it. */
-export type PnExtensionPack = NonNullable<PrismaNextConfig['extensionPacks']>[number];
+export type PnExtensionPack = NonNullable<PrismaNextConfig['extensions']>[number];
 
 /** What the deploy reads out of one `prisma-next.config.ts`. */
 export interface ResolvedPrismaNextConfig {
   /** The absolute migrations directory PN reads authored migration packages from. */
   readonly migrationsDir: string;
   /** The config's declared extension packs (`[]` when it declares none). */
-  readonly extensionPacks: readonly PnExtensionPack[];
+  readonly extensions: readonly PnExtensionPack[];
 }
 
 /** Loads the config at `configPath` and resolves the facts the deploy consumes. */
@@ -35,7 +35,7 @@ export async function resolvePrismaNextConfig(
     // `resolve(configPath, '..')` is the config file's directory; the
     // migrations root is `migrations.dir` (or the default) relative to it.
     migrationsDir: resolve(configPath, '..', config.migrations?.dir ?? 'migrations'),
-    extensionPacks: config.extensionPacks ?? [],
+    extensions: config.extensions ?? [],
   };
 }
 
@@ -52,8 +52,6 @@ export async function resolveMigrationsDir(configPath: string): Promise<string> 
  * `contractSpace` contributes `"-"` for its head — it declares no migratable
  * space, but its presence still belongs in the key.
  */
-export function packHeadRefHashes(extensionPacks: readonly PnExtensionPack[]): readonly string[] {
-  return extensionPacks
-    .map((pack) => `${pack.id}:${pack.contractSpace?.headRef.hash ?? '-'}`)
-    .sort();
+export function packHeadRefHashes(extensions: readonly PnExtensionPack[]): readonly string[] {
+  return extensions.map((pack) => `${pack.id}:${pack.contractSpace?.headRef.hash ?? '-'}`).sort();
 }

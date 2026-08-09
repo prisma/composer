@@ -31,7 +31,7 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
-      /^@prisma\//,
+      /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
       /^@durable-streams\//,
@@ -50,6 +50,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\//, /^fastq/, /^reusify/],
+    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/, /^fastq/, /^reusify/],
   },
 ]);

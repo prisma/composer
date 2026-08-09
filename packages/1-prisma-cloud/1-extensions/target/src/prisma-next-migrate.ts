@@ -3,7 +3,7 @@
  * the safety-critical decision that brings a live database to a target REF
  * using ONLY Prisma Next's authored migrations.
  *
- * Deploy-time only: this module imports `@prisma-next/postgres/control` (which
+ * Deploy-time only: this module imports `@prisma/orm-postgres/control` (which
  * transitively pulls PN's control/migration machinery + `pg`). It is imported
  * by the deploy descriptors and this package's tests, NEVER by `index.ts` / the
  * `./prisma-next` authoring entry — so it never lands in an app runtime bundle
@@ -30,14 +30,15 @@
  * PN applies each migration in its own transaction, so a failed apply is atomic
  * and resume-safe — the marker and schema are left as the last committed step.
  */
-import { readRef } from '@prisma-next/migration-tools/refs';
+
+import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { readRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
   readContractSpaceHeadRef,
   spaceMigrationDirectory,
   spaceRefsDirectory,
-} from '@prisma-next/migration-tools/spaces';
-import { createPostgresControlClient } from '@prisma-next/postgres/control';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import { normalizeSslMode, withConnectionRetry } from './pg-connection.ts';
 import type { PnExtensionPack } from './pn-config.ts';
 
@@ -178,7 +179,7 @@ export async function applyPnMigration(opts: {
   readonly ref: PnTargetRef;
   readonly refName?: string;
   /** The project's declared extension packs — threaded into PN's aggregate (multi-space) pipeline. */
-  readonly extensionPacks?: readonly PnExtensionPack[];
+  readonly extensions?: readonly PnExtensionPack[];
 }): Promise<PnMigrationOutcome> {
   const connection = normalizeSslMode(opts.url);
   // Retry the connect+operation past PPG's cold-start (see withConnectionRetry).
@@ -192,7 +193,7 @@ export async function applyPnMigration(opts: {
         opts.migrationsDir,
         opts.ref,
         opts.refName,
-        opts.extensionPacks ?? [],
+        opts.extensions ?? [],
       ),
     { shouldRetry: (error) => !(error instanceof PnMigrationError) },
   );
@@ -204,9 +205,9 @@ async function runMigration(
   migrationsDir: string,
   ref: PnTargetRef,
   refName: string | undefined,
-  extensionPacks: readonly PnExtensionPack[],
+  extensions: readonly PnExtensionPack[],
 ): Promise<PnMigrationOutcome> {
-  const client = createPostgresControlClient({ connection, extensionPacks });
+  const client = createPostgresControlClient({ connection, extensions });
   await client.connect();
   try {
     const marker = await client.readMarker();
@@ -218,7 +219,7 @@ async function runMigration(
     // no extension packs are declared; with packs, fall through to `migrate`,
     // whose per-space path resolution no-ops each space already at its head.
     if (action === 'noop') {
-      if (extensionPacks.length === 0) {
+      if (extensions.length === 0) {
         return { action, targetHash: ref.hash, markerHashBefore };
       }
       action = 'migrate';

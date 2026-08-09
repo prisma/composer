@@ -47,13 +47,13 @@ describe('resolvePrismaNextConfig', () => {
 
   test('a config with no extension packs yields []', async () => {
     const project = await resolvePrismaNextConfig(widgetConfig);
-    expect(project.extensionPacks).toEqual([]);
+    expect(project.extensions).toEqual([]);
   });
 
   test('surfaces declared extension packs with their contract-space heads', async () => {
     const project = await resolvePrismaNextConfig(packedConfig);
-    expect(project.extensionPacks.map((p) => p.id)).toEqual([GADGET_PACK_ID]);
-    expect(project.extensionPacks[0]?.contractSpace?.headRef.hash).toBe(GADGET_PACK_HEAD_HASH);
+    expect(project.extensions.map((p) => p.id)).toEqual([GADGET_PACK_ID]);
+    expect(project.extensions[0]?.contractSpace?.headRef.hash).toBe(GADGET_PACK_HEAD_HASH);
   });
 
   test('resolveMigrationsDir stays the migrationsDir projection of resolvePrismaNextConfig', async () => {
@@ -84,15 +84,15 @@ describe('packHeadRefHashes (the migration-resource diff-key fold)', () => {
     }) as unknown as PnExtensionPack;
 
   test('one entry per pack, "<id>:<headHash>", sorted by pack id', () => {
-    expect(packHeadRefHashes([pack('zeta', 'sha256:z'), pack('alpha', 'sha256:a')])).toEqual([
-      'alpha:sha256:a',
-      'zeta:sha256:z',
+    expect(packHeadRefHashes([pack('zeta', 'z'), pack('alpha', 'a')])).toEqual([
+      'alpha:a',
+      'zeta:z',
     ]);
   });
 
   test('a pack upgrade (new head hash) changes its entry', () => {
-    expect(packHeadRefHashes([pack('auth', 'sha256:v1')])).not.toEqual(
-      packHeadRefHashes([pack('auth', 'sha256:v2')]),
+    expect(packHeadRefHashes([pack('auth', 'v1')])).not.toEqual(
+      packHeadRefHashes([pack('auth', 'v2')]),
     );
   });
 

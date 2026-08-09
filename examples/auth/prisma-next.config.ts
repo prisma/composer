@@ -1,5 +1,5 @@
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
-import { defineConfig } from '@prisma-next/postgres/config';
+import { defineConfig } from '@prisma/orm-postgres/config';
 
 // The Prisma Next config anchors the (empty) app contract and the migrations
 // directory, and declares the auth extension pack — `prisma-next migration

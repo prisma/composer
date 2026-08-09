@@ -35,7 +35,9 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
-      /^@prisma\//,
+      // `@prisma/orm-*` (the Prisma Next shells) are excluded: this entrypoint
+      // must not carry the ORM, which the app resolves from its own facade.
+      /^@prisma\/(?!orm-)/,
       /^arktype/,
       /^@standard-schema\//,
       /^better-auth/,
@@ -66,12 +68,10 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
-      /^@prisma\//,
       // The local bootstrap runs the real PN dbInit path, so the control
-      // client (and the rest of the @prisma-next graph it reaches) must ride
-      // inside the bundle — @prisma-next/postgres is a devDependency here
-      // precisely because consumers never resolve it themselves.
-      /^@prisma-next\//,
+      // client (and the rest of the @prisma/orm-* graph it reaches) must ride
+      // inside the bundle — consumers never resolve those packages themselves.
+      /^@prisma\//,
       /^arktype/,
       /^@standard-schema\//,
       /^better-auth/,

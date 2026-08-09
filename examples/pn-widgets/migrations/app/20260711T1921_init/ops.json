@@ -1,5 +1,22 @@
 [
   {
+    "id": "schema.public",
+    "label": "Create schema \"public\"",
+    "operationClass": "additive",
+    "target": {
+      "id": "postgres"
+    },
+    "precheck": [],
+    "execute": [
+      {
+        "description": "Create schema \"public\"",
+        "sql": "CREATE SCHEMA IF NOT EXISTS \"public\"",
+        "params": []
+      }
+    ],
+    "postcheck": []
+  },
+  {
     "id": "table.Widget",
     "label": "Create table \"Widget\"",
     "summary": "Creates table \"Widget\"",
@@ -24,7 +41,7 @@
     "execute": [
       {
         "description": "create table \"Widget\"",
-        "sql": "CREATE TABLE \"public\".\"Widget\" (\n  \"id\" character(36) NOT NULL,\n  \"label\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"public\".\"Widget\" (\n  \"id\" text NOT NULL,\n  \"label\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],

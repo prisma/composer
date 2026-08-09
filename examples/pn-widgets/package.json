@@ -10,9 +10,9 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${PN_WIDGETS_STACK_NAME:+--name \"$PN_WIDGETS_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@prisma-next/postgres": "0.16.0",
     "@prisma/composer": "workspace:0.6.0",
     "@prisma/composer-prisma-cloud": "workspace:0.6.0",
+    "@prisma/orm-postgres": "0.17.0",
     "effect": "4.0.0-beta.103",
     "pg": "8.22.0"
   },

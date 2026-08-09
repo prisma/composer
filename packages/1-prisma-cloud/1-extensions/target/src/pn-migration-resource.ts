@@ -14,7 +14,7 @@
  * PnMigrationProvider())`), and Alchemy resolves it at apply via a direct
  * provider-tag lookup (`tryFindProviderByType`) — no change to `@internal/lowering`.
  *
- * Deploy-time only: imports `@prisma-next/postgres/control` (via the helper) +
+ * Deploy-time only: imports `@prisma/orm-postgres/control` (via the helper) +
  * `alchemy`. Imported by `control.ts` and tests, never by `index.ts` / the
  * `./prisma-next` authoring entry — index isolation holds.
  */
@@ -89,16 +89,16 @@ export const pnMigrationProviderService: Provider.ProviderService<PnMigration> =
         // in Alchemy state and a descriptor is live code. Loaded only when
         // the key says packs are declared, so a pack-free project never pays
         // (or depends on) the config load at apply time.
-        const extensionPacks =
+        const extensions =
           news.packHeadRefHashes.length > 0
-            ? (await resolvePrismaNextConfig(news.configPath)).extensionPacks
+            ? (await resolvePrismaNextConfig(news.configPath)).extensions
             : [];
         return applyPnMigration({
           url: news.url,
           contractJson: news.contractJson,
           migrationsDir: news.migrationsDir,
           ref: { hash: news.targetHash, invariants: news.invariants },
-          extensionPacks,
+          extensions,
           ...(news.refName !== undefined ? { refName: news.refName } : {}),
         });
       },
