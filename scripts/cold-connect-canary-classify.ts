@@ -1,6 +1,7 @@
 /**
- * Pass/fail logic for cold-connect-canary.ts, split out for offline unit
- * testing. Duplicates the transient-error signatures from
+ * Decision logic for cold-connect-canary.ts — which outcomes count as what, and
+ * how a run collects its samples — split out for offline unit testing, with no
+ * Management API and no real waiting. Duplicates the transient-error signatures from
  * packages/compose-cloud/src/pg-connection.ts (not exported from that package's
  * public entry points) — keep in sync if that list changes.
  *
@@ -75,10 +76,22 @@ export interface ColdConnectResult {
 /**
  * How many all-success samples it takes before `bug-gone` is claimed. The
  * rejection is intermittent, so a short unanimous streak is the expected
- * outcome of a run that is too small, not evidence of a fix. Same reasoning
- * and figure as the cold-start canary's hold requirement (gotchas.md,
- * PRO-217): at a conservative 20% rejection rate, 0.8^14 ≈ 4.4% chance of a
- * lucky streak.
+ * outcome of a run that is too small, not evidence of a fix. Same figure as
+ * the cold-start canary's hold requirement (gotchas.md, PRO-217).
+ *
+ * This number alone does NOT carry the confidence it looks like it does. It
+ * was justified as "at a conservative 20% rejection rate, 0.8^14 ≈ 4.4%
+ * chance of a lucky streak", which assumes every sample is an independent
+ * draw at a fixed rate. Measured over 20 runs (63 samples) that assumption is
+ * false: the overall rate was 30%, but 8 of those runs rejected on their very
+ * first sample while others ran 8, 10 and 14 samples clean. The outcome is
+ * dominated by conditions that hold for a whole run, so raising this number
+ * mostly buys more samples from runs that were already sailing through — one
+ * of which produced a false bug-gone verdict on 2026-08-09.
+ *
+ * What makes a sample worth counting is that it met a cold database at all,
+ * which is why the canary now spaces its samples (SAMPLE_INTERVAL_MS in
+ * cold-connect-canary.ts). Re-derive that interval before this number.
  */
 export const MIN_BUG_GONE_SAMPLES = 14;
 
@@ -130,4 +143,55 @@ export function classifyColdConnectRun(samples: readonly ColdConnectSample[]): C
     verdict: 'inconclusive',
     message: `Inconclusive across ${n} samples (${success} ok, ${count('timeout')} timeout, ${count('other')} other, 0 active rejections) — FT-5226 may be fixed via a slow cold start, or the canary/credentials are broken. A human should look; not blocking.`,
   };
+}
+
+export interface SampleCollectionOptions {
+  /** Provisions a fresh cold database and returns its first-connect outcome. */
+  readonly sample: (index: number) => Promise<ColdConnectSample>;
+  readonly sleep: (ms: number) => Promise<void>;
+  readonly now: () => number;
+  /** Samples taken before the loop may stop on a non-rejection outcome. */
+  readonly minSamples: number;
+  /** Spacing between samples, so each one meets a genuinely cold database. */
+  readonly intervalMs: number;
+  /** The run's own wall-clock budget, sitting below the CI job's timeout. */
+  readonly maxRunMs: number;
+  readonly log: (line: string) => void;
+}
+
+/**
+ * Samples until the verdict is settled: one rejection settles it outright, and
+ * an all-success streak keeps going to {@link MIN_BUG_GONE_SAMPLES} because
+ * anything shorter is luck rather than the bug-gone forcing signal.
+ *
+ * Samples are spaced. Stopping early on the run's budget can never manufacture
+ * a bug-gone verdict, because short of {@link MIN_BUG_GONE_SAMPLES} an
+ * all-success run classifies as inconclusive.
+ */
+export async function collectColdConnectSamples(
+  opts: SampleCollectionOptions,
+): Promise<ColdConnectSample[]> {
+  const samples: ColdConnectSample[] = [];
+  const startedAt = opts.now();
+  while (
+    samples.length < opts.minSamples ||
+    (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
+  ) {
+    if (opts.now() - startedAt > opts.maxRunMs) {
+      opts.log(
+        `  stopping after ${samples.length} sample(s): the run's own ${opts.maxRunMs}ms budget is spent.`,
+      );
+      break;
+    }
+    // Never before the first sample — that would just delay the run without
+    // making anything colder.
+    if (samples.length > 0) {
+      opts.log(`  waiting ${opts.intervalMs}ms before sample #${samples.length}…`);
+      await opts.sleep(opts.intervalMs);
+    }
+    const sample = await opts.sample(samples.length);
+    samples.push(sample);
+    if (sample === 'rejected') break;
+  }
+  return samples;
 }

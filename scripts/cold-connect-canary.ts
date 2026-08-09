@@ -27,7 +27,7 @@ import {
   type ColdConnectVerdict,
   classifyColdConnectRun,
   classifyColdConnectSample,
-  MIN_BUG_GONE_SAMPLES,
+  collectColdConnectSamples,
 } from './cold-connect-canary-classify.ts';
 
 // bun exits 1 on any uncaught error or unhandled rejection, whatever
@@ -45,6 +45,26 @@ process.on('unhandledRejection', (reason) => {
 const API = 'https://api.prisma.io/v1';
 const REGION = 'us-east-1';
 const SAMPLES = Number(process.env['COLD_CONNECT_SAMPLES'] ?? '5');
+/**
+ * Spacing between samples. Back-to-back sampling produced a false bug-gone
+ * verdict on 2026-08-09 (run 31330072181, 14/14 successes) while runs minutes
+ * either side of it still saw the rejection: across 20 runs the successes came
+ * back in a median of 122ms against 546ms for rejections, so the quick ones
+ * were reaching an already-warm upstream and testing nothing. A sample that
+ * never met a cold database is not evidence the cold-connect bug is gone.
+ *
+ * 60s is the sibling cold-start canary's interval (SAMPLE_INTERVAL_MS there),
+ * adopted for the same reason rather than derived from measurement here — if
+ * false bug-gone verdicts persist, that is the number to re-derive first.
+ *
+ * The pause belongs BETWEEN samples. Never put one between provisioning a
+ * database and connecting to it: that warms the very thing under test.
+ */
+const SAMPLE_INTERVAL_MS = Number(process.env['COLD_CONNECT_SAMPLE_INTERVAL_MS'] ?? '60000');
+/** The run's own wall-clock budget, below the job's timeout so the script stops itself and still reports. */
+const MAX_RUN_MS = Number(process.env['COLD_CONNECT_MAX_RUN_MS'] ?? '900000');
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const token = process.env['PRISMA_SERVICE_TOKEN'];
 const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
@@ -171,18 +191,15 @@ async function runCanary(): Promise<ColdConnectVerdict> {
   project = created;
   console.log(`Created project "${created.name}" (${created.id}); sampling ${SAMPLES} cold DBs…`);
 
-  // One rejection settles the verdict, so stop there. An all-success streak
-  // keeps sampling up to MIN_BUG_GONE_SAMPLES — below that, all-success is
-  // luck, not the bug-gone forcing signal (see classifyColdConnectRun).
-  const samples: ColdConnectSample[] = [];
-  while (
-    samples.length < SAMPLES ||
-    (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
-  ) {
-    const sample = await sampleColdConnect(created.id, samples.length);
-    samples.push(sample);
-    if (sample === 'rejected') break;
-  }
+  const samples = await collectColdConnectSamples({
+    sample: (index) => sampleColdConnect(created.id, index),
+    sleep,
+    now: () => Date.now(),
+    minSamples: SAMPLES,
+    intervalMs: SAMPLE_INTERVAL_MS,
+    maxRunMs: MAX_RUN_MS,
+    log: (line) => console.log(line),
+  });
 
   const result = classifyColdConnectRun(samples);
   console.log(result.message);

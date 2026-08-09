@@ -5,6 +5,7 @@ import {
   type ColdConnectSample,
   classifyColdConnectRun,
   classifyColdConnectSample,
+  collectColdConnectSamples,
   MIN_BUG_GONE_SAMPLES,
 } from './cold-connect-canary-classify.ts';
 
@@ -102,5 +103,65 @@ describe("classifyColdConnectRun (unanimity, with a REQUIRED check's three exits
 
   it('zero samples → inconclusive (broken canary; warn, do not block)', () => {
     assert.equal(classifyColdConnectRun([]).verdict, 'inconclusive');
+  });
+});
+
+describe('collectColdConnectSamples', () => {
+  /** A driver with a virtual clock, so spacing is asserted rather than waited out. */
+  function driver(outcomes: ColdConnectSample[]) {
+    const waits: number[] = [];
+    const logs: string[] = [];
+    let clock = 0;
+    const run = (overrides: { minSamples?: number; maxRunMs?: number } = {}) =>
+      collectColdConnectSamples({
+        sample: (index) => {
+          clock += 1_000; // each sample costs a second of the run's budget
+          return Promise.resolve(outcomes[index] ?? 'success');
+        },
+        sleep: (ms) => {
+          waits.push(ms);
+          clock += ms;
+          return Promise.resolve();
+        },
+        now: () => clock,
+        minSamples: overrides.minSamples ?? 5,
+        intervalMs: 60_000,
+        maxRunMs: overrides.maxRunMs ?? 900_000,
+        log: (line) => logs.push(line),
+      });
+    return { waits, logs, run };
+  }
+
+  it('never pauses before the first sample, and pauses once between each pair after', async () => {
+    const d = driver(['success', 'success', 'success', 'success', 'timeout']);
+    const samples = await d.run();
+    assert.equal(samples.length, 5);
+    // Four gaps between five samples — not five, which would mean a pointless
+    // pause before the run had provisioned anything.
+    assert.deepEqual(d.waits, [60_000, 60_000, 60_000, 60_000]);
+  });
+
+  it('stops at the first rejection without pausing again', async () => {
+    const d = driver(['success', 'rejected', 'success']);
+    const samples = await d.run();
+    assert.deepEqual(samples, ['success', 'rejected']);
+    assert.deepEqual(d.waits, [60_000]);
+  });
+
+  it('keeps sampling past minSamples while every sample succeeds, up to MIN_BUG_GONE_SAMPLES', async () => {
+    const d = driver([]);
+    const samples = await d.run();
+    assert.equal(samples.length, MIN_BUG_GONE_SAMPLES);
+    assert.ok(samples.every((s) => s === 'success'));
+  });
+
+  it('stops on the run budget, and the short all-success run is not a bug-gone verdict', async () => {
+    // 1s per sample + 60s per gap, so a 200s budget stops it well short of 14.
+    const d = driver([]);
+    const samples = await d.run({ maxRunMs: 200_000 });
+    assert.ok(samples.length < MIN_BUG_GONE_SAMPLES, `stopped early, got ${samples.length}`);
+    assert.ok(d.logs.some((l) => l.includes('budget is spent')));
+    // The reason stopping early is safe: it cannot manufacture the forcing signal.
+    assert.equal(classifyColdConnectRun(samples).verdict, 'inconclusive');
   });
 });
