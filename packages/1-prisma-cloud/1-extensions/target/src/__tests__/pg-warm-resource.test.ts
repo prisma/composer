@@ -83,7 +83,8 @@ describe('a cold upstream that drops the socket after connecting', () => {
     server = net.createServer((socket) => {
       socket.on('error', () => {});
       let startupAnswered = false;
-      socket.on('data', (buf) => {
+      socket.on('data', (chunk) => {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         // SSLRequest → refuse, so the startup continues in plaintext.
         if (buf.length >= 8 && buf.readInt32BE(4) === 80877103) {
           socket.write(Buffer.from('N'));
