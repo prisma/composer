@@ -14,7 +14,13 @@ import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
+import {
+  type ConfigSection,
+  findConfigPathForEntry,
+  loadAppConfig,
+  missingConfigError,
+  requireConfigSections,
+} from './load-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
@@ -58,7 +64,10 @@ export async function resolveAppIdentity(
   if (configPath === undefined) {
     throw missingConfigError(resolvedEntryPath);
   }
-  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+  // Identity consumers (log) read only `extensions` — an invalid `state`
+  // section must not block them (the config contract's section rule).
+  const config =
+    deps.config ?? requireConfigSections(await loadAppConfig(configPath), ['extensions']);
   const entryModule = await loadEntry(entry, cwd);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
@@ -74,7 +83,9 @@ export async function resolveAppIdentity(
  * resolution, and assemble — steps 1–6 of `run()`. `onAssembleError`, when
  * given, lets a caller decorate an assemble failure with command-specific
  * guidance (destroy's "build first" hint) without this shared step knowing
- * about any one command.
+ * about any one command. `configSections` is what the CALLER will read from
+ * the config — a diagnostic in any other section does not fail the command
+ * (deploy/destroy read `state`; dev never does).
  */
 export async function runPipeline(
   entry: string,
@@ -82,6 +93,7 @@ export async function runPipeline(
   cwd: string,
   deps: PipelineDeps = {},
   onAssembleError?: (error: Error) => Error,
+  configSections: readonly ConfigSection[] = ['extensions', 'state'],
 ): Promise<PipelineResult> {
   // 1. Find + load prisma-composer.config.ts — runs extension env validation before the entry import.
   const resolvedEntryPath = path.resolve(cwd, entry);
@@ -89,7 +101,8 @@ export async function runPipeline(
   if (configPath === undefined) {
     throw missingConfigError(resolvedEntryPath);
   }
-  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+  const config =
+    deps.config ?? requireConfigSections(await loadAppConfig(configPath), configSections);
 
   // 2. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);
@@ -105,7 +118,7 @@ export async function runPipeline(
   }
 
   // 4. Registry coverage: every node/build in the graph has a matching descriptor in the config.
-  validateRegistryCoverage(graph, config);
+  validateRegistryCoverage(graph, config, configPath);
 
   // 5. Resolve the name.
   const name = overrideName ?? entryModule.root.name;

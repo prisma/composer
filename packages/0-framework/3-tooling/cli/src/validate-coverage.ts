@@ -2,14 +2,16 @@
  * Pipeline step: registry coverage. Every provisioned node's
  * `(extension, type)` — and every service's build descriptor's — must have a
  * registry entry of the right kind in the loaded config, BEFORE any slow
- * assembly work; the error names the missing extension and the config fix.
- * `lower()` re-checks the same relation inside the stack effect (the
- * backstop for programmatic callers); this check is the CLI's fail-fast UX.
+ * assembly work; each miss is a structured diagnostic naming the missing
+ * extension and the config fix, and EVERY miss is collected before failing —
+ * one uncovered node never hides the next. `lower()` re-checks the same
+ * relation inside the stack effect (the backstop for programmatic callers);
+ * this check is the CLI's fail-fast UX.
  */
 import type { Graph } from '@internal/core';
 import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { CONFIG_FILENAME } from './load-config.ts';
+import { CONFIG_FILENAME, combinedConfigFailure } from './load-config.ts';
 
 function lookup(
   extensions: ReadonlyMap<string, ExtensionDescriptor>,
@@ -17,58 +19,81 @@ function lookup(
   type: string,
   expectedKind: NodeDescriptor['kind'],
   what: string,
-): void {
+): CliStructuredError | undefined {
   const ext = extensions.get(extension);
   if (ext === undefined) {
-    throw new CliStructuredError(
+    return new CliStructuredError(
       'CONFIG.EXTENSION_MISSING',
       `No extension "${extension}" is configured (needed by ${what}).`,
       {
         fix:
           `Add it to ${CONFIG_FILENAME}'s \`extensions\` ` +
           '(import its /control entry and list its descriptor).',
-        meta: { extension, type },
+        meta: { section: 'extensions', extension, type },
       },
     );
   }
   const descriptor = ext.nodes[type];
   if (descriptor === undefined) {
-    throw new CliStructuredError(
+    return new CliStructuredError(
       'CONFIG.DESCRIPTOR_MISSING',
       `Extension "${extension}" has no descriptor for node type "${type}" (needed by ${what}).`,
       {
         why: `Known types: ${Object.keys(ext.nodes).join(', ')}.`,
-        meta: { extension, type },
+        meta: { section: 'extensions', extension, type },
       },
     );
   }
   if (descriptor.kind !== expectedKind) {
-    throw new CliStructuredError(
+    return new CliStructuredError(
       'CONFIG.DESCRIPTOR_KIND_MISMATCH',
       `Extension "${extension}"'s descriptor for node type "${type}" is a "${descriptor.kind}" ` +
         `descriptor — ${what} needs a "${expectedKind}" descriptor.`,
-      { meta: { extension, type, kind: descriptor.kind } },
+      { meta: { section: 'extensions', extension, type, kind: descriptor.kind } },
     );
   }
+  return undefined;
 }
 
-/** Throws a structured CONFIG.* error on the first uncovered `(extension, type)`; silent when the config covers the whole graph. */
-export function validateRegistryCoverage(graph: Graph, config: PrismaAppConfig): void {
+/** Every uncovered `(extension, type)` in the graph, as structured CONFIG.* diagnostics; empty when the config covers the whole graph. */
+export function collectCoverageDiagnostics(
+  graph: Graph,
+  config: PrismaAppConfig,
+): CliStructuredError[] {
   const extensions = new Map(config.extensions.map((descriptor) => [descriptor.id, descriptor]));
+  const diagnostics: CliStructuredError[] = [];
+  const add = (diagnostic: CliStructuredError | undefined): void => {
+    if (diagnostic !== undefined) diagnostics.push(diagnostic);
+  };
 
   for (const { id, node } of graph.nodes) {
     if (node.kind === 'resource') {
-      lookup(extensions, node.extension, node.type, 'resource', `resource node "${id}"`);
+      add(lookup(extensions, node.extension, node.type, 'resource', `resource node "${id}"`));
       continue;
     }
     if (node.kind !== 'service') continue;
-    lookup(extensions, node.extension, node.type, 'service', `service node "${id}"`);
-    lookup(
-      extensions,
-      node.build.extension,
-      node.build.type,
-      'build',
-      `service node "${id}"'s build descriptor`,
+    add(lookup(extensions, node.extension, node.type, 'service', `service node "${id}"`));
+    add(
+      lookup(
+        extensions,
+        node.build.extension,
+        node.build.type,
+        'build',
+        `service node "${id}"'s build descriptor`,
+      ),
     );
+  }
+  return diagnostics;
+}
+
+/** Throws one structured failure covering EVERY uncovered `(extension, type)` (a single miss surfaces as itself); silent when the config covers the whole graph. */
+export function validateRegistryCoverage(
+  graph: Graph,
+  config: PrismaAppConfig,
+  configPath: string,
+): void {
+  const diagnostics = collectCoverageDiagnostics(graph, config);
+  if (diagnostics.length > 0) {
+    throw combinedConfigFailure(diagnostics, configPath);
   }
 }

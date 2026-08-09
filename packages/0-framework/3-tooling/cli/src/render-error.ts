@@ -1,10 +1,27 @@
 /**
  * Human rendering of a CliErrorEnvelope (the shared layout from the CLI
- * base-types design): `✖ summary (CODE)` plus indented Why/Fix/Where lines.
- * No color; conflicts/meta/docsUrl are not rendered (composer has no -v).
+ * base-types design): `✖ summary (CODE)` plus indented Why/Fix/Where lines
+ * and, when `meta.issues` carries a diagnostics list (prisma/prisma's shared
+ * envelope idiom), one `- [kind] message` line per issue — all of them,
+ * composer has no -v to gate a longer view behind. Other meta and docsUrl
+ * are not rendered.
  */
 import type { CliErrorEnvelope, CliStructuredError } from '@internal/foundation/errors';
 import { executionDiagnostics } from './operations/shared.ts';
+
+/** The `meta.issues` entries that are renderable; anything else in the array is skipped rather than crashing the renderer. */
+function renderableIssues(
+  issues: unknown,
+): readonly { readonly kind: string; readonly message: string }[] {
+  if (!Array.isArray(issues)) return [];
+  return issues.flatMap((issue: unknown) => {
+    if (typeof issue !== 'object' || issue === null) return [];
+    const kind = 'kind' in issue ? issue.kind : undefined;
+    const message = 'message' in issue ? issue.message : undefined;
+    if (typeof kind !== 'string' || typeof message !== 'string') return [];
+    return [{ kind, message }];
+  });
+}
 
 export function renderErrorEnvelope(envelope: CliErrorEnvelope): string {
   const lines = [`✖ ${envelope.summary} (${envelope.code})`];
@@ -13,6 +30,13 @@ export function renderErrorEnvelope(envelope: CliErrorEnvelope): string {
   if (envelope.where?.path !== undefined) {
     const line = envelope.where.line !== undefined ? `:${String(envelope.where.line)}` : '';
     lines.push(`  Where: ${envelope.where.path}${line}`);
+  }
+  const issues = renderableIssues(envelope.meta?.['issues']);
+  if (issues.length > 0) {
+    lines.push('  Issues:');
+    for (const issue of issues) {
+      lines.push(`    - [${issue.kind}] ${issue.message}`);
+    }
   }
   return lines.join('\n');
 }

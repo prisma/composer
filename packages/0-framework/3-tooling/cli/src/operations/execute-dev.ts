@@ -63,7 +63,11 @@ export async function executeDev(
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
-    pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
+    // Dev never reads `config.state` (the generated dev stack pins
+    // `state: localState()`), so only the `extensions` section must be valid.
+    pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps, undefined, [
+      'extensions',
+    ]);
     const { config, graph, name } = pipeline;
 
     // Dev-capability check — resolve every non-build-only extension's lazy
@@ -254,7 +258,14 @@ export async function executeDev(
         // app and keeps watching".
         void (async () => {
           try {
-            const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+            const rePipeline = await runPipeline(
+              input.entry,
+              input.name,
+              cwd,
+              watchDeps,
+              undefined,
+              ['extensions'],
+            );
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,

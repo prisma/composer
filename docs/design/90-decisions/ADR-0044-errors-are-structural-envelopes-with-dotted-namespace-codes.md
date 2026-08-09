@@ -80,7 +80,10 @@ Closed subcode registry:
 
 - `CONFIG` — FILE_MISSING, EXPORT_INVALID, FIELD_INVALID, EXTENSION_DUPLICATE,
   PATH_MISMATCH, EXTENSION_MISSING, DESCRIPTOR_MISSING,
-  DESCRIPTOR_KIND_MISMATCH, EVALUATION_FAILED
+  DESCRIPTOR_KIND_MISMATCH, EVALUATION_FAILED, INVALID (several config
+  diagnostics combined into one failure; each rides in `meta.issues` as
+  `{ kind, message }` — prisma/prisma's shared envelope idiom. A single
+  diagnostic surfaces as itself, never wrapped)
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE,
   NAME_MISSING, GRAPH_INVALID
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING,
