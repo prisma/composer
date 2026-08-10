@@ -110,7 +110,9 @@ describe('resolveAlchemyBin()', () => {
         message: 'Composer could not read its installed `alchemy` dependency metadata.',
         fix: 'Reinstall @prisma/composer.',
       });
-      expect(error).toHaveProperty('cause');
+      expect(error).toBeInstanceOf(Error);
+      if (!(error instanceof Error)) throw new Error('expected an Error instance');
+      expect(error.cause).toBeInstanceOf(SyntaxError);
     }
   });
 });
