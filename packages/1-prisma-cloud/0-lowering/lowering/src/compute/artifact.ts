@@ -45,27 +45,69 @@ function resolveEntry(bundleDir: string, entry: string | undefined): string {
   return found;
 }
 
-/** All files under `dir`, as dir-relative POSIX paths, in sorted order. A
- * symlink is a hard error: deploy bundles must be flat (ADR-0005), and the
- * user's build owns flattening — dereferencing here would relink the tree and
- * risk packaging files from outside it. */
-function walkFiles(dir: string): string[] {
-  const out: string[] = [];
+interface WalkedFile {
+  readonly type: 'file';
+  readonly relPath: string;
+}
+
+interface WalkedSymlink {
+  readonly type: 'symlink';
+  readonly relPath: string;
+  readonly linkTarget: string;
+}
+
+type WalkedEntry = WalkedFile | WalkedSymlink;
+
+function isWithin(root: string, candidate: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
+}
+
+/**
+ * All files and safe relative symlinks under `dir`, as dir-relative POSIX
+ * paths, in sorted order. Links remain links: dereferencing pnpm's layout
+ * changes Node/Bun resolution semantics. Their lexical targets must remain
+ * inside the artifact, but may be dangling because framework tracers can omit
+ * an unused package while retaining its package-manager alias (ADR-0047).
+ */
+function walkEntries(dir: string): WalkedEntry[] {
+  const root = path.resolve(dir);
+  const out: WalkedEntry[] = [];
   const visit = (sub: string): void => {
     for (const entry of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
       const rel = sub.length > 0 ? `${sub}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink()) {
-        throw new Error(
-          `bundle contains a symlink at ${rel} — deploy bundles must be flat; ` +
-            'materialize links in your build (e.g. cp -RL) so the tree is self-contained.',
-        );
+        const source = path.join(dir, rel);
+        const target = fs.readlinkSync(source);
+        if (
+          path.isAbsolute(target) ||
+          /^[a-zA-Z]:/.test(target) ||
+          (path.sep === '/' && target.includes('\\'))
+        ) {
+          throw new Error(`bundle contains an unsafe absolute symlink at ${rel}: ${target}`);
+        }
+        const resolvedTarget = path.resolve(path.dirname(source), target);
+        if (!isWithin(root, resolvedTarget)) {
+          throw new Error(
+            `bundle contains a symlink at ${rel} whose target escapes the artifact: ${target}`,
+          );
+        }
+        out.push({
+          type: 'symlink',
+          relPath: rel,
+          linkTarget: target.replaceAll(path.sep, '/'),
+        });
+      } else if (entry.isDirectory()) {
+        visit(rel);
+      } else if (entry.isFile()) {
+        out.push({ type: 'file', relPath: rel });
+      } else {
+        throw new Error(`bundle contains an unsupported filesystem entry at ${rel}`);
       }
-      if (entry.isDirectory()) visit(rel);
-      else out.push(rel);
     }
   };
   visit('');
-  return out.sort();
+  return out.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
 }
 
 // ——— A minimal, deterministic USTAR writer: fixed mtime (epoch 0), fixed
@@ -91,17 +133,25 @@ function splitUstarPath(relPath: string): { name: string; prefix: string } {
   throw new Error(`path too long for a ustar tar entry: ${relPath}`);
 }
 
-function ustarHeader(relPath: string, size: number): Buffer {
+function ustarHeader(
+  relPath: string,
+  size: number,
+  options: { readonly type?: 'file' | 'symlink' | 'pax'; readonly linkTarget?: string } = {},
+): Buffer {
   const { name, prefix } = splitUstarPath(relPath);
   const buf = Buffer.alloc(512);
   buf.write(name, 0, 100, 'utf8');
-  buf.write(octal(0o644, 8), 100, 8, 'utf8'); // mode
+  buf.write(octal(options.type === 'symlink' ? 0o777 : 0o644, 8), 100, 8, 'utf8'); // mode
   buf.write(octal(0, 8), 108, 8, 'utf8'); // uid
   buf.write(octal(0, 8), 116, 8, 'utf8'); // gid
   buf.write(octal(size, 12), 124, 12, 'utf8');
   buf.write(octal(0, 12), 136, 12, 'utf8'); // mtime: fixed at epoch 0
   buf.write('        ', 148, 8, 'utf8'); // chksum placeholder (8 spaces)
-  buf.write('0', 156, 1, 'utf8'); // typeflag: regular file
+  const typeflag = options.type === 'symlink' ? '2' : options.type === 'pax' ? 'x' : '0';
+  buf.write(typeflag, 156, 1, 'utf8');
+  if (options.linkTarget !== undefined) {
+    buf.write(options.linkTarget, 157, 100, 'utf8');
+  }
   buf.write('ustar\0', 257, 6, 'utf8');
   buf.write('00', 263, 2, 'utf8');
   buf.write(prefix, 345, 155, 'utf8');
@@ -112,16 +162,71 @@ function ustarHeader(relPath: string, size: number): Buffer {
   return buf;
 }
 
-function createDeterministicTarGz(
-  entries: readonly { relPath: string; content: Buffer }[],
-): Buffer {
-  const sorted = [...entries].sort((a, b) => a.relPath.localeCompare(b.relPath));
+interface FileTarEntry {
+  readonly type: 'file';
+  readonly relPath: string;
+  readonly content: Buffer;
+}
+
+interface SymlinkTarEntry {
+  readonly type: 'symlink';
+  readonly relPath: string;
+  readonly linkTarget: string;
+}
+
+type TarEntry = FileTarEntry | SymlinkTarEntry;
+
+function appendContent(chunks: Buffer[], content: Buffer): void {
+  chunks.push(content);
+  const pad = (512 - (content.length % 512)) % 512;
+  if (pad > 0) chunks.push(Buffer.alloc(pad));
+}
+
+/** POSIX.1-2001 PAX record, used when a symlink target exceeds ustar's 100-byte field. */
+function paxRecord(key: string, value: string): Buffer {
+  const body = `${key}=${value}\n`;
+  let length = Buffer.byteLength(body, 'utf8') + 3;
+  while (true) {
+    const record = `${String(length)} ${body}`;
+    const actual = Buffer.byteLength(record, 'utf8');
+    if (actual === length) return Buffer.from(record, 'utf8');
+    length = actual;
+  }
+}
+
+function createDeterministicTarGz(entries: readonly TarEntry[]): Buffer {
+  const sorted = [...entries].sort((a, b) =>
+    a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0,
+  );
   const chunks: Buffer[] = [];
   for (const entry of sorted) {
+    if (entry.type === 'symlink') {
+      const shortTarget =
+        Buffer.byteLength(entry.linkTarget, 'utf8') <= 100 ? entry.linkTarget : undefined;
+      if (shortTarget === undefined) {
+        const pax = paxRecord('linkpath', entry.linkTarget);
+        const paxName = `PaxHeaders/${crypto
+          .createHash('sha256')
+          .update(entry.relPath)
+          .digest('hex')
+          .slice(0, 24)}`;
+        chunks.push(ustarHeader(paxName, pax.length, { type: 'pax' }));
+        appendContent(chunks, pax);
+      }
+      chunks.push(
+        ustarHeader(entry.relPath, 0, {
+          type: 'symlink',
+          // libarchive and npm's `tar` use this conventional marker to
+          // identify the following PAX `linkpath` as the real long target.
+          // An empty ustar linkname is treated as an invalid symlink before
+          // the extended header can override it.
+          linkTarget: shortTarget ?? '././@LongSymLink',
+        }),
+      );
+      continue;
+    }
     chunks.push(ustarHeader(entry.relPath, entry.content.length));
-    chunks.push(entry.content);
-    const pad = (512 - (entry.content.length % 512)) % 512;
-    if (pad > 0) chunks.push(Buffer.alloc(pad));
+    appendContent(chunks, entry.content);
   }
   chunks.push(Buffer.alloc(1024)); // end-of-archive: two zero blocks
   return zlib.gzipSync(Buffer.concat(chunks));
@@ -158,12 +263,25 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
     2,
   )}\n`;
 
-  const files = walkFiles(opts.bundleDir).map((relPath) => ({
-    relPath,
-    content: fs.readFileSync(path.join(opts.bundleDir, relPath)),
-  }));
-  files.push({ relPath: 'bootstrap.js', content: Buffer.from(bootstrap, 'utf8') });
-  files.push({ relPath: 'compute.manifest.json', content: Buffer.from(manifest, 'utf8') });
+  const entries: TarEntry[] = walkEntries(opts.bundleDir).map((entry) =>
+    entry.type === 'symlink'
+      ? entry
+      : {
+          type: 'file',
+          relPath: entry.relPath,
+          content: fs.readFileSync(path.join(opts.bundleDir, entry.relPath)),
+        },
+  );
+  entries.push({
+    type: 'file',
+    relPath: 'bootstrap.js',
+    content: Buffer.from(bootstrap, 'utf8'),
+  });
+  entries.push({
+    type: 'file',
+    relPath: 'compute.manifest.json',
+    content: Buffer.from(manifest, 'utf8'),
+  });
   // Disable bun's runtime auto-install for every Compute artifact. An app's
   // build produces a self-contained entry with its dependencies inlined
   // (ADR-0005), so nothing needs fetching at boot; this guards against a stray
@@ -171,12 +289,13 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   // bun fetch a linux binary at boot and fill the tiny disk (ENOSPC -> reboot
   // loop). bun reads bunfig from the process CWD, which is the artifact root
   // at boot.
-  files.push({
+  entries.push({
+    type: 'file',
     relPath: 'bunfig.toml',
     content: Buffer.from('[install]\nauto = "disable"\n', 'utf8'),
   });
 
-  const gz = createDeterministicTarGz(files);
+  const gz = createDeterministicTarGz(entries);
   const sha256 = crypto.createHash('sha256').update(gz).digest('hex');
 
   // The output path must be content-addressed AND per-user. Content-addressed

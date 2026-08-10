@@ -10,11 +10,11 @@
  * It does not guess: the app's location inside the standalone tree (deep, when
  * `outputFileTracingRoot` is the monorepo root) is *read from Next's own build
  * manifest* (`.next/required-server-files.json`'s `relativeAppDir`), never walked
- * for or computed from a hardcoded depth. It does not launder: node_modules is
- * shipped exactly as `next build` produced it, so a symlinked (non-hoisted)
- * node_modules is the packager's hard error — the same misconfiguration crashes
- * the standalone server at boot, so it must be a flat install (npm, or pnpm/bun
- * with a hoisted node-linker).
+ * for or computed from a hardcoded depth. It does not launder: the standalone
+ * tree—including pnpm/Bun/Yarn links—is copied exactly as Next produced it.
+ * Composer's artifact writer validates that every relative link stays inside
+ * the artifact and records it as a tar symlink instead of dereferencing it;
+ * changing link identity changes Node/Bun resolution semantics (ADR-0047).
  *
  * Artifact layout: `<workDir>/main.mjs` (our wrapper) + `<workDir>/bundle/`
  * (the standalone tree, with static/public copied in). The packager adds
@@ -108,9 +108,13 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(workDir, { recursive: true });
   const bundleDir = path.join(workDir, 'bundle');
 
-  // Ship the standalone tree as `next build` produced it (a symlinked
-  // node_modules stays symlinked → the packager rejects it, correctly).
-  await fs.promises.cp(standaloneRoot, bundleDir, { recursive: true });
+  // Ship the standalone tree exactly as `next build` produced it. The artifact
+  // writer safely records relative links; dereferencing a pnpm package link
+  // would change its runtime module-resolution context.
+  await fs.promises.cp(standaloneRoot, bundleDir, {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
 
   // The documented copy: Next omits the client assets from standalone; place
   // them beside the app's server.js so it serves them (docs: `cp -r public
@@ -118,11 +122,17 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const appOut = path.join(bundleDir, appRel);
   const staticSrc = path.join(appDir, '.next', 'static');
   if (fs.existsSync(staticSrc)) {
-    await fs.promises.cp(staticSrc, path.join(appOut, '.next', 'static'), { recursive: true });
+    await fs.promises.cp(staticSrc, path.join(appOut, '.next', 'static'), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
   }
   const publicSrc = path.join(appDir, 'public');
   if (fs.existsSync(publicSrc)) {
-    await fs.promises.cp(publicSrc, path.join(appOut, 'public'), { recursive: true });
+    await fs.promises.cp(publicSrc, path.join(appOut, 'public'), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
   }
 
   // Our wrapper, bundled to main.mjs at the working-dir root (unambiguously

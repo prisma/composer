@@ -5,8 +5,8 @@
  * emulation). Reading tar is commodity even though the writer is a
  * deterministic subset we own (fixed mtimes, sorted entries): the maintained
  * `tar` package (dependency razor) does the parsing; this module keeps only
- * the pinned entry filtering (regular files only, reject links/devices,
- * reject path escapes) and the directory-level temp-then-rename.
+ * the pinned entry filtering (regular files and contained relative symlinks,
+ * reject devices/path escapes) and the directory-level temp-then-rename.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -15,8 +15,8 @@ import * as tar from 'tar';
 
 function unsupportedEntryError(entryPath: string, type: string): Error {
   return new Error(
-    `compute artifact entry "${entryPath}" has type "${type}" — only regular files are ` +
-      'supported; this artifact was not produced by packageComputeArtifact.',
+    `compute artifact entry "${entryPath}" has type "${type}" — only regular files and ` +
+      'safe symbolic links are supported; this artifact was not produced by packageComputeArtifact.',
   );
 }
 
@@ -28,6 +28,12 @@ function pathEscapeError(entryPath: string): Error {
 }
 
 const REGULAR_FILE_TYPES = new Set(['File', 'OldFile', 'ContiguousFile']);
+const SYMBOLIC_LINK_TYPES = new Set(['SymbolicLink']);
+
+function isWithin(root: string, candidate: string): boolean {
+  const rel = path.relative(root, candidate);
+  return rel === '' || (!path.isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${path.sep}`));
+}
 
 /**
  * Extracts `tarGzPath` (a `packageComputeArtifact` tar.gz) into `destDir`,
@@ -47,17 +53,33 @@ export function extractComputeArtifact(tarGzPath: string, destDir: string): void
       file: tarGzPath,
       cwd: tmpDir,
       sync: true,
+      // A malformed entry must fail the whole extraction rather than merely
+      // warning and leaving a silently incomplete local Compute artifact.
+      strict: true,
       // preservePaths stays at its default (false): tar itself strips a
       // leading `/` and refuses a `..`-escaping path — the explicit check
       // below still names the entry in a pinned error rather than leaving
       // tar's own generic warning as the only signal.
       onentry: (entry) => {
-        if (!REGULAR_FILE_TYPES.has(entry.type)) {
+        if (!REGULAR_FILE_TYPES.has(entry.type) && !SYMBOLIC_LINK_TYPES.has(entry.type)) {
           throw unsupportedEntryError(entry.path, entry.type);
         }
         const resolved = path.resolve(tmpDir, entry.path);
-        if (resolved !== tmpDir && !resolved.startsWith(`${tmpDir}${path.sep}`)) {
+        if (!isWithin(tmpDir, resolved)) {
           throw pathEscapeError(entry.path);
+        }
+        if (SYMBOLIC_LINK_TYPES.has(entry.type)) {
+          const target = entry.linkpath;
+          if (
+            target === undefined ||
+            target.length === 0 ||
+            path.isAbsolute(target) ||
+            /^[a-zA-Z]:/.test(target) ||
+            (path.sep === '/' && target.includes('\\')) ||
+            !isWithin(tmpDir, path.resolve(path.dirname(resolved), target))
+          ) {
+            throw pathEscapeError(`${entry.path} -> ${target}`);
+          }
         }
       },
     });

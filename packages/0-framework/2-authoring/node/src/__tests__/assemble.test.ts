@@ -514,58 +514,49 @@ describe('assemble() — the directory form', () => {
     ).rejects.toThrow(/sits inside the build adapter's dir .* copy the artifact into itself/s);
   });
 
-  test('rejects a tree containing a symlink, naming it — the packager rejects symlinks, and we ship what the build produced', async () => {
-    // Decided over dereferencing on copy: the artifact must be the tree the
-    // author's build produced (ADR-0005), and following a link could pull in
-    // files from outside dir that the author never named. Failing here beats
-    // failing in the packager, which reports it far from the cause.
+  test('preserves a file symlink without dereferencing it', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
-      'shared/util.js': 'export const shared = 1;\n',
+      'server/shared/util.js': 'export const shared = 1;\n',
     });
-    fs.symlinkSync(
-      path.join(serviceDir, 'dist', 'shared', 'util.js'),
-      path.join(serviceDir, 'dist', 'server', 'util.js'),
-    );
+    fs.symlinkSync('shared/util.js', path.join(serviceDir, 'dist', 'server', 'util.js'));
     writeServiceModule(serviceDir);
 
-    await expect(
-      assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
-        address: 'svc',
-        cwd: makeCwd(),
-      }),
-    ).rejects.toThrow(/contains symlinks.*server\/util\.js/s);
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const copied = path.join(result.dir, 'bundle', 'util.js');
+    expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copied)).toBe('shared/util.js');
   });
 
-  test('reports a symlinked directory without descending into it', async () => {
+  test('preserves a directory symlink without copying its target through the link', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
-      'shared/util.js': 'export const shared = 1;\n',
+      'server/shared/util.js': 'export const shared = 1;\n',
     });
-    fs.symlinkSync(
-      path.join(serviceDir, 'dist', 'shared'),
-      path.join(serviceDir, 'dist', 'server', 'vendor'),
-    );
+    fs.symlinkSync('shared', path.join(serviceDir, 'dist', 'server', 'vendor'));
     writeServiceModule(serviceDir);
 
-    await expect(
-      assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
-        address: 'svc',
-        cwd: makeCwd(),
-      }),
-    ).rejects.toThrow(/contains symlinks.*server\/vendor/s);
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const copied = path.join(result.dir, 'bundle', 'vendor');
+    expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copied)).toBe('shared');
   });
 
   test('rejects a dir that is itself a symlink to a directory — hard-errors instead of dereferencing it and copying the target', async () => {
-    // ADR-0005: a symlink is never dereferenced, including when it's the
-    // build adapter's `dir` value itself, not just something nested inside
-    // it. `statSync` (used to confirm dir is a directory) follows a symlink,
-    // so this case needs its own check — this test is what catches a
-    // regression there.
+    // ADR-0047 keeps the declared root as a real directory boundary even
+    // though links inside that boundary are valid artifact entries.
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist', 'real'), {
       'start.js': 'export default "app-entry";\n',
@@ -579,7 +570,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .*dist\/server.* is itself a symlink/s);
   });
 
   test('rejects a dir that is itself a symlink to a FILE — the same hard error, not "not a directory"', async () => {
@@ -602,6 +593,6 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .*dist\/server.* is itself a symlink/s);
   });
 });

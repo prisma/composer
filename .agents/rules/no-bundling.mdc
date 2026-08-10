@@ -1,5 +1,5 @@
 ---
-description: "We don't bundle the app's code, and we don't guess or launder. The user's build produces the runnable; the framework assembles the deploy artifact by DOCUMENTED, DETERMINISTIC steps only (validate, wrap, and each app-type's documented deploy step) — never by guessing filenames/depths or laundering trees. Settled by ADR-0005. Do not relitigate."
+description: "We don't bundle the app's code, and we don't guess or launder. The user's build produces the runnable; the framework assembles the deploy artifact by DOCUMENTED, DETERMINISTIC steps only. Contained relative symlinks are preserved, never dereferenced. Settled by ADR-0005 and ADR-0047. Do not relitigate."
 alwaysApply: true
 ---
 
@@ -12,7 +12,8 @@ steps: validate the built output, add the boot wrapper, and perform that
 app-type's documented deploy step (e.g. `nextjs()` does Next's documented
 `.next/static`+`public/` copy; `node()` ships the entry). Guiding principle:
 `docs/design/01-principles/architectural-principles.md`; settled by
-`docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md`.
+`docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md` and
+`docs/design/90-decisions/ADR-0047-contained-artifact-symlinks-are-preserved.md`.
 
 The real rule is **no guessing, no laundering** — do not "helpfully" violate it:
 
@@ -22,12 +23,13 @@ The real rule is **no guessing, no laundering** — do not "helpfully" violate i
   not compute it.
 - Never derive identity from file paths, and never write an absolute
   deploy-machine path into an artifact. Uniqueness comes from the graph address.
-- A symlink in a bundle is a hard error ("use a hoisted node_modules"), never
-  dereferenced or represented. Ship `node_modules` as the build produced it.
+- A contained relative symlink is represented as a tar symlink, never
+  dereferenced. Absolute and escaping links are hard errors. Ship
+  `node_modules` with the link identity the build produced.
 - Never write deploy output into `node_modules` or the user's build output;
   staging is deploy-owned, keyed by graph address; the user's tree goes under
   `bundle/`.
 
-Doing an app-type's *documented* deploy step (the Next asset copy) is fine — it's
-deterministic. Guessing or laundering is not. If a change needs guessing/
-inference/dereferencing, the design is being misread — re-read ADR-0005.
+Doing an app-type's *documented* deploy step (the Next asset copy) and archiving
+contained links are fine — both are deterministic. Guessing, dereferencing, or
+arbitrary-file laundering is not. Re-read ADR-0005 and ADR-0047.

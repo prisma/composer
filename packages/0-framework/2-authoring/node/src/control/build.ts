@@ -7,9 +7,10 @@
  *
  * Two forms, chosen by the descriptor: without `dir`, `entry` is a single
  * self-contained file and only that file is copied. With `dir`, the whole
- * directory is copied verbatim and `entry` names the file inside it that boots.
- * Neither form discovers anything — no tree-walking for an entry, no filename
- * heuristics; the author states the paths and we copy exactly those.
+ * directory is copied verbatim—including its relative links—and `entry` names
+ * the file inside it that boots. Neither form discovers anything — no
+ * tree-walking for an entry, no filename heuristics; the author states the
+ * paths and we copy exactly those (ADR-0047).
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -78,40 +79,11 @@ function resolveFile(entrySpec: string, moduleDir: string): BuiltRunnable {
   };
 }
 
-/** The shared "dir contains symlinks" error, reused by both the root-is-a-symlink case and the nested-symlink walk below — one message shape, never two to drift apart. */
-function symlinksFoundError(dirPath: string, found: readonly string[]): Error {
-  const listed = found.slice(0, 5).join(', ');
+/** The declared root itself must be a real directory; links inside it are artifact entries, but a linked root would erase the declared boundary. */
+function symlinkedRootError(dirPath: string): Error {
   return new Error(
-    `the build adapter's dir ("${dirPath}") contains symlinks, which the platform's packager ` +
-      `rejects: ${listed}${found.length > 5 ? `, and ${found.length - 5} more` : ''}. The tree is ` +
-      'copied verbatim, so make your build emit real files in dir (for example, a hoisted ' +
-      'node_modules, or dereference the links into dir with cp -RL).',
+    `the build adapter's dir ("${dirPath}") is itself a symlink; name the real build-output directory instead.`,
   );
-}
-
-/**
- * Compute's packager rejects symlinks, so a tree containing one cannot deploy.
- * We fail here, naming the links, rather than dereferencing them on the copy:
- * the artifact must be what the author's build produced (ADR-0005), and
- * following a link that points outside `dir` would pull in files the author
- * never named. The walk reads dirents (lstat semantics), so a symlinked
- * directory is reported and never descended into. Checks only `dirPath`'s
- * children — the caller (`resolveDir`) checks `dirPath` itself before this
- * runs, since that check also decides "not a directory" vs "is a symlink"
- * and must happen before any dereferencing stat.
- */
-async function assertNoSymlinks(dirPath: string): Promise<void> {
-  const found: string[] = [];
-  const walk = async (current: string): Promise<void> => {
-    for (const entry of await fs.promises.readdir(current, { withFileTypes: true })) {
-      const full = path.join(current, entry.name);
-      if (entry.isSymbolicLink()) found.push(full);
-      else if (entry.isDirectory()) await walk(full);
-    }
-  };
-  await walk(dirPath);
-
-  if (found.length > 0) throw symlinksFoundError(dirPath, found);
 }
 
 /**
@@ -120,11 +92,10 @@ async function assertNoSymlinks(dirPath: string): Promise<void> {
  * that boots. An `entry` that resolves outside `dir` is rejected rather than
  * followed — only `dir` is ever copied.
  *
- * `dir` itself can be a symlink — not just something inside it. `lstat` it
- * before anything else so that case hard-errors identically whether the link
- * points at a real directory (which a dereferencing `stat` would otherwise
- * accept as "is a directory") or at a file: neither is ever silently
- * dereferenced and copied (ADR-0005).
+ * `dir` itself cannot be a symlink. `lstat` it before anything else so the
+ * declared artifact boundary is a real directory; links below that boundary
+ * are copied without dereferencing and validated by the artifact writer
+ * (ADR-0047).
  */
 async function resolveDir(
   dirSpec: string,
@@ -143,7 +114,7 @@ async function resolveDir(
     );
   }
   if (dirLstat.isSymbolicLink()) {
-    throw symlinksFoundError(dirPath, [dirPath]);
+    throw symlinkedRootError(dirPath);
   }
   if (!dirLstat.isDirectory()) {
     throw new Error(
@@ -166,13 +137,15 @@ async function resolveDir(
     );
   }
 
-  await assertNoSymlinks(dirPath);
-
   return {
     source: dirPath,
     sourceField: 'dir',
     entry: path.relative(dirPath, entryPath).split(path.sep).join('/'),
-    copyInto: (bundleDir) => fs.promises.cp(dirPath, bundleDir, { recursive: true }),
+    copyInto: (bundleDir) =>
+      fs.promises.cp(dirPath, bundleDir, {
+        recursive: true,
+        verbatimSymlinks: true,
+      }),
   };
 }
 

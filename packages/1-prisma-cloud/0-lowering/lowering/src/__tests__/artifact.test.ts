@@ -15,11 +15,17 @@ function makeBundle(files: Record<string, string>): string {
   return dir;
 }
 
-/** Un-gzips and lists the tar entry names + reads one entry's content, without a tar library. */
-function readTar(gz: Buffer): { names: string[]; read: (name: string) => string } {
+/** Un-gzips and inspects regular files and symlinks, including PAX linkpath records. */
+function readTar(gz: Buffer): {
+  names: string[];
+  read: (name: string) => string;
+  readLink: (name: string) => string | undefined;
+} {
   const tar = zlib.gunzipSync(gz);
   const names: string[] = [];
   const contents = new Map<string, string>();
+  const links = new Map<string, string>();
+  let pendingPaxLink: string | undefined;
   let offset = 0;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
@@ -27,16 +33,29 @@ function readTar(gz: Buffer): { names: string[]; read: (name: string) => string 
     const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/s, '');
     const rawPrefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/s, '');
     const name = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
+    const typeflag = header.subarray(156, 157).toString('utf8');
+    const headerLink = header.subarray(157, 257).toString('utf8').replace(/\0.*$/s, '');
     const size = Number.parseInt(
       header.subarray(124, 136).toString('utf8').replace(/\0.*$/s, '').trim(),
       8,
     );
     offset += 512;
-    contents.set(name, tar.subarray(offset, offset + size).toString('utf8'));
-    names.push(name);
+    const content = tar.subarray(offset, offset + size).toString('utf8');
+    if (typeflag === 'x') {
+      pendingPaxLink = /^\d+ linkpath=(.*)\n$/s.exec(content)?.[1];
+    } else {
+      names.push(name);
+      if (typeflag === '2') links.set(name, pendingPaxLink ?? headerLink);
+      else contents.set(name, content);
+      pendingPaxLink = undefined;
+    }
     offset += Math.ceil(size / 512) * 512;
   }
-  return { names, read: (name: string) => contents.get(name) ?? '' };
+  return {
+    names,
+    read: (name: string) => contents.get(name) ?? '',
+    readLink: (name: string) => links.get(name),
+  };
 }
 
 describe('packageComputeArtifact', () => {
@@ -221,18 +240,69 @@ describe('packageComputeArtifact', () => {
     expect(read('bunfig.toml')).toContain('auto = "disable"');
   });
 
-  test('a symlink in the bundle is a hard error naming the path and the fix (flat bundles only)', () => {
+  test('preserves a contained dangling symlink as a tar symlink', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    fs.mkdirSync(path.join(bundleDir, 'node_modules'), { recursive: true });
+    fs.symlinkSync('missing-package', path.join(bundleDir, 'node_modules', 'optional'));
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.names).toContain('node_modules/optional');
+    expect(archive.readLink('node_modules/optional')).toBe('missing-package');
+  });
+
+  test('uses a PAX linkpath record for pnpm targets longer than ustar linkname', () => {
+    const packageDir = `next@16.2.9_${'peer'.repeat(30)}`;
+    const linkTarget = `.pnpm/${packageDir}/node_modules/next`;
     const bundleDir = makeBundle({
       'main.js': 'export default {};',
-      'node_modules/real/index.js': '// real',
+      [`node_modules/${linkTarget}/index.js`]: '// next',
     });
-    // A bun/pnpm-shaped relative dir-symlink, the kind a Next standalone tree
-    // is full of — the framework must reject it, not dereference it.
-    fs.symlinkSync('real', path.join(bundleDir, 'node_modules', 'link'));
+    fs.symlinkSync(linkTarget, path.join(bundleDir, 'node_modules', 'next'));
 
+    const artifact = packageComputeArtifact({
+      id: 'web',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'web',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(Buffer.byteLength(linkTarget, 'utf8')).toBeGreaterThan(100);
+    expect(archive.readLink('node_modules/next')).toBe(linkTarget);
+  });
+
+  test('rejects absolute and escaping symlink targets', () => {
+    const absoluteBundle = makeBundle({ 'main.js': 'export default {};' });
+    fs.symlinkSync('/private/machine-file', path.join(absoluteBundle, 'absolute'));
     expect(() =>
-      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
-    ).toThrow(/symlink at node_modules\/link .* deploy bundles must be flat/);
+      packageComputeArtifact({
+        id: 'auth',
+        bundleDir: absoluteBundle,
+        appEntry: 'server.js',
+        address: 'auth',
+      }),
+    ).toThrow(/unsafe absolute symlink at absolute/);
+
+    const escapingBundle = makeBundle({
+      'main.js': 'export default {};',
+      'nested/marker.txt': 'inside',
+    });
+    fs.symlinkSync('../../outside', path.join(escapingBundle, 'nested', 'escape'));
+    expect(() =>
+      packageComputeArtifact({
+        id: 'auth',
+        bundleDir: escapingBundle,
+        appEntry: 'server.js',
+        address: 'auth',
+      }),
+    ).toThrow(/target escapes the artifact/);
   });
 
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {

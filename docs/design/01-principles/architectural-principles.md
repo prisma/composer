@@ -44,10 +44,13 @@ steps: it validates the built output, adds its boot wrapper, and performs the
 app-type's documented deploy step (a Next app gets its `.next/static`+`public/`
 copied in exactly as the Next docs prescribe). What it must **never** do is
 *guess* or *launder*: no filename guessing (the wrapper's name is dictated), no
-monorepo-depth inference (the app's location in a standalone tree is *found* by
-locating `server.js`, not computed), no baking absolute paths into artifacts, and
-a symlinked `node_modules` is a hard error, never dereferenced. See
-[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md);
+monorepo-depth inference (the app's location comes from the framework's own
+manifest), and no absolute paths baked into artifacts. A relative symlink whose
+lexical target remains inside an explicitly declared directory output is
+preserved as a tar link, never dereferenced; absolute and escaping links are hard
+errors. See
+[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md) and
+[ADR-0047](../90-decisions/ADR-0047-contained-artifact-symlinks-are-preserved.md);
 every guessing/laundering violation has produced a real deploy failure. Do not
 relitigate.
 

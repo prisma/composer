@@ -118,6 +118,34 @@ describe('assemble()', () => {
     expect(result.watch).toEqual([path.join(root, '.next', 'standalone')]);
   }, 20_000);
 
+  test('preserves Next standalone package links for the artifact writer', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const aliasDir = path.join(root, '.next', 'standalone', '.next', 'node_modules', '@prisma');
+    fs.mkdirSync(aliasDir, { recursive: true });
+    const linkTarget = '../../../node_modules/next';
+    fs.symlinkSync(linkTarget, path.join(aliasDir, 'client-traced'));
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+
+    const result = await assemble({
+      address: 'web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const copied = path.join(
+      result.dir,
+      'bundle',
+      '.next',
+      'node_modules',
+      '@prisma',
+      'client-traced',
+    );
+    expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copied)).toBe(linkTarget);
+  }, 20_000);
+
   test('standaloneServerPath locates the app server.js (the integration-test seam)', () => {
     const root = makeAppRoot();
     writeNextBuild(root);

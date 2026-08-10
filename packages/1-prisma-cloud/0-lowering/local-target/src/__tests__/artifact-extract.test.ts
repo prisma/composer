@@ -66,7 +66,32 @@ describe('extractComputeArtifact', () => {
     expect(extracted['bunfig.toml']).toContain('auto = "disable"');
   });
 
-  test('rejects a tar entry with a non-regular-file type', () => {
+  test('round-trips a long pnpm-style directory symlink without changing its target', () => {
+    const packageDir = `next@16.2.9_${'peer'.repeat(30)}`;
+    const linkTarget = `.pnpm/${packageDir}/node_modules/next`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [`node_modules/${linkTarget}/index.js`]: 'module.exports = "next";',
+    });
+    fs.symlinkSync(linkTarget, path.join(bundleDir, 'node_modules', 'next'));
+    const artifact = packageComputeArtifact({
+      id: 'web',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'web',
+    });
+
+    const destDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-dest-'));
+    fs.rmSync(destDir, { recursive: true, force: true });
+    extractComputeArtifact(artifact.path, destDir);
+
+    const extractedLink = path.join(destDir, 'node_modules', 'next');
+    expect(fs.lstatSync(extractedLink).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(extractedLink)).toBe(linkTarget);
+    expect(fs.readFileSync(path.join(extractedLink, 'index.js'), 'utf8')).toContain('next');
+  });
+
+  test('rejects a tar entry that is neither a regular file nor a symbolic link', () => {
     // Hand-build a one-entry ustar archive with typeflag '5' (directory) to
     // prove extraction rejects anything packageComputeArtifact never writes.
     const header = Buffer.alloc(512);
@@ -94,5 +119,35 @@ describe('extractComputeArtifact', () => {
     const destDir = path.join(path.dirname(tmpGz), 'dest');
 
     expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/has type "Directory"/);
+  });
+
+  test('rejects an archive symlink whose target escapes the extraction directory', () => {
+    const header = Buffer.alloc(512);
+    header.write('nested/escape', 0, 100, 'utf8');
+    header.write('0000777\0', 100, 8, 'utf8');
+    header.write('0000000\0', 108, 8, 'utf8');
+    header.write('0000000\0', 116, 8, 'utf8');
+    header.write('00000000000\0', 124, 12, 'utf8');
+    header.write('00000000000\0', 136, 12, 'utf8');
+    header.write('        ', 148, 8, 'utf8');
+    header.write('2', 156, 1, 'utf8');
+    header.write('../../outside', 157, 100, 'utf8');
+    header.write('ustar\0', 257, 6, 'utf8');
+    header.write('00', 263, 2, 'utf8');
+    let sum = 0;
+    for (const b of header) sum += b;
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 8, 'utf8');
+
+    const gz = zlib.gzipSync(Buffer.concat([header, Buffer.alloc(1024)]));
+    const tmpGz = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-escape-')),
+      'escape.tar.gz',
+    );
+    fs.writeFileSync(tmpGz, gz);
+    const destDir = path.join(path.dirname(tmpGz), 'dest');
+
+    expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(
+      /nested\/escape -> \.\.\/\.\.\/outside.*escapes the extraction directory/,
+    );
   });
 });
