@@ -19,8 +19,9 @@ The real rule is **no guessing, no laundering** — do not "helpfully" violate i
 
 - Never guess or discover a bundle filename — dictate names we own (`main.mjs`).
 - Never infer monorepo layout, workspace roots, or a fixed depth. When the app's
-  location in a standalone tree is needed, **find** it (locate `server.js`); do
-  not compute it.
+  location in a standalone tree is needed, read it from the framework's own
+  manifest (for Next, `required-server-files.json`'s `relativeAppDir`); never
+  walk the tree for `server.js` or compute an assumed depth.
 - Never derive identity from file paths, and never write an absolute
   deploy-machine path into an artifact. Uniqueness comes from the graph address.
 - A contained relative symlink is represented as a tar symlink, never

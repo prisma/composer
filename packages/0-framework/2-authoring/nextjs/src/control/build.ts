@@ -99,6 +99,12 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       `no ${path.join('.next', 'standalone')} under ${appDir} — run \`next build\` with output: "standalone" first.`,
     );
   }
+  const standaloneLstat = await fs.promises.lstat(standaloneRoot);
+  if (standaloneLstat.isSymbolicLink()) {
+    throw new Error(
+      `the Next standalone root ("${standaloneRoot}") is itself a symlink; run \`next build\` so .next/standalone is a real directory.`,
+    );
+  }
   // The app's (possibly deep) location within the standalone tree — read from
   // Next's own build manifest, not searched for.
   const appRel = nextAppRel(appDir);

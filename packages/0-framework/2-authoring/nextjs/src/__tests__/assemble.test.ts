@@ -86,6 +86,28 @@ describe('assemble()', () => {
     ).rejects.toThrow(/no .*standalone under .* run `next build`/);
   });
 
+  test('rejects a symlinked standalone root before copying it', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standaloneRoot = path.join(root, '.next', 'standalone');
+    const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-external-'));
+    tmpDirs.push(externalRoot);
+    fs.cpSync(standaloneRoot, externalRoot, { recursive: true });
+    fs.rmSync(standaloneRoot, { recursive: true });
+    fs.symlinkSync(externalRoot, standaloneRoot, 'dir');
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+
+    await expect(
+      assemble({
+        address: 'web',
+        cwd,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/standalone root .* is itself a symlink/);
+    expect(fs.existsSync(path.join(cwd, '.prisma-composer', 'artifacts', 'web'))).toBe(false);
+  });
+
   test('ships the standalone tree, copies static/public to the located app dir, main.mjs at root', async () => {
     const root = makeAppRoot();
     const { appRel } = writeNextBuild(root);

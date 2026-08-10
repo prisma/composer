@@ -38,7 +38,16 @@ export function resolveAlchemyBin(resolveFrom: string | URL = import.meta.url): 
     );
   }
 
-  const manifest: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch (cause) {
+    throw new CliStructuredError(
+      'DEPLOY.ALCHEMY_BIN_MISSING',
+      'Composer could not read its installed `alchemy` dependency metadata.',
+      { fix: 'Reinstall @prisma/composer.', cause },
+    );
+  }
   const bin =
     typeof manifest === 'object' &&
     manifest !== null &&

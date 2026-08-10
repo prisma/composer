@@ -91,6 +91,28 @@ describe('resolveAlchemyBin()', () => {
       /does not declare an `alchemy` bin/,
     );
   });
+
+  test('wraps malformed Alchemy dependency metadata as a structured reinstall error', () => {
+    const root = makeTmpDir();
+    const packageDir = path.join(root, 'node_modules', 'alchemy');
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(path.join(packageDir, 'package.json'), '{ invalid json');
+    fs.writeFileSync(path.join(packageDir, 'index.js'), '');
+    fs.writeFileSync(path.join(root, 'composer-bin.mjs'), '');
+
+    try {
+      resolveAlchemyBin(path.join(root, 'composer-bin.mjs'));
+      throw new Error('expected resolveAlchemyBin to fail');
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: 'CliStructuredError',
+        code: 'DEPLOY.ALCHEMY_BIN_MISSING',
+        message: 'Composer could not read its installed `alchemy` dependency metadata.',
+        fix: 'Reinstall @prisma/composer.',
+      });
+      expect(error).toHaveProperty('cause');
+    }
+  });
 });
 
 describe('runAlchemy()', () => {
