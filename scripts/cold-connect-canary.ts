@@ -27,7 +27,7 @@ import {
   type ColdConnectVerdict,
   classifyColdConnectRun,
   classifyColdConnectSample,
-  MIN_BUG_GONE_SAMPLES,
+  collectColdConnectSamples,
 } from './cold-connect-canary-classify.ts';
 
 // bun exits 1 on any uncaught error or unhandled rejection, whatever
@@ -44,7 +44,52 @@ process.on('unhandledRejection', (reason) => {
 
 const API = 'https://api.prisma.io/v1';
 const REGION = 'us-east-1';
-const SAMPLES = Number(process.env['COLD_CONNECT_SAMPLES'] ?? '5');
+
+/**
+ * A misspelt override would otherwise become NaN, and NaN quietly disables the
+ * very things it names: `setTimeout(NaN)` fires at once, killing the spacing,
+ * and every comparison against a NaN budget is false, so the run never stops
+ * itself. Refuse to start instead — non-blocking, like every other way this
+ * canary can fail to reach a verdict.
+ */
+function positiveNumber(name: string, fallback: number, integer = false): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  const ok = Number.isFinite(value) && value > 0 && (!integer || Number.isSafeInteger(value));
+  if (!ok) {
+    const wanted = integer ? 'a positive whole number' : 'a positive number';
+    console.error(`${name} must be ${wanted}; got "${raw}".`);
+    console.log(
+      `::warning title=Cold-connect canary (FT-5226) could not run::${name} must be ${wanted}; ` +
+        `got "${raw}" — no FT-5226 verdict this run; not blocking.`,
+    );
+    process.exit(0);
+  }
+  return value;
+}
+
+const SAMPLES = positiveNumber('COLD_CONNECT_SAMPLES', 5, true);
+/**
+ * Spacing between samples. Back-to-back sampling produced a false bug-gone
+ * verdict on 2026-08-09 (run 31330072181, 14/14 successes) while runs minutes
+ * either side of it still saw the rejection: across 20 runs the successes came
+ * back in a median of 122ms against 546ms for rejections, so the quick ones
+ * were reaching an already-warm upstream and testing nothing. A sample that
+ * never met a cold database is not evidence the cold-connect bug is gone.
+ *
+ * 60s is the sibling cold-start canary's interval (SAMPLE_INTERVAL_MS there),
+ * adopted for the same reason rather than derived from measurement here — if
+ * false bug-gone verdicts persist, that is the number to re-derive first.
+ *
+ * The pause belongs BETWEEN samples. Never put one between provisioning a
+ * database and connecting to it: that warms the very thing under test.
+ */
+const SAMPLE_INTERVAL_MS = positiveNumber('COLD_CONNECT_SAMPLE_INTERVAL_MS', 60_000);
+/** The run's own wall-clock budget, below the job's timeout so the script stops itself and still reports. */
+const MAX_RUN_MS = positiveNumber('COLD_CONNECT_MAX_RUN_MS', 900_000);
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 const token = process.env['PRISMA_SERVICE_TOKEN'];
 const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
@@ -171,18 +216,15 @@ async function runCanary(): Promise<ColdConnectVerdict> {
   project = created;
   console.log(`Created project "${created.name}" (${created.id}); sampling ${SAMPLES} cold DBs…`);
 
-  // One rejection settles the verdict, so stop there. An all-success streak
-  // keeps sampling up to MIN_BUG_GONE_SAMPLES — below that, all-success is
-  // luck, not the bug-gone forcing signal (see classifyColdConnectRun).
-  const samples: ColdConnectSample[] = [];
-  while (
-    samples.length < SAMPLES ||
-    (samples.length < MIN_BUG_GONE_SAMPLES && samples.every((s) => s === 'success'))
-  ) {
-    const sample = await sampleColdConnect(created.id, samples.length);
-    samples.push(sample);
-    if (sample === 'rejected') break;
-  }
+  const samples = await collectColdConnectSamples({
+    sample: (index) => sampleColdConnect(created.id, index),
+    sleep,
+    now: () => Date.now(),
+    minSamples: SAMPLES,
+    intervalMs: SAMPLE_INTERVAL_MS,
+    maxRunMs: MAX_RUN_MS,
+    log: (line) => console.log(line),
+  });
 
   const result = classifyColdConnectRun(samples);
   console.log(result.message);
