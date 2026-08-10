@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { resolveAlchemyBin, runAlchemy } from '../run-alchemy.ts';
 
 const tmpDirs: string[] = [];
@@ -22,29 +23,73 @@ afterEach(() => {
 });
 
 describe('resolveAlchemyBin()', () => {
-  test('finds node_modules/.bin/alchemy in the given directory', () => {
-    const dir = makeTmpDir();
-    const binDir = path.join(dir, 'node_modules', '.bin');
-    fs.mkdirSync(binDir, { recursive: true });
-    fs.writeFileSync(path.join(binDir, 'alchemy'), '');
-
-    expect(resolveAlchemyBin(dir)).toBe(path.join(binDir, 'alchemy'));
-  });
-
-  test('walks up through parent directories (hoisted node_modules layouts)', () => {
+  test("resolves Alchemy from Composer's dependency graph and reads its declared bin", () => {
     const root = makeTmpDir();
-    const binDir = path.join(root, 'node_modules', '.bin');
+    const packageDir = path.join(root, 'node_modules', 'alchemy');
+    const binDir = path.join(packageDir, 'bin');
     fs.mkdirSync(binDir, { recursive: true });
-    fs.writeFileSync(path.join(binDir, 'alchemy'), '');
-    const nested = path.join(root, 'examples', 'app');
-    fs.mkdirSync(nested, { recursive: true });
+    fs.writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({
+        name: 'alchemy',
+        main: './index.js',
+        exports: { '.': './index.js' },
+        bin: { alchemy: './bin/cli.js' },
+      }),
+    );
+    fs.writeFileSync(path.join(packageDir, 'index.js'), '');
+    fs.writeFileSync(path.join(binDir, 'cli.js'), '');
+    fs.writeFileSync(path.join(root, 'composer-bin.mjs'), '');
 
-    expect(resolveAlchemyBin(nested)).toBe(path.join(binDir, 'alchemy'));
+    expect(resolveAlchemyBin(pathToFileURL(path.join(root, 'composer-bin.mjs')).href)).toBe(
+      path.join(binDir, 'cli.js'),
+    );
   });
 
-  test('throws naming the starting directory when no alchemy bin is found anywhere above it', () => {
-    const dir = makeTmpDir();
-    expect(() => resolveAlchemyBin(dir)).toThrow(/Could not find an installed `alchemy` bin/);
+  test('resolves an isolated pnpm-style dependency with no app-level bin', () => {
+    const root = makeTmpDir();
+    const appDir = path.join(root, 'app');
+    const installDir = path.join(
+      appDir,
+      'node_modules',
+      '.pnpm',
+      '@prisma+composer@0.0.0',
+      'node_modules',
+    );
+    const composerDir = path.join(installDir, '@prisma', 'composer');
+    const alchemyDir = path.join(installDir, 'alchemy');
+    fs.mkdirSync(path.join(composerDir, 'dist'), { recursive: true });
+    fs.mkdirSync(path.join(alchemyDir, 'bin'), { recursive: true });
+    fs.writeFileSync(
+      path.join(alchemyDir, 'package.json'),
+      JSON.stringify({ name: 'alchemy', main: './index.js', bin: { alchemy: './bin/cli.js' } }),
+    );
+    fs.writeFileSync(path.join(alchemyDir, 'index.js'), '');
+    fs.writeFileSync(path.join(alchemyDir, 'bin', 'cli.js'), '');
+    fs.writeFileSync(path.join(composerDir, 'dist', 'bin.mjs'), '');
+    const publicComposerDir = path.join(appDir, 'node_modules', '@prisma', 'composer');
+    fs.mkdirSync(path.dirname(publicComposerDir), { recursive: true });
+    fs.symlinkSync(composerDir, publicComposerDir, 'dir');
+
+    expect(resolveAlchemyBin(path.join(publicComposerDir, 'dist', 'bin.mjs'))).toBe(
+      path.join(alchemyDir, 'bin', 'cli.js'),
+    );
+  });
+
+  test('throws when the resolved package has no declared alchemy bin', () => {
+    const root = makeTmpDir();
+    const packageDir = path.join(root, 'node_modules', 'alchemy');
+    fs.mkdirSync(packageDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({ name: 'alchemy', main: './index.js' }),
+    );
+    fs.writeFileSync(path.join(packageDir, 'index.js'), '');
+    fs.writeFileSync(path.join(root, 'composer-bin.mjs'), '');
+
+    expect(() => resolveAlchemyBin(path.join(root, 'composer-bin.mjs'))).toThrow(
+      /does not declare an `alchemy` bin/,
+    );
   });
 });
 
@@ -65,14 +110,17 @@ describe('runAlchemy()', () => {
       { mode: 0o755 },
     );
 
-    const status = runAlchemy({
-      command: 'deploy',
-      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-      cwd: dir,
-      stage: 'ci-42',
-      containerEnv: {},
-      env: { ...process.env, CAPTURE_FILE: captureFile },
-    });
+    const status = runAlchemy(
+      {
+        command: 'deploy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        cwd: dir,
+        stage: 'ci-42',
+        containerEnv: {},
+        env: { ...process.env, CAPTURE_FILE: captureFile },
+      },
+      { resolveBin: () => path.join(binDir, 'alchemy') },
+    );
 
     expect(status).toBe(0);
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
@@ -101,14 +149,17 @@ describe('runAlchemy()', () => {
       { mode: 0o755 },
     );
 
-    runAlchemy({
-      command: 'destroy',
-      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-      cwd: dir,
-      stage: 'br_test123',
-      containerEnv: {},
-      env: { ...process.env, CAPTURE_FILE: captureFile },
-    });
+    runAlchemy(
+      {
+        command: 'destroy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        cwd: dir,
+        stage: 'br_test123',
+        containerEnv: {},
+        env: { ...process.env, CAPTURE_FILE: captureFile },
+      },
+      { resolveBin: () => path.join(binDir, 'alchemy') },
+    );
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
     expect(captured.argv).toEqual([
@@ -145,14 +196,17 @@ describe('runAlchemy()', () => {
     ];
 
     const captures = envs.map((env) => {
-      runAlchemy({
-        command: 'deploy',
-        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-        cwd: dir,
-        stage: 'br_test123',
-        containerEnv: {},
-        env,
-      });
+      runAlchemy(
+        {
+          command: 'deploy',
+          stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+          cwd: dir,
+          stage: 'br_test123',
+          containerEnv: {},
+          env,
+        },
+        { resolveBin: () => path.join(binDir, 'alchemy') },
+      );
       return JSON.parse(fs.readFileSync(captureFile, 'utf8')).argv;
     });
 
@@ -185,14 +239,17 @@ describe('runAlchemy()', () => {
       { mode: 0o755 },
     );
 
-    runAlchemy({
-      command: 'deploy',
-      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-      cwd: dir,
-      stage: 'staging',
-      containerEnv: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
-      env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
-    });
+    runAlchemy(
+      {
+        command: 'deploy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        cwd: dir,
+        stage: 'staging',
+        containerEnv: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
+        env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
+      },
+      { resolveBin: () => path.join(binDir, 'alchemy') },
+    );
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
     expect(captured).toEqual({
@@ -218,14 +275,17 @@ describe('runAlchemy()', () => {
       { mode: 0o755 },
     );
 
-    runAlchemy({
-      command: 'deploy',
-      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-      cwd: dir,
-      stage: 'staging',
-      containerEnv: {},
-      env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
-    });
+    runAlchemy(
+      {
+        command: 'deploy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        cwd: dir,
+        stage: 'staging',
+        containerEnv: {},
+        env: { ...process.env, CAPTURE_FILE: captureFile, BASE_VAR: 'base' },
+      },
+      { resolveBin: () => path.join(binDir, 'alchemy') },
+    );
 
     const captured = JSON.parse(fs.readFileSync(captureFile, 'utf8'));
     expect(captured).toEqual({ BASE_VAR: 'base' });

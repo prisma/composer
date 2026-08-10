@@ -1,33 +1,63 @@
 /**
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): shell out to the generated stack file. Resolves the
- * workspace's own installed `alchemy` bin (walking up `node_modules/.bin`
- * from the generated file's package dir) rather than going through
- * `bunx`/`npx`, so this works the same under node and bun — the resolved
- * bin's own launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch
- * from there, driven by the env it inherits.
+ * `alchemy` package owned by Composer rather than looking in the app's
+ * `node_modules/.bin`, so isolated package-manager layouts work without
+ * requiring the app to depend on Alchemy or hoist Composer's dependencies.
+ * The package's declared bin launcher does its own node/bun dispatch, driven
+ * by the runtime and env it inherits.
  */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as nodeModule from 'node:module';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
 
-/** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
-export function resolveAlchemyBin(startDir: string): string {
-  let dir = startDir;
-  while (true) {
-    const candidate = path.join(dir, 'node_modules', '.bin', 'alchemy');
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new CliStructuredError(
-        'DEPLOY.ALCHEMY_BIN_MISSING',
-        `Could not find an installed \`alchemy\` bin above "${startDir}".`,
-        { fix: 'Add "alchemy" as a dependency of your app.' },
-      );
-    }
-    dir = parent;
+/** Resolves Composer's installed Alchemy package and returns its declared CLI entry. */
+export function resolveAlchemyBin(resolveFrom: string | URL = import.meta.url): string {
+  let manifestPath: string;
+  try {
+    const modulePath =
+      resolveFrom instanceof URL || resolveFrom.startsWith('file:')
+        ? fileURLToPath(resolveFrom)
+        : resolveFrom;
+    const realModulePath = fs.realpathSync(modulePath);
+    const foundManifest =
+      typeof nodeModule.findPackageJSON === 'function'
+        ? nodeModule.findPackageJSON('alchemy', pathToFileURL(realModulePath))
+        : createRequire(realModulePath).resolve('alchemy/package.json');
+    if (foundManifest === undefined) throw new Error('Alchemy has no package manifest.');
+    manifestPath = foundManifest;
+  } catch (cause) {
+    throw new CliStructuredError(
+      'DEPLOY.ALCHEMY_BIN_MISSING',
+      'Composer could not resolve its installed `alchemy` dependency.',
+      { fix: 'Reinstall @prisma/composer.', cause },
+    );
   }
+
+  const manifest: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const bin =
+    typeof manifest === 'object' &&
+    manifest !== null &&
+    'bin' in manifest &&
+    typeof manifest.bin === 'object' &&
+    manifest.bin !== null &&
+    'alchemy' in manifest.bin
+      ? manifest.bin.alchemy
+      : undefined;
+
+  if (typeof bin !== 'string') {
+    throw new CliStructuredError(
+      'DEPLOY.ALCHEMY_BIN_MISSING',
+      'Composer resolved `alchemy`, but the package does not declare an `alchemy` bin.',
+      { fix: 'Reinstall @prisma/composer.' },
+    );
+  }
+
+  return path.resolve(path.dirname(manifestPath), bin);
 }
 
 export interface RunAlchemyInput {
@@ -43,12 +73,17 @@ export interface RunAlchemyInput {
   readonly env?: NodeJS.ProcessEnv;
 }
 
+export interface RunAlchemyDeps {
+  /** Test seam; production resolves Composer's own dependency. */
+  readonly resolveBin?: () => string;
+}
+
 /** Runs `alchemy deploy|destroy <stack file> --yes --stage <stage>`, inheriting stdio + env, plus every extension's resolved container. */
-export function runAlchemy(input: RunAlchemyInput): number {
-  const bin = resolveAlchemyBin(input.cwd);
+export function runAlchemy(input: RunAlchemyInput, deps: RunAlchemyDeps = {}): number {
+  const bin = (deps.resolveBin ?? resolveAlchemyBin)();
   const args = [input.command, input.stackFileRelativePath, '--yes', '--stage', input.stage];
 
-  const result = spawnSync(bin, args, {
+  const result = spawnSync(process.execPath, [bin, ...args], {
     cwd: input.cwd,
     stdio: 'inherit',
     env: {
