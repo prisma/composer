@@ -65,6 +65,10 @@ describe('the engine is the sole signal listener', () => {
 
     expect(afterLocalTargets.SIGINT).toBe(0);
     expect(afterLocalTargets.SIGTERM).toBe(0);
+    // The exit hook too: it is the single registration that installed all
+    // three upstream, so a local-target import that armed only it would slip
+    // past a check that looked at the two signals alone.
+    expect(afterLocalTargets.exit).toBe(0);
   });
 
   test('no exit hook is armed either, which is what the upstream fix changed', () => {

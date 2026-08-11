@@ -42,9 +42,11 @@ if (args.includes('--linger')) {
     process.on('SIGINT', () => {});
     process.on('SIGTERM', () => {});
   } else if (onSignal === 'report') {
+    // Exiting from the write callback, not after the call: stdout is a pipe
+    // here, and an exit issued while the write is still pending discards the
+    // report the reader is waiting for.
     const report = (name) => {
-      process.stdout.write(`signal:${name}\n`);
-      process.exit(0);
+      process.stdout.write(`signal:${name}\n`, () => process.exit(0));
     };
     process.on('SIGINT', () => report('SIGINT'));
     process.on('SIGTERM', () => report('SIGTERM'));

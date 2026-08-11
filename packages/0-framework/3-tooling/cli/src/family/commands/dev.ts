@@ -14,15 +14,14 @@
  * `dev` is credential-free: everything it starts runs on this machine.
  */
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
-import { defineSessionCommand, exitWithChildStatus, flag, positional } from '@prisma/cli-engine';
-import { notOk, ok } from '@prisma/cli-engine/protocol';
+import { defineSessionCommand, flag, positional } from '@prisma/cli-engine';
+import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { convergeSpawn, reproduceHint } from '../converge.ts';
+import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
-import { toEngineError } from '../translate-error.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
@@ -212,17 +211,11 @@ export const createDevCommand = (operations: ComposerOperations) =>
         { alchemy: coalescedConverge(alchemy), configPath: ctx.config.configPath },
       );
 
-      // Nothing is live yet, so the ending is the converge's — read the way
-      // deploy and destroy read it, which is the operation's own verdict and
-      // nothing else. A signal-killed converge needs no branch: the engine
-      // settles the run from its own record of the signal.
-      if (!result.ok) {
-        const child = ctx.lastChild();
-        if (child !== undefined && child.exitCode !== 0) {
-          return ok(exitWithChildStatus({ nextActions: reproduceHint(result.failure) }));
-        }
-        return notOk(toEngineError(result.failure));
-      }
+      // Nothing is live yet, so the ending is the converge's — settled by the
+      // same decision deploy and destroy settle by, which is what keeps the
+      // three from drifting. A signal-killed converge needs no branch: the
+      // engine settles the run from its own record of the signal.
+      if (!result.ok) return settleConvergeFailure(result.failure, ctx);
 
       await stopRequested(ctx.signal);
       await result.value.stop();

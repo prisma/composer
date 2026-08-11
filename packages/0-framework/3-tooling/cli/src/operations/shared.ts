@@ -45,6 +45,12 @@ export interface OperationDeps {
    * environment for token material. Absent for hosts that have not adopted
    * the seam — the container descriptors then fall back to the environment
    * protocol, as the spawned child does.
+   *
+   * Read by `deploy` and `destroy` only, because they are the operations that
+   * reach a PLATFORM container. `dev` and `log` resolve local targets, whose
+   * container is "a stable local identity — resolved without any platform
+   * call", and both commands are credential-free by contract: there is no
+   * authenticated call on those paths for this to reach.
    */
   readonly credentials?: ContainerCredentials | undefined;
 }
@@ -83,6 +89,7 @@ export function executionDiagnostics(f: CliStructuredError): ExecutionDiagnostic
   >(diagnostics);
   if (
     (candidate['exitCode'] !== undefined && typeof candidate['exitCode'] !== 'number') ||
+    (candidate['signal'] !== undefined && typeof candidate['signal'] !== 'string') ||
     typeof candidate['stackFilePath'] !== 'string' ||
     typeof candidate['reproduceCommand'] !== 'string' ||
     typeof candidate['cwd'] !== 'string'
@@ -91,7 +98,7 @@ export function executionDiagnostics(f: CliStructuredError): ExecutionDiagnostic
   }
   return blindCast<
     ExecutionDiagnostics,
-    'the field checks above validate the runtime shape (optional numeric exitCode, string stackFilePath/reproduceCommand/cwd)'
+    'the field checks above validate the runtime shape (optional numeric exitCode, optional string signal, string stackFilePath/reproduceCommand/cwd)'
   >(diagnostics);
 }
 

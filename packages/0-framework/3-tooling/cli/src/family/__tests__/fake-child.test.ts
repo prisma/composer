@@ -54,12 +54,15 @@ describe('the fake child', () => {
 
   test('a lingering child scripted to report a signal names it and exits 0', async () => {
     const child = spawn(process.execPath, [FIXTURE, '--linger', '--on-signal', 'report']);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    child.kill('SIGINT');
+    // Listening before the kill, and waiting for `close` rather than `exit`:
+    // `exit` fires when the child terminates, `close` only once its stdio has
+    // ended, so `close` is what says the report has actually been read.
     const chunks: string[] = [];
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    child.kill('SIGINT');
     const code = await new Promise<number | null>((resolve) => {
-      child.on('exit', (exitCode) => resolve(exitCode));
+      child.on('close', (exitCode) => resolve(exitCode));
     });
     expect(code).toBe(0);
     expect(chunks.join('')).toBe('signal:SIGINT\n');

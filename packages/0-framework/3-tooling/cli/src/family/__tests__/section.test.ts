@@ -66,10 +66,44 @@ describe('composerSection.validate()', () => {
       () => undefined,
       new Proxy({}, { get: () => undefined }),
       Object.create(null),
+      // Traps that throw rather than answer: reading the fields is itself
+      // what fails, so a validator that inspects before it guards dies here.
+      new Proxy(
+        {},
+        {
+          ownKeys: () => {
+            throw new Error('ownKeys trap');
+          },
+        },
+      ),
+      new Proxy(
+        {},
+        {
+          get: () => {
+            throw new Error('get trap');
+          },
+        },
+      ),
     ];
     for (const raw of hostile) {
       expect(() => composerSection.validate(raw)).not.toThrow();
     }
+  });
+
+  test('a section whose own fields cannot be read fails with a field diagnostic', () => {
+    const result = composerSection.validate(
+      new Proxy(
+        {},
+        {
+          ownKeys: () => {
+            throw new Error('ownKeys trap');
+          },
+        },
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics[0]?.code).toBe('CONFIG.FIELD_INVALID');
+    expect(result.diagnostics[0]?.severity).toBe('error');
   });
 
   test('the section is named `composer`', () => {

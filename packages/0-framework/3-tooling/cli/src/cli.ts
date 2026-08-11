@@ -36,8 +36,15 @@ export function shippedVersion(
   while (true) {
     const manifest = path.join(dir, 'package.json');
     if (fs.existsSync(manifest)) {
-      const version: unknown = JSON.parse(fs.readFileSync(manifest, 'utf-8')).version;
-      return typeof version === 'string' ? version : UNKNOWN_VERSION;
+      try {
+        const version: unknown = JSON.parse(fs.readFileSync(manifest, 'utf-8')).version;
+        return typeof version === 'string' ? version : UNKNOWN_VERSION;
+      } catch {
+        // An unreadable or malformed manifest is a version we cannot report,
+        // not a reason to fail the command: reporting the version is the only
+        // thing this function is for.
+        return UNKNOWN_VERSION;
+      }
     }
     const parent = path.dirname(dir);
     if (parent === dir) return UNKNOWN_VERSION;

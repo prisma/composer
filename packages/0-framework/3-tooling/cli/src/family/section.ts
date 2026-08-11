@@ -65,7 +65,28 @@ function validate(raw: unknown): SectionValidation<ComposerSection> {
     };
   }
 
-  const record: Record<string, unknown> = { ...raw };
+  // Reading the fields can itself fail — a Proxy whose `get` or `ownKeys`
+  // trap throws answers neither question — and the engine turns a throwing
+  // validator into an internal error, reporting a bad config as a bug in
+  // composer. A section we cannot read is a section we cannot accept.
+  let record: Record<string, unknown>;
+  try {
+    record = { ...raw };
+  } catch {
+    return {
+      ok: false,
+      diagnostics: [
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          severity: 'error',
+          summary: 'The `composer` section of prisma.config.ts could not be read.',
+          why: 'Reading its fields threw, so nothing in it can be trusted.',
+          fix: 'Write it as a plain object literal, e.g. `composer: { configPath: "./prisma-composer.config.ts" }`.',
+        }),
+      ],
+    };
+  }
+
   const configPath = record['configPath'];
   if (configPath !== undefined && (typeof configPath !== 'string' || configPath.length === 0)) {
     return {

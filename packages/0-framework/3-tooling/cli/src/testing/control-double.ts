@@ -21,7 +21,7 @@ import type { ComposerOperations } from '../family/family.ts';
 import type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DestroyEvent, DestroyInput } from '../operations/destroy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
-import type { LogAttached, LogInput, LogLine } from '../operations/log.ts';
+import type { LogAttached, LogDeps, LogInput, LogLine } from '../operations/log.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 
 export interface ControlDoubleFixtures {
@@ -46,12 +46,26 @@ export interface ControlDoubleFixtures {
   readonly logLines?: readonly LogLine[] | undefined;
 }
 
+/**
+ * The deps each call carried, in the same order as the inputs beside them.
+ * These are the operation's SECOND argument — the seam the config path, the
+ * converge spawn adapter and the credentials ride in on — so a host that
+ * drops one of those is caught here rather than by its absence downstream.
+ */
+export interface ControlDoubleDeps {
+  readonly deploy: readonly OperationDeps[];
+  readonly destroy: readonly OperationDeps[];
+  readonly dev: readonly OperationDeps[];
+  readonly log: readonly LogDeps[];
+}
+
 /** Every input each operation received, in call order — the assertion surface. */
 export interface ControlDoubleCalls {
   readonly deploy: readonly DeployInput[];
   readonly destroy: readonly DestroyInput[];
   readonly dev: readonly DevInput[];
   readonly log: readonly LogInput[];
+  readonly deps: ControlDoubleDeps;
 }
 
 export interface ControlDouble {
@@ -162,28 +176,43 @@ export function createControlDouble(fixtures: ControlDoubleFixtures = {}): Contr
   const destroyCalls: DestroyInput[] = [];
   const devCalls: DevInput[] = [];
   const logCalls: LogInput[] = [];
-  const calls = { deploy: deployCalls, destroy: destroyCalls, dev: devCalls, log: logCalls };
+  const deployDeps: OperationDeps[] = [];
+  const destroyDeps: OperationDeps[] = [];
+  const devDeps: OperationDeps[] = [];
+  const logDeps: LogDeps[] = [];
+  const deps = { deploy: deployDeps, destroy: destroyDeps, dev: devDeps, log: logDeps };
+  const calls = {
+    deploy: deployCalls,
+    destroy: destroyCalls,
+    dev: devCalls,
+    log: logCalls,
+    deps,
+  };
 
   const operations: ComposerOperations = {
-    deploy: async (input, deps) => {
+    deploy: async (input, operationDeps) => {
       calls.deploy.push(input);
-      const converge = await runConverge('deploy', deps, input.cwd);
+      deps.deploy.push(operationDeps);
+      const converge = await runConverge('deploy', operationDeps, input.cwd);
       if (converge !== undefined) return converge;
       return fixtures.deploy ?? ok({ summary: undefined });
     },
-    destroy: async (input, deps) => {
+    destroy: async (input, operationDeps) => {
       calls.destroy.push(input);
+      deps.destroy.push(operationDeps);
       for (const event of fixtures.destroyEvents ?? []) input.onEvent?.(event);
-      const converge = await runConverge('destroy', deps, input.cwd);
+      const converge = await runConverge('destroy', operationDeps, input.cwd);
       if (converge !== undefined) return converge;
       return fixtures.destroy ?? okVoid();
     },
-    dev: async (input) => {
+    dev: async (input, operationDeps) => {
       calls.dev.push(input);
+      deps.dev.push(operationDeps);
       return fixtures.dev ?? ok(devSessionDouble(input, fixtures.devEndpoints ?? []));
     },
-    log: async (input) => {
+    log: async (input, logDeps) => {
       calls.log.push(input);
+      deps.log.push(logDeps);
       return (
         fixtures.log ??
         ok({

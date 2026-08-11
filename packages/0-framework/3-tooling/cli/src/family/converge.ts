@@ -99,6 +99,27 @@ export function reproduceHint(failure: ComposerError): readonly NextAction[] {
 }
 
 /**
+ * How a FAILED converge settles. `deploy`, `destroy` and `dev` all end this
+ * way and must not drift apart, so the decision lives here once rather than
+ * inline in each handler.
+ *
+ * A failure that reached the child exits with the child's status verbatim and
+ * carries the reproduce hint; a failure that never reached the child is an
+ * ordinary structured error and gets the normal envelope. Nothing here reads
+ * `signal` — see settleConverge.
+ */
+export function settleConvergeFailure(
+  failure: ComposerError,
+  ctx: ConvergeContext,
+): Result<ChildStatusSettlement, CliStructuredError> {
+  const child = ctx.lastChild();
+  if (child !== undefined && child.exitCode !== 0) {
+    return ok(exitWithChildStatus({ nextActions: reproduceHint(failure) }));
+  }
+  return notOk(toEngineError(failure));
+}
+
+/**
  * How a converge settles, now that the engine owns the child's status.
  *
  * Nothing here reads `signal`. `exitWithChildStatus` settles from the engine's
@@ -124,13 +145,7 @@ export function settleConverge<T>(
   ctx: ConvergeContext,
   present: (value: T) => PresentedResult<unknown>,
 ): HandlerResult {
-  if (!result.ok) {
-    const child = ctx.lastChild();
-    if (child !== undefined && child.exitCode !== 0) {
-      return ok(exitWithChildStatus({ nextActions: reproduceHint(result.failure) }));
-    }
-    return notOk(toEngineError(result.failure));
-  }
+  if (!result.ok) return settleConvergeFailure(result.failure, ctx);
 
   return ok(present(result.value));
 }
