@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Nothing statically reachable from `@prisma/composer/family` may import
-// alchemy or effect.
+// Nothing statically reachable from `@prisma/composer/family` — or from the
+// published `prisma-composer` executable — may import alchemy or effect.
 //
 // The `prisma` bin imports composer's command family directly, so every module
 // in that entrypoint's static graph loads on `prisma --version`. Alchemy's
@@ -56,6 +56,18 @@ const CHECKS = [
     allowDynamicImports: true,
   },
   {
+    // The published executable, built by its own tsdown config. `--help`,
+    // `--version` and every grammar error must survive a tree whose alchemy is
+    // unloadable (scripts/check-npm-effect-resolution.mjs asserts exactly that
+    // against a real install), which holds only while start-up loads none of
+    // it. The engine specifier doubles as the proof that the executable's
+    // config left the engine external rather than inlining a private copy.
+    entry: 'dist/bin.mjs',
+    expectedSpecifier: /^@prisma\/cli-engine(\/|$)/,
+    expectedDescription: 'a @prisma/cli-engine import',
+    allowDynamicImports: true,
+  },
+  {
     entry: 'dist/testing.mjs',
     // The non-vacuous marker here is chunk content, not an import: the
     // double's constructor must be defined in the walked source.
@@ -85,6 +97,11 @@ function staticImports(source) {
   return specifiers;
 }
 
+/** A packed file's path as the operator sees it in the tarball. */
+function relativeToPacked(file) {
+  return file.split('/package/')[1] ?? file;
+}
+
 /** Walks one entry's static graph inside the packed tree. */
 function walk(packedRoot, entryRelative) {
   const entry = join(packedRoot, entryRelative);
@@ -105,7 +122,19 @@ function walk(packedRoot, entryRelative) {
     sources.push(source);
     for (const specifier of staticImports(source)) {
       if (specifier.startsWith('.')) {
-        queue.push(resolve(dirname(file), specifier));
+        const target = resolve(dirname(file), specifier);
+        // Guarded, because an unresolvable relative import ends the walk where
+        // it stands: everything that module imported goes unexamined, and a
+        // forbidden alchemy or effect import behind it would pass unseen. The
+        // named error also beats the bare ENOENT this used to die on.
+        if (!existsSync(target)) {
+          throw new Error(
+            `${relativeToPacked(file)} imports "${specifier}", which is not in the packed tarball, ` +
+              'so the walk cannot see what it imports. Is the build stale, or is the chunk missing ' +
+              "from the package's `files`?",
+          );
+        }
+        queue.push(target);
         continue;
       }
       if (!bareSpecifiers.has(specifier)) bareSpecifiers.set(specifier, file);
@@ -133,12 +162,23 @@ try {
   const packedRoot = join(work, 'package');
 
   for (const check of CHECKS) {
-    const { bareSpecifiers, source } = walk(packedRoot, check.entry);
+    // A walk that cannot proceed is reported like any other failure rather
+    // than thrown: the `finally` below deletes the extracted tarball, so an
+    // escaping error would take every finding already collected with it and
+    // leave a stack trace where the curated report should be.
+    let walked;
+    try {
+      walked = walk(packedRoot, check.entry);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+      continue;
+    }
+    const { bareSpecifiers, source } = walked;
 
     for (const [specifier, importer] of bareSpecifiers) {
       if (FORBIDDEN.some((pattern) => pattern.test(specifier))) {
         failures.push(
-          `"${specifier}" is statically reachable from ${check.entry} (imported by ${importer.split('/package/')[1] ?? importer}). ` +
+          `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
             'Something now imports an executor directly instead of behind its `await import()`.',
         );
       }
@@ -171,5 +211,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 process.stderr.write(
-  '\nOK — dist/family.mjs and dist/testing.mjs are free of alchemy and effect, and the testing graph carries no dynamic imports.\n',
+  '\nOK — dist/family.mjs, dist/bin.mjs and dist/testing.mjs are free of alchemy and effect, the ' +
+    'executable keeps the engine external, and the testing graph carries no dynamic imports.\n',
 );

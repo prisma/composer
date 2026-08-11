@@ -16,15 +16,19 @@
 //   the one the code was built against. Dependabot is told to leave it alone
 //   (.github/dependabot.yml), which is what makes this check the only guard.
 //
-//   External. tsdown bundles by default here (`skipNodeModulesBundle: false`),
-//   so without an explicit `external` entry the engine would be INLINED into
-//   the tarball. A private copy of the engine is not a copy of a library — the
-//   `prisma` bin would mount composer's family into its own engine while
-//   composer's handlers reached for the inlined one, and every cross-boundary
-//   `instanceof` and every module-level registry would silently disagree.
-//   Grepping the emitted chunks for a surviving bare specifier is what proves
-//   externalization actually happened, which the manifest alone cannot say
-//   (see the inventory's hazard H7).
+//   External. Both of composer's tsdown configs bundle node_modules
+//   (`skipNodeModulesBundle: false`) so the @internal scope is inlined, and
+//   what survives as a real import is then the bundler's decision — one it can
+//   change without anyone editing a manifest. A private copy of the engine is
+//   not a copy of a library: the `prisma` bin would mount composer's family
+//   into its own engine while composer's handlers reached for the inlined one,
+//   and every cross-boundary `instanceof` and every module-level registry
+//   would silently disagree. Grepping the emitted chunks for a surviving bare
+//   specifier is what proves externalization actually happened, which the
+//   manifest alone cannot say (see the inventory's hazard H7). The executable
+//   is checked BY NAME as well as in the whole-dist sweep, because it is built
+//   by a second config with its own externals and would otherwise ride on the
+//   library entries' specifier.
 //
 // Requires @prisma/composer to be built (`pnpm turbo run build
 // --filter=@prisma/composer`).
@@ -32,12 +36,14 @@
 // Usage: node scripts/check-cli-engine-pin.mjs
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ENGINE = '@prisma/cli-engine';
+/** The published executable, built by its own tsdown config — see the bin-specific check below. */
+const BIN = 'bin.mjs';
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -102,19 +108,48 @@ try {
   );
 
   const distDir = join(packedRoot, 'dist');
-  const chunks = readdirSync(distDir).filter((f) => f.endsWith('.mjs'));
-  // A surviving bare specifier is the externalization proof. An inlined engine
-  // leaves no specifier at all, so "no chunk mentions it" is the failure, not
-  // the pass.
-  const importing = chunks.filter((f) =>
-    new RegExp(`from\\s*["']${ENGINE}(/[^"']*)?["']`).test(readFileSync(join(distDir, f), 'utf-8')),
-  );
-  require_(
-    importing.length > 0,
-    `no chunk in the packed dist/ imports ${ENGINE} by specifier — it has been inlined into the tarball instead of left external. Add it to tsdown.config.ts's \`external\` array.`,
-  );
-  if (importing.length > 0) {
-    process.stderr.write(`${ENGINE} stays external in: ${importing.join(', ')}\n`);
+  if (!existsSync(distDir)) {
+    // Not a finding about the code: the operator packed a package that was
+    // never built. Say so here rather than dying on ENOENT and discarding the
+    // manifest findings already collected above.
+    require_(
+      false,
+      'the packed tarball has no dist/ — build the package first: `pnpm turbo run build --filter=@prisma/composer`.',
+    );
+  } else {
+    // Recursive: code splitting can put a chunk in a subdirectory, and a
+    // surviving import down there is just as much proof as one at the top.
+    // The returned paths stay relative to distDir.
+    const chunks = readdirSync(distDir, { recursive: true, encoding: 'utf-8' }).filter((f) =>
+      f.endsWith('.mjs'),
+    );
+    // A surviving bare specifier is the externalization proof. An inlined engine
+    // leaves no specifier at all, so "no chunk mentions it" is the failure, not
+    // the pass.
+    const imports = (file) =>
+      new RegExp(`from\\s*["']${ENGINE}(/[^"']*)?["']`).test(
+        readFileSync(join(distDir, file), 'utf-8'),
+      );
+    const importing = chunks.filter(imports);
+    require_(
+      importing.length > 0,
+      `no chunk in the packed dist/ imports ${ENGINE} by specifier — it has been inlined into the tarball instead of left external. Add it to tsdown.config.ts's \`external\` array.`,
+    );
+    // The executable specifically. The whole-dist check above passes as soon
+    // as ONE chunk keeps the specifier, so the library entries alone would
+    // satisfy it while the bin — built by a second tsdown config, with its own
+    // externals — carried a private copy of the engine.
+    require_(
+      !chunks.includes(BIN) || imports(BIN),
+      `the packed ${BIN} does not import ${ENGINE} by specifier — the executable's tsdown config has inlined its own copy of the engine. Add it to that config's \`external\` array.`,
+    );
+    require_(
+      chunks.includes(BIN),
+      `the packed dist/ has no ${BIN} — the executable @prisma/composer publishes as its bin is missing from the tarball.`,
+    );
+    if (importing.length > 0) {
+      process.stderr.write(`${ENGINE} stays external in: ${importing.join(', ')}\n`);
+    }
   }
 } finally {
   if (work !== undefined) rmSync(work, { recursive: true, force: true });

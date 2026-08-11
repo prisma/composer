@@ -51,6 +51,14 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
+    // The same two the library entries externalize, for the same two reasons,
+    // stated rather than inherited from what the bundler happens to do with a
+    // declared dependency: esbuild refuses to run once bundled, and the
+    // executable must run the ENGINE THE MANIFEST PINS — a private copy would
+    // make the installed version and the running one different things.
+    // scripts/check-cli-engine-pin.mjs checks dist/bin.mjs by name for exactly
+    // this, and check-family-static-graph.mjs walks its graph.
+    external: ['esbuild', '@prisma/cli-engine'],
     noExternal: [/^@internal\//],
   },
 ]);
