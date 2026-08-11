@@ -15,8 +15,14 @@
  * Everything else on the envelope survives as-is; only remediation changes
  * representation.
  */
-import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
-import { CliStructuredError as EngineError, type NextAction } from '@prisma/cli-engine/protocol';
+import { CliStructuredError, type NextAction } from '@prisma/cli-engine/protocol';
+
+/**
+ * Composer's own class of the same name — referenced through an inline import
+ * type rather than an import alias so the two same-named classes cannot be
+ * confused at a use site: the bare name is always the engine's.
+ */
+type ComposerError = import('@internal/foundation/errors').CliStructuredError;
 
 /**
  * Composer's `fix` is free prose — "add this overrides block and reinstall",
@@ -31,8 +37,8 @@ function fixAsNextActions(fix: string | undefined): readonly NextAction[] {
 }
 
 /** Translates a composer failure into the engine's error type. Composer-side detail — `meta`, `where`, `docsUrl` — rides along untouched. */
-export function toEngineError(error: ComposerError): EngineError {
-  return new EngineError(error.code, error.message, {
+export function toEngineError(error: ComposerError): CliStructuredError {
+  return new CliStructuredError(error.code, error.message, {
     severity: error.severity,
     nextActions: fixAsNextActions(error.fix),
     ...(error.why === undefined ? {} : { why: error.why }),

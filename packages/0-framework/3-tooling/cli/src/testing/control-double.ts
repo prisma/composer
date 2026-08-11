@@ -92,12 +92,11 @@ async function* replayLines(
 }
 
 export function createControlDouble(fixtures: ControlDoubleFixtures = {}): ControlDouble {
-  const calls = {
-    deploy: [] as DeployInput[],
-    destroy: [] as DestroyInput[],
-    dev: [] as DevInput[],
-    log: [] as LogInput[],
-  };
+  const deployCalls: DeployInput[] = [];
+  const destroyCalls: DestroyInput[] = [];
+  const devCalls: DevInput[] = [];
+  const logCalls: LogInput[] = [];
+  const calls = { deploy: deployCalls, destroy: destroyCalls, dev: devCalls, log: logCalls };
 
   const operations: ComposerOperations = {
     deploy: async (input) => {
