@@ -58,8 +58,13 @@ describe('createComposerFamily()', () => {
     expect(createComposerFamily().configSection).toBe(composerSection);
   });
 
-  test('the skeleton mounts no commands — they arrive in D3', () => {
-    expect(Object.keys(createComposerFamily().commands)).toEqual([]);
+  test('the family mounts the four commands', () => {
+    expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
+      'deploy',
+      'destroy',
+      'dev',
+      'log',
+    ]);
   });
 
   test('the operations seam defaults to the real control operations', () => {
@@ -80,25 +85,19 @@ describe('createComposerFamily()', () => {
 });
 
 describe('createComposerCli()', () => {
-  /**
-   * Pins D2's deliberate state rather than asserting around it. A CLI with no
-   * commands has nothing to be, and the engine says so at construction; D3
-   * mounts deploy/destroy/dev/log and this expectation inverts.
-   */
-  test('the skeleton has no commands yet, so the engine refuses to construct a CLI', () => {
-    expect(() => createComposerCli({ version: VERSION })).toThrow(/at least one mounted command/);
+  test('the CLI constructs, now that the family carries commands', () => {
+    expect(() => createComposerCli({ version: VERSION })).not.toThrow();
   });
 
   test('the CLI mounts exactly what the family carries', () => {
-    expect(Object.keys(createComposerFamily().commands)).toEqual([]);
+    const mounted = Object.keys(createComposerFamily().commands).sort();
+    expect(mounted).toEqual(['deploy', 'destroy', 'dev', 'log']);
   });
 
-  test('runComposerCli builds the same command-less CLI, so it rejects the same way until D3', async () => {
+  test('runComposerCli runs a real engine run to an exit code', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-engine-cli-'));
     try {
-      await expect(
-        runComposerCli(['--version'], fakeHost(dir), { version: VERSION }),
-      ).rejects.toThrow(/at least one mounted command/);
+      expect(await runComposerCli(['--version'], fakeHost(dir), { version: VERSION })).toBe(0);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -13,32 +13,43 @@
  * scripts/check-family-static-graph.mjs enforces this against BUILT output,
  * where type-only imports have already been erased.
  *
- * D2 ships the skeleton: the section token, the injection seam, and the
- * family itself. The four commands arrive in D3.
+ * The four commands close over the operations they are given, so a host can
+ * mount this family against the test double and exercise real grammar, real
+ * arg validation and real handlers with no alchemy behind them.
  */
 import { DOCS_BASE } from '@internal/foundation/errors';
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
-import { deploy } from '../operations/deploy.ts';
-import { destroy } from '../operations/destroy.ts';
-import { dev } from '../operations/dev.ts';
-import { log } from '../operations/log.ts';
+import { deployWithDeps } from '../operations/deploy.ts';
+import { destroyWithDeps } from '../operations/destroy.ts';
+import { devWithDeps } from '../operations/dev.ts';
+import { logWithDeps } from '../operations/log.ts';
+import { createDeployCommand } from './commands/deploy.ts';
+import { createDestroyCommand } from './commands/destroy.ts';
+import { createDevCommand } from './commands/dev.ts';
+import { createLogCommand } from './commands/log.ts';
 import { composerSection } from './section.ts';
 
 /**
- * The control-plane operations the family's handlers call. Taking them as an
- * argument is what lets a host mount the family against the published test
- * double (`@prisma/composer/testing`) and get real grammar, real arg
- * validation and real handlers without alchemy, containers or a network —
- * which is how prisma-cli tests its mount of this family.
+ * The control-plane operations the family's handlers call. These are the
+ * deps-taking variants, not the bare ones: a handler must inject the converge
+ * spawn adapter (so the ENGINE starts the child and owns signal policy) and
+ * the credentials the in-process leg authenticates with. A double that
+ * honours `deps.alchemy` therefore exercises the real settlement path
+ * against a scripted fake child.
  */
 export interface ComposerOperations {
-  readonly deploy: typeof deploy;
-  readonly destroy: typeof destroy;
-  readonly dev: typeof dev;
-  readonly log: typeof log;
+  readonly deploy: typeof deployWithDeps;
+  readonly destroy: typeof destroyWithDeps;
+  readonly dev: typeof devWithDeps;
+  readonly log: typeof logWithDeps;
 }
 
-export const realOperations: ComposerOperations = { deploy, destroy, dev, log };
+export const realOperations: ComposerOperations = {
+  deploy: deployWithDeps,
+  destroy: destroyWithDeps,
+  dev: devWithDeps,
+  log: logWithDeps,
+};
 
 export interface CreateComposerFamilyOptions {
   /** Defaults to the real control operations. */
@@ -47,14 +58,14 @@ export interface CreateComposerFamilyOptions {
 
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   const operations = options.operations ?? realOperations;
-  // The skeleton mounts no commands, so nothing consumes `operations` yet —
-  // D3's four handlers close over it. The seam exists now because the
-  // signature is what prisma-cli writes its family tests against, and
-  // discovering it in D3 would mean rewriting them.
-  void operations;
   return defineCommandFamily({
     configSection: composerSection,
-    commands: {},
+    commands: {
+      deploy: createDeployCommand(operations),
+      destroy: createDestroyCommand(operations),
+      dev: createDevCommand(operations),
+      log: createLogCommand(operations),
+    },
     docsBaseUrl: DOCS_BASE,
   });
 }

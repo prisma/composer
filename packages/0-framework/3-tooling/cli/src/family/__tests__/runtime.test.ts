@@ -154,8 +154,25 @@ describe('createRuntime()', () => {
     ).toBe('https://api.staging.invalid');
   });
 
-  test('no credential manager is wired yet — commands needing credentials must fail as signed out', () => {
-    expect(createRuntime(fakeHost(), emptyConfig).credentialManager).toBeUndefined();
+  test('the environment credential manager is wired, and reads the two protocol variables', async () => {
+    const manager = createRuntime(
+      fakeHost({ env: { PRISMA_SERVICE_TOKEN: 'token', PRISMA_WORKSPACE_ID: 'ws_1' } }),
+      emptyConfig,
+    ).credentialManager;
+
+    const credential = await manager?.activeCredential();
+    expect(credential?.workspaceId).toBe('ws_1');
+    expect(credential?.origin.source).toBe('environment');
+  });
+
+  test('with no service token in the environment there is no active credential', async () => {
+    expect(await createRuntime(fakeHost(), emptyConfig).credentialManager?.activeCredential()).toBe(
+      null,
+    );
+  });
+
+  test('a spawn adapter is wired — without one the engine refuses every spawning command', () => {
+    expect(typeof createRuntime(fakeHost(), emptyConfig).spawn).toBe('function');
   });
 
   test('the loaded config is passed through untouched', () => {

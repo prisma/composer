@@ -14,14 +14,14 @@
  * control implementation, which scripts/check-family-static-graph.mjs proves
  * against the packed tarball.
  */
-import type { CliStructuredError } from '@internal/foundation/errors';
-import { ok, okVoid, type Result } from '@internal/foundation/result';
+import { CliStructuredError } from '@internal/foundation/errors';
+import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
 import type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DestroyEvent, DestroyInput } from '../operations/destroy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
 import type { LogAttached, LogInput, LogLine } from '../operations/log.ts';
-import type { ServiceEndpoint } from '../operations/shared.ts';
+import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 
 export interface ControlDoubleFixtures {
   /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary. */
@@ -91,6 +91,70 @@ async function* replayLines(
   }
 }
 
+/**
+ * Runs the caller's converge adapter, when it supplied one, against a
+ * synthetic invocation — no alchemy bin is resolved and no real child is
+ * started; the adapter decides what the child does.
+ *
+ * This is what makes a host's tests cover the settlement rules rather than
+ * just the grammar: a scripted fake child that exits non-zero, or is killed
+ * by a signal, produces the same failure shape the real executor produces, so
+ * the handler's "signal first, then exit status" branch is genuinely
+ * exercised. Returns undefined when no adapter was injected, leaving the
+ * fixture result untouched.
+ */
+async function runConverge(
+  action: 'deploy' | 'destroy',
+  deps: OperationDeps,
+  cwd: string | undefined,
+): Promise<Result<never, CliStructuredError> | undefined> {
+  if (deps.alchemy === undefined) return undefined;
+  const stackFilePath = '.prisma-composer/alchemy.run.ts';
+  const reproduceCommand = `alchemy ${action} ${stackFilePath} --yes --stage test`;
+  const workingDirectory = cwd ?? '.';
+  const outcome = await deps.alchemy({
+    command: 'alchemy',
+    args: [action, stackFilePath, '--yes', '--stage', 'test'],
+    cwd: workingDirectory,
+    env: {},
+  });
+
+  if (outcome.signal !== null) {
+    return notOk(
+      new CliStructuredError(
+        'DEPLOY.ENGINE_FAILED',
+        `alchemy ${action} was interrupted by ${outcome.signal}.`,
+        {
+          meta: {
+            signal: outcome.signal,
+            diagnostics: {
+              exitCode: undefined,
+              signal: outcome.signal,
+              stackFilePath,
+              reproduceCommand,
+              cwd: workingDirectory,
+            },
+          },
+        },
+      ),
+    );
+  }
+  const status = outcome.exitCode ?? 1;
+  if (status === 0) return undefined;
+  return notOk(
+    new CliStructuredError(
+      'DEPLOY.ENGINE_FAILED',
+      `alchemy ${action} exited with status ${status}.`,
+      {
+        meta: {
+          exitCode: status,
+          diagnostics: { exitCode: status, stackFilePath, reproduceCommand, cwd: workingDirectory },
+        },
+      },
+    ),
+  );
+}
+
 export function createControlDouble(fixtures: ControlDoubleFixtures = {}): ControlDouble {
   const deployCalls: DeployInput[] = [];
   const destroyCalls: DestroyInput[] = [];
@@ -99,13 +163,17 @@ export function createControlDouble(fixtures: ControlDoubleFixtures = {}): Contr
   const calls = { deploy: deployCalls, destroy: destroyCalls, dev: devCalls, log: logCalls };
 
   const operations: ComposerOperations = {
-    deploy: async (input) => {
+    deploy: async (input, deps) => {
       calls.deploy.push(input);
+      const converge = await runConverge('deploy', deps, input.cwd);
+      if (converge !== undefined) return converge;
       return fixtures.deploy ?? ok({ summary: undefined });
     },
-    destroy: async (input) => {
+    destroy: async (input, deps) => {
       calls.destroy.push(input);
       for (const event of fixtures.destroyEvents ?? []) input.onEvent?.(event);
+      const converge = await runConverge('destroy', deps, input.cwd);
+      if (converge !== undefined) return converge;
       return fixtures.destroy ?? okVoid();
     },
     dev: async (input) => {

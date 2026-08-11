@@ -15,7 +15,7 @@ const ENTRY = './app/main.ts';
 describe('createControlDouble()', () => {
   test('deploy succeeds by default, with no summary, and records its input', async () => {
     const double = createControlDouble();
-    const result = await double.operations.deploy({ entry: ENTRY, stage: 'preview' });
+    const result = await double.operations.deploy({ entry: ENTRY, stage: 'preview' }, {});
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toEqual({ summary: undefined });
     expect(double.calls.deploy).toEqual([{ entry: ENTRY, stage: 'preview' }]);
@@ -26,7 +26,7 @@ describe('createControlDouble()', () => {
       fix: 'Pick a valid stage.',
     });
     const double = createControlDouble({ deploy: notOk(failure) });
-    const result = await double.operations.deploy({ entry: ENTRY });
+    const result = await double.operations.deploy({ entry: ENTRY }, {});
     expect(!result.ok && result.failure).toBe(failure);
   });
 
@@ -35,11 +35,14 @@ describe('createControlDouble()', () => {
       destroyEvents: [{ kind: 'no-local-deploy-state', cwd: '/app' }],
     });
     const events: unknown[] = [];
-    const result = await double.operations.destroy({
-      entry: ENTRY,
-      target: { kind: 'production' },
-      onEvent: (event) => events.push(event),
-    });
+    const result = await double.operations.destroy(
+      {
+        entry: ENTRY,
+        target: { kind: 'production' },
+        onEvent: (event) => events.push(event),
+      },
+      {},
+    );
     expect(result.ok).toBe(true);
     expect(events).toEqual([{ kind: 'no-local-deploy-state', cwd: '/app' }]);
   });
@@ -48,10 +51,13 @@ describe('createControlDouble()', () => {
     const endpoints = [{ address: 'web', url: 'http://localhost:3000' }];
     const double = createControlDouble({ devEndpoints: endpoints });
     const events: Array<{ kind: string }> = [];
-    const result = await double.operations.dev({
-      entry: ENTRY,
-      onEvent: (event) => events.push(event),
-    });
+    const result = await double.operations.dev(
+      {
+        entry: ENTRY,
+        onEvent: (event) => events.push(event),
+      },
+      {},
+    );
     const session = result.assertOk();
     expect(session.endpoints).toEqual(endpoints);
     expect(events.map((event) => event.kind)).toEqual(['ready']);
@@ -78,7 +84,7 @@ describe('createControlDouble()', () => {
         { service: 'worker', line: 'polling' },
       ],
     });
-    const attached = (await double.operations.log({ entry: ENTRY })).assertOk();
+    const attached = (await double.operations.log({ entry: ENTRY }, {})).assertOk();
     expect(attached.appName).toBe('store');
     const lines = [];
     for await (const line of attached.lines) lines.push(line);
@@ -92,7 +98,9 @@ describe('createControlDouble()', () => {
         { service: 'worker', line: 'polling' },
       ],
     });
-    const attached = (await double.operations.log({ entry: ENTRY, address: 'worker' })).assertOk();
+    const attached = (
+      await double.operations.log({ entry: ENTRY, address: 'worker' }, {})
+    ).assertOk();
     const lines = [];
     for await (const line of attached.lines) lines.push(line);
     expect(lines).toEqual([{ service: 'worker', line: 'polling' }]);
@@ -103,7 +111,7 @@ describe('createControlDouble()', () => {
     controller.abort();
     const double = createControlDouble({ logLines: [{ service: 'web', line: 'never' }] });
     const attached = (
-      await double.operations.log({ entry: ENTRY, signal: controller.signal })
+      await double.operations.log({ entry: ENTRY, signal: controller.signal }, {})
     ).assertOk();
     const lines = [];
     for await (const line of attached.lines) lines.push(line);
