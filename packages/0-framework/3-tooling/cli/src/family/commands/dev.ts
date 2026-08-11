@@ -13,7 +13,7 @@
  *
  * `dev` is credential-free: everything it starts runs on this machine.
  */
-import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
+import type { EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, exitWithChildStatus, flag, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
@@ -25,15 +25,6 @@ import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
-
-/**
- * How an interrupted session settles. The engine settles a session that
- * returns `ok(undefined)` as 0 whatever fired, so the child-status bypass is
- * the only route to the contract's "Ctrl-C settles 130" (the legacy CLI exited
- * 0 — a recorded divergence). The termination being reported is the one the
- * user asked for.
- */
-const INTERRUPTED: ChildResult = { exitCode: null, signal: 'SIGINT' };
 
 /** Resolves when the run is asked to stop. */
 function stopRequested(signal: AbortSignal): Promise<void> {
@@ -235,6 +226,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
 
       await stopRequested(ctx.signal);
       await result.value.stop();
-      return ok(exitWithChildStatus(INTERRUPTED));
+      // Ctrl-C settles 130 because the engine records the signal that fired and
+      // settles at 128 + it, including for a handler that cleaned up and
+      // returned. Reporting the termination is not this handler's to do.
+      return ok(undefined);
     },
   });
