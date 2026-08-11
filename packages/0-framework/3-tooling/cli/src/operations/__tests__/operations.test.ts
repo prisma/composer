@@ -23,7 +23,7 @@ import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/cor
 import * as Layer from 'effect/Layer';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import type { RunAlchemyInput } from '../../run-alchemy.ts';
+import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
@@ -197,7 +197,7 @@ const summaryFixture: DeploymentSummary = {
 describe('deploy()', () => {
   test('a successful deploy passes the result-file env var to alchemy and returns the summary the child wrote', async () => {
     const app = makeAppDir('hello-ops');
-    const calls: RunAlchemyInput[] = [];
+    const calls: AlchemyInvocation[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -209,11 +209,11 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             calls.push(input);
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof file === 'string') fs.writeFileSync(file, JSON.stringify(summaryFixture));
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -240,7 +240,11 @@ describe('deploy()', () => {
           stage: 'ci-7',
           cwd: app.dir,
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -262,10 +266,10 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof file === 'string') fs.writeFileSync(file, '{"app": 42, "nodes": "nope"');
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -287,9 +291,9 @@ describe('deploy()', () => {
     const deps = {
       config: fakeConfig(),
       runAssembler: fakeAssembler,
-      alchemy: (input: RunAlchemyInput) => {
+      alchemy: async (input: AlchemyInvocation) => {
         resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
-        return 0;
+        return { exitCode: 0, signal: null };
       },
     };
 
@@ -316,12 +320,12 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof resultFile === 'string') {
               fs.writeFileSync(resultFile, JSON.stringify(summaryFixture));
             }
-            return 1;
+            return { exitCode: 1, signal: null };
           },
         },
       ),
@@ -352,14 +356,14 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             const child = spawnSync(process.execPath, [childPath], {
               cwd: app.dir,
-              env: input.env,
+              env: { ...process.env, ...input.env },
               encoding: 'utf-8',
             });
             expect(child.stderr).toBe('');
-            return child.status ?? 1;
+            return { exitCode: child.status ?? 1, signal: null };
           },
         },
       ),
@@ -384,7 +388,7 @@ describe('deploy()', () => {
         {
           config: fakeConfig({}, { calls: containerCalls }),
           runAssembler: fakeAssembler,
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -405,7 +409,7 @@ describe('deploy()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: () => 0 },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
       ),
     );
 
@@ -433,9 +437,9 @@ describe('deploy()', () => {
             },
           }),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -459,7 +463,11 @@ describe('deploy()', () => {
           stage: 'ci-7',
           cwd: app.dir,
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 42 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 42, signal: null }),
+        },
       ),
     );
 
@@ -490,9 +498,9 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -622,7 +630,7 @@ describe('destroy()', () => {
           {
             config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' }),
             runAssembler: fakeAssembler,
-            alchemy: () => 0,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
           },
         ),
       );
@@ -650,7 +658,7 @@ describe('destroy()', () => {
         {
           config: fakeConfig({}, { notFound: true }),
           runAssembler: fakeAssembler,
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -681,9 +689,9 @@ describe('destroy()', () => {
             { onRemove: () => void order.push('remove') },
           ),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             order.push('alchemy');
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -711,7 +719,7 @@ describe('destroy()', () => {
             order.push('assemble');
             return fakeAssembler(node);
           },
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -734,7 +742,11 @@ describe('destroy()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -866,7 +878,11 @@ describe('dev()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -899,7 +915,11 @@ describe('dev()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -927,7 +947,11 @@ describe('dev()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       await start.value.stop();
@@ -958,7 +982,11 @@ describe('dev()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       expect(start.value.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
@@ -1002,7 +1030,11 @@ describe('dev()', () => {
             throw new Error('host renderer blew up');
           },
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       await start.value.stop();
@@ -1033,9 +1065,9 @@ describe('dev()', () => {
         {
           config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),

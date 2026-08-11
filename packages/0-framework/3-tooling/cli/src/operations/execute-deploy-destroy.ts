@@ -19,7 +19,7 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { runAlchemy } from '../run-alchemy.ts';
+import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
 import { validateStageName } from '../validate-stage.ts';
 import type { DeployInput, DeploySuccess } from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
@@ -111,7 +111,11 @@ async function runStackPipeline(
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
+    const pipelineDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      config: deps.config,
+      configPath: deps.configPath,
+    };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
@@ -137,10 +141,13 @@ async function runStackPipeline(
         if (action === 'deploy') {
           containers.set(
             extension.id,
-            await extension.container.ensure({ appName: resolvedName, stage }),
+            await extension.container.ensure({ appName: resolvedName, stage }, deps.credentials),
           );
         } else {
-          const instance = await extension.container.locate({ appName: resolvedName, stage });
+          const instance = await extension.container.locate(
+            { appName: resolvedName, stage },
+            deps.credentials,
+          );
           if (instance === undefined) {
             throw new CliStructuredError(
               'DEPLOY.TARGET_NOT_FOUND',
@@ -187,7 +194,12 @@ async function runStackPipeline(
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
         try {
-          await extension.preflight({ graph, container: containers.get(extension.id), stage });
+          await extension.preflight({
+            graph,
+            container: containers.get(extension.id),
+            stage,
+            credentials: deps.credentials,
+          });
         } catch (error) {
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
@@ -233,17 +245,19 @@ async function runStackPipeline(
 
     const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
 
-    // Shell out to alchemy against the generated file.
-    let status: number;
+    // Hand the terminal to alchemy against the generated file.
+    let outcome: AlchemyOutcome;
     try {
-      status = (deps.alchemy ?? runAlchemy)({
-        command: action,
-        stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-        cwd,
-        stage: alchemyStage,
-        containerEnv: containerEnv(containers),
-        env: { ...process.env, [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
-      });
+      outcome = await (deps.alchemy ?? spawnAlchemy)(
+        alchemyInvocation({
+          command: action,
+          stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+          cwd,
+          stage: alchemyStage,
+          containerEnv: containerEnv(containers),
+          env: { [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath },
+        }),
+      );
     } catch (error) {
       if (CliStructuredError.is(error)) return notOk(error);
       return notOk(
@@ -259,6 +273,37 @@ async function runStackPipeline(
         ),
       );
     }
+
+    // A signal-killed converge is the user interrupting, not a deploy that
+    // went wrong: it is still reported as a failure VALUE (the operation
+    // promised a Result), but it carries the signal instead of an exit code
+    // so a caller can tell the two apart. The CLI's handler never reaches
+    // this branch — it holds the child result itself and settles the abort
+    // before reading the failure.
+    if (outcome.signal !== null) {
+      return notOk(
+        new CliStructuredError(
+          'DEPLOY.ENGINE_FAILED',
+          `alchemy ${action} was interrupted by ${outcome.signal}.`,
+          {
+            meta: {
+              signal: outcome.signal,
+              diagnostics: {
+                exitCode: undefined,
+                signal: outcome.signal,
+                stackFilePath: stackPath,
+                reproduceCommand,
+                cwd,
+              },
+            },
+          },
+        ),
+      );
+    }
+
+    // An adapter that can say neither how the child exited nor what killed it
+    // is never treated as success.
+    const status = outcome.exitCode ?? 1;
     if (status !== 0) {
       return notOk(
         new CliStructuredError(
@@ -299,7 +344,7 @@ async function runStackPipeline(
           const instance = containers.get(extension.id);
           if (instance === undefined) continue;
           try {
-            await extension.container.remove(instance);
+            await extension.container.remove(instance, deps.credentials);
           } catch (error) {
             throw toStructured('DEPLOY.CONTAINER_REMOVE_FAILED', error);
           }

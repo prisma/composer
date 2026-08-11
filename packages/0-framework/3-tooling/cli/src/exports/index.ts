@@ -7,4 +7,4 @@ export { renderStackFile, writeStackFile } from '../generate-stack.ts';
 export { loadEntry } from '../load-entry.ts';
 export type { RunDeps } from '../main.ts';
 export { run } from '../main.ts';
-export { resolveAlchemyBin, runAlchemy } from '../run-alchemy.ts';
+export { alchemyInvocation, resolveAlchemyBin, spawnAlchemy } from '../run-alchemy.ts';

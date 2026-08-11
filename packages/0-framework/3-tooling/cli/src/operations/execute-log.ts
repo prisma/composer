@@ -150,7 +150,10 @@ export async function executeLog(
   try {
     const identity =
       deps.identity ??
-      (await resolveAppIdentity(input.entry, input.name, cwd, { config: deps.config }));
+      (await resolveAppIdentity(input.entry, input.name, cwd, {
+        config: deps.config,
+        configPath: deps.configPath,
+      }));
     name = identity.name;
 
     // The no-dev-support refusal is structured at origin in core

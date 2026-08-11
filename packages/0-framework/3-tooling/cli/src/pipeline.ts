@@ -23,6 +23,14 @@ export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs). */
   readonly config?: PrismaAppConfig | undefined;
+  /**
+   * The config file to load, named explicitly instead of discovered. When
+   * present the entry-anchored walk is skipped entirely, so a config that
+   * does not sit above the entry is still usable — and the walk's
+   * path-mismatch check has nothing left to check. Supplied by the engine's
+   * `composer` config section.
+   */
+  readonly configPath?: string | undefined;
 }
 
 export interface PipelineResult {
@@ -54,7 +62,7 @@ export async function resolveAppIdentity(
   deps: PipelineDeps = {},
 ): Promise<AppIdentity> {
   const resolvedEntryPath = path.resolve(cwd, entry);
-  const configPath = findConfigPathForEntry(resolvedEntryPath);
+  const configPath = deps.configPath ?? findConfigPathForEntry(resolvedEntryPath);
   if (configPath === undefined) {
     throw missingConfigError(resolvedEntryPath);
   }
@@ -85,7 +93,7 @@ export async function runPipeline(
 ): Promise<PipelineResult> {
   // 1. Find + load prisma-composer.config.ts — runs extension env validation before the entry import.
   const resolvedEntryPath = path.resolve(cwd, entry);
-  const configPath = findConfigPathForEntry(resolvedEntryPath);
+  const configPath = deps.configPath ?? findConfigPathForEntry(resolvedEntryPath);
   if (configPath === undefined) {
     throw missingConfigError(resolvedEntryPath);
   }

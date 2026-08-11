@@ -31,6 +31,8 @@ export interface LogDeps {
   readonly config?: PrismaAppConfig | undefined;
   /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
   readonly identity?: AppIdentity | undefined;
+  /** Names the config file explicitly instead of walking up from the entry. */
+  readonly configPath?: string | undefined;
 }
 
 export interface LogInput {
