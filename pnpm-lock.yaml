@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@alchemy.run/node-utils@0.0.5':
+    hash: 6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266
+    path: patches/@alchemy.run__node-utils@0.0.5.patch
   alchemy@2.0.0-beta.67:
     hash: b4f53c9c951c28d72ce7373ac88b38bd85718e114e5001fa7b2a8f7f869d6fac
     path: patches/alchemy@2.0.0-beta.67.patch
@@ -681,8 +684,8 @@ importers:
         specifier: workspace:0.6.0
         version: link:../../0-foundation/foundation
       '@prisma/cli-engine':
-        specifier: 0.0.2
-        version: 0.0.2
+        specifier: 0.0.3
+        version: 0.0.3
       c12:
         specifier: ^3.3.4
         version: 3.3.4
@@ -1144,8 +1147,8 @@ importers:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))
       '@prisma/cli-engine':
-        specifier: 0.0.2
-        version: 0.0.2
+        specifier: 0.0.3
+        version: 0.0.3
       '@prisma/management-api-sdk':
         specifier: ^1.57.0
         version: 1.57.0
@@ -2407,8 +2410,8 @@ packages:
   '@oxc-project/types@0.140.0':
     resolution: {integrity: sha512-h5LUOzGArYemnW1NMz/DuuQhBi96J6JL2Bk8zE4kvqxB5Sg3jxmCiH4uyOWHDkiKSt5vWlG4FIwCR/DbstcNRQ==}
 
-  '@prisma/cli-engine@0.0.2':
-    resolution: {integrity: sha512-ZMUrBmkCnLxRXPy6N2HK4BPfrB4Tw56F4LvySrt5CZSUl6eoEfQHbr8HHQmPy6GsNlJnAw9252m8tnjlRzsF7w==}
+  '@prisma/cli-engine@0.0.3':
+    resolution: {integrity: sha512-8qefJFTi0+/b0OHpZYbuB7utD7KlltF5FgH/xUNCh+EOtajPtAItS/+oXJR2oujysWozPsiqA2MZzb7Gf/35gw==}
     engines: {node: '>=22.12.0'}
 
   '@prisma/config@7.9.0':
@@ -5497,7 +5500,7 @@ snapshots:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
 
-  '@alchemy.run/node-utils@0.0.5': {}
+  '@alchemy.run/node-utils@0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)': {}
 
   '@ark/schema@0.56.2':
     dependencies:
@@ -5916,7 +5919,7 @@ snapshots:
 
   '@distilled.cloud/cloudflare-runtime@0.15.0(@distilled.cloud/cloudflare@0.30.3(effect@4.0.0-beta.103))(@effect/platform-bun@4.0.0-beta.103(effect@4.0.0-beta.103))(@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103)(ioredis@5.11.1))(effect@4.0.0-beta.103)':
     dependencies:
-      '@alchemy.run/node-utils': 0.0.5
+      '@alchemy.run/node-utils': 0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)
       '@distilled.cloud/cloudflare': 0.30.3(effect@4.0.0-beta.103)
       effect: 4.0.0-beta.103
       workerd: 1.20260704.1
@@ -6498,7 +6501,7 @@ snapshots:
 
   '@oxc-project/types@0.140.0': {}
 
-  '@prisma/cli-engine@0.0.2':
+  '@prisma/cli-engine@0.0.3':
     dependencies:
       '@clack/prompts': 1.5.0
       '@prisma/management-api-sdk': 1.55.0
@@ -7505,7 +7508,7 @@ snapshots:
 
   alchemy@2.0.0-beta.67(patch_hash=b4f53c9c951c28d72ce7373ac88b38bd85718e114e5001fa7b2a8f7f869d6fac)(@effect/platform-bun@4.0.0-beta.103(effect@4.0.0-beta.103))(@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103)(ioredis@5.11.1))(@types/node@26.1.1)(@types/react@19.2.17)(effect@4.0.0-beta.103)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260704.1)(ws@8.21.1):
     dependencies:
-      '@alchemy.run/node-utils': 0.0.5
+      '@alchemy.run/node-utils': 0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)
       '@aws-sdk/credential-providers': 3.1077.0
       '@clack/prompts': 1.7.0
       '@distilled.cloud/aws': 0.30.3(effect@4.0.0-beta.103)
