@@ -8,7 +8,8 @@ import { describe, expect, test } from 'bun:test';
 import type { HostProcess, LoadedConfig } from '@prisma/cli-engine';
 import { createRuntime, detectPackageManager } from '../runtime.ts';
 
-const emptyConfig: LoadedConfig = { sections: {}, diagnostics: [] };
+const noConfig = (): Promise<LoadedConfig> =>
+  Promise.resolve({ path: '/app/prisma.config.ts', sections: {}, diagnostics: [] });
 
 interface FakeHost extends HostProcess {
   readonly listeners: Map<string, Set<() => void>>;
@@ -86,7 +87,7 @@ describe('detectPackageManager()', () => {
 describe('createRuntime()', () => {
   test('carries cwd, env and streams from the host', () => {
     const host = fakeHost({ cwd: '/some/app', env: { FOO: 'bar' } });
-    const runtime = createRuntime(host, emptyConfig);
+    const runtime = createRuntime(host, noConfig);
     expect(runtime.cwd).toBe('/some/app');
     expect(runtime.env).toEqual({ FOO: 'bar' });
     runtime.stdout.write('hello');
@@ -96,21 +97,21 @@ describe('createRuntime()', () => {
   });
 
   test('a missing isTTY reads as not a TTY, never as undefined', () => {
-    const runtime = createRuntime(fakeHost(), emptyConfig);
+    const runtime = createRuntime(fakeHost(), noConfig);
     expect(runtime.isTty).toEqual({ stdin: false, stdout: false, stderr: false });
   });
 
   test('isTTY comes through per stream', () => {
     const runtime = createRuntime(
       fakeHost({ isTty: { stdin: false, stdout: true, stderr: true } }),
-      emptyConfig,
+      noConfig,
     );
     expect(runtime.isTty).toEqual({ stdin: false, stdout: true, stderr: true });
   });
 
   test('onSignal subscribes to both signals and the returned function unsubscribes both', () => {
     const host = fakeHost();
-    const runtime = createRuntime(host, emptyConfig);
+    const runtime = createRuntime(host, noConfig);
     const seen: string[] = [];
     const unsubscribe = runtime.onSignal((signal) => seen.push(signal));
 
@@ -128,7 +129,7 @@ describe('createRuntime()', () => {
 
   test('two subscriptions are independent — unsubscribing one leaves the other', () => {
     const host = fakeHost();
-    const runtime = createRuntime(host, emptyConfig);
+    const runtime = createRuntime(host, noConfig);
     const first = runtime.onSignal(() => undefined);
     runtime.onSignal(() => undefined);
     first();
@@ -137,19 +138,17 @@ describe('createRuntime()', () => {
 
   test('exit reaches the host', () => {
     const host = fakeHost();
-    const runtime = createRuntime(host, emptyConfig);
+    const runtime = createRuntime(host, noConfig);
     expect(() => runtime.exit(2)).toThrow();
     expect(host.exits).toEqual([2]);
   });
 
   test('the management API base url defaults to the platform, and the env overrides it', () => {
-    expect(createRuntime(fakeHost(), emptyConfig).managementApi.baseUrl).toBe(
-      'https://api.prisma.io',
-    );
+    expect(createRuntime(fakeHost(), noConfig).managementApi.baseUrl).toBe('https://api.prisma.io');
     expect(
       createRuntime(
         fakeHost({ env: { PRISMA_MANAGEMENT_API_URL: 'https://api.staging.invalid' } }),
-        emptyConfig,
+        noConfig,
       ).managementApi.baseUrl,
     ).toBe('https://api.staging.invalid');
   });
@@ -157,7 +156,7 @@ describe('createRuntime()', () => {
   test('the environment credential manager is wired, and reads the two protocol variables', async () => {
     const manager = createRuntime(
       fakeHost({ env: { PRISMA_SERVICE_TOKEN: 'token', PRISMA_WORKSPACE_ID: 'ws_1' } }),
-      emptyConfig,
+      noConfig,
     ).credentialManager;
 
     const credential = await manager?.activeCredential();
@@ -166,20 +165,40 @@ describe('createRuntime()', () => {
   });
 
   test('with no service token in the environment there is no active credential', async () => {
-    expect(await createRuntime(fakeHost(), emptyConfig).credentialManager?.activeCredential()).toBe(
+    expect(await createRuntime(fakeHost(), noConfig).credentialManager?.activeCredential()).toBe(
       null,
     );
   });
 
   test('a spawn adapter is wired — without one the engine refuses every spawning command', () => {
-    expect(typeof createRuntime(fakeHost(), emptyConfig).spawn).toBe('function');
+    expect(typeof createRuntime(fakeHost(), noConfig).spawn).toBe('function');
   });
 
-  test('the loaded config is passed through untouched', () => {
+  test('the loader is exposed as loadConfig, and its result is passed through untouched', async () => {
     const config: LoadedConfig = {
+      path: '/app/prisma.config.ts',
       sections: { composer: { configPath: 'x.ts' } },
       diagnostics: [],
     };
-    expect(createRuntime(fakeHost(), config).config).toBe(config);
+    const runtime = createRuntime(fakeHost(), () => Promise.resolve(config));
+    expect(await runtime.loadConfig()).toBe(config);
+  });
+
+  /**
+   * What `--config` rides on. The engine hands the loader the file the user
+   * named; a Runtime that dropped that argument would silently read
+   * prisma.config.ts from cwd instead of the file that was asked for.
+   */
+  test('loadConfig forwards the config path the engine asked for', async () => {
+    const asked: (string | undefined)[] = [];
+    const runtime = createRuntime(fakeHost(), (configPath) => {
+      asked.push(configPath);
+      return noConfig();
+    });
+
+    await runtime.loadConfig('custom/prisma.config.ts');
+    await runtime.loadConfig();
+
+    expect(asked).toEqual(['custom/prisma.config.ts', undefined]);
   });
 });

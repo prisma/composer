@@ -198,6 +198,8 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<numb
   });
 }
 
+/** Ctrl-C settles 130 — 128 + SIGINT — by exit code, the CLI having handled the
+ *  interrupt rather than died from it. */
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -210,6 +212,11 @@ async function stopDev(session: DevSession): Promise<void> {
       resolve();
     });
   });
+  assertEqual(
+    { code: session.child.exitCode, signal: session.child.signalCode },
+    { code: 130, signal: null },
+    'Ctrl-C on dev settles 130 (128 + SIGINT)',
+  );
 }
 
 async function main(): Promise<void> {

@@ -308,7 +308,20 @@ async function startDev(fresh: boolean): Promise<DevSession> {
   return { child, logPath, endpoints };
 }
 
-/** SIGINT, then wait for the process to actually exit (bounded) — the pinned Ctrl-C contract: stop, exit 0, emulators survive. */
+/**
+ * SIGINT, then wait for the process to actually exit (bounded) — the pinned
+ * Ctrl-C contract: stop, exit 130, emulators survive.
+ *
+ * 130 is 128 + SIGINT, and the engine settles it from its own record of the
+ * signal rather than from anything `dev`'s handler returns — the handler stops
+ * the session and returns success. The process exits with a code and no signal
+ * of its own, because the CLI handles the interrupt rather than dying from it.
+ *
+ * This is the whole contract at process level: a real binary, a real SIGINT,
+ * a real exit status. The unit suite can only prove the engine settles 130;
+ * that it survives composer's own signal wiring and reaches the shell is
+ * provable only here.
+ */
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -321,6 +334,11 @@ async function stopDev(session: DevSession): Promise<void> {
       resolve();
     });
   });
+  assertEqual(
+    { code: session.child.exitCode, signal: session.child.signalCode },
+    { code: 130, signal: null },
+    'Ctrl-C on dev settles 130 (128 + SIGINT), by exit code rather than by dying from the signal',
+  );
 }
 
 function readJson(file: string): unknown {

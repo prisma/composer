@@ -684,8 +684,8 @@ importers:
         specifier: workspace:0.6.0
         version: link:../../0-foundation/foundation
       '@prisma/cli-engine':
-        specifier: 0.0.3
-        version: 0.0.3
+        specifier: 0.0.5
+        version: 0.0.5
       c12:
         specifier: ^3.3.4
         version: 3.3.4
@@ -1144,8 +1144,8 @@ importers:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))
       '@prisma/cli-engine':
-        specifier: 0.0.3
-        version: 0.0.3
+        specifier: 0.0.5
+        version: 0.0.5
       '@prisma/management-api-sdk':
         specifier: ^1.57.0
         version: 1.57.0
@@ -2404,8 +2404,8 @@ packages:
   '@oxc-project/types@0.140.0':
     resolution: {integrity: sha512-h5LUOzGArYemnW1NMz/DuuQhBi96J6JL2Bk8zE4kvqxB5Sg3jxmCiH4uyOWHDkiKSt5vWlG4FIwCR/DbstcNRQ==}
 
-  '@prisma/cli-engine@0.0.3':
-    resolution: {integrity: sha512-8qefJFTi0+/b0OHpZYbuB7utD7KlltF5FgH/xUNCh+EOtajPtAItS/+oXJR2oujysWozPsiqA2MZzb7Gf/35gw==}
+  '@prisma/cli-engine@0.0.5':
+    resolution: {integrity: sha512-dVS8yZZeYfxUq2EIHfr/1d/dlUsHSw0pbYEcB8aWpLK75/0jWcgRJOPkqejOBbPc30LfQ2cRfJJmjgK8/gjhRA==}
     engines: {node: '>=22.12.0'}
 
   '@prisma/config@7.9.0':
@@ -6490,11 +6490,14 @@ snapshots:
 
   '@oxc-project/types@0.140.0': {}
 
-  '@prisma/cli-engine@0.0.3':
+  '@prisma/cli-engine@0.0.5':
     dependencies:
       '@clack/prompts': 1.5.0
       '@prisma/management-api-sdk': 1.55.0
       '@stricli/core': 1.3.0
+      c12: 3.3.4
+    transitivePeerDependencies:
+      - magicast
 
   '@prisma/config@7.9.0':
     dependencies:

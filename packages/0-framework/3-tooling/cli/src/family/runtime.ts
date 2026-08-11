@@ -16,7 +16,6 @@ import { spawn } from 'node:child_process';
 import {
   EnvironmentCredentialManager,
   type HostProcess,
-  type LoadedConfig,
   type ManagementApiClientConfig,
   type Runtime,
   type SpawnChild,
@@ -97,7 +96,14 @@ export function detectPackageManager(
   }
 }
 
-export function createRuntime(host: HostProcess, config: LoadedConfig): Runtime {
+/**
+ * The config loader arrives as a function rather than an already-loaded config
+ * because the engine reads `prisma.config.ts` on demand — only when the command
+ * it is about to run declares a config section, and with whatever file
+ * `--config` named. A host that loaded the file up front would read it for runs
+ * that never needed it, and would have nowhere to put `--config`.
+ */
+export function createRuntime(host: HostProcess, loadConfig: Runtime['loadConfig']): Runtime {
   const env = host.env;
   const apiBaseUrl = env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_MANAGEMENT_API_BASE_URL;
   return {
@@ -126,7 +132,7 @@ export function createRuntime(host: HostProcess, config: LoadedConfig): Runtime 
         host.off('SIGTERM', onSigterm);
       };
     },
-    config,
+    loadConfig,
     credentialManager: new EnvironmentCredentialManager({ env }),
     managementApiClientConfig: clientConfig(env, apiBaseUrl),
     spawn: spawnChild,

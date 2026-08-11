@@ -59,17 +59,22 @@ export function createComposerCli(spec: ComposerCliSpec): Cli {
 }
 
 /**
- * Loads `prisma.config.ts` from the host's cwd, composes the Runtime and runs
- * one invocation. Returns the exit code rather than exiting, so the caller
- * owns the process — a bin assigns it to `process.exitCode` and lets the
- * streams drain, as composer's CLI has always done.
+ * Composes the Runtime and runs one invocation. Returns the exit code rather
+ * than exiting, so the caller owns the process — a bin assigns it to
+ * `process.exitCode` and lets the streams drain, as composer's CLI has always
+ * done.
+ *
+ * `prisma.config.ts` is not read here. The loader goes in as a function, and the
+ * engine calls it only when the command it is about to run declares a config
+ * section, passing it the file `--config` named; the loader resolves that
+ * against the host's cwd.
  */
-export async function runComposerCli(
+export function runComposerCli(
   argv: readonly string[],
   host: HostProcess,
   spec: ComposerCliSpec,
   hooks?: CliRunHooks,
 ): Promise<number> {
-  const config = await loadConfig(host.cwd());
-  return createComposerCli(spec).run(argv, createRuntime(host, config), hooks);
+  const runtime = createRuntime(host, (configPath) => loadConfig(host.cwd(), configPath));
+  return createComposerCli(spec).run(argv, runtime, hooks);
 }

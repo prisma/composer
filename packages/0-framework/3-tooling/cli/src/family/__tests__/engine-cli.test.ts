@@ -27,7 +27,8 @@ import { createRuntime } from '../runtime.ts';
 import { type ComposerSection, composerSection } from '../section.ts';
 
 const VERSION = '0.6.0-test';
-const EMPTY_CONFIG: LoadedConfig = { sections: {}, diagnostics: [] };
+const NO_CONFIG = (): Promise<LoadedConfig> =>
+  Promise.resolve({ path: '/app/prisma.config.ts', sections: {}, diagnostics: [] });
 
 function fakeHost(cwd: string): HostProcess & { out: string[]; err: string[] } {
   const out: string[] = [];
@@ -122,7 +123,7 @@ describe("composer's Runtime against a real engine run", () => {
       groups: {},
       commands: { probe },
     });
-    const exitCode = await cli.run(['--version'], createRuntime(host, EMPTY_CONFIG));
+    const exitCode = await cli.run(['--version'], createRuntime(host, NO_CONFIG));
     expect(exitCode).toBe(0);
     expect(host.out.join('')).toContain(VERSION);
   });
@@ -138,7 +139,7 @@ describe("composer's Runtime against a real engine run", () => {
       groups: {},
       commands: { probe },
     });
-    await cli.run(['--help'], createRuntime(host, EMPTY_CONFIG));
+    await cli.run(['--help'], createRuntime(host, NO_CONFIG));
     expect(`${host.out.join('')}${host.err.join('')}`).toContain('prisma-composer');
   });
 });
