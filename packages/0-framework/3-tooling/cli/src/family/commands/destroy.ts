@@ -53,7 +53,7 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
       const target = targetOf(args.flags.stage, args.flags.production);
       if (!target.ok) return target;
 
-      const spawn = convergeSpawn(ctx);
+      const alchemy = convergeSpawn(ctx);
       const result = await operations.destroy(
         {
           entry: args.positionals.entry,
@@ -72,14 +72,14 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
           },
         },
         operationDeps({
-          spawn,
+          alchemy,
           configPath: ctx.config.configPath,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),
       );
 
-      return settleConverge(result, spawn, () =>
+      return settleConverge(result, ctx, () =>
         ctx.present(
           { data: undefined },
           { human: () => [{ kind: 'summary', tone: 'ok', text: 'Destroyed.' }] },

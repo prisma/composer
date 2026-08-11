@@ -13,13 +13,13 @@
  *
  * `dev` is credential-free: everything it starts runs on this machine.
  */
-import type { EngineEvent } from '@prisma/cli-engine';
+import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, exitWithChildStatus, flag, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { type ConvergeSpawn, convergeSpawn, reproduceHint } from '../converge.ts';
+import { convergeSpawn, reproduceHint } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
@@ -86,7 +86,7 @@ function frontDoorOrder(endpoints: readonly ServiceEndpoint[]): readonly Service
  */
 function reportDevEvent(
   report: (event: EngineEvent) => void,
-  spawn: ConvergeSpawn,
+  lastChild: () => ChildResult | undefined,
 ): (event: DevEvent) => void {
   let stopFailed = false;
 
@@ -118,7 +118,7 @@ function reportDevEvent(
         return;
 
       case 'converge-failed': {
-        const child = spawn.child();
+        const child = lastChild();
         // A signal-killed converge is the user shutting the session down, not
         // a converge that failed — the engine replays that signal into
         // ctx.signal the moment the child ends, and the teardown below is what
@@ -200,26 +200,26 @@ export const createDevCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection },
     maySpawn: true,
     handler: async (args, ctx) => {
-      const spawn = convergeSpawn(ctx);
+      const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {
           entry: args.positionals.entry,
           name: args.flags.name,
           fresh: args.flags.fresh,
           cwd: ctx.cwd,
-          onEvent: reportDevEvent(ctx.report, spawn),
+          onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
-        { alchemy: coalescedConverge(spawn.alchemy), configPath: ctx.config.configPath },
+        { alchemy: coalescedConverge(alchemy), configPath: ctx.config.configPath },
       );
 
-      // Nothing is live yet, so the ending is the converge's, read in the order
-      // deploy and destroy read it: signal FIRST — a signal-killed converge is
-      // the shutdown, not a failure — then the operation's own verdict.
-      const child = spawn.child();
-      if (child !== undefined && child.signal !== null) return ok(exitWithChildStatus(child));
+      // Nothing is live yet, so the ending is the converge's — read the way
+      // deploy and destroy read it, which is the operation's own verdict and
+      // nothing else. A signal-killed converge needs no branch: the engine
+      // settles the run from its own record of the signal.
       if (!result.ok) {
+        const child = ctx.lastChild();
         if (child !== undefined && child.exitCode !== 0) {
-          return ok(exitWithChildStatus(child, { nextActions: reproduceHint(result.failure) }));
+          return ok(exitWithChildStatus({ nextActions: reproduceHint(result.failure) }));
         }
         return notOk(toEngineError(result.failure));
       }

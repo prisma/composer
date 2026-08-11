@@ -38,7 +38,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
-      const spawn = convergeSpawn(ctx);
+      const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
           entry: args.positionals.entry,
@@ -47,14 +47,14 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           cwd: ctx.cwd,
         },
         operationDeps({
-          spawn,
+          alchemy,
           configPath: ctx.config.configPath,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),
       );
 
-      return settleConverge(result, spawn, ({ summary }) =>
+      return settleConverge(result, ctx, ({ summary }) =>
         ctx.present(
           { data: { summary: summary ?? null } },
           {

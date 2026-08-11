@@ -100,9 +100,9 @@ async function* replayLines(
  * This is what makes a host's tests cover the settlement rules rather than
  * just the grammar: a scripted fake child that exits non-zero, or is killed
  * by a signal, produces the same failure shape the real executor produces, so
- * the handler's "signal first, then exit status" branch is genuinely
- * exercised. Returns undefined when no adapter was injected, leaving the
- * fixture result untouched.
+ * the handler's settlement — and the engine's own child-status settlement
+ * behind it — is genuinely exercised. Returns undefined when no adapter was
+ * injected, leaving the fixture result untouched.
  */
 async function runConverge(
   action: 'deploy' | 'destroy',
