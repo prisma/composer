@@ -71,6 +71,12 @@ updates:
       # bumped by hand together with streams-server (see the note in
       # packages/1-prisma-cloud/2-shared-modules/streams/conformance/local.vitest.ts).
       - dependency-name: "@durable-streams/server-conformance-tests"
+      # Pinned exact and released in tandem with prisma/prisma-cli: composer's
+      # command family and the `prisma` bin must mount the SAME engine build,
+      # so the version moves by hand as part of a coordinated engine →
+      # composer → prisma-cli release, never on Dependabot's schedule.
+      # Enforced by scripts/check-cli-engine-pin.mjs.
+      - dependency-name: "@prisma/cli-engine"
 
   - package-ecosystem: github-actions
     directory: /

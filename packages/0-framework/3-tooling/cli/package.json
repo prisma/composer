@@ -19,6 +19,7 @@
     "@internal/assemble": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
     "@internal/foundation": "workspace:0.6.0",
+    "@prisma/cli-engine": "0.0.2",
     "c12": "^3.3.4",
     "chokidar": "^4.0.3",
     "clipanion": "^3.2.1"

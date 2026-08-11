@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@effect/vitest": "4.0.0-beta.103",
+    "@prisma/cli-engine": "0.0.2",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",

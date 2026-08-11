@@ -32,7 +32,13 @@ export default defineConfig([
     // checks __filename/__dirname against its own package layout and throws
     // "The esbuild JavaScript API cannot be bundled" otherwise) — it must stay
     // a real import, not inlined like the rest of node_modules.
-    external: ['esbuild'],
+    // `@prisma/cli-engine` is the CLI front door composer's command family
+    // mounts into. It must stay a real import so composer and the `prisma`
+    // bin share ONE engine instance at runtime; inlining it would give the
+    // tarball a private copy whose classes fail every cross-package
+    // instanceof. scripts/check-cli-engine-pin.mjs enforces both that and
+    // the exact-version agreement between the two manifests.
+    external: ['esbuild', '@prisma/cli-engine'],
     noExternal: [/^@internal\//],
   },
   {

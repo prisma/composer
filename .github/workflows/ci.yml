@@ -143,6 +143,24 @@ jobs:
       - name: Check npm resolves a single pinned effect
         run: pnpm check:npm-effect-resolution
 
+  cli-engine-pin:
+    name: cli-engine pin and externality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build the public package
+        run: pnpm turbo run build --filter=@prisma/composer
+      # publish.yml runs no checks, so this lives here, on the PR: the engine is
+      # released in tandem with composer and must be exact-pinned identically in
+      # both manifests and left external in the tarball. See the script's header.
+      - name: Check the cli-engine pin and externality
+        run: pnpm check:cli-engine-pin
+
   build:
     name: Build
     runs-on: ubuntu-latest

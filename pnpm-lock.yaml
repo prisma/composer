@@ -680,6 +680,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.6.0
         version: link:../../0-foundation/foundation
+      '@prisma/cli-engine':
+        specifier: 0.0.2
+        version: 0.0.2
       c12:
         specifier: ^3.3.4
         version: 3.3.4
@@ -1140,6 +1143,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))
+      '@prisma/cli-engine':
+        specifier: 0.0.2
+        version: 0.0.2
       '@prisma/management-api-sdk':
         specifier: ^1.57.0
         version: 1.57.0
@@ -1620,8 +1626,16 @@ packages:
   '@chevrotain/utils@10.5.0':
     resolution: {integrity: sha512-hBzuU5+JjB2cqNZyszkDHZgOSrUUT8V3dhgRl8Q9Gp6dAj/H5+KILGjbhDpc3Iy9qmqlm/akuOI2ut9VUtzJxQ==}
 
+  '@clack/core@1.4.0':
+    resolution: {integrity: sha512-7Wctjq6f7c1CPz8sPpkwUnz8yRgVANkpNupb81q432FjcJg4l+Sw7XANdNSdWfAKq0IHI0JTcUeK5dxs/HrGPw==}
+    engines: {node: '>= 20.12.0'}
+
   '@clack/core@1.4.3':
     resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
+    engines: {node: '>= 20.12.0'}
+
+  '@clack/prompts@1.5.0':
+    resolution: {integrity: sha512-wKh+wTjmrUoUdkZg8KpJO5X+p9PWV+KE9mePseq9UYWkukgTKsGS47RRL2HstwVcvDQH+PenrPJWII8+MfiiyA==}
     engines: {node: '>= 20.12.0'}
 
   '@clack/prompts@1.7.0':
@@ -2393,6 +2407,10 @@ packages:
   '@oxc-project/types@0.140.0':
     resolution: {integrity: sha512-h5LUOzGArYemnW1NMz/DuuQhBi96J6JL2Bk8zE4kvqxB5Sg3jxmCiH4uyOWHDkiKSt5vWlG4FIwCR/DbstcNRQ==}
 
+  '@prisma/cli-engine@0.0.2':
+    resolution: {integrity: sha512-ZMUrBmkCnLxRXPy6N2HK4BPfrB4Tw56F4LvySrt5CZSUl6eoEfQHbr8HHQmPy6GsNlJnAw9252m8tnjlRzsF7w==}
+    engines: {node: '>=22.12.0'}
+
   '@prisma/config@7.9.0':
     resolution: {integrity: sha512-CsoK2mhl0u+N4/8V+XroQMOUNIic4isqD+E2HBG8l1yGEKo62CFDu3FHo0FdwItjl6XkW+omA1STSzeN1DAXlg==}
 
@@ -2425,6 +2443,9 @@ packages:
 
   '@prisma/management-api-sdk@1.50.0':
     resolution: {integrity: sha512-xTg2xCKCwH1h6ZXzT8ieRmypINvFB5RIMAuWEuk2LpfsHUFs0RFuyRNw1CeYGVXnxWckkA8dWFQVLyjolZlDeA==}
+
+  '@prisma/management-api-sdk@1.55.0':
+    resolution: {integrity: sha512-WuDDOhxOHfROGY7QAU6wtlbWR0diNwfsQw1epQkhalvgOUe/JzIjxqpBpQzMA54zFVlMmcnT6OEiQfwCIKiRjA==}
 
   '@prisma/management-api-sdk@1.57.0':
     resolution: {integrity: sha512-NrTnL41BKj1XEs0sLsSUuxG6t4n1Qh1JldFnNpeLgTdTasfXYech4u8bCcfInxKkkPvFwDM759wpb9cSySK1Fw==}
@@ -3031,6 +3052,9 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@stricli/core@1.3.0':
+    resolution: {integrity: sha512-LnBe2HntygaLDU5trtjiC3J4C/YkmIZuM0XB52IF4qaLqJH09kgD1fnZiS2gaYUnt0nAN2a+1b4PSOBcfPrN4Q==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -5813,8 +5837,20 @@ snapshots:
 
   '@chevrotain/utils@10.5.0': {}
 
+  '@clack/core@1.4.0':
+    dependencies:
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
+
   '@clack/core@1.4.3':
     dependencies:
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
+
+  '@clack/prompts@1.5.0':
+    dependencies:
+      '@clack/core': 1.4.0
+      fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
@@ -6462,6 +6498,12 @@ snapshots:
 
   '@oxc-project/types@0.140.0': {}
 
+  '@prisma/cli-engine@0.0.2':
+    dependencies:
+      '@clack/prompts': 1.5.0
+      '@prisma/management-api-sdk': 1.55.0
+      '@stricli/core': 1.3.0
+
   '@prisma/config@7.9.0':
     dependencies:
       c12: 3.3.4
@@ -6541,6 +6583,10 @@ snapshots:
       '@prisma/debug': 7.9.0
 
   '@prisma/management-api-sdk@1.50.0':
+    dependencies:
+      openapi-fetch: 0.14.0
+
+  '@prisma/management-api-sdk@1.55.0':
     dependencies:
       openapi-fetch: 0.14.0
 
@@ -7081,6 +7127,8 @@ snapshots:
       tslib: 2.8.1
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@stricli/core@1.3.0': {}
 
   '@swc/helpers@0.5.15':
     dependencies:
