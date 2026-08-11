@@ -724,7 +724,7 @@
       "glob": "packages/9-public/composer/src/exports/testing.ts",
       "domain": "public",
       "layer": "public",
-      "plane": "shared"
+      "plane": "control"
     },
     {
       "glob": "packages/9-public/composer/src/exports/casts.ts",
