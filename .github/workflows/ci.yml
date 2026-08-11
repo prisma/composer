@@ -160,6 +160,10 @@ jobs:
       # both manifests and left external in the tarball. See the script's header.
       - name: Check the cli-engine pin and externality
         run: pnpm check:cli-engine-pin
+      # Same built package, second invariant: nothing statically reachable
+      # from the family or testing entrypoints may import alchemy or effect.
+      - name: Check the family and testing static graphs
+        run: pnpm check:family-static-graph
 
   build:
     name: Build
