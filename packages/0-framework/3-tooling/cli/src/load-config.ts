@@ -231,15 +231,88 @@ export interface ConfigLoadRequest {
   /** The command's entry argument. Anchors the walk when no explicit path is given. */
   readonly entryPath: string;
   /**
-   * The `composer` config section's `configPath`, already resolved to an
-   * absolute path. When present the section wins: the walk is skipped, and so
-   * is the same-file check — that check exists to catch a walk finding one
-   * file while c12 loaded another, and a path the user named directly has no
-   * walk to disagree with.
+   * The `composer` config section's `configPath`, absolute or relative to
+   * `cwd`. When present the section wins: the walk is skipped, and so is the
+   * same-file check — that check exists to catch a walk finding one file while
+   * c12 loaded another, and a path the user named directly has no walk to
+   * disagree with.
    */
   readonly configPath?: string | undefined;
-  /** Where the effect-resolution check runs from. Defaults to the entry's directory. */
+  /**
+   * The directory the command runs in: it anchors a relative `configPath` and
+   * is where the effect-resolution check looks for the installed tree.
+   * Defaults to the entry's directory.
+   */
   readonly cwd?: string | undefined;
+}
+
+/** Which file a load will use, or the one finding that stops it before any file is chosen. */
+type ConfigSource =
+  | { readonly ok: true; readonly path: string; readonly explicit: boolean }
+  | {
+      readonly ok: false;
+      readonly path: string | undefined;
+      readonly diagnostic: CliStructuredError;
+    };
+
+/**
+ * The front of every config load, shared by the throwing and the
+ * diagnostics-list shapes: verify the installed tree can evaluate a config at
+ * all, then settle which file to load — the section's path, or the
+ * entry-anchored walk.
+ *
+ * The effect-resolution check comes first because evaluating a config imports
+ * alchemy's provider tree: in a tree where alchemy resolves an `effect` we did
+ * not pin, nothing downstream can load, so the dependency conflict is the
+ * finding with the fix in it and every later failure is its symptom.
+ */
+function configSource(request: ConfigLoadRequest): ConfigSource {
+  const resolvedEntry = path.resolve(request.entryPath);
+  const cwd = request.cwd ?? path.dirname(resolvedEntry);
+
+  const effectConflict = effectResolutionDiagnostic(cwd);
+  if (effectConflict !== undefined) {
+    return { ok: false, path: undefined, diagnostic: effectConflict };
+  }
+
+  if (request.configPath === undefined) {
+    const discovered = findConfigPathForEntry(resolvedEntry);
+    return discovered === undefined
+      ? { ok: false, path: undefined, diagnostic: missingConfigError(resolvedEntry) }
+      : { ok: true, path: discovered, explicit: false };
+  }
+
+  const configPath = path.resolve(cwd, request.configPath);
+  if (!fs.existsSync(configPath)) {
+    return {
+      ok: false,
+      path: configPath,
+      diagnostic: new CliStructuredError(
+        'CONFIG.FILE_MISSING',
+        `The \`composer\` config section points at "${configPath}", which does not exist.`,
+        {
+          why: 'An explicit configPath is used as given — there is no walk to fall back on.',
+          fix: 'Correct `configPath` in the `composer` section of prisma.config.ts, or remove it to search upward from the entry.',
+          where: { path: configPath },
+        },
+      ),
+    };
+  }
+  return { ok: true, path: configPath, explicit: true };
+}
+
+/**
+ * The throwing form of that front, for the pipeline: the file the load will
+ * use, or the finding raised. `explicit` says the section named the file,
+ * which is what retires the same-file check for that case.
+ */
+export function resolveConfigFile(request: ConfigLoadRequest): {
+  readonly path: string;
+  readonly explicit: boolean;
+} {
+  const source = configSource(request);
+  if (!source.ok) throw source.diagnostic;
+  return { path: source.path, explicit: source.explicit };
 }
 
 export interface ConfigLoadOutcome {
@@ -264,47 +337,23 @@ export interface ConfigLoadOutcome {
 export async function loadAppConfigDiagnostics(
   request: ConfigLoadRequest,
 ): Promise<ConfigLoadOutcome> {
-  const resolvedEntry = path.resolve(request.entryPath);
-  const cwd = request.cwd ?? path.dirname(resolvedEntry);
-
-  const effectConflict = effectResolutionDiagnostic(cwd);
-  if (effectConflict !== undefined) {
-    return { path: request.configPath, value: undefined, diagnostics: [effectConflict] };
+  const source = configSource(request);
+  if (!source.ok) {
+    return { path: source.path, value: undefined, diagnostics: [source.diagnostic] };
   }
-
-  const explicit = request.configPath !== undefined;
-  const configPath = request.configPath ?? findConfigPathForEntry(resolvedEntry);
-  if (configPath === undefined) {
-    return { path: undefined, value: undefined, diagnostics: [missingConfigError(resolvedEntry)] };
-  }
-  if (explicit && !fs.existsSync(configPath)) {
-    return {
-      path: configPath,
-      value: undefined,
-      diagnostics: [
-        new CliStructuredError(
-          'CONFIG.FILE_MISSING',
-          `The \`composer\` config section points at "${configPath}", which does not exist.`,
-          {
-            why: 'An explicit configPath is used as given — there is no walk to fall back on.',
-            fix: 'Correct `configPath` in the `composer` section of prisma.config.ts, or remove it to search upward from the entry.',
-            where: { path: configPath },
-          },
-        ),
-      ],
-    };
-  }
-
-  const { value, diagnostics } = await evaluateConfig(configPath, !explicit);
-  return { path: configPath, value, diagnostics };
+  const { value, diagnostics } = await evaluateConfig(source.path, !source.explicit);
+  return { path: source.path, value, diagnostics };
 }
 
 /**
  * Loads + validates the config at `configPath`, throwing its first diagnostic.
  * The clipanion CLI's pipeline runs on this; it goes when clipanion does.
  */
-export async function loadAppConfig(configPath: string): Promise<LoadedAppConfig> {
-  const { value, diagnostics } = await evaluateConfig(configPath, true);
+export async function loadAppConfig(
+  configPath: string,
+  verifySamePath = true,
+): Promise<LoadedAppConfig> {
+  const { value, diagnostics } = await evaluateConfig(configPath, verifySamePath);
   const [first] = diagnostics;
   if (first !== undefined) throw first;
   return { path: configPath, config: validateConfigShape(value, configPath) };

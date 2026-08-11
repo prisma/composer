@@ -193,8 +193,12 @@ function runCli(label, appDir, args, env = {}) {
  */
 function assertCliStarts(label, appDir) {
   const help = runCli(label, appDir, ['--help']);
+  // Matched as the engine renders each usage line — `prisma-composer <name>` —
+  // not as a bare word: "dev" and "log" appear inside "development",
+  // "--log-level" and the prose around them, so a bare search would call the
+  // family mounted on the strength of unrelated text.
   const missing = ['deploy', 'destroy', 'dev', 'log'].filter(
-    (command) => !help.output.includes(command),
+    (command) => !help.output.includes(`prisma-composer ${command}`),
   );
   if (missing.length > 0) {
     fail(

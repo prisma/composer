@@ -13,6 +13,7 @@ import {
   CONFIG_FILENAME,
   findConfigPathForEntry,
   loadAppConfig,
+  resolveConfigFile,
   validateConfigShape,
 } from '../load-config.ts';
 
@@ -74,6 +75,71 @@ describe('findConfigPathForEntry() — the walk-up', () => {
   test('returns undefined when no ancestor carries the config', () => {
     const dir = makeTree();
     expect(findConfigPathForEntry(path.join(dir, 'module.ts'))).toBeUndefined();
+  });
+});
+
+describe('resolveConfigFile() — which file a load will use', () => {
+  test('a relative configPath resolves against the cwd the command runs in', () => {
+    const dir = makeTree();
+    const appDir = path.join(dir, 'apps', 'shop');
+    fs.mkdirSync(appDir, { recursive: true });
+    const configPath = path.join(appDir, CONFIG_FILENAME);
+    fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+
+    const resolved = resolveConfigFile({
+      entryPath: path.join(dir, 'module.ts'),
+      configPath: `./apps/shop/${CONFIG_FILENAME}`,
+      cwd: dir,
+    });
+
+    expect(resolved.path).toBe(configPath);
+    expect(resolved.explicit).toBe(true);
+  });
+
+  test('an absolute configPath is used as given', () => {
+    const dir = makeTree();
+    const configPath = path.join(dir, CONFIG_FILENAME);
+    fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+
+    expect(
+      resolveConfigFile({ entryPath: path.join(dir, 'module.ts'), configPath, cwd: dir }).path,
+    ).toBe(configPath);
+  });
+
+  test('a configPath naming a file that is not there is CONFIG.FILE_MISSING, not a fallback walk', () => {
+    const dir = makeTree();
+    fs.writeFileSync(path.join(dir, CONFIG_FILENAME), VALID_CONFIG_SOURCE);
+
+    const error: unknown = (() => {
+      try {
+        resolveConfigFile({
+          entryPath: path.join(dir, 'module.ts'),
+          configPath: './not-here.config.ts',
+          cwd: dir,
+        });
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('CONFIG.FILE_MISSING');
+    expect(error.message).toContain(path.join(dir, 'not-here.config.ts'));
+  });
+
+  test('with no configPath it is the entry-anchored walk, and the walk is not explicit', () => {
+    const dir = makeTree();
+    const configPath = path.join(dir, CONFIG_FILENAME);
+    fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+
+    const resolved = resolveConfigFile({
+      entryPath: path.join(dir, 'apps', 'shop', 'module.ts'),
+      cwd: dir,
+    });
+
+    expect(resolved.path).toBe(configPath);
+    expect(resolved.explicit).toBe(false);
   });
 });
 
