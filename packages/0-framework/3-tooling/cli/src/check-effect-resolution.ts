@@ -136,7 +136,7 @@ export function effectResolutionDiagnostic(cwd: string): CliStructuredError | un
   });
 }
 
-/** The throwing form, for the callers that still want a preflight that aborts: the clipanion `bin.ts` start-up check and the executor-load diagnosis. */
+/** The throwing form, used by the executor-load diagnosis — the one caller left now that the bin runs no start-up preflight of its own. */
 export function checkEffectResolution(cwd: string): void {
   const diagnostic = effectResolutionDiagnostic(cwd);
   if (diagnostic !== undefined) throw diagnostic;

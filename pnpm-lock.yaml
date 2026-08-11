@@ -692,9 +692,6 @@ importers:
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
-      clipanion:
-        specifier: ^3.2.1
-        version: 3.2.1(typanion@3.14.0)
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.6.0
@@ -1164,9 +1161,6 @@ importers:
       c12:
         specifier: ^3.3.4
         version: 3.3.4
-      clipanion:
-        specifier: ^3.2.1
-        version: 3.2.1(typanion@3.14.0)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103
@@ -3691,11 +3685,6 @@ packages:
 
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
-
-  clipanion@3.2.1:
-    resolution: {integrity: sha512-dYFdjLb7y1ajfxQopN05mylEpK9ZX0sO1/RfMXdfmwjlIsPkbh4p7A682x++zFPLDCo1x3p82dtljHf5cW2LKA==}
-    peerDependencies:
-      typanion: '*'
 
   clipanion@4.0.0-rc.4:
     resolution: {integrity: sha512-CXkMQxU6s9GklO/1f714dkKBMu1lopS1WFF0B8o4AxPykR1hpozxSiUZ5ZUeBjfPgCWqbcNOtZVFhB8Lkfp1+Q==}
@@ -7755,10 +7744,6 @@ snapshots:
       string-width: 8.2.2
 
   client-only@0.0.1: {}
-
-  clipanion@3.2.1(typanion@3.14.0):
-    dependencies:
-      typanion: 3.14.0
 
   clipanion@4.0.0-rc.4(typanion@3.14.0):
     dependencies:

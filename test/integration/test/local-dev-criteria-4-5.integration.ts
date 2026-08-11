@@ -107,11 +107,11 @@ function dumpDiagnostics(): void {
 
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
   const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === '[dev] ready:');
+  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
   if (readyAt === -1) return undefined;
   const endpoints: Endpoint[] = [];
   for (let i = readyAt + 1; i < lines.length; i += 1) {
-    const m = /^\[dev\] (\S+)\s\s(\S+)$/.exec(lines[i] ?? '');
+    const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
     if (m === null) break;
     endpoints.push({ address: m[1] as string, url: m[2] as string });
   }

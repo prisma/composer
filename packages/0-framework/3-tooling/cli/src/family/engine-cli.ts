@@ -9,10 +9,8 @@
  * the point: it is what proves the family works standalone before the `prisma`
  * bin mounts it.
  *
- * In D2 this lands BESIDE the clipanion `main.ts`, exercised by tests only.
- * The clipanion shell, its bespoke runner and the old e2e paths are deleted in
- * D3, when the four commands arrive; until then composer's shipped bin is
- * still the clipanion one.
+ * This IS composer's CLI. The clipanion shell it replaced, and the bespoke
+ * runner that shelled out to alchemy, are gone; `bin.ts` is a call into here.
  */
 import {
   type Cli,
@@ -49,13 +47,6 @@ function mountedTree(family: CommandFamily): MountedTree {
   return { ...family.commands };
 }
 
-/**
- * NOTE for D2: the engine refuses a CLI with no mounted commands, and the
- * skeleton family carries none, so this throws until D3 mounts
- * deploy/destroy/dev/log. That is the correct behavior on both sides — a CLI
- * with no commands has nothing to be — and composer's shipped bin is still the
- * clipanion one meanwhile.
- */
 export function createComposerCli(spec: ComposerCliSpec): Cli {
   const family = createComposerFamily({ operations: spec.operations });
   return createCli({

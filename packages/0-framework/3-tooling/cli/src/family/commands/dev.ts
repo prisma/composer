@@ -15,19 +15,14 @@
  */
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, exitWithChildStatus, flag, positional } from '@prisma/cli-engine';
-import type { NextAction } from '@prisma/cli-engine/protocol';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
-import { executionDiagnostics } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { type ConvergeSpawn, convergeSpawn } from '../converge.ts';
+import { type ConvergeSpawn, convergeSpawn, reproduceHint } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
-
-/** Composer's own class of the same name; the bare name is always the engine's. */
-type ComposerError = import('@internal/foundation/errors').CliStructuredError;
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
@@ -46,23 +41,6 @@ function stopRequested(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     signal.addEventListener('abort', () => resolve(), { once: true });
   });
-}
-
-/**
- * The reproduce hint a failed converge carries — the same one deploy and
- * destroy settle with.
- */
-function reproduceHint(failure: ComposerError): readonly NextAction[] {
-  const diagnostics = executionDiagnostics(failure);
-  if (diagnostics === undefined) return [];
-  return [
-    {
-      kind: 'run-command',
-      label: `Run the converge directly from ${diagnostics.cwd} to reproduce this`,
-      command: diagnostics.reproduceCommand,
-      reason: `Generated stack file: ${diagnostics.stackFilePath}`,
-    },
-  ];
 }
 
 /**

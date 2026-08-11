@@ -7,9 +7,10 @@
  * against this instead of the real operations, so their suites never spawn a
  * converge and their typecheck never needs the alchemy/effect constellation.
  * The conformance guarantee is carried by the types: `ComposerOperations` is
- * defined as `typeof deploy` (etc.) of the REAL operations, and the double is
- * declared against it, so a drift in any real signature fails `tsc --noEmit`
- * right here. Every import of implementation modules is type-only and erases
+ * defined as `typeof deployWithDeps` (etc.) of the REAL operations, and the
+ * double is declared against it, so a drift in any real signature fails
+ * `tsc --noEmit` right here. Every import of implementation modules is
+ * type-only and erases
  * at build — the built `testing` chunk must contain no path to the real
  * control implementation, which scripts/check-family-static-graph.mjs proves
  * against the packed tarball.
@@ -113,9 +114,10 @@ async function runConverge(
   const reproduceCommand = `alchemy ${action} ${stackFilePath} --yes --stage test`;
   const workingDirectory = cwd ?? '.';
   const outcome = await deps.alchemy({
-    command: 'alchemy',
-    args: [action, stackFilePath, '--yes', '--stage', 'test'],
+    action,
+    stackFileRelativePath: stackFilePath,
     cwd: workingDirectory,
+    stage: 'test',
     env: {},
   });
 

@@ -23,7 +23,7 @@ import { exitWithChildStatus } from '@prisma/cli-engine';
 import type { CliStructuredError, NextAction, Result } from '@prisma/cli-engine/protocol';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
-import type { RunAlchemy } from '../run-alchemy.ts';
+import { alchemyCommandLine, type RunAlchemy } from '../run-alchemy.ts';
 import { toEngineError } from './translate-error.ts';
 
 // Inline import types, not aliased imports: the no-bare-cast plugin reads the
@@ -63,11 +63,12 @@ export function convergeSpawn(ctx: ConvergeContext): ConvergeSpawn {
   let seen: ChildResult | undefined;
   return {
     alchemy: async (invocation) => {
+      const line = alchemyCommandLine(invocation);
       const result = await ctx.spawn({
-        command: invocation.command,
-        args: invocation.args,
-        cwd: invocation.cwd,
-        env: invocation.env,
+        command: line.command,
+        args: line.args,
+        cwd: line.cwd,
+        env: line.env,
       });
       seen = result;
       return result;
@@ -95,7 +96,7 @@ export function operationDeps(spec: {
  * The reproduce hint a failed converge carries. Deliberately absent for an
  * aborted one: the user stopped it, so there is nothing to reproduce.
  */
-function reproduceHint(failure: ComposerError): readonly NextAction[] {
+export function reproduceHint(failure: ComposerError): readonly NextAction[] {
   const diagnostics = executionDiagnostics(failure);
   if (diagnostics === undefined) return [];
   return [

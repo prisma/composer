@@ -37,16 +37,51 @@ export function resolveAlchemyBin(startDir: string): string {
 }
 
 /**
- * A fully composed converge invocation. `env` carries only the ADDITIONS to
- * the invoking environment — the container transport vars and the result-file
- * pointer — never a whole environment: the engine merges additions over the
- * invocation environment and applies its own credential vars last.
+ * WHAT to converge. Deliberately not a command line: which alchemy binary to
+ * run is a question about this machine's installed tree, and answering it
+ * eagerly would make an injected adapter — a test's fake child — fail in a
+ * directory that has no alchemy installed, before the fake ever ran. The
+ * adapter resolves the binary, because the adapter is what starts a child.
+ *
+ * `env` carries only the ADDITIONS to the invoking environment — the container
+ * transport vars and the result-file pointer — never a whole environment: the
+ * engine merges additions over the invocation environment and applies its own
+ * credential vars last.
  */
 export interface AlchemyInvocation {
+  readonly action: 'deploy' | 'destroy';
+  readonly stackFileRelativePath: string;
+  readonly cwd: string;
+  readonly stage: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/** The command line an invocation becomes, once a binary has been resolved. */
+export interface AlchemyCommandLine {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
+}
+
+/**
+ * Resolves the invocation against this machine — the step every adapter takes
+ * and no caller should. Raises DEPLOY.ALCHEMY_BIN_MISSING when the app has no
+ * alchemy installed.
+ */
+export function alchemyCommandLine(invocation: AlchemyInvocation): AlchemyCommandLine {
+  return {
+    command: resolveAlchemyBin(invocation.cwd),
+    args: [
+      invocation.action,
+      invocation.stackFileRelativePath,
+      '--yes',
+      '--stage',
+      invocation.stage,
+    ],
+    cwd: invocation.cwd,
+    env: invocation.env,
+  };
 }
 
 /**
@@ -75,12 +110,13 @@ export interface AlchemyInvocationInput {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
-/** `alchemy deploy|destroy <stack file> --yes --stage <stage>`. */
+/** What becomes `alchemy deploy|destroy <stack file> --yes --stage <stage>`. */
 export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocation {
   return {
-    command: resolveAlchemyBin(input.cwd),
-    args: [input.command, input.stackFileRelativePath, '--yes', '--stage', input.stage],
+    action: input.command,
+    stackFileRelativePath: input.stackFileRelativePath,
     cwd: input.cwd,
+    stage: input.stage,
     env: { ...input.containerEnv, ...input.env },
   };
 }
@@ -91,15 +127,17 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  * collapse a signal into an exit code — that collapse is what made a
  * Ctrl-C'd deploy report itself as a failure.
  */
-export const spawnAlchemy: RunAlchemy = async (invocation) =>
-  new Promise<AlchemyOutcome>((resolve, reject) => {
-    const child = spawn(invocation.command, [...invocation.args], {
-      cwd: invocation.cwd,
+export const spawnAlchemy: RunAlchemy = async (invocation) => {
+  const line = alchemyCommandLine(invocation);
+  return new Promise<AlchemyOutcome>((resolve, reject) => {
+    const child = spawn(line.command, [...line.args], {
+      cwd: line.cwd,
       stdio: 'inherit',
-      env: { ...process.env, ...invocation.env },
+      env: { ...process.env, ...line.env },
     });
     child.on('error', reject);
     child.on('close', (exitCode, signal) => {
       resolve({ exitCode, signal });
     });
   });
+};

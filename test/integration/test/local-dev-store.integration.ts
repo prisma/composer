@@ -13,7 +13,7 @@
  * Criteria proved here:
  *   1. Credential-free bring-up: PRISMA_WORKSPACE_ID/PRISMA_SERVICE_TOKEN/
  *      PRISMA_REGION are stripped from the child's env; the front door
- *      (`[dev] ready:` + one line per service) is parsed from real stdout;
+ *      (`dev: ready` + one line per service) is parsed from real stdout;
  *      an HTTP round-trip against the storefront's URL succeeds.
  *   2. Rebuild restarts exactly one service: touching ONLY catalog's built
  *      artifact (so its hash moves, nothing else's) restarts `catalog.service`
@@ -173,14 +173,19 @@ function readLog(logPath: string): string {
   }
 }
 
-/** Parses the pinned front-door block out of the tee'd log: `[dev] ready:` then `[dev] <address>  <url>` lines, until a non-matching line. */
+/**
+ * Parses the front-door block out of the tee'd log. The engine renders `dev`'s
+ * ready status and its endpoint events as `dev: ready` followed by one
+ * `<address>: <url>` line per service; the old `[dev] `-prefixed block was the
+ * legacy CLI adapter's own console formatting and went with it.
+ */
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
   const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === '[dev] ready:');
+  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
   if (readyAt === -1) return undefined;
   const endpoints: Endpoint[] = [];
   for (let i = readyAt + 1; i < lines.length; i += 1) {
-    const m = /^\[dev\] (\S+)\s\s(\S+)$/.exec(lines[i] ?? '');
+    const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
     if (m === null) break;
     endpoints.push({ address: m[1] as string, url: m[2] as string });
   }
@@ -399,7 +404,7 @@ const REAL_WATCH_TIMEOUT_MS = 30_000;
  * re-assemble, and re-converge are what's being proved.
  *
  * Waits for the watch loop's OWN completion signal — run-dev.ts reprints the
- * front door (`[dev] ready:` + one line per service) after a successful
+ * front door (`dev: ready` + one line per service) after a successful
  * reconverge — rather than just for catalog.service's pid to move: the spec
  * re-runs assemble for EVERY service on a fire (not just the touched one),
  * so waiting on catalog's pid alone can return while the running process is

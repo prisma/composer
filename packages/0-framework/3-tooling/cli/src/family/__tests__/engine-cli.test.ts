@@ -106,9 +106,9 @@ describe('createComposerCli()', () => {
 
 /**
  * The rest of the composition — composer's Runtime driving a real engine run
- * to a real exit code — proven over a probe command, because the skeleton
- * family has none of its own yet. `runComposerCli` differs from this only in
- * where the family comes from.
+ * to a real exit code — proven over a probe command, so the assertions are
+ * about the Runtime rather than about any one command's behavior.
+ * `runComposerCli` differs from this only in where the family comes from.
  */
 describe("composer's Runtime against a real engine run", () => {
   test('a run reaches the engine, writes to the host streams and reports the version', async () => {
