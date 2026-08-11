@@ -16,6 +16,8 @@
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
     "check:npm-effect-resolution": "node scripts/check-npm-effect-resolution.mjs",
+    "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
+    "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
     "bump-minor": "node scripts/bump-minor.ts",
     "test": "turbo run test",
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
@@ -43,7 +45,8 @@
       "@prisma/engines"
     ],
     "patchedDependencies": {
-      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch"
+      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch",
+      "@alchemy.run/node-utils@0.0.5": "patches/@alchemy.run__node-utils@0.0.5.patch"
     }
   },
   "version": "0.6.0"

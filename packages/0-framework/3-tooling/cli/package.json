@@ -6,7 +6,9 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
+    "./family": "./dist/family.mjs",
     "./report": "./dist/report.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -19,9 +21,9 @@
     "@internal/assemble": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
     "@internal/foundation": "workspace:0.6.0",
+    "@prisma/cli-engine": "0.0.7",
     "c12": "^3.3.4",
-    "chokidar": "^4.0.3",
-    "clipanion": "^3.2.1"
+    "chokidar": "^4.0.3"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.6.0",

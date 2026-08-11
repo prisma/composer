@@ -47,6 +47,8 @@
         "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
       ],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
+      "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
+      "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
       "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/exports/index.ts"],
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"

@@ -107,11 +107,11 @@ function dumpDiagnostics(): void {
 
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
   const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === '[dev] ready:');
+  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
   if (readyAt === -1) return undefined;
   const endpoints: Endpoint[] = [];
   for (let i = readyAt + 1; i < lines.length; i += 1) {
-    const m = /^\[dev\] (\S+)\s\s(\S+)$/.exec(lines[i] ?? '');
+    const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
     if (m === null) break;
     endpoints.push({ address: m[1] as string, url: m[2] as string });
   }
@@ -198,6 +198,8 @@ async function waitForExit(child: ChildProcess, timeoutMs: number): Promise<numb
   });
 }
 
+/** Ctrl-C settles 130 — 128 + SIGINT — by exit code, the CLI having handled the
+ *  interrupt rather than died from it. */
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -210,6 +212,11 @@ async function stopDev(session: DevSession): Promise<void> {
       resolve();
     });
   });
+  assertEqual(
+    { code: session.child.exitCode, signal: session.child.signalCode },
+    { code: 130, signal: null },
+    'Ctrl-C on dev settles 130 (128 + SIGINT)',
+  );
 }
 
 async function main(): Promise<void> {

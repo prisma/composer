@@ -5,11 +5,11 @@
  * because this is all they pull in statically.
  */
 import type { RunAssembler } from '@internal/assemble';
-import type { PrismaAppConfig } from '@internal/core/config';
+import type { ContainerCredentials, PrismaAppConfig } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { checkEffectResolution } from '../check-effect-resolution.ts';
-import type { RunAlchemyInput } from '../run-alchemy.ts';
+import type { RunAlchemy } from '../run-alchemy.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
 export type ExtensionId = string;
@@ -29,8 +29,30 @@ export interface ServiceEndpoint {
  */
 export interface OperationDeps {
   readonly runAssembler?: RunAssembler | undefined;
-  readonly alchemy?: ((input: RunAlchemyInput) => number) | undefined;
+  /**
+   * Starts the converge child. The CLI passes one backed by the engine's
+   * `ctx.spawn`, so the terminal reaches the child natively and the engine
+   * owns signal policy; hosts get the default `spawnAlchemy`.
+   */
+  readonly alchemy?: RunAlchemy | undefined;
   readonly config?: PrismaAppConfig | undefined;
+  /** Names the config file explicitly instead of walking up from the entry. */
+  readonly configPath?: string | undefined;
+  /**
+   * How the in-process leg authenticates: the caller's already-authenticated
+   * API client and the workspace it acts in. Supplied by the CLI from the
+   * engine's credential read, so no code below this point reads the
+   * environment for token material. Absent for hosts that have not adopted
+   * the seam — the container descriptors then fall back to the environment
+   * protocol, as the spawned child does.
+   *
+   * Read by `deploy` and `destroy` only, because they are the operations that
+   * reach a PLATFORM container. `dev` and `log` resolve local targets, whose
+   * container is "a stable local identity — resolved without any platform
+   * call", and both commands are credential-free by contract: there is no
+   * authenticated call on those paths for this to reach.
+   */
+  readonly credentials?: ContainerCredentials | undefined;
 }
 
 /**
@@ -42,8 +64,13 @@ export interface OperationDeps {
  * anything durable.
  */
 export interface ExecutionDiagnostics {
-  /** The child's exit status; undefined means the spawn itself threw. */
+  /** The child's exit status; undefined means the spawn itself threw, or the
+   *  child was killed by a signal (`signal` then names it). */
   readonly exitCode: number | undefined;
+  /** The signal that killed the child, when one did. A signal-killed converge
+   *  is an abort the user asked for, not a failure of the deploy — a host
+   *  should report it as an interruption and print no reproduce hint. */
+  readonly signal?: string | undefined;
   readonly stackFilePath: string;
   readonly reproduceCommand: string;
   readonly cwd: string;
@@ -62,6 +89,7 @@ export function executionDiagnostics(f: CliStructuredError): ExecutionDiagnostic
   >(diagnostics);
   if (
     (candidate['exitCode'] !== undefined && typeof candidate['exitCode'] !== 'number') ||
+    (candidate['signal'] !== undefined && typeof candidate['signal'] !== 'string') ||
     typeof candidate['stackFilePath'] !== 'string' ||
     typeof candidate['reproduceCommand'] !== 'string' ||
     typeof candidate['cwd'] !== 'string'
@@ -70,7 +98,7 @@ export function executionDiagnostics(f: CliStructuredError): ExecutionDiagnostic
   }
   return blindCast<
     ExecutionDiagnostics,
-    'the field checks above validate the runtime shape (optional numeric exitCode, string stackFilePath/reproduceCommand/cwd)'
+    'the field checks above validate the runtime shape (optional numeric exitCode, optional string signal, string stackFilePath/reproduceCommand/cwd)'
   >(diagnostics);
 }
 

@@ -10,6 +10,7 @@
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
     "./control": "./dist/control.mjs",
+    "./family": "./dist/family.mjs",
     "./deploy": "./dist/deploy.mjs",
     "./local-target": "./dist/local-target.mjs",
     "./report": "./dist/report.mjs",
@@ -35,11 +36,11 @@
   },
   "dependencies": {
     "@effect/vitest": "4.0.0-beta.103",
+    "@prisma/cli-engine": "0.0.7",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
     "c12": "^3.3.4",
-    "clipanion": "^3.2.1",
     "effect": "4.0.0-beta.103",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.57.0"

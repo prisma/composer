@@ -16,7 +16,7 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import { startWatch, type WatchHandle, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
-import { runAlchemy } from '../run-alchemy.ts';
+import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
@@ -62,7 +62,11 @@ export async function executeDev(
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
+    const pipelineDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      config: deps.config,
+      configPath: deps.configPath,
+    };
     pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
     const { config, graph, name } = pipeline;
 
@@ -122,7 +126,7 @@ export async function executeDev(
 
   const reproduceCommand = `alchemy deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`;
 
-  const converge = (): { status: number; stackPath: string } => {
+  const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {
     let stackPath: string;
     try {
       stackPath = writeDevStackFile({
@@ -136,15 +140,17 @@ export async function executeDev(
       // Stack-file write I/O is structured at the catch that knows (rule 6).
       throw toStructured('DEV.STACK_WRITE_FAILED', error);
     }
-    let status: number;
+    let outcome: AlchemyOutcome;
     try {
-      status = (deps.alchemy ?? runAlchemy)({
-        command: 'deploy',
-        stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-        cwd,
-        stage: 'dev',
-        containerEnv: containerEnv(containers),
-      });
+      outcome = await (deps.alchemy ?? spawnAlchemy)(
+        alchemyInvocation({
+          command: 'deploy',
+          stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+          cwd,
+          stage: 'dev',
+          containerEnv: containerEnv(containers),
+        }),
+      );
     } catch (error) {
       if (CliStructuredError.is(error)) throw error;
       throw new CliStructuredError('DEV.CONVERGE_FAILED', failureMessage(error), {
@@ -154,29 +160,35 @@ export async function executeDev(
         },
       });
     }
-    return { status, stackPath };
+    return { outcome, stackPath };
   };
 
   // Write the dev stack file and converge. Inside the try: a stray
   // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
   // back as a failure result, not a rejection out of dev().
-  let first: { status: number; stackPath: string };
+  let first: { outcome: AlchemyOutcome; stackPath: string };
   try {
-    first = converge();
+    first = await converge();
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
-  if (first.status !== 0) {
+  const firstStatus = first.outcome.signal !== null ? null : (first.outcome.exitCode ?? 1);
+  if (firstStatus !== 0) {
     return notOk(
       new CliStructuredError(
         'DEV.CONVERGE_FAILED',
-        `alchemy deploy exited with status ${first.status}.`,
+        first.outcome.signal !== null
+          ? `alchemy deploy was interrupted by ${first.outcome.signal}.`
+          : `alchemy deploy exited with status ${String(firstStatus)}.`,
         {
           meta: {
-            exitCode: first.status,
+            ...(first.outcome.signal !== null
+              ? { signal: first.outcome.signal }
+              : { exitCode: firstStatus }),
             diagnostics: {
-              exitCode: first.status,
+              exitCode: firstStatus ?? undefined,
+              ...(first.outcome.signal !== null ? { signal: first.outcome.signal } : {}),
               stackFilePath: first.stackPath,
               reproduceCommand,
               cwd,
@@ -244,7 +256,11 @@ export async function executeDev(
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
+    const watchDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      config: deps.config,
+      configPath: deps.configPath,
+    };
     watch = startWatch(
       targets,
       () => {
@@ -262,14 +278,16 @@ export async function executeDev(
               name: rePipeline.name,
               assembled: rePipeline.assembled,
             });
-            const status = (deps.alchemy ?? runAlchemy)({
-              command: 'deploy',
-              stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-              cwd,
-              stage: 'dev',
-              containerEnv: containerEnv(containers),
-            });
-            if (status !== 0) {
+            const outcome = await (deps.alchemy ?? spawnAlchemy)(
+              alchemyInvocation({
+                command: 'deploy',
+                stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+                cwd,
+                stage: 'dev',
+                containerEnv: containerEnv(containers),
+              }),
+            );
+            if (outcome.signal !== null || outcome.exitCode !== 0) {
               emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
               return;
             }

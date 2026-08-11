@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@alchemy.run/node-utils@0.0.5':
+    hash: 6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266
+    path: patches/@alchemy.run__node-utils@0.0.5.patch
   alchemy@2.0.0-beta.67:
     hash: b4f53c9c951c28d72ce7373ac88b38bd85718e114e5001fa7b2a8f7f869d6fac
     path: patches/alchemy@2.0.0-beta.67.patch
@@ -680,15 +683,15 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.6.0
         version: link:../../0-foundation/foundation
+      '@prisma/cli-engine':
+        specifier: 0.0.7
+        version: 0.0.7
       c12:
         specifier: ^3.3.4
         version: 3.3.4
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
-      clipanion:
-        specifier: ^3.2.1
-        version: 3.2.1(typanion@3.14.0)
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.6.0
@@ -1140,6 +1143,9 @@ importers:
       '@effect/vitest':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))
+      '@prisma/cli-engine':
+        specifier: 0.0.7
+        version: 0.0.7
       '@prisma/management-api-sdk':
         specifier: ^1.57.0
         version: 1.57.0
@@ -1155,9 +1161,6 @@ importers:
       c12:
         specifier: ^3.3.4
         version: 3.3.4
-      clipanion:
-        specifier: ^3.2.1
-        version: 3.2.1(typanion@3.14.0)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103
@@ -1620,8 +1623,16 @@ packages:
   '@chevrotain/utils@10.5.0':
     resolution: {integrity: sha512-hBzuU5+JjB2cqNZyszkDHZgOSrUUT8V3dhgRl8Q9Gp6dAj/H5+KILGjbhDpc3Iy9qmqlm/akuOI2ut9VUtzJxQ==}
 
+  '@clack/core@1.4.0':
+    resolution: {integrity: sha512-7Wctjq6f7c1CPz8sPpkwUnz8yRgVANkpNupb81q432FjcJg4l+Sw7XANdNSdWfAKq0IHI0JTcUeK5dxs/HrGPw==}
+    engines: {node: '>= 20.12.0'}
+
   '@clack/core@1.4.3':
     resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
+    engines: {node: '>= 20.12.0'}
+
+  '@clack/prompts@1.5.0':
+    resolution: {integrity: sha512-wKh+wTjmrUoUdkZg8KpJO5X+p9PWV+KE9mePseq9UYWkukgTKsGS47RRL2HstwVcvDQH+PenrPJWII8+MfiiyA==}
     engines: {node: '>= 20.12.0'}
 
   '@clack/prompts@1.7.0':
@@ -2393,6 +2404,10 @@ packages:
   '@oxc-project/types@0.140.0':
     resolution: {integrity: sha512-h5LUOzGArYemnW1NMz/DuuQhBi96J6JL2Bk8zE4kvqxB5Sg3jxmCiH4uyOWHDkiKSt5vWlG4FIwCR/DbstcNRQ==}
 
+  '@prisma/cli-engine@0.0.7':
+    resolution: {integrity: sha512-at7M9hqN9eE0CkAj+U7Ey0ZSqTTSmI1r5Uk9rCc7hbAJgEk3keyQ/ObeXtd0BMu6G9rcb7zGGMQyumKH1gEolQ==}
+    engines: {node: '>=22.12.0'}
+
   '@prisma/config@7.9.0':
     resolution: {integrity: sha512-CsoK2mhl0u+N4/8V+XroQMOUNIic4isqD+E2HBG8l1yGEKo62CFDu3FHo0FdwItjl6XkW+omA1STSzeN1DAXlg==}
 
@@ -2425,6 +2440,9 @@ packages:
 
   '@prisma/management-api-sdk@1.50.0':
     resolution: {integrity: sha512-xTg2xCKCwH1h6ZXzT8ieRmypINvFB5RIMAuWEuk2LpfsHUFs0RFuyRNw1CeYGVXnxWckkA8dWFQVLyjolZlDeA==}
+
+  '@prisma/management-api-sdk@1.55.0':
+    resolution: {integrity: sha512-WuDDOhxOHfROGY7QAU6wtlbWR0diNwfsQw1epQkhalvgOUe/JzIjxqpBpQzMA54zFVlMmcnT6OEiQfwCIKiRjA==}
 
   '@prisma/management-api-sdk@1.57.0':
     resolution: {integrity: sha512-NrTnL41BKj1XEs0sLsSUuxG6t4n1Qh1JldFnNpeLgTdTasfXYech4u8bCcfInxKkkPvFwDM759wpb9cSySK1Fw==}
@@ -3031,6 +3049,9 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@stricli/core@1.3.0':
+    resolution: {integrity: sha512-LnBe2HntygaLDU5trtjiC3J4C/YkmIZuM0XB52IF4qaLqJH09kgD1fnZiS2gaYUnt0nAN2a+1b4PSOBcfPrN4Q==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -3664,11 +3685,6 @@ packages:
 
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
-
-  clipanion@3.2.1:
-    resolution: {integrity: sha512-dYFdjLb7y1ajfxQopN05mylEpK9ZX0sO1/RfMXdfmwjlIsPkbh4p7A682x++zFPLDCo1x3p82dtljHf5cW2LKA==}
-    peerDependencies:
-      typanion: '*'
 
   clipanion@4.0.0-rc.4:
     resolution: {integrity: sha512-CXkMQxU6s9GklO/1f714dkKBMu1lopS1WFF0B8o4AxPykR1hpozxSiUZ5ZUeBjfPgCWqbcNOtZVFhB8Lkfp1+Q==}
@@ -5473,7 +5489,7 @@ snapshots:
       ansi-styles: 6.2.3
       is-fullwidth-code-point: 5.1.0
 
-  '@alchemy.run/node-utils@0.0.5': {}
+  '@alchemy.run/node-utils@0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)': {}
 
   '@ark/schema@0.56.2':
     dependencies:
@@ -5813,8 +5829,20 @@ snapshots:
 
   '@chevrotain/utils@10.5.0': {}
 
+  '@clack/core@1.4.0':
+    dependencies:
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
+
   '@clack/core@1.4.3':
     dependencies:
+      fast-wrap-ansi: 0.2.2
+      sisteransi: 1.0.5
+
+  '@clack/prompts@1.5.0':
+    dependencies:
+      '@clack/core': 1.4.0
+      fast-string-width: 3.0.2
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
@@ -5880,7 +5908,7 @@ snapshots:
 
   '@distilled.cloud/cloudflare-runtime@0.15.0(@distilled.cloud/cloudflare@0.30.3(effect@4.0.0-beta.103))(@effect/platform-bun@4.0.0-beta.103(effect@4.0.0-beta.103))(@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103)(ioredis@5.11.1))(effect@4.0.0-beta.103)':
     dependencies:
-      '@alchemy.run/node-utils': 0.0.5
+      '@alchemy.run/node-utils': 0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)
       '@distilled.cloud/cloudflare': 0.30.3(effect@4.0.0-beta.103)
       effect: 4.0.0-beta.103
       workerd: 1.20260704.1
@@ -6462,6 +6490,15 @@ snapshots:
 
   '@oxc-project/types@0.140.0': {}
 
+  '@prisma/cli-engine@0.0.7':
+    dependencies:
+      '@clack/prompts': 1.5.0
+      '@prisma/management-api-sdk': 1.55.0
+      '@stricli/core': 1.3.0
+      c12: 3.3.4
+    transitivePeerDependencies:
+      - magicast
+
   '@prisma/config@7.9.0':
     dependencies:
       c12: 3.3.4
@@ -6541,6 +6578,10 @@ snapshots:
       '@prisma/debug': 7.9.0
 
   '@prisma/management-api-sdk@1.50.0':
+    dependencies:
+      openapi-fetch: 0.14.0
+
+  '@prisma/management-api-sdk@1.55.0':
     dependencies:
       openapi-fetch: 0.14.0
 
@@ -7082,6 +7123,8 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
+  '@stricli/core@1.3.0': {}
+
   '@swc/helpers@0.5.15':
     dependencies:
       tslib: 2.8.1
@@ -7457,7 +7500,7 @@ snapshots:
 
   alchemy@2.0.0-beta.67(patch_hash=b4f53c9c951c28d72ce7373ac88b38bd85718e114e5001fa7b2a8f7f869d6fac)(@effect/platform-bun@4.0.0-beta.103(effect@4.0.0-beta.103))(@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103)(ioredis@5.11.1))(@types/node@26.1.1)(@types/react@19.2.17)(effect@4.0.0-beta.103)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0)))(workerd@1.20260704.1)(ws@8.21.1):
     dependencies:
-      '@alchemy.run/node-utils': 0.0.5
+      '@alchemy.run/node-utils': 0.0.5(patch_hash=6faf37cc2077b96dea5bf0d1906285c3f32e99f34af71943256985056678b266)
       '@aws-sdk/credential-providers': 3.1077.0
       '@clack/prompts': 1.7.0
       '@distilled.cloud/aws': 0.30.3(effect@4.0.0-beta.103)
@@ -7704,10 +7747,6 @@ snapshots:
       string-width: 8.2.2
 
   client-only@0.0.1: {}
-
-  clipanion@3.2.1(typanion@3.14.0):
-    dependencies:
-      typanion: 3.14.0
 
   clipanion@4.0.0-rc.4(typanion@3.14.0):
     dependencies:
