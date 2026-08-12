@@ -101,6 +101,72 @@ jobs:
       - name: Test scripts (cast-ratchet unit tests)
         run: pnpm test:scripts
 
+  node-floor:
+    name: Node 22.18 floor
+    # The published packages declare `engines.node: >=22.18.0`, but every suite
+    # above runs under bun, which ignores `engines.node` entirely, and
+    # `.tool-versions` pins node 24.16.0 — so nothing else here ever executes
+    # the floor version. This job does. It covers what a Node user hits first:
+    # the two runtime features the floor rests on, the CLI's TypeScript entry
+    # under a real node, `node --test` over the repo's TypeScript scripts, and
+    # the built binary a consumer installs. It deliberately does NOT re-run the
+    # bun suites under node — bun is the runner there, so doing so would prove
+    # nothing about node.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # Built on the toolchain `.tool-versions` pins (node 24.16.0) — the same
+      # toolchain publish.yml builds the tarballs with. The floor is a claim
+      # about CONSUMING that output, so node drops to 22.18.0 only after this.
+      - name: Build packages
+        run: pnpm build
+      # mise is how this repo pins tools; there is no `actions/setup-node`
+      # anywhere in .github. `.tool-versions` stays on 24.16.0 — this prepends
+      # 22.18.0 to PATH for the steps below only.
+      - name: Put node 22.18.0 first on PATH
+        run: |
+          mise install node@22.18.0
+          echo "$(mise where node@22.18.0)/bin" >> "$GITHUB_PATH"
+      # If that PATH order ever flips back to mise's 24.16.0, every step below
+      # would quietly re-test the version CI already covers. Fail loudly here.
+      - name: Confirm node is exactly the floor version
+        run: |
+          echo "node --version -> $(node --version)"
+          test "$(node --version)" = "v22.18.0"
+      # The two runtime features `>=22.18.0` rests on. Type stripping is what
+      # sets the floor: it is unflagged in 22.18.0 exactly, and it is how the
+      # CLI imports the user's `.ts` entry. `node:sqlite` (used by the streams
+      # module's local stand-in, via @prisma/streams-local's `DatabaseSync`)
+      # unflagged earlier, in 22.13.0, so the floor already covers it.
+      - name: Check the runtime features the floor claims
+        run: |
+          printf 'const greeting: string = "type stripping works"\nconsole.log(greeting)\n' > "$RUNNER_TEMP/floor-check.mts"
+          node "$RUNNER_TEMP/floor-check.mts"
+          node -e "const { DatabaseSync } = require('node:sqlite'); new DatabaseSync(':memory:').exec('create table t(x)'); console.log('node:sqlite works')"
+      # The one test in the repo that spawns a real `node` at the CLI's
+      # TypeScript entry (src/bin.ts). bun runs the SUITE; the process under
+      # test is the 22.18.0 node put on PATH above, which is what makes this
+      # the proof for the CLI's front door.
+      - name: CLI node-compat smoke test (spawns node at src/bin.ts)
+        run: pnpm --filter @internal/cli exec bun test src/__tests__/node-compat.test.ts
+      # `node --test` over scripts/*.test.ts — a real node executing TypeScript
+      # test files directly, so type stripping again, across the script suite.
+      - name: Repo script tests (node --test over TypeScript sources)
+        run: pnpm test:scripts
+      # What a consumer actually installs and runs in their first minutes.
+      # `--help` writes to stderr, hence the redirect.
+      - name: Smoke the published CLI binary
+        run: |
+          BIN=packages/9-public/composer/dist/bin.mjs
+          VERSION=$(node -p "require('./packages/9-public/composer/package.json').version")
+          node "$BIN" --version | grep -q "$VERSION"
+          node "$BIN" --help 2>&1 | grep -q 'prisma-composer deploy'
+
   cast-ratchet:
     name: Cast ratchet
     # PR-only: the ratchet compares HEAD against the PR base. On push to main
