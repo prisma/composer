@@ -108,10 +108,11 @@ jobs:
     # `.tool-versions` pins node 24.16.0 — so nothing else here ever executes
     # the floor version. This job does. It covers what a Node user hits first:
     # the two runtime features the floor rests on, the CLI's TypeScript entry
-    # under a real node, `node --test` over the repo's TypeScript scripts, and
-    # the built binary a consumer installs. It deliberately does NOT re-run the
-    # bun suites under node — bun is the runner there, so doing so would prove
-    # nothing about node.
+    # under a real node, `node --test` over the repo's TypeScript scripts, the
+    # built binary a consumer installs, and every published entrypoint of
+    # @prisma/composer. It deliberately does NOT re-run the bun suites under
+    # node — bun is the runner there, so doing so would prove nothing about
+    # node.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -166,6 +167,15 @@ jobs:
           VERSION=$(node -p "require('./packages/9-public/composer/package.json').version")
           node "$BIN" --version | grep -q "$VERSION"
           node "$BIN" --help 2>&1 | grep -q 'prisma-composer deploy'
+      # The step above proves start-up, and start-up is exactly the part that
+      # loads none of the deploy machinery: composer keeps its executors behind
+      # `await import()` (check-family-static-graph.mjs enforces that), so
+      # `--version` never touches alchemy, effect, or any provider. Until this
+      # step, the constellation a real `deploy` evaluates had never been
+      # imported on the floor version anywhere in CI, and a consumer running
+      # `prisma-composer deploy` was the first to find out.
+      - name: Import every published entrypoint on the floor
+        run: pnpm check:floor-imports
 
   cast-ratchet:
     name: Cast ratchet
