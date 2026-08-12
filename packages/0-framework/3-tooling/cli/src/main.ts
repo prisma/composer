@@ -54,6 +54,18 @@ class DeployCommand extends DeployCliCommand {
       "Write the deploy's outcome as JSON to this path — resources, preview URLs, and the " +
       'failure cause when there is one. Also settable as PRISMA_COMPOSER_REPORT_FILE.',
   });
+
+  // Named for what a user reads in their target's console — a build — not for
+  // this CLI's own `build` (a service's build adapter, ADR-0005). Nothing else
+  // on this surface takes a build id, so the two cannot collide at the command
+  // line, and `--build-id` is the name someone copying an id from their CI
+  // will reach for.
+  buildId = Option.String('--build-id', {
+    description:
+      'Join the deploy record your CI already created rather than letting the target create ' +
+      'one — for a workflow that opens the record, runs several steps against it, then ' +
+      'closes it. Each target also reads its own environment variable for this; the flag wins.',
+  });
 }
 
 class DestroyCommand extends DeployCliCommand {
@@ -148,6 +160,8 @@ export interface ParsedArgs {
   readonly tail?: number | undefined;
   /** `deploy` only — where to write the run report. */
   readonly report?: string | undefined;
+  /** `deploy` only — an existing deploy record to join (`--build-id`). */
+  readonly buildId?: string | undefined;
 }
 
 /** `log`'s default backlog: an empty screen reads as broken, so show a little recent history before going live. */
@@ -179,6 +193,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       production: command.production,
       fresh: false,
       report: command instanceof DeployCommand ? command.report : undefined,
+      buildId: command instanceof DeployCommand ? command.buildId : undefined,
     };
   }
 
@@ -278,7 +293,13 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       );
     }
     const result = await deployWithDeps(
-      { entry: args.entry, name: args.name, stage: args.stage, reportPath: args.report },
+      {
+        entry: args.entry,
+        name: args.name,
+        stage: args.stage,
+        reportPath: args.report,
+        reportId: args.buildId,
+      },
       deps,
     );
     if (result.ok) return 0;

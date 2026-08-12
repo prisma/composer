@@ -40,6 +40,10 @@ const CANCEL_REPORT_BUDGET_MS = 1_500;
 /** Exit status for a run ended by a signal, by the usual shell convention (128 + SIGINT). */
 const CANCELLED_EXIT_CODE = 130;
 
+/** An empty string is how a shell spells "unset", so it must not be mistaken for a build id. */
+const nonEmpty = (value: string | undefined): string | undefined =>
+  value !== undefined && value.length > 0 ? value : undefined;
+
 /** The build's query anchors, read out of the reporting extension's own container. */
 export interface BuildReportAnchors {
   readonly projectId: string;
@@ -98,13 +102,18 @@ async function beginSession(
       warn,
     });
 
-  // A build id in the environment means something upstream — the Prisma
-  // GitHub Action — already created the build and this run is one part of it.
-  // Joining means never re-creating it, and never overwriting what the
-  // creator knows better: its source, and the link to its own logs.
-  const joined = env[BUILD_ID_ENV];
+  // A build id from either channel means something upstream — the Prisma
+  // GitHub Action, or a workflow driving the CLI directly — already created
+  // the build and this run is one part of it. Joining means never re-creating
+  // it, and never overwriting what the creator knows better: its source, and
+  // the link to its own logs.
+  //
+  // `--build-id` beats PRISMA_BUILD_ID because it was passed deliberately: a
+  // runner that exports the variable for a whole job, then names a different
+  // build for one step, means the step.
+  const joined = nonEmpty(input.reportId) ?? nonEmpty(env[BUILD_ID_ENV]);
   const buildId =
-    joined !== undefined && joined.length > 0
+    joined !== undefined
       ? joined
       : await api.create({
           source: identity.source,

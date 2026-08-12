@@ -27,6 +27,13 @@ export interface DeployInput {
    * absent from both writes no report.
    */
   readonly reportPath?: string | undefined;
+  /**
+   * An existing report record this deploy belongs to — the `--build-id` flag's
+   * slot. A CI job that opens the record before invoking Composer passes the
+   * id here, and the target's reporter joins that record instead of creating
+   * one. Absent falls back to whatever the target reads from the environment.
+   */
+  readonly reportId?: string | undefined;
 }
 
 export interface DeploySuccess {

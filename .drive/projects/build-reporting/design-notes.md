@@ -56,6 +56,18 @@ So the constraint is that `UpdateBuildInputSchema` lists five fields and these a
 
 **The repository's cast counter treats an import alias as a cast.** `import { buildReporter as reportBuilds }` raised `lint:casts` by one. Renaming the export removed it. Worth knowing before someone spends time hunting for a type assertion that was never there.
 
+## How two reporters of one CI run converge
+
+Checked against `origin/main` because it decides where the GitHub-env reading belongs.
+
+The platform owns the dedup key and nothing else. `sourceEventIdForRun(workspaceId, runIdentity)` in `packages/interactors/src/compute/build.ts` returns `github:<workspaceId>:<repositoryId>:<runId>:<runAttempt>`, and `Build.sourceEventId` carries a unique constraint, so any two reporters that supply the same `runIdentity` land on one `Build` row rather than two. `createBuild` looks the key up before inserting and treats a duplicate-key error as "already recorded", so the race is closed on both sides.
+
+What the platform does **not** do is work out that identity for you. It reads no GitHub environment variable anywhere outside its own CI scripts — the four fields arrive in the `POST` body, and a reporter that omits `runIdentity` gets a fresh build every call plus no repository link, since `gitRepoId` is resolved from `runIdentity.repositoryId`. So deriving the identity from `GITHUB_REPOSITORY_ID` / `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` is the reporter's job, and `builds/run-identity.ts` is the right home for it. There is no shared helper to reuse and nothing to keep in step beyond those three variable names.
+
+The consequence worth remembering: **Composer and the GitHub Action must derive the identity identically, or one run produces two builds.** Passing a build id down side-steps it entirely, which is why that path exists — but the fallback only converges because both sides read the same three variables.
+
+Separately, a platform webhook build and a CI-run build for the same push do *not* converge: `startBuild.ts` sets `sourceEventId` to the webhook event id, a different key space. That is correct — they are different events — but it means a repository with both connected shows two rows per push.
+
 ## Invocation cases
 
 Walked through with Will. The brief covers the first and third; the rest were found during review.

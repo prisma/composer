@@ -125,6 +125,17 @@ export interface ReportBeginInput {
   readonly stage: string | undefined;
   /** The directory the deploy command was run from — where a reporter reads repository metadata. */
   readonly cwd: string;
+  /**
+   * An existing report record this deploy is one part of, when whatever
+   * invoked Composer created one first — a CI job that opens the record, runs
+   * several steps against it, and closes it afterwards. Opaque to core: only
+   * the reporter knows what record the id names, and a reporter that receives
+   * one joins it instead of creating its own.
+   *
+   * Takes precedence over any equivalent the reporter reads from the
+   * environment, because it was passed deliberately.
+   */
+  readonly reportId: string | undefined;
 }
 
 /** The deploy context handed to `RunReporter.anchor`, once containers exist. */

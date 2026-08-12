@@ -47,6 +47,8 @@ interface StackPipelineOptions {
   readonly cwd: string;
   readonly onEvent: ((event: DestroyEvent) => void) | undefined;
   readonly deps: OperationDeps;
+  /** Deploy only: an existing report record to join, from `--build-id`. */
+  readonly reportId: string | undefined;
 }
 
 export async function executeDeploy(
@@ -61,6 +63,7 @@ export async function executeDeploy(
     cwd,
     onEvent: undefined,
     deps,
+    reportId: input.reportId,
   });
 
   const reportPath = resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd);
@@ -97,15 +100,18 @@ interface ExtensionReporter {
  */
 async function beginReporters(
   extensions: readonly { readonly id: ExtensionId; readonly reporter?: ReporterDescriptor }[],
-  appName: string,
-  stage: string | undefined,
-  cwd: string,
+  context: {
+    readonly appName: string;
+    readonly stage: string | undefined;
+    readonly cwd: string;
+    readonly reportId: string | undefined;
+  },
 ): Promise<readonly ExtensionReporter[]> {
   const opened = await Promise.all(
     extensions.map(async (extension) => {
       if (extension.reporter === undefined) return undefined;
       try {
-        const reporter = await extension.reporter.begin({ appName, stage, cwd });
+        const reporter = await extension.reporter.begin(context);
         return reporter === undefined ? undefined : { extensionId: extension.id, reporter };
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -202,6 +208,7 @@ export async function executeDestroy(
     cwd,
     onEvent: input.onEvent,
     deps,
+    reportId: undefined,
   });
   if (!outcome.ok) return outcome;
   return okVoid();
@@ -297,7 +304,14 @@ async function runStackPipelineInner(
     // one failure it most needs to describe. Nothing earlier than this is
     // reportable — the extensions come from the config this line just loaded.
     if (action === 'deploy') {
-      reporters.push(...(await beginReporters(config.extensions, resolvedName, stage, cwd)));
+      reporters.push(
+        ...(await beginReporters(config.extensions, {
+          appName: resolvedName,
+          stage,
+          cwd,
+          reportId: opts.reportId,
+        })),
+      );
     }
 
     // Resolve each extension's own container (e.g. Prisma Cloud's Project +

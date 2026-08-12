@@ -1115,7 +1115,9 @@ describe('run() — the full pipeline over fakes', () => {
         events,
         reporter: {
           begin: async (input) => {
-            events.push(`begin:${input.appName}:${input.stage ?? 'default'}`);
+            events.push(
+              `begin:${input.appName}:${input.stage ?? 'default'}:${input.reportId ?? 'no-id'}`,
+            );
             fail('begin');
             if (opts.none === true) return undefined;
             return {
@@ -1152,7 +1154,11 @@ describe('run() — the full pipeline over fakes', () => {
       });
 
       expect(status).toBe(0);
-      expect(log.events).toEqual(['begin:reported-app:ci-1', 'anchor:container', 'finish:ok']);
+      expect(log.events).toEqual([
+        'begin:reported-app:ci-1:no-id',
+        'anchor:container',
+        'finish:ok',
+      ]);
       expect(calls[0]?.env?.['FAKE_BUILD_ID']).toBe('bld_1');
     });
 
@@ -1206,7 +1212,7 @@ describe('run() — the full pipeline over fakes', () => {
 
       expect(error).toBeInstanceOf(CliStructuredError);
       expect(log.events).toEqual([
-        'begin:fixture-app:ci-3',
+        'begin:fixture-app:ci-3:no-id',
         'finish:failed:DEPLOY.CONTAINER_FAILED',
       ]);
     });
@@ -1243,8 +1249,26 @@ describe('run() — the full pipeline over fakes', () => {
       });
 
       expect(status).toBe(0);
-      expect(log.events).toEqual(['begin:fixture-app:ci-5']);
+      expect(log.events).toEqual(['begin:fixture-app:ci-5:no-id']);
       expect(calls[0]?.env?.['FAKE_BUILD_ID']).toBeUndefined();
+    });
+
+    test('--build-id names the record the reporter should join', async () => {
+      const app = makeAppDir('joined-app');
+      process.chdir(app.dir);
+      const log = recordingReporter();
+
+      const status = await run(
+        ['deploy', app.entryPath, '--stage', 'ci-9', '--build-id', 'bld_from_ci'],
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: () => 0,
+        },
+      );
+
+      expect(status).toBe(0);
+      expect(log.events[0]).toBe('begin:joined-app:ci-9:bld_from_ci');
     });
 
     test('destroy is not reported — its shape has no phase and no source that names a teardown', async () => {

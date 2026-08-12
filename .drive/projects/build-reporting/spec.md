@@ -45,7 +45,9 @@ Facts that shape the design, each confirmed in the route or model source:
 
 ### Functional
 
-**FR1 — Join an existing build, or create one.** Read `PRISMA_BUILD_ID` from the environment and join that build when present. When absent, Composer creates the build itself. A deploy that reports nothing is invisible in the Console, so creating one is a requirement, not a fallback.
+**FR1 — Join an existing build, or create one.** Take the build id from `--build-id` or from `PRISMA_BUILD_ID`, the flag winning, and join that build. When neither is given, Composer creates the build itself. A deploy that reports nothing is invisible in the Console, so creating one is a requirement, not a fallback.
+
+Both channels exist because a workflow can supply an id either way and neither is always convenient: a runner that opens one record per job exports the variable once, while a job that deploys several stages names a different record per step. The flag wins because it was passed deliberately for that step.
 
 **FR2 — Report progress and outcome.** Set `phase: deploy` and `state: running` when the run starts, and the terminal `state` with `failingStep` and `errorMessage` when it ends, on both the success and failure paths. Composer's own error codes (`DEPLOY.PREFLIGHT_FAILED`, `DEPLOY.CONTAINER_FAILED`, `DEPLOY.ENGINE_FAILED` and the rest) are the `failingStep` vocabulary.
 

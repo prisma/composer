@@ -42,11 +42,13 @@ const begin = (
   api: BuildsApi,
   env: Record<string, string | undefined> = ENV,
   warn: (message: string) => void = () => {},
+  reportId: string | undefined = undefined,
 ) =>
   buildReporter({ api, env, warn, anchorsOf }).begin({
     appName: 'storefront',
     stage: undefined,
     cwd: import.meta.dir,
+    reportId,
   });
 
 describe('buildReporter', () => {
@@ -86,6 +88,56 @@ describe('buildReporter', () => {
     expect(recorded.updates.every((u) => u.buildId === 'bld_from_action')).toBe(true);
     // The creator's own link to its logs is never overwritten.
     expect(recorded.updates.some((u) => 'externalLogUrl' in u.body)).toBe(false);
+  });
+
+  test('joins the build named on the command line, without the environment variable', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(api, ENV, () => {}, 'bld_from_flag');
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+
+    expect(recorded.creates).toEqual([]);
+    expect(recorded.updates.every((u) => u.buildId === 'bld_from_flag')).toBe(true);
+    expect(session?.childEnv()).toEqual({ PRISMA_BUILD_ID: 'bld_from_flag' });
+  });
+
+  test('the command line beats the environment — a job-wide variable does not override one step', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(
+      api,
+      { ...ENV, PRISMA_BUILD_ID: 'bld_from_env' },
+      () => {},
+      'bld_from_flag',
+    );
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+
+    expect(recorded.updates.every((u) => u.buildId === 'bld_from_flag')).toBe(true);
+  });
+
+  test('an empty build id is how a shell spells unset, so the build is created', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(api, { ...ENV, PRISMA_BUILD_ID: '' }, () => {}, '');
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+
+    expect(recorded.creates).toHaveLength(1);
+    expect(recorded.updates.every((u) => u.buildId === 'bld_new')).toBe(true);
   });
 
   test('passes the build id into the apply, so the state store reports against it', async () => {
@@ -228,7 +280,12 @@ describe('buildReporter', () => {
       env: {},
       warn: (m) => warnings.push(m),
       anchorsOf,
-    }).begin({ appName: 'storefront', stage: undefined, cwd: import.meta.dir });
+    }).begin({
+      appName: 'storefront',
+      stage: undefined,
+      cwd: import.meta.dir,
+      reportId: undefined,
+    });
 
     expect(session).toBeUndefined();
     expect(warnings).toEqual([]);
@@ -242,7 +299,7 @@ describe('buildReporter', () => {
       env: { PRISMA_SERVICE_TOKEN: 'token' },
       warn: (m) => warnings.push(m),
       anchorsOf,
-    }).begin({ appName: 'storefront', stage: undefined, cwd: '/' });
+    }).begin({ appName: 'storefront', stage: undefined, cwd: '/', reportId: undefined });
 
     expect(session).toBeUndefined();
     expect(recorded.creates).toEqual([]);
