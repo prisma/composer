@@ -60,9 +60,13 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           {
             human: (ui) =>
               summary === undefined
-                ? [{ kind: 'summary', tone: 'ok', text: 'Deployed.' }]
+                ? [{ kind: 'summary', status: 'ok', text: 'Deployed.' }]
                 : [
-                    { kind: 'summary', tone: 'ok', text: `Deployed ${ui.emphasize(summary.app)}.` },
+                    {
+                      kind: 'summary',
+                      status: 'ok',
+                      text: `Deployed ${ui.emphasize(summary.app)}.`,
+                    },
                     {
                       kind: 'table',
                       columns: ['Address', 'Deployed'],
