@@ -54,7 +54,12 @@ describe('buildReporter', () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
 
     expect(recorded.creates).toEqual([
       { source: 'cli', commitSha: 'a'.repeat(40), branchName: 'main' },
@@ -70,7 +75,12 @@ describe('buildReporter', () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api, { ...ENV, PRISMA_BUILD_ID: 'bld_from_action' });
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
 
     expect(recorded.creates).toEqual([]);
     expect(recorded.updates.every((u) => u.buildId === 'bld_from_action')).toBe(true);
@@ -83,7 +93,12 @@ describe('buildReporter', () => {
 
     const session = await begin(api);
     expect(session?.childEnv()).toEqual({ PRISMA_BUILD_ID: 'bld_new' });
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
   });
 
   test('attaches the project and branch on their own, so a rejection costs only the anchors', async () => {
@@ -91,7 +106,12 @@ describe('buildReporter', () => {
 
     const session = await begin(api);
     await session?.anchor({ container: CONTAINER as unknown as ContainerInstance });
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
 
     expect(recorded.updates[1]).toEqual({
       buildId: 'bld_new',
@@ -104,7 +124,12 @@ describe('buildReporter', () => {
 
     const session = await begin(api);
     await session?.anchor({ container: undefined });
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
 
     expect(recorded.updates.some((u) => 'projectId' in u.body)).toBe(false);
   });
@@ -117,6 +142,7 @@ describe('buildReporter', () => {
       ok: false,
       failingStep: 'DEPLOY.PREFLIGHT_FAILED',
       errorMessage: 'STRIPE_KEY is not set for preview.',
+      entities: [],
     });
 
     expect(recorded.updates.at(-1)).toEqual({
@@ -129,12 +155,69 @@ describe('buildReporter', () => {
     });
   });
 
+  test('a run that deployed one service records the app and where it can be reached', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(api);
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [
+        { kind: 'postgres-database', id: 'db_1' },
+        { kind: 'compute-service', id: 'app_1', url: 'https://storefront.example' },
+      ],
+    });
+
+    expect(recorded.updates.at(-1)?.body).toEqual({
+      state: 'succeeded',
+      appId: 'app_1',
+      deployedUrl: 'https://storefront.example',
+    });
+  });
+
+  test('a run that deployed several services records neither — there is no one answer to record', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(api);
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [
+        { kind: 'compute-service', id: 'app_1', url: 'https://web.example' },
+        { kind: 'compute-service', id: 'app_2', url: 'https://api.example' },
+      ],
+    });
+
+    expect(recorded.updates.at(-1)?.body).toEqual({ state: 'succeeded' });
+  });
+
+  test('a service with no public address still records the app it deployed', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+
+    const session = await begin(api);
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [{ kind: 'compute-service', id: 'app_1' }],
+    });
+
+    expect(recorded.updates.at(-1)?.body).toEqual({ state: 'succeeded', appId: 'app_1' });
+  });
+
   test('finishing twice reports once — the signal path and the normal path cannot both land', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
-    await session?.finish({ ok: true, failingStep: undefined, errorMessage: undefined });
-    await session?.finish({ ok: false, failingStep: 'X.Y', errorMessage: 'second' });
+    await session?.finish({
+      ok: true,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+    await session?.finish({ ok: false, failingStep: 'X.Y', errorMessage: 'second', entities: [] });
 
     expect(recorded.updates.filter((u) => u.body.state !== 'running')).toHaveLength(1);
   });

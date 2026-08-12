@@ -130,8 +130,8 @@ export const stateLayerAgainst = (
       const { store, reporter } = withResourceReporting(
         service,
         buildsApi({
-          origin: apiOrigin,
-          token: Redacted.value(token),
+          // The same client the lease and the scope probe already use.
+          client: mgmt,
           warn: (message) => {
             console.warn(message);
           },

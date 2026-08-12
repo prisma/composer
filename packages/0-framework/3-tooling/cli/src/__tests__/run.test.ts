@@ -1100,7 +1100,7 @@ describe('run() — the full pipeline over fakes', () => {
   describe('deploy-run reporting', () => {
     interface ReporterLog {
       readonly events: string[];
-      readonly reporter: ExtensionDescriptor['reporter'];
+      readonly reporter: NonNullable<ExtensionDescriptor['reporter']>;
     }
 
     /** Records the lifecycle the CLI drives, and optionally fails at one of its steps. */

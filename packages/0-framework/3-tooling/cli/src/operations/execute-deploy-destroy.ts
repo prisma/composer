@@ -163,8 +163,16 @@ function truncate(value: string, limit: number): string {
  */
 async function finishReporters(
   reporters: readonly ExtensionReporter[],
-  outcome: { readonly ok: boolean; readonly code?: string; readonly message?: string },
+  outcome: {
+    readonly ok: boolean;
+    readonly code?: string;
+    readonly message?: string;
+    readonly summary?: DeploymentSummary | undefined;
+  },
 ): Promise<void> {
+  // Flattened, not per node: a reporter reads the kinds its own extension
+  // emits, and which node produced one is the CLI's presentation concern.
+  const entities = outcome.summary?.nodes.flatMap((node) => node.entities) ?? [];
   await Promise.all(
     reporters.map(async ({ reporter }) => {
       try {
@@ -172,6 +180,7 @@ async function finishReporters(
           ok: outcome.ok,
           failingStep: outcome.code === undefined ? undefined : truncate(outcome.code, 500),
           errorMessage: outcome.message === undefined ? undefined : truncate(outcome.message, 5000),
+          entities,
         });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
@@ -225,7 +234,7 @@ async function runStackPipeline(
   await finishReporters(
     reporters,
     outcome.ok
-      ? { ok: true }
+      ? { ok: true, summary: outcome.value }
       : { ok: false, code: outcome.failure.code, message: outcome.failure.message },
   );
   return outcome;

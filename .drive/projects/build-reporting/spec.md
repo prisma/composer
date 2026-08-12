@@ -83,7 +83,9 @@ Facts that shape the design, each confirmed in the route or model source:
 
 **D5 — Detect GitHub Actions and report `source: "ci"` with a `runIdentity`. (assumed)** `GITHUB_REPOSITORY_ID`, `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT` are exactly the numeric fields the schema wants. Supplying them buys idempotency across retries and is what resolves `gitRepoId`, so the build appears against its repository. Fall back to `source: "cli"` with no run identity everywhere else.
 
-**D6 — Hand-write the three API calls until the SDK ships them. (assumed)** A deliberate, temporary exception to "no second HTTP path": the installed SDK exposes only `/v1/builds/{buildId}/logs`, and the endpoints cannot compile against it. Confine them to one small typed module using the same token and origin, and delete it when the SDK catches up.
+**D6 — ~~Hand-write the three API calls until the SDK ships them.~~ RESOLVED 2026-08-12.** The stack merged and `@prisma/management-api-sdk` 1.60.0 carries all three endpoints, so the hand-written module was replaced before this work shipped and no second HTTP path exists. Every request and response shape is now *derived* from the generated `operations` type rather than restated, so a contract change breaks the build instead of drifting silently.
+
+**D11 — The build records the app and its address only when the run deployed exactly one compute service.** `Build.appId` and `Build.deployedUrl` are each one value, and an app with several services has no single answer; picking the first would put an arbitrary service's address in the Console and imply it was the app's. Single-service apps — the common case — get a working link. Multi-service apps get neither, and every service is still reported through the resources endpoint.
 
 **D7 — `destroy` is out of the first cut. (assumed)** It is the only source of the `deleted` action and would be nearly free to wire, but `phase` has no value meaning teardown and `source` has none distinguishing it, so a destroy would render in the Console as an ordinary deploy with a pile of deleted resources. Better to omit it than to report it misleadingly.
 
@@ -91,16 +93,11 @@ Facts that shape the design, each confirmed in the route or model source:
 
 **D9 — Direct `alchemy deploy` of the generated stack file reports nothing.** That path has no parent process, so no build exists. With no `PRISMA_BUILD_ID` in the environment, skip resource reporting and log one line. Inventing a build from inside the child would defeat the purpose of a path that exists to isolate CLI bugs from Alchemy bugs.
 
-## Dependencies
+## Dependencies — all resolved, 2026-08-12
 
-**Blocking for slices 1 and 2:**
-
-1. The pdp-control-plane stack merges: #4853 → #4850 → #4855.
-2. A `@prisma/management-api-sdk` release carrying the builds endpoints. Composer has 1.50.0; `main` is 1.57.0 and has none of them. D6 unblocks development but not correctness — the hand-written module still needs the routes deployed.
-
-**Handed off, blocking the anchor behaviour:** an amendment to #4855 adding `projectId`, `branchId` and `appId` as optional fields on `UpdateBuildInputSchema`, with the anchors merged against the row's existing values before `verifyBuildAnchors` runs, and fill-only semantics. Without it, Composer-reported builds carry no project and are invisible to `GET /v1/builds?projectId=`.
-
-Slice 3 (the JSON report) depends on none of these and can land first.
+1. **The pdp-control-plane stack merged.** #4853, #4850 and #4855 are all in `main`, and the API is in production.
+2. **`@prisma/management-api-sdk` 1.60.0 carries the endpoints.** Composer's pin moved from `^1.57.0` to `^1.60.0`. The release also closed a pre-existing gap: the hosted-state lease and scope endpoints were missing too, which is why this package never typechecked cleanly. It does now.
+3. **The anchor amendment landed in full.** `UpdateBuildInputSchema` takes `projectId`, `branchId` and `appId`, fill-only, verified against the row's existing anchors, with a 409 on a genuine change. It also gained `deployedUrl` on the same terms — the secondary ask — which is what D11 uses.
 
 ## Definition of done
 

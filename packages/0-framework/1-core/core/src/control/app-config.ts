@@ -7,6 +7,7 @@ import type {
   ApplicationDescriptor,
   AssembleInput,
   Bundle,
+  DeployedEntity,
   Lowering,
   ProvisionerDescriptor,
   ServiceLowering,
@@ -22,6 +23,8 @@ export {
   containerEnvVarName,
   deserializeContainers,
 } from '../container-transport.ts';
+/** Re-exported because `RunOutcome` hands them to a reporter — reading this surface must not also require the deploy one. */
+export type { DeployedEntity } from './deploy.ts';
 
 /**
  * One extension's control-plane registry: everything the deploy pipeline may
@@ -137,6 +140,13 @@ export interface RunOutcome {
   readonly failingStep: string | undefined;
   /** Human-readable detail. `undefined` when the run succeeded. */
   readonly errorMessage: string | undefined;
+  /**
+   * Everything the run's nodes became on the deployment target, flattened.
+   * Core does not interpret a `kind` and neither should the CLI — a reporter
+   * reads the kinds its own extension emits and ignores the rest. Empty when
+   * the run failed before producing a report.
+   */
+  readonly entities: readonly DeployedEntity[];
 }
 
 /**

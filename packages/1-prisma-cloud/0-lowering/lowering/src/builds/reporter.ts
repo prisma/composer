@@ -21,14 +21,16 @@
  */
 import type {
   ContainerInstance,
+  DeployedEntity,
   ReportAnchorInput,
   ReportBeginInput,
   ReporterDescriptor,
   RunOutcome,
   RunReporter,
 } from '@internal/core/config';
+import { createManagementApiClient } from '@prisma/management-api-sdk';
 import { MANAGEMENT_API_ORIGIN } from '../client.ts';
-import { type BuildsApi, buildsApi } from './api.ts';
+import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
 import { BUILD_ID_ENV } from './resources.ts';
 import { resolveRunIdentity } from './run-identity.ts';
 
@@ -83,11 +85,16 @@ async function beginSession(
     return undefined;
   }
 
+  // Its own client rather than the shared `ManagementClient` service: this
+  // runs in the CLI process, before any Effect layer is built, and needs
+  // nothing from one.
   const api =
     options.api ??
     buildsApi({
-      origin: options.origin ?? MANAGEMENT_API_ORIGIN,
-      token: token ?? '',
+      client: createManagementApiClient({
+        token: token ?? '',
+        baseUrl: options.origin ?? MANAGEMENT_API_ORIGIN,
+      }),
       warn,
     });
 
@@ -117,6 +124,31 @@ async function beginSession(
   await api.update(buildId, { phase: 'deploy', state: 'running' });
 
   return session(api, buildId, options.anchorsOf, warn);
+}
+
+/**
+ * The app this run deployed and where it can be reached — but only when the
+ * run deployed exactly one compute service.
+ *
+ * `Build.appId` and `Build.deployedUrl` are each one value, and an app with
+ * several services has no single answer. Picking the first would put an
+ * arbitrary service's address in the Console and quietly imply it was the
+ * app's. Single-service apps are the common case and get a working link;
+ * multi-service apps get neither, and their services are all reported through
+ * the resources endpoint regardless.
+ *
+ * Both fields are fill-only, so this is safe to send on a build whose creator
+ * already set them to the same values, and a genuine disagreement is a 409
+ * the caller logs.
+ */
+function deployedApp(entities: readonly DeployedEntity[]): UpdateBuildBody {
+  const services = entities.filter((entity) => entity.kind === 'compute-service');
+  const only = services.length === 1 ? services[0] : undefined;
+  if (only === undefined) return {};
+  return {
+    appId: only.id,
+    ...(only.url !== undefined ? { deployedUrl: only.url } : {}),
+  };
 }
 
 function session(
@@ -188,6 +220,7 @@ function session(
         state: outcome.ok ? 'succeeded' : 'failed',
         ...(outcome.failingStep !== undefined ? { failingStep: outcome.failingStep } : {}),
         ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
+        ...deployedApp(outcome.entities),
       });
     },
   };

@@ -14,15 +14,11 @@
 
 The session lives on the lowering side rather than beside the extension that registers it because the extension package may read no environment and import no node builtin (its own invariants 4 and 5), and reading git and the deploy shell is exactly what a reporter does.
 
-## Sequencing
+## Dependencies — all cleared, 2026-08-12
 
-```
-A. JSON report ─────────────────────► no dependencies
-B. Build lifecycle ─────────────────► needs #4853 → #4850 → #4855 merged
-   └─ C. Resource reporting ────────► needs B (build-id plumbing)
-```
+The pdp-control-plane stack merged and the API is in production. `@prisma/management-api-sdk` 1.60.0 carries every endpoint, so the temporary hand-written client is gone and the pin moved to `^1.60.0`. The anchor amendment landed in full, plus `deployedUrl`.
 
-The handed-off anchor amendment to #4855 blocks only the anchor-filling behaviour inside B. B works without it: the anchors go in their own call, so today's rejection costs the anchors alone and the same code starts working the moment the endpoint does.
+Nothing is blocked. What remains before the definition of done is met is one real deploy observed in the Console.
 
 ---
 
