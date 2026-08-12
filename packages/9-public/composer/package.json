@@ -35,7 +35,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/vitest": "4.0.0-beta.103",
     "@prisma/cli-engine": "0.0.9",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
@@ -46,6 +45,7 @@
     "@prisma/management-api-sdk": "^1.57.0"
   },
   "devDependencies": {
+    "@effect/vitest": "4.0.0-beta.103",
     "@internal/assemble": "workspace:0.6.0",
     "@internal/cli": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
