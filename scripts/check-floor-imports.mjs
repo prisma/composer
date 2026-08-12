@@ -34,6 +34,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 // cheap start-up code and this check would pass while proving nothing.
 const MUST_COVER = './deploy';
 
+// An entry that hangs on import has to fail this check, not stall it. spawnSync
+// blocks until the child exits, and ci.yml sets no timeout-minutes, so an
+// unbounded wait would hold the runner for GitHub's six-hour default and end
+// the log mid-list. SIGKILL rather than the SIGTERM default because spawnSync
+// keeps waiting on a child that handles SIGTERM and declines to exit; on
+// 22.18.0 that pairing never returns at all. The heaviest entry (./deploy)
+// imports in about two seconds, so a minute is slack, not a deadline.
+const IMPORT_TIMEOUT_MS = 60_000;
+const IMPORT_KILL_SIGNAL = 'SIGKILL';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
 
@@ -53,6 +63,20 @@ if (!entries.some(([subpath]) => subpath === MUST_COVER)) {
 
 process.stderr.write(`importing ${entries.length} entrypoint(s) with ${process.version}\n`);
 
+// spawnSync signals a timeout by setting `error` alongside the signal it sent,
+// and a child that never started by setting `error` with no signal at all.
+// Both leave `status` null, so reading status alone prints them identically
+// and tells whoever is looking at the log nothing about which one happened.
+/** @param {ReturnType<typeof spawnSync>} result */
+function describeFailure(result) {
+  if (result.error && result.signal === IMPORT_KILL_SIGNAL) {
+    return `was killed after ${IMPORT_TIMEOUT_MS / 1000}s without finishing its import`;
+  }
+  if (result.error) return `could not be started (${result.error.message})`;
+  if (result.status === null) return `died on signal ${result.signal}`;
+  return `exited ${result.status}`;
+}
+
 const failures = [];
 for (const [subpath, target] of entries) {
   const file = join(composerDir, target);
@@ -66,6 +90,8 @@ for (const [subpath, target] of entries) {
     {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: IMPORT_TIMEOUT_MS,
+      killSignal: IMPORT_KILL_SIGNAL,
     },
   );
   if (result.status === 0) {
@@ -74,7 +100,7 @@ for (const [subpath, target] of entries) {
   }
   process.stderr.write(`  FAIL ${subpath}\n`);
   failures.push(
-    `${subpath} exited ${result.status ?? `on signal ${result.signal}`} on ${process.version}:\n` +
+    `${subpath} ${describeFailure(result)} on ${process.version}:\n` +
       `${(result.stderr || '(no stderr)').trimEnd()}`,
   );
 }
