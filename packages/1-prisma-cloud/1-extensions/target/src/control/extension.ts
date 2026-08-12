@@ -36,6 +36,7 @@ import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
 import { runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
+import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
@@ -342,6 +343,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
     preflight: (input) => runPreflight(input),
+
+    // Records the deploy as a Build so it appears in the Console, and passes
+    // the build's id into the apply so the state store can report what the
+    // run touched. Deploy only — the CLI does not run this for destroy.
+    reporter: prismaCloudReporter(),
 
     // No teardown: deploy state lives behind the platform state API, scoped
     // to the stage's Branch — deleting the Branch/Project deletes it

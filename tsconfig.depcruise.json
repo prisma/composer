@@ -57,6 +57,9 @@
       "@internal/lowering/compute": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/compute.ts"
       ],
+      "@internal/lowering/builds": [
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/builds.ts"
+      ],
       "@internal/lowering/state": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/state.ts"
       ],

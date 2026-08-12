@@ -42,9 +42,18 @@ class DeployCommand extends DeployCliCommand {
   static override paths = [['deploy']];
   static override usage = Command.Usage({
     description: "Deploy the application whose root node is <entry>'s default export.",
-    examples: [['Deploy an app', '$0 deploy src/service.ts']],
+    examples: [
+      ['Deploy an app', '$0 deploy src/service.ts'],
+      ['Deploy and record the outcome as JSON', '$0 deploy src/service.ts --report run.json'],
+    ],
   });
   readonly action = 'deploy' as const;
+
+  report = Option.String('--report', {
+    description:
+      "Write the deploy's outcome as JSON to this path — resources, preview URLs, and the " +
+      'failure cause when there is one. Also settable as PRISMA_COMPOSER_REPORT_FILE.',
+  });
 }
 
 class DestroyCommand extends DeployCliCommand {
@@ -137,6 +146,8 @@ export interface ParsedArgs {
   readonly address?: string | undefined;
   /** `log` only — trailing history lines before live output. */
   readonly tail?: number | undefined;
+  /** `deploy` only — where to write the run report. */
+  readonly report?: string | undefined;
 }
 
 /** `log`'s default backlog: an empty screen reads as broken, so show a little recent history before going live. */
@@ -167,6 +178,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       stage: command.stage,
       production: command.production,
       fresh: false,
+      report: command instanceof DeployCommand ? command.report : undefined,
     };
   }
 
@@ -266,7 +278,7 @@ export async function run(argv: readonly string[], deps: RunDeps = {}): Promise<
       );
     }
     const result = await deployWithDeps(
-      { entry: args.entry, name: args.name, stage: args.stage },
+      { entry: args.entry, name: args.name, stage: args.stage, reportPath: args.report },
       deps,
     );
     if (result.ok) return 0;

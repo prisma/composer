@@ -65,6 +65,12 @@ export interface ExtensionDescriptor {
    */
   readonly container?: ContainerDescriptor;
   /**
+   * Deploy-run reporting. The CLI begins a session after the graph is loaded
+   * and before containers are resolved, and finishes it on every exit path.
+   * An extension without one reports nothing, which is the default.
+   */
+  readonly reporter?: ReporterDescriptor;
+  /**
    * The extension's LOCAL TARGET counterpart (ADR-0041; naming, operator
    * 2026-07-23 — "dev" names the user-facing feature only, the seam takes
    * the concept's real noun) — a LAZY reference: an async thunk, never the
@@ -106,6 +112,64 @@ export interface TeardownInput {
   readonly container: ContainerInstance | undefined;
   /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
   readonly stage: string | undefined;
+}
+
+/** The deploy context handed to `ReporterDescriptor.begin`. */
+export interface ReportBeginInput {
+  /** The resolved application name. */
+  readonly appName: string;
+  /** The stage name (`--stage`), or `undefined` for the default stage. */
+  readonly stage: string | undefined;
+  /** The directory the deploy command was run from — where a reporter reads repository metadata. */
+  readonly cwd: string;
+}
+
+/** The deploy context handed to `RunReporter.anchor`, once containers exist. */
+export interface ReportAnchorInput {
+  /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
+  readonly container: ContainerInstance | undefined;
+}
+
+/** How a run ended, as a reporter sees it. */
+export interface RunOutcome {
+  readonly ok: boolean;
+  /** The failing step's name — the deploy's own error code. `undefined` when the run succeeded. */
+  readonly failingStep: string | undefined;
+  /** Human-readable detail. `undefined` when the run succeeded. */
+  readonly errorMessage: string | undefined;
+}
+
+/**
+ * One run's reporting session. Every method is best-effort by contract:
+ * reporting is observability, never a step of the deploy, so an
+ * implementation logs its own failures and resolves rather than rejecting.
+ * The CLI does not catch, and will not fail a deploy over a report.
+ */
+export interface RunReporter {
+  /**
+   * Extra environment for the alchemy child, so reporting that happens
+   * inside the apply can find the run this session belongs to. Read once,
+   * after `anchor`, and merged into the child's environment.
+   */
+  childEnv(): Readonly<Record<string, string>>;
+  /** Called once the extension's own container is resolved, before any stack file is written. */
+  anchor(input: ReportAnchorInput): Promise<void>;
+  /** Called exactly once, on every exit path including a thrown error. */
+  finish(outcome: RunOutcome): Promise<void>;
+}
+
+/**
+ * Deploy-run reporting — how an extension records that a deploy happened,
+ * how far it got, and how it ended. The CLI begins a session after the app's
+ * graph is loaded and before its containers are resolved, so a failure while
+ * creating them is still reported, and finishes it on every exit path.
+ *
+ * Deploy only: `destroy` has no reportable shape on the Prisma Cloud side
+ * (its build phases name a deploy), so the CLI does not run this hook there.
+ */
+export interface ReporterDescriptor {
+  /** Start a session, or return `undefined` when there is nothing to report against (no credentials, no repository). Never throws. */
+  begin(input: ReportBeginInput): Promise<RunReporter | undefined>;
 }
 
 /** The extension's LOCAL TARGET counterpart (ADR-0041) — the local-target variant OF ExtensionDescriptor, hence the full qualifier. An extension without one is not local-target-capable (cannot back the "dev" feature). */

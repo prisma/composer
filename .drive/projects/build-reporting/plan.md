@@ -1,16 +1,28 @@
 # Plan: Composer reports its builds to Prisma Cloud
 
-Three slices, each one PR. Slice A is unblocked and lands first. B and C need the pdp-control-plane stack merged and an SDK release; the work can be written and unit-tested before that, but cannot be verified end to end until the routes are deployed.
+> **Status, 2026-08-12: all three slices are implemented in one pull request** at the operator's direction, rather than the three separate PRs planned below. The slice descriptions stand as the record of what each part does and what still blocks it. Nothing can be verified against a live API until the pdp-control-plane stack merges and deploys.
+
+## Where the code landed
+
+| Part | Location |
+| --- | --- |
+| The `reporter` extension hook | [app-config.ts](packages/0-framework/1-core/core/src/control/app-config.ts) |
+| Lifecycle driving, run report | [execute-deploy-destroy.ts](packages/0-framework/3-tooling/cli/src/operations/execute-deploy-destroy.ts), [run-report.ts](packages/0-framework/3-tooling/cli/src/run-report.ts) |
+| Build endpoints, git identity, the session | `packages/1-prisma-cloud/0-lowering/lowering/src/builds/` |
+| Resource reporting through the state store | [state-store.ts](packages/1-prisma-cloud/0-lowering/lowering/src/builds/state-store.ts), wired in [state/layer.ts](packages/1-prisma-cloud/0-lowering/lowering/src/state/layer.ts) |
+| The extension's adapter | [reporting/reporter.ts](packages/1-prisma-cloud/1-extensions/target/src/reporting/reporter.ts) |
+
+The session lives on the lowering side rather than beside the extension that registers it because the extension package may read no environment and import no node builtin (its own invariants 4 and 5), and reading git and the deploy shell is exactly what a reporter does.
 
 ## Sequencing
 
 ```
-A. JSON report ─────────────────────► can start now, no dependencies
+A. JSON report ─────────────────────► no dependencies
 B. Build lifecycle ─────────────────► needs #4853 → #4850 → #4855 merged
    └─ C. Resource reporting ────────► needs B (build-id plumbing)
 ```
 
-The handed-off anchor amendment to #4855 blocks only the anchor-filling behaviour inside B. B can land without it and gain anchors in a follow-up if the amendment is declined.
+The handed-off anchor amendment to #4855 blocks only the anchor-filling behaviour inside B. B works without it: the anchors go in their own call, so today's rejection costs the anchors alone and the same code starts working the moment the endpoint does.
 
 ---
 

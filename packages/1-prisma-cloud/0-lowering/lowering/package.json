@@ -5,6 +5,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./buckets": "./dist/buckets.mjs",
+    "./builds": "./dist/builds.mjs",
     "./compute": "./dist/compute.mjs",
     "./postgres": "./dist/postgres.mjs",
     "./state": "./dist/state.mjs",

@@ -20,6 +20,13 @@ export interface DeployInput {
   readonly stage?: string | undefined;
   /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
   readonly cwd?: string | undefined;
+  /**
+   * Where to write the run report — the deploy's outcome as JSON, for a tool
+   * that consumes a deploy rather than watches one. Relative paths resolve
+   * against `cwd`. Absent falls back to `PRISMA_COMPOSER_REPORT_FILE`, and
+   * absent from both writes no report.
+   */
+  readonly reportPath?: string | undefined;
 }
 
 export interface DeploySuccess {

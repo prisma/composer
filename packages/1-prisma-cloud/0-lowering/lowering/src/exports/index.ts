@@ -6,6 +6,7 @@
  */
 export {
   layer as managementClientLayer,
+  MANAGEMENT_API_ORIGIN,
   type ManagementApiClient,
   ManagementClient,
 } from '../client.ts';

@@ -110,7 +110,7 @@ const originalCwd = process.cwd();
  * stack, and the build assemble is substituted by the runAssembler seam.
  */
 function fakeConfig(
-  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight'>> = {},
+  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight' | 'reporter'>> = {},
   containerOpts: Parameters<typeof fakeContainerDescriptor>[0] = {},
 ): PrismaAppConfig {
   const unused = () => {
@@ -132,6 +132,7 @@ function fakeConfig(
         container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
         ...(hooks.preflight !== undefined ? { preflight: hooks.preflight } : {}),
+        ...(hooks.reporter !== undefined ? { reporter: hooks.reporter } : {}),
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
@@ -1093,6 +1094,232 @@ describe('run() — the full pipeline over fakes', () => {
       });
 
       expect(status).toBe(0);
+    });
+  });
+
+  describe('deploy-run reporting', () => {
+    interface ReporterLog {
+      readonly events: string[];
+      readonly reporter: ExtensionDescriptor['reporter'];
+    }
+
+    /** Records the lifecycle the CLI drives, and optionally fails at one of its steps. */
+    function recordingReporter(
+      opts: { readonly throwOn?: 'begin' | 'anchor' | 'finish'; readonly none?: boolean } = {},
+    ): ReporterLog {
+      const events: string[] = [];
+      const fail = (step: string) => {
+        if (opts.throwOn === step) throw new Error(`reporting broke at ${step}`);
+      };
+      return {
+        events,
+        reporter: {
+          begin: async (input) => {
+            events.push(`begin:${input.appName}:${input.stage ?? 'default'}`);
+            fail('begin');
+            if (opts.none === true) return undefined;
+            return {
+              childEnv: () => ({ FAKE_BUILD_ID: 'bld_1' }),
+              anchor: async (anchorInput) => {
+                events.push(`anchor:${anchorInput.container === undefined ? 'none' : 'container'}`);
+                fail('anchor');
+              },
+              finish: async (outcome) => {
+                events.push(
+                  `finish:${outcome.ok ? 'ok' : `failed:${outcome.failingStep ?? 'unnamed'}`}`,
+                );
+                fail('finish');
+              },
+            };
+          },
+        },
+      };
+    }
+
+    test('a successful deploy is begun, anchored, and finished, and its build reaches the apply', async () => {
+      const app = makeAppDir('reported-app');
+      process.chdir(app.dir);
+      const log = recordingReporter();
+      const calls: RunAlchemyInput[] = [];
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-1'], {
+        config: fakeConfig({ reporter: log.reporter }),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          calls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(log.events).toEqual(['begin:reported-app:ci-1', 'anchor:container', 'finish:ok']);
+      expect(calls[0]?.env?.['FAKE_BUILD_ID']).toBe('bld_1');
+    });
+
+    test('a failed deploy still reports, naming the step that failed', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const log = recordingReporter();
+
+      // run() rethrows a structured failure rather than returning a status.
+      const error: unknown = await run(['deploy', app.entryPath, '--stage', 'ci-2'], {
+        config: fakeConfig({
+          reporter: log.reporter,
+          preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+        }),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect(log.events).toContain('finish:failed:DEPLOY.PREFLIGHT_FAILED');
+    });
+
+    test('reporting is begun before containers, so a container failure is still reported', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const log = recordingReporter();
+      const config = fakeConfig({ reporter: log.reporter });
+      const extension = config.extensions[0];
+      if (extension?.container === undefined) throw new Error('fixture must declare a container');
+      // Failing the very step that creates the project is what proves the
+      // session opened before it (composer#103's orphan case).
+      const refusing: PrismaAppConfig = {
+        ...config,
+        extensions: [
+          {
+            ...extension,
+            container: {
+              ...extension.container,
+              ensure: () => Promise.reject(new Error('the platform refused to create the project')),
+            },
+          },
+          ...config.extensions.slice(1),
+        ],
+      };
+
+      const error: unknown = await run(['deploy', app.entryPath, '--stage', 'ci-3'], {
+        config: refusing,
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect(log.events).toEqual([
+        'begin:fixture-app:ci-3',
+        'finish:failed:DEPLOY.CONTAINER_FAILED',
+      ]);
+    });
+
+    test('a reporter that throws at any step never fails the deploy', async () => {
+      for (const step of ['begin', 'anchor', 'finish'] as const) {
+        const app = makeAppDir();
+        process.chdir(app.dir);
+        const log = recordingReporter({ throwOn: step });
+
+        const status = await run(['deploy', app.entryPath, '--stage', 'ci-4'], {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: () => 0,
+        });
+
+        expect({ step, status }).toEqual({ step, status: 0 });
+      }
+    });
+
+    test('a reporter that declines the run contributes nothing to the apply', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const log = recordingReporter({ none: true });
+      const calls: RunAlchemyInput[] = [];
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-5'], {
+        config: fakeConfig({ reporter: log.reporter }),
+        runAssembler: fakeAssembler,
+        alchemy: (input) => {
+          calls.push(input);
+          return 0;
+        },
+      });
+
+      expect(status).toBe(0);
+      expect(log.events).toEqual(['begin:fixture-app:ci-5']);
+      expect(calls[0]?.env?.['FAKE_BUILD_ID']).toBeUndefined();
+    });
+
+    test('destroy is not reported — its shape has no phase and no source that names a teardown', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const log = recordingReporter();
+
+      const status = await run(['destroy', app.entryPath, '--stage', 'staging'], {
+        config: fakeConfig({ reporter: log.reporter }),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      });
+
+      expect(status).toBe(0);
+      expect(log.events).toEqual([]);
+    });
+  });
+
+  describe('the run report', () => {
+    test('--report writes the outcome where the operator asked for it', async () => {
+      const app = makeAppDir('reported-json');
+      process.chdir(app.dir);
+      const target = path.join(app.dir, 'out', 'run.json');
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-6', '--report', target], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      });
+
+      expect(status).toBe(0);
+      const report: unknown = JSON.parse(fs.readFileSync(target, 'utf8'));
+      expect(report).toMatchObject({
+        version: 1,
+        outcome: 'succeeded',
+        stage: 'ci-6',
+        failure: null,
+      });
+    });
+
+    test('a failed deploy still writes a report, carrying the cause', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+      const target = path.join(app.dir, 'run.json');
+
+      const error: unknown = await run(
+        ['deploy', app.entryPath, '--stage', 'ci-7', '--report', target],
+        {
+          config: fakeConfig({
+            preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+          }),
+          runAssembler: fakeAssembler,
+          alchemy: () => 0,
+        },
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(CliStructuredError);
+      expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toMatchObject({
+        outcome: 'failed',
+        failure: { code: 'DEPLOY.PREFLIGHT_FAILED' },
+      });
+    });
+
+    test('no --report and no environment variable writes nothing', async () => {
+      const app = makeAppDir();
+      process.chdir(app.dir);
+
+      const status = await run(['deploy', app.entryPath, '--stage', 'ci-8'], {
+        config: fakeConfig(),
+        runAssembler: fakeAssembler,
+        alchemy: () => 0,
+      });
+
+      expect(status).toBe(0);
+      expect(fs.readdirSync(app.dir).filter((f) => f.endsWith('.json'))).toEqual(['package.json']);
     });
   });
 });

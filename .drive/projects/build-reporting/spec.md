@@ -73,6 +73,8 @@ Facts that shape the design, each confirmed in the route or model source:
 
 **D1 — Composer only ever reports `phase: deploy`.** Composer never builds the user's code; ADR-0005 is explicit that users build and the framework assembles. `phase: build` belongs to whoever ran the build — the Action, or nobody.
 
+**D10 — Reporting reaches the CLI through a new `reporter` extension hook, and the session lives on the lowering side.** The framework domain may import nothing but external dependencies, so the reporting client cannot live in the CLI; the extension descriptor is the seam the CLI already drives generically. The session itself sits in `0-lowering/lowering/src/builds/` because the extension package may read no environment and import no node builtin, which is most of what a reporter does.
+
 **D2 — Resource reporting is incremental, intercepted at the state layer.** Not primarily for crash resilience. The descriptors emit only three entity kinds (`postgres-database`, `bucket`, `compute-service`) against the platform's eight resource types, and the most valuable type — `deployment` — is not an entity at all. The Alchemy providers in `packages/1-prisma-cloud/0-lowering/lowering/src/` do cover the vocabulary. End-of-run reporting from `report()` could never cover more than three of eight.
 
 **D3 — The build id always reaches the apply through the environment.** The parent injects `PRISMA_BUILD_ID` into the alchemy child exactly as it already injects the result-file path, so the child reads one variable whether Composer created the build or the Action did.

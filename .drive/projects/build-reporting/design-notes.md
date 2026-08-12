@@ -44,6 +44,12 @@ So the constraint is that `UpdateBuildInputSchema` lists five fields and these a
 
 **The result file is deleted after every run.** Deliberately, so resource ids and URLs do not accumulate on disk. Any user-facing JSON output must be a separate path that survives, without reintroducing that accumulation for people who did not ask for it.
 
+**The framework may not import Prisma Cloud, so reporting reaches the CLI through a new extension hook.** `architecture.config.json` gives the framework domain `mayImportFrom: []`, and the CLI is framework tooling. The reporting client cannot live there. The existing seam for exactly this is the extension descriptor, which already carries `container`, `preflight` and `teardown` hooks the CLI calls generically — so `reporter` joins them: core defines the vocabulary, the CLI drives the lifecycle, and Prisma Cloud supplies the implementation.
+
+**The extension package may not read the environment or import a node builtin, which decided where the reporter lives.** `packages/1-prisma-cloud/1-extensions/target` ships into runtime surfaces, and two of its own tests enforce this: invariant 4 asserts an exact per-file list of `process.env` uses, and invariant 5 bans every `node:` import across the package. Reading git and the deploy shell is precisely what a reporter does, so the session lives in `0-lowering/lowering/src/builds/` — which already uses `node:fs`, `node:os` and `node:crypto` freely — and the extension keeps only a five-line adapter supplying the one thing the lowering side cannot know: how to read its own container.
+
+**The repository's cast counter treats an import alias as a cast.** `import { buildReporter as reportBuilds }` raised `lint:casts` by one. Renaming the export removed it. Worth knowing before someone spends time hunting for a type assertion that was never there.
+
 ## Invocation cases
 
 Walked through with Will. The brief covers the first and third; the rest were found during review.
