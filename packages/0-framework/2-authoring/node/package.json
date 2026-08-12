@@ -31,7 +31,7 @@
     "directory": "packages/0-framework/2-authoring/node"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "private": true,
   "types": "./dist/index.d.mts"

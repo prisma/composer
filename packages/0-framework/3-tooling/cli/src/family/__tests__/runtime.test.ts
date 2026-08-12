@@ -73,14 +73,33 @@ describe('detectPackageManager()', () => {
       ['npm/11.0.0 node/v24.16.0 linux x64', 'npm'],
       ['yarn/4.5.0 npm/? node/v24.16.0', 'yarn'],
       ['bun/1.3.13 npm/? node/v24.16.0', 'bun'],
+      ['deno/2.0.0', 'deno'],
     ] as const) {
       expect(detectPackageManager({ npm_config_user_agent: agent })).toBe(expected);
     }
   });
 
-  test('a direct invocation is `unknown`, not a guess', () => {
-    expect(detectPackageManager({})).toBe('unknown');
-    expect(detectPackageManager({ npm_config_user_agent: 'deno/2.0.0' })).toBe('unknown');
+  test('a direct invocation reports nothing, so the engine detects it instead', () => {
+    expect(detectPackageManager({})).toBeUndefined();
+    expect(detectPackageManager({ npm_config_user_agent: 'corepack/0.30.0' })).toBeUndefined();
+  });
+});
+
+/**
+ * CI-ness is the one field the Runtime does not read off the host — `ci-info`
+ * answers it from the real environment — so the override is the only way a test
+ * can drive it. Nothing here asserts the DEFAULT: it depends on whether CI is
+ * running the suite, which is the point of it being `ci-info`'s answer.
+ */
+describe('createRuntime() CI reporting', () => {
+  test('the override decides, in both directions', () => {
+    expect(createRuntime(fakeHost(), noConfig, true).isCI).toBe(true);
+    expect(createRuntime(fakeHost(), noConfig, false).isCI).toBe(false);
+  });
+
+  test('environment variables do not decide it', () => {
+    const host = fakeHost({ env: { CI: 'true', BUILD_ID: '42' } });
+    expect(createRuntime(host, noConfig, false).isCI).toBe(false);
   });
 });
 

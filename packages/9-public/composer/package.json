@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@effect/vitest": "4.0.0-beta.103",
-    "@prisma/cli-engine": "0.0.7",
+    "@prisma/cli-engine": "0.0.9",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
@@ -66,7 +66,7 @@
     "directory": "packages/9-public/composer"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "publishConfig": {
     "access": "public"

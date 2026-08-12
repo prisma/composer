@@ -82,7 +82,7 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
       return settleConverge(result, ctx, () =>
         ctx.present(
           { data: undefined },
-          { human: () => [{ kind: 'summary', tone: 'ok', text: 'Destroyed.' }] },
+          { human: () => [{ kind: 'summary', status: 'ok', text: 'Destroyed.' }] },
         ),
       );
     },

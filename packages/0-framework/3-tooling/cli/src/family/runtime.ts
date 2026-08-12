@@ -20,6 +20,7 @@ import {
   type Runtime,
   type SpawnChild,
 } from '@prisma/cli-engine';
+import { isCI } from 'ci-info';
 
 /** Where the management API lives. Matches the lowering client's default origin; the env var is the escape hatch for staging. */
 const DEFAULT_MANAGEMENT_API_BASE_URL = 'https://api.prisma.io';
@@ -76,23 +77,25 @@ type PackageManager = Runtime['packageManager'];
 /**
  * Which package manager invoked us, read from the `npm_config_user_agent`
  * every major manager sets (`pnpm/10.27.0 npm/? node/v24.16.0 darwin arm64`).
- * `unknown` when the CLI was run directly rather than through a manager — a
- * normal case, not a failure, so nothing is inferred from the filesystem.
+ * `undefined` when the CLI was run directly rather than through a manager — a
+ * normal case, not a failure, so nothing is inferred from the filesystem, and
+ * the engine falls back to its own detection from the project at cwd.
  */
 export function detectPackageManager(
   env: Readonly<Record<string, string | undefined>>,
 ): PackageManager {
   const agent = env['npm_config_user_agent'];
-  if (agent === undefined) return 'unknown';
+  if (agent === undefined) return undefined;
   const name = agent.split('/')[0];
   switch (name) {
     case 'npm':
     case 'pnpm':
     case 'yarn':
     case 'bun':
+    case 'deno':
       return name;
     default:
-      return 'unknown';
+      return undefined;
   }
 }
 
@@ -102,10 +105,21 @@ export function detectPackageManager(
  * it is about to run declares a config section, and with whatever file
  * `--config` named. A host that loaded the file up front would read it for runs
  * that never needed it, and would have nowhere to put `--config`.
+ *
+ * `inCI` is the one thing here not derived from the host: `ci-info` answers it
+ * from the real `process.env` at import, which is what the engine's `isCI` doc
+ * asks a host to wire and what the `prisma` bin already does. Production passes
+ * nothing. It is a parameter so a test can still drive CI state without
+ * touching a process global.
  */
-export function createRuntime(host: HostProcess, loadConfig: Runtime['loadConfig']): Runtime {
+export function createRuntime(
+  host: HostProcess,
+  loadConfig: Runtime['loadConfig'],
+  inCI: boolean = isCI,
+): Runtime {
   const env = host.env;
   const apiBaseUrl = env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_MANAGEMENT_API_BASE_URL;
+  const packageManager = detectPackageManager(env);
   return {
     stdout: host.stdout,
     stderr: host.stderr,
@@ -137,6 +151,7 @@ export function createRuntime(host: HostProcess, loadConfig: Runtime['loadConfig
     managementApiClientConfig: clientConfig(env, apiBaseUrl),
     spawn: spawnChild,
     managementApi: { baseUrl: apiBaseUrl },
-    packageManager: detectPackageManager(env),
+    ...(packageManager !== undefined && { packageManager }),
+    isCI: inCI,
   };
 }

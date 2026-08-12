@@ -51,7 +51,7 @@
     "directory": "packages/1-prisma-cloud/1-extensions/target"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "private": true,
   "types": "./dist/index.d.mts"

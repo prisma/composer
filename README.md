@@ -10,6 +10,23 @@ databases, schedules, secrets — compose them into a **Prisma App**, and
 `prisma-composer deploy` provisions all of it. There is no infrastructure
 configuration to write or maintain.
 
+## You need Node 22.18 or newer
+
+```sh
+node --version
+```
+
+**On anything older, Composer cannot load your app at all.** Your entry file is
+TypeScript and `prisma-composer` hands it straight to Node — the framework
+never bundles or transforms your code. Node runs `.ts` files directly only from
+**22.18.0**, the release that turns type stripping on by default. Before that,
+`prisma-composer deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own
+entry file, which reads as a broken file rather than a Node that is too old.
+
+22.17 is not close enough, and Node 20 never gets it: the default changed in
+22.18.0 exactly. The `streams` module's local stand-in additionally needs
+Node's built-in `node:sqlite`, unflagged since 22.13 — so 22.18 covers both.
+
 ## Start with the skill
 
 Composer is built to be driven by an agent, so the first thing to do is give
