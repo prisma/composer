@@ -175,6 +175,13 @@ export interface PrismaCloudOptions {
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
   region?: Prisma.ComputeRegion;
+  /**
+   * Pin the Prisma project the deploy targets. When set, name resolution and project creation are
+   * skipped — the project is used verbatim. The platform's setup flow passes the connected project
+   * id here so deploys land in the right project instead of the one Composer would otherwise find
+   * or create by name. Implements the deferred project override noted in ADR-0019.
+   */
+  projectId?: string;
 }
 
 // Prisma.COMPUTE_REGIONS is the runtime source of truth ComputeRegion is
@@ -324,7 +331,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
 
-    container: containerDescriptor(),
+    container: containerDescriptor(
+      opts.projectId !== undefined ? { projectId: opts.projectId } : undefined,
+    ),
 
     providers: () =>
       asProvidersLayer(

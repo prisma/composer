@@ -136,6 +136,8 @@ type PrismaCloudCredentials = ContainerCredentials<ManagementApiClient>;
 /** Construction-time injection. Per-call credentials outrank it wherever both are present. */
 interface ContainerDeps {
   readonly client?: ManagementApiClient;
+  /** When set, threaded into `resolveContainer` as the project id override — name resolution and create-on-miss are skipped. */
+  readonly projectId?: string;
 }
 
 const workspaceRequiredError = (): Error =>
@@ -196,6 +198,7 @@ async function ensureContainer(
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    ...(deps?.projectId !== undefined ? { projectId: deps.projectId } : {}),
     ensure: true,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
@@ -230,6 +233,7 @@ async function locateContainer(
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    ...(deps?.projectId !== undefined ? { projectId: deps.projectId } : {}),
     ensure: false,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),

@@ -206,7 +206,13 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
 
 const run = (
   state: FakeState,
-  opts: { workspaceId: string; appName: string; stage?: string; ensure?: boolean },
+  opts: {
+    workspaceId: string;
+    appName: string;
+    stage?: string;
+    ensure?: boolean;
+    projectId?: string;
+  },
 ) =>
   Effect.runPromise(
     resolveContainer(opts).pipe(Effect.provideService(ManagementClient, fakeClient(state))),
@@ -386,6 +392,41 @@ describe('resolveContainer — Project resolution', () => {
     expect((error as PrismaApiError).message).toContain(
       'reported more pages but returned no cursor',
     );
+  });
+
+  test('pinned projectId is used verbatim — no project listing, no create', async () => {
+    state.branches['pinned-proj'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      projectId: 'pinned-proj',
+    });
+
+    expect(result.projectId).toBe('pinned-proj');
+    expect(result.defaultBranchId).toBe('br-default');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('pinned projectId with a named stage skips project name resolution', async () => {
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      stage: 'staging',
+      projectId: 'pinned-proj',
+    });
+
+    expect(result.projectId).toBe('pinned-proj');
+    expect(result.branchId).toBe('br-pinned-proj-1');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('without pinned projectId, name resolution and create-on-miss still run', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(state.projectCreateCalls).toBe(1);
   });
 });
 

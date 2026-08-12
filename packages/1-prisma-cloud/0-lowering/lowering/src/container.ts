@@ -13,6 +13,11 @@ export interface ResolveContainerOptions {
   readonly stage?: string;
   /** Create the Project/Branch if absent (default `true`). `false` finds only — used by `destroy`. */
   readonly ensure?: boolean;
+  /**
+   * Pin the target project id directly. When set, name resolution and create-on-miss are skipped —
+   * the id is used verbatim. The first downstream API call fails naturally on an invalid id.
+   */
+  readonly projectId?: string;
 }
 
 /** Raised with `ensure: false` when the app's Project (or a named stage's Branch) doesn't exist. */
@@ -195,7 +200,8 @@ export const resolveContainer = (
   Effect.gen(function* () {
     const client = yield* ManagementClient;
     const ensure = opts.ensure ?? true;
-    const projectId = yield* resolveProject(client, opts.workspaceId, opts.appName, ensure);
+    const projectId =
+      opts.projectId ?? (yield* resolveProject(client, opts.workspaceId, opts.appName, ensure));
     if (opts.stage === undefined) {
       const defaultBranchId = yield* resolveDefaultBranchId(client, projectId);
       return { projectId, defaultBranchId };

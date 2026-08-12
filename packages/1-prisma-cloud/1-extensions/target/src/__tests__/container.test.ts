@@ -278,6 +278,33 @@ describe('containerDescriptor().ensure()', () => {
     });
   });
 
+  test('pinned projectId in deps is used verbatim — no project listing, no create', async () => {
+    const state = newFakeState({
+      branches: {
+        'pinned-proj': [
+          {
+            id: 'br-default',
+            gitName: 'main',
+            isDefault: true,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
+      },
+    });
+
+    await withEnv(baseEnv, async () => {
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        projectId: 'pinned-proj',
+      });
+      const instance = await descriptor.ensure({ appName: 'storefront', stage: undefined });
+
+      expect(isPrismaCloudContainer(instance)).toBe(true);
+      expect(instance.projectId).toBe('pinned-proj');
+      expect(state.projectCreateCalls).toBe(0);
+    });
+  });
+
   test('a Management API failure throws the resolving-containers message', async () => {
     // A GET whose response carries an `error` fails `call()` with a
     // PrismaApiError, which `ensure` translates to the operator-facing text.
@@ -364,6 +391,32 @@ describe('containerDescriptor().locate()', () => {
       expect(instance?.alchemyStage).toBe('br-existing');
       expect(state.projectCreateCalls).toBe(0);
       expect(state.branchCreateCalls).toBe(0);
+    });
+  });
+
+  test('pinned projectId in deps is used verbatim — no project listing', async () => {
+    const state = newFakeState({
+      branches: {
+        'pinned-proj': [
+          {
+            id: 'br-default',
+            gitName: 'main',
+            isDefault: true,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
+      },
+    });
+
+    await withEnv(baseEnv, async () => {
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        projectId: 'pinned-proj',
+      });
+      const instance = await descriptor.locate({ appName: 'storefront', stage: undefined });
+
+      expect(instance?.projectId).toBe('pinned-proj');
+      expect(state.projectCreateCalls).toBe(0);
     });
   });
 
