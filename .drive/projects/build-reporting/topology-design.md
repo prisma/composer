@@ -2,7 +2,7 @@
 
 **The decision:** the Prisma platform stores each Branch's full application graph — every module, service, and resource, their ports, and every edge between ports, including module-boundary forwarding — as three generic record types under the Branch. Composer submits the graph as one atomic replace-set per deploy, after the Branch exists and before the apply starts. The payload contains no platform ids: the config address is the only identity, and the platform joins topology nodes to its own typed resource rows at read time. Build Jobs (the run journal) and the topology (the declared shape) are separate models that never couple.
 
-Settled 2026-08-13 between Will (who implements the platform side) and the Composer side. This document is the implementation handoff. Alternatives considered are at the end; read them last.
+Settled 2026-08-13 between Will (who implements the platform side) and the Composer side. **The canonical handoff copy lives in pdp-control-plane at `projects/branch-topology/spec.md` ([PR #4892](https://github.com/prisma/pdp-control-plane/pull/4892))**; this is the Composer-side mirror, kept for the Composer work items below. Alternatives considered are at the end; read them last.
 
 ## Vocabulary
 
