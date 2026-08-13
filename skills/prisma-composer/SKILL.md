@@ -253,8 +253,12 @@ you.
 
 ## Deploy config
 
-`prisma-composer.config.ts` sits next to `module.ts`. It is read only by
-`prisma-composer deploy`/`destroy`, never imported by app code:
+`prisma-composer.config.ts` sits next to `module.ts`. Composer's commands search
+upward from the entry for it; when present, it wins without evaluating
+`prisma.config.ts`, so a stable Prisma ORM config may require `DATABASE_URL`
+before Composer has provisioned it. Only when no Composer config is found does
+Composer consult the `composer` section of `prisma.config.ts` as a compatibility
+fallback. The file is never imported by app code:
 
 ```ts
 // prisma-composer.config.ts

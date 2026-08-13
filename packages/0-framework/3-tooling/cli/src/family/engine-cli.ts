@@ -64,10 +64,11 @@ export function createComposerCli(spec: ComposerCliSpec): Cli {
  * `process.exitCode` and lets the streams drain, as composer's CLI has always
  * done.
  *
- * `prisma.config.ts` is not read here. The loader goes in as a function, and the
- * engine calls it only when the command it is about to run declares a config
- * section, passing it the file `--config` named; the loader resolves that
- * against the host's cwd.
+ * The Runtime still receives the engine's config loader because the family
+ * publishes its section token for consolidated hosts. Composer's own commands
+ * select their config before the operation: a discovered
+ * prisma-composer.config.ts wins without evaluating prisma.config.ts, and the
+ * latter is loaded directly only as the compatibility fallback.
  */
 export function runComposerCli(
   argv: readonly string[],

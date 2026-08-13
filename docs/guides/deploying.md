@@ -14,6 +14,13 @@ a command-line choice, never something in your code.
 | Tear down an isolated environment | `prisma-composer destroy module.ts --stage <name>` |
 | Tear down production's resources | `prisma-composer destroy module.ts --production` |
 
+Composer searches upward from `module.ts` for `prisma-composer.config.ts`. When
+it finds that file, it uses it directly and does not evaluate `prisma.config.ts`;
+the stable Prisma ORM config can therefore require `DATABASE_URL` without
+blocking Composer before it provisions the database. Only when no Composer
+config is discoverable does the CLI consult the `composer` section of
+`prisma.config.ts` as a compatibility fallback.
+
 ## Credentials
 
 Two environment variables, nothing else:

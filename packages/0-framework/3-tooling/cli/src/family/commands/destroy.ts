@@ -10,7 +10,7 @@ import { defineCommand, flag, positional } from '@prisma/cli-engine';
 import type { DestroyTarget } from '../../operations/destroy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
-import { composerSection } from '../section.ts';
+import { reportConfigDiagnostics, selectComposerConfig } from '../select-config.ts';
 import { targetOf } from '../target.ts';
 import { workspaceIdOf } from '../workspace.ts';
 
@@ -47,11 +47,15 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
         }),
       },
     },
-    needs: { config: composerSection, credentials: 'child' },
+    needs: { credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
       const target = targetOf(args.flags.stage, args.flags.production);
       if (!target.ok) return target;
+
+      const selectedConfig = await selectComposerConfig(args.positionals.entry, ctx.cwd);
+      if (!selectedConfig.ok) return selectedConfig;
+      reportConfigDiagnostics(selectedConfig.value.diagnostics, ctx.report);
 
       const alchemy = convergeSpawn(ctx);
       const result = await operations.destroy(
@@ -73,7 +77,7 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
         },
         operationDeps({
           alchemy,
-          configPath: ctx.config.configPath,
+          configPath: selectedConfig.value.configPath,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),

@@ -28,7 +28,7 @@ export interface PipelineDeps {
    * absolute, or relative to `cwd`. When present the entry-anchored walk is
    * skipped entirely, so a config that does not sit above the entry is still
    * usable — and the walk's path-mismatch check has nothing left to check.
-   * Supplied by the engine's `composer` config section.
+   * Supplied by the command family's consolidated-config fallback.
    */
   readonly configPath?: string | undefined;
 }

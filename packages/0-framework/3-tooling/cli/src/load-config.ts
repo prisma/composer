@@ -7,17 +7,14 @@
  * root by whatever package manager runs — no specifier construction, no
  * anchoring.
  *
- * Two shapes of the same machinery:
+ * Two shapes of the same machinery remain available to the operation layer:
  *
  *   loadAppConfigDiagnostics — returns the evaluated value together with
- *   EVERY problem found, and never throws. This is the shape the engine
- *   command family consumes: the engine renders diagnostics itself and
- *   decides per command whether a broken section is fatal, so a loader that
- *   threw on the first bad field would both hide the rest and bypass that
- *   rendering.
+ *   EVERY problem found, and never throws. Hosts that need to render all
+ *   findings can consume this without losing later diagnostics.
  *
- *   loadAppConfig — the same load, throwing its first diagnostic. The
- *   clipanion CLI still runs on it; it goes when clipanion does.
+ *   loadAppConfig — the same load, throwing its first diagnostic. Composer's
+ *   deploy/dev operations use this after config selection has settled.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -26,25 +23,14 @@ import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as c12 from 'c12';
 import { effectResolutionDiagnostic } from './check-effect-resolution.ts';
+import { CONFIG_FILENAME, findConfigPathForEntry } from './config-discovery.ts';
 
-export const CONFIG_FILENAME = 'prisma-composer.config.ts';
+export { CONFIG_FILENAME, findConfigPathForEntry } from './config-discovery.ts';
 
 export interface LoadedAppConfig {
   /** The discovered config file's absolute path — the generated stack file imports it by a path relative to itself. */
   readonly path: string;
   readonly config: PrismaAppConfig;
-}
-
-/** Walks UP from the entry file's directory looking for the literal CONFIG_FILENAME; undefined when the walk hits the filesystem root. */
-export function findConfigPathForEntry(entryPath: string): string | undefined {
-  let current = path.dirname(path.resolve(entryPath));
-  while (true) {
-    const candidate = path.join(current, CONFIG_FILENAME);
-    if (fs.existsSync(candidate)) return candidate;
-    const parent = path.dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
-  }
 }
 
 export function missingConfigError(entryPath: string): CliStructuredError {

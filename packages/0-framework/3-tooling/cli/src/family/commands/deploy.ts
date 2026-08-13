@@ -8,7 +8,7 @@
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
-import { composerSection } from '../section.ts';
+import { reportConfigDiagnostics, selectComposerConfig } from '../select-config.ts';
 import { workspaceIdOf } from '../workspace.ts';
 
 export const createDeployCommand = (operations: ComposerOperations) =>
@@ -35,9 +35,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         }),
       },
     },
-    needs: { config: composerSection, credentials: 'child' },
+    needs: { credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const selectedConfig = await selectComposerConfig(args.positionals.entry, ctx.cwd);
+      if (!selectedConfig.ok) return selectedConfig;
+      reportConfigDiagnostics(selectedConfig.value.diagnostics, ctx.report);
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
@@ -48,7 +51,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         },
         operationDeps({
           alchemy,
-          configPath: ctx.config.configPath,
+          configPath: selectedConfig.value.configPath,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),

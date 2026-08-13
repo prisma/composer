@@ -21,7 +21,7 @@ import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
 import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
-import { composerSection } from '../section.ts';
+import { reportConfigDiagnostics, selectComposerConfig } from '../select-config.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
@@ -196,9 +196,11 @@ export const createDevCommand = (operations: ComposerOperations) =>
         }),
       },
     },
-    needs: { config: composerSection },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const selectedConfig = await selectComposerConfig(args.positionals.entry, ctx.cwd);
+      if (!selectedConfig.ok) return selectedConfig;
+      reportConfigDiagnostics(selectedConfig.value.diagnostics, ctx.report);
       const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {
@@ -208,7 +210,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
           cwd: ctx.cwd,
           onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
-        { alchemy: coalescedConverge(alchemy), configPath: ctx.config.configPath },
+        { alchemy: coalescedConverge(alchemy), configPath: selectedConfig.value.configPath },
       );
 
       // Nothing is live yet, so the ending is the converge's — settled by the

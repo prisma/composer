@@ -8,10 +8,9 @@
  * real invocation died with "runtime.loadConfig is not a function" while all
  * 207 unit tests still passed. Only the integration suite noticed.
  *
- * So these tests run through `runComposerCli` and a fake host, on commands that
- * declare a config section — the path that was broken. The existing coverage
- * used `--version`, which declares none and therefore never asks the Runtime
- * for config at all.
+ * So these tests run through `runComposerCli` and a fake host. In particular,
+ * they pin the precedence between Composer's own config and the consolidated
+ * prisma.config.ts fallback at the real command boundary.
  */
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -58,9 +57,8 @@ function fakeHost(cwd: string): FakeHost {
 const emptyDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), 'composer-host-'));
 
 /**
- * `dev` is the cheapest command that declares a config section: it is
- * credential-free, and a failing fixture settles it immediately without
- * starting a session or spawning a converge.
+ * `dev` is credential-free, and a failing fixture settles it immediately
+ * without starting a session or spawning a converge.
  */
 function refusingOperations() {
   return createControlDouble({
@@ -68,11 +66,11 @@ function refusingOperations() {
   });
 }
 
-describe('runComposerCli() — the real Runtime, on a command that needs config', () => {
+describe('runComposerCli() — Composer config precedence through the real host', () => {
   /**
-   * The regression this file exists for. With the Runtime's config seam
-   * misspelled, this run settles CLI.INTERNAL_ERROR instead of reaching the
-   * handler at all.
+   * With neither config file, the consolidated fallback is absent and
+   * Composer's operation remains responsible for its normal missing-config
+   * diagnosis.
    */
   test('a run with no config file reaches the handler — absence is normal', async () => {
     const double = refusingOperations();
@@ -89,50 +87,44 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     expect(host.err.join('')).toContain('DEV.REFUSED');
   });
 
-  /**
-   * `--config` end to end: the flag is the engine's, but the path only reaches
-   * the loader because composer's Runtime forwards it. A Runtime that dropped
-   * the argument would quietly read prisma.config.ts from cwd, find nothing,
-   * and run — so the missing named file is what proves the forwarding.
-   */
-  test('--config reaches the loader, which refuses a file that is not there', async () => {
+  test('a discovered Composer config prevents prisma.config.ts from being evaluated', async () => {
     const double = refusingOperations();
     const dir = emptyDir();
-    const host = fakeHost(dir);
-
-    const exitCode = await runComposerCli(
-      ['dev', 'src/service.ts', '--config', 'not-here.config.ts'],
-      host,
-      { version: VERSION, operations: double.operations },
-    );
-
-    expect(exitCode).toBe(2);
-    expect(host.err.join('')).toContain('CLI.CONFIG_NOT_FOUND');
-    expect(host.err.join('')).toContain(path.join(dir, 'not-here.config.ts'));
-    expect(double.calls.dev).toEqual([]);
-  });
-
-  /** The same flag, satisfied: a real file on disk is read, and its composer section reaches the handler. */
-  test('--config reads the file it names, whose section reaches the command', async () => {
-    const double = refusingOperations();
-    const dir = emptyDir();
-    const configFile = path.join(dir, 'custom.config.ts');
     fs.writeFileSync(
-      configFile,
-      'export default { $prismaConfig: 1, composer: { configPath: "custom" } };\n',
+      path.join(dir, 'prisma.config.ts'),
+      [
+        'const env = (name: string): string => { throw new Error(name + " is required"); };',
+        'export default { datasource: { url: env("DATABASE_URL") } };',
+        '',
+      ].join('\n'),
     );
+    fs.writeFileSync(path.join(dir, 'prisma-composer.config.ts'), 'export default {};\n');
 
-    const exitCode = await runComposerCli(
-      ['dev', 'src/service.ts', '--config', 'custom.config.ts'],
-      fakeHost(dir),
-      { version: VERSION, operations: double.operations },
-    );
+    const exitCode = await runComposerCli(['dev', 'src/service.ts'], fakeHost(dir), {
+      version: VERSION,
+      operations: double.operations,
+    });
 
     expect(exitCode).toBe(2);
     expect(double.calls.dev).toHaveLength(1);
-    // The section's own field, not just the fact that dev ran: `configPath`
-    // travels in the operation's SECOND argument, so a handler that read the
-    // section but forgot to pass it on would still satisfy the call count.
+    expect(double.calls.deps.dev[0]?.configPath).toBeUndefined();
+  });
+
+  test('without a Composer config, prisma.config.ts remains the fallback', async () => {
+    const double = refusingOperations();
+    const dir = emptyDir();
+    fs.writeFileSync(
+      path.join(dir, 'prisma.config.ts'),
+      'export default { $prismaConfig: 1, composer: { configPath: "custom" } };\n',
+    );
+
+    const exitCode = await runComposerCli(['dev', 'src/service.ts'], fakeHost(dir), {
+      version: VERSION,
+      operations: double.operations,
+    });
+
+    expect(exitCode).toBe(2);
+    expect(double.calls.dev).toHaveLength(1);
     expect(double.calls.deps.dev[0]?.configPath).toBe('custom');
   });
 });
