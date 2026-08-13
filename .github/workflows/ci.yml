@@ -110,7 +110,7 @@ jobs:
     # the two runtime features the floor rests on, the CLI's TypeScript entry
     # under a real node, `node --test` over the repo's TypeScript scripts, the
     # built binary a consumer installs, and every published entrypoint of
-    # @prisma/composer. It deliberately does NOT re-run the bun suites under
+    # @prisma/composer and @prisma/composer-cli. It deliberately does NOT re-run the bun suites under
     # node — bun is the runner there, so doing so would prove nothing about
     # node.
     runs-on: ubuntu-latest
@@ -163,12 +163,12 @@ jobs:
       # `--help` writes to stderr, hence the redirect.
       - name: Smoke the published CLI binary
         run: |
-          BIN=packages/9-public/composer/dist/bin.mjs
-          VERSION=$(node -p "require('./packages/9-public/composer/package.json').version")
+          BIN=packages/9-public/composer-cli/dist/bin.mjs
+          VERSION=$(node -p "require('./packages/9-public/composer-cli/package.json').version")
           node "$BIN" --version | grep -q "$VERSION"
           node "$BIN" --help 2>&1 | grep -q 'prisma-composer deploy'
       # The step above proves start-up, and start-up is exactly the part that
-      # loads none of the deploy machinery: composer keeps its executors behind
+      # loads none of the deploy machinery: the CLI keeps its executors behind
       # `await import()` (check-family-static-graph.mjs enforces that), so
       # `--version` never touches alchemy, effect, or any provider. Until this
       # step, the constellation a real `deploy` evaluates had never been
@@ -210,7 +210,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build the public packages
-        run: pnpm turbo run build --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud
+        run: pnpm turbo run build --filter=@prisma/composer --filter=@prisma/composer-cli --filter=@prisma/composer-prisma-cloud
       # Regression check for TML-3158: packs the public packages and installs
       # the tarballs with real npm against the real registry; fails if more
       # than one `effect` resolves or alchemy's position resolves a copy
@@ -229,11 +229,14 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build the public package
-        run: pnpm turbo run build --filter=@prisma/composer
-      # publish.yml runs no checks, so this lives here, on the PR: the engine is
-      # released in tandem with composer and must be exact-pinned identically in
-      # both manifests and left external in the tarball. See the script's header.
+      # Both public packages: the pin check packs @prisma/composer-cli for the
+      # peer/externality half AND @prisma/composer for the engine-free-library
+      # half.
+      - name: Build the public packages
+        run: pnpm turbo run build --filter=@prisma/composer --filter=@prisma/composer-cli
+      # The engine is released in tandem with composer-cli and must be
+      # exact-pinned identically across the manifests, left external in the CLI
+      # tarball, and absent from the library tarball. See the script's header.
       - name: Check the cli-engine pin and externality
         run: pnpm check:cli-engine-pin
       # Same built package, second invariant: nothing statically reachable

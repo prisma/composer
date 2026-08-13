@@ -140,6 +140,8 @@
         "./packages/9-public/composer/src/exports/nextjs-control.ts"
       ],
       "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
+      "@prisma/composer-cli/family": ["./packages/9-public/composer-cli/src/exports/family.ts"],
+      "@prisma/composer-cli/testing": ["./packages/9-public/composer-cli/src/exports/testing.ts"],
       "@prisma/composer-prisma-cloud/control": [
         "./packages/9-public/composer-prisma-cloud/src/exports/control.ts"
       ],

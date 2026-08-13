@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Nothing statically reachable from `@prisma/composer/family` — or from the
-// published `prisma-composer` executable — may import alchemy or effect.
+// Nothing statically reachable from `@prisma/composer-cli/family` — or from
+// the published `prisma-composer` executable — may import alchemy or effect.
 //
 // The `prisma` bin imports composer's command family directly, so every module
 // in that entrypoint's static graph loads on `prisma --version`. Alchemy's
@@ -31,8 +31,14 @@
 // tarball inlines the whole @internal scope, so only the packed graph shows
 // what a consumer actually loads.
 //
-// Requires @prisma/composer to be built (`pnpm turbo run build
-// --filter=@prisma/composer`).
+// The walk stops at bare specifiers, so `@prisma/composer/...` imports are
+// not followed. That is safe only because they are BANNED from these static
+// graphs outright (see LIBRARY below): the library is reached solely inside
+// the executor chunks behind their `await import()`, and its own graphs are
+// covered by check-floor-imports.mjs and the library's tests.
+//
+// Requires @prisma/composer-cli to be built (`pnpm turbo run build
+// --filter=@prisma/composer-cli`).
 //
 // Usage: node scripts/check-family-static-graph.mjs
 
@@ -44,6 +50,19 @@ import { fileURLToPath } from 'node:url';
 
 /** Bare specifiers that must never appear in either graph, matched on the package name. */
 const FORBIDDEN = [/^alchemy(\/|$)/, /^effect(\/|$)/, /^@effect\//];
+
+/**
+ * The library, statically imported from a start-up graph. The walk cannot
+ * follow a bare specifier into another package, so a static
+ * `@prisma/composer/...` import would smuggle whatever that entry loads —
+ * including alchemy and effect — past the FORBIDDEN scan above. Today the
+ * library is reached ONLY inside the executor chunks behind their
+ * `await import()`, so any static occurrence in these graphs is the lazy
+ * boundary being flattened, and fails outright rather than passing unseen.
+ * (`@prisma/composer-cli` and `@prisma/composer-prisma-cloud` do not match:
+ * the pattern requires a subpath or end-of-specifier after the name.)
+ */
+const LIBRARY = /^@prisma\/composer(\/|$)/;
 
 const CHECKS = [
   {
@@ -78,7 +97,7 @@ const CHECKS = [
 ];
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const composerDir = join(repoRoot, 'packages/9-public/composer');
+const composerCliDir = join(repoRoot, 'packages/9-public/composer-cli');
 
 /**
  * Static import specifiers of one built module. Deliberately does NOT match
@@ -153,11 +172,12 @@ try {
   // pnpm pack, not npm pack: it rewrites `workspace:` specifiers the way a
   // real publish does.
   execFileSync('pnpm', ['pack', '--pack-destination', work], {
-    cwd: composerDir,
+    cwd: composerCliDir,
     stdio: ['ignore', 'ignore', 'inherit'],
   });
   const tarball = readdirSync(work).find((f) => f.endsWith('.tgz'));
-  if (tarball === undefined) throw new Error('pnpm pack produced no tarball for @prisma/composer');
+  if (tarball === undefined)
+    throw new Error('pnpm pack produced no tarball for @prisma/composer-cli');
   execFileSync('tar', ['xzf', tarball], { cwd: work });
   const packedRoot = join(work, 'package');
 
@@ -180,6 +200,13 @@ try {
         failures.push(
           `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
             'Something now imports an executor directly instead of behind its `await import()`.',
+        );
+      }
+      if (LIBRARY.test(specifier)) {
+        failures.push(
+          `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
+            "The library belongs behind the executors' `await import()` — a static import here loads " +
+            'library code on start-up, and this walk cannot see what that entry drags in.',
         );
       }
     }
