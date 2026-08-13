@@ -22,7 +22,7 @@ Nothing is blocked. What remains before the definition of done is met is one rea
 
 ## Follow-up design, 2026-08-13
 
-The topology-persistence design is settled and recorded in [topology-design.md](topology-design.md): the platform holds the branch's full graph (nodes, ports, edges — module structure included) as first-class records, submitted pre-apply, keyed by config address with no platform ids in the payload. Will implements the platform side. Composer's follow-up slices: keep the authored graph form in core's `Graph`, add the pre-apply topology submission, retire `--report` once the Action reads the platform.
+The topology design is settled; the canonical spec lives in pdp-control-plane at `projects/branch-topology/spec.md` (see [topology-design.md](topology-design.md) for the pointer). Composer's follow-up slices, from its plan: (1) keep the authored graph — boundary ports and pre-dereference edges — in core's `Graph` (`load-module.ts` + `graph-types.ts`, additive); (2) the pre-apply topology submission through the `ExtensionDescriptor` seam once the endpoint exists, best-effort like all reporting; (3) stamp `logicalName` (the node's full address) on typed rows once the platform accepts it; (4) retire `--report` once the Action reads the platform; (5) reject `$out` as a user-declared port name.
 
 ---
 
