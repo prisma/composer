@@ -1,5 +1,7 @@
 # Design notes: Composer reports its builds to Prisma Cloud
 
+> **This is a chronological log, not a reference.** It records what was believed at each point, including claims later corrected further down. For the current design, read [spec.md](spec.md) and [topology-design.md](topology-design.md); come here only for the reasoning behind a decision.
+
 Design review of the incoming brief, 2026-08-12. Verified against pdp-control-plane PR #4855 (`feat/builds-api` branch) and the Composer deploy pipeline. Records what the review found, including where the brief and the reviewer were wrong.
 
 ## Where the brief was wrong

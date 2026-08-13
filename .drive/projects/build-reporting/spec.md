@@ -1,111 +1,70 @@
 # Project: Composer reports its builds to Prisma Cloud
 
-> Status: design verified against the platform contract and the Composer deploy pipeline, 2026-08-12. Findings and the reasoning behind each decision are in `design-notes.md`. Decisions marked **assumed** below were taken by the orchestrator and are open to override.
+> Status: **implemented** on [PR #227](https://github.com/prisma/composer/pull/227); the platform API is in production. The one item outstanding against the definition of done is a real deploy observed in the Console. The follow-up topology design is in [topology-design.md](topology-design.md). The discussion history behind every decision here is in [design-notes.md](design-notes.md) — a log, not a reference.
 
-## Summary
+## The design
 
-Every `prisma-composer deploy` run reports itself to Prisma Cloud as a `Build` record — how far it got, whether it worked, and which platform resources it touched — and emits the run's outcome as a JSON file the Prisma GitHub Action can read.
+Every `prisma-composer deploy` records itself on the platform as a **Build**: that a run happened, how far it got, how it ended, and which platform resources it touched. Reporting is observability — it can never fail a deploy.
 
-## Why
+Four pieces, and where each lives:
 
-Prisma Cloud is moving builds out of the platform and into users' CI. The platform side is built: a `Build` record with provenance and a Management API any deploy tool can report to (pdp-control-plane PR #4855). Composer is the first real reporter.
+1. **A `reporter` hook on `ExtensionDescriptor`** ([app-config.ts](packages/0-framework/1-core/core/src/control/app-config.ts)), driven generically by the CLI: `begin` after the graph loads and *before* containers resolve (so the failure that orphans a freshly created project, composer#103, is still recorded), `attach` once the Project/Branch exist, `finish` on every exit path — success, structured failure, thrown defect, SIGINT/SIGTERM. Core defines the vocabulary and knows nothing about Builds; the CLI drives the lifecycle and makes no HTTP calls; the Prisma Cloud extension supplies the implementation. This indirection is forced by the architecture: the framework domain may import nothing (`architecture.config.json`), so reporting reaches the CLI only through the extension seam.
+2. **The reporting session** in `packages/1-prisma-cloud/0-lowering/lowering/src/builds/` — build create/join, git identity, progress and terminal PATCHes, all through the generated `@prisma/management-api-sdk` client with every request/response shape *derived* from its `operations` types (a hand-kept copy of someone else's contract drifts; a derived one breaks the build). It lives in `lowering` rather than beside the extension because the extension package may read no environment and import no node builtin (its invariants 4 and 5) — which is most of what a reporter does. The extension keeps a five-line adapter supplying the one thing lowering cannot know: how to read its own container.
+3. **Resource reporting through the state store** ([state-store.ts](packages/1-prisma-cloud/0-lowering/lowering/src/builds/state-store.ts), wired in [state/layer.ts](packages/1-prisma-cloud/0-lowering/lowering/src/state/layer.ts)): each platform resource is reported as Alchemy converges it, fired without blocking the apply and drained before the deploy lease releases. The state store is the interception point because every resource write passes through it whichever provider performed it; the deploy's own report hook sees only three entity kinds against the platform's eight resource types.
+4. **The run report** ([run-report.ts](packages/0-framework/3-tooling/cli/src/run-report.ts)): `--report <path>` or `PRISMA_COMPOSER_REPORT_FILE` writes a versioned JSON file with the app, its entities, preview URLs, and the failure cause — written on failure too. **Transitional**: it dies once the GitHub Action reads Build + topology + Versions from the platform (topology-design.md R4).
 
-Two audiences consume one run:
+How a run gets its Build: join the id from `--build-id` or `PRISMA_BUILD_ID` (flag wins — passed deliberately for that step; empty string is unset on both), else create one — `source: "ci"` with a GitHub run identity when inside GitHub Actions, `source: "cli"` otherwise. The id reaches the apply child through `PRISMA_BUILD_ID`, injected like the other pipeline env.
 
-- **Prisma Cloud**, so the Console can show deploy history for apps the platform never built.
-- **The Prisma GitHub Action**, which needs the outcome as data so it can post a pull-request comment carrying preview links.
+## Requirements, and what satisfies them
 
-## The platform contract
+| # | Requirement | Satisfied by |
+| --- | --- | --- |
+| FR1 | Join an existing build or create one; a deploy that reports nothing is invisible, so creating is a requirement, not a fallback. | The join/create logic above; both channels exist because a runner exporting one id per job wants the variable, a job deploying several stages wants the per-step flag. |
+| FR2 | Report progress and outcome, with Composer's error codes as the `failingStep` vocabulary and human detail in `errorMessage`. | `begin` PATCHes `phase: deploy, state: running`; `finish` PATCHes the terminal state on every exit path; codes truncate to the platform's 500/5000 caps. |
+| FR3 | Report the resources the run acted on: `acted_on` default, `created` only when this run created it, `deleted` on teardown; never report what was merely resolved. | The state-store interceptor; terminal statuses map created→`created`, updated→`acted_on`, deleting→`deleted`; adopted resources are excluded by the `adopting` flag on the state record. |
+| FR4 | The Action can consume the outcome as data. | Today: the run-report JSON. Target state: the platform (topology-design.md R4); the file is transitional. |
+| FR5 | Reporting never fails a deploy, including a platform unreachable all run. | Every API call warns and returns; the CLI additionally swallows anything a reporter throws; the drain never rejects. |
 
-Verified against `services/management-api/routes/v1/builds/` and `models/v1/builds.ts` on the `feat/builds-api` branch.
-
-```http
-POST  /v1/builds                                          Authorization: Bearer <workspace token>
-      { source, commitSha, branchName, runIdentity?, externalLogUrl?, projectId?, branchId?, appId? }
-      → 201 { id, phase, state, ... }
-
-PATCH /v1/builds/:id                                      { phase?, state?, failingStep?, errorMessage?, externalLogUrl? }
-PUT   /v1/builds/:id/resources/:resourceType/:resourceId   { action }
-```
-
-Facts that shape the design, each confirmed in the route or model source:
-
-- The workspace comes from the token, never the body. A token spanning several workspaces is rejected outright. `PRISMA_WORKSPACE_ID` is **not** part of this contract.
-- `commitSha` and `branchName` are required, `min(1)`. Composer reads no git metadata today.
-- `phase` is `queued | build | deploy` and is nullable — the platform never invents an observation it did not receive. `state` is `pending | running | succeeded | failed | cancelled`.
-- `source` for an external reporter is `ci | cli` only. `webhook`, `setup` and `manual` name build-runner's own surfaces and are rejected.
-- `runIdentity` is what makes `POST` idempotent, and it is also what resolves `gitRepoId` — without it the build carries no repository and every call creates a new build.
-- Resource reporting is an idempotent upsert whose recorded action never weakens: `created` survives a later `acted_on`, and `deleted` beats both.
-- Reporting a `deployment` as `created` also attaches it to the build and records the implied `app` row, in one transaction.
-- Every reported resource is checked to exist inside the caller's workspace before a provenance row is written.
-- `failingStep` is free text, max 500. `errorMessage` max 5000. Both need truncation at the call site.
-- **The build's anchors (`projectId`, `branchId`, `appId`) are settable only at creation.** This blocks the design and is being amended — see Dependencies.
-
-## Requirements
-
-### Functional
-
-**FR1 — Join an existing build, or create one.** Take the build id from `--build-id` or from `PRISMA_BUILD_ID`, the flag winning, and join that build. When neither is given, Composer creates the build itself. A deploy that reports nothing is invisible in the Console, so creating one is a requirement, not a fallback.
-
-Both channels exist because a workflow can supply an id either way and neither is always convenient: a runner that opens one record per job exports the variable once, while a job that deploys several stages names a different record per step. The flag wins because it was passed deliberately for that step.
-
-**FR2 — Report progress and outcome.** Set `phase: deploy` and `state: running` when the run starts, and the terminal `state` with `failingStep` and `errorMessage` when it ends, on both the success and failure paths. Composer's own error codes (`DEPLOY.PREFLIGHT_FAILED`, `DEPLOY.CONTAINER_FAILED`, `DEPLOY.ENGINE_FAILED` and the rest) are the `failingStep` vocabulary.
-
-**FR3 — Report the resources the run acted on.** One `PUT` per platform resource, mapped from Composer's Alchemy resources onto the platform's eight resource types. `acted_on` is the default; `created` only when this run created the thing; `deleted` on teardown. Resources merely read or resolved are not reported — adopting an existing project is not acting on it.
-
-**FR4 — Emit the run's outcome as JSON.** A versioned, documented file the Action can depend on: the app, its nodes and entities, preview URLs, and the failure cause when there is one. Not stdout — stdout already carries the human-readable tree.
-
-**FR5 — Reporting never fails a deploy.** Reporting is observability, not a step of the deploy. Every failure is logged and swallowed. This includes the case where the platform is unreachable for the entire run.
-
-### Non-functional
-
-- Reuse the existing credentials (`PRISMA_SERVICE_TOKEN` via `fromEnv`) and the existing API origin. No second authentication path.
-- No change to what a deploy provisions, in what order, or with what result. The reporting overlay observes; it does not steer.
-- Reporting latency must not meaningfully extend a deploy. Resource reports are per-resource and fire during apply, so they cannot be allowed to serialise behind each other.
-
-### Non-goals
-
-- Publishing the GitHub Action itself.
-- Work in pdp-control-plane, beyond the one amendment handed off as a dependency.
-- The Alchemy state-store migration, and Composer's own auth rework.
-- Reporting `prisma-composer destroy` — see decision D7.
-- Reporting `prisma-composer dev`, which never touches Prisma Cloud.
+Non-functional: one credential path (`PRISMA_SERVICE_TOKEN`, workspace from the token — `PRISMA_WORKSPACE_ID` is not part of this contract); no change to what a deploy provisions or in what order; resource reports must not serialise behind each other.
 
 ## Decisions
 
-**D1 — Composer only ever reports `phase: deploy`.** Composer never builds the user's code; ADR-0005 is explicit that users build and the framework assembles. `phase: build` belongs to whoever ran the build — the Action, or nobody.
+Ids are stable (they are referenced from design-notes.md and plan.md); the order here is logical, not chronological.
 
-**D10 — Reporting reaches the CLI through a new `reporter` extension hook, and the session lives on the lowering side.** The framework domain may import nothing but external dependencies, so the reporting client cannot live in the CLI; the extension descriptor is the seam the CLI already drives generically. The session itself sits in `0-lowering/lowering/src/builds/` because the extension package may read no environment and import no node builtin, which is most of what a reporter does.
+**Architecture**
 
-**D2 — Resource reporting is incremental, intercepted at the state layer.** Not primarily for crash resilience. The descriptors emit only three entity kinds (`postgres-database`, `bucket`, `compute-service`) against the platform's eight resource types, and the most valuable type — `deployment` — is not an entity at all. The Alchemy providers in `packages/1-prisma-cloud/0-lowering/lowering/src/` do cover the vocabulary. End-of-run reporting from `report()` could never cover more than three of eight.
+- **D10 — reporting reaches the CLI through the `reporter` extension hook, and the session lives on the lowering side.** Both placements forced by machine-checked rules; see The design.
+- **D2 — resource reporting is incremental, intercepted at the state layer.** Not primarily for crash resilience: end-of-run reporting from the deploy's report hook could never cover more than three of the platform's eight resource types, and misses `deployment` — the type that makes the platform maintain the build↔app link — entirely.
+- **D3 — the build id reaches the apply through the environment** (`PRISMA_BUILD_ID` on the alchemy child), so the child reads one variable whether Composer created the build or CI did.
 
-**D3 — The build id always reaches the apply through the environment.** The parent injects `PRISMA_BUILD_ID` into the alchemy child exactly as it already injects the result-file path, so the child reads one variable whether Composer created the build or the Action did.
+**Semantics**
 
-**D4 — No git metadata means no report. (assumed)** `commitSha` and `branchName` are required fields. Composer reads git, preferring `GITHUB_SHA` / `GITHUB_REF_NAME` when present. Outside a git checkout entirely, skip reporting and log why — filling required fields with placeholders puts permanent junk in the Console.
+- **D1 — Composer only ever reports `phase: deploy`.** Composer never builds the user's code (composer ADR-0005); `build` belongs to whoever ran the build.
+- **D4 — no git metadata means no report.** `commitSha`/`branchName` are required fields; placeholders would sit in a workspace's history permanently. Prefer `GITHUB_SHA`/`GITHUB_REF_NAME`, fall back to git, skip with a warning outside a checkout.
+- **D5 — GitHub Actions runs report `source: "ci"` with a run identity** from `GITHUB_REPOSITORY_ID`/`GITHUB_RUN_ID`/`GITHUB_RUN_ATTEMPT` — that is what buys create-idempotency and the repository link. The platform owns the dedup key (`sourceEventIdForRun`) but reads no GitHub environment itself, so Composer, the Action, and the platform webhook must derive the identity from the same three variables or one run produces multiple builds.
+- **D11 — the build records `appId`/`deployedUrl` only when the run deployed exactly one compute service.** The columns hold one value each; picking a service arbitrarily would imply it was the app's address. Multi-service apps lose nothing — every service is reported through the resources endpoint.
+- **D8 — a killed process leaves a permanently `running` build, accepted.** Nothing sweeps builds; SIGINT/SIGTERM are caught (with a 1.5s budget so Ctrl-C never hangs), SIGKILL and torn-down runners cannot be.
 
-**D5 — Detect GitHub Actions and report `source: "ci"` with a `runIdentity`. (assumed)** `GITHUB_REPOSITORY_ID`, `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT` are exactly the numeric fields the schema wants. Supplying them buys idempotency across retries and is what resolves `gitRepoId`, so the build appears against its repository. Fall back to `source: "cli"` with no run identity everywhere else.
+**Scope**
 
-**D6 — ~~Hand-write the three API calls until the SDK ships them.~~ RESOLVED 2026-08-12.** The stack merged and `@prisma/management-api-sdk` 1.60.0 carries all three endpoints, so the hand-written module was replaced before this work shipped and no second HTTP path exists. Every request and response shape is now *derived* from the generated `operations` type rather than restated, so a contract change breaks the build instead of drifting silently.
+- **D7 — `destroy` is not reported.** Only source of the `deleted` action, but `phase` has no teardown value and `source` cannot distinguish it — it would render as a deploy that deleted everything.
+- **D9 — a direct `alchemy deploy` of the generated stack file reports nothing** (no CLI parent, no build; the state store skips resource reporting when `PRISMA_BUILD_ID` is absent).
+- `prisma-composer dev` never reports — local providers, no token.
+- **D6 — resolved.** The hand-written HTTP client that bridged the pre-SDK gap was deleted the day SDK 1.60.0 shipped; shapes are now derived from the SDK.
 
-**D11 — The build records the app and its address only when the run deployed exactly one compute service.** `Build.appId` and `Build.deployedUrl` are each one value, and an app with several services has no single answer; picking the first would put an arbitrary service's address in the Console and imply it was the app's. Single-service apps — the common case — get a working link. Multi-service apps get neither, and every service is still reported through the resources endpoint.
+## Platform contract notes
 
-**D7 — `destroy` is out of the first cut. (assumed)** It is the only source of the `deleted` action and would be nearly free to wire, but `phase` has no value meaning teardown and `source` has none distinguishing it, so a destroy would render in the Console as an ordinary deploy with a pile of deleted resources. Better to omit it than to report it misleadingly.
+The authoritative surface is `services/management-api/routes/v1/builds/` in pdp-control-plane (see its `docs/prisma-next-in-mgmt-api/builds.builds-surface.md`). Points this design leans on: the workspace comes from the token, never the body; `projectId`/`branchId`/`appId`/`deployedUrl` are fill-only on PATCH (409 on a genuine change, no-op on re-send) — which is why the `attach` call is separate, so a disagreeing creator costs those fields alone; resource reporting is an idempotent upsert whose action never weakens; reporting a created `deployment` also attaches it to the build and records the app, in one transaction.
 
-**D8 — A killed process leaves a permanently running build, and that is accepted.** Nothing sweeps a build that stops reporting. A signal handler covers Ctrl-C and SIGTERM; SIGKILL and a torn-down runner cannot be covered. Since cancellation is common in CI, a visible population of permanently-running builds is the expected steady state, not a defect.
+## Non-goals
 
-**D9 — Direct `alchemy deploy` of the generated stack file reports nothing.** That path has no parent process, so no build exists. With no `PRISMA_BUILD_ID` in the environment, skip resource reporting and log one line. Inventing a build from inside the child would defeat the purpose of a path that exists to isolate CLI bugs from Alchemy bugs.
-
-## Dependencies — all resolved, 2026-08-12
-
-1. **The pdp-control-plane stack merged.** #4853, #4850 and #4855 are all in `main`, and the API is in production.
-2. **`@prisma/management-api-sdk` 1.60.0 carries the endpoints.** Composer's pin moved from `^1.57.0` to `^1.60.0`. The release also closed a pre-existing gap: the hosted-state lease and scope endpoints were missing too, which is why this package never typechecked cleanly. It does now.
-3. **The fill-only amendment landed in full.** `UpdateBuildInputSchema` takes `projectId`, `branchId` and `appId`, fill-only, verified against the row's existing values, with a 409 on a genuine change. It also gained `deployedUrl` on the same terms — the secondary ask — which is what D11 uses. These are optional fks narrowing the Console's views; the build's required scope is the workspace, from the token.
+Publishing the GitHub Action; platform-side work beyond what topology-design.md names; the Alchemy state-store migration; Composer's auth rework.
 
 ## Definition of done
 
-- A `prisma-composer deploy` against Prisma Cloud produces a build in the Console with the right phase, outcome and resources — both when `PRISMA_BUILD_ID` is supplied and when Composer creates its own.
-- A failing deploy shows its named cause and a human-readable message.
-- A deploy whose reporting calls all fail still succeeds, and says why reporting failed.
-- The JSON report is emitted, versioned, documented, and parses.
-- A run from a directory with no git metadata deploys normally and reports nothing.
-- `prisma-composer dev` and a direct `alchemy deploy` of the generated stack file report nothing.
+- A deploy against Prisma Cloud produces a build in the Console with the right phase, outcome and resources — joined id and created id both. **← the one unverified item**
+- A failing deploy shows its named cause and human detail. ✓ (fake-API and pipeline tests)
+- A reporting outage does not fail the deploy. ✓
+- The JSON report is emitted, versioned, parseable, written on failure. ✓
+- No git → deploys normally, reports nothing, says why. ✓
+- `dev` and direct `alchemy deploy` report nothing. ✓
