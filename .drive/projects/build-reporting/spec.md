@@ -62,7 +62,7 @@ Publishing the GitHub Action; platform-side work beyond what topology-design.md 
 
 ## Definition of done
 
-- A deploy against Prisma Cloud produces a build in the Console with the right phase, outcome and resources — joined id and created id both. **← the one unverified item**
+- A deploy against Prisma Cloud produces a build with the right phase, outcome and resources. ✓ **Verified live 2026-08-14**: `bld_cqdzjjlja99nmcd4f27bn69g` (dev workspace, storage example) — `source: cli`, `phase: deploy`, `state: succeeded`, correct branch and commit, project attached via the fill-only PATCH, `appId`/`deployedUrl` correctly absent (two services, D11), and 21 resource rows all `created`: 2 apps, 2 deployments, 1 database, 1 service_key, 15 config_variables. Two observations from the live run, neither blocking: the Project itself appears as no resource row, because the hosted flow creates it through the container step rather than the state store (the build's `projectId` carries the association); and `branchId` stays null on a default-stage deploy, since only named stages carry a branch id into `attach` — attaching the default Branch id is a possible refinement.
 - A failing deploy shows its named cause and human detail. ✓ (fake-API and pipeline tests)
 - A reporting outage does not fail the deploy. ✓
 - The JSON report is emitted, versioned, parseable, written on failure. ✓
