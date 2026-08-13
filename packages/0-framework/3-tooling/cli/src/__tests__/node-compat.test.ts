@@ -3,28 +3,54 @@
  * bun (design-notes.md's "CLI runtime" call). This is the one test in the
  * suite that actually spawns a separate node process, proving `bin.ts`
  * itself — not just its pieces — works there.
+ *
+ * It is a smoke test of the SHELL, not of the grammar: what it has to show is
+ * that a real node process gets through the engine's front door and back out
+ * with the right exit code. The engine's own behavior is covered in-process.
  */
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-const binPath = path.join(import.meta.dir, '..', 'bin.ts');
+const packageDir = path.join(import.meta.dir, '..', '..');
+const binPath = path.join(packageDir, 'src', 'bin.ts');
+
+function runUnderNode(args: readonly string[]) {
+  const result = spawnSync('node', [binPath, ...args], { encoding: 'utf8' });
+  return { status: result.status, output: `${result.stdout}${result.stderr}` };
+}
 
 describe('node compatibility smoke test', () => {
-  test('a bare invocation under node prints usage (deploy and destroy) and exits nonzero', () => {
-    const result = spawnSync('node', [binPath], { encoding: 'utf8' });
+  /**
+   * A bare invocation is a request for help under the engine, so it succeeds.
+   * The legacy CLI treated it as a usage error and exited nonzero.
+   */
+  test('a bare invocation under node prints the usage banner and exits 0', () => {
+    const result = runUnderNode([]);
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('prisma-composer deploy');
-    expect(result.stderr).toContain('prisma-composer destroy');
-    expect(result.stderr).toContain('<entry>');
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('prisma-composer deploy');
+    expect(result.output).toContain('prisma-composer destroy');
+    expect(result.output).toContain('<entry>');
   }, 15000);
 
-  test('an unknown command under node prints usage and exits nonzero', () => {
-    const result = spawnSync('node', [binPath, 'build', 'src/service.ts'], { encoding: 'utf8' });
+  test('an unknown command under node is refused by name, exit 2', () => {
+    const result = runUnderNode(['build', 'src/service.ts']);
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('prisma-composer deploy');
-    expect(result.stderr).toContain('prisma-composer destroy');
+    expect(result.status).toBe(2);
+    expect(result.output).toContain('CLI.UNKNOWN_COMMAND');
+    expect(result.output).toContain('build');
+  }, 15000);
+
+  /** Proves the version read works under node's type stripping, not just under bun. */
+  test('--version under node reports the version of the package the module sits in', () => {
+    const version: unknown = JSON.parse(
+      fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'),
+    ).version;
+    const result = runUnderNode(['--version']);
+
+    expect(result.status).toBe(0);
+    expect(result.output).toContain(String(version));
   }, 15000);
 });

@@ -58,6 +58,7 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -79,6 +80,7 @@ describe('buildReporter', () => {
     const session = await begin(api, { ...ENV, PRISMA_BUILD_ID: 'bld_from_action' });
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -96,6 +98,7 @@ describe('buildReporter', () => {
     const session = await begin(api, ENV, () => {}, 'bld_from_flag');
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -117,6 +120,7 @@ describe('buildReporter', () => {
     );
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -131,6 +135,7 @@ describe('buildReporter', () => {
     const session = await begin(api, { ...ENV, PRISMA_BUILD_ID: '' }, () => {}, '');
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -147,6 +152,7 @@ describe('buildReporter', () => {
     expect(session?.childEnv()).toEqual({ PRISMA_BUILD_ID: 'bld_new' });
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -160,6 +166,7 @@ describe('buildReporter', () => {
     await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -178,6 +185,7 @@ describe('buildReporter', () => {
     await session?.attach({ container: undefined });
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
@@ -192,6 +200,7 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: false,
+      cancelled: false,
       failingStep: 'DEPLOY.PREFLIGHT_FAILED',
       errorMessage: 'STRIPE_KEY is not set for preview.',
       entities: [],
@@ -213,6 +222,7 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [
@@ -234,6 +244,7 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [
@@ -251,6 +262,7 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [{ kind: 'compute-service', id: 'app_1' }],
@@ -265,11 +277,18 @@ describe('buildReporter', () => {
     const session = await begin(api);
     await session?.finish({
       ok: true,
+      cancelled: false,
       failingStep: undefined,
       errorMessage: undefined,
       entities: [],
     });
-    await session?.finish({ ok: false, failingStep: 'X.Y', errorMessage: 'second', entities: [] });
+    await session?.finish({
+      ok: false,
+      cancelled: false,
+      failingStep: 'X.Y',
+      errorMessage: 'second',
+      entities: [],
+    });
 
     expect(recorded.updates.filter((u) => u.body.state !== 'running')).toHaveLength(1);
   });

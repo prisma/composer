@@ -10,8 +10,9 @@
  * listing exactly what is missing and where to set it.
  *
  * Control-plane only (imported by control.ts → prisma-composer.config.ts); runs
- * in the CLI parent, so it builds its own Management API client from env — the
- * same credential path `container.ts`'s `ensure`/`locate` use.
+ * in the CLI parent, on the caller's Management API client when it passed one,
+ * and otherwise on a client built from env — the same credential path
+ * `container.ts`'s `ensure`/`locate` use.
  */
 import type { Graph } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
@@ -147,6 +148,9 @@ interface MissingBinding {
   readonly serviceAddress: string;
 }
 
+/** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
+export type PrismaCloudPreflightInput = PreflightInput<ManagementApiClient>;
+
 // ——— Preflight errors (centralized; ADR-0029). Values are never logged. ———
 
 const tokenRequiredError = (): Error =>
@@ -198,11 +202,11 @@ async function managementClient(): Promise<ManagementApiClient> {
  * shell where possible, and fails loudly on anything absent from both.
  * `envParam` leaves of an input binding are NOT checked here — they resolve
  * from the deploy shell at serialize, and an unset one is an omitted key the
- * schema arbitrates. Accepts an injected client for tests; otherwise builds
- * one from env.
+ * schema arbitrates. Uses the caller's client (`input.credentials`), then an
+ * injected one for tests, then a client built from env.
  */
 export async function runPreflight(
-  input: PreflightInput,
+  input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
 ): Promise<void> {
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
@@ -220,7 +224,7 @@ export async function runPreflight(
   }
   if (names.size === 0) return;
 
-  const client = deps?.client ?? (await managementClient());
+  const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
   const missing: MissingBinding[] = [];
   for (const meta of names.values()) {
     if (await existsOnPlatform(client, projectId, branchId, meta.name)) continue;

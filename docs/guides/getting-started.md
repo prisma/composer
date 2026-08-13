@@ -41,6 +41,11 @@ and [Building an app](building-an-app.md#databases) covers it.
 
 You'll need:
 
+- **Node 22.18 or newer** — check with `node --version` before anything else.
+  Composer hands your TypeScript entry file straight to Node, and Node runs
+  `.ts` directly only from 22.18.0, the release that turns type stripping on by
+  default. On anything older `prisma-composer` stops at
+  `ERR_UNKNOWN_FILE_EXTENSION` naming your own file; 22.17 is not close enough.
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).

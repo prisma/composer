@@ -703,6 +703,18 @@
       "plane": "control"
     },
     {
+      "glob": "packages/9-public/composer-cli/src/exports/family.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/9-public/composer-cli/src/exports/testing.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
       "glob": "packages/9-public/composer/src/exports/node-control.ts",
       "domain": "public",
       "layer": "public",
@@ -724,7 +736,7 @@
       "glob": "packages/9-public/composer/src/exports/testing.ts",
       "domain": "public",
       "layer": "public",
-      "plane": "shared"
+      "plane": "control"
     },
     {
       "glob": "packages/9-public/composer/src/exports/casts.ts",

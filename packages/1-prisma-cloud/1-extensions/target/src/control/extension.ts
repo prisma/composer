@@ -34,7 +34,7 @@ import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
-import { runPreflight } from '../preflight.ts';
+import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
@@ -342,7 +342,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
-    preflight: (input) => runPreflight(input),
+    // The parameter annotation is what recovers this extension's own client
+    // type from the framework's erased one; without it `input.credentials`
+    // arrives as `unknown` and the call below stops compiling.
+    preflight: (input: PrismaCloudPreflightInput) => runPreflight(input),
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the

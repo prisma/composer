@@ -8,9 +8,13 @@
  * the one failure it most needs to describe.
  *
  * Nothing here can fail a deploy. Every call goes through `BuildsApi`, which
- * warns and returns rather than throwing, and the two places that could still
- * throw — reading git, installing a signal handler — are wrapped. A deploy
- * that converged is a deploy that succeeded, whatever the Console was told.
+ * warns and returns rather than throwing, and the one place that could still
+ * throw — reading git — is wrapped. A deploy that converged is a deploy that
+ * succeeded, whatever the Console was told.
+ *
+ * This module installs NO signal handlers: the CLI engine is the sole signal
+ * owner (its detector test enforces it). Cancellation reaches this reporter
+ * as `RunOutcome.cancelled` on the ordinary `finish` path.
  *
  * Lives here rather than beside the extension that registers it because the
  * extension package ships into runtime surfaces and may import no node
@@ -29,16 +33,10 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { createManagementApiClient } from '@prisma/management-api-sdk';
-import { MANAGEMENT_API_ORIGIN } from '../client.ts';
+import { MANAGEMENT_API_ORIGIN, type ManagementApiClient } from '../client.ts';
 import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
 import { BUILD_ID_ENV } from './resources.ts';
 import { resolveRunIdentity } from './run-identity.ts';
-
-/** How long a cancelled run waits for its last report before exiting anyway. */
-const CANCEL_REPORT_BUDGET_MS = 1_500;
-
-/** Exit status for a run ended by a signal, by the usual shell convention (128 + SIGINT). */
-const CANCELLED_EXIT_CODE = 130;
 
 /** An empty string is how a shell spells "unset", so it must not be mistaken for a build id. */
 const nonEmpty = (value: string | undefined): string | undefined =>
@@ -62,21 +60,32 @@ export interface BuildReporterOptions {
 
 export function buildReporter(options: BuildReporterOptions): ReporterDescriptor {
   return {
-    begin: (input) => beginSession(input, options),
+    // Typed against this platform's client; assigns into the erased
+    // `begin(ReportBeginInput<unknown>)` through method bivariance.
+    begin: (input: ReportBeginInput<ManagementApiClient>) => beginSession(input, options),
   };
 }
 
 async function beginSession(
-  input: ReportBeginInput,
+  input: ReportBeginInput<ManagementApiClient>,
   options: BuildReporterOptions,
 ): Promise<RunReporter | undefined> {
   const env = options.env ?? process.env;
   const warn = options.warn ?? ((message: string) => console.warn(message));
 
+  // The caller's already-authenticated client, when the engine supplied one
+  // — "present means the extension must not build its own from the
+  // environment" (ContainerCredentials). The env token is the standalone
+  // fallback, for hosts driving `@prisma/composer/control` without an engine.
+  const injected = input.credentials?.client;
   const token = env['PRISMA_SERVICE_TOKEN'];
-  if (options.api === undefined && (token === undefined || token.length === 0)) {
-    // Not worth a line: a deploy without a token fails immediately afterwards
-    // for a reason the operator will see.
+  if (
+    options.api === undefined &&
+    injected === undefined &&
+    (token === undefined || token.length === 0)
+  ) {
+    // Not worth a line: a deploy without any credential fails immediately
+    // afterwards for a reason the operator will see.
     return undefined;
   }
 
@@ -95,10 +104,12 @@ async function beginSession(
   const api =
     options.api ??
     buildsApi({
-      client: createManagementApiClient({
-        token: token ?? '',
-        baseUrl: options.origin ?? MANAGEMENT_API_ORIGIN,
-      }),
+      client:
+        injected ??
+        createManagementApiClient({
+          token: token ?? '',
+          baseUrl: options.origin ?? MANAGEMENT_API_ORIGIN,
+        }),
       warn,
     });
 
@@ -132,7 +143,7 @@ async function beginSession(
   // Whoever did build reports that phase itself.
   await api.update(buildId, { phase: 'deploy', state: 'running' });
 
-  return session(api, buildId, options.refsOf, warn);
+  return session(api, buildId, options.refsOf);
 }
 
 /**
@@ -164,40 +175,8 @@ function session(
   api: BuildsApi,
   buildId: string,
   refsOf: (container: ContainerInstance) => BuildContainerRefs,
-  warn: (message: string) => void,
 ): RunReporter {
   let finished = false;
-
-  /**
-   * A run killed by a signal never reports a terminal state, and nothing
-   * sweeps a build that stopped reporting — it stays "running" in the Console
-   * forever. Ctrl-C and SIGTERM are the two that can be caught, so they are.
-   * The budget is what stops a slow platform from making Ctrl-C feel broken;
-   * SIGKILL and a torn-down CI runner remain uncoverable by anything here.
-   */
-  const onSignal = (): void => {
-    if (finished) return;
-    finished = true;
-    const exit = (): never => process.exit(CANCELLED_EXIT_CODE);
-    setTimeout(exit, CANCEL_REPORT_BUDGET_MS).unref();
-    void api.update(buildId, { state: 'cancelled' }).then(exit, exit);
-  };
-
-  try {
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
-  } catch (error) {
-    // An environment that refuses signal handlers costs this run its
-    // cancellation report and nothing else.
-    warn(
-      `Could not watch for cancellation: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  const releaseSignals = (): void => {
-    process.removeListener('SIGINT', onSignal);
-    process.removeListener('SIGTERM', onSignal);
-  };
 
   return {
     childEnv: () => ({ [BUILD_ID_ENV]: buildId }),
@@ -220,11 +199,17 @@ function session(
     async finish(outcome: RunOutcome): Promise<void> {
       if (finished) return;
       finished = true;
-      releaseSignals();
+      // `cancelled` is the user interrupting, not a deploy that went wrong —
+      // and a SIGKILLed run reports nothing at all, leaving the build
+      // permanently `running` (nothing sweeps builds, by platform design).
       await api.update(buildId, {
-        state: outcome.ok ? 'succeeded' : 'failed',
-        ...(outcome.failingStep !== undefined ? { failingStep: outcome.failingStep } : {}),
-        ...(outcome.errorMessage !== undefined ? { errorMessage: outcome.errorMessage } : {}),
+        state: outcome.ok ? 'succeeded' : outcome.cancelled ? 'cancelled' : 'failed',
+        ...(outcome.failingStep !== undefined && !outcome.cancelled
+          ? { failingStep: outcome.failingStep }
+          : {}),
+        ...(outcome.errorMessage !== undefined && !outcome.cancelled
+          ? { errorMessage: outcome.errorMessage }
+          : {}),
         ...deployedApp(outcome.entities),
       });
     },

@@ -1,6 +1,10 @@
 /** The `prisma-composer.config.ts` surface (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
 import type * as Layer from 'effect/Layer';
-import type { ContainerDescriptor, ContainerInstance } from '../container-transport.ts';
+import type {
+  ContainerCredentials,
+  ContainerDescriptor,
+  ContainerInstance,
+} from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
 import type {
   AlchemyStateLayer,
@@ -14,6 +18,7 @@ import type {
 } from './deploy.ts';
 
 export type {
+  ContainerCredentials,
   ContainerDescriptor,
   ContainerInstance,
   LocateContainerInput,
@@ -48,8 +53,13 @@ export interface ExtensionDescriptor {
    * runs. A target uses it to verify platform prerequisites (e.g. that every
    * secret env var in the provision manifest exists for the resolved stage) and
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
+   *
+   * METHOD SYNTAX REQUIRED, for the same reason ContainerDescriptor's members
+   * need it: the framework hands over the erased `PreflightInput<unknown>`,
+   * and an extension that types the input against its own client type only
+   * assigns here through method bivariance.
    */
-  readonly preflight?: (input: PreflightInput) => Promise<void>;
+  preflight?(input: PreflightInput): Promise<void>;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
    * succeeds and BEFORE the stage's Project/Branch are removed. A target uses
@@ -99,14 +109,16 @@ export interface StateDescriptor {
   create(container: ContainerInstance | undefined): AlchemyStateLayer;
 }
 
-/** The resolved deploy context handed to an extension's `preflight` hook. */
-export interface PreflightInput {
+/** The resolved deploy context handed to an extension's `preflight` hook. `C` erases to `unknown` at the framework boundary — see ContainerCredentials. */
+export interface PreflightInput<C = unknown> {
   /** The loaded application graph — the manifest of prerequisites is read from it (`provisionManifest`). */
   readonly graph: Graph;
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
   /** The stage name (`--stage`), or `undefined` for the default stage — for diagnostics/scope. */
   readonly stage: string | undefined;
+  /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
+  readonly credentials?: ContainerCredentials<C> | undefined;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */
@@ -117,8 +129,8 @@ export interface TeardownInput {
   readonly stage: string | undefined;
 }
 
-/** The deploy context handed to `ReporterDescriptor.begin`. */
-export interface ReportBeginInput {
+/** The deploy context handed to `ReporterDescriptor.begin`. `C` erases to `unknown` at the framework boundary, exactly as on `PreflightInput`. */
+export interface ReportBeginInput<C = unknown> {
   /** The resolved application name. */
   readonly appName: string;
   /** The stage name (`--stage`), or `undefined` for the default stage. */
@@ -136,6 +148,8 @@ export interface ReportBeginInput {
    * environment, because it was passed deliberately.
    */
   readonly reportId: string | undefined;
+  /** What the caller has already authenticated, exactly as `preflight` and the container lifecycle receive it. Present means the reporter must not build a client from the environment. */
+  readonly credentials?: ContainerCredentials<C> | undefined;
 }
 
 /** The deploy context handed to `RunReporter.attach`, once containers exist. */
@@ -147,6 +161,8 @@ export interface ReportAttachInput {
 /** How a run ended, as a reporter sees it. */
 export interface RunOutcome {
   readonly ok: boolean;
+  /** The run was interrupted (the engine settled a Ctrl-C or a termination signal) — a kind of not-ok that is not a failure. Only meaningful when `ok` is false. */
+  readonly cancelled: boolean;
   /** The failing step's name — the deploy's own error code. `undefined` when the run succeeded. */
   readonly failingStep: string | undefined;
   /** Human-readable detail. `undefined` when the run succeeded. */
@@ -189,7 +205,13 @@ export interface RunReporter {
  * (its build phases name a deploy), so the CLI does not run this hook there.
  */
 export interface ReporterDescriptor {
-  /** Start a session, or return `undefined` when there is nothing to report against (no credentials, no repository). Never throws. */
+  /**
+   * Start a session, or return `undefined` when there is nothing to report
+   * against (no credentials, no repository). Never throws. METHOD SYNTAX
+   * REQUIRED, like `preflight`: the framework hands over the erased
+   * `ReportBeginInput<unknown>`, and a reporter that types the input against
+   * its own client type only assigns here through method bivariance.
+   */
   begin(input: ReportBeginInput): Promise<RunReporter | undefined>;
 }
 

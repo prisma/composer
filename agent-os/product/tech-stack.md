@@ -6,7 +6,7 @@ platform primitives it targets on the Prisma Platform.
 ## Framework & Runtime
 - **Language:** TypeScript
 - **Runtime (target):** Bun (Prisma Compute runs JS on Bun instances)
-- **Runtime (dev/tooling):** Node.js (Prisma Next stack uses Node `>=24`) + Bun where useful
+- **Runtime (dev/tooling):** Node.js `>=22.18` (the version that turns TypeScript type stripping on by default, which is how the CLI imports the user's `.ts` entry) + Bun where useful
 - **Distribution:** npm packages (Prisma Composer as a library + companion packages)
 - **Package Manager:** pnpm (match Prisma Next; pnpm workspaces)
 - **Monorepo tooling:** Turborepo (task runner + caching)

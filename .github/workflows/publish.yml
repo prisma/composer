@@ -88,6 +88,24 @@ jobs:
       - name: Check publish dependency specifiers
         run: pnpm check:publish-deps
 
+      # The remaining publish-blocking invariants, against the exact artifacts
+      # this run would upload (the build step above built everything):
+      # engine-once — the engine is an exact peer of the CLI package, external
+      # in its tarball, and absent from the library.
+      - name: Check the cli-engine pin and externality
+        run: pnpm check:cli-engine-pin
+
+      # Lazy executor boundary — nothing statically reachable from the family,
+      # bin, or testing entrypoints imports alchemy or effect.
+      - name: Check the family and testing static graphs
+        run: pnpm check:family-static-graph
+
+      # npm-tree survival — a real `npm install` of the packed tarballs
+      # resolves one pinned effect, and the CLI starts (and fails loudly in an
+      # adversarial tree).
+      - name: Check npm resolves a single pinned effect
+        run: pnpm check:npm-effect-resolution
+
       # Dry-run path: exercises the full pipeline (pack, dependency rewriting)
       # without touching the registry. Use from any branch via workflow_dispatch.
       - name: Publish packages (dry-run)

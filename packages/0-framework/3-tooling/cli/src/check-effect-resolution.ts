@@ -110,19 +110,34 @@ export function effectMismatchError(
   };
 }
 
-/** Runs the preflight from the app's directory; throws DEPS.EFFECT_VERSION_CONFLICT on a mismatched tree, no-op otherwise. */
-export function checkEffectResolution(cwd: string): void {
+/**
+ * Runs the preflight from the app's directory and RETURNS the
+ * DEPS.EFFECT_VERSION_CONFLICT error for a mismatched tree; undefined when the
+ * tree is healthy or alchemy is not installed.
+ *
+ * This is the form the config-load machinery uses. The check belongs on the
+ * config-load path rather than at import time because that is the first moment
+ * anything actually loads alchemy's provider tree — the break it explains —
+ * and because a check that runs at import time takes out commands that never
+ * touch alchemy at all, help among them.
+ */
+export function effectResolutionDiagnostic(cwd: string): CliStructuredError | undefined {
   const alchemyDir = findAlchemyPackageDir(cwd);
-  if (alchemyDir === undefined) return;
+  if (alchemyDir === undefined) return undefined;
   const parts = effectMismatchError(
     resolveEffectVersionFrom(alchemyDir),
     requiredEffectVersion(cwd),
   );
-  if (parts !== undefined) {
-    throw new CliStructuredError('DEPS.EFFECT_VERSION_CONFLICT', parts.summary, {
-      why: parts.why,
-      fix: parts.fix,
-      meta: parts.meta,
-    });
-  }
+  if (parts === undefined) return undefined;
+  return new CliStructuredError('DEPS.EFFECT_VERSION_CONFLICT', parts.summary, {
+    why: parts.why,
+    fix: parts.fix,
+    meta: parts.meta,
+  });
+}
+
+/** The throwing form, used by the executor-load diagnosis — the one caller left now that the bin runs no start-up preflight of its own. */
+export function checkEffectResolution(cwd: string): void {
+  const diagnostic = effectResolutionDiagnostic(cwd);
+  if (diagnostic !== undefined) throw diagnostic;
 }

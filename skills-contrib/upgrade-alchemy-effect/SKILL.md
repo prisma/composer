@@ -177,6 +177,39 @@ pnpm patch alchemy@<version>   # edit lib/Resource.d.ts, then patch-commit
 At the time of writing this is still required: on alchemy 2.0.0-beta.67,
 `lowering` alone reports 17 errors without the patch and none with it.
 
+## The @alchemy.run/node-utils patch
+
+`patches/@alchemy.run__node-utils@0.0.5.patch` is
+[alchemy-run/node-utils#6](https://github.com/alchemy-run/node-utils/pull/6)
+("fix(lockfile): scope exit hooks to owned locks"), vendored here until the
+release chain delivers it. **Delete it then** — see the exit condition below.
+
+Without it, `lib/lockfile.js` calls `exitHook(...)` at module scope, so merely
+importing `alchemy` registers a SIGINT, a SIGTERM, and an `exit` listener on
+the process. Composer's commands run inside the Prisma CLI engine, and the
+engine owns the whole signal policy: the first Ctrl-C aborts the command and
+waits for teardown, a second one force-exits. A stray SIGINT listener that
+calls `process.exit(130)` on its own pre-empts that, killing the process while
+the engine's cleanup is still running. The engine's family test suite asserts
+that after a composer command's config evaluation the engine is the sole
+SIGINT/SIGTERM listener, and that assertion is what fails if this patch is
+dropped.
+
+The fix registers the exit hook on the first lock acquisition and unregisters
+it when the last owned lock is released or compromised, so a bare import
+registers nothing. It is applied to **both** `lib/lockfile.js` and
+`src/lockfile.ts`: the package's `exports` map sends `bun` to `src/` and
+everything else to `lib/`, and this repo runs tests under both runtimes.
+
+Exit condition — on every alchemy bump, check whether the fix has arrived
+upstream (node-utils release → alchemy's pin bump → our bump). With the
+`pnpm.patchedDependencies` entry removed:
+
+```bash
+pnpm install
+node -e 'const c=()=>process.listenerCount("SIGINT")+process.listenerCount("SIGTERM");const b=c();import("alchemy").then(()=>console.log(c()-b===0?"FIXED UPSTREAM — delete the patch":"still needed"))'
+```
+
 ## Keeping the regression check honest
 
 `scripts/check-npm-effect-resolution.mjs` has three shapes: two healthy

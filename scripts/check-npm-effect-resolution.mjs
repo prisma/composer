@@ -27,9 +27,16 @@
 // still start — which is what proves the resolved `effect` genuinely satisfies
 // alchemy, since starting loads alchemy's provider tree.
 //
-// Requires the two public packages to be built (`pnpm turbo build
-// --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud`) and
-// network access to the npm registry.
+// The `prisma-composer` bin ships in @prisma/composer-cli, so every shape
+// that runs it installs the composer-cli tarball alongside the composer
+// tarball — npm resolves composer-cli's exact `@prisma/composer` dependency
+// against the co-installed tarball because the versions match, and the
+// `@prisma/cli-engine` peer is auto-installed by npm from the registry.
+//
+// Requires the public packages to be built (`pnpm turbo build
+// --filter=@prisma/composer --filter=@prisma/composer-cli
+// --filter=@prisma/composer-prisma-cloud`) and network access to the npm
+// registry.
 //
 // Usage: node scripts/check-npm-effect-resolution.mjs
 
@@ -50,6 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
+const composerCliDir = join(repoRoot, 'packages/9-public/composer-cli');
 const prismaCloudDir = join(repoRoot, 'packages/9-public/composer-prisma-cloud');
 
 /** Scratch dir holding the packed tarballs and the shape installs. */
@@ -157,25 +165,53 @@ function effectSeenByAlchemy(label, appDir) {
 }
 
 /** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
-function runCli(label, appDir, args) {
+/**
+ * A service token that parses and is nowhere near expiry. The engine refuses a
+ * credentialed command before the handler runs, so a check that wants to reach
+ * the handler has to be signed in — this token never leaves the temp app and
+ * authenticates nothing: the run fails on the dependency tree long before any
+ * request.
+ */
+function fakeServiceToken() {
+  const claim = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  return `${claim({ alg: 'none', typ: 'JWT' })}.${claim({
+    sub: 'user_1',
+    workspace_id: 'ws_1',
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.`;
+}
+
+function runCli(label, appDir, args, env = {}) {
   const bin = join(appDir, 'node_modules', '.bin', 'prisma-composer');
   if (!existsSync(bin)) fail(`[${label}] the prisma-composer bin is not installed`);
-  const result = spawnSync(bin, args, { cwd: appDir, encoding: 'utf-8' });
+  const result = spawnSync(bin, args, {
+    cwd: appDir,
+    encoding: 'utf-8',
+    env: { ...process.env, ...env },
+  });
   if (result.error) fail(`[${label}] failed to spawn the prisma-composer bin: ${result.error}`);
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /**
  * Asserts the bundled bin starts and reaches its own usage output. The proof is
- * the usage banner, not the exit code: a bare `--help` exits 1 on main too,
- * because clipanion reports it as a missing command.
+ * that help lists the commands the family mounts: the engine renders help, so
+ * naming every command is what says the family was mounted rather than that
+ * some banner was printed.
  */
 function assertCliStarts(label, appDir) {
   const help = runCli(label, appDir, ['--help']);
-  if (!help.output.includes('prisma-composer <command>')) {
+  // Matched as the engine renders each usage line — `prisma-composer <name>` —
+  // not as a bare word: "dev" and "log" appear inside "development",
+  // "--log-level" and the prose around them, so a bare search would call the
+  // family mounted on the strength of unrelated text.
+  const missing = ['deploy', 'destroy', 'dev', 'log'].filter(
+    (command) => !help.output.includes(`prisma-composer ${command}`),
+  );
+  if (missing.length > 0) {
     fail(
-      `[${label}] \`prisma-composer --help\` did not reach its usage output in a healthy tree ` +
-        `(exit ${help.status}):\n${help.output}`,
+      `[${label}] \`prisma-composer --help\` did not list ${missing.join(', ')} in a healthy ` +
+        `tree, so the command family was not mounted (exit ${help.status}):\n${help.output}`,
     );
   }
   if (/is not a function|Cannot find module/.test(help.output)) {
@@ -227,7 +263,13 @@ async function checkShape(label, tarballs) {
   // The start-up check must NOT trip on this healthy tree — the deploy should
   // get past it and fail on the app itself (no entry/config here), never on a
   // broken module graph.
-  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
+  // Signed in, because `deploy` declares a credentials need and the engine
+  // refuses before the handler otherwise — which would prove nothing about the
+  // dependency tree.
+  const cli = runCli(label, appDir, ['deploy', 'app.ts'], {
+    PRISMA_SERVICE_TOKEN: fakeServiceToken(),
+    PRISMA_WORKSPACE_ID: 'ws_1',
+  });
   if (cli.output.includes(CLI_CHECK_MARKER)) {
     fail(`[${label}] the CLI's effect check misfired on a healthy tree:\n${cli.output}`);
   }
@@ -275,7 +317,13 @@ async function checkAdversarialShape(tarballs) {
     );
   }
 
-  const cli = runCli(label, appDir, ['deploy', 'app.ts']);
+  // Signed in, because `deploy` declares a credentials need and the engine
+  // refuses before the handler otherwise — which would prove nothing about the
+  // dependency tree.
+  const cli = runCli(label, appDir, ['deploy', 'app.ts'], {
+    PRISMA_SERVICE_TOKEN: fakeServiceToken(),
+    PRISMA_WORKSPACE_ID: 'ws_1',
+  });
   if (cli.status === 0) {
     fail(`[${label}] the CLI exited 0 in a tree where alchemy resolves effect@${resolvedVersion}`);
   }
@@ -289,22 +337,22 @@ async function checkAdversarialShape(tarballs) {
     fail(`[${label}] the CLI crashed with a TypeError instead of the effect check:\n${cli.output}`);
   }
 
-  // Every command loads the graph that crashes, so every command must hit the
-  // check first — `--help` included, or the user meets the raw TypeError there.
+  // `--help` must SURVIVE a tree this broken. The command family's static graph
+  // is alchemy-free and effect-free (scripts/check-family-static-graph.mjs
+  // proves it against built output), so help, version and grammar errors never
+  // load the modules that cannot load. Before that was true, every command met
+  // the raw TypeError and this asserted the opposite.
   const help = runCli(label, appDir, ['--help']);
-  if (
-    help.status === 0 ||
-    !help.output.includes(CLI_CHECK_MARKER) ||
-    /is not a function/.test(help.output)
-  ) {
+  if (help.status !== 0 || /is not a function/.test(help.output)) {
     fail(
-      `[${label}] \`prisma-composer --help\` did not fail with the effect check in a broken tree ` +
-        `(exit ${help.status}):\n${help.output}`,
+      `[${label}] \`prisma-composer --help\` did not survive a broken tree (exit ` +
+        `${help.status}); the family's static graph must not reach alchemy:\n${help.output}`,
     );
   }
 
   process.stderr.write(
-    `[${label}] OK — broken tree caught at start-up with the actionable error, deploy and --help alike\n`,
+    `[${label}] OK — the broken tree is caught with the actionable error when a command ` +
+      'actually loads the executor, and --help still works\n',
   );
 }
 
@@ -313,11 +361,12 @@ try {
   const tarballDir = join(work, 'tarballs');
   mkdirSync(tarballDir, { recursive: true });
   const composerTgz = packInto(composerDir, tarballDir);
+  const composerCliTgz = packInto(composerCliDir, tarballDir);
   const prismaCloudTgz = packInto(prismaCloudDir, tarballDir);
 
-  await checkShape('composer-only', [composerTgz]);
-  await checkShape('composer-and-prisma-cloud', [composerTgz, prismaCloudTgz]);
-  await checkAdversarialShape([composerTgz, prismaCloudTgz]);
+  await checkShape('composer-and-cli', [composerTgz, composerCliTgz]);
+  await checkShape('composer-cli-and-prisma-cloud', [composerTgz, composerCliTgz, prismaCloudTgz]);
+  await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
 
   process.stderr.write(
     `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +

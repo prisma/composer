@@ -28,7 +28,7 @@ describe('the ./control entry', () => {
           '    build.onLoad(\n' +
           '      {\n' +
           '        filter:\n' +
-          '          /(execute-deploy-destroy|execute-dev|execute-log|pipeline|run-alchemy|generate-stack|generate-dev-stack|watch|run-dev|run-log|main)\\.ts$/,\n' +
+          '          /(execute-deploy-destroy|execute-dev|execute-log|pipeline|run-alchemy|generate-stack|generate-dev-stack|watch|run-dev|run-log)\\.ts$/,\n' +
           '      },\n' +
           '      (args) => {\n' +
           "        throw new Error(`heavy module in the control entry's static graph: ${args.path}`);\n" +

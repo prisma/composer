@@ -8,7 +8,12 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ContainerInstance, ReporterDescriptor, RunReporter } from '@internal/core/config';
+import type {
+  ContainerCredentials,
+  ContainerInstance,
+  ReporterDescriptor,
+  RunReporter,
+} from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
@@ -19,10 +24,9 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { runAlchemy } from '../run-alchemy.ts';
+import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
 import {
   RUN_REPORT_FILE_ENV,
-  type RunReportFailure,
   resolveRunReportPath,
   toRunReport,
   writeRunReport,
@@ -73,7 +77,9 @@ export async function executeDeploy(
       toRunReport({
         summary: outcome.ok ? outcome.value : undefined,
         stage: input.stage,
-        failure: outcome.ok ? undefined : failureOf(outcome.failure),
+        failure: outcome.ok
+          ? undefined
+          : { code: outcome.failure.code, message: outcome.failure.message },
       }),
     );
   }
@@ -82,8 +88,22 @@ export async function executeDeploy(
   return ok({ summary: outcome.value });
 }
 
-function failureOf(error: CliStructuredError): RunReportFailure {
-  return { code: error.code, message: error.message };
+export async function executeDestroy(
+  input: DestroyInput,
+  deps: OperationDeps,
+  cwd: string,
+): Promise<Result<void, CliStructuredError>> {
+  const outcome = await runStackPipeline('destroy', {
+    entry: input.entry,
+    name: input.name,
+    stage: input.target.kind === 'stage' ? input.target.stage : undefined,
+    cwd,
+    onEvent: input.onEvent,
+    deps,
+    reportId: undefined,
+  });
+  if (!outcome.ok) return outcome;
+  return okVoid();
 }
 
 /** A live reporting session, kept beside the extension that owns it so `attach` can hand back that extension's own container. */
@@ -105,6 +125,7 @@ async function beginReporters(
     readonly stage: string | undefined;
     readonly cwd: string;
     readonly reportId: string | undefined;
+    readonly credentials: ContainerCredentials | undefined;
   },
 ): Promise<readonly ExtensionReporter[]> {
   const opened = await Promise.all(
@@ -161,6 +182,11 @@ function truncate(value: string, limit: number): string {
   return value.length <= limit ? value : `${value.slice(0, limit - 1)}…`;
 }
 
+/** An interrupted converge (the engine settled a Ctrl-C) — reported as `cancelled`, never as `failed`. */
+function wasInterrupted(failure: CliStructuredError): boolean {
+  return typeof failure.meta?.['signal'] === 'string';
+}
+
 /**
  * Ends every reporting session, whatever the run did. Sessions never reject
  * by contract, but a buggy one must not turn a converged deploy into a
@@ -171,6 +197,7 @@ async function finishReporters(
   reporters: readonly ExtensionReporter[],
   outcome: {
     readonly ok: boolean;
+    readonly cancelled: boolean;
     readonly code?: string;
     readonly message?: string;
     readonly summary?: DeploymentSummary | undefined;
@@ -184,6 +211,7 @@ async function finishReporters(
       try {
         await reporter.finish({
           ok: outcome.ok,
+          cancelled: outcome.cancelled,
           failingStep: outcome.code === undefined ? undefined : truncate(outcome.code, 500),
           errorMessage: outcome.message === undefined ? undefined : truncate(outcome.message, 5000),
           entities,
@@ -194,24 +222,6 @@ async function finishReporters(
       }
     }),
   );
-}
-
-export async function executeDestroy(
-  input: DestroyInput,
-  deps: OperationDeps,
-  cwd: string,
-): Promise<Result<void, CliStructuredError>> {
-  const outcome = await runStackPipeline('destroy', {
-    entry: input.entry,
-    name: input.name,
-    stage: input.target.kind === 'stage' ? input.target.stage : undefined,
-    cwd,
-    onEvent: input.onEvent,
-    deps,
-    reportId: undefined,
-  });
-  if (!outcome.ok) return outcome;
-  return okVoid();
 }
 
 /**
@@ -233,6 +243,7 @@ async function runStackPipeline(
     // only chance to record that it ended at all.
     await finishReporters(reporters, {
       ok: false,
+      cancelled: false,
       code: 'DEPLOY.UNEXPECTED',
       message: error instanceof Error ? error.message : String(error),
     });
@@ -241,8 +252,13 @@ async function runStackPipeline(
   await finishReporters(
     reporters,
     outcome.ok
-      ? { ok: true, summary: outcome.value }
-      : { ok: false, code: outcome.failure.code, message: outcome.failure.message },
+      ? { ok: true, cancelled: false, summary: outcome.value }
+      : {
+          ok: false,
+          cancelled: wasInterrupted(outcome.failure),
+          code: outcome.failure.code,
+          message: outcome.failure.message,
+        },
   );
   return outcome;
 }
@@ -283,7 +299,11 @@ async function runStackPipelineInner(
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
     // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler, config: deps.config };
+    const pipelineDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      config: deps.config,
+      configPath: deps.configPath,
+    };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
@@ -301,8 +321,7 @@ async function runStackPipelineInner(
     // Open reporting BEFORE containers are resolved: creating them is the
     // step that can leave a project behind with nothing recording why
     // (composer#103), so a session that started afterwards would miss the
-    // one failure it most needs to describe. Nothing earlier than this is
-    // reportable — the extensions come from the config this line just loaded.
+    // one failure it most needs to describe.
     if (action === 'deploy') {
       reporters.push(
         ...(await beginReporters(config.extensions, {
@@ -310,6 +329,7 @@ async function runStackPipelineInner(
           stage,
           cwd,
           reportId: opts.reportId,
+          credentials: deps.credentials,
         })),
       );
     }
@@ -325,10 +345,13 @@ async function runStackPipelineInner(
         if (action === 'deploy') {
           containers.set(
             extension.id,
-            await extension.container.ensure({ appName: resolvedName, stage }),
+            await extension.container.ensure({ appName: resolvedName, stage }, deps.credentials),
           );
         } else {
-          const instance = await extension.container.locate({ appName: resolvedName, stage });
+          const instance = await extension.container.locate(
+            { appName: resolvedName, stage },
+            deps.credentials,
+          );
           if (instance === undefined) {
             throw new CliStructuredError(
               'DEPLOY.TARGET_NOT_FOUND',
@@ -379,7 +402,12 @@ async function runStackPipelineInner(
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
         try {
-          await extension.preflight({ graph, container: containers.get(extension.id), stage });
+          await extension.preflight({
+            graph,
+            container: containers.get(extension.id),
+            stage,
+            credentials: deps.credentials,
+          });
         } catch (error) {
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
@@ -425,21 +453,22 @@ async function runStackPipelineInner(
 
     const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
 
-    // Shell out to alchemy against the generated file.
-    let status: number;
+    // Hand the terminal to alchemy against the generated file.
+    let outcome: AlchemyOutcome;
     try {
-      status = (deps.alchemy ?? runAlchemy)({
-        command: action,
-        stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-        cwd,
-        stage: alchemyStage,
-        containerEnv: containerEnv(containers),
-        env: {
-          ...process.env,
-          ...reporterChildEnv(reporters),
-          [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
-        },
-      });
+      outcome = await (deps.alchemy ?? spawnAlchemy)(
+        alchemyInvocation({
+          command: action,
+          stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+          cwd,
+          stage: alchemyStage,
+          containerEnv: containerEnv(containers),
+          env: {
+            ...reporterChildEnv(reporters),
+            [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
+          },
+        }),
+      );
     } catch (error) {
       if (CliStructuredError.is(error)) return notOk(error);
       return notOk(
@@ -455,6 +484,37 @@ async function runStackPipelineInner(
         ),
       );
     }
+
+    // A signal-killed converge is the user interrupting, not a deploy that
+    // went wrong: it is still reported as a failure VALUE (the operation
+    // promised a Result), but it carries the signal instead of an exit code
+    // so a caller can tell the two apart. The CLI's handler never reaches
+    // this branch — it holds the child result itself and settles the abort
+    // before reading the failure.
+    if (outcome.signal !== null) {
+      return notOk(
+        new CliStructuredError(
+          'DEPLOY.ENGINE_FAILED',
+          `alchemy ${action} was interrupted by ${outcome.signal}.`,
+          {
+            meta: {
+              signal: outcome.signal,
+              diagnostics: {
+                exitCode: undefined,
+                signal: outcome.signal,
+                stackFilePath: stackPath,
+                reproduceCommand,
+                cwd,
+              },
+            },
+          },
+        ),
+      );
+    }
+
+    // An adapter that can say neither how the child exited nor what killed it
+    // is never treated as success.
+    const status = outcome.exitCode ?? 1;
     if (status !== 0) {
       return notOk(
         new CliStructuredError(
@@ -495,7 +555,7 @@ async function runStackPipelineInner(
           const instance = containers.get(extension.id);
           if (instance === undefined) continue;
           try {
-            await extension.container.remove(instance);
+            await extension.container.remove(instance, deps.credentials);
           } catch (error) {
             throw toStructured('DEPLOY.CONTAINER_REMOVE_FAILED', error);
           }

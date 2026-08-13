@@ -2,10 +2,7 @@
   "name": "@prisma/composer",
   "version": "0.6.0",
   "type": "module",
-  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, the prisma-composer CLI, and the service-rpc/node/nextjs authoring surfaces.",
-  "bin": {
-    "prisma-composer": "./dist/bin.mjs"
-  },
+  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/nextjs authoring surfaces. The `prisma-composer` CLI lives in @prisma/composer-cli.",
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
@@ -34,17 +31,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/vitest": "4.0.0-beta.103",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
     "c12": "^3.3.4",
-    "clipanion": "^3.2.1",
     "effect": "4.0.0-beta.103",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.60.0"
   },
   "devDependencies": {
+    "@effect/vitest": "4.0.0-beta.103",
     "@internal/assemble": "workspace:0.6.0",
     "@internal/cli": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
@@ -65,7 +61,7 @@
     "directory": "packages/9-public/composer"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "publishConfig": {
     "access": "public"
