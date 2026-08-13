@@ -119,7 +119,20 @@ export interface ResourceReporter {
   drain(): Promise<void>;
 }
 
-export function resourceReporter(api: BuildsApi, buildId: string): ResourceReporter {
+/**
+ * The most a drain will wait, total. Every real report already carries the
+ * api layer's per-request deadline, so this never fires for the shipped
+ * `BuildsApi`; it is the backstop that keeps the state layer's finalizer —
+ * and therefore the deploy lease release — bounded against any implementation.
+ */
+const DRAIN_DEADLINE_MS = 15_000;
+
+export function resourceReporter(
+  api: BuildsApi,
+  buildId: string,
+  warn: (message: string) => void = (message) => console.warn(message),
+  drainDeadlineMs: number = DRAIN_DEADLINE_MS,
+): ResourceReporter {
   const inFlight = new Set<Promise<unknown>>();
   // A resource is written more than once per run (creating, then created).
   // The API's upsert makes a repeat harmless, but there is no reason to
@@ -142,10 +155,27 @@ export function resourceReporter(api: BuildsApi, buildId: string): ResourceRepor
     },
 
     async drain() {
+      const deadline = Date.now() + drainDeadlineMs;
       // Reports started while draining join the same wait — a state write can
       // land between the snapshot and the await.
       while (inFlight.size > 0) {
-        await Promise.allSettled([...inFlight]);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          warn(
+            `Abandoned ${inFlight.size} in-flight resource report(s) after ${drainDeadlineMs}ms.`,
+          );
+          return;
+        }
+        await Promise.race([
+          Promise.allSettled([...inFlight]),
+          new Promise((resolve) => setTimeout(resolve, remaining).unref?.()),
+        ]);
+        if (Date.now() >= deadline && inFlight.size > 0) {
+          warn(
+            `Abandoned ${inFlight.size} in-flight resource report(s) after ${drainDeadlineMs}ms.`,
+          );
+          return;
+        }
       }
     },
   };

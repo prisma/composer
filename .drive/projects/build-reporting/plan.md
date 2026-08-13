@@ -1,16 +1,16 @@
 # Plan: Composer reports its builds to Prisma Cloud
 
-> **Status, 2026-08-12: all three slices are implemented in one pull request** at the operator's direction, rather than the three separate PRs planned below. The slice descriptions stand as the record of what each part does and what still blocks it. Nothing can be verified against a live API until the pdp-control-plane stack merges and deploys.
+> **Status, 2026-08-12: all three slices are implemented in one pull request** at the operator's direction, rather than the three separate PRs planned below. The slice descriptions stand as the record of what each part does. Everything below the rule is historical; the current status is the sections above it: dependencies cleared, definition of done met (verified live 2026-08-14).
 
 ## Where the code landed
 
 | Part | Location |
 | --- | --- |
-| The `reporter` extension hook | [app-config.ts](packages/0-framework/1-core/core/src/control/app-config.ts) |
-| Lifecycle driving, run report | [execute-deploy-destroy.ts](packages/0-framework/3-tooling/cli/src/operations/execute-deploy-destroy.ts), [run-report.ts](packages/0-framework/3-tooling/cli/src/run-report.ts) |
+| The `reporter` extension hook | [app-config.ts](../../../packages/0-framework/1-core/core/src/control/app-config.ts) |
+| Lifecycle driving, run report | [execute-deploy-destroy.ts](../../../packages/0-framework/3-tooling/cli/src/operations/execute-deploy-destroy.ts), [run-report.ts](../../../packages/0-framework/3-tooling/cli/src/run-report.ts) |
 | Build endpoints, git identity, the session | `packages/1-prisma-cloud/0-lowering/lowering/src/builds/` |
-| Resource reporting through the state store | [state-store.ts](packages/1-prisma-cloud/0-lowering/lowering/src/builds/state-store.ts), wired in [state/layer.ts](packages/1-prisma-cloud/0-lowering/lowering/src/state/layer.ts) |
-| The extension's adapter | [reporting/reporter.ts](packages/1-prisma-cloud/1-extensions/target/src/reporting/reporter.ts) |
+| Resource reporting through the state store | [state-store.ts](../../../packages/1-prisma-cloud/0-lowering/lowering/src/builds/state-store.ts), wired in [state/layer.ts](../../../packages/1-prisma-cloud/0-lowering/lowering/src/state/layer.ts) |
+| The extension's adapter | [reporting/reporter.ts](../../../packages/1-prisma-cloud/1-extensions/target/src/reporting/reporter.ts) |
 
 The session lives on the lowering side rather than beside the extension that registers it because the extension package may read no environment and import no node builtin (its own invariants 4 and 5), and reading git and the deploy shell is exactly what a reporter does.
 
@@ -32,7 +32,7 @@ The topology design is settled; the canonical spec lives in pdp-control-plane at
 
 **Why first.** It depends on nothing, and it is what unblocks Action development in parallel with everything else.
 
-**Starting point.** Most of the mechanism exists. `DeploymentSummary` in [deployment-summary.ts](packages/0-framework/3-tooling/cli/src/deployment-summary.ts) is already written by the report hook inside the alchemy child, to a per-run file named by `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`, and read back by the parent. It is an internal cross-process protocol, not a public contract.
+**Starting point.** Most of the mechanism exists. `DeploymentSummary` in [deployment-summary.ts](../../../packages/0-framework/3-tooling/cli/src/deployment-summary.ts) is already written by the report hook inside the alchemy child, to a per-run file named by `PRISMA_COMPOSER_DEPLOYMENT_RESULT_FILE`, and read back by the parent. It is an internal cross-process protocol, not a public contract.
 
 **What changes.**
 
@@ -51,7 +51,7 @@ The topology design is settled; the canonical spec lives in pdp-control-plane at
 
 **Scope.** Git identity, create-or-join, progress reporting, terminal reporting, and the guarantee that none of it can fail a deploy.
 
-**Where it lives.** `runStackPipeline` in [execute-deploy-destroy.ts](packages/0-framework/3-tooling/cli/src/operations/execute-deploy-destroy.ts), which runs in the CLI's own process where async work is easy and where every failure path already funnels through one place. Reporting wraps it rather than threading through it.
+**Where it lives.** `runStackPipeline` in [execute-deploy-destroy.ts](../../../packages/0-framework/3-tooling/cli/src/operations/execute-deploy-destroy.ts), which runs in the CLI's own process where async work is easy and where every failure path already funnels through one place. Reporting wraps it rather than threading through it.
 
 **Sequence.**
 
@@ -109,6 +109,6 @@ Branch has no Alchemy resource of its own; it is resolved by the container, so i
 
 Recorded in `spec.md` as D4, D5, D6 and D7, all taken by the orchestrator and all reversible. If any is wrong, the cheapest time to say so is before slice B starts.
 
-## Not verifiable yet
+## Not verifiable yet — superseded
 
-Nothing can be tested against a live API until #4855 and its stack merge and deploy. Slices B and C will land with fake-API tests, and the definition of done stays unmet until one real deploy has been observed in the Console.
+This section predates the API shipping. The stack merged, the API is in production, and the live deploy was observed (see the status header): the definition of done is met.

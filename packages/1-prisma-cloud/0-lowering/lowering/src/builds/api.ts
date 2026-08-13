@@ -69,6 +69,13 @@ export interface BuildsApiOptions {
   readonly warn: (message: string) => void;
 }
 
+/**
+ * Reporting is observability, so no call may stall the deploy: every request
+ * carries this deadline, and an expired one is warned and dropped like any
+ * other failure.
+ */
+const REPORT_DEADLINE_MS = 10_000;
+
 /** What openapi-fetch hands back from every call. */
 interface ClientResult {
   readonly data?: unknown;
@@ -108,7 +115,10 @@ export function buildsApi(options: BuildsApiOptions): BuildsApi {
 
   return {
     async create(body) {
-      const created = await send(() => client.POST('/v1/builds', { body }), 'record this deploy');
+      const created = await send(
+        () => client.POST('/v1/builds', { body, signal: AbortSignal.timeout(REPORT_DEADLINE_MS) }),
+        'record this deploy',
+      );
       if (created === undefined) return undefined;
       // Typed by the generated client, so this reads the id rather than
       // hunting for it — but a 2xx with no body is still possible on the wire.
@@ -122,7 +132,12 @@ export function buildsApi(options: BuildsApiOptions): BuildsApi {
 
     async update(id, body) {
       const payload = await send(
-        () => client.PATCH('/v1/builds/{buildId}', { params: { path: { buildId: id } }, body }),
+        () =>
+          client.PATCH('/v1/builds/{buildId}', {
+            params: { path: { buildId: id } },
+            body,
+            signal: AbortSignal.timeout(REPORT_DEADLINE_MS),
+          }),
         "update this deploy's build",
       );
       return payload !== undefined;
@@ -134,6 +149,7 @@ export function buildsApi(options: BuildsApiOptions): BuildsApi {
           client.PUT('/v1/builds/{buildId}/resources/{resourceType}/{resourceId}', {
             params: { path: { buildId: id, resourceType, resourceId } },
             body: { action },
+            signal: AbortSignal.timeout(REPORT_DEADLINE_MS),
           }),
         `record the ${resourceType} this deploy ${action === 'acted_on' ? 'acted on' : action}`,
       );

@@ -62,7 +62,22 @@ export function buildReporter(options: BuildReporterOptions): ReporterDescriptor
   return {
     // Typed against this platform's client; assigns into the erased
     // `begin(ReportBeginInput<unknown>)` through method bivariance.
-    begin: (input: ReportBeginInput<ManagementApiClient>) => beginSession(input, options),
+    //
+    // `begin` is documented never to throw, and this catch is what makes the
+    // claim true of THIS reporter rather than a favour the CLI does it: an
+    // injected api that rejects, or any other defect here, costs the session
+    // and one warning, never the deploy.
+    begin: async (input: ReportBeginInput<ManagementApiClient>) => {
+      try {
+        return await beginSession(input, options);
+      } catch (error) {
+        const warn = options.warn ?? ((message: string) => console.warn(message));
+        warn(
+          `Could not start build reporting: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return undefined;
+      }
+    },
   };
 }
 
@@ -143,7 +158,7 @@ async function beginSession(
   // Whoever did build reports that phase itself.
   await api.update(buildId, { phase: 'deploy', state: 'running' });
 
-  return session(api, buildId, options.refsOf);
+  return session(api, buildId, options.refsOf, warn);
 }
 
 /**
@@ -175,6 +190,7 @@ function session(
   api: BuildsApi,
   buildId: string,
   refsOf: (container: ContainerInstance) => BuildContainerRefs,
+  warn: (message: string) => void,
 ): RunReporter {
   let finished = false;
 
@@ -202,16 +218,23 @@ function session(
       // `cancelled` is the user interrupting, not a deploy that went wrong —
       // and a SIGKILLed run reports nothing at all, leaving the build
       // permanently `running` (nothing sweeps builds, by platform design).
-      await api.update(buildId, {
-        state: outcome.ok ? 'succeeded' : outcome.cancelled ? 'cancelled' : 'failed',
-        ...(outcome.failingStep !== undefined && !outcome.cancelled
-          ? { failingStep: outcome.failingStep }
-          : {}),
-        ...(outcome.errorMessage !== undefined && !outcome.cancelled
-          ? { errorMessage: outcome.errorMessage }
-          : {}),
-        ...deployedApp(outcome.entities),
-      });
+      try {
+        await api.update(buildId, {
+          state: outcome.ok ? 'succeeded' : outcome.cancelled ? 'cancelled' : 'failed',
+          ...(outcome.failingStep !== undefined && !outcome.cancelled
+            ? { failingStep: outcome.failingStep }
+            : {}),
+          ...(outcome.errorMessage !== undefined && !outcome.cancelled
+            ? { errorMessage: outcome.errorMessage }
+            : {}),
+          ...deployedApp(outcome.entities),
+        });
+      } catch (error) {
+        // Same contract as begin: finish never rejects, whatever the api does.
+        warn(
+          `Could not report this deploy's outcome: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     },
   };
 }

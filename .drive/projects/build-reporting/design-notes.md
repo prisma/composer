@@ -90,4 +90,4 @@ Walked through with Will. The brief covers the first and third; the rest were fo
 ## Follow-ups worth their own tickets
 
 - A failed apply reports `DEPLOY.ENGINE_FAILED` and nothing else. Structuring the child's failure so the real cause survives to the parent would make `failingStep` and `errorMessage` genuinely useful.
-- `deployedUrl` is on the build response but not settable via PATCH, so a Composer-reported build shows no deploy URL in the Console. Raised as a secondary ask on #4855; not a blocker, since preview URLs reach the Action through the JSON report.
+- ~~`deployedUrl` is on the build response but not settable via PATCH~~ — superseded: the fill-only amendment (recorded above) shipped `deployedUrl`, and the reporter sets it for single-service apps.

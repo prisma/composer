@@ -22,8 +22,9 @@ export function withResourceReporting(
   inner: StateService,
   api: BuildsApi,
   buildId: string,
+  warn?: (message: string) => void,
 ): ReportingStateStore {
-  const reporter = resourceReporter(api, buildId);
+  const reporter = resourceReporter(api, buildId, warn);
 
   const store: StateService = {
     ...inner,

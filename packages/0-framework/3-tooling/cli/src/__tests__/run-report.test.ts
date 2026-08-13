@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { DeploymentSummary } from '../deployment-summary.ts';
 import {
   RUN_REPORT_VERSION,
   resolveRunReportPath,
@@ -17,7 +18,7 @@ const summary = {
       entities: [{ kind: 'compute-service', id: 'app_1', url: 'https://web.example' }],
     },
   ],
-};
+} satisfies DeploymentSummary;
 
 const tempDirs: string[] = [];
 

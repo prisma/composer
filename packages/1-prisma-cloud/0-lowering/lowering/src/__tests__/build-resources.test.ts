@@ -158,4 +158,19 @@ describe('resourceReporter', () => {
     reporter.observe(state({}));
     await reporter.drain();
   });
+
+  test('a report that never settles is abandoned at the deadline instead of hanging the drain', async () => {
+    const never: BuildsApi = {
+      create: async () => undefined,
+      update: async () => true,
+      reportResource: () => new Promise<boolean>(() => {}),
+    };
+    const warnings: string[] = [];
+    const reporter = resourceReporter(never, 'bld_1', (m) => warnings.push(m), 50);
+
+    reporter.observe(state({}));
+    await reporter.drain();
+
+    expect(warnings.join('\n')).toContain('Abandoned 1 in-flight resource report');
+  });
 });

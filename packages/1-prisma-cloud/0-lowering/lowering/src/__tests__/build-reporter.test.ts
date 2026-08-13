@@ -331,4 +331,36 @@ describe('buildReporter', () => {
     expect(await begin(api)).toBeUndefined();
     expect(recorded.updates).toEqual([]);
   });
+
+  test('a platform that rejects the create ends the session without throwing', async () => {
+    const warnings: string[] = [];
+    const api: BuildsApi = {
+      create: () => Promise.reject(new Error('the platform is unavailable')),
+      update: async () => true,
+      reportResource: async () => true,
+    };
+
+    expect(await begin(api, ENV, (m) => warnings.push(m))).toBeUndefined();
+    expect(warnings.join('\n')).toContain('the platform is unavailable');
+  });
+
+  test('a rejected terminal update does not reject finish', async () => {
+    const warnings: string[] = [];
+    const api: BuildsApi = {
+      create: async () => 'bld_new',
+      update: () => Promise.reject(new Error('the platform is unavailable')),
+      reportResource: async () => true,
+    };
+
+    const session = await begin(api, ENV, (m) => warnings.push(m));
+    // begin PATCHes running and already tolerates the rejection; finish must too.
+    await session?.finish({
+      ok: true,
+      cancelled: false,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+    expect(warnings.length).toBeGreaterThan(0);
+  });
 });
