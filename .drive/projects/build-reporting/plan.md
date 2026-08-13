@@ -20,6 +20,10 @@ The pdp-control-plane stack merged and the API is in production. `@prisma/manage
 
 Nothing is blocked. What remains before the definition of done is met is one real deploy observed in the Console.
 
+## Follow-up design, 2026-08-13
+
+The topology-persistence design is settled and recorded in [topology-design.md](topology-design.md): the platform holds the branch's full graph (nodes, ports, edges — module structure included) as first-class records, submitted pre-apply, keyed by config address with no platform ids in the payload. Will implements the platform side. Composer's follow-up slices: keep the authored graph form in core's `Graph`, add the pre-apply topology submission, retire `--report` once the Action reads the platform.
+
 ---
 
 ## Slice A — the JSON report the Action reads
