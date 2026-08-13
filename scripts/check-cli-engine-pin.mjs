@@ -45,9 +45,11 @@
 //   import the engine (a surviving specifier would be an undeclared
 //   dependency) and nothing may inline it either (a second copy is exactly
 //   what the peer model exists to prevent). The manifest half of that is
-//   checked on the packed tarball; the inlining half is what the split
-//   guarantees structurally — the library has no source path to the engine —
-//   and the import scan would catch a declared-and-external regression.
+//   checked on the packed tarball. The import scan below can only see a
+//   SURVIVING specifier, so the library's tsdown config keeps the engine in
+//   `external`: an accidental engine import then stays visible as a bare
+//   specifier and fails here, instead of being inlined into a silent private
+//   copy the scan cannot detect.
 //
 // Requires both public packages to be built (`pnpm turbo run build
 // --filter=@prisma/composer --filter=@prisma/composer-cli`).

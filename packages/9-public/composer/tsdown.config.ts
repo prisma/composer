@@ -35,6 +35,16 @@ export default defineConfig({
   // checks __filename/__dirname against its own package layout and throws
   // "The esbuild JavaScript API cannot be bundled" otherwise) — it must stay
   // a real import, not inlined like the rest of node_modules.
-  external: ['esbuild'],
+  // `@prisma/cli-engine` is external even though this library declares no
+  // engine relationship: the workspace has the engine installed (for
+  // @prisma/composer-cli), so without this entry an accidental engine import
+  // in a library entry would be INLINED — a private engine copy shipping
+  // silently inside the library tarball, with no surviving specifier for
+  // check-cli-engine-pin.mjs's engine-free scan to catch. External, the
+  // accidental import survives as a bare specifier and that scan fails
+  // loudly. A pattern, not the string: a string external matches only the
+  // exact specifier, and a subpath import like `@prisma/cli-engine/protocol`
+  // would still be inlined (verified).
+  external: ['esbuild', /^@prisma\/cli-engine(\/|$)/],
   noExternal: [/^@internal\//],
 });

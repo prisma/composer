@@ -32,9 +32,10 @@
 // what a consumer actually loads.
 //
 // The walk stops at bare specifiers, so `@prisma/composer/...` imports are
-// not followed — which is fine: the FORBIDDEN list applies to the specifiers
-// themselves, and `@prisma/composer` is an allowed one (its own graphs are
-// covered by check-floor-imports.mjs and the library's tests).
+// not followed. That is safe only because they are BANNED from these static
+// graphs outright (see LIBRARY below): the library is reached solely inside
+// the executor chunks behind their `await import()`, and its own graphs are
+// covered by check-floor-imports.mjs and the library's tests.
 //
 // Requires @prisma/composer-cli to be built (`pnpm turbo run build
 // --filter=@prisma/composer-cli`).
@@ -49,6 +50,19 @@ import { fileURLToPath } from 'node:url';
 
 /** Bare specifiers that must never appear in either graph, matched on the package name. */
 const FORBIDDEN = [/^alchemy(\/|$)/, /^effect(\/|$)/, /^@effect\//];
+
+/**
+ * The library, statically imported from a start-up graph. The walk cannot
+ * follow a bare specifier into another package, so a static
+ * `@prisma/composer/...` import would smuggle whatever that entry loads —
+ * including alchemy and effect — past the FORBIDDEN scan above. Today the
+ * library is reached ONLY inside the executor chunks behind their
+ * `await import()`, so any static occurrence in these graphs is the lazy
+ * boundary being flattened, and fails outright rather than passing unseen.
+ * (`@prisma/composer-cli` and `@prisma/composer-prisma-cloud` do not match:
+ * the pattern requires a subpath or end-of-specifier after the name.)
+ */
+const LIBRARY = /^@prisma\/composer(\/|$)/;
 
 const CHECKS = [
   {
@@ -186,6 +200,13 @@ try {
         failures.push(
           `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
             'Something now imports an executor directly instead of behind its `await import()`.',
+        );
+      }
+      if (LIBRARY.test(specifier)) {
+        failures.push(
+          `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
+            'The library belongs behind the executors\' `await import()` — a static import here loads ' +
+            "library code on start-up, and this walk cannot see what that entry drags in.",
         );
       }
     }
