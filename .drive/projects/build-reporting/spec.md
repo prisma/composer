@@ -1,6 +1,6 @@
 # Project: Composer reports its builds to Prisma Cloud
 
-> Status: **implemented** on [PR #227](https://github.com/prisma/composer/pull/227); the platform API is in production. The one item outstanding against the definition of done is a real deploy observed in the Console. The follow-up topology design is in [topology-design.md](topology-design.md). The discussion history behind every decision here is in [design-notes.md](design-notes.md) — a log, not a reference.
+> Status: **implemented** on [PR #227](https://github.com/prisma/composer/pull/227); the platform API is in production. The definition of done is met — verified live 2026-08-14, build `bld_cqdzjjlja99nmcd4f27bn69g`. The follow-up topology design is in [topology-design.md](topology-design.md). The discussion history behind every decision here is in [design-notes.md](design-notes.md) — a log, not a reference.
 
 ## The design
 
