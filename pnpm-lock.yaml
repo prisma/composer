@@ -83,6 +83,9 @@ importers:
       '@prisma/composer':
         specifier: workspace:0.6.0
         version: link:../../packages/9-public/composer
+      '@prisma/composer-cli':
+        specifier: workspace:0.6.0
+        version: link:../../packages/9-public/composer-cli
       '@prisma/composer-prisma-cloud':
         specifier: workspace:0.6.0
         version: link:../../packages/9-public/composer-prisma-cloud
