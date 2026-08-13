@@ -132,7 +132,9 @@ Authorization: Bearer <workspace token>
 ## Reads and joins
 
 - `GET /v1/projects/{p}/branches/{b}/topology` returns the stored (authored) graph. A flattened view can be an additive query parameter later.
-- **Joining to typed rows.** A topology node materialises as a typed row when the apply succeeds: `kind: service` → Service, `type: postgres` → Database, `type: s3` → Bucket. The join key is the node's full config address. **This requires a platform change this design names explicitly:** typed rows today carry only a short name derived during provisioning, not the full address. Each joinable table gains a nullable `configKey` column holding the declaring node's full address, and Composer's provisioning fills it (see Division of work). Until both halves land, the Console can fall back to suffix-matching on names, but the column is the design.
+- **Joining to typed rows.** A topology node materialises as a typed row when the apply succeeds: `kind: service` → Service, `type: postgres` → Database, `type: s3` → Bucket. The join key is the node's **`logicalName`**: a nullable column on each joinable table holding the declaring node's full topology address, verbatim (`shop.auth.api`) — the row stores exactly what the topology stores, and the join is string equality. Composer's provisioning fills it (see Division of work). A row with a null `logicalName` (created before this lands, or created outside Composer) simply joins to nothing, which renders the same as "declared, not created" — honest and harmless.
+
+  The naming, settled 2026-08-13: the platform's entities carry three distinct identifiers. `id` — the physical, platform-minted instance id, stable within a branch. `logicalName` — the declared identity in the config's logical namespace, the same namespace the topology maps; identical logical names pin the config declaration, the topology node, and the typed row together within a branch, and identify "the same" entity across branches. `displayName` — free presentation, no semantics. Project's `slug` (pdp ADR-011) is the first shipped instance of `logicalName` — the root node's address — and should converge on the same field name. Renaming a `logicalName` names a *different* entity; the rename affordance (a Terraform `moved`-block equivalent, reserved in the platform resource-model proposal) is the mechanism that will make "same entity, new name" sayable.
 - **Drift is a query, not a stored fact.** Declared-but-not-created = topology nodes whose join finds no row. Created-but-no-longer-declared = typed rows whose address is absent from the topology (an honest state between a config removing a service and its teardown). The Build Job for the run explains *why* either state exists.
 
 ## Requirements this design satisfies
@@ -152,7 +154,7 @@ Authorization: Bearer <workspace token>
 **Platform (Will):**
 
 1. The three tables and the `PUT`/`GET` endpoints per The write protocol, workspace-token authorised like the builds surface.
-2. `configKey` columns on Service, Database, Bucket, accepted on their create/update APIs.
+2. `logicalName` columns on Service, Database, Bucket, accepted on their create APIs — the per-resource continuation of ADR-011's Project slug. This is the identity track's model change; the topology tables themselves touch no existing model.
 3. Console surfaces reading the topology and the drift join.
 4. From the resource-model proposal, adjacent but separate: the Deployment→Version rename, Build Job naming.
 
@@ -160,7 +162,7 @@ Authorization: Bearer <workspace token>
 
 1. **Keep the authored graph through Load.** Load currently dereferences module boundaries and discards the traversal; the emitted `Graph` gains the authored ports and edges alongside the flat view downstream consumers keep. Additive change in `packages/0-framework/1-core/core/src/load-module.ts` + `graph-types.ts`. Shape approved 2026-08-13.
 2. **The topology submission** at the pipeline position given above, through the same extension seam as the build reporter (`ExtensionDescriptor`), against the new endpoint. Best-effort like all reporting.
-3. **Stamp `configKey`** on the typed rows its providers create, once the platform accepts it.
+3. **Stamp `logicalName`** — the node's full topology address — on the typed rows its providers create, once the platform accepts it.
 4. **Retire `--report`** once the Action reads the platform (R4).
 5. Reject `$out` as a user port name.
 
