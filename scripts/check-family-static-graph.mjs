@@ -205,8 +205,8 @@ try {
       if (LIBRARY.test(specifier)) {
         failures.push(
           `"${specifier}" is statically reachable from ${check.entry} (imported by ${relativeToPacked(importer)}). ` +
-            'The library belongs behind the executors\' `await import()` — a static import here loads ' +
-            "library code on start-up, and this walk cannot see what that entry drags in.",
+            "The library belongs behind the executors' `await import()` — a static import here loads " +
+            'library code on start-up, and this walk cannot see what that entry drags in.',
         );
       }
     }
