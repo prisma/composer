@@ -1,0 +1,53 @@
+{
+  "name": "@prisma/composer-cli",
+  "version": "0.6.0",
+  "type": "module",
+  "description": "Prisma Composer's command family and the `prisma-composer` CLI.",
+  "bin": {
+    "prisma-composer": "./dist/bin.mjs"
+  },
+  "exports": {
+    "./family": "./dist/family.mjs",
+    "./testing": "./dist/testing.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/composer": "workspace:0.6.0",
+    "alchemy": "2.0.0-beta.67",
+    "c12": "^3.3.4",
+    "effect": "4.0.0-beta.103",
+    "esbuild": "^0.28.1"
+  },
+  "peerDependencies": {
+    "@prisma/cli-engine": "0.0.9"
+  },
+  "devDependencies": {
+    "@internal/cli": "workspace:0.6.0",
+    "@internal/tsdown-config": "workspace:0.6.0",
+    "@prisma/cli-engine": "0.0.9",
+    "@types/node": "^26.0.1",
+    "tsdown": "^0.22.7",
+    "typescript": "^6.0.3"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prisma/composer.git",
+    "directory": "packages/9-public/composer-cli"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Nothing statically reachable from `@prisma/composer/family` — or from the
-// published `prisma-composer` executable — may import alchemy or effect.
+// Nothing statically reachable from `@prisma/composer-cli/family` — or from
+// the published `prisma-composer` executable — may import alchemy or effect.
 //
 // The `prisma` bin imports composer's command family directly, so every module
 // in that entrypoint's static graph loads on `prisma --version`. Alchemy's
@@ -31,8 +31,13 @@
 // tarball inlines the whole @internal scope, so only the packed graph shows
 // what a consumer actually loads.
 //
-// Requires @prisma/composer to be built (`pnpm turbo run build
-// --filter=@prisma/composer`).
+// The walk stops at bare specifiers, so `@prisma/composer/...` imports are
+// not followed — which is fine: the FORBIDDEN list applies to the specifiers
+// themselves, and `@prisma/composer` is an allowed one (its own graphs are
+// covered by check-floor-imports.mjs and the library's tests).
+//
+// Requires @prisma/composer-cli to be built (`pnpm turbo run build
+// --filter=@prisma/composer-cli`).
 //
 // Usage: node scripts/check-family-static-graph.mjs
 
@@ -78,7 +83,7 @@ const CHECKS = [
 ];
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const composerDir = join(repoRoot, 'packages/9-public/composer');
+const composerCliDir = join(repoRoot, 'packages/9-public/composer-cli');
 
 /**
  * Static import specifiers of one built module. Deliberately does NOT match
@@ -153,11 +158,12 @@ try {
   // pnpm pack, not npm pack: it rewrites `workspace:` specifiers the way a
   // real publish does.
   execFileSync('pnpm', ['pack', '--pack-destination', work], {
-    cwd: composerDir,
+    cwd: composerCliDir,
     stdio: ['ignore', 'ignore', 'inherit'],
   });
   const tarball = readdirSync(work).find((f) => f.endsWith('.tgz'));
-  if (tarball === undefined) throw new Error('pnpm pack produced no tarball for @prisma/composer');
+  if (tarball === undefined)
+    throw new Error('pnpm pack produced no tarball for @prisma/composer-cli');
   execFileSync('tar', ['xzf', tarball], { cwd: work });
   const packedRoot = join(work, 'package');
 
