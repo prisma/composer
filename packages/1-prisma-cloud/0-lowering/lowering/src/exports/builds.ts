@@ -12,7 +12,7 @@ export type {
   UpdateBuildBody,
 } from '../builds/api.ts';
 export { buildsApi } from '../builds/api.ts';
-export type { BuildReportAnchors, BuildReporterOptions } from '../builds/reporter.ts';
+export type { BuildContainerRefs, BuildReporterOptions } from '../builds/reporter.ts';
 export { buildReporter } from '../builds/reporter.ts';
 export type { ReportableResource, ResourceReporter } from '../builds/resources.ts';
 export { BUILD_ID_ENV, reportableResource, resourceReporter } from '../builds/resources.ts';

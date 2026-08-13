@@ -11,7 +11,7 @@ import { prismaCloudContainerOf } from '../container.ts';
 
 export function prismaCloudReporter(): ReporterDescriptor {
   return Builds.buildReporter({
-    anchorsOf: (container) => {
+    refsOf: (container) => {
       const { projectId, branchId } = prismaCloudContainerOf(container);
       return { projectId, branchId };
     },

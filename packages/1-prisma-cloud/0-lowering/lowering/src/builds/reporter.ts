@@ -22,7 +22,7 @@
 import type {
   ContainerInstance,
   DeployedEntity,
-  ReportAnchorInput,
+  ReportAttachInput,
   ReportBeginInput,
   ReporterDescriptor,
   RunOutcome,
@@ -44,15 +44,15 @@ const CANCELLED_EXIT_CODE = 130;
 const nonEmpty = (value: string | undefined): string | undefined =>
   value !== undefined && value.length > 0 ? value : undefined;
 
-/** The build's query anchors, read out of the reporting extension's own container. */
-export interface BuildReportAnchors {
+/** The Build row's project and branch references, read out of the reporting extension's own container. */
+export interface BuildContainerRefs {
   readonly projectId: string;
   readonly branchId: string | undefined;
 }
 
 export interface BuildReporterOptions {
-  /** Narrows the extension's container to the anchors this build should carry. */
-  readonly anchorsOf: (container: ContainerInstance) => BuildReportAnchors;
+  /** Narrows the extension's container to the project/branch references this build should carry. */
+  readonly refsOf: (container: ContainerInstance) => BuildContainerRefs;
   readonly origin?: string;
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly warn?: (message: string) => void;
@@ -132,7 +132,7 @@ async function beginSession(
   // Whoever did build reports that phase itself.
   await api.update(buildId, { phase: 'deploy', state: 'running' });
 
-  return session(api, buildId, options.anchorsOf, warn);
+  return session(api, buildId, options.refsOf, warn);
 }
 
 /**
@@ -163,7 +163,7 @@ function deployedApp(entities: readonly DeployedEntity[]): UpdateBuildBody {
 function session(
   api: BuildsApi,
   buildId: string,
-  anchorsOf: (container: ContainerInstance) => BuildReportAnchors,
+  refsOf: (container: ContainerInstance) => BuildContainerRefs,
   warn: (message: string) => void,
 ): RunReporter {
   let finished = false;
@@ -204,17 +204,13 @@ function session(
 
     /**
      * Attaches the build to the Project and Branch this deploy resolved.
-     *
      * Sent on its own rather than folded into the progress update above:
-     * until the amendment requested on pdp-control-plane #4855 lands, the
-     * platform accepts these three only at creation, and Composer does not
-     * know them until now. Keeping them in their own call means today's
-     * rejection costs the anchors alone, and the same code starts working the
-     * moment the endpoint does.
+     * the fields are fill-only, so keeping them in their own call means a
+     * 409 from a disagreeing creator costs these references alone.
      */
-    async anchor(input: ReportAnchorInput): Promise<void> {
+    async attach(input: ReportAttachInput): Promise<void> {
       if (input.container === undefined) return;
-      const { projectId, branchId } = anchorsOf(input.container);
+      const { projectId, branchId } = refsOf(input.container);
       await api.update(buildId, {
         projectId,
         ...(branchId !== undefined ? { branchId } : {}),

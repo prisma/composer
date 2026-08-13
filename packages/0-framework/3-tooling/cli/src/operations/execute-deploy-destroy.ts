@@ -86,7 +86,7 @@ function failureOf(error: CliStructuredError): RunReportFailure {
   return { code: error.code, message: error.message };
 }
 
-/** A live reporting session, kept beside the extension that owns it so `anchor` can hand back that extension's own container. */
+/** A live reporting session, kept beside the extension that owns it so `attach` can hand back that extension's own container. */
 interface ExtensionReporter {
   readonly extensionId: ExtensionId;
   readonly reporter: RunReporter;
@@ -124,14 +124,14 @@ async function beginReporters(
 }
 
 /** Hands each session its own extension's resolved container, so it can attach the run to what that container names. */
-async function anchorReporters(
+async function attachReporters(
   reporters: readonly ExtensionReporter[],
   containers: ReadonlyMap<ExtensionId, ContainerInstance>,
 ): Promise<void> {
   await Promise.all(
     reporters.map(async ({ extensionId, reporter }) => {
       try {
-        await reporter.anchor({ container: containers.get(extensionId) });
+        await reporter.attach({ container: containers.get(extensionId) });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         console.warn(`\nCould not attach this deploy to its project for ${extensionId}: ${detail}`);
@@ -345,7 +345,7 @@ async function runStackPipelineInner(
 
     // Containers exist now, so each session can attach its run to the
     // Project/Branch its extension resolved.
-    await anchorReporters(reporters, containers);
+    await attachReporters(reporters, containers);
 
     // The Alchemy stage is never left to Alchemy's own default (`dev_$USER`
     // — machine-dependent, the TML-3157 incident): the state-owning extension's

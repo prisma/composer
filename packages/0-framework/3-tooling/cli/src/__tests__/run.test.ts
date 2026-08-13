@@ -1105,7 +1105,7 @@ describe('run() — the full pipeline over fakes', () => {
 
     /** Records the lifecycle the CLI drives, and optionally fails at one of its steps. */
     function recordingReporter(
-      opts: { readonly throwOn?: 'begin' | 'anchor' | 'finish'; readonly none?: boolean } = {},
+      opts: { readonly throwOn?: 'begin' | 'attach' | 'finish'; readonly none?: boolean } = {},
     ): ReporterLog {
       const events: string[] = [];
       const fail = (step: string) => {
@@ -1122,9 +1122,9 @@ describe('run() — the full pipeline over fakes', () => {
             if (opts.none === true) return undefined;
             return {
               childEnv: () => ({ FAKE_BUILD_ID: 'bld_1' }),
-              anchor: async (anchorInput) => {
-                events.push(`anchor:${anchorInput.container === undefined ? 'none' : 'container'}`);
-                fail('anchor');
+              attach: async (attachInput) => {
+                events.push(`attach:${attachInput.container === undefined ? 'none' : 'container'}`);
+                fail('attach');
               },
               finish: async (outcome) => {
                 events.push(
@@ -1138,7 +1138,7 @@ describe('run() — the full pipeline over fakes', () => {
       };
     }
 
-    test('a successful deploy is begun, anchored, and finished, and its build reaches the apply', async () => {
+    test('a successful deploy is begun, attached, and finished, and its build reaches the apply', async () => {
       const app = makeAppDir('reported-app');
       process.chdir(app.dir);
       const log = recordingReporter();
@@ -1156,7 +1156,7 @@ describe('run() — the full pipeline over fakes', () => {
       expect(status).toBe(0);
       expect(log.events).toEqual([
         'begin:reported-app:ci-1:no-id',
-        'anchor:container',
+        'attach:container',
         'finish:ok',
       ]);
       expect(calls[0]?.env?.['FAKE_BUILD_ID']).toBe('bld_1');
@@ -1218,7 +1218,7 @@ describe('run() — the full pipeline over fakes', () => {
     });
 
     test('a reporter that throws at any step never fails the deploy', async () => {
-      for (const step of ['begin', 'anchor', 'finish'] as const) {
+      for (const step of ['begin', 'attach', 'finish'] as const) {
         const app = makeAppDir();
         process.chdir(app.dir);
         const log = recordingReporter({ throwOn: step });

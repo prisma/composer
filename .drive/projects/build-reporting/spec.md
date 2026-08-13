@@ -99,7 +99,7 @@ Both channels exist because a workflow can supply an id either way and neither i
 
 1. **The pdp-control-plane stack merged.** #4853, #4850 and #4855 are all in `main`, and the API is in production.
 2. **`@prisma/management-api-sdk` 1.60.0 carries the endpoints.** Composer's pin moved from `^1.57.0` to `^1.60.0`. The release also closed a pre-existing gap: the hosted-state lease and scope endpoints were missing too, which is why this package never typechecked cleanly. It does now.
-3. **The anchor amendment landed in full.** `UpdateBuildInputSchema` takes `projectId`, `branchId` and `appId`, fill-only, verified against the row's existing anchors, with a 409 on a genuine change. It also gained `deployedUrl` on the same terms — the secondary ask — which is what D11 uses.
+3. **The fill-only amendment landed in full.** `UpdateBuildInputSchema` takes `projectId`, `branchId` and `appId`, fill-only, verified against the row's existing values, with a 409 on a genuine change. It also gained `deployedUrl` on the same terms — the secondary ask — which is what D11 uses. These are optional fks narrowing the Console's views; the build's required scope is the workspace, from the token.
 
 ## Definition of done
 

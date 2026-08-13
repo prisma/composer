@@ -36,7 +36,9 @@ appId       String?   @map("computeServiceId")            // nullable, no relati
 
 So the constraint is that `UpdateBuildInputSchema` lists five fields and these are not among them. An omission in an unmerged PR, not a property of the model. The correct response is to amend the PR, which was handed to that PR's author with two details attached: merge the row's existing anchors before verifying, or the mutual-agreement checks silently pass; and make it fill-only, matching the never-weaken rule the same PR already applies to resource actions.
 
-**Outcome: the amendment landed in full.** The merged `UpdateBuildInputSchema` takes all three anchors, fill-only, verified against the anchors the build already carries, with a 409 when a recorded value would change and a no-op when the same value is re-sent. `deployedUrl` was added on the same terms — the secondary ask that was flagged as decline-able — which is what lets a Composer build show a working link in the Console.
+**Outcome: the amendment landed in full.** The merged `UpdateBuildInputSchema` takes all three references, fill-only, verified against what the build already carries, with a 409 when a recorded value would change and a no-op when the same value is re-sent. `deployedUrl` was added on the same terms — the secondary ask that was flagged as decline-able — which is what lets a Composer build show a working link in the Console.
+
+**Correction (2026-08-13, operator).** Two claims above overstated the project reference's weight, and the vocabulary was wrong. A Build's required scope is its **workspace**, which comes from the token; `projectId`/`branchId`/`appId` are optional foreign keys that only add narrower views. The Console's builds pages (pdp #4860) list at workspace level as well as project level, so a build without a project reference is still visible — it just does not appear in the project-filtered view. And the platform's own "anchor" wording is outdated; these are plain optional fks. The code now says `attach`/`refsOf` and nothing says anchor.
 
 ## Constraints discovered in the Composer pipeline
 
@@ -66,7 +68,7 @@ What the platform does **not** do is work out that identity for you. It reads no
 
 The consequence worth remembering: **Composer and the GitHub Action must derive the identity identically, or one run produces two builds.** Passing a build id down side-steps it entirely, which is why that path exists — but the fallback only converges because both sides read the same three variables.
 
-Separately, a platform webhook build and a CI-run build for the same push do *not* converge: `startBuild.ts` sets `sourceEventId` to the webhook event id, a different key space. That is correct — they are different events — but it means a repository with both connected shows two rows per push.
+~~Separately, a platform webhook build and a CI-run build for the same push do *not* converge.~~ **Superseded 2026-08-13:** pdp #4877 makes the git webhook correlate `workflow_run` events for `prisma-deploy.yml` into the same Build row via the run's `sourceEventId`, and it marks the build `queued` the moment GitHub accepts the run — before any user code executes. So the webhook and the CI run now converge on one row, and the webhook is usually the first reporter. This strengthens the identity requirement: Composer's derivation must match not only the Action's but the webhook's.
 
 ## Invocation cases
 

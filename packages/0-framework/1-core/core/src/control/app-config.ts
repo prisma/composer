@@ -138,8 +138,8 @@ export interface ReportBeginInput {
   readonly reportId: string | undefined;
 }
 
-/** The deploy context handed to `RunReporter.anchor`, once containers exist. */
-export interface ReportAnchorInput {
+/** The deploy context handed to `RunReporter.attach`, once containers exist. */
+export interface ReportAttachInput {
   /** The calling extension's own resolved container; `undefined` when it declares no container descriptor. Narrow with the extension's guard. */
   readonly container: ContainerInstance | undefined;
 }
@@ -170,11 +170,11 @@ export interface RunReporter {
   /**
    * Extra environment for the alchemy child, so reporting that happens
    * inside the apply can find the run this session belongs to. Read once,
-   * after `anchor`, and merged into the child's environment.
+   * after `attach`, and merged into the child's environment.
    */
   childEnv(): Readonly<Record<string, string>>;
-  /** Called once the extension's own container is resolved, before any stack file is written. */
-  anchor(input: ReportAnchorInput): Promise<void>;
+  /** Called once the extension's own container is resolved, before any stack file is written — the moment the run's project and branch first exist to be referenced. */
+  attach(input: ReportAttachInput): Promise<void>;
   /** Called exactly once, on every exit path including a thrown error. */
   finish(outcome: RunOutcome): Promise<void>;
 }

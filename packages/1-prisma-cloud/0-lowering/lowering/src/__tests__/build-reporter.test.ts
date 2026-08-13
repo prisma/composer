@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ContainerInstance } from '@internal/core/config';
 import type { BuildsApi, CreateBuildBody, UpdateBuildBody } from '../builds/api.ts';
-import { type BuildReportAnchors, buildReporter } from '../builds/reporter.ts';
+import { type BuildContainerRefs, buildReporter } from '../builds/reporter.ts';
 
 const ENV = {
   PRISMA_SERVICE_TOKEN: 'token',
@@ -33,10 +33,10 @@ function fakeApi(createdId: string | undefined): { api: BuildsApi; recorded: Rec
   };
 }
 
-/** Stands in for the extension's own container; the reporter only ever sees it through `anchorsOf`. */
+/** Stands in for the extension's own container; the reporter only ever sees it through `refsOf`. */
 const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1' };
-const anchorsOf = (container: ContainerInstance): BuildReportAnchors =>
-  container as unknown as BuildReportAnchors;
+const refsOf = (container: ContainerInstance): BuildContainerRefs =>
+  container as unknown as BuildContainerRefs;
 
 const begin = (
   api: BuildsApi,
@@ -44,7 +44,7 @@ const begin = (
   warn: (message: string) => void = () => {},
   reportId: string | undefined = undefined,
 ) =>
-  buildReporter({ api, env, warn, anchorsOf }).begin({
+  buildReporter({ api, env, warn, refsOf }).begin({
     appName: 'storefront',
     stage: undefined,
     cwd: import.meta.dir,
@@ -153,11 +153,11 @@ describe('buildReporter', () => {
     });
   });
 
-  test('attaches the project and branch on their own, so a rejection costs only the anchors', async () => {
+  test('attaches the project and branch on their own, so a rejection costs only those fields', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
-    await session?.anchor({ container: CONTAINER as unknown as ContainerInstance });
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
     await session?.finish({
       ok: true,
       failingStep: undefined,
@@ -175,7 +175,7 @@ describe('buildReporter', () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
-    await session?.anchor({ container: undefined });
+    await session?.attach({ container: undefined });
     await session?.finish({
       ok: true,
       failingStep: undefined,
@@ -279,7 +279,7 @@ describe('buildReporter', () => {
     const session = await buildReporter({
       env: {},
       warn: (m) => warnings.push(m),
-      anchorsOf,
+      refsOf,
     }).begin({
       appName: 'storefront',
       stage: undefined,
@@ -298,7 +298,7 @@ describe('buildReporter', () => {
       api,
       env: { PRISMA_SERVICE_TOKEN: 'token' },
       warn: (m) => warnings.push(m),
-      anchorsOf,
+      refsOf,
     }).begin({ appName: 'storefront', stage: undefined, cwd: '/', reportId: undefined });
 
     expect(session).toBeUndefined();
