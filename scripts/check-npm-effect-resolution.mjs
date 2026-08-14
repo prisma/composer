@@ -27,9 +27,16 @@
 // still start — which is what proves the resolved `effect` genuinely satisfies
 // alchemy, since starting loads alchemy's provider tree.
 //
-// Requires the two public packages to be built (`pnpm turbo build
-// --filter=@prisma/composer --filter=@prisma/composer-prisma-cloud`) and
-// network access to the npm registry.
+// The `prisma-composer` bin ships in @prisma/composer-cli, so every shape
+// that runs it installs the composer-cli tarball alongside the composer
+// tarball — npm resolves composer-cli's exact `@prisma/composer` dependency
+// against the co-installed tarball because the versions match, and the
+// `@prisma/cli-engine` peer is auto-installed by npm from the registry.
+//
+// Requires the public packages to be built (`pnpm turbo build
+// --filter=@prisma/composer --filter=@prisma/composer-cli
+// --filter=@prisma/composer-prisma-cloud`) and network access to the npm
+// registry.
 //
 // Usage: node scripts/check-npm-effect-resolution.mjs
 
@@ -50,6 +57,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const composerDir = join(repoRoot, 'packages/9-public/composer');
+const composerCliDir = join(repoRoot, 'packages/9-public/composer-cli');
 const prismaCloudDir = join(repoRoot, 'packages/9-public/composer-prisma-cloud');
 
 /** Scratch dir holding the packed tarballs and the shape installs. */
@@ -353,11 +361,12 @@ try {
   const tarballDir = join(work, 'tarballs');
   mkdirSync(tarballDir, { recursive: true });
   const composerTgz = packInto(composerDir, tarballDir);
+  const composerCliTgz = packInto(composerCliDir, tarballDir);
   const prismaCloudTgz = packInto(prismaCloudDir, tarballDir);
 
-  await checkShape('composer-only', [composerTgz]);
-  await checkShape('composer-and-prisma-cloud', [composerTgz, prismaCloudTgz]);
-  await checkAdversarialShape([composerTgz, prismaCloudTgz]);
+  await checkShape('composer-and-cli', [composerTgz, composerCliTgz]);
+  await checkShape('composer-cli-and-prisma-cloud', [composerTgz, composerCliTgz, prismaCloudTgz]);
+  await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
 
   process.stderr.write(
     `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
