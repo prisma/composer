@@ -165,7 +165,7 @@ jobs:
           sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary bucket resolver
 
   logical-id-resolution:
-    name: Logical-id resolution (prisma/composer#230)
+    name: Logical-id resolution
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
