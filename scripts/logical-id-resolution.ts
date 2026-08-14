@@ -16,7 +16,7 @@
 
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { layer as managementClientLayer } from '../packages/1-prisma-cloud/0-lowering/lowering/src/client.ts';
+import { layer } from '../packages/1-prisma-cloud/0-lowering/lowering/src/client.ts';
 import { resolveContainer } from '../packages/1-prisma-cloud/0-lowering/lowering/src/container.ts';
 import { fromEnv } from '../packages/1-prisma-cloud/0-lowering/lowering/src/credentials.ts';
 import { deleteProjectDeep, type HttpCall } from './ci-cleanup-utils.ts';
@@ -76,8 +76,10 @@ async function countWorkspaceProjects(): Promise<number> {
     });
     if (!res.ok) throw new Error(`GET /projects failed: ${res.status} ${await res.text()}`);
     const json: unknown = await res.json();
-    if (!isRecord(json) || !Array.isArray(json['data'])) break;
-    count += (json['data'] as unknown[]).length;
+    if (!isRecord(json)) break;
+    const data = json['data'];
+    if (!Array.isArray(data)) break;
+    count += data.length;
     const pagination = isRecord(json['pagination']) ? json['pagination'] : undefined;
     const nextCursor = pagination?.['nextCursor'];
     if (pagination?.['hasMore'] !== true || typeof nextCursor !== 'string') break;
@@ -115,7 +117,7 @@ try {
   console.log('Scenario 1: resolving by logical id after display-name rename…');
   const countBefore = await countWorkspaceProjects();
 
-  const layers = managementClientLayer().pipe(Layer.provideMerge(fromEnv()));
+  const layers = layer().pipe(Layer.provideMerge(fromEnv()));
   const resolved = await Effect.runPromise(
     resolveContainer({ workspaceId, appName: logicalId }).pipe(Effect.provide(layers)),
   );
