@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -83,11 +84,50 @@ describe('resolveRunIdentity', () => {
     expect(resolveRunIdentity(nonRepoDir(), { GITHUB_SHA: 'a'.repeat(40) })).toBeUndefined();
   });
 
-  test('this checkout resolves its own commit and branch through git', () => {
-    const identity = resolveRunIdentity(import.meta.dir, {});
+  test('a git checkout resolves its commit and branch through git', () => {
+    // A purpose-built repo, not the host checkout: CI checks out pull
+    // requests at a detached HEAD, where "no branch" is the correct answer.
+    const dir = nonRepoDir();
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] });
+    git('init', '--initial-branch=trunk');
+    git(
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'user.name=t',
+      'commit',
+      '--allow-empty',
+      '--no-gpg-sign',
+      '-m',
+      'x',
+    );
+
+    const identity = resolveRunIdentity(dir, {});
 
     expect(identity?.source).toBe('cli');
     expect(identity?.commitSha).toMatch(/^[0-9a-f]{40}$/);
-    expect(identity?.branchName).toBeString();
+    expect(identity?.branchName).toBe('trunk');
+  });
+
+  test('a detached HEAD has no branch to report, so there is no identity', () => {
+    const dir = nonRepoDir();
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] });
+    git('init', '--initial-branch=trunk');
+    git(
+      '-c',
+      'user.email=t@example.com',
+      '-c',
+      'user.name=t',
+      'commit',
+      '--allow-empty',
+      '--no-gpg-sign',
+      '-m',
+      'x',
+    );
+    git('checkout', '--detach', 'HEAD');
+
+    expect(resolveRunIdentity(dir, {})).toBeUndefined();
   });
 });
