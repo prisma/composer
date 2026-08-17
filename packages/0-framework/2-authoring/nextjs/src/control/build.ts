@@ -90,7 +90,13 @@ function appRelFrom(manifest: ServerFilesManifest, appDir: string): string {
       `${manifest.path} records neither relativeAppDir nor config.outputFileTracingRoot — cannot locate the standalone server`,
     );
   }
-  return posixRel.split('/').join(path.sep);
+  const rel = posixRel.split('/').join(path.sep);
+  if (path.isAbsolute(rel) || !isWithin(appDir, path.join(appDir, rel))) {
+    throw new Error(
+      `${manifest.path} records an app location that escapes its tracing root (${posixRel}) — refusing to stage outside the bundle`,
+    );
+  }
+  return rel;
 }
 
 async function lstatIfPresent(candidate: string): Promise<fs.Stats | undefined> {

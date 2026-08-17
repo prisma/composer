@@ -22,7 +22,9 @@
         "./packages/0-framework/0-foundation/foundation/src/exports/arktype.ts"
       ],
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
-      "@internal/bundle-paths": ["./packages/0-framework/1-core/bundle-paths/src/exports/index.ts"],
+      "@internal/bundle-paths": [
+        "./packages/0-framework/2-authoring/bundle-paths/src/exports/index.ts"
+      ],
       "@internal/core/config": ["./packages/0-framework/1-core/core/src/exports/app-config.ts"],
       "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/exports/deploy.ts"],
       "@internal/core/local-target": [

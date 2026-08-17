@@ -107,6 +107,38 @@ describe('extractComputeArtifact', () => {
     expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/has type "Directory"/);
   });
 
+  test('rejects a symlink entry with an absolute target', () => {
+    // Hand-build a one-entry ustar archive with typeflag '2' and an absolute
+    // linkname: the resolve check alone would accept one that points inside
+    // the extraction dir, which dangles after the rename into place.
+    const header = Buffer.alloc(512);
+    header.write('link', 0, 100, 'utf8');
+    header.write('0000644\0', 100, 8, 'utf8');
+    header.write('0000000\0', 108, 8, 'utf8');
+    header.write('0000000\0', 116, 8, 'utf8');
+    header.write('00000000000\0', 124, 12, 'utf8');
+    header.write('00000000000\0', 136, 12, 'utf8');
+    header.write('        ', 148, 8, 'utf8');
+    header.write('2', 156, 1, 'utf8'); // typeflag: symlink
+    header.write('/etc/passwd', 157, 100, 'utf8');
+    header.write('ustar\0', 257, 6, 'utf8');
+    header.write('00', 263, 2, 'utf8');
+    let sum = 0;
+    for (const b of header) sum += b;
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 8, 'utf8');
+    const tar = Buffer.concat([header, Buffer.alloc(1024)]);
+    const gz = zlib.gzipSync(tar);
+
+    const tmpGz = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-abs-link-')),
+      'abs-link.tar.gz',
+    );
+    fs.writeFileSync(tmpGz, gz);
+    const destDir = path.join(path.dirname(tmpGz), 'dest');
+
+    expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/escapes the extraction/);
+  });
+
   test('round-trips a safe symlink target longer than USTAR through PAX', () => {
     const longTarget = `.pnpm/${'next-with-peer-context-'.repeat(5)}/node_modules/next`;
     const longPath = `assets/${'a'.repeat(140)}/${'b'.repeat(120)}/asset.txt`;

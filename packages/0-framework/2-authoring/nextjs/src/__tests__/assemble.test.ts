@@ -179,6 +179,21 @@ describe('assemble()', () => {
     expect(result.watch).toContain(source);
   }, 20_000);
 
+  test('refuses a manifest whose app location escapes its tracing root', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const manifestPath = path.join(root, '.next', 'required-server-files.json');
+    fs.writeFileSync(manifestPath, JSON.stringify({ relativeAppDir: '../evil', config: {} }));
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd: root,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/escapes its tracing root/);
+  }, 20_000);
+
   test('names the missing manifest field when links need repair and no tracing root is recorded', async () => {
     const root = makeAppRoot();
     writeNextBuild(root);

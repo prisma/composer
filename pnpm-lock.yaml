@@ -565,18 +565,6 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  packages/0-framework/1-core/bundle-paths:
-    devDependencies:
-      '@internal/tsdown-config':
-        specifier: workspace:0.6.0
-        version: link:../../0-foundation/tsdown-config
-      tsdown:
-        specifier: ^0.22.7
-        version: 0.22.12(typescript@6.0.3)
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
   packages/0-framework/1-core/core:
     dependencies:
       '@internal/foundation':
@@ -608,11 +596,23 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.6.1)(yaml@2.9.0))
 
+  packages/0-framework/2-authoring/bundle-paths:
+    devDependencies:
+      '@internal/tsdown-config':
+        specifier: workspace:0.6.0
+        version: link:../../0-foundation/tsdown-config
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/0-framework/2-authoring/nextjs:
     dependencies:
       '@internal/bundle-paths':
         specifier: workspace:0.6.0
-        version: link:../../1-core/bundle-paths
+        version: link:../bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
@@ -640,7 +640,7 @@ importers:
     dependencies:
       '@internal/bundle-paths':
         specifier: workspace:0.6.0
-        version: link:../../1-core/bundle-paths
+        version: link:../bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
@@ -810,7 +810,7 @@ importers:
     dependencies:
       '@internal/bundle-paths':
         specifier: workspace:0.6.0
-        version: link:../../../0-framework/1-core/bundle-paths
+        version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../../0-framework/1-core/core
@@ -856,7 +856,7 @@ importers:
     dependencies:
       '@internal/bundle-paths':
         specifier: workspace:0.6.0
-        version: link:../../../0-framework/1-core/bundle-paths
+        version: link:../../../0-framework/2-authoring/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../../0-framework/1-core/core

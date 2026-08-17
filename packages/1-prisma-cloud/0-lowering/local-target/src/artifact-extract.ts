@@ -65,6 +65,11 @@ export function extractComputeArtifact(tarGzPath: string, destDir: string): void
         if (entry.linkpath === undefined) {
           throw unsupportedEntryError(entry.path, `${entry.type} without a target`);
         }
+        // An absolute target could point inside tmpDir and survive the
+        // resolve check, then dangle once the tree is renamed into place.
+        if (path.isAbsolute(entry.linkpath)) {
+          throw pathEscapeError(`${entry.path} -> ${entry.linkpath}`);
+        }
         const linkTarget = path.resolve(path.dirname(resolved), entry.linkpath);
         if (!isWithin(tmpDir, linkTarget)) {
           throw pathEscapeError(`${entry.path} -> ${entry.linkpath}`);

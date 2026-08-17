@@ -7,9 +7,9 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/0-framework/1-core/bundle-paths/src/**",
+      "glob": "packages/0-framework/2-authoring/bundle-paths/src/**",
       "domain": "framework",
-      "layer": "core",
+      "layer": "authoring",
       "plane": "control"
     },
     {
