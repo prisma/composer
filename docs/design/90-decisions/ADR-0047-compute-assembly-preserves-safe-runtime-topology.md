@@ -20,8 +20,6 @@ The generated bootstrap may install a narrowly scoped compatibility shim when Co
 
 Compute also supplies `HOST=0.0.0.0` when the author did not configure a host. Framework servers must listen on Compute's network interface rather than a loopback-only default; an explicit author value remains authoritative.
 
-After promotion, lowering probes the stable application URL. Any application-owned HTTP response proves that routing reached the deployment; the platform's explicit missing-service response does not. A deployment is not reported successful while that marker remains.
-
 ## Reasoning
 
 "Users build; Composer assembles" is a boundary between owning a build and manufacturing a deployment artifact. It does not require Composer to ignore the runtime topology recorded by a build. Astro's Node adapter, for example, emits server files that deliberately retain bare package imports. Copying only `dist/` preserves the bytes but not the runnable program. Tracing from the author-declared entry follows package metadata and import edges deterministically; it is file assembly, not a second application build.
@@ -30,16 +28,13 @@ The same distinction applies to symlinks. Dereferencing a package-manager link c
 
 Frameworks also exercise details of the Compute runtime that a plain HTTP server may not. A compatibility shim belongs in Composer's generated bootstrap because it is part of the hosting envelope, not the user's framework build. The shim is deliberately narrow: the current URL custom-inspect setter restores Node-compatible assignment semantics for Bun without patching SvelteKit output or changing unrelated globals.
 
-Finally, an API status of `running` and a successful promotion describe control-plane progress, not data-plane routing. The stable URL is the observable contract returned to the author. Probing it closes that gap while treating the application's own status code as application policy rather than deployment policy.
-
 ## Consequences
 
 - Node directory artifacts can carry runtime packages that a framework intentionally leaves external.
 - Safe package-manager and framework symlinks remain links in both cloud and local artifacts, including peer-context targets longer than USTAR's fixed field; escaping or unresolved dangling links fail before upload.
 - Runtime compatibility code is isolated in the generated bootstrap and covered by framework deployment tests.
 - Framework servers receive a listen-all host default without overriding an author-configured host.
-- A deploy can take longer after promotion, and fails instead of returning a URL that still routes to the platform's missing-service handler.
-- These mechanisms are compatibility ownership, not permanent duplication. When the upstream Alchemy Compute provider supplies an equivalent archive, build staging, runtime bootstrap, or readiness guarantee, Composer deletes the corresponding local mechanism rather than keeping two implementations.
+- These mechanisms are compatibility ownership, not permanent duplication. When the upstream Alchemy Compute provider supplies an equivalent archive, build staging, or runtime bootstrap guarantee, Composer deletes the corresponding local mechanism rather than keeping two implementations.
 
 ## Alternatives considered
 
@@ -48,8 +43,6 @@ Finally, an API status of `running` and a successful promotion describe control-
 **Dereference symlinks during packaging.** Rejected: it changes the build topology and can package files outside the declared artifact boundary.
 
 **Bundle the application entry again.** Rejected: that crosses the user-build boundary and creates a second framework compatibility surface. Static file tracing preserves the application's emitted code.
-
-**Treat promotion as deployment readiness.** Rejected: promotion can succeed while the stable endpoint still returns the platform's missing-service response.
 
 ## Related
 

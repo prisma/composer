@@ -41,46 +41,6 @@ export interface DeploymentAttributes {
 
 export type Deployment = Resource<'Prisma.Deployment', DeploymentProps, DeploymentAttributes>;
 
-export type DeploymentFetch = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
-
-export const deploymentReadinessSchedule = Schedule.spaced('2 seconds').pipe(
-  Schedule.upTo({ duration: '2 minutes' }),
-);
-
-/** One stable-endpoint readiness attempt. Any application response — including
- * a user-owned 404/500 — proves routing reached the deployment. The platform's
- * explicit missing-service marker does not. */
-export const probeDeployedUrl = (
-  deployedUrl: string,
-  fetcher: DeploymentFetch = globalThis.fetch,
-) =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetcher(deployedUrl, {
-        redirect: 'manual',
-        signal: AbortSignal.timeout(5_000),
-      });
-      const missing = response.headers.get('x-prisma-internal-service-missing') === 'true';
-      await response.body?.cancel();
-      if (missing) {
-        throw new PrismaApiError({
-          status: 503,
-          message: `deployment endpoint ${deployedUrl} still reports a missing service`,
-        });
-      }
-    },
-    catch: (cause) =>
-      cause instanceof PrismaApiError
-        ? cause
-        : new PrismaApiError({
-            status: 0,
-            message: `deployment endpoint ${deployedUrl} is not reachable: ${String(cause)}`,
-          }),
-  });
-
 /**
  * A **deployment** of a Prisma app — creates a deployment, uploads
  * its artifact, starts the VM, waits for it to run, then promotes it to the
@@ -178,9 +138,6 @@ export const DeploymentProvider = () =>
           );
 
           const deployedUrl = promoted.data.appEndpointDomain;
-          if (deployedUrl !== undefined) {
-            yield* probeDeployedUrl(deployedUrl).pipe(Effect.retry(deploymentReadinessSchedule));
-          }
           return { deploymentId, ...(deployedUrl !== undefined && { deployedUrl }) };
         }),
         delete: Effect.fn(function* () {
