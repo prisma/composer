@@ -102,9 +102,11 @@ function walkEntries(dir: string): BundleEntry[] {
         continue;
       }
       if (entry.isDirectory()) visit(rel);
-      else {
+      else if (entry.isFile()) {
         const mode = fs.statSync(path.join(dir, ...rel.split('/'))).mode;
         out.push({ relPath: rel, type: 'file', executable: (mode & 0o100) !== 0 });
+      } else {
+        throw new Error(`bundle contains an unsupported filesystem entry: ${rel}`);
       }
     }
   };

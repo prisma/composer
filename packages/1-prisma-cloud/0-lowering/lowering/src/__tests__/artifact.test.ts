@@ -446,6 +446,18 @@ describe('packageComputeArtifact', () => {
     ).toThrow(/symlink at dangling is dangling/);
   });
 
+  test('rejects a FIFO before attempting to read it', () => {
+    if (process.platform === 'win32') return;
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const fifo = path.join(bundleDir, 'runtime.pipe');
+    const created = Bun.spawnSync({ cmd: ['mkfifo', fifo] });
+    expect(created.exitCode).toBe(0);
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/unsupported filesystem entry: runtime\.pipe/);
+  });
+
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {
     const artifact = packageComputeArtifact({
       id: 'auth',
