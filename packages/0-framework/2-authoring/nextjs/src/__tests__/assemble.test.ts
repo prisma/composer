@@ -43,7 +43,10 @@ function writeNextBuild(root: string): { appRel: string } {
   // Next's manifest — records the app's subpath within standalone (posix).
   fs.writeFileSync(
     path.join(root, '.next', 'required-server-files.json'),
-    JSON.stringify({ relativeAppDir: 'apps/web' }),
+    JSON.stringify({
+      relativeAppDir: 'apps/web',
+      config: { outputFileTracingRoot: root },
+    }),
   );
   fs.writeFileSync(
     path.join(root, 'src', 'service.ts'),
@@ -128,4 +131,51 @@ describe('assemble()', () => {
     const server = standaloneServerPath(nextjs({ module: moduleUrl(root), appDir: '..' }));
     expect(server).toBe(path.join(root, '.next', 'standalone', 'apps', 'web', 'server.js'));
   });
+
+  test('stages a pnpm virtual-store target that Next omitted behind a traced link', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+    const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const bundleStore = path.join(
+      cwd,
+      '.prisma-composer',
+      'artifacts',
+      'storefront.web',
+      'bundle',
+      'node_modules',
+      '.pnpm',
+    );
+    expect(fs.readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))).toBe(
+      '../semver@6.3.1/node_modules/semver',
+    );
+    expect(
+      fs.readFileSync(
+        path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),
+        'utf8',
+      ),
+    ).toContain('6.3.1');
+    expect(result.watch).toContain(source);
+  }, 20_000);
 });

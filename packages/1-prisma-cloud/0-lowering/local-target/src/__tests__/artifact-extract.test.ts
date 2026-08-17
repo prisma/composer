@@ -103,4 +103,33 @@ describe('extractComputeArtifact', () => {
 
     expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/has type "Directory"/);
   });
+
+  test('round-trips a safe symlink target longer than USTAR through PAX', () => {
+    const longTarget = `.pnpm/${'next-with-peer-context-'.repeat(5)}/node_modules/next`;
+    const longPath = `assets/${'a'.repeat(140)}/${'b'.repeat(120)}/asset.txt`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [`node_modules/${longTarget}/index.js`]: '// real',
+      [longPath]: 'long-path asset',
+    });
+    fs.symlinkSync(longTarget, path.join(bundleDir, 'node_modules', 'next'));
+    const artifact = packageComputeArtifact({
+      id: 'long-link',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'long-link',
+    });
+    const destDir = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-long-link-')),
+      'dest',
+    );
+
+    extractComputeArtifact(artifact.path, destDir);
+
+    expect(fs.readlinkSync(path.join(destDir, 'node_modules', 'next'))).toBe(longTarget);
+    expect(fs.readFileSync(path.join(destDir, 'node_modules', 'next', 'index.js'), 'utf8')).toBe(
+      '// real',
+    );
+    expect(fs.readFileSync(path.join(destDir, longPath), 'utf8')).toBe('long-path asset');
+  });
 });

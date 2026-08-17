@@ -25,13 +25,14 @@ function readTar(gz: Buffer): {
   const names: string[] = [];
   const contents = new Map<string, string>();
   const links = new Map<string, string>();
+  let nextPax: Record<string, string> = {};
   let offset = 0;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.every((b) => b === 0)) break; // end-of-archive block
     const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/s, '');
     const rawPrefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/s, '');
-    const name = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
+    const headerName = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
     const size = Number.parseInt(
       header.subarray(124, 136).toString('utf8').replace(/\0.*$/s, '').trim(),
       8,
@@ -39,9 +40,28 @@ function readTar(gz: Buffer): {
     const typeflag = header.subarray(156, 157).toString('utf8');
     const linkname = header.subarray(157, 257).toString('utf8').replace(/\0.*$/s, '');
     offset += 512;
-    contents.set(name, tar.subarray(offset, offset + size).toString('utf8'));
-    if (typeflag === '2') links.set(name, linkname);
+    const content = tar.subarray(offset, offset + size);
+    if (typeflag === 'x') {
+      let paxOffset = 0;
+      while (paxOffset < content.length) {
+        const separator = content.indexOf(0x20, paxOffset);
+        const length = Number.parseInt(
+          content.subarray(paxOffset, separator).toString('ascii'),
+          10,
+        );
+        const record = content.subarray(separator + 1, paxOffset + length - 1).toString('utf8');
+        const equals = record.indexOf('=');
+        nextPax[record.slice(0, equals)] = record.slice(equals + 1);
+        paxOffset += length;
+      }
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    const name = nextPax['path'] ?? headerName;
+    contents.set(name, content.toString('utf8'));
+    if (typeflag === '2') links.set(name, nextPax['linkpath'] ?? linkname);
     names.push(name);
+    nextPax = {};
     offset += Math.ceil(size / 512) * 512;
   }
   return {
@@ -314,6 +334,45 @@ describe('packageComputeArtifact', () => {
 
     expect(archive.names).toContain('node_modules/link');
     expect(archive.link('node_modules/link')).toBe('real');
+  });
+
+  test('uses a PAX linkpath for a safe framework symlink target longer than USTAR allows', () => {
+    const longTarget = `.pnpm/${'next-with-peer-context-'.repeat(5)}/node_modules/next`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [`node_modules/${longTarget}/index.js`]: '// real',
+    });
+    fs.symlinkSync(longTarget, path.join(bundleDir, 'node_modules', 'next'));
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(Buffer.byteLength(longTarget, 'utf8')).toBeGreaterThan(100);
+    expect(archive.link('node_modules/next')).toBe(longTarget);
+  });
+
+  test('uses a PAX path for a bundle file whose path cannot fit USTAR fields', () => {
+    const longPath = `assets/${'a'.repeat(140)}/${'b'.repeat(120)}/asset.txt`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [longPath]: 'long-path asset',
+    });
+
+    const artifact = packageComputeArtifact({
+      id: 'long-path',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'long-path',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(Buffer.byteLength(longPath, 'utf8')).toBeGreaterThan(255);
+    expect(archive.read(longPath)).toBe('long-path asset');
   });
 
   test('rejects a symlink whose real target escapes the assembled bundle', () => {

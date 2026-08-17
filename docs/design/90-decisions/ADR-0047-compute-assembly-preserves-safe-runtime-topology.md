@@ -7,13 +7,14 @@ Composer's Compute path turns declared built output into a self-contained artifa
 ```text
 declared entry ──trace imports──▶ staged runtime files
 safe symlink   ────────────────▶ archived as a symlink
+missing traced target ─────────▶ staged from the declared trace root
 escaping link  ────────────────▶ hard error
 promoted URL   ──route probe───▶ deploy succeeds
 ```
 
 The Node directory adapter traces the explicitly declared entry's static runtime file graph and stages those files beside the directory the author named. It does not choose an entry, run a build, or bundle the application.
 
-The Compute archive preserves a symlink as a tar symlink only after resolving its real target and proving that target remains inside the assembled bundle. It never dereferences the link. Dangling links and links that escape the bundle are errors.
+The Compute archive preserves a symlink as a tar symlink only after resolving its real target and proving that target remains inside the assembled bundle. Long targets use a POSIX PAX `linkpath` rather than flattening the package tree. It never dereferences the link. Next.js assembly handles one framework-output gap first: if pnpm's standalone tree contains an in-root traced link but omits its virtual-store target, Composer stages the exact corresponding target from Next's declared `outputFileTracingRoot`. A target unavailable there remains dangling and fails, as do links that escape the bundle.
 
 The generated bootstrap may install a narrowly scoped compatibility shim when Compute's JavaScript runtime differs from the Node behavior a framework relies on. Such a shim must be feature-gated to that runtime and must run before the application entry is imported.
 
@@ -25,7 +26,7 @@ After promotion, lowering probes the stable application URL. Any application-own
 
 "Users build; Composer assembles" is a boundary between owning a build and manufacturing a deployment artifact. It does not require Composer to ignore the runtime topology recorded by a build. Astro's Node adapter, for example, emits server files that deliberately retain bare package imports. Copying only `dist/` preserves the bytes but not the runnable program. Tracing from the author-declared entry follows package metadata and import edges deterministically; it is file assembly, not a second application build.
 
-The same distinction applies to symlinks. Dereferencing a package-manager link can silently pull arbitrary deploy-machine files into an artifact, which remains forbidden. Preserving the link itself retains the build's topology. Resolving the target only for validation proves that the archived link cannot escape the artifact, including through a chain of links, without copying the target through the link.
+The same distinction applies to symlinks. Dereferencing a package-manager link can silently pull arbitrary deploy-machine files into an artifact, which remains forbidden. Preserving the link itself retains the build's topology. Resolving the target only for validation proves that the archived link cannot escape the artifact, including through a chain of links, without copying the target through the link. The pnpm/Next repair is narrower: its destination is the missing in-artifact target, its source is the same relative path in Next's trace root, and the source's real path must remain inside that root.
 
 Frameworks also exercise details of the Compute runtime that a plain HTTP server may not. A compatibility shim belongs in Composer's generated bootstrap because it is part of the hosting envelope, not the user's framework build. The shim is deliberately narrow: the current URL custom-inspect setter restores Node-compatible assignment semantics for Bun without patching SvelteKit output or changing unrelated globals.
 
@@ -34,7 +35,7 @@ Finally, an API status of `running` and a successful promotion describe control-
 ## Consequences
 
 - Node directory artifacts can carry runtime packages that a framework intentionally leaves external.
-- Safe package-manager and framework symlinks remain links in both cloud and local artifacts; escaping or dangling links fail before upload.
+- Safe package-manager and framework symlinks remain links in both cloud and local artifacts, including peer-context targets longer than USTAR's fixed field; escaping or unresolved dangling links fail before upload.
 - Runtime compatibility code is isolated in the generated bootstrap and covered by framework deployment tests.
 - Framework servers receive a listen-all host default without overriding an author-configured host.
 - A deploy can take longer after promotion, and fails instead of returning a URL that still routes to the platform's missing-service handler.

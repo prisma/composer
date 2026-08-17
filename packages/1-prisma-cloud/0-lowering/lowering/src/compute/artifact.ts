@@ -92,9 +92,6 @@ function walkEntries(dir: string): BundleEntry[] {
         )
           .split(path.sep)
           .join('/');
-        if (Buffer.byteLength(linkname, 'utf8') > 100) {
-          throw new Error(`bundle symlink target is too long for ustar at ${rel}: ${linkname}`);
-        }
         out.push({ relPath: rel, type: 'symlink', linkname });
         continue;
       }
@@ -106,9 +103,10 @@ function walkEntries(dir: string): BundleEntry[] {
   return out.sort((a, b) => a.relPath.localeCompare(b.relPath));
 }
 
-// ——— A minimal, deterministic USTAR writer: fixed mtime (epoch 0), fixed
-// mode/uid/gid, sorted entries. gzip (node:zlib) is itself deterministic —
-// its header carries no timestamp — so byte-identical inputs always hash
+// ——— A minimal, deterministic USTAR + POSIX PAX writer: fixed mtime (epoch 0),
+// fixed mode/uid/gid, sorted entries. PAX is used only when a path or symlink
+// target exceeds USTAR's fixed fields. gzip (node:zlib) is itself deterministic
+// — its header carries no timestamp — so byte-identical inputs always hash
 // identically.
 
 function octal(value: number, length: number): string {
@@ -129,10 +127,35 @@ function splitUstarPath(relPath: string): { name: string; prefix: string } {
   throw new Error(`path too long for a ustar tar entry: ${relPath}`);
 }
 
+function paxRecord(key: 'path' | 'linkpath', value: string): string {
+  const payload = ` ${key}=${value}\n`;
+  let length = Buffer.byteLength(payload, 'utf8') + 1;
+  while (true) {
+    const record = `${length}${payload}`;
+    const actualLength = Buffer.byteLength(record, 'utf8');
+    if (actualLength === length) return record;
+    length = actualLength;
+  }
+}
+
+function ustarPathOrPlaceholder(relPath: string): { path: string; paxPath?: string } {
+  try {
+    splitUstarPath(relPath);
+    return { path: relPath };
+  } catch {
+    const digest = crypto.createHash('sha256').update(relPath).digest('hex').slice(0, 32);
+    return { path: `PaxEntries/${digest}`, paxPath: relPath };
+  }
+}
+
 function ustarHeader(
   relPath: string,
   size: number,
-  options: { readonly mode: number; readonly typeflag: '0' | '2'; readonly linkname?: string },
+  options: {
+    readonly mode: number;
+    readonly typeflag: '0' | '2' | 'x';
+    readonly linkname?: string;
+  },
 ): Buffer {
   const { name, prefix } = splitUstarPath(relPath);
   const buf = Buffer.alloc(512);
@@ -164,16 +187,39 @@ function createDeterministicTarGz(
   const sorted = [...entries].sort((a, b) => a.relPath.localeCompare(b.relPath));
   const chunks: Buffer[] = [];
   for (const entry of sorted) {
+    const archivePath = ustarPathOrPlaceholder(entry.relPath);
+    const pax = [archivePath.paxPath === undefined ? '' : paxRecord('path', archivePath.paxPath)];
+    if (entry.type === 'symlink' && Buffer.byteLength(entry.linkname, 'utf8') > 100) {
+      pax.push(paxRecord('linkpath', entry.linkname));
+    }
+    const paxContent = Buffer.from(pax.join(''), 'utf8');
+    if (paxContent.length > 0) {
+      const digest = crypto.createHash('sha256').update(entry.relPath).digest('hex').slice(0, 32);
+      chunks.push(
+        ustarHeader(`PaxHeaders/${digest}`, paxContent.length, {
+          mode: 0o644,
+          typeflag: 'x',
+        }),
+      );
+      chunks.push(paxContent);
+      const paxPad = (512 - (paxContent.length % 512)) % 512;
+      if (paxPad > 0) chunks.push(Buffer.alloc(paxPad));
+    }
     if (entry.type === 'symlink') {
       chunks.push(
-        ustarHeader(entry.relPath, 0, {
+        ustarHeader(archivePath.path, 0, {
           mode: 0o777,
           typeflag: '2',
-          linkname: entry.linkname,
+          // A non-empty legacy field keeps libarchive/GNU tar applying the PAX
+          // linkpath override; this is the conventional long-link placeholder.
+          linkname:
+            Buffer.byteLength(entry.linkname, 'utf8') <= 100 ? entry.linkname : '././@LongSymLink',
         }),
       );
     } else {
-      chunks.push(ustarHeader(entry.relPath, entry.content.length, { mode: 0o644, typeflag: '0' }));
+      chunks.push(
+        ustarHeader(archivePath.path, entry.content.length, { mode: 0o644, typeflag: '0' }),
+      );
       chunks.push(entry.content);
       const pad = (512 - (entry.content.length % 512)) % 512;
       if (pad > 0) chunks.push(Buffer.alloc(pad));
