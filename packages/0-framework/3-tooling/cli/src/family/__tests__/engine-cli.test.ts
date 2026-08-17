@@ -38,6 +38,10 @@ function fakeHost(cwd: string): HostProcess & { out: string[]; err: string[] } {
     err,
     argv: [],
     env: {},
+    version: 'v24.0.0',
+    versions: { node: '24.0.0' },
+    platform: 'linux',
+    arch: 'x64',
     cwd: () => cwd,
     stdout: { write: (text: string) => out.push(text) },
     stderr: { write: (text: string) => err.push(text) },
@@ -153,7 +157,17 @@ const probe = defineCommand({
   help: { summary: 'Report the validated composer section.' },
   needs: { config: composerSection },
   handler: async (_args, ctx) =>
-    ok(ctx.present({ data: ctx.config }, { human: () => [], json: () => ctx.config })),
+    ok(
+      ctx.present(
+        { data: ctx.config },
+        {
+          human: () => [],
+          stdout: () => [],
+          json: () => ctx.config,
+          next: () => [],
+        },
+      ),
+    ),
 });
 
 function probeCli(sections: Record<string, unknown>) {

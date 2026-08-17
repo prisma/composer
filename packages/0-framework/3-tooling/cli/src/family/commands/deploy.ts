@@ -33,6 +33,22 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           brief: 'Deploy scope to target; omit for production.',
           placeholder: 'stage',
         }),
+        report: flag.string({
+          brief:
+            "Write the deploy's outcome as JSON to this path — resources, preview URLs, and " +
+            'the failure cause. Also settable as PRISMA_COMPOSER_REPORT_FILE.',
+          placeholder: 'path',
+        }),
+        // Named for what a user reads in their target's console — a build —
+        // not for this CLI's own `build` (a service's build adapter,
+        // ADR-0005). Nothing else on this surface takes a build id.
+        buildId: flag.string({
+          brief:
+            'Join the deploy record your CI already created rather than letting the target ' +
+            'create one. Each target also reads its own environment variable for this; the ' +
+            'flag wins.',
+          placeholder: 'id',
+        }),
       },
     },
     needs: { config: composerSection, credentials: 'child' },
@@ -45,6 +61,8 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           name: args.flags.name,
           stage: args.flags.stage,
           cwd: ctx.cwd,
+          reportPath: args.flags.report,
+          reportId: args.flags.buildId,
         },
         operationDeps({
           alchemy,
@@ -76,7 +94,9 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                       ]),
                     },
                   ],
+            stdout: () => [],
             json: () => ({ summary: summary ?? null }),
+            next: () => [],
           },
         ),
       );

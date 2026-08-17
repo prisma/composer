@@ -23,6 +23,7 @@ function fakeHost(
     env?: Record<string, string | undefined>;
     cwd?: string;
     isTty?: { stdin?: boolean; stdout?: boolean; stderr?: boolean };
+    versions?: Record<string, string | undefined>;
   } = {},
 ): FakeHost {
   const listeners = new Map<string, Set<() => void>>();
@@ -36,6 +37,10 @@ function fakeHost(
     exits,
     argv: [],
     env: overrides.env ?? {},
+    version: 'v24.0.0',
+    versions: overrides.versions ?? { node: '24.0.0' },
+    platform: 'linux',
+    arch: 'x64',
     cwd: () => overrides.cwd ?? '/app',
     stdout: {
       write: (text: string) => out.push(text),
@@ -86,20 +91,32 @@ describe('detectPackageManager()', () => {
 });
 
 /**
- * CI-ness is the one field the Runtime does not read off the host — `ci-info`
- * answers it from the real environment — so the override is the only way a test
- * can drive it. Nothing here asserts the DEFAULT: it depends on whether CI is
- * running the suite, which is the point of it being `ci-info`'s answer.
+ * CI-ness is no longer composer's to answer: the engine detects it from `env`
+ * itself, and `isCIOverride` exists only for hosts where that detection cannot
+ * be right. A Runtime that set the override would silence the engine's own
+ * detection, so absence is the asserted behavior.
  */
 describe('createRuntime() CI reporting', () => {
-  test('the override decides, in both directions', () => {
-    expect(createRuntime(fakeHost(), noConfig, true).isCI).toBe(true);
-    expect(createRuntime(fakeHost(), noConfig, false).isCI).toBe(false);
+  test('no CI override is set — the engine detects CI from env itself', () => {
+    expect(createRuntime(fakeHost(), noConfig).isCIOverride).toBeUndefined();
+  });
+});
+
+describe('createRuntime() host description', () => {
+  test('reports platform, arch and the Node runtime from the host process', () => {
+    expect(createRuntime(fakeHost(), noConfig).host).toEqual({
+      runtime: { name: 'node', version: '24.0.0' },
+      platform: 'linux',
+      arch: 'x64',
+    });
   });
 
-  test('environment variables do not decide it', () => {
-    const host = fakeHost({ env: { CI: 'true', BUILD_ID: '42' } });
-    expect(createRuntime(host, noConfig, false).isCI).toBe(false);
+  test('a runtime that announces itself in versions names itself', () => {
+    const host = fakeHost({ versions: { node: '24.0.0', bun: '1.3.13' } });
+    expect(createRuntime(host, noConfig).host.runtime).toEqual({
+      name: 'bun',
+      version: '1.3.13',
+    });
   });
 });
 
