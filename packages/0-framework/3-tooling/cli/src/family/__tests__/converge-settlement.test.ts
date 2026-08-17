@@ -27,7 +27,12 @@ const converged = defineCommand({
     return settleConverge(ok({ app: 'shop' }), ctx, (value) =>
       ctx.present(
         { data: value },
-        { human: () => [{ kind: 'summary', status: 'ok', text: `Deployed ${value.app}.` }] },
+        {
+          human: () => [{ kind: 'summary', status: 'ok', text: `Deployed ${value.app}.` }],
+          stdout: () => [],
+          json: () => value,
+          next: () => [],
+        },
       ),
     );
   },
