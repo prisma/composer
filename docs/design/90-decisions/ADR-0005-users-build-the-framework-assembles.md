@@ -1,5 +1,7 @@
 # ADR-0005: Users build their app; the framework assembles deploy artifacts from built output
 
+Superseded in part by [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md): assembly may trace the declared entry's runtime files and preserve symlinks whose targets remain inside the final bundle; it still never dereferences a link or guesses an entry.
+
 ## Decision
 
 The framework never initiates or configures a user's build. The contract is:

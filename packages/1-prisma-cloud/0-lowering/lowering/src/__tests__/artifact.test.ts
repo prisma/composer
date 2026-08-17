@@ -15,11 +15,16 @@ function makeBundle(files: Record<string, string>): string {
   return dir;
 }
 
-/** Un-gzips and lists the tar entry names + reads one entry's content, without a tar library. */
-function readTar(gz: Buffer): { names: string[]; read: (name: string) => string } {
+/** Un-gzips and inspects the deterministic tar subset, without a tar library. */
+function readTar(gz: Buffer): {
+  names: string[];
+  read: (name: string) => string;
+  link: (name: string) => string | undefined;
+} {
   const tar = zlib.gunzipSync(gz);
   const names: string[] = [];
   const contents = new Map<string, string>();
+  const links = new Map<string, string>();
   let offset = 0;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
@@ -31,12 +36,19 @@ function readTar(gz: Buffer): { names: string[]; read: (name: string) => string 
       header.subarray(124, 136).toString('utf8').replace(/\0.*$/s, '').trim(),
       8,
     );
+    const typeflag = header.subarray(156, 157).toString('utf8');
+    const linkname = header.subarray(157, 257).toString('utf8').replace(/\0.*$/s, '');
     offset += 512;
     contents.set(name, tar.subarray(offset, offset + size).toString('utf8'));
+    if (typeflag === '2') links.set(name, linkname);
     names.push(name);
     offset += Math.ceil(size / 512) * 512;
   }
-  return { names, read: (name: string) => contents.get(name) ?? '' };
+  return {
+    names,
+    read: (name: string) => contents.get(name) ?? '',
+    link: (name: string) => links.get(name),
+  };
 }
 
 describe('packageComputeArtifact', () => {
@@ -54,6 +66,8 @@ describe('packageComputeArtifact', () => {
 
     const importLines = bootstrap.split('\n').filter((line) => /^\s*import\b/.test(line));
     expect(importLines).toEqual(['import main from "./main.js";']);
+    expect(bootstrap).toContain('for (const constructor of [URL, URLSearchParams])');
+    expect(bootstrap).toContain('Object.defineProperty(this, inspect');
     expect(bootstrap).toContain('await main.run("auth", () => import("./server.js"));');
   });
 
@@ -221,18 +235,46 @@ describe('packageComputeArtifact', () => {
     expect(read('bunfig.toml')).toContain('auto = "disable"');
   });
 
-  test('a symlink in the bundle is a hard error naming the path and the fix (flat bundles only)', () => {
+  test('preserves a framework-produced symlink whose target stays inside the bundle', () => {
     const bundleDir = makeBundle({
       'main.js': 'export default {};',
       'node_modules/real/index.js': '// real',
     });
-    // A bun/pnpm-shaped relative dir-symlink, the kind a Next standalone tree
-    // is full of — the framework must reject it, not dereference it.
+    // A bun/Next-standalone-shaped relative directory symlink.
     fs.symlinkSync('real', path.join(bundleDir, 'node_modules', 'link'));
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.names).toContain('node_modules/link');
+    expect(archive.link('node_modules/link')).toBe('real');
+  });
+
+  test('rejects a symlink whose real target escapes the assembled bundle', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-symlink-escape-'));
+    const bundleDir = path.join(parent, 'bundle');
+    fs.mkdirSync(bundleDir);
+    fs.writeFileSync(path.join(bundleDir, 'main.js'), 'export default {};');
+    fs.writeFileSync(path.join(parent, 'secret.txt'), 'must not ship');
+    fs.symlinkSync('../secret.txt', path.join(bundleDir, 'escaped'));
 
     expect(() =>
       packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
-    ).toThrow(/symlink at node_modules\/link .* deploy bundles must be flat/);
+    ).toThrow(/symlink at escaped escapes the bundle root/);
+  });
+
+  test('rejects a dangling symlink instead of emitting an unusable artifact', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    fs.symlinkSync('missing.js', path.join(bundleDir, 'dangling'));
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/symlink at dangling is dangling/);
   });
 
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {

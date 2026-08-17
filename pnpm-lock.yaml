@@ -626,6 +626,9 @@ importers:
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
+      '@vercel/nft':
+        specifier: ^1.10.2
+        version: 1.10.2
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1

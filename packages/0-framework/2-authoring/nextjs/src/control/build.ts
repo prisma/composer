@@ -11,10 +11,9 @@
  * `outputFileTracingRoot` is the monorepo root) is *read from Next's own build
  * manifest* (`.next/required-server-files.json`'s `relativeAppDir`), never walked
  * for or computed from a hardcoded depth. It does not launder: node_modules is
- * shipped exactly as `next build` produced it, so a symlinked (non-hoisted)
- * node_modules is the packager's hard error — the same misconfiguration crashes
- * the standalone server at boot, so it must be a flat install (npm, or pnpm/bun
- * with a hoisted node-linker).
+ * shipped exactly as `next build` produced it. The packager preserves a link
+ * only after resolving its target inside the assembled bundle, and rejects
+ * dangling or escaping links.
  *
  * Artifact layout: `<workDir>/main.mjs` (our wrapper) + `<workDir>/bundle/`
  * (the standalone tree, with static/public copied in). The packager adds
@@ -108,8 +107,9 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(workDir, { recursive: true });
   const bundleDir = path.join(workDir, 'bundle');
 
-  // Ship the standalone tree as `next build` produced it (a symlinked
-  // node_modules stays symlinked → the packager rejects it, correctly).
+  // Ship the standalone tree as `next build` produced it. Framework-emitted
+  // links stay links; the packager validates that every target remains inside
+  // the assembled bundle before emitting it into the archive.
   await fs.promises.cp(standaloneRoot, bundleDir, { recursive: true });
 
   // The documented copy: Next omits the client assets from standalone; place

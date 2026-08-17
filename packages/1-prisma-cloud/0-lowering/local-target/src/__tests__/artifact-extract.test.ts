@@ -41,6 +41,7 @@ describe('extractComputeArtifact', () => {
       'main.js': 'export default { run: async () => {} };',
       'nested/asset.txt': 'hello world',
     });
+    fs.symlinkSync('asset.txt', path.join(bundleDir, 'nested', 'asset-link.txt'));
     const artifact = packageComputeArtifact({
       id: 'auth',
       bundleDir,
@@ -55,6 +56,8 @@ describe('extractComputeArtifact', () => {
     const extracted = readAll(destDir);
     expect(extracted['main.js']).toBe('export default { run: async () => {} };');
     expect(extracted['nested/asset.txt']).toBe('hello world');
+    expect(extracted['nested/asset-link.txt']).toBe('hello world');
+    expect(fs.readlinkSync(path.join(destDir, 'nested', 'asset-link.txt'))).toBe('asset.txt');
     expect(extracted['bootstrap.js']).toContain(
       'await main.run("auth", () => import("./server.js"));',
     );

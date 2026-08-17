@@ -8,8 +8,10 @@
  * Two forms, chosen by the descriptor: without `dir`, `entry` is a single
  * self-contained file and only that file is copied. With `dir`, the whole
  * directory is copied verbatim and `entry` names the file inside it that boots.
- * Neither form discovers anything — no tree-walking for an entry, no filename
- * heuristics; the author states the paths and we copy exactly those.
+ * The directory form also follows the declared entry's static runtime dependency
+ * graph and stages those files from the deploy cwd beside the output. This is
+ * deterministic dependency assembly (not app bundling), and is what makes
+ * framework outputs such as Astro's Node adapter self-contained.
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -28,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
+import { nodeFileTrace } from '@vercel/nft';
 import { build } from 'esbuild';
 import type { NodeBuildAdapter } from '../node.ts';
 
@@ -78,42 +81,6 @@ function resolveFile(entrySpec: string, moduleDir: string): BuiltRunnable {
   };
 }
 
-/** The shared "dir contains symlinks" error, reused by both the root-is-a-symlink case and the nested-symlink walk below — one message shape, never two to drift apart. */
-function symlinksFoundError(dirPath: string, found: readonly string[]): Error {
-  const listed = found.slice(0, 5).join(', ');
-  return new Error(
-    `the build adapter's dir ("${dirPath}") contains symlinks, which the platform's packager ` +
-      `rejects: ${listed}${found.length > 5 ? `, and ${found.length - 5} more` : ''}. The tree is ` +
-      'copied verbatim, so make your build emit real files in dir (for example, a hoisted ' +
-      'node_modules, or dereference the links into dir with cp -RL).',
-  );
-}
-
-/**
- * Compute's packager rejects symlinks, so a tree containing one cannot deploy.
- * We fail here, naming the links, rather than dereferencing them on the copy:
- * the artifact must be what the author's build produced (ADR-0005), and
- * following a link that points outside `dir` would pull in files the author
- * never named. The walk reads dirents (lstat semantics), so a symlinked
- * directory is reported and never descended into. Checks only `dirPath`'s
- * children — the caller (`resolveDir`) checks `dirPath` itself before this
- * runs, since that check also decides "not a directory" vs "is a symlink"
- * and must happen before any dereferencing stat.
- */
-async function assertNoSymlinks(dirPath: string): Promise<void> {
-  const found: string[] = [];
-  const walk = async (current: string): Promise<void> => {
-    for (const entry of await fs.promises.readdir(current, { withFileTypes: true })) {
-      const full = path.join(current, entry.name);
-      if (entry.isSymbolicLink()) found.push(full);
-      else if (entry.isDirectory()) await walk(full);
-    }
-  };
-  await walk(dirPath);
-
-  if (found.length > 0) throw symlinksFoundError(dirPath, found);
-}
-
 /**
  * The directory form: `dir` is the built tree, resolved against dirname(module)
  * (ADR-0004) and copied whole; `entry` resolves inside `dir` and names the file
@@ -143,7 +110,9 @@ async function resolveDir(
     );
   }
   if (dirLstat.isSymbolicLink()) {
-    throw symlinksFoundError(dirPath, [dirPath]);
+    throw new Error(
+      `the build adapter's dir ("${dirPath}") is itself a symlink — name the built directory directly. Nested links are preserved only after the final assembled bundle proves their targets stay inside it.`,
+    );
   }
   if (!dirLstat.isDirectory()) {
     throw new Error(
@@ -166,14 +135,124 @@ async function resolveDir(
     );
   }
 
-  await assertNoSymlinks(dirPath);
-
   return {
     source: dirPath,
     sourceField: 'dir',
     entry: path.relative(dirPath, entryPath).split(path.sep).join('/'),
     copyInto: (bundleDir) => fs.promises.cp(dirPath, bundleDir, { recursive: true }),
   };
+}
+
+function isInside(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+  );
+}
+
+function commonAncestor(left: string, right: string): string {
+  let candidate = path.resolve(left);
+  const resolvedRight = path.resolve(right);
+  while (!isInside(candidate, resolvedRight)) {
+    const parent = path.dirname(candidate);
+    if (parent === candidate) return candidate;
+    candidate = parent;
+  }
+  return candidate;
+}
+
+async function copyTracedEntry(
+  source: string,
+  destination: string,
+  traceBase: string,
+  bundleDir: string,
+  dirPath: string,
+): Promise<void> {
+  const stat = await fs.promises.lstat(source);
+  await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+
+  if (stat.isSymbolicLink()) {
+    const realTarget = await fs.promises.realpath(source);
+    if (!isInside(traceBase, realTarget)) {
+      throw new Error(
+        `the runtime dependency trace found a symlink outside its staging root: ${source} -> ${realTarget}`,
+      );
+    }
+    const stagedTarget = isInside(dirPath, realTarget)
+      ? path.join(bundleDir, path.relative(dirPath, realTarget))
+      : path.join(bundleDir, path.relative(traceBase, realTarget));
+    const linkTarget = path.relative(path.dirname(destination), stagedTarget);
+    await fs.promises.symlink(linkTarget, destination);
+    return;
+  }
+  if (stat.isDirectory()) {
+    await fs.promises.mkdir(destination, { recursive: true });
+    return;
+  }
+  if (!stat.isFile()) {
+    throw new Error(
+      `the runtime dependency trace found an unsupported filesystem entry: ${source}`,
+    );
+  }
+  await fs.promises.copyFile(source, destination);
+}
+
+/** Stages the explicit entry's runtime file graph beside the copied build dir.
+ * `nodeFileTrace` follows import/require/package metadata; it does not rewrite
+ * the app. Files already supplied by `dir` remain the author's verbatim copy. */
+async function stageRuntimeDependencies(options: {
+  readonly entryPath: string;
+  readonly dirPath: string;
+  readonly moduleDir: string;
+  readonly cwd: string;
+  readonly bundleDir: string;
+}): Promise<void> {
+  const resolvedCwd = path.resolve(options.cwd);
+  const traceBase =
+    isInside(resolvedCwd, options.moduleDir) && isInside(resolvedCwd, options.dirPath)
+      ? resolvedCwd
+      : commonAncestor(options.moduleDir, options.dirPath);
+  const traced = await nodeFileTrace([options.entryPath], {
+    base: traceBase,
+    processCwd: traceBase,
+  });
+
+  for (const relative of [...traced.fileList].sort()) {
+    const source = path.resolve(traceBase, relative);
+    if (!isInside(traceBase, source)) {
+      throw new Error(`the runtime dependency trace escaped its staging root: ${relative}`);
+    }
+    if (isInside(options.dirPath, source)) continue;
+    const destination = path.join(options.bundleDir, ...relative.split('/'));
+    if (fs.existsSync(destination)) continue;
+    await copyTracedEntry(source, destination, traceBase, options.bundleDir, options.dirPath);
+  }
+}
+
+async function assertBundleSymlinksStayInside(bundleDir: string): Promise<void> {
+  const realRoot = await fs.promises.realpath(bundleDir);
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await fs.promises.readdir(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        let realTarget: string;
+        try {
+          realTarget = await fs.promises.realpath(full);
+        } catch {
+          throw new Error(`the assembled bundle contains a dangling symlink: ${full}`);
+        }
+        if (!isInside(realRoot, realTarget)) {
+          throw new Error(
+            `the assembled bundle contains a symlink whose target escapes the bundle: ${full} -> ${await fs.promises.readlink(full)}`,
+          );
+        }
+      } else if (entry.isDirectory()) {
+        await walk(full);
+      }
+    }
+  };
+  await walk(bundleDir);
 }
 
 /**
@@ -232,7 +311,18 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     throw new Error(`esbuild produced no main.mjs in ${workDir}`);
   }
 
-  await runnable.copyInto(path.join(workDir, 'bundle'));
+  const bundleDir = path.join(workDir, 'bundle');
+  await runnable.copyInto(bundleDir);
+  if (buildDescriptor.dir !== undefined) {
+    await stageRuntimeDependencies({
+      entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
+      dirPath: runnable.source,
+      moduleDir,
+      cwd: input.cwd,
+      bundleDir,
+    });
+  }
+  await assertBundleSymlinksStayInside(bundleDir);
 
   return {
     dir: workDir,

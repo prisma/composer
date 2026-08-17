@@ -45,27 +45,65 @@ function resolveEntry(bundleDir: string, entry: string | undefined): string {
   return found;
 }
 
-/** All files under `dir`, as dir-relative POSIX paths, in sorted order. A
- * symlink is a hard error: deploy bundles must be flat (ADR-0005), and the
- * user's build owns flattening — dereferencing here would relink the tree and
- * risk packaging files from outside it. */
-function walkFiles(dir: string): string[] {
-  const out: string[] = [];
+type BundleEntry =
+  | { readonly relPath: string; readonly type: 'file' }
+  | { readonly relPath: string; readonly type: 'symlink'; readonly linkname: string };
+
+function isWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === '' ||
+    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+  );
+}
+
+/** All files and safe symlinks under `dir`, as dir-relative POSIX paths, in
+ * sorted order. Symlinks are preserved as links — never dereferenced — after
+ * their real target is proven to remain inside the bundle root. This accepts
+ * framework-produced trees such as Next standalone while retaining ADR-0005's
+ * boundary against packaging arbitrary files from the deploy machine. */
+function walkEntries(dir: string): BundleEntry[] {
+  const out: BundleEntry[] = [];
+  const realRoot = fs.realpathSync(dir);
   const visit = (sub: string): void => {
     for (const entry of fs.readdirSync(path.join(dir, sub), { withFileTypes: true })) {
       const rel = sub.length > 0 ? `${sub}/${entry.name}` : entry.name;
       if (entry.isSymbolicLink()) {
-        throw new Error(
-          `bundle contains a symlink at ${rel} — deploy bundles must be flat; ` +
-            'materialize links in your build (e.g. cp -RL) so the tree is self-contained.',
-        );
+        const symlinkPath = path.join(dir, ...rel.split('/'));
+        const target = fs.readlinkSync(symlinkPath);
+        if (path.sep === '/' && target.includes('\\')) {
+          throw new Error(
+            `bundle symlink at ${rel} has an unsupported backslash target: ${target}`,
+          );
+        }
+        let realTarget: string;
+        try {
+          realTarget = fs.realpathSync(path.resolve(path.dirname(symlinkPath), target));
+        } catch {
+          throw new Error(`bundle symlink at ${rel} is dangling: ${target}`);
+        }
+        if (!isWithinRoot(realRoot, realTarget)) {
+          throw new Error(
+            `bundle symlink at ${rel} escapes the bundle root: ${target} — deploy artifacts may only preserve links whose targets are inside the assembled bundle.`,
+          );
+        }
+        const linkname = (
+          path.isAbsolute(target) ? path.relative(path.dirname(symlinkPath), realTarget) : target
+        )
+          .split(path.sep)
+          .join('/');
+        if (Buffer.byteLength(linkname, 'utf8') > 100) {
+          throw new Error(`bundle symlink target is too long for ustar at ${rel}: ${linkname}`);
+        }
+        out.push({ relPath: rel, type: 'symlink', linkname });
+        continue;
       }
       if (entry.isDirectory()) visit(rel);
-      else out.push(rel);
+      else out.push({ relPath: rel, type: 'file' });
     }
   };
   visit('');
-  return out.sort();
+  return out.sort((a, b) => a.relPath.localeCompare(b.relPath));
 }
 
 // ——— A minimal, deterministic USTAR writer: fixed mtime (epoch 0), fixed
@@ -91,17 +129,22 @@ function splitUstarPath(relPath: string): { name: string; prefix: string } {
   throw new Error(`path too long for a ustar tar entry: ${relPath}`);
 }
 
-function ustarHeader(relPath: string, size: number): Buffer {
+function ustarHeader(
+  relPath: string,
+  size: number,
+  options: { readonly mode: number; readonly typeflag: '0' | '2'; readonly linkname?: string },
+): Buffer {
   const { name, prefix } = splitUstarPath(relPath);
   const buf = Buffer.alloc(512);
   buf.write(name, 0, 100, 'utf8');
-  buf.write(octal(0o644, 8), 100, 8, 'utf8'); // mode
+  buf.write(octal(options.mode, 8), 100, 8, 'utf8');
   buf.write(octal(0, 8), 108, 8, 'utf8'); // uid
   buf.write(octal(0, 8), 116, 8, 'utf8'); // gid
   buf.write(octal(size, 12), 124, 12, 'utf8');
   buf.write(octal(0, 12), 136, 12, 'utf8'); // mtime: fixed at epoch 0
   buf.write('        ', 148, 8, 'utf8'); // chksum placeholder (8 spaces)
-  buf.write('0', 156, 1, 'utf8'); // typeflag: regular file
+  buf.write(options.typeflag, 156, 1, 'utf8');
+  if (options.linkname !== undefined) buf.write(options.linkname, 157, 100, 'utf8');
   buf.write('ustar\0', 257, 6, 'utf8');
   buf.write('00', 263, 2, 'utf8');
   buf.write(prefix, 345, 155, 'utf8');
@@ -113,15 +156,28 @@ function ustarHeader(relPath: string, size: number): Buffer {
 }
 
 function createDeterministicTarGz(
-  entries: readonly { relPath: string; content: Buffer }[],
+  entries: readonly (
+    | { readonly relPath: string; readonly type: 'file'; readonly content: Buffer }
+    | { readonly relPath: string; readonly type: 'symlink'; readonly linkname: string }
+  )[],
 ): Buffer {
   const sorted = [...entries].sort((a, b) => a.relPath.localeCompare(b.relPath));
   const chunks: Buffer[] = [];
   for (const entry of sorted) {
-    chunks.push(ustarHeader(entry.relPath, entry.content.length));
-    chunks.push(entry.content);
-    const pad = (512 - (entry.content.length % 512)) % 512;
-    if (pad > 0) chunks.push(Buffer.alloc(pad));
+    if (entry.type === 'symlink') {
+      chunks.push(
+        ustarHeader(entry.relPath, 0, {
+          mode: 0o777,
+          typeflag: '2',
+          linkname: entry.linkname,
+        }),
+      );
+    } else {
+      chunks.push(ustarHeader(entry.relPath, entry.content.length, { mode: 0o644, typeflag: '0' }));
+      chunks.push(entry.content);
+      const pad = (512 - (entry.content.length % 512)) % 512;
+      if (pad > 0) chunks.push(Buffer.alloc(pad));
+    }
   }
   chunks.push(Buffer.alloc(1024)); // end-of-archive: two zero blocks
   return zlib.gzipSync(Buffer.concat(chunks));
@@ -144,7 +200,30 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   }
 
   const entryFile = resolveEntry(opts.bundleDir, opts.bundleEntry);
-  const bootstrap = `import main from "./${entryFile}";\nawait main.run(${JSON.stringify(opts.address)}, () => import(${JSON.stringify(`./${opts.appEntry}`)}));\n`;
+  const bootstrap = `import main from "./${entryFile}";
+
+// Compute currently boots JavaScript with Bun. Its URL and URLSearchParams
+// implementations accept Object.defineProperty but reject assignment to
+// Node's custom-inspect symbol. SvelteKit assigns that symbol while creating a
+// tracked request URL, so install a narrow setter that materializes the same
+// own property Node would. Remove this compatibility shim when the upstream
+// Alchemy Compute runtime owns the equivalent normalization.
+if (process.versions.bun !== undefined) {
+  const inspect = Symbol.for("nodejs.util.inspect.custom");
+  for (const constructor of [URL, URLSearchParams]) {
+    const inherited = constructor.prototype[inspect];
+    Object.defineProperty(constructor.prototype, inspect, {
+      configurable: true,
+      get() { return inherited; },
+      set(value) {
+        Object.defineProperty(this, inspect, { configurable: true, value, writable: true });
+      },
+    });
+  }
+}
+
+await main.run(${JSON.stringify(opts.address)}, () => import(${JSON.stringify(`./${opts.appEntry}`)}));
+`;
   // `address` is intrinsic artifact metadata, not dev config — bootstrap.js
   // above already bakes `main.run(address, …)`, so the manifest carrying it
   // too is the same fact recorded twice: once for the boot path, once for a
@@ -158,12 +237,24 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
     2,
   )}\n`;
 
-  const files = walkFiles(opts.bundleDir).map((relPath) => ({
-    relPath,
-    content: fs.readFileSync(path.join(opts.bundleDir, relPath)),
-  }));
-  files.push({ relPath: 'bootstrap.js', content: Buffer.from(bootstrap, 'utf8') });
-  files.push({ relPath: 'compute.manifest.json', content: Buffer.from(manifest, 'utf8') });
+  const files: (
+    | { relPath: string; type: 'file'; content: Buffer }
+    | { relPath: string; type: 'symlink'; linkname: string }
+  )[] = walkEntries(opts.bundleDir).map((entry) =>
+    entry.type === 'symlink'
+      ? entry
+      : {
+          relPath: entry.relPath,
+          type: 'file',
+          content: fs.readFileSync(path.join(opts.bundleDir, ...entry.relPath.split('/'))),
+        },
+  );
+  files.push({ relPath: 'bootstrap.js', type: 'file', content: Buffer.from(bootstrap, 'utf8') });
+  files.push({
+    relPath: 'compute.manifest.json',
+    type: 'file',
+    content: Buffer.from(manifest, 'utf8'),
+  });
   // Disable bun's runtime auto-install for every Compute artifact. An app's
   // build produces a self-contained entry with its dependencies inlined
   // (ADR-0005), so nothing needs fetching at boot; this guards against a stray
@@ -173,6 +264,7 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   // at boot.
   files.push({
     relPath: 'bunfig.toml',
+    type: 'file',
     content: Buffer.from('[install]\nauto = "disable"\n', 'utf8'),
   });
 

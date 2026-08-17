@@ -514,11 +514,7 @@ describe('assemble() — the directory form', () => {
     ).rejects.toThrow(/sits inside the build adapter's dir .* copy the artifact into itself/s);
   });
 
-  test('rejects a tree containing a symlink, naming it — the packager rejects symlinks, and we ship what the build produced', async () => {
-    // Decided over dereferencing on copy: the artifact must be the tree the
-    // author's build produced (ADR-0005), and following a link could pull in
-    // files from outside dir that the author never named. Failing here beats
-    // failing in the packager, which reports it far from the cause.
+  test('rejects a tree symlink whose target is outside the final assembled bundle', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
@@ -536,10 +532,10 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*server\/util\.js/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/util\.js/s);
   });
 
-  test('reports a symlinked directory without descending into it', async () => {
+  test('rejects an escaping directory symlink without descending into it', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
@@ -557,7 +553,27 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*server\/vendor/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/vendor/s);
+  });
+
+  test('preserves a relative directory symlink whose target stays inside the built tree', async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist', 'server'), {
+      'start.js': 'export default "app-entry";\n',
+      'node_modules/real/index.js': 'export const value = 1;\n',
+    });
+    fs.symlinkSync('real', path.join(serviceDir, 'dist', 'server', 'node_modules', 'linked'));
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const copied = path.join(result.dir, 'bundle', 'node_modules', 'linked');
+    expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copied)).toBe('real');
   });
 
   test('rejects a dir that is itself a symlink to a directory — hard-errors instead of dereferencing it and copying the target', async () => {
@@ -579,7 +595,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .* is itself a symlink/s);
   });
 
   test('rejects a dir that is itself a symlink to a FILE — the same hard error, not "not a directory"', async () => {
@@ -602,6 +618,34 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .* is itself a symlink/s);
   });
+
+  test('stages bare runtime dependencies traced from a directory entry (Astro Node output shape)', async () => {
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+    });
+    const marker = installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'astro',
+      cwd,
+    });
+
+    expect(result.entry).toBe('bundle/server/entry.mjs');
+    expect(
+      fs.readFileSync(
+        path.join(result.dir, 'bundle', 'node_modules', 'runtime-fixture', 'index.js'),
+        'utf8',
+      ),
+    ).toContain(marker);
+  }, 20_000);
 });
