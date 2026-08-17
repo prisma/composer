@@ -59,8 +59,13 @@ describe('extractComputeArtifact', () => {
     expect(extracted['nested/asset-link.txt']).toBe('hello world');
     expect(fs.readlinkSync(path.join(destDir, 'nested', 'asset-link.txt'))).toBe('asset.txt');
     expect(extracted['bootstrap.js']).toContain(
-      'await main.run("auth", () => import("./server.js"));',
+      'await main.run(boot.address, () => import(boot.appEntrypoint));',
     );
+    expect(JSON.parse(extracted['compute.bootstrap.json'] ?? '{}')).toEqual({
+      moduleEntrypoint: './main.js',
+      appEntrypoint: './server.js',
+      address: 'auth',
+    });
     expect(JSON.parse(extracted['compute.manifest.json'] ?? '{}')).toEqual({
       manifestVersion: '1',
       entrypoint: 'bootstrap.js',

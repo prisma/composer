@@ -20,11 +20,11 @@ export interface PackageComputeArtifactOptions {
   /** The Prisma App wrapper file inside bundleDir. Defaults to main.js|main.mjs. */
   readonly bundleEntry?: string;
   /**
-   * The app's own runnable inside bundleDir (e.g. "server.js") — baked into the
-   * bootstrap's boot import: `main.run(address, () => import("./<appEntry>"))`.
+   * The app's own runnable inside bundleDir (e.g. "server.js") — recorded in
+   * the bootstrap data consumed by the generated bootstrap.
    */
   readonly appEntry: string;
-  /** The node's deployment address — baked into the printed bootstrap. */
+  /** The node's deployment address — recorded as intrinsic artifact metadata. */
   readonly address: string;
 }
 
@@ -200,7 +200,23 @@ export function packageComputeArtifact(opts: PackageComputeArtifactOptions): Com
   }
 
   const entryFile = resolveEntry(opts.bundleDir, opts.bundleEntry);
-  const bootstrap = `import main from "./${entryFile}";
+  // Keep all caller-provided strings in JSON data rather than interpolating
+  // them into executable JavaScript. The generated bootstrap is constant code,
+  // so an unusual but valid address or entry filename cannot become code.
+  const bootstrapData = `${JSON.stringify(
+    {
+      moduleEntrypoint: `./${entryFile}`,
+      appEntrypoint: `./${opts.appEntry}`,
+      address: opts.address,
+    },
+    null,
+    2,
+  )}\n`;
+  const bootstrap = `import { readFile } from "node:fs/promises";
+
+const boot = JSON.parse(
+  await readFile(new URL("./compute.bootstrap.json", import.meta.url), "utf8"),
+);
 
 // Compute currently boots JavaScript with Bun. Its URL and URLSearchParams
 // implementations accept Object.defineProperty but reject assignment to
@@ -222,15 +238,14 @@ if (process.versions.bun !== undefined) {
   }
 }
 
-await main.run(${JSON.stringify(opts.address)}, () => import(${JSON.stringify(`./${opts.appEntry}`)}));
+const main = (await import(boot.moduleEntrypoint)).default;
+await main.run(boot.address, () => import(boot.appEntrypoint));
 `;
-  // `address` is intrinsic artifact metadata, not dev config — bootstrap.js
-  // above already bakes `main.run(address, …)`, so the manifest carrying it
-  // too is the same fact recorded twice: once for the boot path, once for a
+  // `address` is intrinsic artifact metadata, not dev config. It is recorded
+  // twice: bootstrap data drives the boot path, while the manifest serves a
   // reader that needs the address WITHOUT executing the artifact (the local
   // Deployment provider, which learns nothing else about dev — local-dev
-  // spec § 4). No version bump — no consumer needs protecting from a new
-  // field; the platform still reads only `entrypoint`.
+  // spec § 4). The platform still reads only `entrypoint` from the manifest.
   const manifest = `${JSON.stringify(
     { manifestVersion: MANIFEST_VERSION, entrypoint: 'bootstrap.js', address: opts.address },
     null,
@@ -250,6 +265,11 @@ await main.run(${JSON.stringify(opts.address)}, () => import(${JSON.stringify(`.
         },
   );
   files.push({ relPath: 'bootstrap.js', type: 'file', content: Buffer.from(bootstrap, 'utf8') });
+  files.push({
+    relPath: 'compute.bootstrap.json',
+    type: 'file',
+    content: Buffer.from(bootstrapData, 'utf8'),
+  });
   files.push({
     relPath: 'compute.manifest.json',
     type: 'file',

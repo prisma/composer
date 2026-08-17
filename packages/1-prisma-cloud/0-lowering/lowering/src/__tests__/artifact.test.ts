@@ -52,7 +52,7 @@ function readTar(gz: Buffer): {
 }
 
 describe('packageComputeArtifact', () => {
-  test('prints a bootstrap that statically imports only the wrapper, then dynamically imports the app entry', () => {
+  test('prints a constant bootstrap that reads data before dynamically importing the wrapper and app', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default { run: async () => {} };' });
 
     const artifact = packageComputeArtifact({
@@ -65,10 +65,70 @@ describe('packageComputeArtifact', () => {
     const bootstrap = read('bootstrap.js');
 
     const importLines = bootstrap.split('\n').filter((line) => /^\s*import\b/.test(line));
-    expect(importLines).toEqual(['import main from "./main.js";']);
+    expect(importLines).toEqual(['import { readFile } from "node:fs/promises";']);
     expect(bootstrap).toContain('for (const constructor of [URL, URLSearchParams])');
     expect(bootstrap).toContain('Object.defineProperty(this, inspect');
-    expect(bootstrap).toContain('await main.run("auth", () => import("./server.js"));');
+    expect(bootstrap).toContain('const main = (await import(boot.moduleEntrypoint)).default;');
+    expect(bootstrap).toContain('await main.run(boot.address, () => import(boot.appEntrypoint));');
+    expect(JSON.parse(read('compute.bootstrap.json'))).toEqual({
+      moduleEntrypoint: './main.js',
+      appEntrypoint: './server.js',
+      address: 'auth',
+    });
+  });
+
+  test('executes the generated data-backed bootstrap under Bun', () => {
+    const bundleDir = makeBundle({
+      'main.js':
+        'export default { run: async (address, boot) => { await boot(); console.log(`address:${address}`); } };',
+      'server.js': 'console.log("server:booted");',
+    });
+    const artifact = packageComputeArtifact({
+      id: 'executable',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+    const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-bootstrap-run-'));
+    for (const name of ['bootstrap.js', 'compute.bootstrap.json', 'main.js', 'server.js']) {
+      fs.writeFileSync(path.join(runtimeDir, name), archive.read(name));
+    }
+
+    const child = Bun.spawnSync({ cmd: [process.execPath, 'bootstrap.js'], cwd: runtimeDir });
+    const stdout = new TextDecoder().decode(child.stdout);
+    const stderr = new TextDecoder().decode(child.stderr);
+
+    expect(child.exitCode, stderr).toBe(0);
+    expect(stdout).toContain('server:booted');
+    expect(stdout).toContain('address:auth');
+  });
+
+  test('keeps caller-provided entry and address strings out of executable JavaScript', () => {
+    const marker = 'globalThis.COMPROMISED = true';
+    const bundleEntry = `main"; ${marker}; ".js`;
+    const appEntry = `server"; ${marker}; ".js`;
+    const address = `auth"); ${marker}; ("`;
+    const bundleDir = makeBundle({
+      [bundleEntry]: 'export default {};',
+      [appEntry]: 'export default {};',
+    });
+
+    const artifact = packageComputeArtifact({
+      id: 'hostile-data',
+      bundleDir,
+      bundleEntry,
+      appEntry,
+      address,
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+
+    expect(read('bootstrap.js')).not.toContain(marker);
+    expect(JSON.parse(read('compute.bootstrap.json'))).toEqual({
+      moduleEntrypoint: `./${bundleEntry}`,
+      appEntrypoint: `./${appEntry}`,
+      address,
+    });
   });
 
   test('writes compute.manifest.json with entrypoint bootstrap.js and the packaged address', () => {
@@ -100,7 +160,7 @@ describe('packageComputeArtifact', () => {
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
-    expect(read('bootstrap.js')).toContain('import main from "./main.mjs";');
+    expect(JSON.parse(read('compute.bootstrap.json')).moduleEntrypoint).toBe('./main.mjs');
   });
 
   test('packaging twice with identical inputs yields an identical sha256 AND an identical path (redeploy noops)', () => {
@@ -164,7 +224,7 @@ describe('packageComputeArtifact', () => {
     expect(artifact.path).toContain(`prisma-composer-compute-${String(os.userInfo().uid)}`);
   });
 
-  test('a different address changes the hash (the bootstrap is address-specific)', () => {
+  test('a different address changes the hash (the bootstrap data is address-specific)', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const a = packageComputeArtifact({
@@ -183,7 +243,7 @@ describe('packageComputeArtifact', () => {
     expect(a.sha256).not.toBe(b.sha256);
   });
 
-  test('a different appEntry changes the hash (the bootstrap bakes in the boot import)', () => {
+  test('a different appEntry changes the hash (the bootstrap data names the boot import)', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const a = packageComputeArtifact({
@@ -218,6 +278,7 @@ describe('packageComputeArtifact', () => {
       'b.txt',
       'bootstrap.js',
       'bunfig.toml',
+      'compute.bootstrap.json',
       'compute.manifest.json',
       'main.js',
     ]);
