@@ -30,3 +30,5 @@ export type { LogAttached, LogEvent, LogInput, LogLine } from '../operations/log
 export { log } from '../operations/log.ts';
 export type { ExecutionDiagnostics, ServiceEndpoint } from '../operations/shared.ts';
 export { executionDiagnostics } from '../operations/shared.ts';
+export type { RunReport, RunReportFailure } from '../run-report.ts';
+export { RUN_REPORT_FILE_ENV, RUN_REPORT_VERSION } from '../run-report.ts';

@@ -5,6 +5,9 @@ import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
 import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
+import { buildsApi } from '../builds/api.ts';
+import { BUILD_ID_ENV } from '../builds/resources.ts';
+import { withResourceReporting } from '../builds/state-store.ts';
 import * as client from '../client.ts';
 import { resolveDefaultBranchId } from '../container.ts';
 import * as credentials from '../credentials.ts';
@@ -114,7 +117,33 @@ export const stateLayerAgainst = (
         id: 'prisma-postgres',
       }).pipe(Effect.provide(FetchHttpClient.layer));
 
-      return Effect.succeed(service);
+      // Report what this run touches to the build it belongs to, when there
+      // is one. There is none when nothing created a build — a direct
+      // `alchemy deploy` of the generated stack file, which runs with no CLI
+      // parent — and reporting resources against no build is impossible, so
+      // the store is used unwrapped and the deploy is unaffected.
+      const buildId = process.env[BUILD_ID_ENV];
+      if (buildId === undefined || buildId.length === 0) {
+        return Effect.succeed(service);
+      }
+
+      const { store, reporter } = withResourceReporting(
+        service,
+        buildsApi({
+          // The same client the lease and the scope probe already use.
+          client: mgmt,
+          warn: (message) => {
+            console.warn(message);
+          },
+        }),
+        buildId,
+      );
+      // Before the lease is released, so the run is still the stage's owner
+      // while its last reports land. Never fails: a report that did not
+      // arrive must not become a deploy that did not finish.
+      yield* Effect.addFinalizer(() => Effect.promise(() => reporter.drain()));
+
+      return Effect.succeed(store);
     }).pipe(Effect.provide(dependencies)),
   ).pipe(Layer.orDie, Layer.merge(redactLeaseHeader));
 };

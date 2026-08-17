@@ -105,7 +105,7 @@ function fakeContainerDescriptor(
 }
 
 function fakeConfig(
-  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight'>> = {},
+  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight' | 'reporter'>> = {},
   containerOpts: Parameters<typeof fakeContainerDescriptor>[0] = {},
 ): PrismaAppConfig {
   return {
@@ -124,6 +124,7 @@ function fakeConfig(
         container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
         ...(hooks.preflight !== undefined ? { preflight: hooks.preflight } : {}),
+        ...(hooks.reporter !== undefined ? { reporter: hooks.reporter } : {}),
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
@@ -1358,5 +1359,251 @@ describe('log()', () => {
     expect(lines).toContainEqual({ service: 'a', line: 'before-crash' });
     expect(lines).toContainEqual({ service: 'b', line: 'still-here' });
     expect(events).toEqual(['daemon went away']);
+  });
+});
+
+describe('deploy-run reporting', () => {
+  interface ReporterLog {
+    readonly events: string[];
+    readonly reporter: NonNullable<ExtensionDescriptor['reporter']>;
+  }
+
+  /** Records the lifecycle the operations drive, and optionally fails at one of its steps. */
+  function recordingReporter(
+    opts: { readonly throwOn?: 'begin' | 'attach' | 'finish'; readonly none?: boolean } = {},
+  ): ReporterLog {
+    const events: string[] = [];
+    const fail = (step: string) => {
+      if (opts.throwOn === step) throw new Error(`reporting broke at ${step}`);
+    };
+    return {
+      events,
+      reporter: {
+        begin: async (input) => {
+          events.push(
+            `begin:${input.appName}:${input.stage ?? 'default'}:${input.reportId ?? 'no-id'}:` +
+              `${input.credentials === undefined ? 'no-credentials' : 'credentials'}`,
+          );
+          fail('begin');
+          if (opts.none === true) return undefined;
+          return {
+            childEnv: () => ({ FAKE_BUILD_ID: 'bld_1' }),
+            attach: async (attachInput) => {
+              events.push(`attach:${attachInput.container === undefined ? 'none' : 'container'}`);
+              fail('attach');
+            },
+            finish: async (outcome) => {
+              events.push(
+                outcome.ok
+                  ? 'finish:ok'
+                  : outcome.cancelled
+                    ? 'finish:cancelled'
+                    : `finish:failed:${outcome.failingStep ?? 'unnamed'}`,
+              );
+              fail('finish');
+            },
+          };
+        },
+      },
+    };
+  }
+
+  /** The reporting wrappers warn on a broken reporter, so these do not run inside silently(). */
+  const quietly = async <T>(run: () => Promise<T>): Promise<T> => {
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      return await run();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  };
+
+  test('a successful deploy is begun, attached, and finished, and its build reaches the apply child', async () => {
+    const app = makeAppDir('reported-app');
+    const log = recordingReporter();
+    const invocations: AlchemyInvocation[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-1', cwd: app.dir },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => {
+            invocations.push(invocation);
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(log.events).toEqual([
+      'begin:reported-app:ci-1:no-id:no-credentials',
+      'attach:container',
+      'finish:ok',
+    ]);
+    expect(invocations[0]?.env['FAKE_BUILD_ID']).toBe('bld_1');
+  });
+
+  test('the engine credentials and the --build-id both reach begin', async () => {
+    const app = makeAppDir('threaded-app');
+    const log = recordingReporter({ none: true });
+
+    await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-2', cwd: app.dir, reportId: 'bld_from_ci' },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+          credentials: { workspaceId: 'ws-1', client: {} },
+        },
+      ),
+    );
+
+    expect(log.events).toEqual(['begin:threaded-app:ci-2:bld_from_ci:credentials']);
+  });
+
+  test('a container failure is still reported — the session opens before containers', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+    const config = fakeConfig({ reporter: log.reporter });
+    const extension = config.extensions[0];
+    if (extension?.container === undefined) throw new Error('fixture must declare a container');
+    const refusing: PrismaAppConfig = {
+      ...config,
+      extensions: [
+        {
+          ...extension,
+          container: {
+            ...extension.container,
+            ensure: () => Promise.reject(new Error('the platform refused to create the project')),
+          },
+        },
+        ...config.extensions.slice(1),
+      ],
+    };
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir },
+        {
+          config: refusing,
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(log.events).toEqual([
+      'begin:fixture-app:ci-3:no-id:no-credentials',
+      'finish:failed:DEPLOY.CONTAINER_FAILED',
+    ]);
+  });
+
+  test('an interrupted converge finishes the session as cancelled, not failed', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-4', cwd: app.dir },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: null, signal: 'SIGINT' }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(log.events.at(-1)).toBe('finish:cancelled');
+  });
+
+  test('a reporter that throws at any step never fails the deploy', async () => {
+    for (const step of ['begin', 'attach', 'finish'] as const) {
+      const app = makeAppDir();
+      const log = recordingReporter({ throwOn: step });
+
+      const result = await quietly(() =>
+        deployWithDeps(
+          { entry: app.entryPath, stage: 'ci-5', cwd: app.dir },
+          {
+            config: fakeConfig({ reporter: log.reporter }),
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        ),
+      );
+
+      expect({ step, ok: result.ok }).toEqual({ step, ok: true });
+    }
+  });
+
+  test('destroy is not reported', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+
+    await silently(() =>
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          onEvent: undefined,
+          cwd: app.dir,
+        },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(log.events).toEqual([]);
+  });
+
+  test('--report writes the outcome, on success and on failure', async () => {
+    const app = makeAppDir('reported-json');
+    const target = path.join(app.dir, 'out', 'run.json');
+
+    const ok = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, reportPath: target },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+    expect(ok.ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toMatchObject({
+      version: 1,
+      outcome: 'succeeded',
+      stage: 'ci-6',
+      failure: null,
+    });
+
+    const failedTarget = path.join(app.dir, 'failed.json');
+    const failed = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, reportPath: failedTarget },
+        {
+          config: fakeConfig({
+            preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+          }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+    expect(failed.ok).toBe(false);
+    expect(JSON.parse(fs.readFileSync(failedTarget, 'utf8'))).toMatchObject({
+      outcome: 'failed',
+      failure: { code: 'DEPLOY.PREFLIGHT_FAILED' },
+    });
   });
 });
