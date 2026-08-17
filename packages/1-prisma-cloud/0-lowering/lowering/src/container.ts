@@ -34,6 +34,8 @@ interface ProjectSummary {
   readonly name: string;
   readonly createdAt: string;
   readonly workspace: { readonly id: string };
+  /** Set on projects created with a logical id; null or absent on older projects. */
+  readonly logicalId?: string | null;
 }
 
 const listAllProjects = (
@@ -57,12 +59,13 @@ const bareWorkspaceId = (id: string): string =>
   id.startsWith('wksp_') ? id.slice('wksp_'.length) : id;
 
 /**
- * Finds the app's Project by name in the workspace — PDP allows duplicate
- * project names, so more than one can match; the oldest wins. Creates one
- * if none match, unless `ensure` is `false` (find-only — `destroy`), in
- * which case an absent Project fails with `ContainerNotFoundError`. No
- * ownership marker and no `--project` override (both deferred — see
- * ADR-0019).
+ * Finds the app's Project by logical id or name in the workspace, creating
+ * one if absent. Logical id match (exact, workspace-unique) is preferred over
+ * display-name match (oldest-wins fallback for projects without a logical id).
+ * Creates one if none match, unless `ensure` is `false` (find-only —
+ * `destroy`), in which case an absent Project fails with
+ * `ContainerNotFoundError`. No ownership marker and no `--project` override
+ * (both deferred — see ADR-0019).
  */
 const resolveProject = (
   client: ManagementApiClient,
@@ -72,13 +75,19 @@ const resolveProject = (
 ): Effect.Effect<string, PrismaApiError | ContainerNotFoundError> =>
   Effect.gen(function* () {
     const projects = yield* listAllProjects(client);
-    const oldest = projects
-      .filter(
-        (p) =>
-          bareWorkspaceId(p.workspace.id) === bareWorkspaceId(workspaceId) && p.name === appName,
-      )
+    const workspaceProjects = projects.filter(
+      (p) => bareWorkspaceId(p.workspace.id) === bareWorkspaceId(workspaceId),
+    );
+
+    const logicalIdMatch = workspaceProjects.find(
+      (p) => p.logicalId != null && p.logicalId === appName,
+    );
+    if (logicalIdMatch !== undefined) return logicalIdMatch.id;
+
+    const nameMatch = workspaceProjects
+      .filter((p) => p.name === appName)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-    if (oldest !== undefined) return oldest.id;
+    if (nameMatch !== undefined) return nameMatch.id;
 
     if (!ensure) return yield* Effect.fail(new ContainerNotFoundError({ appName }));
 
@@ -87,7 +96,21 @@ const resolveProject = (
     // API 403s this for user actors, but deploys authenticate as workspace
     // actors (service tokens), which are allowed.
     const created = yield* call(() =>
-      client.POST('/v1/projects', { body: { name: appName, workspaceId, createDatabase: false } }),
+      client.POST('/v1/projects', {
+        body: { name: appName, workspaceId, createDatabase: false, logicalId: appName },
+      }),
+    ).pipe(
+      Effect.catch((err) =>
+        err.status === 409
+          ? Effect.fail(
+              new PrismaApiError({
+                status: 409,
+                message:
+                  'a project with this name already exists in the workspace; rename your Composer module or free the name.',
+              }),
+            )
+          : Effect.fail(err),
+      ),
     );
     return created.data.id;
   });
