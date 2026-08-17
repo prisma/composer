@@ -110,7 +110,10 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // Ship the standalone tree as `next build` produced it. Framework-emitted
   // links stay links; the packager validates that every target remains inside
   // the assembled bundle before emitting it into the archive.
-  await fs.promises.cp(standaloneRoot, bundleDir, { recursive: true });
+  await fs.promises.cp(standaloneRoot, bundleDir, {
+    recursive: true,
+    verbatimSymlinks: true,
+  });
 
   // The documented copy: Next omits the client assets from standalone; place
   // them beside the app's server.js so it serves them (docs: `cp -r public
@@ -118,11 +121,17 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const appOut = path.join(bundleDir, appRel);
   const staticSrc = path.join(appDir, '.next', 'static');
   if (fs.existsSync(staticSrc)) {
-    await fs.promises.cp(staticSrc, path.join(appOut, '.next', 'static'), { recursive: true });
+    await fs.promises.cp(staticSrc, path.join(appOut, '.next', 'static'), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
   }
   const publicSrc = path.join(appDir, 'public');
   if (fs.existsSync(publicSrc)) {
-    await fs.promises.cp(publicSrc, path.join(appOut, 'public'), { recursive: true });
+    await fs.promises.cp(publicSrc, path.join(appOut, 'public'), {
+      recursive: true,
+      verbatimSymlinks: true,
+    });
   }
 
   // Our wrapper, bundled to main.mjs at the working-dir root (unambiguously

@@ -34,6 +34,7 @@ function writeNextBuild(root: string): { appRel: string } {
   fs.writeFileSync(path.join(appOut, 'server.js'), '// standalone server\n');
   fs.mkdirSync(path.join(standalone, 'node_modules', 'next'), { recursive: true });
   fs.writeFileSync(path.join(standalone, 'node_modules', 'next', 'marker.txt'), 'next\n');
+  fs.symlinkSync('next', path.join(standalone, 'node_modules', 'next-linked'));
   // Client assets — omitted from standalone by Next, at the app root.
   fs.mkdirSync(path.join(root, '.next', 'static'), { recursive: true });
   fs.writeFileSync(path.join(root, '.next', 'static', 'chunk.js'), '// static asset\n');
@@ -108,6 +109,9 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(bundleApp, 'server.js'))).toBe(true);
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(
       true,
+    );
+    expect(fs.readlinkSync(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe(
+      'next',
     );
     // The documented copy: static + public placed beside the app's server.js.
     expect(fs.existsSync(path.join(bundleApp, '.next', 'static', 'chunk.js'))).toBe(true);

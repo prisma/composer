@@ -139,7 +139,8 @@ async function resolveDir(
     source: dirPath,
     sourceField: 'dir',
     entry: path.relative(dirPath, entryPath).split(path.sep).join('/'),
-    copyInto: (bundleDir) => fs.promises.cp(dirPath, bundleDir, { recursive: true }),
+    copyInto: (bundleDir) =>
+      fs.promises.cp(dirPath, bundleDir, { recursive: true, verbatimSymlinks: true }),
   };
 }
 
