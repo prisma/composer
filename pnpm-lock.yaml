@@ -714,17 +714,14 @@ importers:
         specifier: workspace:0.6.0
         version: link:../../0-foundation/foundation
       '@prisma/cli-engine':
-        specifier: 0.0.9
-        version: 0.0.9
+        specifier: 0.1.1
+        version: 0.1.1
       c12:
         specifier: ^3.3.4
         version: 3.3.4
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
-      ci-info:
-        specifier: ^4.4.0
-        version: 4.4.0
     devDependencies:
       '@internal/tsdown-config':
         specifier: workspace:0.6.0
@@ -1260,8 +1257,8 @@ importers:
         specifier: workspace:0.6.0
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
-        specifier: 0.0.9
-        version: 0.0.9
+        specifier: 0.1.1
+        version: 0.1.1
       '@types/node':
         specifier: ^26.0.1
         version: 26.1.1
@@ -2477,8 +2474,8 @@ packages:
   '@oxc-project/types@0.140.0':
     resolution: {integrity: sha512-h5LUOzGArYemnW1NMz/DuuQhBi96J6JL2Bk8zE4kvqxB5Sg3jxmCiH4uyOWHDkiKSt5vWlG4FIwCR/DbstcNRQ==}
 
-  '@prisma/cli-engine@0.0.9':
-    resolution: {integrity: sha512-OiAolWJBhgwVXJ+0aJ9uERplJkxXsKNaUSaUXNDYGvdEoq5c0365OZbGMH5fTmFpqPlPv7MwZga3WkN6ldQyjQ==}
+  '@prisma/cli-engine@0.1.1':
+    resolution: {integrity: sha512-2W3a4MEpXhjYbDl+TjXsf6/B1auoQ+TCsTgRUN0IpO+qnWqVzEqo00uzkIx6xkL9FcBVNwJGOihLjQG3S5Gtgg==}
     engines: {node: '>=22.12.0'}
 
   '@prisma/config@7.9.0':
@@ -6563,7 +6560,7 @@ snapshots:
 
   '@oxc-project/types@0.140.0': {}
 
-  '@prisma/cli-engine@0.0.9':
+  '@prisma/cli-engine@0.1.1':
     dependencies:
       '@clack/prompts': 1.5.0
       '@prisma/management-api-sdk': 1.55.0

@@ -94,7 +94,9 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                       ]),
                     },
                   ],
+            stdout: () => [],
             json: () => ({ summary: summary ?? null }),
+            next: () => [],
           },
         ),
       );

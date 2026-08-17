@@ -20,7 +20,6 @@ import {
   type Runtime,
   type SpawnChild,
 } from '@prisma/cli-engine';
-import { isCI } from 'ci-info';
 
 /** Where the management API lives. Matches the lowering client's default origin; the env var is the escape hatch for staging. */
 const DEFAULT_MANAGEMENT_API_BASE_URL = 'https://api.prisma.io';
@@ -75,6 +74,21 @@ function clientConfig(
 type PackageManager = Runtime['packageManager'];
 
 /**
+ * What this process runs on, for `ctx.host`. Bun and Deno both announce
+ * themselves in `versions`; nothing else does, so an absent marker means Node.
+ */
+export function describeHost(host: HostProcess): Runtime['host'] {
+  const name =
+    (['bun', 'deno'] as const).find((candidate) => host.versions[candidate] !== undefined) ??
+    'node';
+  return {
+    runtime: { name, version: host.versions[name] ?? host.version },
+    platform: host.platform,
+    arch: host.arch,
+  };
+}
+
+/**
  * Which package manager invoked us, read from the `npm_config_user_agent`
  * every major manager sets (`pnpm/10.27.0 npm/? node/v24.16.0 darwin arm64`).
  * `undefined` when the CLI was run directly rather than through a manager — a
@@ -106,17 +120,11 @@ export function detectPackageManager(
  * `--config` named. A host that loaded the file up front would read it for runs
  * that never needed it, and would have nowhere to put `--config`.
  *
- * `inCI` is the one thing here not derived from the host: `ci-info` answers it
- * from the real `process.env` at import, which is what the engine's `isCI` doc
- * asks a host to wire and what the `prisma` bin already does. Production passes
- * nothing. It is a parameter so a test can still drive CI state without
- * touching a process global.
+ * Nothing here answers "is this CI": the engine detects it from `env` itself,
+ * and `isCIOverride` exists only for hosts where that detection cannot be
+ * right — composer is not one.
  */
-export function createRuntime(
-  host: HostProcess,
-  loadConfig: Runtime['loadConfig'],
-  inCI: boolean = isCI,
-): Runtime {
+export function createRuntime(host: HostProcess, loadConfig: Runtime['loadConfig']): Runtime {
   const env = host.env;
   const apiBaseUrl = env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_MANAGEMENT_API_BASE_URL;
   const packageManager = detectPackageManager(env);
@@ -152,6 +160,6 @@ export function createRuntime(
     spawn: spawnChild,
     managementApi: { baseUrl: apiBaseUrl },
     ...(packageManager !== undefined && { packageManager }),
-    isCI: inCI,
+    host: describeHost(host),
   };
 }

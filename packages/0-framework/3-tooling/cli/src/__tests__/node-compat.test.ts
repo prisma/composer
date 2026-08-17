@@ -29,10 +29,13 @@ describe('node compatibility smoke test', () => {
   test('a bare invocation under node prints the usage banner and exits 0', () => {
     const result = runUnderNode([]);
 
+    // The engine's help renderer lists commands by name alone ('deploy
+    // <entry>'), no longer prefixed with the binary ('prisma-composer
+    // deploy'); the banner still opens with the binary name.
     expect(result.status).toBe(0);
-    expect(result.output).toContain('prisma-composer deploy');
-    expect(result.output).toContain('prisma-composer destroy');
-    expect(result.output).toContain('<entry>');
+    expect(result.output).toContain('prisma-composer');
+    expect(result.output).toContain('deploy <entry>');
+    expect(result.output).toContain('destroy <entry>');
   }, 15000);
 
   test('an unknown command under node is refused by name, exit 2', () => {
