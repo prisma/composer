@@ -29,15 +29,15 @@
     "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test website && node scripts/lint-architecture-coverage.mjs && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs && node scripts/lint-orm-pins.mjs && node scripts/lint-contract-snapshots.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.4",
+    "@biomejs/biome": "2.5.8",
     "@clack/prompts": "^1.7.0",
     "dependency-cruiser": "^17.4.3",
     "husky": "^9.1.7",
-    "lint-staged": "^17.0.7",
+    "lint-staged": "^17.3.0",
     "pathe": "^2.0.3",
-    "pkg-pr-new": "0.0.78",
-    "skills": "^1.5.17",
-    "turbo": "^2.10.5",
+    "pkg-pr-new": "0.0.87",
+    "skills": "^1.5.22",
+    "turbo": "^2.10.9",
     "typescript": "^6.0.3"
   },
   "pnpm": {
