@@ -14,11 +14,11 @@ promoted URL   ──route probe───▶ deploy succeeds
 
 The Node directory adapter traces the explicitly declared entry's static runtime file graph and stages those files beside the directory the author named. It does not choose an entry, run a build, or bundle the application.
 
-The Compute archive preserves a symlink as a tar symlink only after resolving its real target and proving that target remains inside the assembled bundle. Long targets use a POSIX PAX `linkpath` rather than flattening the package tree. It never dereferences the link. Next.js assembly handles one framework-output gap first: if pnpm's standalone tree contains an in-root traced link but omits its virtual-store target, Composer stages the exact corresponding target from Next's declared `outputFileTracingRoot`. A target unavailable there remains dangling and fails, as do links that escape the bundle.
+The Compute archive preserves a symlink as a tar symlink only after resolving its real target and proving that target remains inside the assembled bundle. Long targets use a POSIX PAX `linkpath` rather than flattening the package tree. Long entry paths ride a PAX `path` record the same way, with a `PaxEntries/<digest>` placeholder left in the legacy USTAR field; extraction is therefore correct only for a consumer that honours PAX records for both the entry path and the link target. It never dereferences the link. Next.js assembly handles one framework-output gap first: if pnpm's standalone tree contains an in-root traced link but omits its virtual-store target, Composer stages the exact corresponding target from Next's declared `outputFileTracingRoot`. A target unavailable there remains dangling and fails, as do links that escape the bundle.
 
 The generated bootstrap may install a narrowly scoped compatibility shim when Compute's JavaScript runtime differs from the Node behavior a framework relies on. Such a shim must be feature-gated to that runtime and must run before the application entry is imported.
 
-Compute also supplies `HOST=0.0.0.0` when the author did not configure a host. Framework servers must listen on Compute's network interface rather than a loopback-only default; an explicit author value remains authoritative.
+Compute also supplies `HOST=0.0.0.0` when the author did not configure a host. Framework servers must listen on Compute's network interface rather than a loopback-only default; an explicit author value remains authoritative. The default is applied wherever `ComputeService.run()` executes, so local development and integration-test harnesses bind to all interfaces too, not only the deployed Compute runtime.
 
 ## Reasoning
 

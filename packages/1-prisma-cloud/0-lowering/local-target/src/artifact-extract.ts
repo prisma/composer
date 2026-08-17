@@ -11,6 +11,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isWithin } from '@internal/bundle-paths';
 import * as tar from 'tar';
 
 function unsupportedEntryError(entryPath: string, type: string): Error {
@@ -54,7 +55,7 @@ export function extractComputeArtifact(tarGzPath: string, destDir: string): void
       // tar's own generic warning as the only signal.
       onentry: (entry) => {
         const resolved = path.resolve(tmpDir, entry.path);
-        if (resolved !== tmpDir && !resolved.startsWith(`${tmpDir}${path.sep}`)) {
+        if (!isWithin(tmpDir, resolved)) {
           throw pathEscapeError(entry.path);
         }
         if (REGULAR_FILE_TYPES.has(entry.type)) return;
@@ -65,7 +66,7 @@ export function extractComputeArtifact(tarGzPath: string, destDir: string): void
           throw unsupportedEntryError(entry.path, `${entry.type} without a target`);
         }
         const linkTarget = path.resolve(path.dirname(resolved), entry.linkpath);
-        if (linkTarget !== tmpDir && !linkTarget.startsWith(`${tmpDir}${path.sep}`)) {
+        if (!isWithin(tmpDir, linkTarget)) {
           throw pathEscapeError(`${entry.path} -> ${entry.linkpath}`);
         }
       },

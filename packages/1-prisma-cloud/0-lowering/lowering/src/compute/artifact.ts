@@ -11,6 +11,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
+import { isWithin } from '@internal/bundle-paths';
 
 export interface PackageComputeArtifactOptions {
   /** The service's provision id — namespaces the temp output path. */
@@ -53,14 +54,6 @@ function compareArchivePaths(left: { relPath: string }, right: { relPath: string
   return Buffer.compare(Buffer.from(left.relPath, 'utf8'), Buffer.from(right.relPath, 'utf8'));
 }
 
-function isWithinRoot(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-  );
-}
-
 /** All files and safe symlinks under `dir`, as dir-relative POSIX paths, in
  * sorted order. Symlinks are preserved as links — never dereferenced — after
  * their real target is proven to remain inside the bundle root. This accepts
@@ -86,7 +79,7 @@ function walkEntries(dir: string): BundleEntry[] {
         } catch {
           throw new Error(`bundle symlink at ${rel} is dangling: ${target}`);
         }
-        if (!isWithinRoot(realRoot, realTarget)) {
+        if (!isWithin(realRoot, realTarget)) {
           throw new Error(
             `bundle symlink at ${rel} escapes the bundle root: ${target} — deploy artifacts may only preserve links whose targets are inside the assembled bundle.`,
           );
@@ -98,6 +91,17 @@ function walkEntries(dir: string): BundleEntry[] {
         )
           .split(path.sep)
           .join('/');
+        // The realpath check above proves where the link points on THIS machine;
+        // the archived link is the literal string, which every extractor
+        // re-checks lexically against the unpack root. A target that leaves the
+        // bundle and re-enters through an out-of-bundle alias passes the first
+        // check and fails the second, so reject it here — at the cause.
+        const lexicalTarget = path.resolve(path.dirname(symlinkPath), ...linkname.split('/'));
+        if (!isWithin(dir, lexicalTarget)) {
+          throw new Error(
+            `bundle symlink at ${rel} has a target that leaves the bundle: ${linkname} — its resolved target is inside the bundle, but the link path itself walks outside and re-enters, which every extractor rejects. Point the link at the in-bundle path directly.`,
+          );
+        }
         out.push({ relPath: rel, type: 'symlink', linkname });
         continue;
       }

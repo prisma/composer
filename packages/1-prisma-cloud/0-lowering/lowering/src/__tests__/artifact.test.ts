@@ -437,6 +437,26 @@ describe('packageComputeArtifact', () => {
     ).toThrow(/symlink at escaped escapes the bundle root/);
   });
 
+  test('rejects a link whose literal target leaves the bundle and re-enters through an outside alias', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-symlink-alias-'));
+    const bundleDir = path.join(parent, 'bundle');
+    fs.mkdirSync(path.join(bundleDir, 'node_modules', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(bundleDir, 'main.js'), 'export default {};');
+    fs.writeFileSync(path.join(bundleDir, 'node_modules', 'pkg', 'index.js'), '// real');
+    // An alias OUTSIDE the bundle pointing back at it: the link below resolves
+    // (realpath) inside the bundle, but the literal target archived into the tar
+    // walks out through the alias — which every extractor rejects.
+    fs.symlinkSync(bundleDir, path.join(parent, 'alias'));
+    fs.symlinkSync(
+      path.join('..', '..', 'alias', 'node_modules', 'pkg'),
+      path.join(bundleDir, 'node_modules', 'aliased'),
+    );
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/symlink at node_modules\/aliased has a target that leaves the bundle/);
+  });
+
   test('rejects a dangling symlink instead of emitting an unusable artifact', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
     fs.symlinkSync('missing.js', path.join(bundleDir, 'dangling'));

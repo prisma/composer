@@ -542,9 +542,11 @@ finds its siblings exactly where the build left them — resolve them against
 Nothing is guessed: you name the directory and the entry, and that is what
 ships. Two things to know:
 
-- The tree must contain no symlinks — the platform's packager rejects them, so
-  assembly fails early and names the link rather than shipping a broken
-  artifact. Have your build emit real files.
+- Symlinks are kept as symlinks, never followed and copied. A link whose target
+  resolves inside the built output ships as-is. A link that points outside it,
+  or at something that isn't there, fails the deploy with an error naming the
+  link, rather than shipping a broken artifact or packaging files from your
+  machine.
 - `entry` must be a file inside `dir`. Pointing it outside with `../` is an
   error, not an escape hatch — only `dir` is copied.
 

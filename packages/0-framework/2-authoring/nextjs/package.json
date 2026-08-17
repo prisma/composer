@@ -14,6 +14,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@internal/bundle-paths": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
     "esbuild": "^0.28.1"
   },

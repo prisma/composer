@@ -9,9 +9,12 @@
  * self-contained file and only that file is copied. With `dir`, the whole
  * directory is copied verbatim and `entry` names the file inside it that boots.
  * The directory form also follows the declared entry's static runtime dependency
- * graph and stages those files from the deploy cwd beside the output. This is
- * deterministic dependency assembly (not app bundling), and is what makes
- * framework outputs such as Astro's Node adapter self-contained.
+ * graph and stages those files beside the output. The staging root is derived
+ * from the declared paths and the traced files themselves — never from the
+ * deploy cwd — so the bundle's layout is the same whichever directory the
+ * deploy is invoked from. This is deterministic dependency assembly (not app
+ * bundling), and is what makes framework outputs such as Astro's Node adapter
+ * self-contained.
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -27,6 +30,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertBundleSymlinksStayInside, isWithin } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -144,18 +148,10 @@ async function resolveDir(
   };
 }
 
-function isInside(parent: string, candidate: string): boolean {
-  const relative = path.relative(parent, candidate);
-  return (
-    relative === '' ||
-    (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
-  );
-}
-
 function commonAncestor(left: string, right: string): string {
   let candidate = path.resolve(left);
   const resolvedRight = path.resolve(right);
-  while (!isInside(candidate, resolvedRight)) {
+  while (!isWithin(candidate, resolvedRight)) {
     const parent = path.dirname(candidate);
     if (parent === candidate) return candidate;
     candidate = parent;
@@ -163,13 +159,34 @@ function commonAncestor(left: string, right: string): string {
   return candidate;
 }
 
+function isFilesystemRoot(candidate: string): boolean {
+  return path.parse(candidate).root === candidate;
+}
+
+async function realPathOrSelf(target: string): Promise<string> {
+  try {
+    return await fs.promises.realpath(target);
+  } catch {
+    return target;
+  }
+}
+
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await fs.promises.lstat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Map traced packages to a node_modules directory the copied entry searches.
  * Keep the complete suffix from the first node_modules segment so pnpm's
  * virtual store and nested dependency topology remain intact. Non-package
  * targets (for example a workspace package behind a node_modules symlink) keep
- * their trace-root-relative location inside the bundle. */
-function stagedRuntimePath(source: string, traceBase: string, bundleDir: string): string {
-  const relative = path.relative(traceBase, source);
+ * their staging-root-relative location inside the bundle. */
+function stagedRuntimePath(source: string, stagingRoot: string, bundleDir: string): string {
+  const relative = path.relative(stagingRoot, source);
   const segments = relative.split(path.sep);
   const nodeModules = segments.indexOf('node_modules');
   const stagedSegments = nodeModules === -1 ? segments : segments.slice(nodeModules);
@@ -179,7 +196,7 @@ function stagedRuntimePath(source: string, traceBase: string, bundleDir: string)
 async function copyTracedEntry(
   source: string,
   destination: string,
-  traceBase: string,
+  stagingRoot: string,
   bundleDir: string,
   dirPath: string,
 ): Promise<void> {
@@ -188,14 +205,14 @@ async function copyTracedEntry(
 
   if (stat.isSymbolicLink()) {
     const realTarget = await fs.promises.realpath(source);
-    if (!isInside(traceBase, realTarget)) {
+    if (!isWithin(stagingRoot, realTarget)) {
       throw new Error(
         `the runtime dependency trace found a symlink outside its staging root: ${source} -> ${realTarget}`,
       );
     }
-    const stagedTarget = isInside(dirPath, realTarget)
+    const stagedTarget = isWithin(dirPath, realTarget)
       ? path.join(bundleDir, path.relative(dirPath, realTarget))
-      : stagedRuntimePath(realTarget, traceBase, bundleDir);
+      : stagedRuntimePath(realTarget, stagingRoot, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
     await fs.promises.symlink(linkTarget, destination);
     return;
@@ -212,66 +229,99 @@ async function copyTracedEntry(
   await fs.promises.copyFile(source, destination);
 }
 
+/**
+ * The staging root: the deepest directory containing the service module, the
+ * built dir, and every traced file (both the path the trace reported and, for a
+ * symlink, the path it resolves to). Derived only from those paths, never from
+ * the deploy cwd, so the same inputs always produce the same bundle layout.
+ *
+ * A root that walks all the way to the filesystem root is refused rather than
+ * used: every containment check below it would accept anything, and assembly
+ * would stage arbitrary reachable files. The path that widened it is named so
+ * the author can see which dependency caused it.
+ */
+function stagingRootFor(
+  moduleDir: string,
+  dirPath: string,
+  tracedPaths: readonly string[],
+): string {
+  let root = commonAncestor(moduleDir, dirPath);
+  if (isFilesystemRoot(root)) {
+    throw new Error(
+      `the build adapter's dir ("${dirPath}") and the directory of its module ("${moduleDir}") share no ` +
+        'common ancestor below the filesystem root, so runtime dependency staging has no root to work from.',
+    );
+  }
+  for (const traced of tracedPaths) {
+    const widened = commonAncestor(root, traced);
+    if (isFilesystemRoot(widened)) {
+      throw new Error(
+        `the runtime dependency trace reached ${traced}, which shares no directory with the build ` +
+          `output ("${dirPath}") below the filesystem root — staging from there would sweep in ` +
+          'arbitrary files. Keep the traced dependency inside the project that holds the build output.',
+      );
+    }
+    root = widened;
+  }
+  return root;
+}
+
 /** Stages the explicit entry's runtime file graph beside the copied build dir.
  * `nodeFileTrace` follows import/require/package metadata; it does not rewrite
- * the app. Files already supplied by `dir` remain the author's verbatim copy. */
+ * the app. Files already supplied by `dir` remain the author's verbatim copy.
+ *
+ * The trace itself runs from the filesystem root so nothing it finds is dropped
+ * for sitting outside a narrower base — a pnpm virtual store at the workspace
+ * root is outside the app directory, and dropping it would silently ship a
+ * bundle missing its dependencies. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
   readonly dirPath: string;
   readonly moduleDir: string;
-  readonly cwd: string;
   readonly bundleDir: string;
 }): Promise<void> {
-  const resolvedCwd = path.resolve(options.cwd);
-  const traceBasePath =
-    isInside(resolvedCwd, options.moduleDir) && isInside(resolvedCwd, options.dirPath)
-      ? resolvedCwd
-      : commonAncestor(options.moduleDir, options.dirPath);
-  const [traceBase, entryPath, dirPath] = await Promise.all([
-    fs.promises.realpath(traceBasePath),
+  const [moduleDir, entryPath, dirPath] = await Promise.all([
+    fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
     fs.promises.realpath(options.dirPath),
   ]);
   const traced = await nodeFileTrace([entryPath], {
-    base: traceBase,
-    processCwd: traceBase,
+    base: path.parse(moduleDir).root,
+    processCwd: moduleDir,
   });
 
-  for (const relative of [...traced.fileList].sort()) {
-    const source = path.resolve(traceBase, relative);
-    if (!isInside(traceBase, source)) {
-      throw new Error(`the runtime dependency trace escaped its staging root: ${relative}`);
-    }
-    if (isInside(dirPath, source)) continue;
-    const destination = stagedRuntimePath(source, traceBase, options.bundleDir);
-    if (fs.existsSync(destination)) continue;
-    await copyTracedEntry(source, destination, traceBase, options.bundleDir, dirPath);
-  }
-}
+  const tracedEntries = await Promise.all(
+    [...traced.fileList].sort().map(async (relative) => {
+      const source = path.resolve(path.parse(moduleDir).root, relative);
+      return { source, origin: await realPathOrSelf(source) };
+    }),
+  );
 
-async function assertBundleSymlinksStayInside(bundleDir: string): Promise<void> {
-  const realRoot = await fs.promises.realpath(bundleDir);
-  const walk = async (directory: string): Promise<void> => {
-    for (const entry of await fs.promises.readdir(directory, { withFileTypes: true })) {
-      const full = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) {
-        let realTarget: string;
-        try {
-          realTarget = await fs.promises.realpath(full);
-        } catch {
-          throw new Error(`the assembled bundle contains a dangling symlink: ${full}`);
-        }
-        if (!isInside(realRoot, realTarget)) {
-          throw new Error(
-            `the assembled bundle contains a symlink whose target escapes the bundle: ${full} -> ${await fs.promises.readlink(full)}`,
-          );
-        }
-      } else if (entry.isDirectory()) {
-        await walk(full);
-      }
+  const stagingRoot = stagingRootFor(
+    moduleDir,
+    dirPath,
+    tracedEntries.flatMap(({ source, origin }) => [source, origin]),
+  );
+
+  const stagedFrom = new Map<string, string>();
+  for (const { source, origin } of tracedEntries) {
+    if (isWithin(dirPath, source)) continue;
+    const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
+    const alreadyStaged = stagedFrom.get(destination);
+    if (alreadyStaged !== undefined) {
+      if (alreadyStaged === origin) continue;
+      throw new Error(
+        'two runtime dependencies stage to the same bundle path ' +
+          `("${path.relative(options.bundleDir, destination).split(path.sep).join('/')}"): ` +
+          `${alreadyStaged} and ${origin}. Staging keeps each file's path from its first node_modules ` +
+          'segment, so two packages of the same name installed at different depths collapse onto one ' +
+          'location — deduplicate them in your install so only one version is reachable.',
+      );
     }
-  };
-  await walk(bundleDir);
+    if (await pathExists(destination)) continue;
+    await copyTracedEntry(source, destination, stagingRoot, options.bundleDir, dirPath);
+    stagedFrom.set(destination, origin);
+  }
 }
 
 /**
@@ -337,7 +387,6 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
       dirPath: runnable.source,
       moduleDir,
-      cwd: input.cwd,
       bundleDir,
     });
   }

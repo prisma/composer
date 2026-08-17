@@ -46,8 +46,13 @@ copied in exactly as the Next docs prescribe). What it must **never** do is
 *guess* or *launder*: no filename guessing (the wrapper's name is dictated), no
 monorepo-depth inference (the app's location in a standalone tree is *found* by
 locating `server.js`, not computed), no baking absolute paths into artifacts, and
-a symlinked `node_modules` is a hard error, never dereferenced. See
-[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md);
+a symlink is **never** dereferenced. A symlink survives packaging as a symlink
+only after assembly resolves its real target and proves that target stays inside
+the bundle; a link that escapes the bundle or dangles is a hard error naming the
+link. Runtime files enter the bundle only by tracing the entry the author
+declared — never by discovering one. See
+[ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md) and
+[ADR-0047](../90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md);
 every guessing/laundering violation has produced a real deploy failure. Do not
 relitigate.
 

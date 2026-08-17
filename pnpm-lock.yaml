@@ -565,6 +565,18 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/0-framework/1-core/bundle-paths:
+    devDependencies:
+      '@internal/tsdown-config':
+        specifier: workspace:0.6.0
+        version: link:../../0-foundation/tsdown-config
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/0-framework/1-core/core:
     dependencies:
       '@internal/foundation':
@@ -598,6 +610,9 @@ importers:
 
   packages/0-framework/2-authoring/nextjs:
     dependencies:
+      '@internal/bundle-paths':
+        specifier: workspace:0.6.0
+        version: link:../../1-core/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
@@ -623,6 +638,9 @@ importers:
 
   packages/0-framework/2-authoring/node:
     dependencies:
+      '@internal/bundle-paths':
+        specifier: workspace:0.6.0
+        version: link:../../1-core/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../1-core/core
@@ -790,6 +808,9 @@ importers:
 
   packages/1-prisma-cloud/0-lowering/local-target:
     dependencies:
+      '@internal/bundle-paths':
+        specifier: workspace:0.6.0
+        version: link:../../../0-framework/1-core/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../../0-framework/1-core/core
@@ -833,6 +854,9 @@ importers:
 
   packages/1-prisma-cloud/0-lowering/lowering:
     dependencies:
+      '@internal/bundle-paths':
+        specifier: workspace:0.6.0
+        version: link:../../../0-framework/1-core/bundle-paths
       '@internal/core':
         specifier: workspace:0.6.0
         version: link:../../../0-framework/1-core/core
