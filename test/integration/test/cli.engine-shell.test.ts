@@ -54,11 +54,14 @@ describe('the prisma-composer binary', () => {
   test('names itself and lists the four commands it mounts', () => {
     const result = runCli(['--help']);
 
+    // The engine's help renderer lists commands by usage line ('deploy
+    // <entry>'), no longer prefixed with the binary name.
     expect(result.status).toBe(0);
-    expect(result.output).toContain('prisma-composer deploy');
-    expect(result.output).toContain('prisma-composer destroy');
-    expect(result.output).toContain('prisma-composer dev');
-    expect(result.output).toContain('prisma-composer log');
+    expect(result.output).toContain('prisma-composer');
+    expect(result.output).toContain('deploy <entry>');
+    expect(result.output).toContain('destroy <entry>');
+    expect(result.output).toContain('dev <entry>');
+    expect(result.output).toContain('log <entry>');
   }, 30_000);
 
   test('an unknown command is refused by name, exit 2', () => {
