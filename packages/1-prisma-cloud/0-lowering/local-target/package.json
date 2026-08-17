@@ -13,6 +13,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@internal/bundle-paths": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
     "@internal/dev-emulators": "workspace:0.6.0",
     "@internal/lowering": "workspace:0.6.0",

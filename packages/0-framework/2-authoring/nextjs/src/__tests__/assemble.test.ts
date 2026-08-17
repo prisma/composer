@@ -34,6 +34,7 @@ function writeNextBuild(root: string): { appRel: string } {
   fs.writeFileSync(path.join(appOut, 'server.js'), '// standalone server\n');
   fs.mkdirSync(path.join(standalone, 'node_modules', 'next'), { recursive: true });
   fs.writeFileSync(path.join(standalone, 'node_modules', 'next', 'marker.txt'), 'next\n');
+  fs.symlinkSync('next', path.join(standalone, 'node_modules', 'next-linked'));
   // Client assets — omitted from standalone by Next, at the app root.
   fs.mkdirSync(path.join(root, '.next', 'static'), { recursive: true });
   fs.writeFileSync(path.join(root, '.next', 'static', 'chunk.js'), '// static asset\n');
@@ -42,7 +43,10 @@ function writeNextBuild(root: string): { appRel: string } {
   // Next's manifest — records the app's subpath within standalone (posix).
   fs.writeFileSync(
     path.join(root, '.next', 'required-server-files.json'),
-    JSON.stringify({ relativeAppDir: 'apps/web' }),
+    JSON.stringify({
+      relativeAppDir: 'apps/web',
+      config: { outputFileTracingRoot: root },
+    }),
   );
   fs.writeFileSync(
     path.join(root, 'src', 'service.ts'),
@@ -109,6 +113,9 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(
       true,
     );
+    expect(fs.readlinkSync(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe(
+      'next',
+    );
     // The documented copy: static + public placed beside the app's server.js.
     expect(fs.existsSync(path.join(bundleApp, '.next', 'static', 'chunk.js'))).toBe(true);
     expect(fs.existsSync(path.join(bundleApp, 'public', 'favicon.ico'))).toBe(true);
@@ -124,4 +131,135 @@ describe('assemble()', () => {
     const server = standaloneServerPath(nextjs({ module: moduleUrl(root), appDir: '..' }));
     expect(server).toBe(path.join(root, '.next', 'standalone', 'apps', 'web', 'server.js'));
   });
+
+  test('stages a pnpm virtual-store target that Next omitted behind a traced link', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+    const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const bundleStore = path.join(
+      cwd,
+      '.prisma-composer',
+      'artifacts',
+      'storefront.web',
+      'bundle',
+      'node_modules',
+      '.pnpm',
+    );
+    expect(fs.readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))).toBe(
+      '../semver@6.3.1/node_modules/semver',
+    );
+    expect(
+      fs.readFileSync(
+        path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),
+        'utf8',
+      ),
+    ).toContain('6.3.1');
+    expect(result.watch).toContain(source);
+  }, 20_000);
+
+  test('refuses a manifest whose app location escapes its tracing root', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const manifestPath = path.join(root, '.next', 'required-server-files.json');
+    fs.writeFileSync(manifestPath, JSON.stringify({ relativeAppDir: '../evil', config: {} }));
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd: root,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/escapes its tracing root/);
+  }, 20_000);
+
+  test('names the missing manifest field when links need repair and no tracing root is recorded', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+    const manifestPath = path.join(root, '.next', 'required-server-files.json');
+    fs.writeFileSync(manifestPath, JSON.stringify({ relativeAppDir: 'apps/web', config: {} }));
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd: root,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/records no config\.outputFileTracingRoot/);
+  }, 20_000);
+
+  test('fails at assemble when a staged store payload carries an escaping link', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+    fs.writeFileSync(path.join(root, 'outside-the-bundle.txt'), 'must not ship');
+    // Copied verbatim into the bundle by staging, where it points outside.
+    fs.symlinkSync(path.join(root, 'outside-the-bundle.txt'), path.join(source, 'escaped.txt'));
+    const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/assembled bundle contains a symlink whose target escapes the bundle/);
+  }, 20_000);
+
+  test('assembles a complete standalone build when its recorded tracing root is absent', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const manifestPath = path.join(root, '.next', 'required-server-files.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.config.outputFileTracingRoot = path.join(root, 'missing-build-machine-root');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd: root,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    expect(fs.existsSync(path.join(result.dir, result.entry))).toBe(true);
+  }, 20_000);
 });

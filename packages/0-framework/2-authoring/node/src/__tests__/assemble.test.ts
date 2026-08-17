@@ -514,11 +514,7 @@ describe('assemble() — the directory form', () => {
     ).rejects.toThrow(/sits inside the build adapter's dir .* copy the artifact into itself/s);
   });
 
-  test('rejects a tree containing a symlink, naming it — the packager rejects symlinks, and we ship what the build produced', async () => {
-    // Decided over dereferencing on copy: the artifact must be the tree the
-    // author's build produced (ADR-0005), and following a link could pull in
-    // files from outside dir that the author never named. Failing here beats
-    // failing in the packager, which reports it far from the cause.
+  test('rejects a tree symlink whose target is outside the final assembled bundle', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
@@ -536,10 +532,10 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*server\/util\.js/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/util\.js/s);
   });
 
-  test('reports a symlinked directory without descending into it', async () => {
+  test('rejects an escaping directory symlink without descending into it', async () => {
     const serviceDir = makeServiceDir();
     writeTree(path.join(serviceDir, 'dist'), {
       'server/start.js': 'export default "app-entry";\n',
@@ -557,7 +553,27 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*server\/vendor/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/vendor/s);
+  });
+
+  test('preserves a relative directory symlink whose target stays inside the built tree', async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist', 'server'), {
+      'start.js': 'export default "app-entry";\n',
+      'node_modules/real/index.js': 'export const value = 1;\n',
+    });
+    fs.symlinkSync('real', path.join(serviceDir, 'dist', 'server', 'node_modules', 'linked'));
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'start.js' }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const copied = path.join(result.dir, 'bundle', 'node_modules', 'linked');
+    expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(copied)).toBe('real');
   });
 
   test('rejects a dir that is itself a symlink to a directory — hard-errors instead of dereferencing it and copying the target', async () => {
@@ -579,7 +595,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .* is itself a symlink/s);
   });
 
   test('rejects a dir that is itself a symlink to a FILE — the same hard error, not "not a directory"', async () => {
@@ -602,6 +618,197 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/contains symlinks.*dist\/server/s);
+    ).rejects.toThrow(/dir .* is itself a symlink/s);
   });
+
+  test('stages bare runtime dependencies traced from a directory entry (Astro Node output shape)', async () => {
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+    });
+    const marker = installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'astro',
+      cwd,
+    });
+
+    expect(result.entry).toBe('bundle/server/entry.mjs');
+    expect(
+      fs.readFileSync(
+        path.join(result.dir, 'bundle', 'node_modules', 'runtime-fixture', 'index.js'),
+        'utf8',
+      ),
+    ).toContain(marker);
+  }, 20_000);
+
+  test('re-roots workspace package dependencies under a Node lookup path', async () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-workspace-'));
+    tmpDirs.push(workspaceRoot);
+    const serviceDir = path.join(workspaceRoot, 'apps', 'web');
+    fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+    });
+    const marker = 'WORKSPACE_RUNTIME_FIXTURE';
+    const workspacePackage = path.join(workspaceRoot, 'packages', 'runtime-fixture');
+    writeTree(workspacePackage, {
+      'package.json': JSON.stringify({
+        name: 'runtime-fixture',
+        version: '1.0.0',
+        type: 'module',
+        main: 'index.js',
+      }),
+      'index.js': `export const marker = ${JSON.stringify(marker)};\n`,
+    });
+    const serviceNodeModules = path.join(serviceDir, 'node_modules');
+    fs.mkdirSync(serviceNodeModules, { recursive: true });
+    fs.symlinkSync(
+      path.relative(serviceNodeModules, workspacePackage),
+      path.join(serviceNodeModules, 'runtime-fixture'),
+    );
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'astro',
+      cwd: workspaceRoot,
+    });
+
+    const stagedPackage = path.join(
+      result.dir,
+      'bundle',
+      'node_modules',
+      'runtime-fixture',
+      'index.js',
+    );
+    expect(fs.lstatSync(path.dirname(stagedPackage)).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(stagedPackage, 'utf8')).toContain(marker);
+    const loaded = await import(pathToFileURL(path.join(result.dir, result.entry)).href);
+    expect(loaded.default).toBe(marker);
+  }, 20_000);
+
+  test('stages a dependency reachable only through a workspace-root virtual store, identically from any cwd', async () => {
+    // The pnpm shape: the app lives at repo/apps/web, but its dependency's real
+    // files sit in the store at repo/node_modules/.pnpm, above the app. A
+    // staging root picked from the deploy cwd (or from the app directory alone)
+    // excludes the store, and the trace then drops it — a bundle that boots
+    // straight into "cannot find module dep". The root must reach the store
+    // whichever directory the deploy was invoked from, so both runs here must
+    // produce byte-identical layouts.
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pnpm-'));
+    tmpDirs.push(workspaceRoot);
+    const serviceDir = path.join(workspaceRoot, 'apps', 'web');
+    fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "dep"; export default marker;\n',
+    });
+    const marker = 'PNPM_STORE_FIXTURE';
+    const storePackage = path.join(
+      workspaceRoot,
+      'node_modules',
+      '.pnpm',
+      'dep@1.0.0',
+      'node_modules',
+      'dep',
+    );
+    writeTree(storePackage, {
+      'package.json': JSON.stringify({
+        name: 'dep',
+        version: '1.0.0',
+        type: 'module',
+        main: 'index.js',
+      }),
+      'index.js': `export const marker = ${JSON.stringify(marker)};\n`,
+    });
+    const serviceNodeModules = path.join(serviceDir, 'node_modules');
+    fs.mkdirSync(serviceNodeModules, { recursive: true });
+    fs.symlinkSync(
+      path.relative(serviceNodeModules, storePackage),
+      path.join(serviceNodeModules, 'dep'),
+    );
+    writeServiceModule(serviceDir);
+
+    const assembleFrom = (cwd: string) =>
+      assemble({
+        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        address: 'astro',
+        cwd,
+      });
+
+    const first = await assembleFrom(makeCwd());
+    const storeRelative = 'node_modules/.pnpm/dep@1.0.0/node_modules/dep';
+    // The store is staged intact; node_modules/dep is the app-level link into
+    // it, so treeContents (which follows it) reports the same files twice.
+    expect(treeContents(path.join(first.dir, 'bundle'))).toEqual([
+      `${storeRelative}/index.js`,
+      `${storeRelative}/package.json`,
+      'node_modules/dep/index.js',
+      'node_modules/dep/package.json',
+      'server/entry.mjs',
+    ]);
+    // The app-level link survives as a link into the staged store, so Node's
+    // own resolution finds the dependency the same way it did before assembly.
+    const linked = path.join(first.dir, 'bundle', 'node_modules', 'dep');
+    expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(linked)).toBe('.pnpm/dep@1.0.0/node_modules/dep');
+    const loaded = await import(pathToFileURL(path.join(first.dir, first.entry)).href);
+    expect(loaded.default).toBe(marker);
+
+    const second = await assembleFrom(workspaceRoot);
+    expect(treeContents(path.join(second.dir, 'bundle'))).toEqual(
+      treeContents(path.join(first.dir, 'bundle')),
+    );
+    expect(fs.readlinkSync(path.join(second.dir, 'bundle', 'node_modules', 'dep'))).toBe(
+      fs.readlinkSync(linked),
+    );
+  }, 30_000);
+
+  test('rejects two traced packages of the same name that would collapse onto one bundle path', async () => {
+    // Staging keeps each file's path from its FIRST node_modules segment, so a
+    // hoisted <root>/node_modules/dup and a nested
+    // <root>/packages/lib/node_modules/dup both land on
+    // bundle/node_modules/dup. Silently keeping whichever was staged first
+    // ships an arbitrary version; assembly must name both instead.
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs':
+        'import { marker } from "dup";\nimport { nested } from "lib";\nexport default marker + nested;\n',
+    });
+    const dupPackage = (version: string, marker: string) => ({
+      'package.json': JSON.stringify({ name: 'dup', version, type: 'module', main: 'index.js' }),
+      'index.js': `export const marker = ${JSON.stringify(marker)};\n`,
+    });
+    writeTree(path.join(serviceDir, 'node_modules', 'dup'), dupPackage('1.0.0', 'HOISTED'));
+    const nestedLib = path.join(serviceDir, 'packages', 'lib');
+    writeTree(nestedLib, {
+      'package.json': JSON.stringify({ name: 'lib', version: '1.0.0', type: 'module' }),
+      'index.js': 'export { marker as nested } from "dup";\n',
+    });
+    writeTree(path.join(nestedLib, 'node_modules', 'dup'), dupPackage('2.0.0', 'NESTED'));
+    fs.symlinkSync(
+      path.relative(path.join(serviceDir, 'node_modules'), nestedLib),
+      path.join(serviceDir, 'node_modules', 'lib'),
+    );
+    writeServiceModule(serviceDir);
+
+    await expect(
+      assemble({
+        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        address: 'svc',
+        cwd: makeCwd(),
+      }),
+    ).rejects.toThrow(/stage to the same bundle path.*node_modules\/dup.*packages\/lib/s);
+  }, 20_000);
 });

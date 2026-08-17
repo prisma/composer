@@ -540,13 +540,20 @@ finds its siblings exactly where the build left them — resolve them against
 `import.meta.url`, not the working directory.
 
 Nothing is guessed: you name the directory and the entry, and that is what
-ships. Two things to know:
+ships. Three things to know:
 
-- The tree must contain no symlinks — the platform's packager rejects them, so
-  assembly fails early and names the link rather than shipping a broken
-  artifact. Have your build emit real files.
+- Symlinks are kept as symlinks, never followed and copied. A link whose target
+  resolves inside the built output ships as-is. A link that points outside it,
+  or at something that isn't there, fails the deploy with an error naming the
+  link, rather than shipping a broken artifact or packaging files from your
+  machine.
+- The entry's runtime imports ship too. Deploy traces the file you named and
+  stages the packages it imports beside `dir`, so framework output that keeps
+  bare imports (Astro's Node adapter, for example) boots without you copying
+  `node_modules` into the build.
 - `entry` must be a file inside `dir`. Pointing it outside with `../` is an
-  error, not an escape hatch — only `dir` is copied.
+  error, not an escape hatch — only `dir` is copied verbatim; everything else
+  arrives through the trace.
 
 Without `dir` you get the single-file form above, unchanged.
 

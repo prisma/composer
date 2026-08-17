@@ -5,18 +5,19 @@
  * emulation). Reading tar is commodity even though the writer is a
  * deterministic subset we own (fixed mtimes, sorted entries): the maintained
  * `tar` package (dependency razor) does the parsing; this module keeps only
- * the pinned entry filtering (regular files only, reject links/devices,
- * reject path escapes) and the directory-level temp-then-rename.
+ * the pinned entry filtering (regular files plus safe relative symlinks,
+ * reject devices/path escapes) and the directory-level temp-then-rename.
  */
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { isWithin } from '@internal/bundle-paths';
 import * as tar from 'tar';
 
 function unsupportedEntryError(entryPath: string, type: string): Error {
   return new Error(
-    `compute artifact entry "${entryPath}" has type "${type}" — only regular files are ` +
-      'supported; this artifact was not produced by packageComputeArtifact.',
+    `compute artifact entry "${entryPath}" has type "${type}" — only regular files and ` +
+      'safe symlinks are supported; this artifact was not produced by packageComputeArtifact.',
   );
 }
 
@@ -28,6 +29,7 @@ function pathEscapeError(entryPath: string): Error {
 }
 
 const REGULAR_FILE_TYPES = new Set(['File', 'OldFile', 'ContiguousFile']);
+const SYMLINK_TYPE = 'SymbolicLink';
 
 /**
  * Extracts `tarGzPath` (a `packageComputeArtifact` tar.gz) into `destDir`,
@@ -52,12 +54,25 @@ export function extractComputeArtifact(tarGzPath: string, destDir: string): void
       // below still names the entry in a pinned error rather than leaving
       // tar's own generic warning as the only signal.
       onentry: (entry) => {
-        if (!REGULAR_FILE_TYPES.has(entry.type)) {
+        const resolved = path.resolve(tmpDir, entry.path);
+        if (!isWithin(tmpDir, resolved)) {
+          throw pathEscapeError(entry.path);
+        }
+        if (REGULAR_FILE_TYPES.has(entry.type)) return;
+        if (entry.type !== SYMLINK_TYPE) {
           throw unsupportedEntryError(entry.path, entry.type);
         }
-        const resolved = path.resolve(tmpDir, entry.path);
-        if (resolved !== tmpDir && !resolved.startsWith(`${tmpDir}${path.sep}`)) {
-          throw pathEscapeError(entry.path);
+        if (entry.linkpath === undefined) {
+          throw unsupportedEntryError(entry.path, `${entry.type} without a target`);
+        }
+        // An absolute target could point inside tmpDir and survive the
+        // resolve check, then dangle once the tree is renamed into place.
+        if (path.isAbsolute(entry.linkpath)) {
+          throw pathEscapeError(`${entry.path} -> ${entry.linkpath}`);
+        }
+        const linkTarget = path.resolve(path.dirname(resolved), entry.linkpath);
+        if (!isWithin(tmpDir, linkTarget)) {
+          throw pathEscapeError(`${entry.path} -> ${entry.linkpath}`);
         }
       },
     });

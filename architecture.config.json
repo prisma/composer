@@ -7,6 +7,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/0-framework/2-authoring/bundle-paths/src/**",
+      "domain": "framework",
+      "layer": "authoring",
+      "plane": "control"
+    },
+    {
       "glob": "packages/0-framework/1-core/core/src/*.ts",
       "domain": "framework",
       "layer": "core",
@@ -908,7 +914,7 @@
     {
       "from": "packages/1-prisma-cloud/1-extensions/target/src/control/**",
       "to": "packages/9-public/composer-prisma-cloud/src/exports/local-target.ts",
-      "reason": "ADR-0041's lazy local-target reference (operator directive; naming, operator 2026-07-23): control/extension.ts's `localTarget` field is a dynamic import of its own published local-target subpath by bare specifier, so no local-target implementation code is bundled into, or loaded by, any deploy path. The specifier resolves at a CONSUMING app's runtime, never as a real build-time dependency between these two packages — verified: dist/control.mjs keeps it as a genuine external dynamic import, never inlined (target's invariant 7 test)."
+      "reason": "ADR-0041's lazy local-target reference (operator directive; naming, operator 2026-07-23): control/extension.ts's `localTarget` field is a dynamic import of its own published local-target subpath by bare specifier, so no local-target implementation code is bundled into, or loaded by, any deploy path. The specifier resolves at a CONSUMING app's runtime, never as a real build-time dependency between these two packages \u2014 verified: dist/control.mjs keeps it as a genuine external dynamic import, never inlined (target's invariant 7 test)."
     }
   ],
   "layerOrder": {

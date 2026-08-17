@@ -36,9 +36,15 @@ const build = {
 };
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
-async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
+async function withEnv<T>(
+  values: Record<string, string | undefined>,
+  fn: () => Promise<T> | T,
+): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(values)) process.env[k] = v;
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   try {
     return await fn();
   } finally {
@@ -402,6 +408,26 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
     expect(portAtBoot).toBe('3000');
+  });
+
+  test('run() binds framework servers to the Compute network unless the author set HOST', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let defaultHost: string | undefined;
+    let explicitHost: string | undefined;
+
+    await withEnv({ COMPOSER_INGEST_PORT: '', COMPOSER_PORT: '', HOST: undefined }, () =>
+      app.run('ingest', async () => {
+        defaultHost = process.env['HOST'];
+      }),
+    );
+    await withEnv({ COMPOSER_INGEST_PORT: '', COMPOSER_PORT: '', HOST: '127.0.0.1' }, () =>
+      app.run('ingest', async () => {
+        explicitHost = process.env['HOST'];
+      }),
+    );
+
+    expect(defaultHost).toBe('0.0.0.0');
+    expect(explicitHost).toBe('127.0.0.1');
   });
 
   // Reserved provider params (ADR-0031) are the provider-side counterpart of

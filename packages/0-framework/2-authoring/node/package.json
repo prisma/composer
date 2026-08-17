@@ -14,7 +14,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@internal/bundle-paths": "workspace:0.6.0",
     "@internal/core": "workspace:0.6.0",
+    "@vercel/nft": "^1.10.2",
     "esbuild": "^0.28.1"
   },
   "devDependencies": {
