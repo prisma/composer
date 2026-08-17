@@ -166,7 +166,7 @@ jobs:
           BIN=packages/9-public/composer-cli/dist/bin.mjs
           VERSION=$(node -p "require('./packages/9-public/composer-cli/package.json').version")
           node "$BIN" --version | grep -q "$VERSION"
-          node "$BIN" --help 2>&1 | grep -q 'prisma-composer deploy'
+          node "$BIN" --help 2>&1 | grep -q 'deploy <entry>'
       # The step above proves start-up, and start-up is exactly the part that
       # loads none of the deploy machinery: the CLI keeps its executors behind
       # `await import()` (check-family-static-graph.mjs enforces that), so
