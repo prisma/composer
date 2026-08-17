@@ -20,11 +20,13 @@ function readTar(gz: Buffer): {
   names: string[];
   read: (name: string) => string;
   link: (name: string) => string | undefined;
+  mode: (name: string) => number | undefined;
 } {
   const tar = zlib.gunzipSync(gz);
   const names: string[] = [];
   const contents = new Map<string, string>();
   const links = new Map<string, string>();
+  const modes = new Map<string, number>();
   let nextPax: Record<string, string> = {};
   let offset = 0;
   while (offset + 512 <= tar.length) {
@@ -35,6 +37,10 @@ function readTar(gz: Buffer): {
     const headerName = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
     const size = Number.parseInt(
       header.subarray(124, 136).toString('utf8').replace(/\0.*$/s, '').trim(),
+      8,
+    );
+    const mode = Number.parseInt(
+      header.subarray(100, 108).toString('utf8').replace(/\0.*$/s, '').trim(),
       8,
     );
     const typeflag = header.subarray(156, 157).toString('utf8');
@@ -59,6 +65,7 @@ function readTar(gz: Buffer): {
     }
     const name = nextPax['path'] ?? headerName;
     contents.set(name, content.toString('utf8'));
+    modes.set(name, mode);
     if (typeflag === '2') links.set(name, nextPax['linkpath'] ?? linkname);
     names.push(name);
     nextPax = {};
@@ -68,6 +75,7 @@ function readTar(gz: Buffer): {
     names,
     read: (name: string) => contents.get(name) ?? '',
     link: (name: string) => links.get(name),
+    mode: (name: string) => modes.get(name),
   };
 }
 
@@ -334,6 +342,47 @@ describe('packageComputeArtifact', () => {
 
     expect(archive.names).toContain('node_modules/link');
     expect(archive.link('node_modules/link')).toBe('real');
+  });
+
+  test('rewrites an absolute in-bundle symlink to a deploy-relative target', () => {
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      'node_modules/real/index.js': '// real',
+    });
+    fs.symlinkSync(
+      path.join(bundleDir, 'node_modules', 'real'),
+      path.join(bundleDir, 'node_modules', 'link'),
+    );
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.link('node_modules/link')).toBe('real');
+    expect(archive.link('node_modules/link')).not.toContain(bundleDir);
+  });
+
+  test('preserves executable mode for staged runtime files', () => {
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      'node_modules/tool/bin/run': '#!/bin/sh\nexit 0\n',
+    });
+    fs.chmodSync(path.join(bundleDir, 'node_modules', 'tool', 'bin', 'run'), 0o755);
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.mode('node_modules/tool/bin/run')).toBe(0o755);
+    expect(archive.mode('main.js')).toBe(0o644);
   });
 
   test('uses a PAX linkpath for a safe framework symlink target longer than USTAR allows', () => {

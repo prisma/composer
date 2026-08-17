@@ -648,4 +648,54 @@ describe('assemble() — the directory form', () => {
       ),
     ).toContain(marker);
   }, 20_000);
+
+  test('re-roots workspace package dependencies under a Node lookup path', async () => {
+    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-workspace-'));
+    tmpDirs.push(workspaceRoot);
+    const serviceDir = path.join(workspaceRoot, 'apps', 'web');
+    fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+    });
+    const marker = 'WORKSPACE_RUNTIME_FIXTURE';
+    const workspacePackage = path.join(workspaceRoot, 'packages', 'runtime-fixture');
+    writeTree(workspacePackage, {
+      'package.json': JSON.stringify({
+        name: 'runtime-fixture',
+        version: '1.0.0',
+        type: 'module',
+        main: 'index.js',
+      }),
+      'index.js': `export const marker = ${JSON.stringify(marker)};\n`,
+    });
+    const serviceNodeModules = path.join(serviceDir, 'node_modules');
+    fs.mkdirSync(serviceNodeModules, { recursive: true });
+    fs.symlinkSync(
+      path.relative(serviceNodeModules, workspacePackage),
+      path.join(serviceNodeModules, 'runtime-fixture'),
+    );
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'astro',
+      cwd: workspaceRoot,
+    });
+
+    const stagedPackage = path.join(
+      result.dir,
+      'bundle',
+      'node_modules',
+      'runtime-fixture',
+      'index.js',
+    );
+    expect(fs.lstatSync(path.dirname(stagedPackage)).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(stagedPackage, 'utf8')).toContain(marker);
+    const loaded = await import(pathToFileURL(path.join(result.dir, result.entry)).href);
+    expect(loaded.default).toBe(marker);
+  }, 20_000);
 });

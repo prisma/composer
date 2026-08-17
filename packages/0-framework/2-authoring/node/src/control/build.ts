@@ -163,6 +163,19 @@ function commonAncestor(left: string, right: string): string {
   return candidate;
 }
 
+/** Map traced packages to a node_modules directory the copied entry searches.
+ * Keep the complete suffix from the first node_modules segment so pnpm's
+ * virtual store and nested dependency topology remain intact. Non-package
+ * targets (for example a workspace package behind a node_modules symlink) keep
+ * their trace-root-relative location inside the bundle. */
+function stagedRuntimePath(source: string, traceBase: string, bundleDir: string): string {
+  const relative = path.relative(traceBase, source);
+  const segments = relative.split(path.sep);
+  const nodeModules = segments.indexOf('node_modules');
+  const stagedSegments = nodeModules === -1 ? segments : segments.slice(nodeModules);
+  return path.join(bundleDir, ...stagedSegments);
+}
+
 async function copyTracedEntry(
   source: string,
   destination: string,
@@ -182,7 +195,7 @@ async function copyTracedEntry(
     }
     const stagedTarget = isInside(dirPath, realTarget)
       ? path.join(bundleDir, path.relative(dirPath, realTarget))
-      : path.join(bundleDir, path.relative(traceBase, realTarget));
+      : stagedRuntimePath(realTarget, traceBase, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
     await fs.promises.symlink(linkTarget, destination);
     return;
@@ -210,11 +223,16 @@ async function stageRuntimeDependencies(options: {
   readonly bundleDir: string;
 }): Promise<void> {
   const resolvedCwd = path.resolve(options.cwd);
-  const traceBase =
+  const traceBasePath =
     isInside(resolvedCwd, options.moduleDir) && isInside(resolvedCwd, options.dirPath)
       ? resolvedCwd
       : commonAncestor(options.moduleDir, options.dirPath);
-  const traced = await nodeFileTrace([options.entryPath], {
+  const [traceBase, entryPath, dirPath] = await Promise.all([
+    fs.promises.realpath(traceBasePath),
+    fs.promises.realpath(options.entryPath),
+    fs.promises.realpath(options.dirPath),
+  ]);
+  const traced = await nodeFileTrace([entryPath], {
     base: traceBase,
     processCwd: traceBase,
   });
@@ -224,10 +242,10 @@ async function stageRuntimeDependencies(options: {
     if (!isInside(traceBase, source)) {
       throw new Error(`the runtime dependency trace escaped its staging root: ${relative}`);
     }
-    if (isInside(options.dirPath, source)) continue;
-    const destination = path.join(options.bundleDir, ...relative.split('/'));
+    if (isInside(dirPath, source)) continue;
+    const destination = stagedRuntimePath(source, traceBase, options.bundleDir);
     if (fs.existsSync(destination)) continue;
-    await copyTracedEntry(source, destination, traceBase, options.bundleDir, options.dirPath);
+    await copyTracedEntry(source, destination, traceBase, options.bundleDir, dirPath);
   }
 }
 

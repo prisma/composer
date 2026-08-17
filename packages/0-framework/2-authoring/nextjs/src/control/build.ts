@@ -138,6 +138,10 @@ async function stageMissingStandaloneLinkTargets(
   bundleDir: string,
   tracingRoot: string,
 ): Promise<string[]> {
+  // required-server-files.json records the build machine's absolute tracing
+  // root. A copied standalone build can be assembled elsewhere; if all of its
+  // links are already complete, no access to the original root is needed.
+  if ((await lstatIfPresent(tracingRoot)) === undefined) return [];
   const tracedRootReal = await fs.promises.realpath(tracingRoot);
   const stagedSources = new Set<string>();
   let staged = true;

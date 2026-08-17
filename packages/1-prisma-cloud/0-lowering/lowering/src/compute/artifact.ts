@@ -46,8 +46,12 @@ function resolveEntry(bundleDir: string, entry: string | undefined): string {
 }
 
 type BundleEntry =
-  | { readonly relPath: string; readonly type: 'file' }
+  | { readonly relPath: string; readonly type: 'file'; readonly executable: boolean }
   | { readonly relPath: string; readonly type: 'symlink'; readonly linkname: string };
+
+function compareArchivePaths(left: { relPath: string }, right: { relPath: string }): number {
+  return Buffer.compare(Buffer.from(left.relPath, 'utf8'), Buffer.from(right.relPath, 'utf8'));
+}
 
 function isWithinRoot(root: string, candidate: string): boolean {
   const relative = path.relative(root, candidate);
@@ -88,7 +92,9 @@ function walkEntries(dir: string): BundleEntry[] {
           );
         }
         const linkname = (
-          path.isAbsolute(target) ? path.relative(path.dirname(symlinkPath), realTarget) : target
+          path.isAbsolute(target)
+            ? path.relative(fs.realpathSync(path.dirname(symlinkPath)), realTarget)
+            : target
         )
           .split(path.sep)
           .join('/');
@@ -96,11 +102,14 @@ function walkEntries(dir: string): BundleEntry[] {
         continue;
       }
       if (entry.isDirectory()) visit(rel);
-      else out.push({ relPath: rel, type: 'file' });
+      else {
+        const mode = fs.statSync(path.join(dir, ...rel.split('/'))).mode;
+        out.push({ relPath: rel, type: 'file', executable: (mode & 0o100) !== 0 });
+      }
     }
   };
   visit('');
-  return out.sort((a, b) => a.relPath.localeCompare(b.relPath));
+  return out.sort(compareArchivePaths);
 }
 
 // ——— A minimal, deterministic USTAR + POSIX PAX writer: fixed mtime (epoch 0),
@@ -180,11 +189,16 @@ function ustarHeader(
 
 function createDeterministicTarGz(
   entries: readonly (
-    | { readonly relPath: string; readonly type: 'file'; readonly content: Buffer }
+    | {
+        readonly relPath: string;
+        readonly type: 'file';
+        readonly content: Buffer;
+        readonly mode: number;
+      }
     | { readonly relPath: string; readonly type: 'symlink'; readonly linkname: string }
   )[],
 ): Buffer {
-  const sorted = [...entries].sort((a, b) => a.relPath.localeCompare(b.relPath));
+  const sorted = [...entries].sort(compareArchivePaths);
   const chunks: Buffer[] = [];
   for (const entry of sorted) {
     const archivePath = ustarPathOrPlaceholder(entry.relPath);
@@ -218,7 +232,10 @@ function createDeterministicTarGz(
       );
     } else {
       chunks.push(
-        ustarHeader(archivePath.path, entry.content.length, { mode: 0o644, typeflag: '0' }),
+        ustarHeader(archivePath.path, entry.content.length, {
+          mode: entry.mode,
+          typeflag: '0',
+        }),
       );
       chunks.push(entry.content);
       const pad = (512 - (entry.content.length % 512)) % 512;
@@ -299,7 +316,7 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
   )}\n`;
 
   const files: (
-    | { relPath: string; type: 'file'; content: Buffer }
+    | { relPath: string; type: 'file'; content: Buffer; mode: number }
     | { relPath: string; type: 'symlink'; linkname: string }
   )[] = walkEntries(opts.bundleDir).map((entry) =>
     entry.type === 'symlink'
@@ -308,18 +325,26 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
           relPath: entry.relPath,
           type: 'file',
           content: fs.readFileSync(path.join(opts.bundleDir, ...entry.relPath.split('/'))),
+          mode: entry.executable ? 0o755 : 0o644,
         },
   );
-  files.push({ relPath: 'bootstrap.js', type: 'file', content: Buffer.from(bootstrap, 'utf8') });
+  files.push({
+    relPath: 'bootstrap.js',
+    type: 'file',
+    content: Buffer.from(bootstrap, 'utf8'),
+    mode: 0o644,
+  });
   files.push({
     relPath: 'compute.bootstrap.json',
     type: 'file',
     content: Buffer.from(bootstrapData, 'utf8'),
+    mode: 0o644,
   });
   files.push({
     relPath: 'compute.manifest.json',
     type: 'file',
     content: Buffer.from(manifest, 'utf8'),
+    mode: 0o644,
   });
   // Disable bun's runtime auto-install for every Compute artifact. An app's
   // build produces a self-contained entry with its dependencies inlined
@@ -332,6 +357,7 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
     relPath: 'bunfig.toml',
     type: 'file',
     content: Buffer.from('[install]\nauto = "disable"\n', 'utf8'),
+    mode: 0o644,
   });
 
   const gz = createDeterministicTarGz(files);

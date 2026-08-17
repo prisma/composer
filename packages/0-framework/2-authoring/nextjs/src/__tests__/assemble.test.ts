@@ -178,4 +178,21 @@ describe('assemble()', () => {
     ).toContain('6.3.1');
     expect(result.watch).toContain(source);
   }, 20_000);
+
+  test('assembles a complete standalone build when its recorded tracing root is absent', async () => {
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const manifestPath = path.join(root, '.next', 'required-server-files.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.config.outputFileTracingRoot = path.join(root, 'missing-build-machine-root');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd: root,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    expect(fs.existsSync(path.join(result.dir, result.entry))).toBe(true);
+  }, 20_000);
 });
