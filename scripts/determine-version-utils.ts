@@ -60,3 +60,33 @@ export function nextDevVersion(base: string, latestDevTag: string | undefined): 
   const buildNumber = match && match[1] === base ? Number.parseInt(match[2] as string, 10) + 1 : 1;
   return `${base}-dev.${buildNumber}`;
 }
+
+export type PreviousVersionLookup =
+  | { available: true; version: string | undefined }
+  | { available: false };
+
+export interface PushPublishPlan {
+  version: string;
+  tag: 'latest' | 'dev';
+  devVersion?: string;
+}
+
+/**
+ * The publish plan for a push to `main`. A changed root version means
+ * the push is a release bump: publish `<base>` under `latest`, plus a
+ * `<base>-dev.N` follow-up so the `dev` dist-tag never falls behind
+ * `latest`. An unchanged (or unreadable — a transient git error must
+ * never silently promote to `latest`) previous version means the usual
+ * dev-only publish.
+ */
+export function planPushPublish(
+  base: string,
+  previous: PreviousVersionLookup,
+  latestDevTag: string | undefined,
+): PushPublishPlan {
+  const isReleaseBump = previous.available && previous.version !== base;
+  if (isReleaseBump) {
+    return { version: base, tag: 'latest', devVersion: nextDevVersion(base, latestDevTag) };
+  }
+  return { version: nextDevVersion(base, latestDevTag), tag: 'dev' };
+}

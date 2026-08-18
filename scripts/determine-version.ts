@@ -11,7 +11,11 @@
  * - `push`              → if the root `version` changed in this push,
  *                          `<base>` (no suffix), dist-tag `latest`. This
  *                          is how a merged `chore(release): ...` PR
- *                          ships a stable release automatically.
+ *                          ships a stable release automatically. The
+ *                          plan then also carries `devVersion`
+ *                          (`<base>-dev.N`) so the workflow can publish
+ *                          a dev build of the same commit — the `dev`
+ *                          dist-tag must never fall behind `latest`.
  *                         Otherwise, `<base>-dev.N`, dist-tag `dev`
  *                          (N is the next available build number,
  *                          discovered by querying npm).
@@ -20,21 +24,23 @@
  *                          Useful as a manual escape hatch (re-publish
  *                          after a transient failure, cut a beta).
  *
- * Outputs `version` and `tag` to `$GITHUB_OUTPUT` for downstream
- * workflow steps to consume.
+ * Outputs `version`, `tag`, and `devVersion` (empty unless the push is
+ * a release bump) to `$GITHUB_OUTPUT` for downstream workflow steps.
  */
 
 import { execFileSync, execSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'pathe';
-import { assertCanonicalBase, nextDevVersion } from './determine-version-utils.ts';
+import type { PreviousVersionLookup } from './determine-version-utils.ts';
+import { assertCanonicalBase, planPushPublish } from './determine-version-utils.ts';
 
 const PACKAGE_NAME = process.argv[2] ?? '@prisma/composer';
 
 interface VersionResult {
   version: string;
   tag: string;
+  devVersion?: string;
 }
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -64,10 +70,6 @@ function getLatestDevVersion(): string | undefined {
   return run(`npm view "${PACKAGE_NAME}" dist-tags.dev`);
 }
 
-type PreviousVersionLookup =
-  | { available: true; version: string | undefined }
-  | { available: false };
-
 /**
  * Reads the root `package.json` `version` at `PUSH_BEFORE_SHA` (the ref
  * that `main` pointed at *before* the push). Distinguishes "we
@@ -96,18 +98,12 @@ function readPreviousRootVersion(): PreviousVersionLookup {
   }
 }
 
-function determineDevVersion(baseVersion: string): VersionResult {
-  return {
-    version: nextDevVersion(baseVersion, getLatestDevVersion()),
-    tag: 'dev',
-  };
-}
-
 function writeGitHubOutput(result: VersionResult): void {
   const outputFile = process.env.GITHUB_OUTPUT;
   if (outputFile) {
     appendFileSync(outputFile, `version<<EOF\n${result.version}\nEOF\n`);
     appendFileSync(outputFile, `tag<<EOF\n${result.tag}\nEOF\n`);
+    appendFileSync(outputFile, `devVersion<<EOF\n${result.devVersion ?? ''}\nEOF\n`);
   }
 }
 
@@ -132,22 +128,12 @@ switch (eventName) {
     break;
 
   case 'push': {
-    // If the root `version` differs from what main was pointing at before
-    // this push, the push contains a release bump — cut a stable release
-    // automatically. Otherwise, produce the usual `<base>-dev.N` tarball.
-    //
-    // `available: false` (shallow clone, missing SHA) deliberately falls
-    // through to the dev path: a transient git error must never silently
-    // promote to `latest`.
     const previous = readPreviousRootVersion();
-    const isReleaseBump = previous.available && previous.version !== baseVersion;
-    if (isReleaseBump) {
+    result = planPushPublish(baseVersion, previous, getLatestDevVersion());
+    if (result.tag === 'latest') {
       console.log(
-        `Previous root version: ${previous.version ?? '(unset)'} → release bump detected.`,
+        `Previous root version: ${previous.available ? (previous.version ?? '(unset)') : '(unreadable)'} → release bump detected.`,
       );
-      result = { version: baseVersion, tag: 'latest' };
-    } else {
-      result = determineDevVersion(baseVersion);
     }
     break;
   }
@@ -158,4 +144,7 @@ switch (eventName) {
 
 console.log(`Resolved version:      ${result.version}`);
 console.log(`Resolved dist-tag:     ${result.tag}`);
+if (result.devVersion) {
+  console.log(`Dev follow-up version: ${result.devVersion}`);
+}
 writeGitHubOutput(result);
