@@ -91,6 +91,29 @@ describe('loadEntry()', () => {
     expect(result.status).toBe(0);
   }, 15000);
 
+  test('a .mjs-extension import resolves to the .mts source under node', () => {
+    const result = spawnSync(
+      'node',
+      [fixture('run-load-entry.ts'), fixture('entry-mjs-ext-import.ts')],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+  }, 15000);
+
+  test('a .cjs-extension import resolves to the .cts source under node', () => {
+    const result = spawnSync(
+      'node',
+      [fixture('run-load-entry.ts'), fixture('entry-cjs-ext-import.ts')],
+      { encoding: 'utf8' },
+    );
+
+    // The hook resolved .cjs → .cts; resolution succeeded, but the fixture's
+    // export is not a Composer node, so the failure is ENTRY_EXPORT_INVALID.
+    expect(result.stderr).not.toContain('Cannot find module');
+    expect(result.stderr).toContain('must default-export a node');
+  }, 15000);
+
   test('a genuinely missing relative import still fails with the original error under node', () => {
     const result = spawnSync(
       'node',

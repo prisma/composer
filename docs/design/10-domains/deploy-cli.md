@@ -47,9 +47,9 @@ CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
 type stripping imports the user's `.ts` entry natively). Under node, the CLI
 also registers a synchronous resolve hook (`node:module` `registerHooks`) so
 that relative imports inside the entry graph may use `./x.js` or extensionless
-`./x` specifiers for `.ts` source files — TypeScript's default forms — without
-requiring `allowImportingTsExtensions`; Bun resolves these natively and the
-hook is a no-op there. One inherent caveat: an app whose service module imports
+`./x` specifiers for `.ts` source files without requiring
+`allowImportingTsExtensions`; `.mjs` and `.cjs` specifiers map to `.mts` and
+`.cts` respectively. Bun resolves these natively and the hook is a no-op there. One inherent caveat: an app whose service module imports
 bun APIs can only deploy under bun, since loading the graph imports that module
 — the app's choice, not a CLI limit.
 

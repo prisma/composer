@@ -58,10 +58,9 @@ Two packages, and only two, appear in your `package.json`:
 ## tsconfig and import specifiers
 
 Within the entry graph (everything reachable from `module.ts`) relative
-imports may use any of the three forms TypeScript accepts: `./service.ts`,
-`./service.js`, or extensionless `./service`. The CLI maps `.js` and
-extensionless specifiers to the matching `.ts` source under Node; Bun does
-this natively. `allowImportingTsExtensions` is not required.
+imports may use `./service.js` or extensionless `./service`. The CLI maps
+`.js` and extensionless specifiers to the matching `.ts` source under Node;
+Bun does this natively.
 
 A minimal tsconfig:
 

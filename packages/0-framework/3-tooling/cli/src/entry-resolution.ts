@@ -5,11 +5,13 @@
  * without requiring `allowImportingTsExtensions` in every consumer's tsconfig.
  *
  * Resolution only; uses TypeScript's own documented mapping: for a specifier
- * Node could not resolve, strip any JS-family extension, then probe `.ts`,
- * `.mts`, `.tsx`, and finally `./index.ts` in that order; first candidate
- * that exists on disk wins. Bare and package specifiers are never touched.
- * Existing `./x.ts` imports keep working — Node resolves them before the hook
- * fires (ADR-0005: no transform, no guessing, deterministic TypeScript rule).
+ * Node could not resolve, strip any JS-family extension and probe the
+ * corresponding TypeScript source; first candidate that exists on disk wins.
+ * Format-specific rules: `.mjs` → `.mts`; `.cjs` → `.cts`; `.js` and
+ * extensionless → `.ts`, `.mts`, `.tsx`, then `./index.ts`. Bare and package
+ * specifiers are never touched. Existing `./x.ts` imports keep working —
+ * Node resolves them before the hook fires (ADR-0005: no transform, no
+ * guessing, deterministic TypeScript rule).
  *
  * Bun resolves `./x.js` and `./x` to `x.ts` natively, so the hook is a
  * no-op under Bun. Nothing is registered there.
@@ -19,7 +21,6 @@ import { existsSync } from 'node:fs';
 import * as mod from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-const SOURCE_EXTENSIONS = ['.ts', '.mts', '.tsx'] as const;
 let registered = false;
 
 /**
@@ -58,11 +59,28 @@ export function registerEntryResolution(): void {
 
 /**
  * TypeScript's extension mapping: for a JS-family or extensionless URL,
- * produce the `.ts`/`.mts`/`.tsx`/`index.ts` candidates to probe.
+ * produce the source candidates to probe. Format-specific: `.mjs` maps only
+ * to `.mts`; `.cjs` maps only to `.cts`; `.js` and extensionless probe
+ * `.ts`, `.mts`, `.tsx` (keeping `.tsx` so the JSX diagnostic fires), then
+ * `./index.ts`.
  */
 function sourceCandidates(resolved: URL): URL[] {
-  const base = resolved.href.replace(/\.(js|mjs|cjs)$/, '');
-  return [...SOURCE_EXTENSIONS.map((ext) => new URL(base + ext)), new URL(`${base}/index.ts`)];
+  const href = resolved.href;
+  if (href.endsWith('.mjs')) {
+    const base = href.slice(0, -4);
+    return [new URL(`${base}.mts`)];
+  }
+  if (href.endsWith('.cjs')) {
+    const base = href.slice(0, -4);
+    return [new URL(`${base}.cts`)];
+  }
+  const base = href.endsWith('.js') ? href.slice(0, -3) : href;
+  return [
+    new URL(`${base}.ts`),
+    new URL(`${base}.mts`),
+    new URL(`${base}.tsx`),
+    new URL(`${base}/index.ts`),
+  ];
 }
 
 function isRelativeSpecifier(specifier: string): boolean {
