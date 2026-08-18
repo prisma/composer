@@ -94,7 +94,6 @@ its code.
     "target": "ES2022",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
@@ -103,6 +102,12 @@ its code.
   "include": ["module.ts", "src"]
 }
 ```
+
+Within your entry graph you may write relative imports as `./service.ts`,
+`./service.js`, or extensionless `./service` — all three forms resolve
+correctly. The CLI maps `.js`/extensionless specifiers to the matching `.ts`
+source under Node (Bun does this natively), so `allowImportingTsExtensions`
+is not required in your tsconfig.
 
 This is what you're about to create:
 
