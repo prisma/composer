@@ -67,4 +67,51 @@ describe('loadEntry()', () => {
     // where.path carries the entry (ruling on `where`: the natural path).
     expect(result.stderr).toContain(`Where: ${fixture('jsx-in-graph.ts')}`);
   }, 15000);
+
+  // The resolve hook is node-specific (Bun resolves .js→.ts natively).
+  // These tests spawn real node so the hook registration path is exercised.
+
+  test('a .js-extension import resolves to the .ts source under node', () => {
+    const result = spawnSync(
+      'node',
+      [fixture('run-load-entry.ts'), fixture('entry-js-ext-import.ts')],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+  }, 15000);
+
+  test('an extensionless import resolves to the .ts source under node', () => {
+    const result = spawnSync(
+      'node',
+      [fixture('run-load-entry.ts'), fixture('entry-no-ext-import.ts')],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).toBe(0);
+  }, 15000);
+
+  test('a genuinely missing relative import still fails with the original error under node', () => {
+    const result = spawnSync(
+      'node',
+      [fixture('run-load-entry.ts'), fixture('entry-truly-missing-import.ts')],
+      { encoding: 'utf8' },
+    );
+
+    expect(result.status).not.toBe(0);
+    // The hook exhausted all candidates; the original ERR_MODULE_NOT_FOUND is re-thrown.
+    expect(result.stderr).toContain('truly-missing');
+  }, 15000);
+
+  // Bun resolves .js→.ts natively — load in-process to confirm the hook is a
+  // no-op (nothing is registered) and the imports still work.
+  test('a .js-extension import loads correctly in-process under bun', async () => {
+    const entry = await loadEntry(fixture('entry-js-ext-import.ts'), import.meta.dir);
+    expect(entry.root.kind).toBe('service');
+  });
+
+  test('an extensionless import loads correctly in-process under bun', async () => {
+    const entry = await loadEntry(fixture('entry-no-ext-import.ts'), import.meta.dir);
+    expect(entry.root.kind).toBe('service');
+  });
 });
