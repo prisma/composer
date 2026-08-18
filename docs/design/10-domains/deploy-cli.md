@@ -49,7 +49,7 @@ also registers a synchronous resolve hook (`node:module` `registerHooks`) so
 that relative imports inside the entry graph may use `./x.js` or extensionless
 `./x` specifiers for `.ts` source files without requiring
 `allowImportingTsExtensions`; `.mjs` and `.cjs` specifiers map to `.mts` and
-`.cts` respectively. Bun resolves these natively and the hook is a no-op there. One inherent caveat: an app whose service module imports
+`.cts` respectively. Bun resolves these natively and the hook is a no-op there. The same hook is propagated to the delegated alchemy converge child by passing `NODE_OPTIONS=--import=<file:// URL>` in the child's spawn environment, so imports in the user's entry graph resolve correctly inside the child process too. One inherent caveat: an app whose service module imports
 bun APIs can only deploy under bun, since loading the graph imports that module
 — the app's choice, not a CLI limit.
 
