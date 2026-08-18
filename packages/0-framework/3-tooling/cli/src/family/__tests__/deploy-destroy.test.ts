@@ -189,33 +189,33 @@ describe('argument validation', () => {
 });
 
 /**
- * The spawning commands hand the terminal to alchemy, whose output is not
- * ours to frame — so `--json` is refused before anything runs, rather than
- * accepted and then quietly abandoned mid-stream.
+ * Engine 0.2.0 (prisma-cli#184): a spawning command uses the engine's normal
+ * structured-output contract. `--json` runs the command — the terminal frame
+ * on stdout is the machine surface, and the child's own output becomes
+ * diagnostics — instead of being refused up front as it was on engine 0.1.1.
  */
-describe('--json on a command that hands the terminal away', () => {
+describe('--json on a spawning command', () => {
   for (const argv of [
     ['deploy', 'src/service.ts'],
     ['destroy', 'src/service.ts', '--production'],
   ]) {
-    test(`\`${argv[0]} --json\` is refused before the handler runs`, async () => {
+    test(`\`${argv[0]} --json\` runs and emits one result frame`, async () => {
       const { cli, double } = composerCli();
       const result = await cli.run([...argv, '--json'], AS_TTY);
 
-      expect(result.exitCode).toBe(2);
-      expect(plain(result.stderr)).toContain('CLI.JSON_UNSUPPORTED');
-      expect(plain(result.stderr)).toContain('does not support json output');
-      expect(result.json).toEqual([]);
-      expect(result.spawns).toEqual([]);
-      expect([...double.calls.deploy, ...double.calls.destroy]).toEqual([]);
+      expect(result.exitCode).toBe(0);
+      expect([...double.calls.deploy, ...double.calls.destroy]).toHaveLength(1);
+      const frames = result.json.filter((frame) => frame.kind === 'result');
+      expect(frames).toHaveLength(1);
+      expect(frames[0]?.envelope).toMatchObject({ ok: true, commandId: argv[0] });
     });
 
-    test(`\`${argv[0]} --format json\` is refused the same way`, async () => {
+    test(`\`${argv[0]} --format json\` runs the same way`, async () => {
       const { cli } = composerCli();
       const result = await cli.run([...argv, '--format', 'json'], AS_TTY);
 
-      expect(result.exitCode).toBe(2);
-      expect(plain(result.stderr)).toContain('CLI.JSON_UNSUPPORTED');
+      expect(result.exitCode).toBe(0);
+      expect(result.json.filter((frame) => frame.kind === 'result')).toHaveLength(1);
     });
   }
 });

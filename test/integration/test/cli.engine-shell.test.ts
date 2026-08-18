@@ -89,15 +89,16 @@ describe('the prisma-composer binary', () => {
   }, 30_000);
 
   /**
-   * A deploy hands the terminal to alchemy, whose output nothing here can
-   * frame — so the whole run is refused up front rather than started and then
-   * abandoned mid-stream.
+   * Engine 0.2.0 (prisma-cli#184): --json on deploy is accepted and the run
+   * proceeds to the credentials check, whose refusal arrives as a structured
+   * result frame instead of human text.
    */
-  test('--json is refused on deploy, exit 2', () => {
+  test('--json on deploy runs, and signed out the refusal is a result frame', () => {
     const result = runCli(['deploy', 'service.ts', '--json']);
 
     expect(result.status).toBe(2);
-    expect(result.output).toContain('CLI.JSON_UNSUPPORTED');
+    expect(result.output).toContain('"kind":"result"');
+    expect(result.output).toContain('CLI.CREDENTIALS_REQUIRED');
   }, 30_000);
 
   test('a signed-out deploy is refused before it evaluates anything, exit 2', () => {
