@@ -158,3 +158,27 @@ jobs:
               --title "v$VERSION" \
               --generate-notes
           fi
+
+      # The dev dist-tag must never fall behind latest: a release push
+      # also ships its commit as a dev build, so dev consumers test the
+      # code the release carries. devVersion is non-empty only on
+      # release pushes.
+      - name: Stamp the dev build
+        if: ${{ steps.version.outputs.devVersion != '' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry-run != 'true') }}
+        env:
+          DEV_VERSION: ${{ steps.version.outputs.devVersion }}
+        run: node scripts/set-version.ts "$DEV_VERSION"
+
+      - name: Build the dev build
+        if: ${{ steps.version.outputs.devVersion != '' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry-run != 'true') }}
+        run: pnpm build
+
+      - name: Check publish dependency specifiers (dev build)
+        if: ${{ steps.version.outputs.devVersion != '' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry-run != 'true') }}
+        run: pnpm check:publish-deps
+
+      - name: Publish the dev build
+        if: ${{ steps.version.outputs.devVersion != '' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry-run != 'true') }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: node scripts/publish-packages.mjs --tag dev

@@ -103,11 +103,12 @@ function determineDevVersion(baseVersion: string): VersionResult {
   };
 }
 
-function writeGitHubOutput(result: VersionResult): void {
+function writeGitHubOutput(result: VersionResult, devAfterRelease: string): void {
   const outputFile = process.env.GITHUB_OUTPUT;
   if (outputFile) {
     appendFileSync(outputFile, `version<<EOF\n${result.version}\nEOF\n`);
     appendFileSync(outputFile, `tag<<EOF\n${result.tag}\nEOF\n`);
+    appendFileSync(outputFile, `devVersion<<EOF\n${devAfterRelease}\nEOF\n`);
   }
 }
 
@@ -121,6 +122,13 @@ console.log(`Event:                 ${eventName}`);
 console.log(`Base version (root):   ${baseVersion}`);
 
 let result: VersionResult;
+
+// The dev dist-tag must never fall behind latest: a release push also
+// publishes its commit as a dev build (prisma-cli's dev channel reads
+// the `dev` tag, and a stale one blocked the 8.0.0-rc.5 release on
+// 2026-08-18). Non-empty only on release pushes; the workflow's dev
+// steps key on it.
+let devAfterRelease = '';
 
 switch (eventName) {
   case 'workflow_dispatch':
@@ -146,6 +154,7 @@ switch (eventName) {
         `Previous root version: ${previous.version ?? '(unset)'} → release bump detected.`,
       );
       result = { version: baseVersion, tag: 'latest' };
+      devAfterRelease = determineDevVersion(baseVersion).version;
     } else {
       result = determineDevVersion(baseVersion);
     }
@@ -158,4 +167,5 @@ switch (eventName) {
 
 console.log(`Resolved version:      ${result.version}`);
 console.log(`Resolved dist-tag:     ${result.tag}`);
-writeGitHubOutput(result);
+console.log(`Dev build after release: ${devAfterRelease || '(none)'}`);
+writeGitHubOutput(result, devAfterRelease);
