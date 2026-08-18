@@ -58,12 +58,15 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
       },
     });
 
+    // Engine 0.2.0: a non-TTY run answers with a structured result frame on
+    // stdout, so the error text lives there rather than on stderr.
+    const output = result.stdout + result.stderr;
     expect(result.status).not.toBe(0);
-    expect(result.stderr).not.toContain('Cannot resolve');
-    expect(result.stderr).not.toContain('CLI.CREDENTIALS_REQUIRED');
-    expect(result.stderr).not.toContain('environment variable PRISMA_WORKSPACE_ID is required');
-    expect(result.stderr).toContain('no built entry at');
-    expect(result.stderr).toContain('run your build first');
+    expect(output).not.toContain('Cannot resolve');
+    expect(output).not.toContain('CLI.CREDENTIALS_REQUIRED');
+    expect(output).not.toContain('environment variable PRISMA_WORKSPACE_ID is required');
+    expect(output).toContain('no built entry at');
+    expect(output).toContain('run your build first');
   }, 30_000);
 
   // Local-dev spec § 5: prismaCloud() now constructs with NO workspace
@@ -85,11 +88,12 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
       env,
     });
 
+    const output = result.stdout + result.stderr;
     expect(result.status).not.toBe(0);
-    expect(result.stderr).not.toContain('Cannot resolve');
-    expect(result.stderr).not.toContain('CLI.CREDENTIALS_REQUIRED');
-    expect(result.stderr).not.toContain('PRISMA_WORKSPACE_ID');
-    expect(result.stderr).toContain('no built entry at');
-    expect(result.stderr).toContain('run your build first');
+    expect(output).not.toContain('Cannot resolve');
+    expect(output).not.toContain('CLI.CREDENTIALS_REQUIRED');
+    expect(output).not.toContain('PRISMA_WORKSPACE_ID');
+    expect(output).toContain('no built entry at');
+    expect(output).toContain('run your build first');
   }, 30_000);
 });
