@@ -182,14 +182,37 @@ function readLog(logPath: string): string {
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
   const lines = log.split('\n');
   const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
-  if (readyAt === -1) return undefined;
-  const endpoints: Endpoint[] = [];
-  for (let i = readyAt + 1; i < lines.length; i += 1) {
-    const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
-    if (m === null) break;
-    endpoints.push({ address: m[1] as string, url: m[2] as string });
+  if (readyAt !== -1) {
+    const endpoints: Endpoint[] = [];
+    for (let i = readyAt + 1; i < lines.length; i += 1) {
+      const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
+      if (m === null) break;
+      endpoints.push({ address: m[1] as string, url: m[2] as string });
+    }
+    return endpoints.length > 0 ? endpoints : undefined;
   }
-  return endpoints.length > 0 ? endpoints : undefined;
+  // Engine 0.2.0 renders a non-TTY run as NDJSON frames instead: readiness
+  // is a `status` frame and each service is an `endpoint` frame.
+  let ready = false;
+  const endpoints: Endpoint[] = [];
+  for (const line of lines) {
+    if (!line.startsWith('{')) continue;
+    try {
+      const frame = JSON.parse(line) as {
+        kind?: string;
+        name?: string;
+        url?: string;
+        status?: string;
+      };
+      if (frame.kind === 'endpoint' && frame.name !== undefined && frame.url !== undefined) {
+        endpoints.push({ address: frame.name, url: frame.url });
+      }
+      if (frame.kind === 'status' && frame.status === 'ready') ready = true;
+    } catch {
+      // Child output interleaved with the frames; not every line is JSON.
+    }
+  }
+  return ready && endpoints.length > 0 ? endpoints : undefined;
 }
 
 interface EmulatorRegistryEntry {

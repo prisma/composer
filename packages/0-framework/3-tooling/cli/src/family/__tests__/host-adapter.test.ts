@@ -87,10 +87,13 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
       operations: double.operations,
     });
 
-    expect(host.err.join('')).not.toContain('CLI.INTERNAL_ERROR');
+    // The fake host is not a TTY, so engine 0.2.0 answers with a
+    // structured result frame on stdout rather than human text on stderr.
+    const output = host.out.join('') + host.err.join('');
+    expect(output).not.toContain('CLI.INTERNAL_ERROR');
     expect(double.calls.dev).toHaveLength(1);
     expect(exitCode).toBe(2);
-    expect(host.err.join('')).toContain('DEV.REFUSED');
+    expect(host.out.join('')).toContain('DEV.REFUSED');
   });
 
   /**
@@ -111,8 +114,8 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     );
 
     expect(exitCode).toBe(2);
-    expect(host.err.join('')).toContain('CLI.CONFIG_NOT_FOUND');
-    expect(host.err.join('')).toContain(path.join(dir, 'not-here.config.ts'));
+    expect(host.out.join('')).toContain('CLI.CONFIG_NOT_FOUND');
+    expect(host.out.join('')).toContain(path.join(dir, 'not-here.config.ts'));
     expect(double.calls.dev).toEqual([]);
   });
 
