@@ -7,7 +7,7 @@ import { defineConfig } from '@prisma/orm-postgres/config';
 // weight: the framework injects the URL at hydrate (no-globals).
 export default definePrismaConfig({
   orm: defineConfig({
-  contract: './contract.prisma',
-  db: { connection: 'postgres://localhost:5432/placeholder' },
-}),
+    contract: './contract.prisma',
+    db: { connection: 'postgres://localhost:5432/placeholder' },
+  }),
 });

@@ -1,5 +1,5 @@
-import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 import { definePrismaConfig } from '@prisma/cli-engine';
+import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 import { defineConfig } from '@prisma/orm-postgres/config';
 
 // The Prisma Next config anchors the (empty) app contract and the migrations
@@ -10,8 +10,8 @@ import { defineConfig } from '@prisma/orm-postgres/config';
 // never imports it.
 export default definePrismaConfig({
   orm: defineConfig({
-  contract: './contract.prisma',
-  db: { connection: 'postgres://localhost:5432/placeholder' },
-  extensions: [authPack],
-}),
+    contract: './contract.prisma',
+    db: { connection: 'postgres://localhost:5432/placeholder' },
+    extensions: [authPack],
+  }),
 });
