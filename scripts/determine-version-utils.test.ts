@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { assertCanonicalBase, computeNextMinor, parseVersion } from './determine-version-utils.ts';
+import { assertCanonicalBase, computeNextMinor, parseVersion, nextDevVersion } from './determine-version-utils.ts';
 
 describe('parseVersion', () => {
   it('parses a clean release', () => {
@@ -53,5 +53,23 @@ describe('assertCanonicalBase', () => {
     assert.throws(() => assertCanonicalBase('01.2.3'), /not canonical/);
     assert.throws(() => assertCanonicalBase('1.02.3'), /not canonical/);
     assert.throws(() => assertCanonicalBase('1.2.03'), /not canonical/);
+  });
+});
+
+describe('nextDevVersion', () => {
+  it('continues the counter when the dev tag is on the same base', () => {
+    assert.equal(nextDevVersion('0.8.0', '0.8.0-dev.4'), '0.8.0-dev.5');
+  });
+
+  it('restarts at dev.1 when the dev tag is on an older base', () => {
+    assert.equal(nextDevVersion('0.8.0', '0.6.0-dev.23'), '0.8.0-dev.1');
+  });
+
+  it('starts at dev.1 when there is no dev tag at all', () => {
+    assert.equal(nextDevVersion('0.8.0', undefined), '0.8.0-dev.1');
+  });
+
+  it('starts at dev.1 when the dev tag is not a dev shape', () => {
+    assert.equal(nextDevVersion('0.8.0', '0.8.0'), '0.8.0-dev.1');
   });
 });
