@@ -10,6 +10,7 @@ import type { ModuleNode, ServiceNode } from '@internal/core';
 import { isNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
+import { registerEntryResolution } from './entry-resolution.ts';
 import { explainJsxLoadError } from './jsx-load-error.ts';
 
 export interface LoadedEntry {
@@ -19,6 +20,7 @@ export interface LoadedEntry {
 }
 
 export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEntry> {
+  registerEntryResolution();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
   try {

@@ -55,6 +55,30 @@ Two packages, and only two, appear in your `package.json`:
 | `@prisma/composer` | Core authoring: `module`, `secret`, `isSecretString`, `/arktype` (the `secretString()` schema leaf), `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
 | `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
 
+## tsconfig and import specifiers
+
+Within the entry graph (everything reachable from `module.ts`) relative
+imports may use `./service.js` or extensionless `./service`. The CLI maps
+`.js` and extensionless specifiers to the matching `.ts` source under Node;
+Bun does this natively.
+
+A minimal tsconfig:
+
+```jsonc
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  "include": ["module.ts", "src"]
+}
+```
+
 ## Anatomy of a service
 
 A service is four small files. Worked example: an `auth` service that owns a

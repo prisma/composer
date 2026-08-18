@@ -94,7 +94,6 @@ its code.
     "target": "ES2022",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
@@ -103,6 +102,11 @@ its code.
   "include": ["module.ts", "src"]
 }
 ```
+
+Within your entry graph you may write relative imports as `./service.js` or
+extensionless `./service` — both forms resolve correctly under both runtimes.
+The CLI maps `.js`/extensionless specifiers to the matching `.ts` source under
+Node; Bun does this natively.
 
 This is what you're about to create:
 
