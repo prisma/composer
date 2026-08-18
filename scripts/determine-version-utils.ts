@@ -48,3 +48,15 @@ export function assertCanonicalBase(base: string): void {
     );
   }
 }
+
+const DEV_VERSION_PATTERN = /^(\d+\.\d+\.\d+)-dev\.(\d+)$/;
+
+/**
+ * The next `<base>-dev.N` version: continues the counter when the
+ * registry's `dev` tag is on the same base, otherwise starts at dev.1.
+ */
+export function nextDevVersion(base: string, latestDevTag: string | undefined): string {
+  const match = latestDevTag?.match(DEV_VERSION_PATTERN);
+  const buildNumber = match && match[1] === base ? Number.parseInt(match[2] as string, 10) + 1 : 1;
+  return `${base}-dev.${buildNumber}`;
+}

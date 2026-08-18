@@ -28,7 +28,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'pathe';
-import { assertCanonicalBase } from './determine-version-utils.ts';
+import { assertCanonicalBase, nextDevVersion } from './determine-version-utils.ts';
 
 const PACKAGE_NAME = process.argv[2] ?? '@prisma/composer';
 
@@ -97,23 +97,8 @@ function readPreviousRootVersion(): PreviousVersionLookup {
 }
 
 function determineDevVersion(baseVersion: string): VersionResult {
-  const latestDevVersion = getLatestDevVersion();
-  let buildNumber = 1;
-
-  if (latestDevVersion) {
-    const devPattern = /^(\d+\.\d+\.\d+)-dev\.(\d+)$/;
-    const match = latestDevVersion.match(devPattern);
-
-    if (match) {
-      const [, devBase, build] = match;
-      if (devBase === baseVersion) {
-        buildNumber = Number.parseInt(build, 10) + 1;
-      }
-    }
-  }
-
   return {
-    version: `${baseVersion}-dev.${buildNumber}`,
+    version: nextDevVersion(baseVersion, getLatestDevVersion()),
     tag: 'dev',
   };
 }
