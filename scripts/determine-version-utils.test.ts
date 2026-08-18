@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { assertCanonicalBase, computeNextMinor, parseVersion, nextDevVersion } from './determine-version-utils.ts';
+import {
+  assertCanonicalBase,
+  computeNextMinor,
+  nextDevVersion,
+  parseVersion,
+  planPushPublish,
+} from './determine-version-utils.ts';
 
 describe('parseVersion', () => {
   it('parses a clean release', () => {
@@ -71,5 +77,43 @@ describe('nextDevVersion', () => {
 
   it('starts at dev.1 when the dev tag is not a dev shape', () => {
     assert.equal(nextDevVersion('0.8.0', '0.8.0'), '0.8.0-dev.1');
+  });
+});
+
+describe('planPushPublish', () => {
+  it('publishes a dev build when the root version is unchanged', () => {
+    assert.deepEqual(
+      planPushPublish('0.8.0', { available: true, version: '0.8.0' }, '0.8.0-dev.4'),
+      { version: '0.8.0-dev.5', tag: 'dev' },
+    );
+  });
+
+  it('publishes a release plus a dev follow-up when the root version changed', () => {
+    assert.deepEqual(
+      planPushPublish('0.9.0', { available: true, version: '0.8.0' }, '0.8.0-dev.7'),
+      { version: '0.9.0', tag: 'latest', devVersion: '0.9.0-dev.1' },
+    );
+  });
+
+  it('continues the dev counter on a release rerun whose dev build already landed', () => {
+    assert.deepEqual(
+      planPushPublish('0.9.0', { available: true, version: '0.8.0' }, '0.9.0-dev.1'),
+      { version: '0.9.0', tag: 'latest', devVersion: '0.9.0-dev.2' },
+    );
+  });
+
+  it('falls back to a dev build when the previous version could not be read', () => {
+    assert.deepEqual(planPushPublish('0.9.0', { available: false }, '0.8.0-dev.7'), {
+      version: '0.9.0-dev.1',
+      tag: 'dev',
+    });
+  });
+
+  it('treats a previous package.json without a version as a release bump', () => {
+    assert.deepEqual(planPushPublish('0.9.0', { available: true, version: undefined }, undefined), {
+      version: '0.9.0',
+      tag: 'latest',
+      devVersion: '0.9.0-dev.1',
+    });
   });
 });
