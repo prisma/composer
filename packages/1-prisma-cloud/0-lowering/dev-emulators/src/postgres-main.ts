@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
 import { isPidAlive, readOwnVersion } from './daemon.ts';
 import { instanceNameFor } from './instance-name.ts';
+import { registryClaimedPorts } from './prisma-dev-registry.ts';
 import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
@@ -236,48 +237,6 @@ function isPrismaDevInternalStateModule(value: unknown): value is PrismaDevInter
     typeof value['killServer'] === 'function' &&
     typeof value['getServerStatus'] === 'function'
   );
-}
-
-/**
- * Every port any `@prisma/dev` server RECORD on this machine claims —
- * database, http, shadow, and streams. `startPrismaDevServer` validates a
- * requested port against these records (`ServerState.scan`) and refuses one
- * that any record claims, even when nothing has it bound — and a record's
- * aux ports are picked by `@prisma/dev`'s own walking-upward picker, which
- * over enough servers climbs into this daemon's database range. A fresh
- * database-port pick that only probed the OS would collide with such a
- * claim, so fresh picks exclude these too. Best-effort: `scan` is the same
- * internal surface the rest of this module already binds to, but absent or
- * failing it degrades to the OS probe alone.
- */
-async function registryClaimedPorts(
-  internalState: PrismaDevInternalStateModule,
-): Promise<Set<number>> {
-  const ports = new Set<number>();
-  const scanHost = isStringKeyedRecord(internalState) ? internalState['ServerState'] : undefined;
-  const scan = isStringKeyedRecord(scanHost) ? scanHost['scan'] : undefined;
-  if (!isStringKeyedRecord(scanHost) || typeof scan !== 'function') return ports;
-  try {
-    const records: unknown = await scan.call(scanHost, { onlyMetadata: true });
-    if (!Array.isArray(records)) return ports;
-    for (const record of records) {
-      if (!isStringKeyedRecord(record)) continue;
-      for (const key of ['databasePort', 'port', 'shadowDatabasePort', 'streamsPort']) {
-        const port = record[key];
-        if (typeof port === 'number' && Number.isInteger(port) && port > 0) ports.add(port);
-      }
-      const experimental = record['experimental'];
-      const streams = isStringKeyedRecord(experimental) ? experimental['streams'] : undefined;
-      const streamsUrl = isStringKeyedRecord(streams) ? streams['serverUrl'] : undefined;
-      if (typeof streamsUrl === 'string') {
-        const port = databasePortOf(streamsUrl);
-        if (port !== undefined) ports.add(port);
-      }
-    }
-  } catch {
-    // Unreadable registry — fall back to the OS probe alone.
-  }
-  return ports;
 }
 
 /**
