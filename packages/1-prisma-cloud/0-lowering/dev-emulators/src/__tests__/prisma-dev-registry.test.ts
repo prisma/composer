@@ -3,9 +3,12 @@ import { registryClaimedPorts } from '../prisma-dev-registry.ts';
 
 describe('Prisma Dev server registry', () => {
   test('reads claimed ports from the static scan method on the ServerState class', async () => {
+    let scanOptions: unknown;
+
     // biome-ignore lint/complexity/noStaticOnlyClass: this must mirror @prisma/dev's real runtime export shape.
     class ServerState {
-      static async scan(): Promise<unknown> {
+      static async scan(options: { readonly onlyMetadata: true }): Promise<unknown> {
+        scanOptions = options;
         return [
           {
             databasePort: 51_300,
@@ -23,6 +26,7 @@ describe('Prisma Dev server registry', () => {
     expect([...ports].sort((left, right) => left - right)).toEqual([
       51_300, 51_301, 51_302, 51_303, 51_304,
     ]);
+    expect(scanOptions).toEqual({ onlyMetadata: true });
   });
 
   test('falls back to no registry claims when scanning fails', async () => {
