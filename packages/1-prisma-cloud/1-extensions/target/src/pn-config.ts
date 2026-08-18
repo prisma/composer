@@ -13,8 +13,8 @@
  * delegating fs/tar to `@internal/lowering` (invariant 5).
  */
 import { blindCast } from '@internal/foundation/casts';
-import { loadConfig } from '@prisma/orm-toolchain/config-loader';
 import type { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { loadConfig } from '@prisma/orm-toolchain/config-loader';
 import { resolve } from 'pathe';
 
 /** One declared extension pack, in the shape the control client accepts.
