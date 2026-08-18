@@ -17,6 +17,7 @@
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
     "check:npm-effect-resolution": "node scripts/check-npm-effect-resolution.mjs",
     "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
+    "check:orm-pins": "node scripts/check-orm-pins.mjs",
     "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
     "check:floor-imports": "node scripts/check-floor-imports.mjs",
     "bump-minor": "node scripts/bump-minor.ts",
@@ -50,5 +51,5 @@
       "@alchemy.run/node-utils@0.0.5": "patches/@alchemy.run__node-utils@0.0.5.patch"
     }
   },
-  "version": "0.9.0"
+  "version": "0.10.0"
 }
