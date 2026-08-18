@@ -55,7 +55,7 @@
     "tsdown": "^0.22.7"
   },
   "peerDependencies": {
-    "@prisma/orm-postgres": "8.0.0-rc.1"
+    "@prisma/orm-postgres": "8.0.0-rc.4"
   },
   "devDependencies": {
     "@internal/auth": "workspace:0.10.0",
@@ -74,7 +74,7 @@
     "@internal/storage": "workspace:0.10.0",
     "@internal/streams": "workspace:0.10.0",
     "@internal/tsdown-config": "workspace:0.10.0",
-    "@prisma/orm-postgres": "8.0.0-rc.1",
+    "@prisma/orm-postgres": "8.0.0-rc.4",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   },

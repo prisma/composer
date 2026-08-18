@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/orm-postgres": "8.0.0-rc.1",
+    "@prisma/orm-postgres": "8.0.0-rc.4",
     "arktype": "^2.2.3",
     "pg": "8.22.0"
   },
