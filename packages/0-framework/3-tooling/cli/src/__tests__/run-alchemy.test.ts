@@ -7,12 +7,14 @@
  * path (`@prisma/composer/control`), where the same rules still have to hold.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   alchemyCommandLine,
   alchemyInvocation,
+  childNodeOptions,
   resolveAlchemyBin,
   spawnAlchemy,
 } from '../run-alchemy.ts';
@@ -275,4 +277,57 @@ describe('spawnAlchemy()', () => {
       }),
     ).rejects.toThrow(/Could not find an installed `alchemy` bin/);
   });
+});
+
+describe('childNodeOptions()', () => {
+  // Pass isBunRuntime:false explicitly so these tests work whether run under
+  // Bun or Node — the default picks up the actual runtime, but here we are
+  // testing both branches regardless of where the suite runs.
+
+  test('under node: returns an --import flag pointing at register-entry-resolution.mjs', () => {
+    const result = childNodeOptions(undefined, false);
+    expect(result).toMatch(/^--import=file:\/\/.*register-entry-resolution\.mjs$/);
+  });
+
+  test('under node: appends to an existing NODE_OPTIONS value without discarding it', () => {
+    const result = childNodeOptions('--no-warnings', false);
+    expect(result).toMatch(/^--no-warnings --import=file:\/\/.*register-entry-resolution\.mjs$/);
+  });
+
+  test('under node: an empty NODE_OPTIONS string is treated the same as undefined', () => {
+    const result = childNodeOptions('', false);
+    expect(result).toMatch(/^--import=file:\/\/.*register-entry-resolution\.mjs$/);
+  });
+
+  test('under bun: returns undefined (bun resolves .js → .ts natively, no hook needed)', () => {
+    expect(childNodeOptions(undefined, true)).toBeUndefined();
+  });
+
+  test('under bun: existing NODE_OPTIONS are ignored — returns undefined regardless', () => {
+    expect(childNodeOptions('--no-warnings', true)).toBeUndefined();
+  });
+});
+
+// Real-node proof: confirm that the preload module makes .js-extension imports
+// resolve to .ts sources in a plain node child — the same situation the alchemy
+// converge child faces when the user's entry uses `./service.js` specifiers.
+describe('register-entry-resolution.ts (real-node proof)', () => {
+  const registerModule = path.join(import.meta.dir, '..', 'register-entry-resolution.ts');
+  const driver = path.join(import.meta.dir, 'fixtures', 'run-child-import.ts');
+  const jsExtEntry = path.join(import.meta.dir, 'fixtures', 'entry-js-ext-import.ts');
+
+  test('with the --import preload: .js-extension import resolves to .ts in a plain node child', () => {
+    const result = spawnSync('node', [`--import=file://${registerModule}`, driver, jsExtEntry], {
+      encoding: 'utf8',
+    });
+
+    expect(result.status).toBe(0);
+  }, 15000);
+
+  test('without the preload: the same .js-extension import fails as expected', () => {
+    const result = spawnSync('node', [driver, jsExtEntry], { encoding: 'utf8' });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('js-ext-service.js');
+  }, 15000);
 });

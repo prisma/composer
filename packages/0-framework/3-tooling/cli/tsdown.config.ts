@@ -15,6 +15,7 @@ export default defineConfig({
   entry: {
     index: 'src/exports/index.ts',
     bin: 'src/bin.ts',
+    'register-entry-resolution': 'src/register-entry-resolution.ts',
     report: 'src/exports/render-deployment.ts',
     control: 'src/exports/control.ts',
     family: 'src/exports/family.ts',
@@ -22,6 +23,16 @@ export default defineConfig({
   },
   exports:
     typeof baseConfig.exports === 'object'
-      ? { ...baseConfig.exports, bin: false }
+      ? {
+          ...baseConfig.exports,
+          bin: false,
+          // Exclude `register-entry-resolution` from the generated exports map
+          // for the same reason `bin` is excluded: it is a preload script, not
+          // an importable module path consumers call by name.
+          exclude: [
+            ...(Array.isArray(baseConfig.exports.exclude) ? baseConfig.exports.exclude : []),
+            /^register-entry-resolution$/,
+          ],
+        }
       : baseConfig.exports,
 });

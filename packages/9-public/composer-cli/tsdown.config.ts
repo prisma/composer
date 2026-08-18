@@ -54,4 +54,21 @@ export default defineConfig([
     external: ['esbuild', '@prisma/cli-engine'],
     noExternal: [/^@internal\//],
   },
+  {
+    // Preload module for the alchemy converge child. NODE_OPTIONS --import
+    // points to this file so the resolve hook is active inside the child
+    // process. Must live alongside dist/bin.mjs so the relative URL computed
+    // in run-alchemy.ts resolves to the correct file after bundling.
+    ...baseConfig,
+    dts: false,
+    entry: {
+      'register-entry-resolution':
+        '../../0-framework/3-tooling/cli/dist/register-entry-resolution.mjs',
+    },
+    exports: false,
+    clean: false,
+    skipNodeModulesBundle: false,
+    external: ['esbuild', '@prisma/cli-engine'],
+    noExternal: [/^@internal\//],
+  },
 ]);
