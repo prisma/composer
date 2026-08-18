@@ -239,6 +239,9 @@ jobs:
       # tarball, and absent from the library tarball. See the script's header.
       - name: Check the cli-engine pin and externality
         run: pnpm check:cli-engine-pin
+
+      - name: Every ORM-family pin agrees
+        run: pnpm check:orm-pins
       # Same built package, second invariant: nothing statically reachable
       # from the family or testing entrypoints may import alchemy or effect.
       - name: Check the family and testing static graphs
