@@ -2,10 +2,9 @@
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
- * Under Bun, resolves the workspace's own installed `alchemy` bin (walking up
- * `node_modules/.bin` from the generated file's package dir). Alchemy's bin
- * launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch driven by
- * the env it inherits.
+ * Under Bun, runs `alchemy.js` directly under `process.execPath` (bun) so
+ * the converge child always inherits the CLI's own runtime — no launcher, no
+ * env heuristics.
  *
  * Under Node, bypasses the alchemy launcher and runs `alchemy.js` directly
  * under tsx (`node <tsx-cli> <alchemy.js> <action> <stack-file> ...`). tsx
@@ -111,7 +110,8 @@ const alchemyArgs = (invocation: AlchemyInvocation): string[] => [
  * and no caller should. Raises DEPLOY.ALCHEMY_BIN_MISSING when the app has no
  * alchemy installed.
  *
- * Under Bun, runs the alchemy launcher directly (it handles its own dispatch).
+ * Under Bun, runs `alchemy.js` directly under `process.execPath` (bun) — the
+ * converge child always inherits the CLI's own runtime, explicitly.
  * Under Node, runs `node <tsx-cli> <alchemy.js> <args>` so tsx provides
  * TypeScript resolution for the stack file and the entry graph it imports.
  */
@@ -120,8 +120,8 @@ export async function alchemyCommandLine(
 ): Promise<AlchemyCommandLine> {
   if (typeof process.versions.bun === 'string') {
     return {
-      command: resolveAlchemyBin(invocation.cwd),
-      args: alchemyArgs(invocation),
+      command: process.execPath,
+      args: [resolveAlchemyJs(invocation.cwd), ...alchemyArgs(invocation)],
       cwd: invocation.cwd,
       env: invocation.env,
     };

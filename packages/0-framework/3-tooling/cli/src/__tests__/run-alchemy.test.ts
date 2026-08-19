@@ -95,10 +95,10 @@ describe('alchemyInvocation()', () => {
     });
   });
 
-  // Tests run under bun, so the bun branch is taken: command = alchemy bin.
+  // Tests run under bun, so the bun branch is taken: command = process.execPath (bun), args[0] = alchemy.js.
   test('becomes `<command> <stack file> --yes --stage <stage>` against the resolved bin', async () => {
     const dir = makeTmpDir();
-    const bin = installFakeAlchemy(dir);
+    const js = installFakeAlchemyJs(dir);
 
     expect(
       await alchemyCommandLine(
@@ -111,8 +111,8 @@ describe('alchemyInvocation()', () => {
         }),
       ),
     ).toEqual({
-      command: bin,
-      args: ['deploy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'ci-42'],
+      command: process.execPath,
+      args: [js, 'deploy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'ci-42'],
       cwd: dir,
       env: {},
     });
@@ -120,7 +120,7 @@ describe('alchemyInvocation()', () => {
 
   test("destroy passes --stage too — the stage is never left to alchemy's machine-dependent default", async () => {
     const dir = makeTmpDir();
-    installFakeAlchemy(dir);
+    const js = installFakeAlchemyJs(dir);
 
     expect(
       (
@@ -134,12 +134,12 @@ describe('alchemyInvocation()', () => {
           }),
         )
       ).args,
-    ).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'br_test123']);
+    ).toEqual([js, 'destroy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'br_test123']);
   });
 
   test('the stage never comes from the environment: identical argv whatever USER is', async () => {
     const dir = makeTmpDir();
-    installFakeAlchemy(dir);
+    const js = installFakeAlchemyJs(dir);
 
     const argv = (
       await alchemyCommandLine(
@@ -155,6 +155,7 @@ describe('alchemyInvocation()', () => {
 
     expect(argv).not.toContain(os.userInfo().username);
     expect(argv).toEqual([
+      js,
       'deploy',
       '.prisma-composer/alchemy.run.ts',
       '--yes',
@@ -165,7 +166,7 @@ describe('alchemyInvocation()', () => {
 
   test('env carries only the ADDITIONS — the containers plus the extra pointers, never a whole environment', () => {
     const dir = makeTmpDir();
-    installFakeAlchemy(dir);
+    installFakeAlchemyJs(dir);
 
     expect(
       alchemyInvocation({
@@ -187,8 +188,8 @@ describe('spawnAlchemy()', () => {
   test('runs the invocation in its cwd with its env additions merged over the invoking environment', async () => {
     const dir = makeTmpDir();
     const captureFile = path.join(dir, 'capture.json');
-    installFakeAlchemy(dir, [
-      'const fs = require("node:fs");',
+    installFakeAlchemyJs(dir, [
+      'import fs from "node:fs";',
       'fs.writeFileSync(process.env.CAPTURE_FILE, JSON.stringify({',
       '  argv: process.argv.slice(2),',
       '  cwd: process.cwd(),',
@@ -228,7 +229,7 @@ describe('spawnAlchemy()', () => {
 
   test("returns a failing child's status verbatim rather than collapsing it", async () => {
     const dir = makeTmpDir();
-    installFakeAlchemy(dir, ['process.exit(3);']);
+    installFakeAlchemyJs(dir, ['process.exit(3);']);
 
     expect(
       await spawnAlchemy({
@@ -251,7 +252,7 @@ describe('spawnAlchemy()', () => {
    */
   test('a signal-killed child comes back as the signal with a null exit code', async () => {
     const dir = makeTmpDir();
-    installFakeAlchemy(dir, [
+    installFakeAlchemyJs(dir, [
       'process.kill(process.pid, "SIGTERM");',
       'setTimeout(() => {}, 5000);',
     ]);

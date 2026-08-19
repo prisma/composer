@@ -37,6 +37,9 @@ const CWD = (() => {
   const bin = path.join(dir, 'node_modules', '.bin');
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(bin, 'alchemy'), '#!/usr/bin/env node\n', { mode: 0o755 });
+  const alchemyBin = path.join(dir, 'node_modules', 'alchemy', 'bin');
+  fs.mkdirSync(alchemyBin, { recursive: true });
+  fs.writeFileSync(path.join(alchemyBin, 'alchemy.js'), '');
   return dir;
 })();
 
