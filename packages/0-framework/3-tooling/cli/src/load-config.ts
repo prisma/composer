@@ -27,7 +27,23 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import * as c12 from 'c12';
 import { effectResolutionDiagnostic } from './check-effect-resolution.ts';
 
-export const CONFIG_FILENAME = 'prisma-composer.config.ts';
+/**
+ * Accepted config file names, in precedence order: when several sit in one
+ * directory the first one found wins. The JavaScript spellings exist so a
+ * project whose own TypeScript build would otherwise compile the config file
+ * (no `include`, a `rootDir`, `module: commonjs`) can keep it out of that
+ * build's sight.
+ */
+export const CONFIG_FILENAMES = [
+  'prisma-composer.config.ts',
+  'prisma-composer.config.mts',
+  'prisma-composer.config.mjs',
+  'prisma-composer.config.js',
+] as const;
+/** The canonical spelling, used in messages and docs. */
+export const CONFIG_FILENAME = CONFIG_FILENAMES[0];
+/** The accepted spellings as one glob-like string for messages. */
+export const CONFIG_FILENAME_PATTERN = 'prisma-composer.config.{ts,mts,mjs,js}';
 
 export interface LoadedAppConfig {
   /** The discovered config file's absolute path — the generated stack file imports it by a path relative to itself. */
@@ -35,12 +51,14 @@ export interface LoadedAppConfig {
   readonly config: PrismaAppConfig;
 }
 
-/** Walks UP from the entry file's directory looking for the literal CONFIG_FILENAME; undefined when the walk hits the filesystem root. */
+/** Walks UP from the entry file's directory looking for one of CONFIG_FILENAMES; undefined when the walk hits the filesystem root. */
 export function findConfigPathForEntry(entryPath: string): string | undefined {
   let current = path.dirname(path.resolve(entryPath));
   while (true) {
-    const candidate = path.join(current, CONFIG_FILENAME);
-    if (fs.existsSync(candidate)) return candidate;
+    for (const filename of CONFIG_FILENAMES) {
+      const candidate = path.join(current, filename);
+      if (fs.existsSync(candidate)) return candidate;
+    }
     const parent = path.dirname(current);
     if (parent === current) return undefined;
     current = parent;
@@ -51,7 +69,7 @@ export function missingConfigError(entryPath: string): CliStructuredError {
   const searchedFrom = path.dirname(path.resolve(entryPath));
   return new CliStructuredError(
     'CONFIG.FILE_MISSING',
-    `No ${CONFIG_FILENAME} found walking up from "${searchedFrom}".`,
+    `No ${CONFIG_FILENAME_PATTERN} found walking up from "${searchedFrom}".`,
     {
       why: "The deploy needs the app's config file.",
       fix:
@@ -62,10 +80,10 @@ export function missingConfigError(entryPath: string): CliStructuredError {
   );
 }
 
-function fieldError(field: string, requirement: string): CliStructuredError {
+function fieldError(configPath: string, field: string, requirement: string): CliStructuredError {
   return new CliStructuredError(
     'CONFIG.FIELD_INVALID',
-    `${CONFIG_FILENAME}: \`${field}\` ${requirement}.`,
+    `${path.basename(configPath)}: \`${field}\` ${requirement}.`,
     {
       fix: "See defineConfig() in '@prisma/composer/config'.",
       meta: { field },
@@ -106,13 +124,13 @@ export function configShapeDiagnostics(
 
   const extensions = loaded['extensions'];
   if (!Array.isArray(extensions)) {
-    diagnostics.push(fieldError('extensions', 'must be an array'));
+    diagnostics.push(fieldError(configPath, 'extensions', 'must be an array'));
   } else {
     const seen = new Set<string>();
     for (const [index, entry] of extensions.entries()) {
       if (!isRecord(entry)) {
         diagnostics.push(
-          fieldError(`extensions[${index}]`, 'must be an extension descriptor object'),
+          fieldError(configPath, `extensions[${index}]`, 'must be an extension descriptor object'),
         );
         continue;
       }
@@ -120,6 +138,7 @@ export function configShapeDiagnostics(
       if (typeof id !== 'string' || id.length === 0) {
         diagnostics.push(
           fieldError(
+            configPath,
             `extensions[${index}].id`,
             'must be a non-empty string (the extension package name)',
           ),
@@ -128,7 +147,7 @@ export function configShapeDiagnostics(
         diagnostics.push(
           new CliStructuredError(
             'CONFIG.EXTENSION_DUPLICATE',
-            `${CONFIG_FILENAME}: extension "${id}" is listed more than once in \`extensions\`.`,
+            `${path.basename(configPath)}: extension "${id}" is listed more than once in \`extensions\`.`,
           ),
         );
       } else {
@@ -137,6 +156,7 @@ export function configShapeDiagnostics(
       if (!isRecord(entry['nodes'])) {
         diagnostics.push(
           fieldError(
+            configPath,
             `extensions[${index}].nodes`,
             'must be an object (the node-ID → control registry)',
           ),
@@ -151,7 +171,9 @@ export function configShapeDiagnostics(
     typeof state['extension'] !== 'string' ||
     typeof state['create'] !== 'function'
   ) {
-    diagnostics.push(fieldError('state', 'must be a state descriptor (e.g. prismaState())'));
+    diagnostics.push(
+      fieldError(configPath, 'state', 'must be a state descriptor (e.g. prismaState())'),
+    );
   }
 
   return diagnostics;

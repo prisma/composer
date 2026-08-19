@@ -11,6 +11,7 @@ import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import {
   CONFIG_FILENAME,
+  CONFIG_FILENAMES,
   findConfigPathForEntry,
   loadAppConfig,
   resolveConfigFile,
@@ -75,6 +76,55 @@ describe('findConfigPathForEntry() — the walk-up', () => {
   test('returns undefined when no ancestor carries the config', () => {
     const dir = makeTree();
     expect(findConfigPathForEntry(path.join(dir, 'module.ts'))).toBeUndefined();
+  });
+
+  test.each(CONFIG_FILENAMES.filter((name) => name !== CONFIG_FILENAME))(
+    'finds a %s beside the entry when no .ts spelling exists',
+    (filename) => {
+      const dir = makeTree();
+      const configPath = path.join(dir, filename);
+      fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+
+      expect(findConfigPathForEntry(path.join(dir, 'module.mjs'))).toBe(configPath);
+    },
+  );
+
+  test('the .ts spelling wins over the JavaScript spellings in the same directory', () => {
+    const dir = makeTree();
+    for (const filename of CONFIG_FILENAMES) {
+      fs.writeFileSync(path.join(dir, filename), VALID_CONFIG_SOURCE);
+    }
+
+    expect(findConfigPathForEntry(path.join(dir, 'module.ts'))).toBe(
+      path.join(dir, CONFIG_FILENAME),
+    );
+  });
+
+  test('the NEAREST directory wins before spelling precedence', () => {
+    const dir = makeTree();
+    fs.writeFileSync(path.join(dir, CONFIG_FILENAME), VALID_CONFIG_SOURCE);
+    const appDir = path.join(dir, 'apps', 'shop');
+    fs.mkdirSync(appDir, { recursive: true });
+    const nearest = path.join(appDir, 'prisma-composer.config.mjs');
+    fs.writeFileSync(nearest, VALID_CONFIG_SOURCE);
+
+    expect(findConfigPathForEntry(path.join(appDir, 'module.mjs'))).toBe(nearest);
+  });
+
+  test('the missing-config error names every accepted spelling', () => {
+    const dir = makeTree();
+    const error: unknown = (() => {
+      try {
+        resolveConfigFile({ entryPath: path.join(dir, 'module.ts') });
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('CONFIG.FILE_MISSING');
+    expect(error.message).toContain('prisma-composer.config.{ts,mts,mjs,js}');
   });
 });
 
@@ -156,6 +206,30 @@ describe('loadAppConfig() — real c12 evaluation', () => {
     expect(loaded.config.extensions[0]?.id).toBe('fixture-extension');
     expect(loaded.config.state.extension).toBe('fixture-extension');
     expect(typeof loaded.config.state.create).toBe('function');
+  });
+
+  test('loads a prisma-composer.config.mjs the same way', async () => {
+    const dir = makeTree();
+    const configPath = path.join(dir, 'prisma-composer.config.mjs');
+    fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+
+    const loaded = await loadAppConfig(configPath);
+
+    expect(loaded.path).toBe(configPath);
+    expect(loaded.config.extensions[0]?.id).toBe('fixture-extension');
+    expect(typeof loaded.config.state.create).toBe('function');
+  });
+
+  test('shape diagnostics name the file that was loaded, not the canonical .ts spelling', async () => {
+    const dir = makeTree();
+    const configPath = path.join(dir, 'prisma-composer.config.mjs');
+    fs.writeFileSync(configPath, 'export default { extensions: "nope", state: {} };\n');
+
+    const error: unknown = await loadAppConfig(configPath).catch((e: unknown) => e);
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('CONFIG.FIELD_INVALID');
+    expect(error.message).toContain('prisma-composer.config.mjs: `extensions` must be an array');
   });
 
   test('a config file whose factory throws (e.g. missing env) propagates that error', async () => {
