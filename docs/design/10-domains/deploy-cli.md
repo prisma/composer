@@ -43,15 +43,15 @@ not exist on `dev` (clipanion rejects them as unknown flags). `prisma-composer
 build` and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The bin is runtime-agnostic — no bun-only APIs anywhere in the
-CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
-type stripping imports the user's `.ts` entry natively). Under node, the CLI
-also registers a synchronous resolve hook (`node:module` `registerHooks`) so
-that relative imports inside the entry graph may use `./x.js` or extensionless
-`./x` specifiers for `.ts` source files without requiring
-`allowImportingTsExtensions`; `.mjs` and `.cjs` specifiers map to `.mts` and
-`.cts` respectively. Bun resolves these natively and the hook is a no-op there. One inherent caveat: an app whose service module imports
-bun APIs can only deploy under bun, since loading the graph imports that module
-— the app's choice, not a CLI limit.
+CLI or assembly code — so it runs under both bun and node. Under node, the CLI
+registers tsx (`tsx/esm/api` `register`) so that relative imports inside the
+entry graph may use `./x.js` or extensionless `./x` specifiers for `.ts`
+source files; `.mjs` specifiers map to `.mts`. Bun resolves these natively and
+tsx registration is skipped there. The alchemy converge child also runs under
+tsx on node (`node <tsx-cli> alchemy.js`) so entry-graph TypeScript resolution
+is consistent across the main process and the child. One inherent caveat: an
+app whose service module imports bun APIs can only deploy under bun, since
+loading the graph imports that module — the app's choice, not a CLI limit.
 
 ## The pipeline
 
