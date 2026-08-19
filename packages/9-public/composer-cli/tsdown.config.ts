@@ -31,7 +31,9 @@ export default defineConfig([
     // fail every cross-package instanceof. scripts/check-cli-engine-pin.mjs
     // enforces both that and the exact-version agreement between the
     // manifests.
-    external: ['esbuild', '@prisma/cli-engine'],
+    // tsx ships worker files and must not be bundled — it must remain a real
+    // import so its own file layout is intact at runtime.
+    external: ['esbuild', '@prisma/cli-engine', 'tsx'],
     noExternal: [/^@internal\//],
   },
   {
@@ -51,7 +53,8 @@ export default defineConfig([
     // different things. scripts/check-cli-engine-pin.mjs checks dist/bin.mjs
     // by name for exactly this, and check-family-static-graph.mjs walks its
     // graph.
-    external: ['esbuild', '@prisma/cli-engine'],
+    // tsx ships worker files and must not be bundled.
+    external: ['esbuild', '@prisma/cli-engine', 'tsx'],
     noExternal: [/^@internal\//],
   },
 ]);

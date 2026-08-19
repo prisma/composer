@@ -26,6 +26,7 @@ import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import * as c12 from 'c12';
 import { effectResolutionDiagnostic } from './check-effect-resolution.ts';
+import { registerTsRuntime } from './runtime-loader.ts';
 
 export const CONFIG_FILENAME = 'prisma-composer.config.ts';
 
@@ -177,6 +178,7 @@ async function evaluateConfig(
   configPath: string,
   verifySamePath: boolean,
 ): Promise<{ value: unknown; diagnostics: readonly CliStructuredError[] }> {
+  await registerTsRuntime();
   let result: Awaited<ReturnType<typeof c12.loadConfig>>;
   try {
     result = await c12.loadConfig({

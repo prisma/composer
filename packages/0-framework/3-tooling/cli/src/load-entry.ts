@@ -10,8 +10,8 @@ import type { ModuleNode, ServiceNode } from '@internal/core';
 import { isNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { registerEntryResolution } from './entry-resolution.ts';
 import { explainJsxLoadError } from './jsx-load-error.ts';
+import { registerTsRuntime } from './runtime-loader.ts';
 
 export interface LoadedEntry {
   /** The resolved absolute path to the entry module on disk. */
@@ -20,7 +20,7 @@ export interface LoadedEntry {
 }
 
 export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEntry> {
-  registerEntryResolution();
+  await registerTsRuntime();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
   try {
