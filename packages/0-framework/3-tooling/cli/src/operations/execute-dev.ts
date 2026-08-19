@@ -124,7 +124,10 @@ export async function executeDev(
     throw error;
   }
 
-  const reproduceCommand = `alchemy deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`;
+  const reproduceCommand =
+    typeof process.versions.bun === 'string'
+      ? `alchemy deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`
+      : `npx tsx node_modules/alchemy/bin/alchemy.js deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`;
 
   const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {
     let stackPath: string;

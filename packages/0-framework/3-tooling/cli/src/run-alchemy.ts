@@ -1,11 +1,17 @@
 /**
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
- * Alchemy" call): hand the terminal to the generated stack file. Resolves the
- * workspace's own installed `alchemy` bin (walking up `node_modules/.bin`
- * from the generated file's package dir) rather than going through
- * `bunx`/`npx`, so this works the same under node and bun — the resolved
- * bin's own launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch
- * from there, driven by the env it inherits.
+ * Alchemy" call): hand the terminal to the generated stack file.
+ *
+ * Under Bun, resolves the workspace's own installed `alchemy` bin (walking up
+ * `node_modules/.bin` from the generated file's package dir). Alchemy's bin
+ * launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch driven by
+ * the env it inherits.
+ *
+ * Under Node, bypasses the alchemy launcher and runs `alchemy.js` directly
+ * under tsx (`node <tsx-cli> <alchemy.js> <action> <stack-file> ...`). tsx
+ * handles TypeScript resolution for the stack file and the entry graph it
+ * imports, which is the same registration `loadEntry` applies in the CLI
+ * process itself.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -16,6 +22,7 @@
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
@@ -34,6 +41,33 @@ export function resolveAlchemyBin(startDir: string): string {
     }
     dir = parent;
   }
+}
+
+/**
+ * Walks up from `startDir` looking for `node_modules/alchemy/bin/alchemy.js` —
+ * the compiled JS entry that the tsx-based Node invocation runs directly,
+ * bypassing the alchemy launcher's node/bun dispatch.
+ */
+export function resolveAlchemyJs(startDir: string): string {
+  let dir = startDir;
+  while (true) {
+    const candidate = path.join(dir, 'node_modules', 'alchemy', 'bin', 'alchemy.js');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new CliStructuredError(
+        'DEPLOY.ALCHEMY_BIN_MISSING',
+        `Could not find an installed \`alchemy\` bin above "${startDir}".`,
+        { fix: 'Add "alchemy" as a dependency of your app.' },
+      );
+    }
+    dir = parent;
+  }
+}
+
+/** Resolves the tsx CLI entry from the installed tsx package. */
+export async function resolveTsxCli(): Promise<string> {
+  return fileURLToPath(await import.meta.resolve('tsx/cli'));
 }
 
 /**
@@ -64,21 +98,43 @@ export interface AlchemyCommandLine {
   readonly env: Readonly<Record<string, string | undefined>>;
 }
 
+const alchemyArgs = (invocation: AlchemyInvocation): string[] => [
+  invocation.action,
+  invocation.stackFileRelativePath,
+  '--yes',
+  '--stage',
+  invocation.stage,
+];
+
 /**
  * Resolves the invocation against this machine — the step every adapter takes
  * and no caller should. Raises DEPLOY.ALCHEMY_BIN_MISSING when the app has no
  * alchemy installed.
+ *
+ * Under Bun, runs the alchemy launcher directly (it handles its own dispatch).
+ * Under Node, runs `node <tsx-cli> <alchemy.js> <args>` so tsx provides
+ * TypeScript resolution for the stack file and the entry graph it imports.
  */
-export function alchemyCommandLine(invocation: AlchemyInvocation): AlchemyCommandLine {
+export async function alchemyCommandLine(
+  invocation: AlchemyInvocation,
+): Promise<AlchemyCommandLine> {
+  if (typeof process.versions.bun === 'string') {
+    return {
+      command: resolveAlchemyBin(invocation.cwd),
+      args: alchemyArgs(invocation),
+      cwd: invocation.cwd,
+      env: invocation.env,
+    };
+  }
+
+  const [tsxCliPath, alchemyJsPath] = await Promise.all([
+    resolveTsxCli(),
+    Promise.resolve(resolveAlchemyJs(invocation.cwd)),
+  ]);
+
   return {
-    command: resolveAlchemyBin(invocation.cwd),
-    args: [
-      invocation.action,
-      invocation.stackFileRelativePath,
-      '--yes',
-      '--stage',
-      invocation.stage,
-    ],
+    command: process.execPath,
+    args: [tsxCliPath, alchemyJsPath, ...alchemyArgs(invocation)],
     cwd: invocation.cwd,
     env: invocation.env,
   };
@@ -128,7 +184,7 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  * Ctrl-C'd deploy report itself as a failure.
  */
 export const spawnAlchemy: RunAlchemy = async (invocation) => {
-  const line = alchemyCommandLine(invocation);
+  const line = await alchemyCommandLine(invocation);
   return new Promise<AlchemyOutcome>((resolve, reject) => {
     const child = spawn(line.command, [...line.args], {
       cwd: line.cwd,

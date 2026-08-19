@@ -451,7 +451,10 @@ async function runStackPipelineInner(
       return notOk(toStructured('DEPLOY.STACK_WRITE_FAILED', error));
     }
 
-    const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
+    const reproduceCommand =
+      typeof process.versions.bun === 'string'
+        ? `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`
+        : `npx tsx node_modules/alchemy/bin/alchemy.js ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
 
     // Hand the terminal to alchemy against the generated file.
     let outcome: AlchemyOutcome;
