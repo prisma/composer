@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { loadEntry } from '../load-entry.ts';
 
 const fixture = (name: string) => path.join(import.meta.dir, 'fixtures', name);
+
+// Resolve the tsx CLI path once. Under Bun, import.meta.resolve is synchronous.
+const tsxCli = fileURLToPath(import.meta.resolve('tsx/cli'));
 
 describe('loadEntry()', () => {
   test('accepts a service default export', async () => {
@@ -50,84 +54,53 @@ describe('loadEntry()', () => {
     expect(error.cause).toBeDefined();
   });
 
-  // Bun's own module loader transforms JSX — this failure is node-specific
-  // (the CLI's shebang runtime; see node-compat.test.ts), so it's reproduced
-  // by spawning real node against a small standalone driver rather than
-  // calling loadEntry() in-process here.
-  test('a .tsx transitively imported by the entry gets a tailored error under node', () => {
-    const result = spawnSync('node', [fixture('run-load-entry.ts'), fixture('jsx-in-graph.ts')], {
-      encoding: 'utf8',
-    });
+  // tsx runs under Node and transpiles TypeScript for the entry graph. These
+  // tests spawn real node with the tsx CLI to exercise the tsx registration
+  // path that loadEntry() calls before importing the entry.
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain(fixture('jsx-in-graph.tsx'));
-    expect(result.stderr).toContain("node's own module loader");
-    expect(result.stderr).toContain('JSX transform');
-    expect(result.stderr).toContain('examples/email/scripts/build.ts');
-    // where.path carries the entry (ruling on `where`: the natural path).
-    expect(result.stderr).toContain(`Where: ${fixture('jsx-in-graph.ts')}`);
-  }, 15000);
-
-  // The resolve hook is node-specific (Bun resolves .js→.ts natively).
-  // These tests spawn real node so the hook registration path is exercised.
-
-  test('a .js-extension import resolves to the .ts source under node', () => {
+  test('a .js-extension import resolves to the .ts source under node via tsx', () => {
     const result = spawnSync(
       'node',
-      [fixture('run-load-entry.ts'), fixture('entry-js-ext-import.ts')],
+      [tsxCli, fixture('run-load-entry.ts'), fixture('entry-js-ext-import.ts')],
       { encoding: 'utf8' },
     );
 
     expect(result.status).toBe(0);
   }, 15000);
 
-  test('an extensionless import resolves to the .ts source under node', () => {
+  test('an extensionless import resolves to the .ts source under node via tsx', () => {
     const result = spawnSync(
       'node',
-      [fixture('run-load-entry.ts'), fixture('entry-no-ext-import.ts')],
+      [tsxCli, fixture('run-load-entry.ts'), fixture('entry-no-ext-import.ts')],
       { encoding: 'utf8' },
     );
 
     expect(result.status).toBe(0);
   }, 15000);
 
-  test('a .mjs-extension import resolves to the .mts source under node', () => {
+  test('a .mjs-extension import resolves to the .mts source under node via tsx', () => {
     const result = spawnSync(
       'node',
-      [fixture('run-load-entry.ts'), fixture('entry-mjs-ext-import.ts')],
+      [tsxCli, fixture('run-load-entry.ts'), fixture('entry-mjs-ext-import.ts')],
       { encoding: 'utf8' },
     );
 
     expect(result.status).toBe(0);
   }, 15000);
 
-  test('a .cjs-extension import resolves to the .cts source under node', () => {
+  test('a genuinely missing relative import still fails with a module-not-found error under node', () => {
     const result = spawnSync(
       'node',
-      [fixture('run-load-entry.ts'), fixture('entry-cjs-ext-import.ts')],
-      { encoding: 'utf8' },
-    );
-
-    // The hook resolved .cjs → .cts; resolution succeeded, but the fixture's
-    // export is not a Composer node, so the failure is ENTRY_EXPORT_INVALID.
-    expect(result.stderr).not.toContain('Cannot find module');
-    expect(result.stderr).toContain('must default-export a node');
-  }, 15000);
-
-  test('a genuinely missing relative import still fails with the original error under node', () => {
-    const result = spawnSync(
-      'node',
-      [fixture('run-load-entry.ts'), fixture('entry-truly-missing-import.ts')],
+      [tsxCli, fixture('run-load-entry.ts'), fixture('entry-truly-missing-import.ts')],
       { encoding: 'utf8' },
     );
 
     expect(result.status).not.toBe(0);
-    // The hook exhausted all candidates; the original ERR_MODULE_NOT_FOUND is re-thrown.
     expect(result.stderr).toContain('truly-missing');
   }, 15000);
 
-  // Bun resolves .js→.ts natively — load in-process to confirm the hook is a
-  // no-op (nothing is registered) and the imports still work.
+  // Bun resolves .js→.ts natively — load in-process to confirm tsx registration
+  // is a no-op (nothing is registered under Bun) and the imports still work.
   test('a .js-extension import loads correctly in-process under bun', async () => {
     const entry = await loadEntry(fixture('entry-js-ext-import.ts'), import.meta.dir);
     expect(entry.root.kind).toBe('service');

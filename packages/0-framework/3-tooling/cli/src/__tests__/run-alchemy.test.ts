@@ -14,6 +14,8 @@ import {
   alchemyCommandLine,
   alchemyInvocation,
   resolveAlchemyBin,
+  resolveAlchemyJs,
+  resolveTsxCli,
   spawnAlchemy,
 } from '../run-alchemy.ts';
 
@@ -93,12 +95,13 @@ describe('alchemyInvocation()', () => {
     });
   });
 
-  test('becomes `<command> <stack file> --yes --stage <stage>` against the resolved bin', () => {
+  // Tests run under bun, so the bun branch is taken: command = alchemy bin.
+  test('becomes `<command> <stack file> --yes --stage <stage>` against the resolved bin', async () => {
     const dir = makeTmpDir();
     const bin = installFakeAlchemy(dir);
 
     expect(
-      alchemyCommandLine(
+      await alchemyCommandLine(
         alchemyInvocation({
           command: 'deploy',
           stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
@@ -115,35 +118,39 @@ describe('alchemyInvocation()', () => {
     });
   });
 
-  test('destroy passes --stage too — the stage is never left to alchemy’s machine-dependent default', () => {
+  test("destroy passes --stage too — the stage is never left to alchemy's machine-dependent default", async () => {
     const dir = makeTmpDir();
     installFakeAlchemy(dir);
 
     expect(
-      alchemyCommandLine(
+      (
+        await alchemyCommandLine(
+          alchemyInvocation({
+            command: 'destroy',
+            stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+            cwd: dir,
+            stage: 'br_test123',
+            containerEnv: {},
+          }),
+        )
+      ).args,
+    ).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'br_test123']);
+  });
+
+  test('the stage never comes from the environment: identical argv whatever USER is', async () => {
+    const dir = makeTmpDir();
+    installFakeAlchemy(dir);
+
+    const argv = (
+      await alchemyCommandLine(
         alchemyInvocation({
-          command: 'destroy',
+          command: 'deploy',
           stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
           cwd: dir,
           stage: 'br_test123',
           containerEnv: {},
         }),
-      ).args,
-    ).toEqual(['destroy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'br_test123']);
-  });
-
-  test('the stage never comes from the environment: identical argv whatever USER is', () => {
-    const dir = makeTmpDir();
-    installFakeAlchemy(dir);
-
-    const argv = alchemyCommandLine(
-      alchemyInvocation({
-        command: 'deploy',
-        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-        cwd: dir,
-        stage: 'br_test123',
-        containerEnv: {},
-      }),
+      )
     ).args;
 
     expect(argv).not.toContain(os.userInfo().username);
@@ -274,5 +281,46 @@ describe('spawnAlchemy()', () => {
         env: {},
       }),
     ).rejects.toThrow(/Could not find an installed `alchemy` bin/);
+  });
+});
+
+/** A fake `alchemy.js` at `<dir>/node_modules/alchemy/bin/alchemy.js`. */
+function installFakeAlchemyJs(dir: string, body: readonly string[] = []): string {
+  const binDir = path.join(dir, 'node_modules', 'alchemy', 'bin');
+  fs.mkdirSync(binDir, { recursive: true });
+  const js = path.join(binDir, 'alchemy.js');
+  fs.writeFileSync(js, body.join('\n'));
+  return js;
+}
+
+describe('resolveAlchemyJs()', () => {
+  test('finds node_modules/alchemy/bin/alchemy.js in the given directory', () => {
+    const dir = makeTmpDir();
+    const js = installFakeAlchemyJs(dir);
+
+    expect(resolveAlchemyJs(dir)).toBe(js);
+  });
+
+  test('walks up through parent directories', () => {
+    const root = makeTmpDir();
+    const js = installFakeAlchemyJs(root);
+    const nested = path.join(root, 'examples', 'app');
+    fs.mkdirSync(nested, { recursive: true });
+
+    expect(resolveAlchemyJs(nested)).toBe(js);
+  });
+
+  test('throws when no alchemy.js is found', () => {
+    const dir = makeTmpDir();
+    expect(() => resolveAlchemyJs(dir)).toThrow(/Could not find an installed `alchemy` bin/);
+  });
+});
+
+describe('resolveTsxCli()', () => {
+  test('returns the path to the tsx CLI entry that exists on disk', async () => {
+    const tsxCliPath = await resolveTsxCli();
+
+    expect(tsxCliPath).toMatch(/tsx/);
+    expect(fs.existsSync(tsxCliPath)).toBe(true);
   });
 });
