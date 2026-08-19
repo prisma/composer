@@ -208,17 +208,20 @@ describe('loadAppConfig() — real c12 evaluation', () => {
     expect(typeof loaded.config.state.create).toBe('function');
   });
 
-  test('loads a prisma-composer.config.mjs the same way', async () => {
-    const dir = makeTree();
-    const configPath = path.join(dir, 'prisma-composer.config.mjs');
-    fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
+  test.each(CONFIG_FILENAMES.filter((name) => name !== CONFIG_FILENAME))(
+    'loads a %s the same way',
+    async (filename) => {
+      const dir = makeTree();
+      const configPath = path.join(dir, filename);
+      fs.writeFileSync(configPath, VALID_CONFIG_SOURCE);
 
-    const loaded = await loadAppConfig(configPath);
+      const loaded = await loadAppConfig(configPath);
 
-    expect(loaded.path).toBe(configPath);
-    expect(loaded.config.extensions[0]?.id).toBe('fixture-extension');
-    expect(typeof loaded.config.state.create).toBe('function');
-  });
+      expect(loaded.path).toBe(configPath);
+      expect(loaded.config.extensions[0]?.id).toBe('fixture-extension');
+      expect(typeof loaded.config.state.create).toBe('function');
+    },
+  );
 
   test('shape diagnostics name the file that was loaded, not the canonical .ts spelling', async () => {
     const dir = makeTree();
