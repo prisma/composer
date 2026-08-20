@@ -18,6 +18,34 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 
+/**
+ * The NODE_OPTIONS addition that makes the resolve hook active in the alchemy
+ * converge child. Exported so tests can exercise both runtime paths without
+ * being forced to run as node.
+ *
+ * Under Bun (`isBunRuntime` true) returns undefined: Bun resolves .js → .ts
+ * natively, so no hook is needed there.
+ *
+ * Under Node, prepends `--import=<file:// URL of the register module>` to any
+ * existing NODE_OPTIONS — never discards the caller's options.
+ *
+ * @param existingNodeOptions - the parent process's current NODE_OPTIONS value
+ * @param isBunRuntime - defaults to whether `process.versions.bun` is set
+ */
+export function childNodeOptions(
+  existingNodeOptions: string | undefined,
+  isBunRuntime: boolean = typeof process.versions.bun === 'string',
+): string | undefined {
+  if (isBunRuntime) return undefined;
+  // Resolve relative to THIS module's location so the URL stays correct both
+  // when run from @internal/cli's own dist and when bundled into
+  // @prisma/composer-cli's dist.
+  const registerUrl = new URL('./register-entry-resolution.mjs', import.meta.url);
+  const flag = `--import=${registerUrl.href}`;
+  if (existingNodeOptions === undefined || existingNodeOptions === '') return flag;
+  return `${existingNodeOptions} ${flag}`;
+}
+
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
 export function resolveAlchemyBin(startDir: string): string {
   let dir = startDir;
@@ -112,12 +140,17 @@ export interface AlchemyInvocationInput {
 
 /** What becomes `alchemy deploy|destroy <stack file> --yes --stage <stage>`. */
 export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocation {
+  const nodeOptions = childNodeOptions(process.env['NODE_OPTIONS']);
   return {
     action: input.command,
     stackFileRelativePath: input.stackFileRelativePath,
     cwd: input.cwd,
     stage: input.stage,
-    env: { ...input.containerEnv, ...input.env },
+    env: {
+      ...input.containerEnv,
+      ...input.env,
+      ...(nodeOptions !== undefined ? { NODE_OPTIONS: nodeOptions } : undefined),
+    },
   };
 }
 
