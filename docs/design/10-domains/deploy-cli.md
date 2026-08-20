@@ -66,9 +66,10 @@ bun APIs can only deploy under bun, since loading the graph imports that module
    composing Module. The deploy root must be a Module — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
    `module('name', ({ provision }) => { provision(...); })`).
-3. **Load the config + validate coverage.** `prisma-composer.config.ts` — found by
-   walking up from the deploy entry, loaded with c12, never imported by app
-   code — supplies the extension registries and the deploy's one state store
+3. **Load the config + validate coverage.** `prisma-composer.config.ts` (or its
+   `.mts`/`.mjs`/`.js` spelling; `.ts` wins when several sit in one directory) —
+   found by walking up from the deploy entry, loaded with c12, never imported
+   by app code — supplies the extension registries and the deploy's one state store
    (ADR-0017). Every node's and build descriptor's `(extension, type)` must
    have a registry entry; a gap errors naming the extension to add to the
    config. Extension factories validate their own environment during config

@@ -277,8 +277,14 @@ you.
 
 ## Deploy config
 
-`prisma-composer.config.ts` sits next to `module.ts`. It is read only by
-`prisma-composer deploy`/`destroy`, never imported by app code:
+`prisma-composer.config.ts` usually sits next to `module.ts`, but it may live in
+any ancestor directory: the CLI searches the entry's directory first, then each
+parent, and uses the nearest one. It is read only by `prisma-composer
+deploy`/`destroy`, never imported by app code. A plain-JavaScript project can
+name it `prisma-composer.config.mjs` or `.js` to keep it out of its TypeScript
+build (a build with `allowJs` still needs an explicit `exclude`); `.mts` is the
+TypeScript ES-module spelling. Within one directory `.ts` wins, then `.mts`,
+`.mjs`, `.js`:
 
 ```ts
 // prisma-composer.config.ts

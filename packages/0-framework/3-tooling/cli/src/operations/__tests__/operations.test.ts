@@ -401,7 +401,7 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
-  test('a missing prisma-composer.config.ts is a pipeline failure naming the filename', async () => {
+  test('a missing config file is a pipeline failure naming the accepted spellings', async () => {
     const app = makeAppDir('no-config', { config: false });
 
     const result = await silently(() =>
@@ -417,7 +417,7 @@ describe('deploy()', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('CONFIG.FILE_MISSING');
-    expect(result.failure.message).toContain('prisma-composer.config.ts');
+    expect(result.failure.message).toContain('prisma-composer.config.{ts,mts,mjs,js}');
   });
 
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
