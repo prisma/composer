@@ -11,22 +11,39 @@ describe('Prisma Dev server registry', () => {
         scanOptions = options;
         return [
           {
+            name: 'other-server',
             databasePort: 51_300,
             port: 51_301,
             shadowDatabasePort: 51_302,
-            streamsPort: 51_303,
             experimental: { streams: { serverUrl: 'http://127.0.0.1:51304' } },
           },
         ];
       }
     }
 
-    const ports = await registryClaimedPorts({ ServerState });
+    const ports = await registryClaimedPorts({ ServerState }, 'this-server');
 
     expect([...ports].sort((left, right) => left - right)).toEqual([
-      51_300, 51_301, 51_302, 51_303, 51_304,
+      51_300, 51_301, 51_302, 51_304,
     ]);
     expect(scanOptions).toEqual({ onlyMetadata: true });
+  });
+
+  test("skips the caller's own record — @prisma/dev exempts it from port validation and prefers to reuse its ports", async () => {
+    const ServerState = {
+      async scan(): Promise<unknown> {
+        return [
+          { name: 'this-server', databasePort: 51_300, port: 51_301, shadowDatabasePort: 51_302 },
+          { name: 'other-server', databasePort: 51_310 },
+        ];
+      },
+    };
+
+    expect(await registryClaimedPorts({ ServerState }, 'this-server')).toEqual(new Set([51_310]));
+  });
+
+  test('falls back to no registry claims when the module exposes no ServerState', async () => {
+    expect(await registryClaimedPorts({}, 'this-server')).toEqual(new Set());
   });
 
   test('falls back to no registry claims when scanning fails', async () => {
@@ -36,6 +53,6 @@ describe('Prisma Dev server registry', () => {
       },
     };
 
-    expect(await registryClaimedPorts({ ServerState })).toEqual(new Set());
+    expect(await registryClaimedPorts({ ServerState }, 'this-server')).toEqual(new Set());
   });
 });

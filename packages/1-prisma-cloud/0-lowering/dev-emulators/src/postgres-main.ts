@@ -20,7 +20,12 @@ import { pathToFileURL } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
 import { isPidAlive, readOwnVersion } from './daemon.ts';
 import { instanceNameFor } from './instance-name.ts';
-import { registryClaimedPorts } from './prisma-dev-registry.ts';
+import {
+  isStringKeyedRecord,
+  portOfUrl,
+  type RegistryScanHost,
+  registryClaimedPorts,
+} from './prisma-dev-registry.ts';
 import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
@@ -175,16 +180,6 @@ function isNameAlreadyTaken(err: unknown): boolean {
   );
 }
 
-/** The port of a postgres connection URL, when it parses as one. */
-function databasePortOf(connectionString: string): number | undefined {
-  try {
-    const port = Number(new URL(connectionString).port);
-    return Number.isInteger(port) && port > 0 ? port : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * A dynamic `import()` failure's own message routinely names a SECOND path
  * (e.g. bun's "Cannot find module '<target>' from '<importer>'") — the
@@ -212,16 +207,7 @@ async function importPrismaDev(prismaDevModulePath: string): Promise<PrismaDevMo
   return mod;
 }
 
-/** A parsed-JSON value narrowed just enough to index into by string key — real narrowing, not a cast: the interface's own index signature is what makes bracket access legal. */
-interface StringKeyedRecord {
-  readonly [key: string]: unknown;
-}
-
-function isStringKeyedRecord(value: unknown): value is StringKeyedRecord {
-  return typeof value === 'object' && value !== null;
-}
-
-interface PrismaDevInternalStateModule {
+interface PrismaDevInternalStateModule extends RegistryScanHost {
   /** Removes the server's persisted state AND its PGlite data. */
   deleteServer(name: string, debug?: boolean): Promise<void>;
   /** Stops the process behind a server's recorded state, leaving its data. */
@@ -544,7 +530,7 @@ function main(): void {
         appRec.databases[id] = {
           id,
           instanceName,
-          databasePort: recorded.databasePort ?? databasePortOf(recorded.url) ?? MIN_DATABASE_PORT,
+          databasePort: recorded.databasePort ?? portOfUrl(recorded.url) ?? MIN_DATABASE_PORT,
           url: recorded.url,
         };
         schedulePersist();
@@ -558,11 +544,6 @@ function main(): void {
     }
 
     const isFreshAllocation = existingRecord === undefined;
-    // Port picks avoid every port a `@prisma/dev` record claims, or the
-    // start would be refused (see `registryClaimedPorts`). A persisted
-    // DATABASE port is pinned regardless — endpoints in deploy state
-    // reference it.
-    const registryPorts = await registryClaimedPorts(internalState);
     // Assigned inside the serialized section below; a persisted port is
     // fixed here and never re-picked.
     let dbPort = existingRecord?.databasePort ?? 0;
@@ -590,6 +571,13 @@ function main(): void {
       const auxPorts: number[] = [];
       try {
         const server = await serializeStart(async () => {
+          // Scanned inside the serialized section, once per attempt, so each
+          // pick sees the claims a sibling's queued start just recorded.
+          // Picks avoid every port a foreign `@prisma/dev` record claims, or
+          // the start would be refused (see `registryClaimedPorts`). A
+          // persisted DATABASE port is pinned regardless — endpoints in
+          // deploy state reference it.
+          const registryPorts = await registryClaimedPorts(internalState, instanceName);
           if (isFreshAllocation) {
             dbPort = await smallestUnusedDatabasePort(
               MIN_DATABASE_PORT,
@@ -656,7 +644,7 @@ function main(): void {
               appRec.databases[id] = {
                 id,
                 instanceName,
-                databasePort: now.databasePort ?? databasePortOf(now.url) ?? dbPort,
+                databasePort: now.databasePort ?? portOfUrl(now.url) ?? dbPort,
                 url: now.url,
               };
               schedulePersist();
