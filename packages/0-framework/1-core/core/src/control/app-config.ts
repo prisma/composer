@@ -6,6 +6,7 @@ import type {
   ContainerInstance,
 } from '../container-transport.ts';
 import type { Graph } from '../graph.ts';
+import type { PreflightPayload } from '../preflight-transport.ts';
 import type {
   AlchemyStateLayer,
   ApplicationDescriptor,
@@ -28,6 +29,12 @@ export {
   containerEnvVarName,
   deserializeContainers,
 } from '../container-transport.ts';
+export type { PreflightPayload } from '../preflight-transport.ts';
+export {
+  preflightEnv,
+  preflightEnvVarName,
+  readPreflightPayload,
+} from '../preflight-transport.ts';
 /** Re-exported because `RunOutcome` hands them to a reporter — reading this surface must not also require the deploy one. */
 export type { DeployedEntity } from './deploy.ts';
 
@@ -54,12 +61,19 @@ export interface ExtensionDescriptor {
    * secret env var in the provision manifest exists for the resolved stage) and
    * throws to abort the deploy. Async: it talks to the platform (ADR-0029).
    *
+   * What it returns is carried to the alchemy process for this same extension
+   * to read back there (preflight-transport.ts) — preflight runs in the CLI
+   * parent, and the alchemy child re-imports the config from scratch, so
+   * anything the lowering needs from it must ride that transport. The payload
+   * is the extension's own opaque string; the framework never reads it, and a
+   * secret value must never go in it.
+   *
    * METHOD SYNTAX REQUIRED, for the same reason ContainerDescriptor's members
    * need it: the framework hands over the erased `PreflightInput<unknown>`,
    * and an extension that types the input against its own client type only
    * assigns here through method bivariance.
    */
-  preflight?(input: PreflightInput): Promise<void>;
+  preflight?(input: PreflightInput): Promise<PreflightPayload>;
   /**
    * Destroy-time cleanup — the CLI runs it once, after `alchemy destroy`
    * succeeds and BEFORE the stage's Project/Branch are removed. A target uses

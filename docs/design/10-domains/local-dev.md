@@ -132,7 +132,8 @@ into a deployment at version-create; locally, the `Deployment` provider
 performs the same join from the `EnvironmentVariable` records the lowering
 emitted — against props defined in this repo, once, not an emulation of a
 foreign API. One pinned deviation: the local join is scoped to the
-service's own rows (plus the unprefixed poison rows), because the platform
+service's own rows (plus any row outside the `COMPOSER_` namespace, which is
+a platform-owned name by definition), because the platform
 diffs a deployment only on its own referenced rows while an app-wide local
 snapshot diffs on bytes — which restart-amplified dependents on every
 first-after-cold converge. No sanctioned reader consumes sibling rows, so
@@ -167,7 +168,7 @@ semantics):
 | `Project` | a local identity record; no platform |
 | `Database` | a database on the local Postgres server (ORM `prisma dev`) |
 | `Connection` | the local connection URL |
-| `ComputeService` | registers the service with the Compute emulator, which allocates its stable port; `endpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
+| `App` | registers the service with the Compute emulator, which allocates its stable port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
 | `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the Compute emulator, which (re)starts the child |
 | `EnvironmentVariable` | a key→value row in the dev state store |
 | `Bucket` | a directory under `.prisma-composer/dev/buckets/<bucket>/`, served by the bucket emulator |

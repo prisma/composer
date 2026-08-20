@@ -6,7 +6,6 @@ export default defineConfig({
     buckets: 'src/exports/buckets.ts',
     builds: 'src/exports/builds.ts',
     compute: 'src/exports/compute.ts',
-    postgres: 'src/exports/postgres.ts',
     state: 'src/exports/state.ts',
   },
 });

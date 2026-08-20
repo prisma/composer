@@ -33,7 +33,9 @@ import type {
   RunReporter,
 } from '@internal/core/config';
 import { createManagementApiClient } from '@prisma/management-api-sdk';
-import { MANAGEMENT_API_ORIGIN, type ManagementApiClient } from '../client.ts';
+import * as Effect from 'effect/Effect';
+import type { ManagementApiClient } from '../client.ts';
+import { managementApiBaseUrl } from '../credentials.ts';
 import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
 import { BUILD_ID_ENV } from './resources.ts';
 import { resolveRunIdentity } from './run-identity.ts';
@@ -123,7 +125,7 @@ async function beginSession(
         injected ??
         createManagementApiClient({
           token: token ?? '',
-          baseUrl: options.origin ?? MANAGEMENT_API_ORIGIN,
+          baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
         }),
       warn,
     });

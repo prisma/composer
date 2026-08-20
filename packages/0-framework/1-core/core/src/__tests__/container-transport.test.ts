@@ -23,7 +23,7 @@ describe('containerEnvVarName()', () => {
     );
   });
 
-  test('trims leading/trailing underscores from the mangled id', () => {
+  test('trims leading/trailing underscores from the env-var-safe id', () => {
     expect(containerEnvVarName('/leading-and-trailing/')).toBe(
       'PRISMA_COMPOSER_CONTAINER_LEADING_AND_TRAILING',
     );
@@ -41,7 +41,7 @@ class FakeInstance implements ContainerInstance {
 }
 
 describe('containerEnv()', () => {
-  test('one env var per extension, keyed by its mangled id', () => {
+  test('one env var per extension, keyed by its env-var-safe id', () => {
     const instances = new Map<string, ContainerInstance>([
       ['ext-a', new FakeInstance({ appName: 'shop', stage: undefined }, 'serialized-a')],
       ['ext-b', new FakeInstance({ appName: 'shop', stage: 'staging' }, 'serialized-b')],
@@ -58,7 +58,7 @@ describe('containerEnv()', () => {
   });
 
   test('two extension ids mangling to the same var name throws, naming both', () => {
-    // '@a/b' and '@a.b' both mangle to 'PRISMA_COMPOSER_CONTAINER_A_B'.
+    // '@a/b' and '@a.b' both map to 'PRISMA_COMPOSER_CONTAINER_A_B'.
     const instances = new Map<string, ContainerInstance>([
       ['@a/b', new FakeInstance({ appName: 'shop', stage: undefined }, 'x')],
       ['@a.b', new FakeInstance({ appName: 'shop', stage: undefined }, 'y')],

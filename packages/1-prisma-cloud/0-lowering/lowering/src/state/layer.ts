@@ -1,5 +1,12 @@
+import { blindCast } from '@internal/foundation/casts';
 import { Stack, type StackServices } from 'alchemy';
-import { makeHttpStateStore, State } from 'alchemy/State';
+import {
+  makeHttpStateStore,
+  type PersistedState,
+  type ReplacedResourceState,
+  State,
+  type StateService,
+} from 'alchemy/State';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
@@ -20,6 +27,7 @@ import {
   redactLeaseHeader,
   releaseDeployLease,
 } from './lease.ts';
+import { migrateLegacyResourceState } from './legacy-resources.ts';
 
 /**
  * The hosted Alchemy state store: alchemy's stock HTTP state client pointed
@@ -48,7 +56,39 @@ export const prismaStateLayer = (ids: {
   /** The project's default Branch id, when the deploy targets the default stage — skips re-resolving it. */
   readonly defaultBranchId?: string;
 }): Layer.Layer<State, never, StackServices> =>
-  stateLayerAgainst(client.MANAGEMENT_API_ORIGIN, ids);
+  // The origin comes from the same resolver upstream's providers use
+  // (credentials.managementApiBaseUrl), so PRISMA_API_URL moves the state
+  // client and the resource providers together, never one without the other.
+  Layer.unwrap(
+    credentials.managementApiBaseUrl().pipe(Effect.map((origin) => stateLayerAgainst(origin, ids))),
+  ).pipe(Layer.orDie);
+
+/**
+ * The stock service with legacy Composer resource rows rewritten to the
+ * upstream providers' shapes as they are read (see legacy-resources.ts) —
+ * reads only; rows written by this version are already upstream-shaped.
+ */
+const migrateRowsOnRead = (service: StateService): StateService => ({
+  ...service,
+  get: (request) =>
+    Effect.map(service.get(request), (value) =>
+      value === undefined
+        ? undefined
+        : blindCast<
+            PersistedState,
+            'migrateLegacyResourceState only rewrites legacy Composer resource rows to the upstream field names; every other value passes through unchanged, so the PersistedState shape is preserved'
+          >(migrateLegacyResourceState(value)),
+    ),
+  getReplacedResources: (request) =>
+    Effect.map(service.getReplacedResources(request), (rows) =>
+      rows.map((row) =>
+        blindCast<
+          ReplacedResourceState,
+          'migrateLegacyResourceState only rewrites legacy Composer resource rows to the upstream field names; the replaced status and envelope shape are preserved'
+        >(migrateLegacyResourceState(row)),
+      ),
+    ),
+});
 
 /** `prismaStateLayer` with the API origin injectable — split out so tests can point it at a fake state API. */
 export const stateLayerAgainst = (
@@ -117,6 +157,8 @@ export const stateLayerAgainst = (
         id: 'prisma-postgres',
       }).pipe(Effect.provide(FetchHttpClient.layer));
 
+      const migrated = migrateRowsOnRead(service);
+
       // Report what this run touches to the build it belongs to, when there
       // is one. There is none when nothing created a build — a direct
       // `alchemy deploy` of the generated stack file, which runs with no CLI
@@ -124,11 +166,11 @@ export const stateLayerAgainst = (
       // the store is used unwrapped and the deploy is unaffected.
       const buildId = process.env[BUILD_ID_ENV];
       if (buildId === undefined || buildId.length === 0) {
-        return Effect.succeed(service);
+        return Effect.succeed(migrated);
       }
 
       const { store, reporter } = withResourceReporting(
-        service,
+        migrated,
         buildsApi({
           // The same client the lease and the scope probe already use.
           client: mgmt,

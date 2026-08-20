@@ -54,3 +54,17 @@ export const callVoid = <R extends Result>(
       r.response.status === 404 || r.error === undefined ? Effect.void : fail(r),
     ),
   );
+
+/**
+ * Fire a CREATE call, tolerating a 409 (it already exists). Gives the caller
+ * create-only semantics: the thing is created when absent, and an existing one
+ * — whoever created it — is left exactly as it is.
+ */
+export const callCreateOnly = <R extends Result>(
+  f: () => Promise<R>,
+): Effect.Effect<void, PrismaApiError> =>
+  attempt(f).pipe(
+    Effect.flatMap((r) =>
+      r.response.status === 409 || r.error === undefined ? Effect.void : fail(r),
+    ),
+  );

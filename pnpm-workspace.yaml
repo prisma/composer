@@ -4,3 +4,6 @@ packages:
   - examples/*/modules/*
   - test/**
   - website
+
+patchedDependencies:
+  "alchemy@2.0.0-beta.67": patches/alchemy@2.0.0-beta.67.patch

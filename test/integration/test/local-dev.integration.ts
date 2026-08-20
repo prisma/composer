@@ -539,7 +539,10 @@ async function main(): Promise<void> {
     assert(typeof webInfo.pid === 'number', 'web service must report a pid');
     assert(typeof bkgInfo.pid === 'number', 'bkg service must report a pid');
 
-    // 10. env store correct: poison DATABASE_URL rows. The port-override row
+    // 10. env store correct: every row lives in the COMPOSER_ namespace.
+    // Composer writes no unprefixed variable — an unprefixed name is a
+    // platform-owned one (DATABASE_URL and friends), and the platform manages
+    // those itself. The port-override row
     // (COMPOSER_<ADDRESS>_PORT) is deliberately NEVER persisted to env.json
     // (local-dev spec § 4: "Ports live nowhere here" — the Deployment
     // provider materializes it fresh into each deployment's own env, in
@@ -547,9 +550,21 @@ async function main(): Promise<void> {
     // fixture's own /health response (captured above, before webInfo existed
     // to compare against) rather than by reading env.json for a key it never
     // receives.
-    const env = readJson(path.join(devDir, 'env.json')) as Record<string, string>;
-    assertEqual(env['DATABASE_URL'], '-', 'env.json DATABASE_URL is poisoned');
-    assertEqual(env['DATABASE_URL_POOLED'], '-', 'env.json DATABASE_URL_POOLED is poisoned');
+    const envRaw = readJson(path.join(devDir, 'env.json'));
+    assert(
+      typeof envRaw === 'object' && envRaw !== null,
+      'env.json exists and parses to an object',
+    );
+    const env = envRaw as Record<string, string>;
+    // Non-empty first: an empty object would vacuously pass every check below.
+    assert(Object.keys(env).length > 0, 'env.json carries the deploy-written rows');
+    assertEqual(env['DATABASE_URL'], undefined, 'env.json holds no DATABASE_URL row');
+    assertEqual(env['DATABASE_URL_POOLED'], undefined, 'env.json holds no DATABASE_URL_POOLED row');
+    assertEqual(
+      Object.keys(env).every((key) => key.startsWith('COMPOSER_')),
+      true,
+      'every env.json row lives in the COMPOSER_ namespace',
+    );
     assertEqual(
       health.portEnv,
       JSON.stringify(webInfo.port),
