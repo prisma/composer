@@ -1,24 +1,19 @@
-#!/usr/bin/env -S bun
-import { Migration, MigrationCLI, col, fn, primaryKey } from '@prisma-next/postgres/migration';
+#!/usr/bin/env -S node
+import type { Contract as End } from '../../snapshots/eee8ad6db4dca6d22c79a724f3d2a6086ffe08fd32b8b778dd2d0d6c464b25b4/contract';
+import endContract from '../../snapshots/eee8ad6db4dca6d22c79a724f3d2a6086ffe08fd32b8b778dd2d0d6c464b25b4/contract.json' with { type: 'json' };
+import { Migration, MigrationCLI, col, fn, primaryKey } from '@prisma/orm-postgres/migration';
 
-export default class M extends Migration {
-  override describe() {
-    return {
-      from: null,
-      to: 'sha256:c02a1b8e5e4db4eb71986673487f007e103ac093f5af4d5f4c6bb5b4ef84b5ce',
-    };
-  }
+export default class M extends Migration<never, End> {
+  override readonly endContractJson = endContract;
 
   override get operations() {
     return [
+      this.createSchema({ schema: 'public' }),
       this.createTable({
         schema: 'public',
         table: 'order',
         columns: [
-          col('id', 'character(36)', {
-            notNull: true,
-            codecRef: { codecId: 'sql/char@1', typeParams: { length: 36 } },
-          }),
+          col('id', 'text', { notNull: true, codecRef: { codecId: 'pg/text@1' } }),
           col('placedAt', 'timestamptz', {
             notNull: true,
             default: fn('now()'),

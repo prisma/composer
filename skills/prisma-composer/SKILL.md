@@ -55,6 +55,30 @@ Two packages, and only two, appear in your `package.json`:
 | `@prisma/composer` | Core authoring: `module`, `secret`, `isSecretString`, `/arktype` (the `secretString()` schema leaf), `/rpc`, `/node`, `/nextjs`, `/config`, `/testing`, the `prisma-composer` CLI |
 | `@prisma/composer-prisma-cloud` | The Prisma Cloud target: `compute`, `postgres`, `envSecret`, `envParam`, `/control`, `/testing`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next` modules |
 
+## tsconfig and import specifiers
+
+Within the entry graph (everything reachable from `module.ts`) relative
+imports may use `./service.js` or extensionless `./service`. The CLI maps
+`.js` and extensionless specifiers to the matching `.ts` source under Node;
+Bun does this natively.
+
+A minimal tsconfig:
+
+```jsonc
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["bun"]
+  },
+  "include": ["module.ts", "src"]
+}
+```
+
 ## Anatomy of a service
 
 A service is four small files. Worked example: an `auth` service that owns a
@@ -253,8 +277,14 @@ you.
 
 ## Deploy config
 
-`prisma-composer.config.ts` sits next to `module.ts`. It is read only by
-`prisma-composer deploy`/`destroy`, never imported by app code:
+`prisma-composer.config.ts` usually sits next to `module.ts`, but it may live in
+any ancestor directory: the CLI searches the entry's directory first, then each
+parent, and uses the nearest one. It is read only by `prisma-composer
+deploy`/`destroy`, never imported by app code. A plain-JavaScript project can
+name it `prisma-composer.config.mjs` or `.js` to keep it out of its TypeScript
+build (a build with `allowJs` still needs an explicit `exclude`); `.mts` is the
+TypeScript ES-module spelling. Within one directory `.ts` wins, then `.mts`,
+`.mjs`, `.js`:
 
 ```ts
 // prisma-composer.config.ts

@@ -10,7 +10,10 @@ name: Publish to npm
 #     under dist-tag `dev`.
 #   - push to `main` with the root `version` changed   → publish `<base>` under
 #     dist-tag `latest` and create a GitHub Release. This is how a merged
-#     release-bump PR auto-ships.
+#     release-bump PR auto-ships. The same run then publishes `<base>-dev.N`
+#     under `dev`, so every push to `main` — release or not — leaves the `dev`
+#     dist-tag on a build of that commit. When releases skipped the dev
+#     publish, `dev` sat on the previous base until the next routine push.
 #   - workflow_dispatch → publish `<base>` under the chosen dist-tag (default
 #     `latest`); also the dry-run path.
 
@@ -88,6 +91,24 @@ jobs:
       - name: Check publish dependency specifiers
         run: pnpm check:publish-deps
 
+      # The remaining publish-blocking invariants, against the exact artifacts
+      # this run would upload (the build step above built everything):
+      # engine-once — the engine is an exact peer of the CLI package, external
+      # in its tarball, and absent from the library.
+      - name: Check the cli-engine pin and externality
+        run: pnpm check:cli-engine-pin
+
+      # Lazy executor boundary — nothing statically reachable from the family,
+      # bin, or testing entrypoints imports alchemy or effect.
+      - name: Check the family and testing static graphs
+        run: pnpm check:family-static-graph
+
+      # npm-tree survival — a real `npm install` of the packed tarballs
+      # resolves one pinned effect, and the CLI starts (and fails loudly in an
+      # adversarial tree).
+      - name: Check npm resolves a single pinned effect
+        run: pnpm check:npm-effect-resolution
+
       # Dry-run path: exercises the full pipeline (pack, dependency rewriting)
       # without touching the registry. Use from any branch via workflow_dispatch.
       - name: Publish packages (dry-run)
@@ -139,4 +160,42 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "v$VERSION" \
               --generate-notes
+          fi
+
+      # --- Dev follow-up, release pushes only (devVersion is empty otherwise).
+      # The release steps above already ran the full check battery against this
+      # commit; only the version stamp changes here, so the follow-up re-runs
+      # just the version-sensitive check (publish-deps) before publishing.
+
+      - name: Set package versions (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        run: node scripts/set-version.ts "${{ steps.version.outputs.devVersion }}"
+
+      - name: Build packages (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        run: pnpm build
+
+      - name: Check publish dependency specifiers (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        run: pnpm check:publish-deps
+
+      - name: Publish packages (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: node scripts/publish-packages.mjs --tag dev
+
+      - name: Create lightweight git tag (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.devVersion }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "Tag v$VERSION already exists; skipping"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+              -X POST \
+              -f ref="refs/tags/v$VERSION" \
+              -f "sha=$GITHUB_SHA"
           fi

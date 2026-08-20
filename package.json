@@ -16,6 +16,10 @@
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
     "check:npm-effect-resolution": "node scripts/check-npm-effect-resolution.mjs",
+    "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
+    "check:orm-pins": "node scripts/check-orm-pins.mjs",
+    "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
+    "check:floor-imports": "node scripts/check-floor-imports.mjs",
     "bump-minor": "node scripts/bump-minor.ts",
     "test": "turbo run test",
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
@@ -23,7 +27,7 @@
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean",
     "prepare": "husky && skills add prisma/skills --skill '*' --agent universal claude-code -y && skills add ./skills-contrib --skill '*' --agent universal claude-code -y && node scripts/sync-agent-rules.mjs",
-    "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test website && node scripts/lint-architecture-coverage.mjs && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs"
+    "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test website && node scripts/lint-architecture-coverage.mjs && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs && node scripts/lint-orm-pins.mjs && node scripts/lint-contract-snapshots.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
@@ -43,8 +47,9 @@
       "@prisma/engines"
     ],
     "patchedDependencies": {
-      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch"
+      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch",
+      "@alchemy.run/node-utils@0.0.5": "patches/@alchemy.run__node-utils@0.0.5.patch"
     }
   },
-  "version": "0.6.0"
+  "version": "0.10.0"
 }

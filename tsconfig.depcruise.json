@@ -22,6 +22,9 @@
         "./packages/0-framework/0-foundation/foundation/src/exports/arktype.ts"
       ],
       "@internal/tsdown-config": ["./packages/0-framework/0-foundation/tsdown-config/base.ts"],
+      "@internal/bundle-paths": [
+        "./packages/0-framework/2-authoring/bundle-paths/src/exports/index.ts"
+      ],
       "@internal/core/config": ["./packages/0-framework/1-core/core/src/exports/app-config.ts"],
       "@internal/core/deploy": ["./packages/0-framework/1-core/core/src/exports/deploy.ts"],
       "@internal/core/local-target": [
@@ -47,6 +50,8 @@
         "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
       ],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
+      "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
+      "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
       "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/exports/index.ts"],
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"
@@ -56,6 +61,9 @@
       ],
       "@internal/lowering/compute": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/compute.ts"
+      ],
+      "@internal/lowering/builds": [
+        "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/builds.ts"
       ],
       "@internal/lowering/state": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/state.ts"
@@ -138,6 +146,8 @@
         "./packages/9-public/composer/src/exports/nextjs-control.ts"
       ],
       "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
+      "@prisma/composer-cli/family": ["./packages/9-public/composer-cli/src/exports/family.ts"],
+      "@prisma/composer-cli/testing": ["./packages/9-public/composer-cli/src/exports/testing.ts"],
       "@prisma/composer-prisma-cloud/control": [
         "./packages/9-public/composer-prisma-cloud/src/exports/control.ts"
       ],

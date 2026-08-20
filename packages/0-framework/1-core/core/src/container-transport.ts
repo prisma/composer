@@ -31,22 +31,45 @@ export interface ContainerInstance {
 }
 
 /**
+ * What the caller has already authenticated, handed to one container
+ * lifecycle call. A caller that holds neither omits the argument, and the
+ * extension falls back to whatever credential protocol it defines for
+ * itself (for Prisma Cloud, its env vars — which is how the alchemy child
+ * process still resolves containers).
+ *
+ * `C` is the extension's own platform-client type, left as a type parameter
+ * because this shared-plane module must not import a platform SDK; the
+ * framework only carries the value, never calls it. The framework stores the
+ * erased `C = unknown` form and the extension recovers its concrete client
+ * through the same method bivariance that erases `I` below.
+ */
+export interface ContainerCredentials<C = unknown> {
+  /** The workspace the container lives in. `undefined` when the caller has no workspace to name — the extension decides whether it can proceed. */
+  readonly workspaceId: string | undefined;
+  /** An already-authenticated platform API client. Present means the extension must not build its own from the environment. */
+  readonly client?: C | undefined;
+}
+
+/**
  * The platform containers an app deploys into, as one lifecycle. `I` is
  * the extension's own instance type — the same descriptor produces and
  * consumes it, so the extension gets full typing internally while the
- * framework stores the erased form. METHOD SYNTAX REQUIRED on all four
- * members: the erased assignment into ExtensionDescriptor compiles only
- * through method bivariance; property-arrow members are checked
- * contravariantly and the assignment fails (same rule as
- * ServiceLowering<P, S> — ADR-0033).
+ * framework stores the erased form; `C` erases the same way. METHOD SYNTAX
+ * REQUIRED on all four members: the erased assignment into
+ * ExtensionDescriptor compiles only through method bivariance;
+ * property-arrow members are checked contravariantly and the assignment
+ * fails (same rule as ServiceLowering<P, S> — ADR-0033).
  */
-export interface ContainerDescriptor<I extends ContainerInstance = ContainerInstance> {
+export interface ContainerDescriptor<I extends ContainerInstance = ContainerInstance, C = unknown> {
   /** Resolve the container for (appName, stage), creating anything absent. Called by `deploy`. */
-  ensure(input: LocateContainerInput): Promise<I>;
+  ensure(input: LocateContainerInput, credentials?: ContainerCredentials<C>): Promise<I>;
   /** Find the container for (appName, stage); `undefined` when nothing exists. Called by `destroy` — never creates. */
-  locate(input: LocateContainerInput): Promise<I | undefined>;
+  locate(
+    input: LocateContainerInput,
+    credentials?: ContainerCredentials<C>,
+  ): Promise<I | undefined>;
   /** Remove the container after a successful destroy, after every extension's `teardown` has run. Failure policy is the extension's. */
-  remove(instance: I): Promise<void>;
+  remove(instance: I, credentials?: ContainerCredentials<C>): Promise<void>;
   /** Reconstruct an instance from its own `serialize()` output — the far end of the framework's parent→child transport. */
   deserialize(serialized: string): I;
 }

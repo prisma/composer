@@ -105,6 +105,10 @@ export class ComputeService<
     // reserved `port` param the same way serialize does (descriptors/compute.ts).
     const port = config.service['port'];
     if (typeof port === 'number') process.env['PORT'] = String(port);
+    // Compute routes to the workload over its network interface, not loopback.
+    // Astro's Node adapter defaults HOST to localhost; preserve an explicit
+    // author value, otherwise supply the framework-neutral listen-all address.
+    process.env['HOST'] ??= '0.0.0.0';
     return boot();
   }
 

@@ -14,7 +14,7 @@ import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { findConfigPathForEntry, loadAppConfig, missingConfigError } from './load-config.ts';
+import { loadAppConfig, resolveConfigFile } from './load-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
@@ -23,6 +23,34 @@ export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
   /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs). */
   readonly config?: PrismaAppConfig | undefined;
+  /**
+   * The config file to load, named explicitly instead of discovered —
+   * absolute, or relative to `cwd`. When present the entry-anchored walk is
+   * skipped entirely, so a config that does not sit above the entry is still
+   * usable — and the walk's path-mismatch check has nothing left to check.
+   * Supplied by the engine's `composer` config section.
+   */
+  readonly configPath?: string | undefined;
+}
+
+/**
+ * The config step both pipelines share: the effect-resolution check and the
+ * choice of config file (load-config.ts's shared front), then evaluation —
+ * unless the caller substituted a config, which replaces the evaluation and
+ * nothing before it.
+ */
+async function loadConfigStep(
+  entryPath: string,
+  cwd: string,
+  deps: PipelineDeps,
+): Promise<{ configPath: string; config: PrismaAppConfig }> {
+  const { path: configPath, explicit } = resolveConfigFile({
+    entryPath,
+    configPath: deps.configPath,
+    cwd,
+  });
+  const config = deps.config ?? (await loadAppConfig(configPath, !explicit)).config;
+  return { configPath, config };
 }
 
 export interface PipelineResult {
@@ -53,12 +81,7 @@ export async function resolveAppIdentity(
   cwd: string,
   deps: PipelineDeps = {},
 ): Promise<AppIdentity> {
-  const resolvedEntryPath = path.resolve(cwd, entry);
-  const configPath = findConfigPathForEntry(resolvedEntryPath);
-  if (configPath === undefined) {
-    throw missingConfigError(resolvedEntryPath);
-  }
-  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+  const { configPath, config } = await loadConfigStep(path.resolve(cwd, entry), cwd, deps);
   const entryModule = await loadEntry(entry, cwd);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
@@ -84,12 +107,7 @@ export async function runPipeline(
   onAssembleError?: (error: Error) => Error,
 ): Promise<PipelineResult> {
   // 1. Find + load prisma-composer.config.ts — runs extension env validation before the entry import.
-  const resolvedEntryPath = path.resolve(cwd, entry);
-  const configPath = findConfigPathForEntry(resolvedEntryPath);
-  if (configPath === undefined) {
-    throw missingConfigError(resolvedEntryPath);
-  }
-  const config = deps.config ?? (await loadAppConfig(configPath)).config;
+  const { configPath, config } = await loadConfigStep(path.resolve(cwd, entry), cwd, deps);
 
   // 2. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);

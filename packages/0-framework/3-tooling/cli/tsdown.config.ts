@@ -17,6 +17,8 @@ export default defineConfig({
     bin: 'src/bin.ts',
     report: 'src/exports/render-deployment.ts',
     control: 'src/exports/control.ts',
+    family: 'src/exports/family.ts',
+    testing: 'src/exports/testing.ts',
   },
   exports:
     typeof baseConfig.exports === 'object'

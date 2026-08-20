@@ -35,8 +35,9 @@ import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
 import { PnMigrationProvider } from '../pn-migration-resource.ts';
-import { runPreflight } from '../preflight.ts';
+import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
+import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
@@ -353,12 +354,19 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
     // Timestamps are kept for this process AND serialized onto the preflight
-    // transport for the alchemy process.
-    preflight: (input) =>
+    // transport for the alchemy process. The parameter annotation is what
+    // recovers this extension's own client type from the framework's erased
+    // one; without it `input.credentials` arrives as `unknown`.
+    preflight: (input: PrismaCloudPreflightInput) =>
       runPreflight(input).then((timestamps) => {
         for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
         return serializePointerUpdatedAt(timestamps);
       }),
+
+    // Records the deploy as a Build so it appears in the Console, and passes
+    // the build's id into the apply so the state store can report what the
+    // run touched. Deploy only — the CLI does not run this for destroy.
+    reporter: prismaCloudReporter(),
 
     // No teardown: deploy state lives behind the platform state API, scoped
     // to the stage's Branch — deleting the Branch/Project deletes it

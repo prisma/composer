@@ -110,7 +110,7 @@ are Prisma Next" is a framework-level decision, Prisma Next is blessed the way
 RPC is: this dependency kind gets a client, while bare postgres keeps `{ url }`.
 The dependency cost is contained by packaging — the primitive lives behind its
 own subpath entry, never re-exported from the index — so a service that opts out
-never loads `@prisma-next/postgres` or `pg` at runtime.
+never loads `@prisma/orm-postgres` or `pg` at runtime.
 
 **Consume the contract; locate the config.** The runtime and the type system
 only need to *consume* the contract: `contract.json` (the data the framework
@@ -155,9 +155,10 @@ closes both.
 - Services get schema-typed data access with the schema version enforced at the
   type level, at Load, and at deploy — three checkpoints, the same shape as RPC
   contracts.
-- `@prisma/composer-prisma-cloud` takes `@prisma-next/postgres` (and transitively
-  `pg`) as a dependency; install weight is shared by all users, runtime weight
-  only by importers of the subpath.
+- `@prisma/composer-prisma-cloud` requires the application to install the Prisma
+  Next facade (and transitively `pg`); runtime weight is carried only by
+  importers of the subpath. How that requirement is expressed — a peer
+  dependency at one exact version — is [ADR-0046](ADR-0046-the-orm-facade-is-a-peer-dependency.md).
 - The deploy pipeline becomes schema-aware: contract changes without an authored
   migration path are deploy failures, surfaced before any DB change.
 - A shared database exposes the whole contract to every consumer; per-consumer

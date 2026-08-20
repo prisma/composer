@@ -44,9 +44,14 @@ build` and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The bin is runtime-agnostic — no bun-only APIs anywhere in the
 CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
-type stripping imports the user's `.ts` entry natively). One inherent caveat:
-an app whose service module imports bun APIs can only deploy under bun, since
-loading the graph imports that module — the app's choice, not a CLI limit.
+type stripping imports the user's `.ts` entry natively). Under node, the CLI
+also registers a synchronous resolve hook (`node:module` `registerHooks`) so
+that relative imports inside the entry graph may use `./x.js` or extensionless
+`./x` specifiers for `.ts` source files without requiring
+`allowImportingTsExtensions`; `.mjs` and `.cjs` specifiers map to `.mts` and
+`.cts` respectively. Bun resolves these natively and the hook is a no-op there. One inherent caveat: an app whose service module imports
+bun APIs can only deploy under bun, since loading the graph imports that module
+— the app's choice, not a CLI limit.
 
 ## The pipeline
 
@@ -61,9 +66,10 @@ loading the graph imports that module — the app's choice, not a CLI limit.
    composing Module. The deploy root must be a Module — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
    `module('name', ({ provision }) => { provision(...); })`).
-3. **Load the config + validate coverage.** `prisma-composer.config.ts` — found by
-   walking up from the deploy entry, loaded with c12, never imported by app
-   code — supplies the extension registries and the deploy's one state store
+3. **Load the config + validate coverage.** `prisma-composer.config.ts` (or its
+   `.mts`/`.mjs`/`.js` spelling; `.ts` wins when several sit in one directory) —
+   found by walking up from the deploy entry, loaded with c12, never imported
+   by app code — supplies the extension registries and the deploy's one state store
    (ADR-0017). Every node's and build descriptor's `(extension, type)` must
    have a registry entry; a gap errors naming the extension to add to the
    config. Extension factories validate their own environment during config

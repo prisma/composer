@@ -28,15 +28,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { computeMigrationHash } from '@prisma-next/migration-tools/hash';
-import { writeMigrationPackage } from '@prisma-next/migration-tools/io';
-import { writeRef } from '@prisma-next/migration-tools/refs';
+import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { computeMigrationHash } from '@prisma/orm-toolchain/migration-tools/hash';
+import { writeMigrationPackage } from '@prisma/orm-toolchain/migration-tools/io';
+import { writeRef } from '@prisma/orm-toolchain/migration-tools/refs';
 import {
   APP_SPACE_ID,
   spaceMigrationDirectory,
   spaceRefsDirectory,
-} from '@prisma-next/migration-tools/spaces';
-import { createPostgresControlClient } from '@prisma-next/postgres/control';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import {
   applyPnMigration,
   PnMigrationError,

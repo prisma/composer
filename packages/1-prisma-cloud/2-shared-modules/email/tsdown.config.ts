@@ -25,7 +25,13 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\//, /^arktype/, /^@standard-schema\//, /^nodemailer/],
+    noExternal: [
+      /^@internal\//,
+      /^@prisma\/(?!orm-)/,
+      /^arktype/,
+      /^@standard-schema\//,
+      /^nodemailer/,
+    ],
   },
   {
     // The /testing local stand-in (startLocalEmailServer). Its own pass with
@@ -38,6 +44,6 @@ export default defineConfig([
     clean: false,
     skipNodeModulesBundle: false,
     external: [/^bun$/, /^bun:/],
-    noExternal: [/^@internal\//, /^@prisma\//],
+    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/],
   },
 ]);

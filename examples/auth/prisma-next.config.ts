@@ -1,5 +1,6 @@
+import { definePrismaConfig } from '@prisma/cli-engine';
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
-import { defineConfig } from '@prisma-next/postgres/config';
+import { defineConfig } from '@prisma/orm-postgres/config';
 
 // The Prisma Next config anchors the (empty) app contract and the migrations
 // directory, and declares the auth extension pack — `prisma-next migration
@@ -7,8 +8,10 @@ import { defineConfig } from '@prisma-next/postgres/config';
 // the deploy's migration step migrates BOTH spaces. The deploy lowering loads
 // this file by path (from the pnPostgres resource's `config`); the app build
 // never imports it.
-export default defineConfig({
-  contract: './contract.prisma',
-  db: { connection: 'postgres://localhost:5432/placeholder' },
-  extensions: [authPack],
+export default definePrismaConfig({
+  orm: defineConfig({
+    contract: './contract.prisma',
+    db: { connection: 'postgres://localhost:5432/placeholder' },
+    extensions: [authPack],
+  }),
 });

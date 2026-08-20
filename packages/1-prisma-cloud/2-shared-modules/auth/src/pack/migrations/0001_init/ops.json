@@ -50,7 +50,9 @@
       {
         "description": "ensure table \"account\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"account\""]
+        "params": [
+          "\"auth\".\"account\""
+        ]
       }
     ],
     "execute": [
@@ -64,7 +66,9 @@
       {
         "description": "verify table \"account\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"account\""]
+        "params": [
+          "\"auth\".\"account\""
+        ]
       }
     ]
   },
@@ -85,7 +89,9 @@
       {
         "description": "ensure table \"jwks\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"jwks\""]
+        "params": [
+          "\"auth\".\"jwks\""
+        ]
       }
     ],
     "execute": [
@@ -99,7 +105,9 @@
       {
         "description": "verify table \"jwks\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"jwks\""]
+        "params": [
+          "\"auth\".\"jwks\""
+        ]
       }
     ]
   },
@@ -120,7 +128,9 @@
       {
         "description": "ensure table \"session\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"session\""]
+        "params": [
+          "\"auth\".\"session\""
+        ]
       }
     ],
     "execute": [
@@ -134,7 +144,9 @@
       {
         "description": "verify table \"session\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"session\""]
+        "params": [
+          "\"auth\".\"session\""
+        ]
       }
     ]
   },
@@ -155,7 +167,9 @@
       {
         "description": "ensure table \"user\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"user\""]
+        "params": [
+          "\"auth\".\"user\""
+        ]
       }
     ],
     "execute": [
@@ -169,7 +183,9 @@
       {
         "description": "verify table \"user\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"user\""]
+        "params": [
+          "\"auth\".\"user\""
+        ]
       }
     ]
   },
@@ -190,7 +206,9 @@
       {
         "description": "ensure table \"verification\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"verification\""]
+        "params": [
+          "\"auth\".\"verification\""
+        ]
       }
     ],
     "execute": [
@@ -204,7 +222,9 @@
       {
         "description": "verify table \"verification\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"verification\""]
+        "params": [
+          "\"auth\".\"verification\""
+        ]
       }
     ]
   },
@@ -225,7 +245,11 @@
       {
         "description": "ensure constraint \"session_token_key\" does not exist",
         "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["session_token_key", "auth", "\"auth\".\"session\""]
+        "params": [
+          "session_token_key",
+          "auth",
+          "\"auth\".\"session\""
+        ]
       }
     ],
     "execute": [
@@ -238,7 +262,11 @@
       {
         "description": "verify constraint \"session_token_key\" exists",
         "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["session_token_key", "auth", "\"auth\".\"session\""]
+        "params": [
+          "session_token_key",
+          "auth",
+          "\"auth\".\"session\""
+        ]
       }
     ]
   },
@@ -259,7 +287,11 @@
       {
         "description": "ensure constraint \"user_email_key\" does not exist",
         "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["user_email_key", "auth", "\"auth\".\"user\""]
+        "params": [
+          "user_email_key",
+          "auth",
+          "\"auth\".\"user\""
+        ]
       }
     ],
     "execute": [
@@ -272,7 +304,11 @@
       {
         "description": "verify constraint \"user_email_key\" exists",
         "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["user_email_key", "auth", "\"auth\".\"user\""]
+        "params": [
+          "user_email_key",
+          "auth",
+          "\"auth\".\"user\""
+        ]
       }
     ]
   },
@@ -293,20 +329,25 @@
       {
         "description": "ensure index \"account_userId_idx\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"account_userId_idx\""]
+        "params": [
+          "\"auth\".\"account_userId_idx\""
+        ]
       }
     ],
     "execute": [
       {
         "description": "create index \"account_userId_idx\"",
-        "sql": "CREATE INDEX \"account_userId_idx\" ON \"auth\".\"account\" (\"userId\")"
+        "sql": "CREATE INDEX \"account_userId_idx\" ON \"auth\".\"account\" (\"userId\")",
+        "params": []
       }
     ],
     "postcheck": [
       {
         "description": "verify index \"account_userId_idx\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"account_userId_idx\""]
+        "params": [
+          "\"auth\".\"account_userId_idx\""
+        ]
       }
     ]
   },
@@ -327,20 +368,25 @@
       {
         "description": "ensure index \"session_userId_idx\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"session_userId_idx\""]
+        "params": [
+          "\"auth\".\"session_userId_idx\""
+        ]
       }
     ],
     "execute": [
       {
         "description": "create index \"session_userId_idx\"",
-        "sql": "CREATE INDEX \"session_userId_idx\" ON \"auth\".\"session\" (\"userId\")"
+        "sql": "CREATE INDEX \"session_userId_idx\" ON \"auth\".\"session\" (\"userId\")",
+        "params": []
       }
     ],
     "postcheck": [
       {
         "description": "verify index \"session_userId_idx\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"session_userId_idx\""]
+        "params": [
+          "\"auth\".\"session_userId_idx\""
+        ]
       }
     ]
   },
@@ -361,20 +407,25 @@
       {
         "description": "ensure index \"verification_identifier_idx\" does not exist",
         "sql": "SELECT (to_regclass($1)) IS NULL AS \"result\"",
-        "params": ["\"auth\".\"verification_identifier_idx\""]
+        "params": [
+          "\"auth\".\"verification_identifier_idx\""
+        ]
       }
     ],
     "execute": [
       {
         "description": "create index \"verification_identifier_idx\"",
-        "sql": "CREATE INDEX \"verification_identifier_idx\" ON \"auth\".\"verification\" (\"identifier\")"
+        "sql": "CREATE INDEX \"verification_identifier_idx\" ON \"auth\".\"verification\" (\"identifier\")",
+        "params": []
       }
     ],
     "postcheck": [
       {
         "description": "verify index \"verification_identifier_idx\" exists",
         "sql": "SELECT (to_regclass($1)) IS NOT NULL AS \"result\"",
-        "params": ["\"auth\".\"verification_identifier_idx\""]
+        "params": [
+          "\"auth\".\"verification_identifier_idx\""
+        ]
       }
     ]
   },
@@ -395,7 +446,11 @@
       {
         "description": "ensure FK \"account_userId_fkey\" does not exist",
         "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["account_userId_fkey", "auth", "\"auth\".\"account\""]
+        "params": [
+          "account_userId_fkey",
+          "auth",
+          "\"auth\".\"account\""
+        ]
       }
     ],
     "execute": [
@@ -408,7 +463,11 @@
       {
         "description": "verify FK \"account_userId_fkey\" exists",
         "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["account_userId_fkey", "auth", "\"auth\".\"account\""]
+        "params": [
+          "account_userId_fkey",
+          "auth",
+          "\"auth\".\"account\""
+        ]
       }
     ]
   },
@@ -429,7 +488,11 @@
       {
         "description": "ensure FK \"session_userId_fkey\" does not exist",
         "sql": "SELECT NOT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["session_userId_fkey", "auth", "\"auth\".\"session\""]
+        "params": [
+          "session_userId_fkey",
+          "auth",
+          "\"auth\".\"session\""
+        ]
       }
     ],
     "execute": [
@@ -442,7 +505,11 @@
       {
         "description": "verify FK \"session_userId_fkey\" exists",
         "sql": "SELECT EXISTS (SELECT 1 AS \"one\" FROM \"pg_constraint\" AS \"c\" INNER JOIN \"pg_namespace\" AS \"n\" ON \"n\".\"oid\" = \"c\".\"connamespace\" WHERE (\"c\".\"conname\" = $1 AND \"n\".\"nspname\" = $2 AND \"c\".\"conrelid\" = to_regclass($3))) AS \"result\"",
-        "params": ["session_userId_fkey", "auth", "\"auth\".\"session\""]
+        "params": [
+          "session_userId_fkey",
+          "auth",
+          "\"auth\".\"session\""
+        ]
       }
     ]
   }

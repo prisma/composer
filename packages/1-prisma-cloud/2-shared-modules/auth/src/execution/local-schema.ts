@@ -14,12 +14,12 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { materialiseExtensionMigrationPackageIfMissing } from '@prisma-next/migration-tools/io';
+import { createPostgresControlClient } from '@prisma/orm-postgres/control';
+import { materialiseExtensionMigrationPackageIfMissing } from '@prisma/orm-toolchain/migration-tools/io';
 import {
-  emitContractSpaceArtefacts,
+  emitContractSpaceArtifacts,
   spaceMigrationDirectory,
-} from '@prisma-next/migration-tools/spaces';
-import { createPostgresControlClient } from '@prisma-next/postgres/control';
+} from '@prisma/orm-toolchain/migration-tools/spaces';
 import pg from 'pg';
 import { AUTH_PACK_HEAD_HASH, AUTH_PACK_ID, authPack } from '../pack/index.ts';
 import emptyAppContractJson from './empty-app-contract.json' with { type: 'json' };
@@ -77,7 +77,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
     throw new Error(
       'local auth bootstrap: the database already carries contract space(s) ' +
         `${rows.map((row) => `"${row.space}"`).join(', ')} but not "${AUTH_PACK_ID}" — list ` +
-        "authPack in that project's prisma-next.config.ts extensionPacks and run its migration " +
+        "authPack in that project's prisma-next.config.ts extensions and run its migration " +
         'plan; the local server only initialises databases it owns entirely.',
     );
   }
@@ -86,7 +86,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
   try {
     const space = authPack.contractSpace;
     if (space === undefined) throw new Error('authPack has no contractSpace');
-    await emitContractSpaceArtefacts(migrationsDir, AUTH_PACK_ID, {
+    await emitContractSpaceArtifacts(migrationsDir, AUTH_PACK_ID, {
       contract: space.contractJson,
       // The loader carries the .d.ts artefact as opaque text (a types file
       // for editors); the bundled testing export ships no source files, so a
@@ -101,7 +101,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
 
     const client = createPostgresControlClient({
       connection: databaseUrl,
-      extensionPacks: [authPack],
+      extensions: [authPack],
     });
     await client.connect();
     try {

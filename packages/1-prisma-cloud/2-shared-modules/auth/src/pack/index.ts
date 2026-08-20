@@ -1,6 +1,6 @@
 /**
  * The `auth` contract space as a Prisma Next extension pack (mirrors
- * `@prisma-next/extension-supabase`'s `supabasePack`): the emitted Better
+ * `@prisma/orm-extension-supabase`'s `supabasePack`): the emitted Better
  * Auth contract plus the shipped migration packages, in-memory. A consumer
  * lists `authPack` in their `prisma-next.config.ts` and their normal
  * migration step creates and evolves the auth tables beside their own —
@@ -12,9 +12,9 @@
  * run `prisma-next contract emit`, and re-author the migration.
  */
 import { blindCast } from '@internal/foundation/casts';
-import type { SqlControlExtensionDescriptor } from '@prisma-next/family-sql/control';
-import { assertDescriptorSelfConsistency } from '@prisma-next/migration-tools/spaces';
-import { sqlContractCanonicalizationHooks } from '@prisma-next/sql-contract/canonicalization-hooks';
+import type { SqlControlExtensionDescriptor } from '@prisma/orm-postgres/family/control';
+import { sqlContractCanonicalizationHooks } from '@prisma/orm-postgres/family-contract/canonicalization-hooks';
+import { assertDescriptorSelfConsistency } from '@prisma/orm-toolchain/migration-tools/spaces';
 import packageJson from '../../package.json' with { type: 'json' };
 import { AUTH_PACK_HEAD_HASH, AUTH_PACK_ID, AUTH_SCHEMA } from './constants.ts';
 import type { Contract } from './contract.d.ts';

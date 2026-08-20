@@ -15,32 +15,72 @@ function makeBundle(files: Record<string, string>): string {
   return dir;
 }
 
-/** Un-gzips and lists the tar entry names + reads one entry's content, without a tar library. */
-function readTar(gz: Buffer): { names: string[]; read: (name: string) => string } {
+/** Un-gzips and inspects the deterministic tar subset, without a tar library. */
+function readTar(gz: Buffer): {
+  names: string[];
+  read: (name: string) => string;
+  link: (name: string) => string | undefined;
+  mode: (name: string) => number | undefined;
+} {
   const tar = zlib.gunzipSync(gz);
   const names: string[] = [];
   const contents = new Map<string, string>();
+  const links = new Map<string, string>();
+  const modes = new Map<string, number>();
+  let nextPax: Record<string, string> = {};
   let offset = 0;
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512);
     if (header.every((b) => b === 0)) break; // end-of-archive block
     const rawName = header.subarray(0, 100).toString('utf8').replace(/\0.*$/s, '');
     const rawPrefix = header.subarray(345, 500).toString('utf8').replace(/\0.*$/s, '');
-    const name = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
+    const headerName = rawPrefix.length > 0 ? `${rawPrefix}/${rawName}` : rawName;
     const size = Number.parseInt(
       header.subarray(124, 136).toString('utf8').replace(/\0.*$/s, '').trim(),
       8,
     );
+    const mode = Number.parseInt(
+      header.subarray(100, 108).toString('utf8').replace(/\0.*$/s, '').trim(),
+      8,
+    );
+    const typeflag = header.subarray(156, 157).toString('utf8');
+    const linkname = header.subarray(157, 257).toString('utf8').replace(/\0.*$/s, '');
     offset += 512;
-    contents.set(name, tar.subarray(offset, offset + size).toString('utf8'));
+    const content = tar.subarray(offset, offset + size);
+    if (typeflag === 'x') {
+      let paxOffset = 0;
+      while (paxOffset < content.length) {
+        const separator = content.indexOf(0x20, paxOffset);
+        const length = Number.parseInt(
+          content.subarray(paxOffset, separator).toString('ascii'),
+          10,
+        );
+        const record = content.subarray(separator + 1, paxOffset + length - 1).toString('utf8');
+        const equals = record.indexOf('=');
+        nextPax[record.slice(0, equals)] = record.slice(equals + 1);
+        paxOffset += length;
+      }
+      offset += Math.ceil(size / 512) * 512;
+      continue;
+    }
+    const name = nextPax['path'] ?? headerName;
+    contents.set(name, content.toString('utf8'));
+    modes.set(name, mode);
+    if (typeflag === '2') links.set(name, nextPax['linkpath'] ?? linkname);
     names.push(name);
+    nextPax = {};
     offset += Math.ceil(size / 512) * 512;
   }
-  return { names, read: (name: string) => contents.get(name) ?? '' };
+  return {
+    names,
+    read: (name: string) => contents.get(name) ?? '',
+    link: (name: string) => links.get(name),
+    mode: (name: string) => modes.get(name),
+  };
 }
 
 describe('packageComputeArtifact', () => {
-  test('prints a bootstrap that statically imports only the wrapper, then dynamically imports the app entry', () => {
+  test('prints a constant bootstrap that reads data before dynamically importing the wrapper and app', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default { run: async () => {} };' });
 
     const artifact = packageComputeArtifact({
@@ -53,8 +93,70 @@ describe('packageComputeArtifact', () => {
     const bootstrap = read('bootstrap.js');
 
     const importLines = bootstrap.split('\n').filter((line) => /^\s*import\b/.test(line));
-    expect(importLines).toEqual(['import main from "./main.js";']);
-    expect(bootstrap).toContain('await main.run("auth", () => import("./server.js"));');
+    expect(importLines).toEqual(['import { readFile } from "node:fs/promises";']);
+    expect(bootstrap).toContain('for (const constructor of [URL, URLSearchParams])');
+    expect(bootstrap).toContain('Object.defineProperty(this, inspect');
+    expect(bootstrap).toContain('const main = (await import(boot.moduleEntrypoint)).default;');
+    expect(bootstrap).toContain('await main.run(boot.address, () => import(boot.appEntrypoint));');
+    expect(JSON.parse(read('compute.bootstrap.json'))).toEqual({
+      moduleEntrypoint: './main.js',
+      appEntrypoint: './server.js',
+      address: 'auth',
+    });
+  });
+
+  test('executes the generated data-backed bootstrap under Bun', () => {
+    const bundleDir = makeBundle({
+      'main.js':
+        'export default { run: async (address, boot) => { await boot(); console.log(`address:${address}`); } };',
+      'server.js': 'console.log("server:booted");',
+    });
+    const artifact = packageComputeArtifact({
+      id: 'executable',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+    const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-bootstrap-run-'));
+    for (const name of ['bootstrap.js', 'compute.bootstrap.json', 'main.js', 'server.js']) {
+      fs.writeFileSync(path.join(runtimeDir, name), archive.read(name));
+    }
+
+    const child = Bun.spawnSync({ cmd: [process.execPath, 'bootstrap.js'], cwd: runtimeDir });
+    const stdout = new TextDecoder().decode(child.stdout);
+    const stderr = new TextDecoder().decode(child.stderr);
+
+    expect(child.exitCode, stderr).toBe(0);
+    expect(stdout).toContain('server:booted');
+    expect(stdout).toContain('address:auth');
+  });
+
+  test('keeps caller-provided entry and address strings out of executable JavaScript', () => {
+    const marker = 'globalThis.COMPROMISED = true';
+    const bundleEntry = `main"; ${marker}; ".js`;
+    const appEntry = `server"; ${marker}; ".js`;
+    const address = `auth"); ${marker}; ("`;
+    const bundleDir = makeBundle({
+      [bundleEntry]: 'export default {};',
+      [appEntry]: 'export default {};',
+    });
+
+    const artifact = packageComputeArtifact({
+      id: 'hostile-data',
+      bundleDir,
+      bundleEntry,
+      appEntry,
+      address,
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+
+    expect(read('bootstrap.js')).not.toContain(marker);
+    expect(JSON.parse(read('compute.bootstrap.json'))).toEqual({
+      moduleEntrypoint: `./${bundleEntry}`,
+      appEntrypoint: `./${appEntry}`,
+      address,
+    });
   });
 
   test('writes compute.manifest.json with entrypoint bootstrap.js and the packaged address', () => {
@@ -86,7 +188,7 @@ describe('packageComputeArtifact', () => {
     });
     const { read } = readTar(fs.readFileSync(artifact.path));
 
-    expect(read('bootstrap.js')).toContain('import main from "./main.mjs";');
+    expect(JSON.parse(read('compute.bootstrap.json')).moduleEntrypoint).toBe('./main.mjs');
   });
 
   test('packaging twice with identical inputs yields an identical sha256 AND an identical path (redeploy noops)', () => {
@@ -150,7 +252,7 @@ describe('packageComputeArtifact', () => {
     expect(artifact.path).toContain(`prisma-composer-compute-${String(os.userInfo().uid)}`);
   });
 
-  test('a different address changes the hash (the bootstrap is address-specific)', () => {
+  test('a different address changes the hash (the bootstrap data is address-specific)', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const a = packageComputeArtifact({
@@ -169,7 +271,7 @@ describe('packageComputeArtifact', () => {
     expect(a.sha256).not.toBe(b.sha256);
   });
 
-  test('a different appEntry changes the hash (the bootstrap bakes in the boot import)', () => {
+  test('a different appEntry changes the hash (the bootstrap data names the boot import)', () => {
     const bundleDir = makeBundle({ 'main.js': 'export default {};' });
 
     const a = packageComputeArtifact({
@@ -204,6 +306,7 @@ describe('packageComputeArtifact', () => {
       'b.txt',
       'bootstrap.js',
       'bunfig.toml',
+      'compute.bootstrap.json',
       'compute.manifest.json',
       'main.js',
     ]);
@@ -221,18 +324,158 @@ describe('packageComputeArtifact', () => {
     expect(read('bunfig.toml')).toContain('auto = "disable"');
   });
 
-  test('a symlink in the bundle is a hard error naming the path and the fix (flat bundles only)', () => {
+  test('preserves a framework-produced symlink whose target stays inside the bundle', () => {
     const bundleDir = makeBundle({
       'main.js': 'export default {};',
       'node_modules/real/index.js': '// real',
     });
-    // A bun/pnpm-shaped relative dir-symlink, the kind a Next standalone tree
-    // is full of — the framework must reject it, not dereference it.
+    // A bun/Next-standalone-shaped relative directory symlink.
     fs.symlinkSync('real', path.join(bundleDir, 'node_modules', 'link'));
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.names).toContain('node_modules/link');
+    expect(archive.link('node_modules/link')).toBe('real');
+  });
+
+  test('rewrites an absolute in-bundle symlink to a deploy-relative target', () => {
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      'node_modules/real/index.js': '// real',
+    });
+    fs.symlinkSync(
+      path.join(bundleDir, 'node_modules', 'real'),
+      path.join(bundleDir, 'node_modules', 'link'),
+    );
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.link('node_modules/link')).toBe('real');
+    expect(archive.link('node_modules/link')).not.toContain(bundleDir);
+  });
+
+  test('preserves executable mode for staged runtime files', () => {
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      'node_modules/tool/bin/run': '#!/bin/sh\nexit 0\n',
+    });
+    fs.chmodSync(path.join(bundleDir, 'node_modules', 'tool', 'bin', 'run'), 0o755);
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(archive.mode('node_modules/tool/bin/run')).toBe(0o755);
+    expect(archive.mode('main.js')).toBe(0o644);
+  });
+
+  test('uses a PAX linkpath for a safe framework symlink target longer than USTAR allows', () => {
+    const longTarget = `.pnpm/${'next-with-peer-context-'.repeat(5)}/node_modules/next`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [`node_modules/${longTarget}/index.js`]: '// real',
+    });
+    fs.symlinkSync(longTarget, path.join(bundleDir, 'node_modules', 'next'));
+
+    const artifact = packageComputeArtifact({
+      id: 'auth',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'auth',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(Buffer.byteLength(longTarget, 'utf8')).toBeGreaterThan(100);
+    expect(archive.link('node_modules/next')).toBe(longTarget);
+  });
+
+  test('uses a PAX path for a bundle file whose path cannot fit USTAR fields', () => {
+    const longPath = `assets/${'a'.repeat(140)}/${'b'.repeat(120)}/asset.txt`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [longPath]: 'long-path asset',
+    });
+
+    const artifact = packageComputeArtifact({
+      id: 'long-path',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'long-path',
+    });
+    const archive = readTar(fs.readFileSync(artifact.path));
+
+    expect(Buffer.byteLength(longPath, 'utf8')).toBeGreaterThan(255);
+    expect(archive.read(longPath)).toBe('long-path asset');
+  });
+
+  test('rejects a symlink whose real target escapes the assembled bundle', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-symlink-escape-'));
+    const bundleDir = path.join(parent, 'bundle');
+    fs.mkdirSync(bundleDir);
+    fs.writeFileSync(path.join(bundleDir, 'main.js'), 'export default {};');
+    fs.writeFileSync(path.join(parent, 'secret.txt'), 'must not ship');
+    fs.symlinkSync('../secret.txt', path.join(bundleDir, 'escaped'));
 
     expect(() =>
       packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
-    ).toThrow(/symlink at node_modules\/link .* deploy bundles must be flat/);
+    ).toThrow(/symlink at escaped escapes the bundle root/);
+  });
+
+  test('rejects a link whose literal target leaves the bundle and re-enters through an outside alias', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-symlink-alias-'));
+    const bundleDir = path.join(parent, 'bundle');
+    fs.mkdirSync(path.join(bundleDir, 'node_modules', 'pkg'), { recursive: true });
+    fs.writeFileSync(path.join(bundleDir, 'main.js'), 'export default {};');
+    fs.writeFileSync(path.join(bundleDir, 'node_modules', 'pkg', 'index.js'), '// real');
+    // An alias OUTSIDE the bundle pointing back at it: the link below resolves
+    // (realpath) inside the bundle, but the literal target archived into the tar
+    // walks out through the alias — which every extractor rejects.
+    fs.symlinkSync(bundleDir, path.join(parent, 'alias'));
+    fs.symlinkSync(
+      path.join('..', '..', 'alias', 'node_modules', 'pkg'),
+      path.join(bundleDir, 'node_modules', 'aliased'),
+    );
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/symlink at node_modules\/aliased has a target that leaves the bundle/);
+  });
+
+  test('rejects a dangling symlink instead of emitting an unusable artifact', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    fs.symlinkSync('missing.js', path.join(bundleDir, 'dangling'));
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/symlink at dangling is dangling/);
+  });
+
+  test('rejects a FIFO before attempting to read it', () => {
+    if (process.platform === 'win32') return;
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const fifo = path.join(bundleDir, 'runtime.pipe');
+    const created = Bun.spawnSync({ cmd: ['mkfifo', fifo] });
+    expect(created.exitCode).toBe(0);
+
+    expect(() =>
+      packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' }),
+    ).toThrow(/unsupported filesystem entry: runtime\.pipe/);
   });
 
   test('a missing bundle dir (destroy before any build) returns a placeholder instead of throwing', () => {

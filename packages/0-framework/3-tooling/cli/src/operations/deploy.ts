@@ -20,6 +20,20 @@ export interface DeployInput {
   readonly stage?: string | undefined;
   /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
   readonly cwd?: string | undefined;
+  /**
+   * Where to write the run report — the deploy's outcome as JSON, for a tool
+   * that consumes a deploy rather than watches one. Relative paths resolve
+   * against `cwd`. Absent falls back to `PRISMA_COMPOSER_REPORT_FILE`, and
+   * absent from both writes no report.
+   */
+  readonly reportPath?: string | undefined;
+  /**
+   * An existing report record this deploy belongs to — the `--build-id` flag's
+   * slot. A CI job that opens the record before invoking Composer passes the
+   * id here, and the target's reporter joins that record instead of creating
+   * one. Absent falls back to whatever the target reads from the environment.
+   */
+  readonly reportId?: string | undefined;
 }
 
 export interface DeploySuccess {

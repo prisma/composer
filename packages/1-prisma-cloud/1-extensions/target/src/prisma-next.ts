@@ -8,8 +8,8 @@
 import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@internal/core';
 import { dependency, freezeNode, ResourceNodeBase, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
-import pnPostgresRuntime, { type PostgresClient } from '@prisma-next/postgres/runtime';
-import type { SqlStorage } from '@prisma-next/sql-contract/types';
+import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types';
+import pnPostgresRuntime, { type PostgresClient } from '@prisma/orm-postgres/runtime';
 import pg from 'pg';
 import { normalizeSslMode, retryTransientConnect } from './pg-connection.ts';
 import { type RequiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
@@ -22,7 +22,7 @@ export { requiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
  * authoring modes (TS no-emit `defineContract()`, or PSL/emitted
  * `contract.d.ts`) satisfy.
  */
-export type AnyPnContract = import('@prisma-next/contract/types').Contract<SqlStorage>;
+export type AnyPnContract = import('@prisma/orm-postgres/contract/types').Contract<SqlStorage>;
 
 /**
  * The comparison payload behind a `prisma-next` Contract. `_contract` is a

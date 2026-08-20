@@ -7,8 +7,11 @@ principle are wrong by definition — the principle wins until an ADR supersedes
 it. In particular: **we don't bundle the app's code, and we don't guess** — the
 framework never bundles/transforms your code, and assembles the deploy artifact
 only by documented, deterministic steps (no filename/depth guessing, no tree
-laundering)
-([ADR-0005](docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md)).
+laundering; symlinks are preserved as links only when their resolved target
+stays inside the bundle, and never dereferenced)
+([ADR-0005](docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md),
+amended by
+[ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
 For design work, also check:
 

@@ -15,6 +15,7 @@ interface FakeProject {
   name: string;
   createdAt: string;
   workspace: { id: string };
+  logicalId?: string | null;
 }
 
 interface FakeBranch {
@@ -47,6 +48,8 @@ interface FakeState {
   projectsCursorRunaway?: boolean;
   /** When set, GET /v1/projects reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
   projectsCursorMissing?: boolean;
+  /** When set, POST /v1/projects responds with a 409 (name already in use). */
+  projectCreateConflict?: boolean;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -133,12 +136,16 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
     if (path === '/v1/projects') {
       state.projectCreateCalls++;
       state.projectCreateBodies.push(init.body ?? {});
+      if (state.projectCreateConflict === true) {
+        return Promise.resolve(errorResponse(409));
+      }
       const id = `proj-${state.projectCreateCalls}`;
       const project: FakeProject = {
         id,
         name: String(init.body?.['name']),
         createdAt: new Date(state.projectCreateCalls).toISOString(),
         workspace: { id: String(init.body?.['workspaceId']) },
+        logicalId: typeof init.body?.['logicalId'] === 'string' ? init.body['logicalId'] : null,
       };
       state.projects.push(project);
       // The platform creates every Project with its default Branch.
@@ -386,6 +393,68 @@ describe('resolveContainer — Project resolution', () => {
     expect((error as PrismaApiError).message).toContain(
       'reported more pages but returned no cursor',
     );
+  });
+
+  test('logical id match: a project whose logical id equals appName is adopted even when another project has a matching name', async () => {
+    state.projects.push(
+      {
+        id: 'proj-slug',
+        name: 'old-display-name',
+        logicalId: 'storefront',
+        createdAt: new Date(1).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+      {
+        id: 'proj-name-only',
+        name: 'storefront',
+        createdAt: new Date(2).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+    );
+    state.branches['proj-slug'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-slug');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('name fallback: a project with no logical id is still found by display name when no logical id match exists', async () => {
+    state.projects.push({
+      id: 'proj-legacy',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+    state.branches['proj-legacy'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-legacy');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('project creation sends the module name as the logical id', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(state.projectCreateBodies[0]?.['logicalId']).toBe('storefront');
+  });
+
+  test('a 409 on project create surfaces a clear name-conflict error', async () => {
+    state.projectCreateConflict = true;
+
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).status).toBe(409);
+    expect((error as PrismaApiError).message).toContain('already exists');
+    expect((error as PrismaApiError).message).toContain('free the name');
   });
 });
 

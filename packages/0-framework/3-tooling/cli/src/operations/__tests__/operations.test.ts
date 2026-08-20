@@ -23,7 +23,7 @@ import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/cor
 import * as Layer from 'effect/Layer';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import type { RunAlchemyInput } from '../../run-alchemy.ts';
+import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
@@ -105,7 +105,7 @@ function fakeContainerDescriptor(
 }
 
 function fakeConfig(
-  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight'>> = {},
+  hooks: Partial<Pick<ExtensionDescriptor, 'teardown' | 'preflight' | 'reporter'>> = {},
   containerOpts: Parameters<typeof fakeContainerDescriptor>[0] = {},
 ): PrismaAppConfig {
   return {
@@ -124,6 +124,7 @@ function fakeConfig(
         container: fakeContainerDescriptor(containerOpts),
         ...(hooks.teardown !== undefined ? { teardown: hooks.teardown } : {}),
         ...(hooks.preflight !== undefined ? { preflight: hooks.preflight } : {}),
+        ...(hooks.reporter !== undefined ? { reporter: hooks.reporter } : {}),
       },
       { id: 'fixture-build', nodes: { node: { kind: 'build', assemble: unused } } },
     ],
@@ -197,7 +198,7 @@ const summaryFixture: DeploymentSummary = {
 describe('deploy()', () => {
   test('a successful deploy passes the result-file env var to alchemy and returns the summary the child wrote', async () => {
     const app = makeAppDir('hello-ops');
-    const calls: RunAlchemyInput[] = [];
+    const calls: AlchemyInvocation[] = [];
 
     const result = await silently(() =>
       deployWithDeps(
@@ -209,11 +210,11 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             calls.push(input);
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof file === 'string') fs.writeFileSync(file, JSON.stringify(summaryFixture));
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -240,7 +241,11 @@ describe('deploy()', () => {
           stage: 'ci-7',
           cwd: app.dir,
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -262,10 +267,10 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof file === 'string') fs.writeFileSync(file, '{"app": 42, "nodes": "nope"');
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -287,9 +292,9 @@ describe('deploy()', () => {
     const deps = {
       config: fakeConfig(),
       runAssembler: fakeAssembler,
-      alchemy: (input: RunAlchemyInput) => {
+      alchemy: async (input: AlchemyInvocation) => {
         resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
-        return 0;
+        return { exitCode: 0, signal: null };
       },
     };
 
@@ -316,12 +321,12 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
             if (typeof resultFile === 'string') {
               fs.writeFileSync(resultFile, JSON.stringify(summaryFixture));
             }
-            return 1;
+            return { exitCode: 1, signal: null };
           },
         },
       ),
@@ -352,14 +357,14 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: (input) => {
+          alchemy: async (input) => {
             const child = spawnSync(process.execPath, [childPath], {
               cwd: app.dir,
-              env: input.env,
+              env: { ...process.env, ...input.env },
               encoding: 'utf-8',
             });
             expect(child.stderr).toBe('');
-            return child.status ?? 1;
+            return { exitCode: child.status ?? 1, signal: null };
           },
         },
       ),
@@ -384,7 +389,7 @@ describe('deploy()', () => {
         {
           config: fakeConfig({}, { calls: containerCalls }),
           runAssembler: fakeAssembler,
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -396,7 +401,7 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
-  test('a missing prisma-composer.config.ts is a pipeline failure naming the filename', async () => {
+  test('a missing config file is a pipeline failure naming the accepted spellings', async () => {
     const app = makeAppDir('no-config', { config: false });
 
     const result = await silently(() =>
@@ -405,14 +410,14 @@ describe('deploy()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { runAssembler: fakeAssembler, alchemy: () => 0 },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
       ),
     );
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
     expect(result.failure.code).toBe('CONFIG.FILE_MISSING');
-    expect(result.failure.message).toContain('prisma-composer.config.ts');
+    expect(result.failure.message).toContain('prisma-composer.config.{ts,mts,mjs,js}');
   });
 
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
@@ -433,9 +438,9 @@ describe('deploy()', () => {
             },
           }),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -459,7 +464,11 @@ describe('deploy()', () => {
           stage: 'ci-7',
           cwd: app.dir,
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 42 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 42, signal: null }),
+        },
       ),
     );
 
@@ -490,9 +499,9 @@ describe('deploy()', () => {
         {
           config: fakeConfig(),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -622,7 +631,7 @@ describe('destroy()', () => {
           {
             config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' }),
             runAssembler: fakeAssembler,
-            alchemy: () => 0,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
           },
         ),
       );
@@ -650,7 +659,7 @@ describe('destroy()', () => {
         {
           config: fakeConfig({}, { notFound: true }),
           runAssembler: fakeAssembler,
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -681,9 +690,9 @@ describe('destroy()', () => {
             { onRemove: () => void order.push('remove') },
           ),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             order.push('alchemy');
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -711,7 +720,7 @@ describe('destroy()', () => {
             order.push('assemble');
             return fakeAssembler(node);
           },
-          alchemy: () => 0,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
     );
@@ -734,7 +743,11 @@ describe('destroy()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: fakeConfig(), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -866,7 +879,11 @@ describe('dev()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -899,7 +916,11 @@ describe('dev()', () => {
           entry: app.entryPath,
           cwd: app.dir,
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       ),
     );
 
@@ -927,7 +948,11 @@ describe('dev()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       await start.value.stop();
@@ -958,7 +983,11 @@ describe('dev()', () => {
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       expect(start.value.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
@@ -1002,7 +1031,11 @@ describe('dev()', () => {
             throw new Error('host renderer blew up');
           },
         },
-        { config: devConfigWith(attachment), runAssembler: fakeAssembler, alchemy: () => 0 },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
       );
       if (!start.ok) throw new Error('expected a started session');
       await start.value.stop();
@@ -1033,9 +1066,9 @@ describe('dev()', () => {
         {
           config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
-          alchemy: () => {
+          alchemy: async () => {
             alchemyRan = true;
-            return 0;
+            return { exitCode: 0, signal: null };
           },
         },
       ),
@@ -1326,5 +1359,251 @@ describe('log()', () => {
     expect(lines).toContainEqual({ service: 'a', line: 'before-crash' });
     expect(lines).toContainEqual({ service: 'b', line: 'still-here' });
     expect(events).toEqual(['daemon went away']);
+  });
+});
+
+describe('deploy-run reporting', () => {
+  interface ReporterLog {
+    readonly events: string[];
+    readonly reporter: NonNullable<ExtensionDescriptor['reporter']>;
+  }
+
+  /** Records the lifecycle the operations drive, and optionally fails at one of its steps. */
+  function recordingReporter(
+    opts: { readonly throwOn?: 'begin' | 'attach' | 'finish'; readonly none?: boolean } = {},
+  ): ReporterLog {
+    const events: string[] = [];
+    const fail = (step: string) => {
+      if (opts.throwOn === step) throw new Error(`reporting broke at ${step}`);
+    };
+    return {
+      events,
+      reporter: {
+        begin: async (input) => {
+          events.push(
+            `begin:${input.appName}:${input.stage ?? 'default'}:${input.reportId ?? 'no-id'}:` +
+              `${input.credentials === undefined ? 'no-credentials' : 'credentials'}`,
+          );
+          fail('begin');
+          if (opts.none === true) return undefined;
+          return {
+            childEnv: () => ({ FAKE_BUILD_ID: 'bld_1' }),
+            attach: async (attachInput) => {
+              events.push(`attach:${attachInput.container === undefined ? 'none' : 'container'}`);
+              fail('attach');
+            },
+            finish: async (outcome) => {
+              events.push(
+                outcome.ok
+                  ? 'finish:ok'
+                  : outcome.cancelled
+                    ? 'finish:cancelled'
+                    : `finish:failed:${outcome.failingStep ?? 'unnamed'}`,
+              );
+              fail('finish');
+            },
+          };
+        },
+      },
+    };
+  }
+
+  /** The reporting wrappers warn on a broken reporter, so these do not run inside silently(). */
+  const quietly = async <T>(run: () => Promise<T>): Promise<T> => {
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      return await run();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  };
+
+  test('a successful deploy is begun, attached, and finished, and its build reaches the apply child', async () => {
+    const app = makeAppDir('reported-app');
+    const log = recordingReporter();
+    const invocations: AlchemyInvocation[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-1', cwd: app.dir },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => {
+            invocations.push(invocation);
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(log.events).toEqual([
+      'begin:reported-app:ci-1:no-id:no-credentials',
+      'attach:container',
+      'finish:ok',
+    ]);
+    expect(invocations[0]?.env['FAKE_BUILD_ID']).toBe('bld_1');
+  });
+
+  test('the engine credentials and the --build-id both reach begin', async () => {
+    const app = makeAppDir('threaded-app');
+    const log = recordingReporter({ none: true });
+
+    await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-2', cwd: app.dir, reportId: 'bld_from_ci' },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+          credentials: { workspaceId: 'ws-1', client: {} },
+        },
+      ),
+    );
+
+    expect(log.events).toEqual(['begin:threaded-app:ci-2:bld_from_ci:credentials']);
+  });
+
+  test('a container failure is still reported — the session opens before containers', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+    const config = fakeConfig({ reporter: log.reporter });
+    const extension = config.extensions[0];
+    if (extension?.container === undefined) throw new Error('fixture must declare a container');
+    const refusing: PrismaAppConfig = {
+      ...config,
+      extensions: [
+        {
+          ...extension,
+          container: {
+            ...extension.container,
+            ensure: () => Promise.reject(new Error('the platform refused to create the project')),
+          },
+        },
+        ...config.extensions.slice(1),
+      ],
+    };
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir },
+        {
+          config: refusing,
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(log.events).toEqual([
+      'begin:fixture-app:ci-3:no-id:no-credentials',
+      'finish:failed:DEPLOY.CONTAINER_FAILED',
+    ]);
+  });
+
+  test('an interrupted converge finishes the session as cancelled, not failed', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-4', cwd: app.dir },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: null, signal: 'SIGINT' }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(log.events.at(-1)).toBe('finish:cancelled');
+  });
+
+  test('a reporter that throws at any step never fails the deploy', async () => {
+    for (const step of ['begin', 'attach', 'finish'] as const) {
+      const app = makeAppDir();
+      const log = recordingReporter({ throwOn: step });
+
+      const result = await quietly(() =>
+        deployWithDeps(
+          { entry: app.entryPath, stage: 'ci-5', cwd: app.dir },
+          {
+            config: fakeConfig({ reporter: log.reporter }),
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        ),
+      );
+
+      expect({ step, ok: result.ok }).toEqual({ step, ok: true });
+    }
+  });
+
+  test('destroy is not reported', async () => {
+    const app = makeAppDir();
+    const log = recordingReporter();
+
+    await silently(() =>
+      destroyWithDeps(
+        {
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          onEvent: undefined,
+          cwd: app.dir,
+        },
+        {
+          config: fakeConfig({ reporter: log.reporter }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(log.events).toEqual([]);
+  });
+
+  test('--report writes the outcome, on success and on failure', async () => {
+    const app = makeAppDir('reported-json');
+    const target = path.join(app.dir, 'out', 'run.json');
+
+    const ok = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, reportPath: target },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+    expect(ok.ok).toBe(true);
+    expect(JSON.parse(fs.readFileSync(target, 'utf8'))).toMatchObject({
+      version: 1,
+      outcome: 'succeeded',
+      stage: 'ci-6',
+      failure: null,
+    });
+
+    const failedTarget = path.join(app.dir, 'failed.json');
+    const failed = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, reportPath: failedTarget },
+        {
+          config: fakeConfig({
+            preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+          }),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+    expect(failed.ok).toBe(false);
+    expect(JSON.parse(fs.readFileSync(failedTarget, 'utf8'))).toMatchObject({
+      outcome: 'failed',
+      failure: { code: 'DEPLOY.PREFLIGHT_FAILED' },
+    });
   });
 });

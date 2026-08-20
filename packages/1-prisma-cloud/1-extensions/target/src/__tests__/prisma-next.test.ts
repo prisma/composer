@@ -7,7 +7,7 @@
  *
  * `pnContract<Contract>(contractJson)` pins the type parameter explicitly —
  * a JSON module import's inferred type is plain data, not the branded
- * `contract.d.ts` type, matching `@prisma-next/postgres/runtime`'s own
+ * `contract.d.ts` type, matching `@prisma/orm-postgres/runtime`'s own
  * `postgres<Contract>({ contractJson })` convention (see prisma-next.ts).
  */
 import { describe, expect, test } from 'bun:test';
@@ -79,14 +79,14 @@ describe('pnContract().satisfies()', () => {
 });
 
 describe('requiredPackHead() — the pack-head claim (wireability only)', () => {
-  const requirement = requiredPackHead({ packId: 'auth', headHash: 'sha256:auth-head' });
+  const requirement = requiredPackHead({ packId: 'auth', headHash: 'auth-head' });
 
   test('is a frozen prisma-next-kind contract carrying the requirement in __cmp', () => {
     expect(requirement.kind).toBe('prisma-next');
     expect(Object.isFrozen(requirement)).toBe(true);
     expect(requiredPackHeadOf(requirement)).toEqual({
       packId: 'auth',
-      headHash: 'sha256:auth-head',
+      headHash: 'auth-head',
     });
   });
 

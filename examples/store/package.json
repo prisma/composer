@@ -1,10 +1,10 @@
 {
   "name": "@prisma/example-store",
-  "version": "0.6.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'nothing to build for this package itself \u2014 the modules build via turbo ^build, from the workspace deps below'",
+    "build": "echo 'nothing to build for this package itself — the modules build via turbo ^build, from the workspace deps below'",
     "dev": "bun run scripts/dev.ts",
     "typecheck": "tsc --noEmit",
     "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
@@ -12,12 +12,13 @@
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.103",
-    "@prisma/composer": "workspace:0.6.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.6.0",
-    "@store/catalog": "workspace:0.6.0",
-    "@store/orders": "workspace:0.6.0",
-    "@store/promotions": "workspace:0.6.0",
-    "@store/storefront": "workspace:0.6.0",
+    "@prisma/composer": "workspace:0.10.0",
+    "@prisma/composer-cli": "workspace:0.10.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.10.0",
+    "@store/catalog": "workspace:0.10.0",
+    "@store/orders": "workspace:0.10.0",
+    "@store/promotions": "workspace:0.10.0",
+    "@store/storefront": "workspace:0.10.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
     "effect": "4.0.0-beta.103"

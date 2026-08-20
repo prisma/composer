@@ -1,6 +1,6 @@
 {
   "name": "@prisma/composer-prisma-cloud",
-  "version": "0.6.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "The Prisma Cloud target for Prisma Composer: compute(), postgres(), the target extension, and first-party modules realized on Prisma Cloud (cron).",
   "exports": {
@@ -42,14 +42,9 @@
     "@effect/platform-bun": "4.0.0-beta.103",
     "@effect/platform-node": "4.0.0-beta.103",
     "@effect/platform-node-shared": "4.0.0-beta.103",
-    "@prisma-next/cli": "0.16.0",
-    "@prisma-next/config-loader": "0.16.0",
-    "@prisma-next/contract": "0.16.0",
-    "@prisma-next/migration-tools": "0.16.0",
-    "@prisma-next/postgres": "0.16.0",
-    "@prisma-next/sql-contract": "0.16.0",
-    "@prisma/composer": "workspace:0.6.0",
-    "@prisma/management-api-sdk": "^1.57.0",
+    "@prisma/composer": "workspace:0.10.0",
+    "@prisma/management-api-sdk": "^1.60.0",
+    "@prisma/orm-toolchain": "8.0.0-rc.4",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
@@ -59,23 +54,27 @@
     "pg": "8.22.0",
     "tsdown": "^0.22.7"
   },
+  "peerDependencies": {
+    "@prisma/orm-postgres": "8.0.0-rc.4"
+  },
   "devDependencies": {
-    "@internal/auth": "workspace:0.6.0",
-    "@internal/core": "workspace:0.6.0",
-    "@internal/cron": "workspace:0.6.0",
-    "@internal/dev-emulators": "workspace:0.6.0",
-    "@internal/email": "workspace:0.6.0",
-    "@internal/foundation": "workspace:0.6.0",
-    "@internal/local-target": "workspace:0.6.0",
-    "@internal/lowering": "workspace:0.6.0",
-    "@internal/nextjs": "workspace:0.6.0",
-    "@internal/node": "workspace:0.6.0",
-    "@internal/prisma-cloud": "workspace:0.6.0",
-    "@internal/s3-protocol": "workspace:0.6.0",
-    "@internal/service-rpc": "workspace:0.6.0",
-    "@internal/storage": "workspace:0.6.0",
-    "@internal/streams": "workspace:0.6.0",
-    "@internal/tsdown-config": "workspace:0.6.0",
+    "@internal/auth": "workspace:0.10.0",
+    "@internal/core": "workspace:0.10.0",
+    "@internal/cron": "workspace:0.10.0",
+    "@internal/dev-emulators": "workspace:0.10.0",
+    "@internal/email": "workspace:0.10.0",
+    "@internal/foundation": "workspace:0.10.0",
+    "@internal/local-target": "workspace:0.10.0",
+    "@internal/lowering": "workspace:0.10.0",
+    "@internal/nextjs": "workspace:0.10.0",
+    "@internal/node": "workspace:0.10.0",
+    "@internal/prisma-cloud": "workspace:0.10.0",
+    "@internal/s3-protocol": "workspace:0.10.0",
+    "@internal/service-rpc": "workspace:0.10.0",
+    "@internal/storage": "workspace:0.10.0",
+    "@internal/streams": "workspace:0.10.0",
+    "@internal/tsdown-config": "workspace:0.10.0",
+    "@prisma/orm-postgres": "8.0.0-rc.4",
     "@types/node": "^26.0.1",
     "typescript": "^6.0.3"
   },
@@ -86,7 +85,7 @@
     "directory": "packages/9-public/composer-prisma-cloud"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "publishConfig": {
     "access": "public"

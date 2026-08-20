@@ -1,6 +1,6 @@
 {
   "name": "@internal/prisma-cloud",
-  "version": "0.6.0",
+  "version": "0.10.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -20,20 +20,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.6.0",
-    "@internal/dev-emulators": "workspace:0.6.0",
-    "@internal/foundation": "workspace:0.6.0",
-    "@internal/local-target": "workspace:0.6.0",
-    "@internal/lowering": "workspace:0.6.0",
-    "@internal/node": "workspace:0.6.0",
-    "@internal/s3-protocol": "workspace:0.6.0",
-    "@internal/service-rpc": "workspace:0.6.0",
-    "@prisma-next/cli": "0.16.0",
-    "@prisma-next/config-loader": "0.16.0",
-    "@prisma-next/contract": "0.16.0",
-    "@prisma-next/migration-tools": "0.16.0",
-    "@prisma-next/postgres": "0.16.0",
-    "@prisma-next/sql-contract": "0.16.0",
+    "@internal/core": "workspace:0.10.0",
+    "@internal/dev-emulators": "workspace:0.10.0",
+    "@internal/foundation": "workspace:0.10.0",
+    "@internal/local-target": "workspace:0.10.0",
+    "@internal/lowering": "workspace:0.10.0",
+    "@internal/node": "workspace:0.10.0",
+    "@internal/s3-protocol": "workspace:0.10.0",
+    "@internal/service-rpc": "workspace:0.10.0",
+    "@prisma/orm-postgres": "8.0.0-rc.4",
+    "@prisma/orm-toolchain": "8.0.0-rc.4",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.67",
     "arktype": "^2.2.3",
@@ -42,10 +38,9 @@
     "pg": "8.22.0"
   },
   "devDependencies": {
-    "@prisma-next/target-postgres": "0.16.0",
-    "@internal/tsdown-config": "workspace:0.6.0",
+    "@internal/tsdown-config": "workspace:0.10.0",
+    "@prisma/cli-engine": "0.2.0",
     "@types/bun": "^1.3.13",
-    "@types/pg": "8.20.0",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
@@ -57,7 +52,7 @@
     "directory": "packages/1-prisma-cloud/1-extensions/target"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "private": true,
   "types": "./dist/index.d.mts"

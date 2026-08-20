@@ -40,8 +40,19 @@ const MAX_PORT = 65_535;
 const EXISTING_HEALTH_TIMEOUT_MS = 2000;
 const START_HEALTH_BUDGET_MS = 10_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
-const TERMINATE_GRACE_MS = 5000;
+/**
+ * How long SIGTERM gets before SIGKILL. Generous on purpose: the daemon hosts
+ * its `@prisma/dev` servers in-process, and only a graceful exit closes them
+ * and releases each server's name lock. A SIGKILLed daemon leaves those locks
+ * behind, and the next daemon then has to wait out proper-lockfile's stale
+ * threshold before it can start the same database — which surfaces as
+ * "already running". The wait below ends as soon as the process is gone, so
+ * this budget is only ever spent on a daemon that is genuinely not exiting.
+ */
+const TERMINATE_GRACE_MS = 20_000;
 const TERMINATE_POLL_INTERVAL_MS = 150;
+/** After SIGKILL, how long to wait for the OS to actually reap the process. */
+const TERMINATE_KILL_WAIT_MS = 5000;
 const LOCK_RETRY_INTERVAL_MS = 250;
 const LOCK_WAIT_BUDGET_MS = 10_000;
 const LOCK_STALE_MS = 10_000;
@@ -234,7 +245,15 @@ async function terminate(pid: number, graceMs: number): Promise<void> {
     try {
       process.kill(pid, 'SIGKILL');
     } catch {
-      // already gone
+      return; // already gone
+    }
+    // SIGKILL is delivered asynchronously. Returning here would let the caller
+    // start a replacement daemon while this one still holds its ports and
+    // its servers' name locks.
+    const killDeadline = Date.now() + TERMINATE_KILL_WAIT_MS;
+    while (Date.now() < killDeadline) {
+      if (!isPidAlive(pid)) return;
+      await sleep(TERMINATE_POLL_INTERVAL_MS);
     }
   }
 }

@@ -40,7 +40,10 @@ describe('extractComputeArtifact', () => {
     const bundleDir = makeBundle({
       'main.js': 'export default { run: async () => {} };',
       'nested/asset.txt': 'hello world',
+      'nested/run.sh': '#!/bin/sh\nexit 0\n',
     });
+    fs.chmodSync(path.join(bundleDir, 'nested', 'run.sh'), 0o755);
+    fs.symlinkSync('asset.txt', path.join(bundleDir, 'nested', 'asset-link.txt'));
     const artifact = packageComputeArtifact({
       id: 'auth',
       bundleDir,
@@ -55,9 +58,17 @@ describe('extractComputeArtifact', () => {
     const extracted = readAll(destDir);
     expect(extracted['main.js']).toBe('export default { run: async () => {} };');
     expect(extracted['nested/asset.txt']).toBe('hello world');
+    expect(extracted['nested/asset-link.txt']).toBe('hello world');
+    expect(fs.readlinkSync(path.join(destDir, 'nested', 'asset-link.txt'))).toBe('asset.txt');
+    expect(fs.statSync(path.join(destDir, 'nested', 'run.sh')).mode & 0o100).toBe(0o100);
     expect(extracted['bootstrap.js']).toContain(
-      'await main.run("auth", () => import("./server.js"));',
+      'await main.run(boot.address, () => import(boot.appEntrypoint));',
     );
+    expect(JSON.parse(extracted['compute.bootstrap.json'] ?? '{}')).toEqual({
+      moduleEntrypoint: './main.js',
+      appEntrypoint: './server.js',
+      address: 'auth',
+    });
     expect(JSON.parse(extracted['compute.manifest.json'] ?? '{}')).toEqual({
       manifestVersion: '1',
       entrypoint: 'bootstrap.js',
@@ -94,5 +105,66 @@ describe('extractComputeArtifact', () => {
     const destDir = path.join(path.dirname(tmpGz), 'dest');
 
     expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/has type "Directory"/);
+  });
+
+  test('rejects a symlink entry with an absolute target', () => {
+    // Hand-build a one-entry ustar archive with typeflag '2' and an absolute
+    // linkname: the resolve check alone would accept one that points inside
+    // the extraction dir, which dangles after the rename into place.
+    const header = Buffer.alloc(512);
+    header.write('link', 0, 100, 'utf8');
+    header.write('0000644\0', 100, 8, 'utf8');
+    header.write('0000000\0', 108, 8, 'utf8');
+    header.write('0000000\0', 116, 8, 'utf8');
+    header.write('00000000000\0', 124, 12, 'utf8');
+    header.write('00000000000\0', 136, 12, 'utf8');
+    header.write('        ', 148, 8, 'utf8');
+    header.write('2', 156, 1, 'utf8'); // typeflag: symlink
+    header.write('/etc/passwd', 157, 100, 'utf8');
+    header.write('ustar\0', 257, 6, 'utf8');
+    header.write('00', 263, 2, 'utf8');
+    let sum = 0;
+    for (const b of header) sum += b;
+    header.write(`${sum.toString(8).padStart(6, '0')}\0 `, 148, 8, 'utf8');
+    const tar = Buffer.concat([header, Buffer.alloc(1024)]);
+    const gz = zlib.gzipSync(tar);
+
+    const tmpGz = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-abs-link-')),
+      'abs-link.tar.gz',
+    );
+    fs.writeFileSync(tmpGz, gz);
+    const destDir = path.join(path.dirname(tmpGz), 'dest');
+
+    expect(() => extractComputeArtifact(tmpGz, destDir)).toThrow(/escapes the extraction/);
+  });
+
+  test('round-trips a safe symlink target longer than USTAR through PAX', () => {
+    const longTarget = `.pnpm/${'next-with-peer-context-'.repeat(5)}/node_modules/next`;
+    const longPath = `assets/${'a'.repeat(140)}/${'b'.repeat(120)}/asset.txt`;
+    const bundleDir = makeBundle({
+      'main.js': 'export default {};',
+      [`node_modules/${longTarget}/index.js`]: '// real',
+      [longPath]: 'long-path asset',
+    });
+    fs.symlinkSync(longTarget, path.join(bundleDir, 'node_modules', 'next'));
+    const artifact = packageComputeArtifact({
+      id: 'long-link',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'long-link',
+    });
+    const destDir = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-long-link-')),
+      'dest',
+    );
+
+    extractComputeArtifact(artifact.path, destDir);
+
+    expect(fs.readlinkSync(path.join(destDir, 'node_modules', 'next'))).toBe(longTarget);
+    expect(fs.readFileSync(path.join(destDir, 'node_modules', 'next', 'index.js'), 'utf8')).toBe(
+      '// real',
+    );
+    expect(fs.readFileSync(path.join(destDir, longPath), 'utf8')).toBe('long-path asset');
   });
 });

@@ -102,7 +102,14 @@ jobs:
     # them (workspace DB-quota headroom). Fails when PPg no longer rejects a
     # database's first connection — the signal to remove withConnectionRetry.
     needs: deploy-bucket
-    timeout-minutes: 3
+    # Samples are spaced 60s apart so each one meets a genuinely cold database
+    # (see SAMPLE_INTERVAL_MS in the script for why back-to-back sampling
+    # produced a false bug-gone verdict). Most runs still finish in a couple of
+    # minutes because the loop stops at the first rejection, which is the
+    # normal outcome today; only a fully clean run pays all 13 intervals. The
+    # script's own MAX_RUN_MS (15 min) stops it and still reports, so this is
+    # headroom for that self-imposed stop, not the primary mechanism.
+    timeout-minutes: 20
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
       PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
@@ -155,4 +162,20 @@ jobs:
           stack-name: streams-canary-ci-${{ github.run_id }}
           verify-command: bun "${{ github.workspace }}/scripts/cold-start-canary.ts"
           destroy-label: 'streams-canary '
-          sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary bucket
+          sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary bucket resolver
+
+  logical-id-resolution:
+    name: Logical-id resolution
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+      PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm install --frozen-lockfile
+      - run: bun scripts/logical-id-resolution.ts
