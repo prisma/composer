@@ -273,7 +273,13 @@ function stagingRootFor(
  * The trace itself runs from the filesystem root so nothing it finds is dropped
  * for sitting outside a narrower base — a pnpm virtual store at the workspace
  * root is outside the app directory, and dropping it would silently ship a
- * bundle missing its dependencies. */
+ * bundle missing its dependencies.
+ *
+ * The graph is traced under both the default (node) conditions and the "bun"
+ * condition, and the union is staged: Compute boots the bundle with Bun, which
+ * resolves a package's "bun"-conditional exports to files a node-conditions
+ * trace never visits, while nft's `conditions` option replaces the default
+ * set rather than extending it. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
   readonly dirPath: string;
@@ -285,14 +291,16 @@ async function stageRuntimeDependencies(options: {
     fs.promises.realpath(options.entryPath),
     fs.promises.realpath(options.dirPath),
   ]);
-  const traced = await nodeFileTrace([entryPath], {
-    base: path.parse(moduleDir).root,
-    processCwd: moduleDir,
-  });
+  const base = path.parse(moduleDir).root;
+  const [nodeTrace, bunTrace] = await Promise.all([
+    nodeFileTrace([entryPath], { base, processCwd: moduleDir }),
+    nodeFileTrace([entryPath], { base, processCwd: moduleDir, conditions: ['bun'] }),
+  ]);
+  const fileList = new Set([...nodeTrace.fileList, ...bunTrace.fileList]);
 
   const tracedEntries = await Promise.all(
-    [...traced.fileList].sort().map(async (relative) => {
-      const source = path.resolve(path.parse(moduleDir).root, relative);
+    [...fileList].sort().map(async (relative) => {
+      const source = path.resolve(base, relative);
       return { source, origin: await realPathOrSelf(source) };
     }),
   );

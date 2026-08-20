@@ -649,6 +649,48 @@ describe('assemble() — the directory form', () => {
     ).toContain(marker);
   }, 20_000);
 
+  test('stages the files a "bun"-conditional export resolves to (stock Elysia shape)', async () => {
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "dual-runtime"; export default marker;\n',
+    });
+    const pkgDir = path.join(serviceDir, 'node_modules', 'dual-runtime');
+    fs.mkdirSync(path.join(pkgDir, 'dist', 'bun'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: 'dual-runtime',
+        version: '1.0.0',
+        type: 'module',
+        exports: { '.': { bun: './dist/bun/index.js', import: './dist/index.mjs' } },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(pkgDir, 'dist', 'index.mjs'),
+      'export const marker = "NODE_FILE";\n',
+    );
+    fs.writeFileSync(
+      path.join(pkgDir, 'dist', 'bun', 'index.js'),
+      'export const marker = "BUN_FILE";\n',
+    );
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'svc',
+      cwd,
+    });
+
+    const staged = path.join(result.dir, 'bundle', 'node_modules', 'dual-runtime', 'dist');
+    expect(fs.existsSync(path.join(staged, 'index.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(staged, 'bun', 'index.js'))).toBe(true);
+  }, 20_000);
+
   test('re-roots workspace package dependencies under a Node lookup path', async () => {
     const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-workspace-'));
     tmpDirs.push(workspaceRoot);
