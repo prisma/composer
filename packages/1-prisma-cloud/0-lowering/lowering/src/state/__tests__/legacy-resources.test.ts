@@ -850,4 +850,25 @@ describe('state round-trip of legacy rows through the hosted state layer', () =>
     // application URL is read.
     expect(Redacted.value(row.attr['databaseUrl'] as Redacted.Redacted<string>)).toBe(DIRECT_URL);
   });
+
+  test('a replaced legacy row read through getReplacedResources comes back migrated', async () => {
+    const replaced = {
+      ...legacyDatabaseRow(),
+      fqn: 'data-db-replaced',
+      status: 'replaced',
+      old: legacyDatabaseRow(),
+      deleteFirst: false,
+    } as unknown as CreatedResourceState;
+    const rows = (await runLayer((service) =>
+      Effect.gen(function* () {
+        yield* service.set({ stack, stage, fqn: 'data-db-replaced', value: replaced });
+        return yield* service.getReplacedResources({ stack, stage });
+      }),
+    )) as unknown as (MigratedRow & { old: MigratedRow })[];
+    const row = rows.find((r) => r['fqn'] === 'data-db-replaced');
+    expect(row).toBeDefined();
+    expect(row?.resourceType).toBe('Prisma.Database');
+    expect(row?.old.resourceType).toBe('Prisma.Database');
+    expect(row?.old.attr).toMatchObject({ databaseId: 'db-1', databaseName: 'data' });
+  });
 });

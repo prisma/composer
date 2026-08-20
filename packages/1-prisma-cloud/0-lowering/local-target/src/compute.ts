@@ -38,22 +38,22 @@ function appIdOfInput(value: unknown): string {
  */
 const artifactHashes = new Map<string, string>();
 
-function artifactSha256(artifactPath: string): string {
-  const stat = fs.statSync(artifactPath);
+async function artifactSha256(artifactPath: string): Promise<string> {
+  const stat = await fs.promises.stat(artifactPath);
   const identity = `${artifactPath}:${String(stat.size)}:${String(stat.mtimeMs)}`;
   const memoized = artifactHashes.get(identity);
   if (memoized !== undefined) return memoized;
   const hash = crypto.createHash('sha256');
-  const fd = fs.openSync(artifactPath, 'r');
+  const handle = await fs.promises.open(artifactPath, 'r');
   try {
     const buffer = Buffer.allocUnsafe(1024 * 1024);
-    let read = fs.readSync(fd, buffer, 0, buffer.length, null);
-    while (read > 0) {
-      hash.update(buffer.subarray(0, read));
-      read = fs.readSync(fd, buffer, 0, buffer.length, null);
+    let { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+    while (bytesRead > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+      ({ bytesRead } = await handle.read(buffer, 0, buffer.length, null));
     }
   } finally {
-    fs.closeSync(fd);
+    await handle.close();
   }
   const digest = hash.digest('hex');
   artifactHashes.set(identity, digest);
@@ -278,7 +278,7 @@ export function LocalDeploymentProvider(
           if (news.artifactPath === undefined) {
             throw new Error('local Deployment requires an artifactPath — nothing to run.');
           }
-          const artifactHash = artifactSha256(news.artifactPath);
+          const artifactHash = await artifactSha256(news.artifactPath);
 
           const artifactDir = path.join(input.devDir, 'artifacts', artifactHash);
           if (!fs.existsSync(artifactDir)) {

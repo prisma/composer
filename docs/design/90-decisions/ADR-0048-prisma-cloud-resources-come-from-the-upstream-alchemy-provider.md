@@ -147,8 +147,14 @@ seam.
 - **The platform's `DATABASE_URL` is left alone.** Prisma Cloud seeds
   `DATABASE_URL`/`DATABASE_URL_POOLED` on every app and marks them
   system-managed; upstream refuses to manage system-managed variables.
-  Composer neither overwrites nor tracks them. The guarantee that apps read
-  configuration through the framework is held at the authoring end instead:
+  Composer never overwrites, updates, deletes, or tracks them. It does CREATE
+  them, once, on a fresh Project: `application.provision` claims both names
+  with the placeholder `"-"` via create-only calls (`database-url-claim.ts`),
+  because the platform otherwise self-heals a missing `DATABASE_URL` on the
+  first compute deploy with a live credential to one of the app's own
+  databases. An existing row — platform-seeded or the operator's — makes the
+  claim a 409 no-op. The guarantee that apps read
+  configuration through the framework is held at the authoring end too:
   `param.ts`/`secret.ts` reject the reserved names, and every
   Composer-written row is `COMPOSER_`-prefixed. An app that reads
   `process.env.DATABASE_URL` directly sees whatever the platform put there.

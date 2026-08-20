@@ -100,9 +100,17 @@ export function fingerprintedArtifactPath(artifactPath: string, fingerprint: str
   if (!fs.existsSync(linked)) {
     try {
       fs.linkSync(artifactPath, linked);
-    } catch {
-      // A filesystem without hard links still gets the fingerprinted path.
-      fs.copyFileSync(artifactPath, linked);
+    } catch (error) {
+      // A concurrent run linked it between the existsSync and here — same
+      // bytes, nothing to do.
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+        // A filesystem without hard links still gets the fingerprinted path.
+        // Copy through a temp file and rename (same pattern as
+        // packageComputeArtifact) so no reader ever sees a partial artifact.
+        const tmp = `${linked}.tmp-${String(process.pid)}`;
+        fs.copyFileSync(artifactPath, tmp);
+        fs.renameSync(tmp, linked);
+      }
     }
   }
   return linked;

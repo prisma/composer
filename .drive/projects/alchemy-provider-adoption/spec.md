@@ -138,15 +138,13 @@ providers with its own local providers — today it is private and only
 
 # Open questions
 
-- **Compute vs App+Deployment**: adopt upstream's composite `Prisma.Compute`
-  (gains health-check + auto-rollback; env ordering owned internally) or the
-  low-level `App`+`Deployment` pair (closer to our current split; needs our own
-  env dependency edge)? Decide in the compute-family slice with the descriptor
-  rewiring in front of us.
-- **State migration mechanics**: rewrite rows in place (SQL migration in the
-  hosted store) vs `Provider.aliases` (beta.65+ mechanism) vs
-  destroy-and-recreate per stage? Decide in the migration slice after testing
-  aliases against a scratch stage.
+- ~~Compute vs App+Deployment~~ — resolved: the low-level `App`+`Deployment`
+  pair, with Composer's own env dependency edge (`deployment-edge.ts`). The
+  `COMPOSER_*_ORIGIN` self-edge needs the App before env rows, and composite
+  `Compute` owns a build path ADR-0005 rules out (ADR-0048, design-notes.md).
+- ~~State migration mechanics~~ — resolved: rows are rewritten on read in the
+  hosted store (`state/legacy-resources.ts`), with type-id aliases so old rows
+  resolve; no destroy-and-recreate (ADR-0048, design-notes.md).
 - ~~Which released beta first contains the provider~~ — resolved:
   `alchemy@2.0.0-beta.67` is the adopted pin.
 

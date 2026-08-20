@@ -171,8 +171,10 @@ for a while and is now restored (see the PRO-211 section above).
 **App delete retry budget: 5 minutes → about 4 seconds.** Composer's deleted
 `ComputeService` provider retried the platform's "did not reach a delete-safe
 state" 409 on an exponential schedule capped at 5 minutes. Upstream's
-`destroyApp` (`ComputeLifecycle.ts:276-310`) retries any conflict 5 times with
-250ms · 2^attempt between them — 3.75 seconds of waiting in total — and it does
+`destroyApp` (`ComputeLifecycle.ts:276-310`) retries any conflict up to 5
+times, sleeping 250ms · 2^attempt between consecutive attempts (four waits:
+250ms + 500ms + 1s + 2s = 3.75 seconds of waiting in total; the final failed
+attempt returns without sleeping) — and it does
 NOT drain the app's deployments first; it deletes the App and relies on the
 platform's cascade. Alchemy does delete a *tracked* `Prisma.Deployment` before
 the App that owns it, because the resource graph orders them, but any untracked

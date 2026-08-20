@@ -299,6 +299,7 @@ async function runStackPipelineInner(
   // runs here, in the parent, and the child re-imports the config from scratch,
   // so anything it learned reaches the lowering only through this transport.
   const preflightPayloads = new Map<string, string>();
+  let preflightTransportEnv: Record<string, string> = {};
 
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
@@ -417,6 +418,14 @@ async function runStackPipelineInner(
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
+      // Serialized HERE, not at the alchemy invocation below: a transport
+      // collision (two extension ids mapping to one env var) is a preflight
+      // failure, and must surface before the stack file is written.
+      try {
+        preflightTransportEnv = preflightEnv(preflightPayloads);
+      } catch (error) {
+        throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
+      }
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
@@ -468,7 +477,7 @@ async function runStackPipelineInner(
           cwd,
           stage: alchemyStage,
           containerEnv: containerEnv(containers),
-          preflightEnv: preflightEnv(preflightPayloads),
+          preflightEnv: preflightTransportEnv,
           env: {
             ...reporterChildEnv(reporters),
             [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,

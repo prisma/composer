@@ -78,10 +78,12 @@ and manual cleanup).
 
 ## The resource inventory
 
-Each row is an Alchemy resource type we define (Alchemy has no built-in types —
-it manages whatever a provider package registers).
+Each row is a resource type the lowering binds. The `Prisma.*` families are
+upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
+provider collection and defines resources only where no Management API exists
+behind them.
 
-| Our resource | PDP entity it manages | Props (in) | Outputs (out) | Notes |
+| Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
 | `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
 | `Prisma.Database` | Database | project, name?, region, branchId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |

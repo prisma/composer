@@ -21,8 +21,8 @@ Why: upstream tracks the Management API so we don't, and its deploy lifecycle is
 - **Foundation** — alchemy beta.59 → beta.67 (plus the forced effect beta.100 train). Our provider collection tag and remaining resource type-ids renamed to `PrismaComposer.*`; the old ids are aliases so existing state rows resolve.
 - **Postgres family** — upstream `Project`/`Database`/`Connection` classes, driven by our own auth layer (`PrismaEnvironment` from `PRISMA_SERVICE_TOKEN`, no interactive profile store; one base-URL resolver shared with our SDK client). Branch stages create their database attached with a generated physical name (upstream correctly refuses explicit-name-plus-branch; verified against PDP source). `directConnectionString` is bound explicitly — upstream's `databaseUrl` is pooled-first.
 - **Compute family** — upstream's low-level `App`/`Deployment`/`EnvironmentVariable`, not composite `Compute`: the `COMPOSER_*_ORIGIN` self-edge needs the App to exist before env rows, and `Deployment` has no build path at all (ADR-0005 by structure). The env→deployment ordering edge rides the deployment's `app` prop as an Output (`deployment-edge.ts`) — riding `artifactPath` would silently skip code deploys when a new env row lands in the same deploy (proven with tests against alchemy's real Output machinery, and re-proven live).
-- **Env changes always ship** (`always-redeploy.ts`) — the deploy hook hard-links the artifact into a per-deploy-generation path so every deploy replaces the deployment, restoring the pre-existing guarantee that a rotated value reaches the running app. Cost: one deployment replacement per service per deploy, same as before this PR's base. Removed at a marked seam when upstream's `Deployment.redeployOn` (in #1061) releases.
-- **Legacy state migrates on read** (`state/legacy-resources.ts`) — old type-ids and attribute shapes rewrite in the hosted store; the retired poison `DATABASE_URL` rows are reported `retained` (state row dropped, platform variable untouched). The platform's seeded `DATABASE_URL` is no longer overwritten; the authoring-side name ban remains.
+- **A deployment is replaced exactly when its environment changes** (`compute/deploy-fingerprint.ts`) — the artifact hard-link directory is named from a hash of the service's environment material, so upstream reuses the deployment when nothing changed and replaces it when the env or artifact did. The hashed material is non-secret by construction (ADR-0042 rows carry literals and pointers, never values); out-of-band rotation of a pointed platform variable is detected via its `updatedAt` metadata, read at preflight and carried across the CLI→Alchemy process boundary on a new preflight-transport channel. Swaps onto upstream's `Deployment.redeployOn` (in #1061) at a marked seam when it releases.
+- **Legacy state migrates on read** (`state/legacy-resources.ts`) — old type-ids and attribute shapes rewrite in the hosted store; the retired poison `DATABASE_URL` rows are reported `retained` (state row dropped, platform variable untouched). Fresh projects get the poison back by a different route: `application.provision` claims `DATABASE_URL`/`DATABASE_URL_POOLED` with `"-"` via create-only writes (never tracked as resources, never modified or deleted), because the platform otherwise self-heals a missing `DATABASE_URL` on first deploy with a live credential to one of the app's own databases. Existing rows — platform-seeded or ours — 409 and no-op. The authoring-side name ban remains.
 - **Local dev unchanged in shape** — the local target binds upstream's resource classes to our emulators at the same seam (ADR-0041).
 
 ## Verified
@@ -35,10 +35,11 @@ Why: upstream tracks the Management API so we don't, and its deploy lifecycle is
 
 - First deploy after upgrading replaces each service's deployment once.
 - Branch-stage databases migrate to generated physical names; the database's *default* connection credentials rotate once (the app's own connection is unaffected).
-- Migrated stages keep the legacy `"-"` placeholder rows on the platform until manually removed; the guide has the exact calls.
+- The `"-"` placeholder in `DATABASE_URL`/`DATABASE_URL_POOLED` is deliberate and self-restoring; deleting it by hand is not useful (the next deploy's claim or the platform's template filler recreates the row). A user-set value wins over both — the guide has the details.
 
 ## Follow-up (tracked in TML-3156)
 
-When upstream PR alchemy-run/alchemy#1061 merges and releases: bump alchemy, delete our bucket resources, drop the alchemy pnpm patch, and swap `always-redeploy.ts` for `Deployment.redeployOn`.
+When upstream PR alchemy-run/alchemy#1061 merges and releases: bump alchemy, delete our bucket resources (upstream now ships them with capability bindings), drop the alchemy pnpm patch, and move the deploy fingerprint onto `Deployment.redeployOn` at the marked seam.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+

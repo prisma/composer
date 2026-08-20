@@ -520,7 +520,10 @@ export function serializeInput(
     value: JSON.stringify(document),
     absent,
     generated,
-    secrets: [...sentinels.values()],
+    // Sorted and unique so the fingerprint depends only on the SET of
+    // referenced variables — a binding refactor that reorders or duplicates
+    // leaves must not replace the deployment.
+    secrets: [...new Set(sentinels.values())].sort(),
   };
 }
 

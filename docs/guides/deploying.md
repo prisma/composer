@@ -276,13 +276,15 @@ existing resources in place — deploy state is migrated automatically on read,
 and production environments redeploy with no changes to their databases or
 connections.
 
-**Every deploy ships a fresh deployment of every service**, changed code or
-not — the same behaviour earlier framework versions had. It is what guarantees
-a configuration change always reaches your running services: the platform
-freezes a deployment's environment when the deployment is created, so a
-changed value only takes effect through a new one. The deploy uploads the
-artifact it already has, starts it, moves the stable endpoint over, and
-removes the old deployment; your service's URL does not change.
+**A service's deployment is replaced exactly when its artifact or environment
+changed, and reused otherwise.** The platform freezes a deployment's
+environment when the deployment is created, so a changed value only takes
+effect through a new one — the framework fingerprints each service's
+environment material into the artifact path, so a changed variable (or an
+out-of-band rotation of a platform variable a row points at) ships a new
+deployment, and an unchanged service redeploys nothing. A replacement uploads
+the artifact, starts it, moves the stable endpoint over, and removes the old
+deployment; your service's URL does not change.
 
 **`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the
 framework never modifies or deletes them.** At provision the framework claims
