@@ -39,7 +39,7 @@ Why: upstream tracks the Management API so we don't, and its deploy lifecycle is
 
 ## Follow-up (tracked in TML-3156)
 
-When upstream PR alchemy-run/alchemy#1061 merges and releases: bump alchemy, delete our bucket resources (upstream now ships them with capability bindings), drop the alchemy pnpm patch, and move the deploy fingerprint onto `Deployment.redeployOn` at the marked seam.
+Upstream PR alchemy-run/alchemy#1061 merged 2026-08-18; the swap below waits on the first alchemy release containing it (the latest release, 2.0.0-beta.72, predates the merge). Then: bump alchemy, delete our bucket resources (upstream now ships them with capability bindings), drop the alchemy pnpm patch, and move the deploy fingerprint onto `Deployment.redeployOn` at the marked seam.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
