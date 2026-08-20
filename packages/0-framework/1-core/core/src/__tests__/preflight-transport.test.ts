@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { containerEnvVarName } from '../container-transport.ts';
 import { preflightEnv, preflightEnvVarName, readPreflightPayload } from '../preflight-transport.ts';
 
 describe('preflightEnvVarName()', () => {
@@ -10,7 +11,7 @@ describe('preflightEnvVarName()', () => {
 
   test('never collides with the container transport variable for the same extension', () => {
     expect(preflightEnvVarName('@prisma/composer-prisma-cloud')).not.toBe(
-      'PRISMA_COMPOSER_CONTAINER_PRISMA_COMPOSER_PRISMA_CLOUD',
+      containerEnvVarName('@prisma/composer-prisma-cloud'),
     );
   });
 });

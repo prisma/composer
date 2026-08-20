@@ -677,13 +677,14 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       ]);
       // The same three rows as the deploy hook fingerprints them: the
       // service's OWN literal param is config and is hashed as text; the
-      // dependency input's value is a provisioning ref (a connection string)
-      // and the provider param's may be a minted key, so both are withheld and
-      // named by the resources they are built from. Under these mocks a value
-      // is already resolved, so it has no upstream resources and the name is
-      // empty; the real Output machinery puts the resource names there.
+      // provider param's may be a minted key, so it is withheld and named by
+      // the resources it is built from. The dependency input's value is
+      // RESOLVED under these mocks (no upstream resources), so it is treated
+      // as authored config and hashed as text — in a real deploy a
+      // resource-built connection string is still an Output and stays
+      // withheld with the resource names.
       expect(result.envFingerprint).toEqual([
-        { key: 'COMPOSER_AUTH_DB_URL', withheld: 'input.db:' },
+        { key: 'COMPOSER_AUTH_DB_URL', value: 'postgres://real-db' },
         { key: 'COMPOSER_AUTH_PORT', value: '3000' },
         { key: 'COMPOSER_AUTH_ORIGIN', withheld: 'provider.ORIGIN:' },
       ]);

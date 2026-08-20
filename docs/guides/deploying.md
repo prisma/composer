@@ -286,6 +286,15 @@ deployment, and an unchanged service redeploys nothing. A replacement uploads
 the artifact, starts it, moves the stable endpoint over, and removes the old
 deployment; your service's URL does not change.
 
+One exception: secret VALUES never enter the fingerprint (by design — no
+secret-derived material may land in a path or state row). A secret re-issued
+under the same resource identity — a connection rotated in place, a re-minted
+service key — does not move the fingerprint, so the running deployment keeps
+the old value until the next deploy whose artifact or environment changed.
+Rotating a platform variable a row points at IS detected (via its `updatedAt`
+metadata); after an in-place re-issue that must ship immediately, deploy any
+code or environment change to force the replacement.
+
 **`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the
 framework never modifies or deletes them.** At provision the framework claims
 both names (production and preview class, project level) with the placeholder,

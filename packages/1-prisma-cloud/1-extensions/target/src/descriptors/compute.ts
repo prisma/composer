@@ -167,8 +167,16 @@ export function computeDescriptor(
               value: rowValue,
               ...(pointer !== undefined ? { pointers: [pointer] } : {}),
             });
-          } else {
+          } else if (Object.keys(Output.upstreamAny(value)).length > 0) {
             fingerprint.push({ key, withheld: withheldSource(`input.${d.owner.input}`, value) });
+          } else {
+            // A dependency value already RESOLVED at plan time traces back to
+            // authored config (ADR-0042 routes secret values through pointers
+            // and resources, which are still Outputs here), so its text is
+            // hashed like a literal — a changed producer setting (e.g. a
+            // store's bucket) must move the consumer's fingerprint. Anything
+            // resource-built is still an Output and stays withheld above.
+            fingerprint.push({ key, value: rowValue });
           }
         }
 
@@ -325,6 +333,14 @@ export function computeDescriptor(
         // no platform preflight, so no rotation timestamps exist. That costs
         // nothing — the local Deployment provider reconciles unconditionally.
         const pointerUpdatedAt = o().pointerUpdatedAt;
+        // Effect.try, like the package hook: the hard-link/copy is filesystem
+        // work whose failure is a deploy error, not a defect.
+        const artifactPath = yield* Effect.try(() =>
+          fingerprintedArtifactPath(
+            artifact.path,
+            deployEnvFingerprint(serialized.envFingerprint, pointerUpdatedAt),
+          ),
+        );
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
@@ -336,10 +352,7 @@ export function computeDescriptor(
           // otherwise — see `deploy-fingerprint.ts` for what the hash covers,
           // why no secret reaches it, and the hand-off to upstream's
           // `redeployOn`.
-          artifactPath: fingerprintedArtifactPath(
-            artifact.path,
-            deployEnvFingerprint(serialized.envFingerprint, pointerUpdatedAt),
-          ),
+          artifactPath,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.

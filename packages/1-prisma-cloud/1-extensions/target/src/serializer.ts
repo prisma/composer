@@ -514,16 +514,18 @@ export function serializeInput(
         'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
     );
   }
-  const document = substitutePointers(validated, sentinels, generated, address);
+  const emittedSecrets = new Set<string>();
+  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
   return {
     key: inputKey(address),
     value: JSON.stringify(document),
     absent,
     generated,
-    // Sorted and unique so the fingerprint depends only on the SET of
-    // referenced variables — a binding refactor that reorders or duplicates
-    // leaves must not replace the deployment.
-    secrets: [...new Set(sentinels.values())].sort(),
+    // The names the DOCUMENT actually carries (a schema transform can drop a
+    // bound leaf), sorted and unique: the fingerprint depends only on the set
+    // of referenced variables, so a binding refactor that reorders or
+    // duplicates leaves cannot move it.
+    secrets: [...emittedSecrets].sort(),
   };
 }
 
@@ -544,6 +546,7 @@ function substitutePointers(
   sentinels: ReadonlyMap<SecretString, string>,
   generated: readonly GeneratedLeaf[],
   address: string,
+  emittedSecrets?: Set<string>,
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
@@ -558,6 +561,7 @@ function substitutePointers(
             "platform variable); bind the field with envSecret('NAME') instead.",
         );
       }
+      emittedSecrets?.add(name);
       return { [SECRET_MARKER]: name };
     }
     if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));

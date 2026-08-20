@@ -120,21 +120,21 @@ providers with its own local providers — today it is private and only
 
 # Project DoD
 
-- [ ] Composer's six overlapping resource implementations are deleted;
+- [x] Composer's six overlapping resource implementations are deleted;
       lowering/descriptors consume `alchemy/Prisma` classes.
-- [ ] `alchemy` pinned at a released version ≥ the first beta containing the
+- [x] `alchemy` pinned at a released version ≥ the first beta containing the
       Prisma provider; CI green.
-- [ ] A pre-existing deployed stage (created before the migration) deploys and
+- [x] A pre-existing deployed stage (created before the migration) deploys and
       destroys cleanly on the new stack.
-- [ ] Local dev (`prisma-composer dev`) runs the full example topology on the
+- [x] Local dev (`prisma-composer dev`) runs the full example topology on the
       emulators against upstream resource shapes.
-- [ ] Deployed smoke suite passes (storefront-auth or equivalent example) on
+- [x] Deployed smoke suite passes (storefront-auth or equivalent example) on
       Prisma Cloud.
-- [ ] Object-storage resources PR and state-store PR opened upstream (merge is
+- [x] Object-storage resources PR and state-store PR opened upstream (merge is
       not in our gift; opened + review-responsive is the bar).
-- [ ] The upstream ask (export `liveProviderLayer` or equivalent) is filed and
+- [x] The upstream ask (export `liveProviderLayer` or equivalent) is filed and
       either landed or worked around per the transitional constraint.
-- [ ] ADR recorded documenting the adoption and the revised local-dev seam.
+- [x] ADR recorded documenting the adoption and the revised local-dev seam (ADR-0048).
 
 # Open questions
 

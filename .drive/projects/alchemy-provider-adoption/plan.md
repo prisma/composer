@@ -37,11 +37,10 @@ emulator provider.
 
 ### Slice 3 — Upstream contributions (TML-3156) — parallel
 
-Fork alchemy-run/alchemy (wmadden-electric), then two upstream PRs: bucket
-resources; generic `postgresState` backend. Plus the one-line
-`liveProviderLayer` export ask (filed early — slice 1 consumes it if it lands
-in time, otherwise uses the transitional local rebuild). `PgWarm` offered in
-the same conversation.
+Fork alchemy-run/alchemy (wmadden-electric), then ONE implementation PR
+(per the operator override below): `liveProviderLayer` export, bucket
+resources, and the generic `postgresState` backend, implemented directly —
+no asks filed. `PgWarm` offered in the same conversation.
 
 - **Builds on:** nothing (written against upstream shapes directly).
 - **Hands to:** slice-1 dependency softening (the export); Composer bucket

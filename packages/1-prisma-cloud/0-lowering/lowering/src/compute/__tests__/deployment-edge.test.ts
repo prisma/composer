@@ -166,6 +166,17 @@ describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
     );
   });
 
+  test('the combined expression still resolves to the app id — not a variable id or tuple', () => {
+    const resolved = Effect.runSync(
+      Output.evaluate(appAfterEnvironment(app.appId, environment), {
+        'auth-svc': { appId: 'app-123' },
+        'COMPOSER_AUTH_PORT-var': { environmentVariableId: 'var-1' },
+        'COMPOSER_AUTH_DB_URL-var': { environmentVariableId: 'var-2' },
+      }) as Effect.Effect<string>,
+    );
+    expect(resolved).toBe('app-123');
+  });
+
   test('a service with no variables passes the app id straight through', () => {
     expect(Object.keys(Output.upstreamAny({ app: appAfterEnvironment(app.appId, []) }))).toEqual([
       'auth-svc',

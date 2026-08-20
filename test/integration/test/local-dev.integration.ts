@@ -550,7 +550,14 @@ async function main(): Promise<void> {
     // fixture's own /health response (captured above, before webInfo existed
     // to compare against) rather than by reading env.json for a key it never
     // receives.
-    const env = readJson(path.join(devDir, 'env.json')) as Record<string, string>;
+    const envRaw = readJson(path.join(devDir, 'env.json'));
+    assert(
+      typeof envRaw === 'object' && envRaw !== null,
+      'env.json exists and parses to an object',
+    );
+    const env = envRaw as Record<string, string>;
+    // Non-empty first: an empty object would vacuously pass every check below.
+    assert(Object.keys(env).length > 0, 'env.json carries the deploy-written rows');
     assertEqual(env['DATABASE_URL'], undefined, 'env.json holds no DATABASE_URL row');
     assertEqual(env['DATABASE_URL_POOLED'], undefined, 'env.json holds no DATABASE_URL_POOLED row');
     assertEqual(

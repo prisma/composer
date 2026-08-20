@@ -80,8 +80,8 @@ and manual cleanup).
 
 Each row is a resource type the lowering binds. The `Prisma.*` families are
 upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
-provider collection and defines resources only where no Management API exists
-behind them.
+provider collection and defines resources only where the upstream provider
+has no support yet (buckets) or no Management API exists behind them.
 
 | Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |

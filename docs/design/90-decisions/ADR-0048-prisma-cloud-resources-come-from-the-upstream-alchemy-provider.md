@@ -4,8 +4,9 @@
 
 Composer does not implement Alchemy resources for Prisma Cloud's Management
 API. It composes the official `alchemy/Prisma` provider's resources and
-providers, and defines its own resources only where no Management API exists
-behind them.
+providers, and defines its own resources only where the upstream provider has
+no support yet (buckets, whose routes upstream deferred) or where no
+Management API exists behind them (local mechanisms like migration steps).
 
 The live wiring is composition, not implementation:
 
@@ -136,6 +137,11 @@ seam.
   hosted state store (`state/legacy-resources.ts`): ids, attribute shapes,
   and the retirement of the legacy claim rows below. The module is the durable
   compatibility boundary for state written by earlier Composer versions.
+  Scope: "legacy" here means rows already INSIDE the platform state API
+  (ADR-0045), written under retired type-ids or shapes. The older generation —
+  the retired SQL `prisma-composer-state` stores — stays under ADR-0045's own
+  rule: never read, cleaned up by destroy or Branch deletion. The two rules
+  govern different stores and do not overlap.
 - **Branch-stage databases carry generated physical names.** Upstream
   refuses an explicit name combined with branch attachment at create — and
   it is right to: the Management API creates the database and attaches the

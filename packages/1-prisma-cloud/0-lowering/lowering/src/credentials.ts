@@ -72,9 +72,15 @@ const normalizeBaseUrl = (value: string): Effect.Effect<string, Error> =>
  * `PRISMA_API_URL`, then `PRISMA_MANAGEMENT_API_URL`, then the public origin,
  * normalized and validated identically.
  */
-export const managementApiBaseUrl = (): Effect.Effect<string, Config.ConfigError | Error> =>
-  Config.string('PRISMA_API_URL').pipe(
-    Config.orElse(() => Config.string('PRISMA_MANAGEMENT_API_URL')),
-    Config.withDefault(DEFAULT_BASE_URL),
-    Effect.flatMap(normalizeBaseUrl),
-  );
+export const managementApiBaseUrl = (
+  env?: Readonly<Record<string, string | undefined>>,
+): Effect.Effect<string, Config.ConfigError | Error> =>
+  env !== undefined
+    ? normalizeBaseUrl(
+        env['PRISMA_API_URL'] ?? env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_BASE_URL,
+      )
+    : Config.string('PRISMA_API_URL').pipe(
+        Config.orElse(() => Config.string('PRISMA_MANAGEMENT_API_URL')),
+        Config.withDefault(DEFAULT_BASE_URL),
+        Effect.flatMap(normalizeBaseUrl),
+      );

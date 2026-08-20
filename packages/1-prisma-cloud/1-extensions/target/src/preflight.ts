@@ -136,7 +136,11 @@ async function readPlatformVariable(
       for (const row of data) {
         if (!visible(row)) continue;
         exists = true;
-        if (latest === undefined || row.updatedAt > latest) latest = row.updatedAt;
+        // Parsed, not string-compared: lexicographic order breaks the moment
+        // two rows serialize with different precision or UTC designators.
+        if (latest === undefined || Date.parse(row.updatedAt) > Date.parse(latest)) {
+          latest = row.updatedAt;
+        }
       }
       return false;
     },

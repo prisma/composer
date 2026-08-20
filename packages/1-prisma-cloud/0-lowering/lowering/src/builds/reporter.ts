@@ -125,7 +125,7 @@ async function beginSession(
         injected ??
         createManagementApiClient({
           token: token ?? '',
-          baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl()),
+          baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
         }),
       warn,
     });

@@ -571,6 +571,34 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
       expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-07-07T12:00:00.000Z');
     });
 
+    test('the NEWER row wins even when it is the template, not the branch override', async () => {
+      state.rows = [
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: null,
+          updatedAt: '2026-08-08T12:00:00.000Z',
+        },
+        {
+          projectId: 'proj',
+          class: 'preview',
+          key: 'STRIPE_SECRET_KEY',
+          branchId: 'br-1',
+          updatedAt: '2026-07-07T12:00:00.000Z',
+        },
+      ];
+
+      const timestamps = await runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', 'br-1'), stage: 'feature' },
+        { client: fakeClient(state) },
+      );
+
+      // Recency, not scope precedence: the rotation signal is the newest write
+      // among every row visible to this stage.
+      expect(timestamps.get('STRIPE_SECRET_KEY')).toBe('2026-08-08T12:00:00.000Z');
+    });
+
     test('a row belonging to ANOTHER branch is not in scope and does not date this one', async () => {
       state.rows = [
         {

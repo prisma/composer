@@ -27,13 +27,11 @@ const DEFAULT_REGION = 'us-east-1';
 const ARTIFACT_CONTENT_TYPE = 'application/gzip';
 
 /**
- * The keys the platform seeds and owns. Composer used to overwrite them with a
- * garbage value so nothing could rely on the platform default; upstream
- * refuses to manage a variable the platform marks `isManagedBySystem`, so
- * those writes are gone (see control/extension.ts) and the rows they left
- * behind are disposed of here.
+ * The reserved keys older Composer versions claimed through tracked
+ * EnvironmentVariable resources. Today the claim is a create-only API call
+ * outside deploy state (database-url-claim.ts), so the tracked rows those
+ * versions left behind are disposed of here.
  */
-/** The reserved keys older Composer versions claimed through EnvironmentVariable resources (see database-url-claim.ts). */
 const CLAIMED_DATABASE_URL_KEYS: ReadonlySet<string> = new Set([
   'DATABASE_URL',
   'DATABASE_URL_POOLED',
