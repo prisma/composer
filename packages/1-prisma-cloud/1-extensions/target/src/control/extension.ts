@@ -11,6 +11,7 @@ import * as Prisma from '@internal/lowering';
 import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
 import * as Output from 'alchemy/Output';
+import * as AlchemyPrisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import {
@@ -40,6 +41,7 @@ import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
+import { pointerUpdatedAtLookup, serializePointerUpdatedAt } from './pointer-timestamps.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -152,7 +154,7 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
   Output.map(provisioned.endpointDomain, (v) => {
     if (v === undefined) {
       throw new Error(
-        `ComputeService for "${address}" reported no endpointDomain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
+        `the App for "${address}" reported no endpoint domain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
       );
     }
     return v;
@@ -175,15 +177,15 @@ export interface PrismaCloudOptions {
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
-  region?: Prisma.ComputeRegion;
+  region?: AlchemyPrisma.Types.PrismaRegionId;
 }
 
-// Prisma.COMPUTE_REGIONS is the runtime source of truth ComputeRegion is
+// Upstream's KNOWN_REGION_IDS is the runtime source of truth PrismaRegionId is
 // derived from, so this can never fall behind — no hand-maintained list, no
 // exhaustiveness gymnastics to keep it honest.
-const KNOWN_REGION_SET: ReadonlySet<string> = new Set(Prisma.COMPUTE_REGIONS);
+const KNOWN_REGION_SET: ReadonlySet<string> = new Set(AlchemyPrisma.KNOWN_REGION_IDS);
 
-function isComputeRegion(value: string): value is Prisma.ComputeRegion {
+function isComputeRegion(value: string): value is AlchemyPrisma.Types.PrismaRegionId {
   return KNOWN_REGION_SET.has(value);
 }
 
@@ -282,7 +284,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * anything else — required for `prisma-composer dev`, which never sets
  * `PRISMA_REGION` and must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
+function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -296,7 +298,7 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   if (!isComputeRegion(region)) {
     throw new Error(
       `prismaCloud(): environment variable PRISMA_REGION="${region}" is not a known region ` +
-        `(expected one of: ${Prisma.COMPUTE_REGIONS.join(', ')}).`,
+        `(expected one of: ${AlchemyPrisma.KNOWN_REGION_IDS.join(', ')}).`,
     );
   }
   return { workspaceId, region, providerParams: PROVIDER_PARAMS };
@@ -310,17 +312,26 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
  * environment present, since it also builds the `localTarget` descriptor, which must
  * never require `PRISMA_WORKSPACE_ID`/`PRISMA_REGION`/`PRISMA_SERVICE_TOKEN`.
  */
-function lazyOptions(opts: PrismaCloudOptions): () => ResolvedCloudOptions {
+function lazyOptions(
+  opts: PrismaCloudOptions,
+  pointerUpdatedAt: Prisma.PointerUpdatedAt,
+): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= resolveOptions(opts);
+    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
     return cached;
   };
 }
 
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  const o = lazyOptions(opts);
+  // When each pointed-at platform variable was last written — filled by the
+  // deploy preflight, read by the environment fingerprint. A closure, not a
+  // module variable, so two `prismaCloud()` extensions cannot share it. In
+  // the alchemy process (no preflight) the lookup falls back to what the CLI
+  // transported (pointer-timestamps.ts).
+  const preflightTimestamps = new Map<string, string>();
+  const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
@@ -342,10 +353,15 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
-    // The parameter annotation is what recovers this extension's own client
-    // type from the framework's erased one; without it `input.credentials`
-    // arrives as `unknown` and the call below stops compiling.
-    preflight: (input: PrismaCloudPreflightInput) => runPreflight(input),
+    // Timestamps are kept for this process AND serialized onto the preflight
+    // transport for the alchemy process. The parameter annotation is what
+    // recovers this extension's own client type from the framework's erased
+    // one; without it `input.credentials` arrives as `unknown`.
+    preflight: (input: PrismaCloudPreflightInput) =>
+      runPreflight(input).then((timestamps) => {
+        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
+        return serializePointerUpdatedAt(timestamps);
+      }),
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the
@@ -356,28 +372,16 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // to the stage's Branch — deleting the Branch/Project deletes it
     // platform-side.
 
-    // Runs once per lowering, before any service: references the CLI-ensured
-    // Project, with the poison DATABASE_URL variables written immediately so
-    // nothing can ever rely on the platform default. Per-binding service keys
-    // are no longer minted here (ADR-0031): core's provision phase invokes
-    // `provisions` below, graph-wide, before any service lowers.
+    // Runs once per lowering, before any service: resolves the CLI-ensured
+    // Project into the application handle, and claims the project's
+    // `DATABASE_URL`/`DATABASE_URL_POOLED` with a placeholder
+    // (`claimDatabaseUrlKeys` explains why). Create-only and outside the
+    // resource graph — alchemy never plans a write or delete for them.
     application: {
       provision: (ctx) =>
         Effect.gen(function* () {
           const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
-          for (const key of ['DATABASE_URL', 'DATABASE_URL_POOLED']) {
-            yield* Prisma.EnvironmentVariable(`${key}-poison`, {
-              projectId,
-              key,
-              // "-", not "": the API rejects empty env-var values with
-              // "String must contain at least 1 character" (verified at the R4
-              // deploy proof). Any garbage value fails a real connect loudly.
-              value: '-',
-              class: branchId ? 'preview' : 'production',
-              ...(branchId !== undefined ? { branchId } : {}),
-            });
-          }
-
+          yield* Prisma.claimDatabaseUrlKeys(projectId);
           return { projectId, branchId } satisfies CloudApplication;
         }),
     },

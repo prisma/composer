@@ -268,6 +268,27 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 - Branch-hosted generation: destroying on the old version already removed the environment's `prisma-composer-state` database. If you skipped that and deleted Branches by hand instead, each Branch took its database with it — but production's, on the default Branch, survives: delete it in the Console.
 - Workspace-hosted generation: delete the workspace-level `prisma-composer-state` project from the Console.
 
+## Upgrading to the upstream Prisma resources
+
+Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and production environments redeploy with no changes to their databases or connections. Stages still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
+
+**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework fingerprints each service's environment material into the artifact path, so a changed variable (or an out-of-band rotation of a platform variable a row points at) ships a new deployment, and an unchanged service redeploys nothing. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
+
+One exception: secret VALUES never enter the fingerprint (by design — no secret-derived material may land in a path or state row). A secret re-issued under the same resource identity — a connection rotated in place, a re-minted service key — does not move the fingerprint, so the running deployment keeps the old value until the next deploy whose artifact or environment changed. Rotating a platform variable a row points at IS detected (via its `updatedAt` metadata); after an in-place re-issue that must ship immediately, deploy any code or environment change to force the replacement.
+
+**`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the framework never modifies or deletes them.** At provision the framework claims both names (production and preview class, project level) with the placeholder, using create-only writes: if the variable already exists — yours, or one Prisma Cloud seeded — the claim does nothing. The placeholder is deliberate. Without it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a live credential to one of your app's own databases, and anything reading `process.env.DATABASE_URL` directly would quietly work against a database it was never wired to. With it, a direct read fails loudly. Nothing you declare can carry those names — `envSecret`/`envParam` reject them — and every database URL your services use comes from the connection they declare.
+
+On the first deploy after the upgrade, the framework also **stops tracking** the two variables in deploy state. The deploy log reports them as `retained`: the entry is dropped from state and no call is made to Prisma Cloud.
+
+Deleting the variables by hand is not useful: the next deploy's claim (or the platform's own template filler) recreates them. If you genuinely want a value there — for a tool outside the framework that insists on `DATABASE_URL` — set your own value in the Console; both the framework's claim and the platform's filler are create-only and will leave your value alone.
+
+**Stage (`--stage`) environments see two one-time effects on their first deploy after the upgrade**, because a branch-attached database can no longer carry an explicit display name at create:
+
+- Each existing stage database is **renamed** to a generated physical name (`<app>-<resource>-db-<stage>-<suffix>`). The database itself, its data, and its ID are untouched — only the display name in the Console changes.
+- The database's **default connection credentials are rotated** during that same reconcile. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (for example, copied out of the Console) stop working and must be re-issued.
+
+Local dev state is not migrated: if `prisma-composer dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
+
 ## Driving deploys from code
 
 Everything the CLI does is also callable in-process, from

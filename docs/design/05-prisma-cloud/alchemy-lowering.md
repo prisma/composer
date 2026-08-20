@@ -1,9 +1,15 @@
-# Alchemy ↔ PDP — the resources we define and how they map
+# Alchemy ↔ PDP — the resources we bind and how they map
 
-The Alchemy resource types `packages/prisma-alchemy` defines over the
+The Alchemy resource types Composer lowers to over the
 [PDP data model](pdp-data-model.md), the mapping in both directions, and the
 lowering graphs — including the correction that makes deploy ordering a property
 of the dependency graph rather than luck.
+
+The postgres family (`Project`, `Database`, `Connection`) and the compute
+family (`App`, `Deployment`, `EnvironmentVariable`) are **upstream alchemy's**
+(`alchemy/Prisma`), not ours: Composer registers their providers and binds their
+props. What `@internal/lowering` still owns is the artifact packager, the
+buckets, `ServiceKey`, and the hosted state store.
 
 ## Placement: one Project per application, one Branch per stage
 
@@ -38,41 +44,53 @@ Alchemy only diffs and provisions the resources *inside* a (Project, Branch),
 never the container itself (see
 [§ Stages and container resolution](#stages-and-container-resolution)).
 
-## `DATABASE_URL` is forbidden — and actively poisoned
+## `DATABASE_URL` is forbidden — and left to the platform
 
 The platform writes `DATABASE_URL` / `DATABASE_URL_POOLED` templates pointing at
 a project's default database — a convenience for hand-provisioned single
 services, and precisely the kind of **implicit ambient config the framework
-exists to eliminate**. The framework never reads it, never depends on it, and
-makes reliance on it impossible. First, the framework creates Projects with
-`createDatabase: false`, so **no default database exists at all** on a
-framework-provisioned Project (the opt-out is workspace-actor-only — fine,
-deploys authenticate with service tokens). Second, as defense in depth (and
-for Projects created before the opt-out, or adopted by name): when the
-framework provisions a Project, it **writes user-level
-`DATABASE_URL` and `DATABASE_URL_POOLED` variables with a poison value** (`"-"` —
-a garbage value any direct reader fails to connect with; the API rejects an empty
-string, `"String must contain at least 1 character"`, verified at the R4 deploy
-proof). User-set values
-permanently override the platform templates (`wireDefaultDatabaseUrl` leaves
-them untouched), so nothing deployed by the framework can ever quietly work
-off the default again. Every database URL a service consumes is an explicit,
-per-service
-variable the pack's `serialize` writes under its own named key.
+exists to eliminate**. The framework never reads it and never depends on it.
+Framework-provisioned Projects are created with `createDatabase: false`, so no
+default database exists on them — but that alone does not keep the variable
+away: the platform self-heals a missing `DATABASE_URL` template on the first
+Compute deploy, wiring it from any ready database on the Project (default
+first, then oldest) — on a Composer Project, one of the app's own databases.
+
+So the framework claims the keys first. `application.provision` writes
+`DATABASE_URL` and `DATABASE_URL_POOLED` (production and preview class,
+project-level) with the placeholder value `"-"` via create-only calls
+(`lowering/src/database-url-claim.ts`). The platform's writes are also
+create-only, so whoever writes first wins permanently: on a fresh Project the
+claim lands first and the self-heal never fires; on a Project whose variables
+the platform already seeded, the claim gets a 409 and no-ops. The rows are
+plain platform variables, never Alchemy resources — nothing enters deploy
+state and upstream's `EnvironmentVariable` never owns them. Alongside the
+claim, the authoring-side ban holds: `param.ts` and `secret.ts` reject both
+names, so no Composer-declared row can carry one. Every database URL a
+service actually consumes is an explicit, per-service variable the pack's
+`serialize` writes under its own named key, inside the `COMPOSER_` namespace.
+
+A service that reads `process.env.DATABASE_URL` behind the framework's back
+therefore reads the placeholder `"-"` and fails loudly — or, on a Project the
+platform seeded before the framework ever deployed to it, the platform's own
+template ([deploying.md](../../guides/deploying.md) covers the leftover rows
+and manual cleanup).
 
 ## The resource inventory
 
-Each row is an Alchemy resource type we define (Alchemy has no built-in types —
-it manages whatever a provider package registers).
+Each row is a resource type the lowering binds. The `Prisma.*` families are
+upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
+provider collection and defines resources only where the upstream provider
+has no support yet (buckets) or no Management API exists behind them.
 
-| Our resource | PDP entity it manages | Props (in) | Outputs (out) | Notes |
+| Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
-| `Project` | Project | workspaceId, name | id | **one per Prisma Composer application**; the poison `DATABASE_URL` variables are written at provision (see above) |
-| `Database` | Database | projectId, name | id, connection info | one per Module-provisioned postgres resource; never the project default; created project-scoped, then attached to a named stage's Branch by a follow-up `PATCH` (the create body doesn't accept `branchId`) |
-| `Connection` | database connection info | databaseId | url | direct/pooled endpoints; the url is written as the service's own named variable via the pack's `serialize` |
-| `ComputeService` | App | projectId, name, region, branchId? | id | `branchId` in the create body targets a named stage's Branch directly; omitted, PDP attaches it to the Project's default (production) Branch |
-| `EnvironmentVariable` | ConfigVariable | projectId, class, key, value, branchId? | id | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage |
-| `Deployment` | Deployment (ComputeVersion) + Promotion | computeServiceId, artifactPath, artifactHash, port, **environment** (the env-var records the version boots with — see the graphs below) | versionId, deployedUrl | provider reconcile: create version → upload tar.gz → start → poll until running → promote; `deployedUrl` read **post-promote** (create-time domain is a placeholder — PRO-200) |
+| `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
+| `Prisma.Database` | Database | project, name?, region, branchId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
+| `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
+| `Prisma.App` | App | project, displayName, regionId, branchId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
+| `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
+| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint moves |
 
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
@@ -119,7 +137,8 @@ logic is untouched.
   resolved and its lifecycle managed by the CLI's container-resolution
   client, outside the Alchemy graph entirely (see
   [§ Stages and container resolution](#stages-and-container-resolution)).
-  `serviceEndpointDomain` surfaces only as `Deployment.deployedUrl`.
+  `serviceEndpointDomain` surfaces as `App.appEndpointDomain` (before the first
+  deploy) and `Deployment.appEndpointDomain` (post-promote).
 
 ## The lowering graphs
 
@@ -143,54 +162,73 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph P [Project: storefront-auth]
-    POISON["EnvironmentVariable(DATABASE_URL = poison)"]
     DBa[(Database auth-db)] --> Ca[Connection] -- url --> EVa["EnvironmentVariable(AUTH_DB_URL)"]
     DBs[(Database storefront-db)] --> Cs[Connection] -- url --> EVs["EnvironmentVariable(STOREFRONT_DB_URL)"]
-    Sa[ComputeService auth] --> Da[Deployment_a]
-    Ss[ComputeService storefront] --> Ds[Deployment_s]
-    EVa -- record ref --> Da
-    EVs -- record ref --> Ds
-    Da -- deployedUrl --> EVu["EnvironmentVariable(STOREFRONT_AUTH_URL)"]
-    EVu -- record ref --> Ds
+    Sa[App auth] --> Da[Deployment_a]
+    Ss[App storefront] --> Ds[Deployment_s]
+    EVa -- id ref --> Da
+    EVs -- id ref --> Ds
+    Da -- appEndpointDomain --> EVu["EnvironmentVariable(STOREFRONT_AUTH_URL)"]
+    EVu -- id ref --> Ds
   end
 ```
 
 How the pieces map:
 
-- **The application** lowers to one `Project`, provisioned first, with the
-  poison `DATABASE_URL` variables written immediately (nothing downstream can
-  depend on the default).
-- **Each service** lowers to a `ComputeService → Deployment` chain plus its own
+- **The application** lowers to one `Project`, resolved by the CLI before
+  Alchemy runs. It provisions no variables of its own.
+- **Each service** lowers to an `App → Deployment` chain plus its own
   `Database → Connection`, whose url is written as that service's **explicitly
   named** variable — the same `serialize` path as any other config value.
-- **The connection** lowers to two edges: the producer's `deployedUrl` flows
-  into a named `EnvironmentVariable`, and that variable's **record reference
-  flows into the consumer's `Deployment`** via its `environment` prop.
-- Every `EnvironmentVariable` a Deployment boots with appears in its
-  `environment` prop — database URLs and connection URLs alike — so the version
+- **The connection** lowers to two edges: the producer's endpoint domain flows
+  into a named `EnvironmentVariable`, and that variable's **id flows into the
+  consumer's `Deployment`** through its `app` prop.
+- Every `EnvironmentVariable` a Deployment boots with is threaded into its
+  `app` — database URLs and connection URLs alike — so the deployment
   depends on its config being written first.
-- The Deployment's `port` prop rides the same seam: `serialize` resolves the
-  service's `port` param from the typed Config and surfaces it in its outputs,
-  and `deploy` routes the platform to it — so the routed port and the `PORT`
-  the app binds trace to one value and cannot drift.
+- The Deployment's `portMapping.http` rides the same seam: `serialize` resolves
+  the service's `port` param from the typed Config and surfaces it in its
+  outputs, and `deploy` routes the platform to it — so the routed port and the
+  `PORT` the app binds trace to one value and cannot drift.
 
-The `environment` prop is essential and mirrors PDP's own dataflow — the
-version-create call literally contains the materialized env map, so the
-environment is genuinely an input to a version (see the
+That ordering edge is essential and mirrors PDP's own dataflow — the
+deployment-create call literally contains the materialized env map, so the
+environment is genuinely an input to a deployment (see the
 [config lifecycle](pdp-data-model.md#the-config-lifecycle--what-is-resolved-when)).
-The edge's job today is **ordering**: the variable write completes before
-version-create, so the first version boots with a complete environment. Without
-it the two race — the failure documented as PRO-211 in `gotchas.md`.
+The edge's job is **ordering**: the variable write completes before
+deployment-create, so the first deployment boots with a complete environment.
+Without it the two race — the failure documented as PRO-211 in `gotchas.md`.
 
-**Change propagation is a deferred follow-up, not yet wired.** The env-var
-resource exposes only `{ id, key }`, so a *value* change (a rotated URL) does not
-diff the consumer `Deployment`, and no new version is created. The intended fix is
-provenance-based — the consumer depends on the **source node's** version, never on
-the value or a hash of it (a hash of a secret is itself a leak, and persisting the
-value would put a credential in Alchemy state). It is narrow in practice: promoted
-service endpoints are stable across producer redeploys, so a wire's value rarely
-moves, and true secrets are platform-sourced and rotate through the platform, not
-this edge (see the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets)).
+**Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no
+`environment` prop (Composer's deleted one did). Alchemy derives its dependency
+graph from the resource references a prop's *value* is built from, so the
+descriptor builds `app` as an Output over the app id AND every variable's id,
+resolving to the app id itself: the graph gains the edges. It cannot ride
+`artifactPath` (or any of upstream's other replacement-block props): the diff
+reads that block as one unit and gives no opinion the moment any member is
+unresolved — and a brand-new variable's reference IS unresolved at plan time —
+which would skip the artifact comparison and silently drop a code change.
+`compute/deployment-edge.ts` records the full argument and its test drives
+upstream's real diff.
+
+**Change propagation is wired by an environment fingerprint in the artifact
+path.** The platform freezes a deployment's environment at create, so a
+*value* change (a rotated URL) reaches a running service only through a new
+deployment. The deploy hook names the artifact hard-link directory from a hash
+of the service's environment material (`compute/deploy-fingerprint.ts`), so
+the resolved path upstream compares moves exactly when the environment does:
+unchanged service → identical path → reuse; changed environment or artifact →
+new path → replace. The hashed material is non-secret by construction —
+environment rows carry config literals and pointers, never secret values (see
+the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets))
+— and out-of-band rotation of a pointed platform variable is detected via its
+`updatedAt` metadata, read at preflight and carried across the CLI→Alchemy
+process boundary on the framework's preflight-transport channel. Secret-bearing
+rows contribute wiring identity only; a value re-issued under a stable resource
+identity does not move the fingerprint (the module comment records the
+accepted narrowing). When upstream's `Prisma.Deployment` gains `redeployOn`
+(inputs a deployment must be recreated for) and the pinned alchemy version
+includes it, the fingerprint moves onto that prop at the marked seam.
 
 The framework's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack

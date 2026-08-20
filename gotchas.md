@@ -203,7 +203,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 
 **Cause (corrected after reading pdp-control-plane source).** Env vars are `ConfigVariable` rows **materialized into a version at version-create time** (`materializeBranchEnvVars` resolves the branch's map and hands it to Foundry with the version) and frozen there — version start does not re-resolve, and updating a variable touches only the row, never an existing version. So the race is the env-var POST vs the consumer's **version-create** call, issued by one apply with no dependency edge between them. Consequences: (1) a version created before the row exists never sees it, regardless of VM recycles; (2) config changes take effect only via a new version — there is no restart-on-config-change. _The original filing (and this entry's first version) claimed boot-time application and recycle-healing; the source model contradicts that. Our one observed recycle-heal is treated as a platform bug, not behavior to rely on._
 
-**Workaround.** Give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). In Prisma Composer this is the Connection primitive's corrected lowering: `Deployment` declares its expected environment records as a prop, which both orders the write first and redeploys the consumer when a value changes. Manual stacks: create the variable, then ship a new version.
+**Workaround.** Two halves, both handled in Prisma Composer. **Ordering:** give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). The consumer's deployment reads its app id through every variable's id, so the planner schedules each write ahead of version-create (`compute/deployment-edge.ts` in `@internal/lowering`; alchemy's `Prisma.Deployment` has no prop for the environment itself). **Propagation:** since a version's environment is frozen at create, a changed variable *value* reaches a running service only via a new version — so the deploy hook fingerprints each service's environment material (non-secret by construction; ADR-0042 rows carry pointers, not values) into the artifact path (`compute/deploy-fingerprint.ts`): a changed environment yields a new path and the deployment is replaced; an unchanged service is reused. Out-of-band platform-variable rotation is caught via `updatedAt` metadata read at preflight. One accepted narrowing: a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) does not move the fingerprint, so the running deployment keeps the old value until the next change that does — force it with a code change or any environment edit (ADR-0048 records the exception). The long-term carrier is alchemy's `Prisma.Deployment.redeployOn` — see the change-propagation note in [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md). Manual stacks: create the variable, then ship a new version.
 
 **Reproduction.**
 
@@ -214,7 +214,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version)
-- Race + edge analysis: [`packages/app-cloud/src/target.ts`](packages/app-cloud/src/target.ts) (the corrected ordering comment — the `deploy`/`serialize` edge)
+- Race + edge analysis: [`packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts) (why the edge rides `app`, and what it does not do)
 - Related: [`dogfood-report.md`](dogfood-report.md)
 
 ---
@@ -300,7 +300,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with)
-- Fix: [`packages/alchemy/src/compute/ComputeService.ts`](packages/alchemy/src/compute/ComputeService.ts), [`packages/alchemy/src/postgres/Database.ts`](packages/alchemy/src/postgres/Database.ts)
+- Fix: both resources are alchemy's `Prisma.App` / `Prisma.Database`, which encode the two opposite mechanisms the Cause describes: `App` passes `branchId` in the create body (`node_modules/alchemy/src/Prisma/App.ts`), while `Database` creates project-scoped and attaches the Branch afterwards via `PATCH` (`.../Database.ts`, `branchNeedsSync`)
 
 ---
 

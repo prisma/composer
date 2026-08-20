@@ -83,13 +83,18 @@ Consequences Prisma Composer designs around:
    restart-on-config-change and no live re-resolution; a late-written variable
    never reaches an existing version. Propagating a changed value (e.g. a
    producer's new URL) into a consumer therefore means creating a new consumer
-   version — which the Alchemy graph does via a property diff (see
-   [alchemy-lowering.md](alchemy-lowering.md)).
-3. **`DATABASE_URL` is not a separate mechanism.** It is a module-written
+   version — which Composer does: a deploy whose environment changed replaces
+   the deployment, so the change reaches the running service (see the
+   change-propagation note in
+   [alchemy-lowering.md](alchemy-lowering.md#the-lowering-graphs)).
+3. **`DATABASE_URL` is not a separate mechanism.** It is a platform-written
    template flowing through the same materialization as user variables — a
-   convenience for hand-provisioned single services. Prisma Composer
-   forbids its use and poisons it at project provision (see
-   [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-actively-poisoned));
+   convenience for hand-provisioned single services. The platform owns it
+   (system-managed), and Prisma Composer refuses to bind or manage the name —
+   though on a fresh Project it claims the keys once, create-only, with an
+   inert placeholder so the platform's self-heal cannot seed live credentials
+   (see
+   [alchemy-lowering.md](alchemy-lowering.md#database_url-is-forbidden--and-left-to-the-platform));
    every database URL a service consumes is an explicit, service-named variable.
 4. **Branch + class is the platform's environments model** (production
    templates vs preview templates + per-branch overrides) — the substrate

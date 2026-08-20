@@ -77,10 +77,11 @@ const isActiveDeployment409 = (r: HttpResponse): boolean =>
   r.status === 409 && r.body.includes('active deployment');
 
 /**
- * The app DELETE 409s with this exact wording while its
- * deployment is still winding down — the same "not delete-safe yet" match
- * alchemy's ComputeService provider retries on (everything else is a real
- * failure and must surface, not be retried).
+ * The app DELETE 409s with this exact wording while its deployment is still
+ * winding down. This cleanup retries on this wording alone; everything else is
+ * a real failure and must surface, not be retried. Alchemy's own App delete
+ * retries any conflict, but only about four seconds' worth — which is why this
+ * script keeps its own, longer, wording-specific budget.
  */
 const isDeleteNotSafeYet409 = (r: HttpResponse): boolean =>
   r.status === 409 && r.body.includes('did not reach a delete-safe state');

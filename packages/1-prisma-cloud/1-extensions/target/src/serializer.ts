@@ -8,8 +8,9 @@
  * root — empty for a lone-service deploy, the "unprefixed" case), then the
  * owner (the input name, dropped for the service's own params), then the
  * param name. auth's db.url ↔ AUTH_DB_URL; a lone service's db.url ↔ DB_URL.
- * The platform's DATABASE_URL is never among them — forbidden and poisoned
- * at project provision (see docs/design/05-prisma-cloud/alchemy-lowering.md).
+ * The platform's DATABASE_URL is never among them: Prisma Cloud owns that name
+ * and the framework refuses to bind it (see
+ * docs/design/05-prisma-cloud/alchemy-lowering.md).
  *
  * This module works off the node's RAW params (`node.params` and each
  * `node.inputs[k].connection.params`) rather than `configOf`'s pure-data
@@ -76,9 +77,10 @@ export const configKey = (
   const owner = d.owner === 'service' ? [] : [d.owner.input];
   // Every generated key lives in the framework's reserved COMPOSER_ namespace
   // (ADR-0029), so it can never collide with — and silently overwrite — a
-  // user-provisioned platform var (e.g. a secret's external name). The poison
-  // keys DATABASE_URL(_POOLED) are written directly in control.ts, not here, so
-  // they stay unprefixed (they are the platform's own names).
+  // user-provisioned platform var (e.g. a secret's external name). Composer
+  // writes no unprefixed variable at all: DATABASE_URL(_POOLED) are the
+  // platform's own names, banned in param.ts/secret.ts and owned by the
+  // platform (control/extension.ts).
   return ['COMPOSER', ...segments, ...owner, d.name].join('_').toUpperCase();
 };
 
@@ -460,6 +462,13 @@ export interface InputDocumentRow {
   readonly absent: readonly string[];
   /** Generated leaves the descriptor must provision (a `GeneratedParam` resource + env row each). */
   readonly generated: readonly GeneratedLeaf[];
+  /**
+   * The platform variable each `$secret` pointer in the document names —
+   * operator-provisioned, never written by Composer. The deploy hook folds
+   * each one's `updatedAt` into the environment fingerprint, so rotating a
+   * secret out of band ships a new deployment.
+   */
+  readonly secrets: readonly string[];
 }
 
 /**
@@ -505,8 +514,19 @@ export function serializeInput(
         'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
     );
   }
-  const document = substitutePointers(validated, sentinels, generated, address);
-  return { key: inputKey(address), value: JSON.stringify(document), absent, generated };
+  const emittedSecrets = new Set<string>();
+  const document = substitutePointers(validated, sentinels, generated, address, emittedSecrets);
+  return {
+    key: inputKey(address),
+    value: JSON.stringify(document),
+    absent,
+    generated,
+    // The names the DOCUMENT actually carries (a schema transform can drop a
+    // bound leaf), sorted and unique: the fingerprint depends only on the set
+    // of referenced variables, so a binding refactor that reorders or
+    // duplicates leaves cannot move it.
+    secrets: [...emittedSecrets].sort(),
+  };
 }
 
 /**
@@ -526,6 +546,7 @@ function substitutePointers(
   sentinels: ReadonlyMap<SecretString, string>,
   generated: readonly GeneratedLeaf[],
   address: string,
+  emittedSecrets: Set<string>,
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
@@ -540,6 +561,7 @@ function substitutePointers(
             "platform variable); bind the field with envSecret('NAME') instead.",
         );
       }
+      emittedSecrets.add(name);
       return { [SECRET_MARKER]: name };
     }
     if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));

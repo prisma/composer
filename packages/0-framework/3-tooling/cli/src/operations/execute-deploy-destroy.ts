@@ -14,7 +14,7 @@ import type {
   ReporterDescriptor,
   RunReporter,
 } from '@internal/core/config';
-import { containerEnv } from '@internal/core/config';
+import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
@@ -295,6 +295,11 @@ async function runStackPipelineInner(
   let pipeline: PipelineResult;
   let containers: Map<ExtensionId, ContainerInstance>;
   let alchemyStage: string;
+  // What each preflight hands back, on its way to the alchemy child: preflight
+  // runs here, in the parent, and the child re-imports the config from scratch,
+  // so anything it learned reaches the lowering only through this transport.
+  const preflightPayloads = new Map<string, string>();
+  let preflightTransportEnv: Record<string, string> = {};
 
   try {
     // The shared prefix (pipeline.ts): config discovery/load, entry load,
@@ -402,16 +407,32 @@ async function runStackPipelineInner(
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
         try {
-          await extension.preflight({
+          const payload = await extension.preflight({
             graph,
             container: containers.get(extension.id),
             stage,
             credentials: deps.credentials,
           });
+          if (payload !== undefined) preflightPayloads.set(extension.id, payload);
         } catch (error) {
           throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
         }
       }
+      // Serialized HERE, not at the alchemy invocation below: a transport
+      // collision (two extension ids mapping to one env var) is a preflight
+      // failure, and must surface before the stack file is written.
+      try {
+        preflightTransportEnv = preflightEnv(preflightPayloads);
+      } catch (error) {
+        throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
+      }
+    }
+    // The child inherits this process's environment, so every transport var
+    // this run did NOT produce is blanked — a stale value exported into the
+    // shell (a re-exported child env) must not read as this run's payload.
+    // The reader treats an empty var as absent.
+    for (const extension of config.extensions) {
+      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);
@@ -463,6 +484,7 @@ async function runStackPipelineInner(
           cwd,
           stage: alchemyStage,
           containerEnv: containerEnv(containers),
+          preflightEnv: preflightTransportEnv,
           env: {
             ...reporterChildEnv(reporters),
             [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,

@@ -37,10 +37,16 @@ export interface BucketKeyAttributes {
   bucketName: string;
 }
 
-export type BucketKey = Resource<'Prisma.BucketKey', BucketKeyProps, BucketKeyAttributes>;
+export const BUCKET_KEY_TYPE_ID = 'PrismaComposer.BucketKey';
+/** The type-id Composer's own bucket-key resource persisted rows under before upstream adoption claimed the `Prisma.*` namespace. */
+export const BUCKET_KEY_LEGACY_TYPE_ID = 'Prisma.BucketKey';
+
+export type BucketKey = Resource<typeof BUCKET_KEY_TYPE_ID, BucketKeyProps, BucketKeyAttributes>;
 
 /** A **bucket access key** for a Prisma Object Store bucket — yields the S3 credentials. */
-export const BucketKey = Resource<BucketKey>('Prisma.BucketKey');
+export const BucketKey = Resource<BucketKey>(BUCKET_KEY_TYPE_ID, {
+  aliases: [BUCKET_KEY_LEGACY_TYPE_ID],
+});
 
 export const BucketKeyProvider = () =>
   Provider.effect(

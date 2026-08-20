@@ -189,6 +189,31 @@ describe('createRuntime()', () => {
     ).toBe('https://api.staging.invalid');
   });
 
+  test('PRISMA_API_URL wins over PRISMA_MANAGEMENT_API_URL — the same precedence every other client uses', () => {
+    expect(
+      createRuntime(
+        fakeHost({
+          env: {
+            PRISMA_API_URL: 'https://api.first.invalid',
+            PRISMA_MANAGEMENT_API_URL: 'https://api.second.invalid',
+          },
+        }),
+        noConfig,
+      ).managementApi.baseUrl,
+    ).toBe('https://api.first.invalid');
+    expect(
+      createRuntime(
+        fakeHost({
+          env: { PRISMA_API_URL: '', PRISMA_MANAGEMENT_API_URL: 'https://api.second.invalid' },
+        }),
+        noConfig,
+      ).managementApi.baseUrl,
+    ).toBe('https://api.second.invalid');
+    expect(
+      createRuntime(fakeHost({ env: { PRISMA_API_URL: '' } }), noConfig).managementApi.baseUrl,
+    ).toBe('https://api.prisma.io');
+  });
+
   test('the environment credential manager is wired, and reads the two protocol variables', async () => {
     const manager = createRuntime(
       fakeHost({ env: { PRISMA_SERVICE_TOKEN: 'token', PRISMA_WORKSPACE_ID: 'ws_1' } }),

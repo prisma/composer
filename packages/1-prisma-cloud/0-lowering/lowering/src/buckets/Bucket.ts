@@ -17,10 +17,14 @@ export interface BucketAttributes {
   name: string;
 }
 
-export type Bucket = Resource<'Prisma.Bucket', BucketProps, BucketAttributes>;
+export const BUCKET_TYPE_ID = 'PrismaComposer.Bucket';
+/** The type-id Composer's own bucket resource persisted rows under before upstream adoption claimed the `Prisma.*` namespace. */
+export const BUCKET_LEGACY_TYPE_ID = 'Prisma.Bucket';
+
+export type Bucket = Resource<typeof BUCKET_TYPE_ID, BucketProps, BucketAttributes>;
 
 /** A Prisma **Object Store bucket** inside a project. */
-export const Bucket = Resource<Bucket>('Prisma.Bucket');
+export const Bucket = Resource<Bucket>(BUCKET_TYPE_ID, { aliases: [BUCKET_LEGACY_TYPE_ID] });
 
 export const BucketProvider = () =>
   Provider.effect(

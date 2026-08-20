@@ -2,8 +2,8 @@
 
 import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
-import * as Prisma from '@internal/lowering';
 import * as Output from 'alchemy/Output';
+import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { PgWarm } from '../pg-warm-resource.ts';
@@ -30,14 +30,26 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
       const branchId = cloudApplicationOf(application).branchId;
+      // Same create rule as descriptors/postgres.ts: an explicit name cannot
+      // combine with branch attachment at create, so a named stage omits the
+      // name and carries the branchId in props (created attached, reconciled
+      // attached).
       const db = yield* Prisma.Database(`${id}-db`, {
-        projectId: projectIdOf(application),
-        name: id,
+        project: projectIdOf(application),
         region: o().region ?? DEFAULT_REGION,
-        ...(branchId !== undefined ? { branchId } : {}),
+        ...(branchId !== undefined ? { branchId } : { name: id }),
       });
-      const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id });
-      const url = Output.map(conn.connectionString, (value) => Redacted.value(value));
+      const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+      // Direct, not pooled — PgWarm and PnMigration below depend on it, and
+      // upstream's `databaseUrl` is pooled-first.
+      const url = Output.map(conn.directConnectionString, (value) => {
+        if (value === undefined) {
+          throw new Error(
+            `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
+          );
+        }
+        return Redacted.value(value);
+      });
 
       if (!isPnPostgresResourceNode(node)) {
         // The registry routes 'prisma-next'-typed resource nodes here, so this
@@ -81,7 +93,7 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
       // not a public endpoint, and only the descriptor can know that.
       return {
         outputs: { url: warm.url },
-        entities: [{ kind: 'postgres-database', id: db.id }],
+        entities: [{ kind: 'postgres-database', id: db.databaseId }],
       };
     });
   return Object.assign(lowering, { kind: 'resource' as const });
