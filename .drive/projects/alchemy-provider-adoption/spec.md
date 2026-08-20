@@ -13,7 +13,7 @@ Four workstreams:
 3. **Contribute upstream** — object storage resources (~161 lines; upstream deferred exactly the routes we call) and the generic core of the Postgres state store (~450 lines; only alchemy state backend with distributed locking, which upstream's own `Compute` docstring asks users to find). `PgWarm` offered to upstream; drop ours if they solve cold-start in `Database`/`Connection`.
 4. **Keep local** — the dev emulators (~3,200 lines + s3-protocol) and the five Composer-concept resources (`ServiceKey`, `GeneratedParam`, `S3Credentials`, `PnMigration`, state-store policy layer). Emulators plug in behind `LowerOptions.providers` exactly as today, now paired with upstream's live providers.
 
-Aman has agreed to the direction (call, 2026-08-03). The one upstream ask that blocks workstream 1+4 composition: export `liveProviderLayer()` (or an equivalent override on `providers()`) so Composer can compose upstream live providers with its own local providers — today it is private and only `providers()` (which hardwires dev-vs-live selection internally) is exported.
+Aman has agreed to the direction (call, 2026-08-03). Composition landed without waiting: the local wiring rebuilds the live provider layer from upstream's exported resource classes. The `liveProviderLayer()` export ask (or an equivalent override on `providers()`) remains as a temporary-dependency cleanup — once upstream exports it, the local rebuild is deleted.
 
 # Non-goals
 

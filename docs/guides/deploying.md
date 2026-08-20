@@ -270,7 +270,7 @@ Legacy leftovers are inert and safe to remove whenever convenient — nothing re
 
 ## Upgrading to the upstream Prisma resources
 
-Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state is migrated automatically on read, and production environments redeploy with no changes to their databases or connections.
+Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and production environments redeploy with no changes to their databases or connections. Stages still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
 
 **A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework fingerprints each service's environment material into the artifact path, so a changed variable (or an out-of-band rotation of a platform variable a row points at) ships a new deployment, and an unchanged service redeploys nothing. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
 

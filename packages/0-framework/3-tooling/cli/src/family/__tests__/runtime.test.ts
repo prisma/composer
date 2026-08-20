@@ -202,6 +202,14 @@ describe('createRuntime()', () => {
       ).managementApi.baseUrl,
     ).toBe('https://api.first.invalid');
     expect(
+      createRuntime(
+        fakeHost({
+          env: { PRISMA_API_URL: '', PRISMA_MANAGEMENT_API_URL: 'https://api.second.invalid' },
+        }),
+        noConfig,
+      ).managementApi.baseUrl,
+    ).toBe('https://api.second.invalid');
+    expect(
       createRuntime(fakeHost({ env: { PRISMA_API_URL: '' } }), noConfig).managementApi.baseUrl,
     ).toBe('https://api.prisma.io');
   });
