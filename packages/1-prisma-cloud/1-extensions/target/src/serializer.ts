@@ -546,7 +546,7 @@ function substitutePointers(
   sentinels: ReadonlyMap<SecretString, string>,
   generated: readonly GeneratedLeaf[],
   address: string,
-  emittedSecrets?: Set<string>,
+  emittedSecrets: Set<string>,
 ): unknown {
   const generatedByPath = new Map(generated.map((leaf) => [leaf.path, leaf]));
   const walk = (v: unknown, path: string): unknown => {
@@ -561,7 +561,7 @@ function substitutePointers(
             "platform variable); bind the field with envSecret('NAME') instead.",
         );
       }
-      emittedSecrets?.add(name);
+      emittedSecrets.add(name);
       return { [SECRET_MARKER]: name };
     }
     if (Array.isArray(v)) return v.map((m, i) => walk(m, path === '' ? String(i) : `${path}.${i}`));

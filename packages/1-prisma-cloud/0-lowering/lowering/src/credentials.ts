@@ -76,8 +76,10 @@ export const managementApiBaseUrl = (
   env?: Readonly<Record<string, string | undefined>>,
 ): Effect.Effect<string, Config.ConfigError | Error> =>
   env !== undefined
-    ? normalizeBaseUrl(
-        env['PRISMA_API_URL'] ?? env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_BASE_URL,
+    ? // `||`, not `??`: an empty string means unset, exactly as Effect's
+      // Config provider treats an empty env var in the branch below.
+      normalizeBaseUrl(
+        env['PRISMA_API_URL'] || env['PRISMA_MANAGEMENT_API_URL'] || DEFAULT_BASE_URL,
       )
     : Config.string('PRISMA_API_URL').pipe(
         Config.orElse(() => Config.string('PRISMA_MANAGEMENT_API_URL')),

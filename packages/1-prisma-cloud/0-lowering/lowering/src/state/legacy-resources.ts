@@ -14,6 +14,8 @@
  */
 
 import * as Redacted from 'effect/Redacted';
+import { ARTIFACT_CONTENT_TYPE } from '../compute/artifact.ts';
+import { RESERVED_DATABASE_URL_KEYS } from '../database-url-claim.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -23,19 +25,13 @@ const EPOCH = '1970-01-01T00:00:00.000Z';
 /** Where a legacy row recorded no region: the only region Composer's descriptors ever defaulted to. */
 const DEFAULT_REGION = 'us-east-1';
 
-/** The content type `descriptors/compute.ts` uploads Composer's tar.gz artifact with. */
-const ARTIFACT_CONTENT_TYPE = 'application/gzip';
-
 /**
  * The reserved keys older Composer versions claimed through tracked
  * EnvironmentVariable resources. Today the claim is a create-only API call
- * outside deploy state (database-url-claim.ts), so the tracked rows those
- * versions left behind are disposed of here.
+ * outside deploy state (database-url-claim.ts, whose key set this is), so the
+ * tracked rows those versions left behind are disposed of here.
  */
-const CLAIMED_DATABASE_URL_KEYS: ReadonlySet<string> = new Set([
-  'DATABASE_URL',
-  'DATABASE_URL_POOLED',
-]);
+const CLAIMED_DATABASE_URL_KEYS: ReadonlySet<string> = new Set(RESERVED_DATABASE_URL_KEYS);
 
 type Family = 'Project' | 'Database' | 'Connection' | 'App' | 'Deployment' | 'EnvironmentVariable';
 

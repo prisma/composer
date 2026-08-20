@@ -3,6 +3,7 @@
 import { isParamSource, type ServiceNode } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
+  ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
   deployEnvFingerprint,
   type EnvFingerprintEntry,
@@ -82,8 +83,8 @@ const envValue = (
  * same walker Alchemy builds its dependency graph with, so the names are the
  * planner's own — no guessing at what a reference points to.
  */
-const withheldSource = (kind: string, value: unknown): string =>
-  `${kind}:${Object.keys(Output.upstreamAny(value)).sort().join(',')}`;
+const withheldSource = (kind: string, upstream: Record<string, unknown>): string =>
+  `${kind}:${Object.keys(upstream).sort().join(',')}`;
 
 /**
  * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
@@ -125,12 +126,14 @@ export function computeDescriptor(
         const branch = branchId !== undefined ? { branchId } : {};
         const projectId = provisioned.projectId;
         const svc = node as ServiceNode;
-        const records = [];
-        // One entry per row, appended in step with `records`. Every entry that
-        // carries text carries text that is secret-free BY CONSTRUCTION; the
-        // rest are `withheld` and have nowhere to put a value — see
-        // `deploy-fingerprint.ts`.
-        const fingerprint: EnvFingerprintEntry[] = [];
+        // One element per env row: the resource AND its fingerprint entry
+        // together, so a row cannot exist without one. An entry that carries
+        // text carries text that is secret-free BY CONSTRUCTION; the rest are
+        // `withheld` and have nowhere to put a value — see deploy-fingerprint.ts.
+        const rows: {
+          readonly record: Prisma.EnvironmentVariable;
+          readonly entry: EnvFingerprintEntry;
+        }[] = [];
 
         for (const d of paramEntries(svc)) {
           const value =
@@ -148,35 +151,44 @@ export function computeDescriptor(
             d.owner === 'service' && isParamSource(value)
               ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
               : encode(d.owner, value);
-          records.push(
-            yield* Prisma.EnvironmentVariable(`${key}-var`, {
-              project: projectId,
-              key,
-              value: envValue(rowValue),
-              class: cls,
-              ...branch,
-            }),
-          );
+          const record = yield* Prisma.EnvironmentVariable(`${key}-var`, {
+            project: projectId,
+            key,
+            value: envValue(rowValue),
+            class: cls,
+            ...branch,
+          });
           // An own param is config, never a secret (ADR-0042): hash its text,
           // and a pointer row's platform name joins `pointers`. A dependency
           // input may carry a connection string or minted token: withheld.
           if (d.owner === 'service') {
             const pointer = isParamPointerRow(rowValue) ? decodeParamPointer(rowValue) : undefined;
-            fingerprint.push({
-              key,
-              value: rowValue,
-              ...(pointer !== undefined ? { pointers: [pointer] } : {}),
+            rows.push({
+              record,
+              entry: {
+                key,
+                value: rowValue,
+                ...(pointer !== undefined ? { pointers: [pointer] } : {}),
+              },
             });
-          } else if (Object.keys(Output.upstreamAny(value)).length > 0) {
-            fingerprint.push({ key, withheld: withheldSource(`input.${d.owner.input}`, value) });
+          } else if (Output.isOutput(value) || Object.keys(Output.upstreamAny(value)).length > 0) {
+            // Any Output stays withheld — `upstreamAny` alone is not the test,
+            // because an Output with no Resource ancestry (a literal or
+            // effect-built expression) would otherwise be pushed as an object.
+            rows.push({
+              record,
+              entry: {
+                key,
+                withheld: withheldSource(`input.${d.owner.input}`, Output.upstreamAny(value)),
+              },
+            });
           } else {
             // A dependency value already RESOLVED at plan time traces back to
             // authored config (ADR-0042 routes secret values through pointers
             // and resources, which are still Outputs here), so its text is
             // hashed like a literal — a changed producer setting (e.g. a
-            // store's bucket) must move the consumer's fingerprint. Anything
-            // resource-built is still an Output and stays withheld above.
-            fingerprint.push({ key, value: rowValue });
+            // store's bucket) must move the consumer's fingerprint.
+            rows.push({ record, entry: { key, value: rowValue } });
           }
         }
 
@@ -186,8 +198,12 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
         );
         if (inputRow !== undefined) {
-          records.push(
-            yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
+          // The document itself is secret-free by construction, so it is
+          // hashed verbatim; each `$secret` pointer names an OPERATOR-owned
+          // platform variable Composer never writes, so its rotation shows up
+          // only as that variable's `updatedAt`.
+          rows.push({
+            record: yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
               project: projectId,
               key: inputRow.key,
               // The defaults-applied document — secret leaves are `$secret`
@@ -197,15 +213,7 @@ export function computeDescriptor(
               class: cls,
               ...branch,
             }),
-          );
-          // The document itself is secret-free by construction, so it is
-          // hashed verbatim; each `$secret` pointer names an OPERATOR-owned
-          // platform variable Composer never writes, so its rotation shows up
-          // only as that variable's `updatedAt`.
-          fingerprint.push({
-            key: inputRow.key,
-            value: inputRow.value,
-            pointers: inputRow.secrets,
+            entry: { key: inputRow.key, value: inputRow.value, pointers: inputRow.secrets },
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
@@ -216,21 +224,21 @@ export function computeDescriptor(
             const resource = yield* GeneratedParam(`${inputRow.key}:${leaf.path}-generated`, {
               bytes: leaf.bytes,
             });
-            records.push(
-              yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
+            // A minted random value — withheld, and no `updatedAt` either:
+            // Composer rewrites this row every deploy, so the timestamp
+            // would churn the fingerprint.
+            rows.push({
+              record: yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
                 project: projectId,
                 key: leaf.varName,
                 value: envValue(resource.value),
                 class: cls,
                 ...branch,
               }),
-            );
-            // A minted random value — withheld, and no `updatedAt` either:
-            // Composer rewrites this row every deploy, so the timestamp
-            // would churn the fingerprint.
-            fingerprint.push({
-              key: leaf.varName,
-              withheld: `generated:${String(leaf.bytes)}:${String(leaf.redacted)}`,
+              entry: {
+                key: leaf.varName,
+                withheld: `generated:${String(leaf.bytes)}:${String(leaf.redacted)}`,
+              },
             });
           }
         }
@@ -288,19 +296,22 @@ export function computeDescriptor(
           const value = Output.isOutput(raw)
             ? Output.map(raw, (v) => encode('service', v))
             : encode('service', raw);
-          records.push(
-            yield* Prisma.EnvironmentVariable(`${key}-var`, {
+          // May be a minted key (rpc, streams), so withheld regardless of
+          // brand; rewiring changes the producing resources, which is what
+          // moves the fingerprint.
+          rows.push({
+            record: yield* Prisma.EnvironmentVariable(`${key}-var`, {
               project: projectId,
               key,
               value: envValue(value),
               class: cls,
               ...branch,
             }),
-          );
-          // May be a minted key (rpc, streams), so withheld regardless of
-          // brand; rewiring changes the producing resources, which is what
-          // moves the fingerprint.
-          fingerprint.push({ key, withheld: withheldSource(`provider.${entry.name}`, raw) });
+            entry: {
+              key,
+              withheld: withheldSource(`provider.${entry.name}`, Output.upstreamAny(raw)),
+            },
+          });
         }
 
         // Carries the resolved port to deploy(); falls back to 3000 if unset.
@@ -308,8 +319,8 @@ export function computeDescriptor(
         // only place the fallback belongs — from here on `port` is a number.
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return {
-          environment: records,
-          envFingerprint: fingerprint,
+          environment: rows.map((r) => r.record),
+          envFingerprint: rows.map((r) => r.entry),
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -356,7 +367,7 @@ export function computeDescriptor(
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.
-          artifactContentType: 'application/gzip',
+          artifactContentType: ARTIFACT_CONTENT_TYPE,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },

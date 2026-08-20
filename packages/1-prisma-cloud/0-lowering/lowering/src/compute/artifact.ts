@@ -13,6 +13,9 @@ import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { isWithin } from '@internal/bundle-paths';
 
+/** The content type every Composer compute artifact is uploaded with (a deterministic tar.gz). */
+export const ARTIFACT_CONTENT_TYPE = 'application/gzip';
+
 export interface PackageComputeArtifactOptions {
   /** The service's provision id — namespaces the temp output path. */
   readonly id: string;

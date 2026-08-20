@@ -4,9 +4,9 @@ import { scopedEnvRows } from '../compute.ts';
 /**
  * Local-dev spec § 4's pinned parity note: the hosted platform diffs a
  * deployment only on its own referenced rows, so an app-wide LOCAL
- * materialization restart-amplifies (an early-deployed service's snapshot
- * looks "changed" on the very next converge, purely from a sibling's row
- * landing afterward). `scopedEnvRows` is the fix — every service's
+ * materialization causes spurious restarts (an early-deployed service's
+ * snapshot looks "changed" on the very next converge, purely from a sibling's
+ * row landing afterward). `scopedEnvRows` is the fix — every service's
  * materialized env keeps only what it owns (`COMPOSER_<its address>_*`)
  * plus every row OUTSIDE the `COMPOSER_` namespace. Composer writes no
  * unprefixed row itself — an unprefixed name is a platform-owned one — but the

@@ -124,9 +124,18 @@ export function detectPackageManager(
  * and `isCIOverride` exists only for hosts where that detection cannot be
  * right — composer is not one.
  */
+const nonEmpty = (value: string | undefined): string | undefined =>
+  value !== undefined && value.length > 0 ? value : undefined;
+
 export function createRuntime(host: HostProcess, loadConfig: Runtime['loadConfig']): Runtime {
   const env = host.env;
-  const apiBaseUrl = env['PRISMA_MANAGEMENT_API_URL'] ?? DEFAULT_MANAGEMENT_API_BASE_URL;
+  // Same precedence as @internal/lowering's managementApiBaseUrl, so
+  // PRISMA_API_URL can never point the engine's client and the deploy's other
+  // clients at different hosts. Empty means unset, matching that resolver.
+  const apiBaseUrl =
+    nonEmpty(env['PRISMA_API_URL']) ??
+    nonEmpty(env['PRISMA_MANAGEMENT_API_URL']) ??
+    DEFAULT_MANAGEMENT_API_BASE_URL;
   const packageManager = detectPackageManager(env);
   return {
     stdout: host.stdout,

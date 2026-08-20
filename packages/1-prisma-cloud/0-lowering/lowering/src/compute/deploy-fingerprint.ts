@@ -57,12 +57,17 @@ export function deployEnvFingerprintMaterial(
   pointerUpdatedAt: PointerUpdatedAt,
 ): string {
   const rows = entries
-    .map((entry) => [
-      entry.key,
-      entry.value !== undefined ? ['value', entry.value] : ['withheld', entry.withheld],
-      [...(entry.pointers ?? [])].sort().map((name) => [name, pointerUpdatedAt(name) ?? '?']),
-    ])
-    .sort((a, b) => (JSON.stringify(a) < JSON.stringify(b) ? -1 : 1));
+    .map((entry) => ({
+      key: entry.key,
+      row: [
+        entry.key,
+        entry.value !== undefined ? ['value', entry.value] : ['withheld', entry.withheld],
+        [...(entry.pointers ?? [])].sort().map((name) => [name, pointerUpdatedAt(name) ?? '?']),
+      ],
+    }))
+    // Keys are unique per row (one env var each), so they are the whole order.
+    .sort((a, b) => (a.key < b.key ? -1 : 1))
+    .map((r) => r.row);
   return JSON.stringify(rows);
 }
 

@@ -85,9 +85,10 @@ const COMPOSER_NAMESPACE_PREFIX = 'COMPOSER_';
 /**
  * Scopes `env.json` to what THIS service may see: rows it owns
  * (`COMPOSER_<its address>_*`) plus every unprefixed (platform-owned,
- * app-wide) row. Materializing the app-wide set locally restart-amplifies —
- * an early service's snapshot "completes" on the second converge and diffs
- * as changed — and the dropped sibling rows have no sanctioned reader.
+ * app-wide) row. Materializing the app-wide set locally causes spurious
+ * restarts — an early service's snapshot "completes" on the second converge
+ * and diffs as changed — and the dropped sibling rows have no sanctioned
+ * reader.
  */
 export function scopedEnvRows(
   allRows: Readonly<Record<string, string>>,

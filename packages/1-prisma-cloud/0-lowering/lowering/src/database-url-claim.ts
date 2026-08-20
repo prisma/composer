@@ -19,7 +19,7 @@ import { callCreateOnly, type PrismaApiError } from './http.ts';
 const PLACEHOLDER_VALUE = '-';
 
 /** The two names Prisma Cloud fills in for itself, and that no Composer service may bind. */
-const RESERVED_DATABASE_URL_KEYS = ['DATABASE_URL', 'DATABASE_URL_POOLED'] as const;
+export const RESERVED_DATABASE_URL_KEYS = ['DATABASE_URL', 'DATABASE_URL_POOLED'] as const;
 
 /**
  * Both environment classes, each at PROJECT level (no branch id). A preview

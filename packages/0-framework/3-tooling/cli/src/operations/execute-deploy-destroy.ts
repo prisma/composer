@@ -14,7 +14,7 @@ import type {
   ReporterDescriptor,
   RunReporter,
 } from '@internal/core/config';
-import { containerEnv, preflightEnv } from '@internal/core/config';
+import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
@@ -426,6 +426,13 @@ async function runStackPipelineInner(
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
+    }
+    // The child inherits this process's environment, so every transport var
+    // this run did NOT produce is blanked — a stale value exported into the
+    // shell (a re-exported child env) must not read as this run's payload.
+    // The reader treats an empty var as absent.
+    for (const extension of config.extensions) {
+      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
     }
   } catch (error) {
     if (CliStructuredError.is(error)) return notOk(error);

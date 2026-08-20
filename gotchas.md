@@ -300,11 +300,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with)
-- Fix: both resources are alchemy's `Prisma.App` / `Prisma.Database`, which
-  encode the two opposite mechanisms the Cause describes: `App` passes
-  `branchId` in the create body (`node_modules/alchemy/src/Prisma/App.ts`),
-  while `Database` creates project-scoped and attaches the Branch afterwards
-  via `PATCH` (`.../Database.ts`, `branchNeedsSync`)
+- Fix: both resources are alchemy's `Prisma.App` / `Prisma.Database`, which encode the two opposite mechanisms the Cause describes: `App` passes `branchId` in the create body (`node_modules/alchemy/src/Prisma/App.ts`), while `Database` creates project-scoped and attaches the Branch afterwards via `PATCH` (`.../Database.ts`, `branchNeedsSync`)
 
 ---
 
