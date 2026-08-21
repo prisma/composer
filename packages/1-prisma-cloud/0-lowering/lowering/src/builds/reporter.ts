@@ -278,13 +278,16 @@ function session(
 
     /**
      * Attaches the build to the Project and Branch this deploy resolved,
-     * submits the declared topology to the stage Branch, and stamps the
-     * build with the topology's content hash. Three calls, not one: the
-     * reference fields are fill-only, so keeping each concern in its own
-     * call means a 409 from a disagreeing creator costs that concern alone.
-     * The hash is stamped whether or not the submission landed — the run
-     * acted on this graph either way, and equal hashes are a value match,
-     * not a reference to the stored topology.
+     * stamping the topology's content hash on the same update, then submits
+     * the declared topology to the stage Branch. The hash rides the attach
+     * update rather than a call of its own because it must not travel alone
+     * yet: until the platform accepts the field, its validator strips it and
+     * then rejects the emptied body ("at least one field must be given") —
+     * observed live on 2026-08-21. Folded in, the update stays valid today
+     * and the hash starts landing the moment the field is accepted. It is
+     * sent whether or not the submission lands — the run acted on this graph
+     * either way; equal hashes are a value match, not a reference to the
+     * stored topology.
      */
     async attach(input: ReportAttachInput): Promise<void> {
       if (input.container === undefined) return;
@@ -293,9 +296,9 @@ function session(
       await api.update(buildId, {
         projectId,
         ...(branchId !== undefined ? { branchId } : {}),
+        applicationTopologyContentHash: submission.contentHash,
       });
       await submitTopology(topologyApi, submission, refs);
-      await api.update(buildId, { applicationTopologyContentHash: submission.contentHash });
     },
 
     async finish(outcome: RunOutcome): Promise<void> {

@@ -206,7 +206,7 @@ describe('buildReporter', () => {
     });
   });
 
-  test('attaches the project and branch on their own, so a rejection costs only those fields', async () => {
+  test('attaches the project, branch, and topology hash in one update, apart from progress', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
@@ -221,7 +221,11 @@ describe('buildReporter', () => {
 
     expect(recorded.updates[1]).toEqual({
       buildId: 'bld_new',
-      body: { projectId: 'proj_1', branchId: 'branch_1' },
+      body: {
+        projectId: 'proj_1',
+        branchId: 'branch_1',
+        applicationTopologyContentHash: CONTENT_HASH,
+      },
     });
   });
 
@@ -446,10 +450,16 @@ describe('buildReporter', () => {
     expect(recordedTopology.replaces[0]?.submission.ports).toEqual([
       { logicalId: 'db', direction: 'out', name: '$out', contractKind: 'fake/db' },
     ]);
-    // The hash rides the build in its own fill-only update.
+    // The hash rides the attach update — until the platform accepts the
+    // field, a hash-only body would be stripped empty and rejected
+    // ("at least one field must be given"; observed live 2026-08-21).
     expect(recorded.updates).toContainEqual({
       buildId: 'bld_new',
-      body: { applicationTopologyContentHash: CONTENT_HASH },
+      body: {
+        projectId: 'proj_1',
+        branchId: 'branch_1',
+        applicationTopologyContentHash: CONTENT_HASH,
+      },
     });
   });
 
@@ -465,7 +475,7 @@ describe('buildReporter', () => {
     expect(recordedTopology.replaces).toEqual([]);
     expect(recorded.updates).toContainEqual({
       buildId: 'bld_new',
-      body: { applicationTopologyContentHash: CONTENT_HASH },
+      body: { projectId: 'proj_1', applicationTopologyContentHash: CONTENT_HASH },
     });
   });
 
@@ -478,7 +488,11 @@ describe('buildReporter', () => {
 
     expect(recorded.updates).toContainEqual({
       buildId: 'bld_new',
-      body: { applicationTopologyContentHash: CONTENT_HASH },
+      body: {
+        projectId: 'proj_1',
+        branchId: 'branch_1',
+        applicationTopologyContentHash: CONTENT_HASH,
+      },
     });
   });
 
