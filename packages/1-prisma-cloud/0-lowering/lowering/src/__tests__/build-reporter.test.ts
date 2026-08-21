@@ -479,6 +479,76 @@ describe('buildReporter', () => {
     });
   });
 
+  test('a default-stage deploy submits to the default Branch and records no branch on the build', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+    const { topology, recordedTopology } = fakeTopology();
+
+    const session = await begin(api, ENV, () => {}, undefined, topology);
+    await session?.attach({
+      container: {
+        projectId: 'proj_1',
+        branchId: undefined,
+        stageBranchId: 'branch_default',
+      } as unknown as ContainerInstance,
+    });
+
+    expect(recordedTopology.replaces).toEqual([
+      {
+        projectId: 'proj_1',
+        branchId: 'branch_default',
+        submission: { contentHash: CONTENT_HASH, ...TOPOLOGY },
+      },
+    ]);
+    expect(recorded.updates).toContainEqual({
+      buildId: 'bld_new',
+      body: { projectId: 'proj_1', applicationTopologyContentHash: CONTENT_HASH },
+    });
+  });
+
+  test('a graph the composition chokes on costs the topology alone — the Build is still reported', async () => {
+    const warnings: string[] = [];
+    const { api, recorded } = fakeApi('bld_new');
+    const { topology, recordedTopology } = fakeTopology();
+    const poisoned = {
+      ...GRAPH,
+      get nodes(): never {
+        throw new Error('malformed authored view');
+      },
+    } as unknown as typeof GRAPH;
+
+    const session = await buildReporter({
+      api,
+      topology,
+      env: ENV,
+      warn: (m) => warnings.push(m),
+      refsOf,
+    }).begin({
+      appName: 'storefront',
+      graph: poisoned,
+      stage: undefined,
+      cwd: import.meta.dir,
+      reportId: undefined,
+    });
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+    await session?.finish({
+      ok: true,
+      cancelled: false,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+
+    expect(warnings.join('\n')).toContain('malformed authored view');
+    expect(recordedTopology.replaces).toEqual([]);
+    expect(recorded.creates).toHaveLength(1);
+    // The full build lifecycle still lands: running, refs without a hash, terminal state.
+    expect(recorded.updates.map((u) => u.body)).toEqual([
+      { phase: 'deploy', state: 'running' },
+      { projectId: 'proj_1', branchId: 'branch_1' },
+      { state: 'succeeded' },
+    ]);
+  });
+
   test('a submission the platform refused still leaves the hash on the build — a value match, not a reference', async () => {
     const { api, recorded } = fakeApi('bld_new');
     const { topology } = fakeTopology(false);

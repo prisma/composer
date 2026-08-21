@@ -139,8 +139,11 @@ async function beginSession(
 
   // The declared graph and its content hash, composed once per deploy. A
   // composition defect costs the submission and a warning, never the rest of
-  // the session — the same price any other failed report pays.
-  let submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string };
+  // the session — the Build keeps being reported, with no hash and no
+  // topology, the same way any other single failed report degrades.
+  let submission:
+    | { readonly body: ApplicationTopologyBody; readonly contentHash: string }
+    | undefined;
   try {
     const body = composeApplicationTopology(input.graph);
     submission = { body, contentHash: applicationTopologyContentHash(body) };
@@ -150,7 +153,7 @@ async function beginSession(
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    return sessionWithoutBuild(topologyApi, undefined, options.refsOf);
+    submission = undefined;
   }
 
   const identity = resolveRunIdentity(input.cwd, env);
@@ -267,7 +270,7 @@ function session(
   api: BuildsApi,
   topologyApi: ApplicationTopologyApi,
   buildId: string,
-  submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string },
+  submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string } | undefined,
   refsOf: (container: ContainerInstance) => BuildContainerRefs,
   warn: (message: string) => void,
 ): RunReporter {
@@ -296,7 +299,9 @@ function session(
       await api.update(buildId, {
         projectId,
         ...(branchId !== undefined ? { branchId } : {}),
-        applicationTopologyContentHash: submission.contentHash,
+        ...(submission !== undefined
+          ? { applicationTopologyContentHash: submission.contentHash }
+          : {}),
       });
       await submitTopology(topologyApi, submission, refs);
     },

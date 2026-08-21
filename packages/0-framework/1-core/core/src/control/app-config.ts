@@ -147,7 +147,13 @@ export interface TeardownInput {
 export interface ReportBeginInput<C = unknown> {
   /** The resolved application name. */
   readonly appName: string;
-  /** The loaded application graph — what this deploy declares. A reporter that records the declared topology reads it here. */
+  /**
+   * The loaded application graph — what this deploy declares. A reporter
+   * that records the declared topology reads it here. Reporter
+   * implementations only receive this input; a host that CONSTRUCTS it to
+   * drive `ReporterDescriptor.begin` itself must now supply the graph it
+   * loaded (a breaking addition to this published type).
+   */
   readonly graph: Graph;
   /** The stage name (`--stage`), or `undefined` for the default stage. */
   readonly stage: string | undefined;
