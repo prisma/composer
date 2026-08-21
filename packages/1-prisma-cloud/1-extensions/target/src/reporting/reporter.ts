@@ -12,8 +12,10 @@ import { prismaCloudContainerOf } from '../container.ts';
 export function prismaCloudReporter(): ReporterDescriptor {
   return Builds.buildReporter({
     refsOf: (container) => {
-      const { projectId, branchId } = prismaCloudContainerOf(container);
-      return { projectId, branchId };
+      const { projectId, branchId, defaultBranchId } = prismaCloudContainerOf(container);
+      // The Build references only a NAMED stage's Branch; the topology lives
+      // on whichever Branch the deploy targets — the default one included.
+      return { projectId, branchId, stageBranchId: branchId ?? defaultBranchId };
     },
   });
 }

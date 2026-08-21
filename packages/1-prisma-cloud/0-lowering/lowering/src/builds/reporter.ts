@@ -1,6 +1,9 @@
 /**
  * Reports a deploy to Prisma Cloud as a `Build`, so the Console can show
- * deploy history for apps the platform never built.
+ * deploy history for apps the platform never built — and, on `attach`,
+ * replaces the stage Branch's application topology with what this deploy
+ * declares, stamping the build with the topology's content hash so the
+ * platform can link the run to the graph it deployed by value.
  *
  * The session opens before the CLI resolves containers, which is deliberate:
  * creating them is the step that can leave a Project behind with nothing
@@ -37,6 +40,13 @@ import * as Effect from 'effect/Effect';
 import type { ManagementApiClient } from '../client.ts';
 import { managementApiBaseUrl } from '../credentials.ts';
 import { type BuildsApi, buildsApi, type UpdateBuildBody } from './api.ts';
+import {
+  type ApplicationTopologyApi,
+  type ApplicationTopologyBody,
+  applicationTopologyApi,
+  applicationTopologyContentHash,
+  composeApplicationTopology,
+} from './application-topology.ts';
 import { BUILD_ID_ENV } from './resources.ts';
 import { resolveRunIdentity } from './run-identity.ts';
 
@@ -47,7 +57,10 @@ const nonEmpty = (value: string | undefined): string | undefined =>
 /** The Build row's project and branch references, read out of the reporting extension's own container. */
 export interface BuildContainerRefs {
   readonly projectId: string;
+  /** The named stage's Branch — absent for the default stage, whose Build carries no branch reference. */
   readonly branchId: string | undefined;
+  /** The Branch the deploy actually targets — the named stage's own, or the default Branch. Where the application topology is submitted; absent means no submission. */
+  readonly stageBranchId: string | undefined;
 }
 
 export interface BuildReporterOptions {
@@ -58,6 +71,8 @@ export interface BuildReporterOptions {
   readonly warn?: (message: string) => void;
   /** Injected by tests; the real one talks to the Management API. */
   readonly api?: BuildsApi;
+  /** Injected by tests; the real one talks to the Management API. */
+  readonly topology?: ApplicationTopologyApi;
 }
 
 export function buildReporter(options: BuildReporterOptions): ReporterDescriptor {
@@ -98,6 +113,7 @@ async function beginSession(
   const token = env['PRISMA_SERVICE_TOKEN'];
   if (
     options.api === undefined &&
+    options.topology === undefined &&
     injected === undefined &&
     (token === undefined || token.length === 0)
   ) {
@@ -106,29 +122,46 @@ async function beginSession(
     return undefined;
   }
 
+  // Its own client rather than the shared `ManagementClient` service: this
+  // runs in the CLI process, before any Effect layer is built, and needs
+  // nothing from one. Built lazily and at most once — both APIs may be
+  // injected by tests, and then no client exists to build from.
+  let client: ManagementApiClient | undefined;
+  const clientOf = (): ManagementApiClient =>
+    (client ??=
+      injected ??
+      createManagementApiClient({
+        token: token ?? '',
+        baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
+      }));
+  const api = options.api ?? buildsApi({ client: clientOf(), warn });
+  const topologyApi = options.topology ?? applicationTopologyApi({ client: clientOf(), warn });
+
+  // The declared graph and its content hash, composed once per deploy. A
+  // composition defect costs the submission and a warning, never the rest of
+  // the session — the same price any other failed report pays.
+  let submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string };
+  try {
+    const body = composeApplicationTopology(input.graph);
+    submission = { body, contentHash: applicationTopologyContentHash(body) };
+  } catch (error) {
+    warn(
+      `Could not compose this deploy's application topology: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return sessionWithoutBuild(topologyApi, undefined, options.refsOf);
+  }
+
   const identity = resolveRunIdentity(input.cwd, env);
   if (identity === undefined) {
     warn(
       `\nNot recording this deploy in Prisma Cloud: ${input.cwd} has no commit and branch to ` +
         'report it under. Deploy from a git checkout to see it in the Console.',
     );
-    return undefined;
+    // The topology needs no repository — it still records what this deploy declared.
+    return sessionWithoutBuild(topologyApi, submission, options.refsOf);
   }
-
-  // Its own client rather than the shared `ManagementClient` service: this
-  // runs in the CLI process, before any Effect layer is built, and needs
-  // nothing from one.
-  const api =
-    options.api ??
-    buildsApi({
-      client:
-        injected ??
-        createManagementApiClient({
-          token: token ?? '',
-          baseUrl: options.origin ?? Effect.runSync(managementApiBaseUrl(options.env)),
-        }),
-      warn,
-    });
 
   // A build id from either channel means something upstream — the Prisma
   // GitHub Action, or a workflow driving the CLI directly — already created
@@ -153,14 +186,14 @@ async function beginSession(
             : {}),
         });
 
-  if (buildId === undefined) return undefined;
+  if (buildId === undefined) return sessionWithoutBuild(topologyApi, submission, options.refsOf);
 
   // `deploy`, always. Composer does not build the user's code — ADR-0005
   // leaves that to them — so `build` names a phase this tool never runs.
   // Whoever did build reports that phase itself.
   await api.update(buildId, { phase: 'deploy', state: 'running' });
 
-  return session(api, buildId, options.refsOf, warn);
+  return session(api, topologyApi, buildId, submission, options.refsOf, warn);
 }
 
 /**
@@ -188,9 +221,53 @@ function deployedApp(entities: readonly DeployedEntity[]): UpdateBuildBody {
   };
 }
 
+/**
+ * The topology half of `attach`, shared with build-less sessions: replaces
+ * the stage Branch's application topology, once per deploy, after the Branch
+ * exists and before any resource is created (attach's position in the
+ * pipeline). A container that resolves no stage Branch has nowhere to submit
+ * to, and the API's own failure handling already warned — nothing here
+ * throws past it.
+ */
+async function submitTopology(
+  topologyApi: ApplicationTopologyApi,
+  submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string } | undefined,
+  refs: BuildContainerRefs,
+): Promise<void> {
+  if (submission === undefined || refs.stageBranchId === undefined) return;
+  await topologyApi.replace(refs.projectId, refs.stageBranchId, {
+    contentHash: submission.contentHash,
+    ...submission.body,
+  });
+}
+
+/**
+ * The session for a deploy whose Build never came to be — no repository to
+ * report under, or a create the platform refused. The declared topology
+ * depends on neither, so `attach` still submits it; everything else is a
+ * no-op.
+ */
+function sessionWithoutBuild(
+  topologyApi: ApplicationTopologyApi,
+  submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string } | undefined,
+  refsOf: (container: ContainerInstance) => BuildContainerRefs,
+): RunReporter {
+  return {
+    childEnv: () => ({}),
+    async attach(input: ReportAttachInput): Promise<void> {
+      if (input.container === undefined) return;
+      await submitTopology(topologyApi, submission, refsOf(input.container));
+    },
+    // Same contract as the full session: finish never rejects. No build, nothing to close.
+    finish: async () => {},
+  };
+}
+
 function session(
   api: BuildsApi,
+  topologyApi: ApplicationTopologyApi,
   buildId: string,
+  submission: { readonly body: ApplicationTopologyBody; readonly contentHash: string },
   refsOf: (container: ContainerInstance) => BuildContainerRefs,
   warn: (message: string) => void,
 ): RunReporter {
@@ -200,18 +277,25 @@ function session(
     childEnv: () => ({ [BUILD_ID_ENV]: buildId }),
 
     /**
-     * Attaches the build to the Project and Branch this deploy resolved.
-     * Sent on its own rather than folded into the progress update above:
-     * the fields are fill-only, so keeping them in their own call means a
-     * 409 from a disagreeing creator costs these references alone.
+     * Attaches the build to the Project and Branch this deploy resolved,
+     * submits the declared topology to the stage Branch, and stamps the
+     * build with the topology's content hash. Three calls, not one: the
+     * reference fields are fill-only, so keeping each concern in its own
+     * call means a 409 from a disagreeing creator costs that concern alone.
+     * The hash is stamped whether or not the submission landed — the run
+     * acted on this graph either way, and equal hashes are a value match,
+     * not a reference to the stored topology.
      */
     async attach(input: ReportAttachInput): Promise<void> {
       if (input.container === undefined) return;
-      const { projectId, branchId } = refsOf(input.container);
+      const refs = refsOf(input.container);
+      const { projectId, branchId } = refs;
       await api.update(buildId, {
         projectId,
         ...(branchId !== undefined ? { branchId } : {}),
       });
+      await submitTopology(topologyApi, submission, refs);
+      await api.update(buildId, { applicationTopologyContentHash: submission.contentHash });
     },
 
     async finish(outcome: RunOutcome): Promise<void> {

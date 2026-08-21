@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { type Contract, Load, module, resource } from '@internal/core';
 import type { ContainerInstance } from '@internal/core/config';
 import type { BuildsApi, CreateBuildBody, UpdateBuildBody } from '../builds/api.ts';
+import {
+  type ApplicationTopologyApi,
+  type ApplicationTopologyBody,
+  applicationTopologyContentHash,
+  composeApplicationTopology,
+} from '../builds/application-topology.ts';
 import { type BuildContainerRefs, buildReporter } from '../builds/reporter.ts';
 
 const ENV = {
@@ -8,6 +15,20 @@ const ENV = {
   GITHUB_SHA: 'a'.repeat(40),
   GITHUB_REF_NAME: 'main',
 };
+
+/** A real loaded graph — one resource under the root — so the topology on the wire comes from Load's authored view, not a hand-built stand-in. */
+const dbContract: Contract<'fake/db', undefined> = {
+  kind: 'fake/db',
+  __cmp: undefined,
+  satisfies: (required) => required.kind === 'fake/db',
+};
+const GRAPH = Load(
+  module('storefront', ({ provision }) => {
+    provision(resource({ name: 'db', extension: 'test/pack', provides: dbContract }));
+  }),
+);
+const TOPOLOGY = composeApplicationTopology(GRAPH);
+const CONTENT_HASH = applicationTopologyContentHash(TOPOLOGY);
 
 interface Recorded {
   creates: CreateBuildBody[];
@@ -33,8 +54,32 @@ function fakeApi(createdId: string | undefined): { api: BuildsApi; recorded: Rec
   };
 }
 
+interface RecordedTopology {
+  replaces: {
+    projectId: string;
+    branchId: string;
+    submission: ApplicationTopologyBody & { contentHash: string };
+  }[];
+}
+
+function fakeTopology(landed = true): {
+  topology: ApplicationTopologyApi;
+  recordedTopology: RecordedTopology;
+} {
+  const recordedTopology: RecordedTopology = { replaces: [] };
+  return {
+    recordedTopology,
+    topology: {
+      replace: async (projectId, branchId, submission) => {
+        recordedTopology.replaces.push({ projectId, branchId, submission });
+        return landed;
+      },
+    },
+  };
+}
+
 /** Stands in for the extension's own container; the reporter only ever sees it through `refsOf`. */
-const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1' };
+const CONTAINER = { projectId: 'proj_1', branchId: 'branch_1', stageBranchId: 'branch_1' };
 const refsOf = (container: ContainerInstance): BuildContainerRefs =>
   container as unknown as BuildContainerRefs;
 
@@ -43,9 +88,11 @@ const begin = (
   env: Record<string, string | undefined> = ENV,
   warn: (message: string) => void = () => {},
   reportId: string | undefined = undefined,
+  topology: ApplicationTopologyApi = fakeTopology().topology,
 ) =>
-  buildReporter({ api, env, warn, refsOf }).begin({
+  buildReporter({ api, env, warn, refsOf, topology }).begin({
     appName: 'storefront',
+    graph: GRAPH,
     stage: undefined,
     cwd: import.meta.dir,
     reportId,
@@ -301,6 +348,7 @@ describe('buildReporter', () => {
       refsOf,
     }).begin({
       appName: 'storefront',
+      graph: GRAPH,
       stage: undefined,
       cwd: import.meta.dir,
       reportId: undefined,
@@ -310,26 +358,50 @@ describe('buildReporter', () => {
     expect(warnings).toEqual([]);
   });
 
-  test('a run with no commit or branch says so, and reports nothing', async () => {
+  test('a run with no commit or branch says so, reports no build — and still submits the topology', async () => {
     const warnings: string[] = [];
     const { api, recorded } = fakeApi('bld_new');
+    const { topology, recordedTopology } = fakeTopology();
     const session = await buildReporter({
       api,
+      topology,
       env: { PRISMA_SERVICE_TOKEN: 'token' },
       warn: (m) => warnings.push(m),
       refsOf,
-    }).begin({ appName: 'storefront', stage: undefined, cwd: '/', reportId: undefined });
+    }).begin({
+      appName: 'storefront',
+      graph: GRAPH,
+      stage: undefined,
+      cwd: '/',
+      reportId: undefined,
+    });
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+    await session?.finish({
+      ok: true,
+      cancelled: false,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
 
-    expect(session).toBeUndefined();
     expect(recorded.creates).toEqual([]);
+    expect(recorded.updates).toEqual([]);
     expect(warnings.join('\n')).toContain('no commit and branch');
+    expect(session?.childEnv()).toEqual({});
+    // The declared topology depends on no repository.
+    expect(recordedTopology.replaces).toHaveLength(1);
   });
 
-  test('a build the platform would not create ends the session rather than reporting into nothing', async () => {
+  test('a build the platform would not create reports nothing into it — but the topology still lands', async () => {
     const { api, recorded } = fakeApi(undefined);
+    const { topology, recordedTopology } = fakeTopology();
 
-    expect(await begin(api)).toBeUndefined();
+    const session = await begin(api, ENV, () => {}, undefined, topology);
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+
     expect(recorded.updates).toEqual([]);
+    expect(session?.childEnv()).toEqual({});
+    expect(recordedTopology.replaces).toHaveLength(1);
   });
 
   test('a platform that rejects the create ends the session without throwing', async () => {
@@ -342,6 +414,72 @@ describe('buildReporter', () => {
 
     expect(await begin(api, ENV, (m) => warnings.push(m))).toBeUndefined();
     expect(warnings.join('\n')).toContain('the platform is unavailable');
+  });
+
+  test('attach replaces the stage Branch topology once and stamps the build with its content hash', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+    const { topology, recordedTopology } = fakeTopology();
+
+    const session = await begin(api, ENV, () => {}, undefined, topology);
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+    await session?.finish({
+      ok: true,
+      cancelled: false,
+      failingStep: undefined,
+      errorMessage: undefined,
+      entities: [],
+    });
+
+    expect(recordedTopology.replaces).toEqual([
+      {
+        projectId: 'proj_1',
+        branchId: 'branch_1',
+        submission: { contentHash: CONTENT_HASH, ...TOPOLOGY },
+      },
+    ]);
+    // The submitted body is the authored graph: stated containment, the
+    // resource's reserved $out port, logical ids throughout.
+    expect(recordedTopology.replaces[0]?.submission.nodes).toEqual([
+      { logicalId: 'db', parentLogicalId: 'storefront', kind: 'resource', type: 'fake/db' },
+      { logicalId: 'storefront', parentLogicalId: null, kind: 'module' },
+    ]);
+    expect(recordedTopology.replaces[0]?.submission.ports).toEqual([
+      { logicalId: 'db', direction: 'out', name: '$out', contractKind: 'fake/db' },
+    ]);
+    // The hash rides the build in its own fill-only update.
+    expect(recorded.updates).toContainEqual({
+      buildId: 'bld_new',
+      body: { applicationTopologyContentHash: CONTENT_HASH },
+    });
+  });
+
+  test('a container that resolves no stage Branch submits nowhere, but the build still records the hash', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+    const { topology, recordedTopology } = fakeTopology();
+
+    const session = await begin(api, ENV, () => {}, undefined, topology);
+    await session?.attach({
+      container: { projectId: 'proj_1', branchId: undefined } as unknown as ContainerInstance,
+    });
+
+    expect(recordedTopology.replaces).toEqual([]);
+    expect(recorded.updates).toContainEqual({
+      buildId: 'bld_new',
+      body: { applicationTopologyContentHash: CONTENT_HASH },
+    });
+  });
+
+  test('a submission the platform refused still leaves the hash on the build — a value match, not a reference', async () => {
+    const { api, recorded } = fakeApi('bld_new');
+    const { topology } = fakeTopology(false);
+
+    const session = await begin(api, ENV, () => {}, undefined, topology);
+    await session?.attach({ container: CONTAINER as unknown as ContainerInstance });
+
+    expect(recorded.updates).toContainEqual({
+      buildId: 'bld_new',
+      body: { applicationTopologyContentHash: CONTENT_HASH },
+    });
   });
 
   test('a rejected terminal update does not reject finish', async () => {
