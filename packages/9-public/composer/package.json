@@ -23,11 +23,13 @@
   },
   "files": [
     "dist",
-    "src"
+    "src",
+    "skills"
   ],
   "scripts": {
     "build": "tsdown",
-    "clean": "rm -rf dist",
+    "prepack": "node ../../../scripts/stage-skills.mjs",
+    "clean": "rm -rf dist skills",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
