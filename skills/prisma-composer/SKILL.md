@@ -1,5 +1,7 @@
 ---
 name: prisma-composer
+library: "@prisma/composer"
+library_version: "0.11.0"
 description: >-
   How to write, test, and deploy an app with Prisma Composer
   (`@prisma/composer`): declare services with `compute()` and typed
