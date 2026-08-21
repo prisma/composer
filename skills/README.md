@@ -15,14 +15,49 @@ enough for one skill; there is no router or per-topic cluster.
 
 ## Install
 
+The skill ships inside the `@prisma/composer` tarball, so installing the
+package is what brings it in. `prisma skills sync` (from the `prisma` CLI)
+copies it out of `node_modules` into the skill directories the agent runtimes
+read — `.claude/skills/`, `.cursor/skills/`, `.agents/skills/`,
+`.windsurf/skills/`:
+
+```bash
+pnpm add @prisma/composer
+pnpm add -D prisma
+pnpm prisma skills sync
+```
+
+Add it to your project's `postinstall` so an upgrade brings the matching skill
+with it:
+
+```jsonc
+// package.json
+"scripts": {
+  "postinstall": "prisma skills sync || exit 0"
+}
+```
+
+The version you read is then always the version you installed: the skill's
+frontmatter carries `library: "@prisma/composer"` and a `library_version`
+stamped by the release that built the tarball
+([`scripts/set-version.ts`](../scripts/set-version.ts);
+[`scripts/check-skill-packaging.mjs`](../scripts/check-skill-packaging.mjs)
+proves it against the packed artifact).
+
+### Without installing the package
+
+The GitHub source stays available for anyone who wants the skill without
+`@prisma/composer` in their project:
+
 ```bash
 npx skills add prisma/composer
 ```
 
 The [`skills` CLI](https://npmjs.com/package/skills) installs it at the
 project level for the agent runtimes it detects (`-a <agent>` to pick one).
-Install the git ref matching your `@prisma/composer` version — the skill's
-surface tracks this repo's packages.
+Nothing keeps this copy in step with your packages, so pick the git ref
+matching your `@prisma/composer` version by hand and re-do it on every
+upgrade.
 
 ## Authoring rules
 
