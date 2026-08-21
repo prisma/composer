@@ -98,6 +98,11 @@ jobs:
       - name: Check the cli-engine pin and externality
         run: pnpm check:cli-engine-pin
 
+      # The agent skill ships inside the @prisma/composer tarball and must
+      # carry the version stamp this run just wrote.
+      - name: Check the skill ships in the tarball
+        run: pnpm check:skill-packaging
+
       # Lazy executor boundary — nothing statically reachable from the family,
       # bin, or testing entrypoints imports alchemy or effect.
       - name: Check the family and testing static graphs
@@ -165,7 +170,8 @@ jobs:
       # --- Dev follow-up, release pushes only (devVersion is empty otherwise).
       # The release steps above already ran the full check battery against this
       # commit; only the version stamp changes here, so the follow-up re-runs
-      # just the version-sensitive check (publish-deps) before publishing.
+      # just the version-sensitive checks (publish-deps and the skill stamp)
+      # before publishing.
 
       - name: Set package versions (dev follow-up)
         if: ${{ steps.version.outputs.devVersion != '' }}
@@ -178,6 +184,10 @@ jobs:
       - name: Check publish dependency specifiers (dev follow-up)
         if: ${{ steps.version.outputs.devVersion != '' }}
         run: pnpm check:publish-deps
+
+      - name: Check the skill ships in the tarball (dev follow-up)
+        if: ${{ steps.version.outputs.devVersion != '' }}
+        run: pnpm check:skill-packaging
 
       - name: Publish packages (dev follow-up)
         if: ${{ steps.version.outputs.devVersion != '' }}

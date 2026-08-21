@@ -30,13 +30,22 @@ Node's built-in `node:sqlite`, unflagged since 22.13 — so 22.18 covers both.
 ## Start with the skill
 
 Composer is built to be driven by an agent, so the first thing to do is give
-your agent the skill:
+your agent the skill. It ships inside `@prisma/composer`, so it arrives with
+the package; `prisma skills sync` copies it into the skill directories your
+agent runtimes read:
 
 ```sh
-npx skills add prisma/composer
+pnpm add @prisma/composer
+pnpm add -D prisma
+pnpm prisma skills sync
 ```
 
-That's the whole setup. Your agent now knows the entire API and arrives
+That's the whole setup — and because the skill travelled in the tarball, it
+describes the exact version you installed. Add
+`"postinstall": "prisma skills sync || exit 0"` to your `package.json` and
+every upgrade brings the matching skill with it.
+
+Your agent now knows the entire API and arrives
 prepped with the **building blocks** it can snap together — ready-made
 Modules for scheduled jobs, blob storage, and event streams, alongside the
 ones you write. Ask it for what you want ("a Next.js storefront calling an
@@ -178,8 +187,10 @@ deploy target. The convention is an npm package named `prisma-composer-*` —
 that name is how you (and your agent) find one. The ecosystem is new: the
 first-party set above is the whole catalogue today, and it's growing.
 
-The agent-facing version of the guides lives in [`skills/`](skills/) and
-installs with `npx skills add prisma/composer`.
+The agent-facing version of the guides lives in [`skills/`](skills/), ships
+inside the `@prisma/composer` tarball, and installs with `prisma skills sync`
+(see [`skills/README.md`](skills/README.md), which also covers installing it
+from GitHub without the package).
 
 ## Design & internals
 

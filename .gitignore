@@ -58,6 +58,11 @@ open-chat/
 .claude/skills/
 skills-lock.json
 
+# Skills staged into a package's tarball by `prepack`
+# (scripts/stage-skills.mjs). The tracked source is the repo-root `skills/`
+# tree; these copies are regenerated on every `pnpm pack`/`pnpm publish`.
+/packages/9-public/composer/skills/
+
 # Next.js build output (any location — a stray copy under an unexpected path once got committed)
 .next/
 next-env.d.ts
