@@ -10,8 +10,9 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const SKILL = `---
 name: prisma-composer
-library: "@prisma/composer"
-library_version: "0.11.0"
+metadata:
+  library: "@prisma/composer"
+  library_version: "0.11.0"
 description: >-
   A folded description that spans lines and contains a literal $& and
   library_version: not-a-key inside prose.
@@ -23,7 +24,7 @@ Also mentions library_version: 9.9.9 in the body.
 `;
 
 describe('readSkillFrontmatter', () => {
-  it('reads library and library_version, unquoted', () => {
+  it('reads metadata.library and metadata.library_version, unquoted', () => {
     assert.deepEqual(readSkillFrontmatter(SKILL), {
       library: '@prisma/composer',
       libraryVersion: '0.11.0',
@@ -32,6 +33,10 @@ describe('readSkillFrontmatter', () => {
 
   it('returns nothing for a file with no frontmatter', () => {
     assert.deepEqual(readSkillFrontmatter('# Just a heading\n'), {});
+  });
+
+  it('ignores the keys at the top level, where the spec does not define them', () => {
+    assert.deepEqual(readSkillFrontmatter('---\nname: x\nlibrary: "@prisma/composer"\n---\n'), {});
   });
 });
 
@@ -48,19 +53,31 @@ describe('stampSkillVersion', () => {
     );
   });
 
+  it('keeps the version a quoted string, as the metadata map requires', () => {
+    assert.match(stampSkillVersion(SKILL, '1.2.3'), /^ {2}library_version: "1\.2\.3"$/m);
+  });
+
   it('is idempotent', () => {
     const once = stampSkillVersion(SKILL, '1.0.0');
     assert.equal(stampSkillVersion(once, '1.0.0'), once);
   });
 
+  it('refuses a skill with no metadata map', () => {
+    assert.throws(() => stampSkillVersion('---\nname: x\n---\n', '1.0.0'), /no `metadata` map/);
+  });
+
   it('refuses a skill that does not name its package', () => {
-    assert.throws(() => stampSkillVersion('---\nname: x\n---\n', '1.0.0'), /no `library` key/);
+    assert.throws(
+      () => stampSkillVersion('---\nname: x\nmetadata:\n  other: y\n---\n', '1.0.0'),
+      /no `metadata.library` key/,
+    );
   });
 
   it('refuses a skill with no library_version key to stamp', () => {
     assert.throws(
-      () => stampSkillVersion('---\nname: x\nlibrary: "@prisma/composer"\n---\n', '1.0.0'),
-      /no `library_version` key/,
+      () =>
+        stampSkillVersion('---\nname: x\nmetadata:\n  library: "@prisma/composer"\n---\n', '1.0.0'),
+      /no `metadata.library_version` key/,
     );
   });
 

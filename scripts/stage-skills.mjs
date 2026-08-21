@@ -10,7 +10,7 @@
 // approximate it by asking the user to pick a matching git ref by hand.
 //
 // Which skills belong to which package is not configured here: each
-// `SKILL.md` already declares its package in `library:` frontmatter (the same
+// `SKILL.md` already declares its package in `metadata.library` frontmatter (the same
 // key `set-version.ts` stamps the version onto), so this script reads that and
 // copies the matching trees. One source of truth, no table to keep in sync.
 //
@@ -53,7 +53,7 @@ const destinationRoot = join(packageDir, 'skills');
 rmSync(destinationRoot, { recursive: true, force: true });
 
 if (owned.length === 0) {
-  process.stderr.write(`No skills declare library: "${packageName}" — nothing staged.\n`);
+  process.stderr.write(`No skills declare metadata.library: "${packageName}" — nothing staged.\n`);
   process.exit(0);
 }
 

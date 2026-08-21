@@ -59,7 +59,7 @@ function ownedSkillNames() {
 const expected = ownedSkillNames();
 require_(
   expected.length > 0,
-  `no skill under skills/ declares \`library: "${PACKAGE}"\` — the frontmatter is what routes a skill into a tarball, so without it nothing ships.`,
+  `no skill under skills/ declares \`metadata.library: "${PACKAGE}"\` — the frontmatter is what routes a skill into a tarball, so without it nothing ships.`,
 );
 
 // pnpm pack, not npm pack: it runs the same `prepack` and rewrites the same
@@ -91,11 +91,11 @@ try {
     const { library, libraryVersion } = readSkillFrontmatter(readFileSync(packedSkill, 'utf-8'));
     require_(
       library === PACKAGE,
-      `the packed skills/${name}/SKILL.md declares library: "${library}", not "${PACKAGE}".`,
+      `the packed skills/${name}/SKILL.md declares metadata.library: "${library}", not "${PACKAGE}".`,
     );
     require_(
       libraryVersion === packedVersion,
-      `the packed skills/${name}/SKILL.md is stamped library_version: "${libraryVersion}" but ships in ${PACKAGE}@${packedVersion} — the stamp is what tells a reader which API surface the skill describes. Run \`node scripts/set-version.ts ${packedVersion}\`.`,
+      `the packed skills/${name}/SKILL.md is stamped metadata.library_version: "${libraryVersion}" but ships in ${PACKAGE}@${packedVersion} — the stamp is what tells a reader which API surface the skill describes. Run \`node scripts/set-version.ts ${packedVersion}\`.`,
     );
 
     // Byte equality with the tracked source: the tarball and the GitHub

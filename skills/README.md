@@ -38,8 +38,8 @@ with it:
 ```
 
 The version you read is then always the version you installed: the skill's
-frontmatter carries `library: "@prisma/composer"` and a `library_version`
-stamped by the release that built the tarball
+frontmatter carries `metadata.library: "@prisma/composer"` and a
+`metadata.library_version` stamped by the release that built the tarball
 ([`scripts/set-version.ts`](../scripts/set-version.ts);
 [`scripts/check-skill-packaging.mjs`](../scripts/check-skill-packaging.mjs)
 proves it against the packed artifact).
@@ -77,6 +77,14 @@ surface change lands in both. For anyone editing the skill:
 - **Teach concepts, not procedures.** Name the moving parts and the command
   that reveals each piece of state; reserve numbered steps for one-safe-path
   operations.
+- **Leave the `metadata` stamp alone.** `metadata.library` names the npm
+  package the skill ships inside, and `metadata.library_version` is rewritten
+  by [`scripts/set-version.ts`](../scripts/set-version.ts) on every release —
+  hand-editing the version, or dropping either key, breaks the release script
+  and [`scripts/check-skill-packaging.mjs`](../scripts/check-skill-packaging.mjs).
+  They live under `metadata` because the Agent Skills spec defines the
+  top-level keys and reserves that map (string → string) for publisher
+  extensions. A new skill needs both keys, with any placeholder version.
 - **Folder name and frontmatter `name` must match** — the runtimes key on the
   frontmatter, humans on the folder.
 
