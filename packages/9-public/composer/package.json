@@ -34,15 +34,15 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.67",
+    "alchemy": "2.0.0-beta.74",
     "arktype": "^2.2.3",
     "c12": "^3.3.4",
-    "effect": "4.0.0-beta.103",
+    "effect": "4.0.0-rc.111",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.60.0"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-beta.103",
+    "@effect/vitest": "4.0.0-rc.111",
     "@internal/assemble": "workspace:0.11.0",
     "@internal/cli": "workspace:0.11.0",
     "@internal/core": "workspace:0.11.0",

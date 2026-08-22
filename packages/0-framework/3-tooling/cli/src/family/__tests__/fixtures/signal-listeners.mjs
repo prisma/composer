@@ -24,10 +24,10 @@ const afterConfigEvaluation = counts();
 
 let afterLocalTargets = afterConfigEvaluation;
 if (what === 'local-target') {
-  // What resolveLocalTargets reaches: effect's Layer plus the lockfile module
-  // whose exit hooks are the thing under suspicion.
+  // What resolveLocalTargets additionally reaches: effect's Layer. (The
+  // historical suspect, @alchemy.run/node-utils' lockfile module, no longer
+  // exists — alchemy ships no file-lock module at all since 2.0.0-beta.74.)
   await import('effect/Layer');
-  await import('@alchemy.run/node-utils/lockfile');
   afterLocalTargets = counts();
 }
 

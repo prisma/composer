@@ -97,13 +97,13 @@ it `resolutions`, pnpm nests it under `"pnpm"`:
 ```jsonc
 // package.json
 "overrides": {
-  "effect": "4.0.0-beta.103",
-  "@effect/sql-d1": "4.0.0-beta.103",
-  "@effect/sql-pg": "4.0.0-beta.103",
-  "@effect/vitest": "4.0.0-beta.103",
-  "@effect/platform-bun": "4.0.0-beta.103",
-  "@effect/platform-node": "4.0.0-beta.103",
-  "@effect/platform-node-shared": "4.0.0-beta.103"
+  "effect": "4.0.0-rc.111",
+  "@effect/sql-d1": "4.0.0-rc.111",
+  "@effect/sql-pg": "4.0.0-rc.111",
+  "@effect/vitest": "4.0.0-rc.111",
+  "@effect/platform-bun": "4.0.0-rc.111",
+  "@effect/platform-node": "4.0.0-rc.111",
+  "@effect/platform-node-shared": "4.0.0-rc.111"
 }
 ```
 

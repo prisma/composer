@@ -22,9 +22,9 @@
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.11.0",
-    "alchemy": "2.0.0-beta.67",
+    "alchemy": "2.0.0-beta.74",
     "c12": "^3.3.4",
-    "effect": "4.0.0-beta.103",
+    "effect": "4.0.0-rc.111",
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {

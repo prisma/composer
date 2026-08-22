@@ -46,11 +46,7 @@
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"
-    ],
-    "patchedDependencies": {
-      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch",
-      "@alchemy.run/node-utils@0.0.5": "patches/@alchemy.run__node-utils@0.0.5.patch"
-    }
+    ]
   },
   "version": "0.11.0"
 }

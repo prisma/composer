@@ -10,9 +10,9 @@
  *
  * alchemy's transitive @alchemy.run/node-utils used to register exactly such
  * a handler at IMPORT time, from a module-scope exit hook in its lockfile —
- * so merely evaluating a config armed it. alchemy-run/node-utils#6 scopes the
- * hooks to owned locks; it is vendored as a pnpm patch until the release
- * chain delivers it (see patches/ and the alchemy upgrade skill).
+ * so merely evaluating a config armed it. alchemy-run/node-utils#6 scoped the
+ * hooks to owned locks (vendored here as a pnpm patch for a while); since
+ * alchemy 2.0.0-beta.74 the lockfile module is gone entirely.
  *
  * This test is the standing check that the property actually holds. By ruling
  * there is NO workaround behind it: nothing in our code strips listeners, so
