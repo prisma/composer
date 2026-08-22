@@ -34,8 +34,17 @@ export type CreateBuildBody = JsonBody<operations['postV1Builds']>;
  * Progress on a build. `projectId`, `branchId`, `appId` and `deployedUrl` are
  * fill-only: a reporter that resolves them partway through a deploy sets them
  * here, re-sending a recorded value is accepted, and changing one is a 409.
+ *
+ * `applicationTopologyContentHash` is the one field stated here rather than
+ * derived: the platform's `Build` table already has the column, the endpoint
+ * accepting it is an additive follow-up, and its validator strips unknown
+ * keys in the meantime — so sending it is how the value starts landing the
+ * moment the platform accepts it. The SDK regeneration retires the
+ * intersection.
  */
-export type UpdateBuildBody = JsonBody<operations['patchV1BuildsByBuildId']>;
+export type UpdateBuildBody = JsonBody<operations['patchV1BuildsByBuildId']> & {
+  applicationTopologyContentHash?: string;
+};
 
 type ResourcePath =
   operations['putV1BuildsByBuildIdResourcesByResourceTypeByResourceId']['parameters']['path'];

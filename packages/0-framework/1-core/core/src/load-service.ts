@@ -1,6 +1,42 @@
-import { type Edge, type Graph, type GraphNode, LoadError, type NodeId } from './graph-types.ts';
-import { isNode, type ServiceNode } from './node.ts';
+import {
+  type BoundaryPort,
+  type Edge,
+  type Graph,
+  type GraphNode,
+  LoadError,
+  type NodeId,
+} from './graph-types.ts';
+import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
 import { topoSort } from './toposort.ts';
+
+/**
+ * The declared boundary ports of a module or service node at `id`: dep slots
+ * as `in` ports (contractKind = the slot's `type`), exposed contracts as
+ * `out` ports (contractKind = the contract's `kind`). A resource's one
+ * `$out` port is recorded at its provision site instead (load-module.ts).
+ */
+export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): BoundaryPort[] {
+  const ports: BoundaryPort[] = [];
+  const slots: Record<string, unknown> = node.kind === 'module' ? node.deps : node.inputs;
+  for (const [name, slot] of Object.entries(slots)) {
+    const type =
+      typeof slot === 'object' && slot !== null && 'type' in slot && typeof slot.type === 'string'
+        ? slot.type
+        : undefined;
+    ports.push({ node: id, direction: 'in', name, contractKind: type });
+  }
+  for (const [name, contract] of Object.entries(node.expose ?? {})) {
+    const kind =
+      typeof contract === 'object' &&
+      contract !== null &&
+      'kind' in contract &&
+      typeof contract.kind === 'string'
+        ? contract.kind
+        : undefined;
+    ports.push({ node: id, direction: 'out', name, contractKind: kind });
+  }
+  return ports;
+}
 
 export function serviceInputs(
   service: ServiceNode,
@@ -33,7 +69,7 @@ export function serviceInputs(
       throw new LoadError(`Input "${input}" of "${serviceId}" has an empty node type.`);
     }
     const id = `${serviceId}.${input}`;
-    nodes.push({ id, node: value });
+    nodes.push({ id, parent: serviceId, node: value });
     edges.push({ from: id, to: serviceId, input, kind: 'input' });
   }
   return { nodes, edges };
@@ -58,12 +94,14 @@ export function loadService(root: ServiceNode, rootId: NodeId): Graph {
         'call binds `input: { … }` (ADR-0042).',
     );
   }
-  const rootGraphNode: GraphNode = { id: rootId, node: root };
+  const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
   const { nodes, edges } = serviceInputs(root, rootId);
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
+    ports: boundaryPortsOf(rootId, root),
+    authoredEdges: [],
     inputBindings: [],
     params: [],
   };

@@ -511,6 +511,24 @@ function requireConfigKeySegmentName(
   }
 }
 
+/**
+ * `$out` names a resource's single anonymous output on the wire (the
+ * application topology's reserved port name), so no declared port — a dep
+ * slot or an expose entry — may claim it. Input names are already confined
+ * to [A-Za-z0-9] by the config-key rule; expose and module-dep names are
+ * not, so the reservation is checked wherever a port name is declared.
+ */
+function requireNotReservedPortNames(names: Iterable<string>, factory: string): void {
+  for (const name of names) {
+    if (name === '$out') {
+      throw new Error(
+        `${factory}() declares a port named "$out" — that name is reserved for a resource's ` +
+          'anonymous output; choose another name.',
+      );
+    }
+  }
+}
+
 function requireConfigKeySegmentNames(
   names: Iterable<string>,
   kind: 'input' | 'param' | 'secret',
@@ -629,6 +647,7 @@ export function service<
   requireType(def.type, 'service');
   requireConfigKeySegmentNames(Object.keys(def.inputs), 'input', 'service');
   requireConfigKeySegmentNames(Object.keys(def.params), 'param', 'service');
+  if (def.expose !== undefined) requireNotReservedPortNames(Object.keys(def.expose), 'service');
   if (def.input !== undefined && typeof def.input['~standard']?.validate !== 'function') {
     throw new Error(
       'service() `input` must be a Standard Schema (an object with a "~standard".validate ' +
@@ -726,6 +745,8 @@ export function module(
   requireName(name, 'module');
   const closedRoot = typeof boundaryOrBody === 'function';
   const boundary = closedRoot ? {} : boundaryOrBody;
+  requireNotReservedPortNames(Object.keys(boundary.deps ?? {}), 'module');
+  requireNotReservedPortNames(Object.keys(boundary.expose ?? {}), 'module');
   const deps = frozenShallowCopy(boundary.deps ?? {});
   const secretSlots = frozenShallowCopy(boundary.secrets ?? {});
   const paramSlots = frozenShallowCopy(boundary.params ?? {});

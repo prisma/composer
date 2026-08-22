@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { Graph } from '@internal/core';
 import type {
   ContainerCredentials,
   ContainerInstance,
@@ -122,6 +123,7 @@ async function beginReporters(
   extensions: readonly { readonly id: ExtensionId; readonly reporter?: ReporterDescriptor }[],
   context: {
     readonly appName: string;
+    readonly graph: Graph;
     readonly stage: string | undefined;
     readonly cwd: string;
     readonly reportId: string | undefined;
@@ -331,6 +333,7 @@ async function runStackPipelineInner(
       reporters.push(
         ...(await beginReporters(config.extensions, {
           appName: resolvedName,
+          graph,
           stage,
           cwd,
           reportId: opts.reportId,

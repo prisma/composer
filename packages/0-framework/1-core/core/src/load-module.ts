@@ -1,14 +1,18 @@
 import { blindCast } from '@internal/foundation/casts';
 import {
+  type AuthoredEdge,
+  type BoundaryPort,
   type Edge,
   type Graph,
   type GraphNode,
   LoadError,
   type NodeId,
   type ParamBinding,
+  type PortEndpoint,
+  RESOURCE_OUT_PORT,
   type ServiceInputBinding,
 } from './graph-types.ts';
-import { serviceInputs } from './load-service.ts';
+import { boundaryPortsOf, serviceInputs } from './load-service.ts';
 import {
   type DependencyEnd,
   type Deps,
@@ -26,6 +30,34 @@ import {
 import { topoSort } from './toposort.ts';
 
 /**
+ * Brands a ref-port with the AUTHORED endpoint it stands for — which port of
+ * which node the author wired, before any forwarding chain resolves. Read
+ * only by `authoredSourceOf`; `__providerId` keeps carrying the resolved
+ * producer for the flat (post-dereference) edges.
+ */
+const AUTHORED_PORT = Symbol('prisma:authored-port');
+
+interface AuthoredPortBrand {
+  readonly node: NodeId;
+  readonly name: string;
+}
+
+/** The authored out-port brand carried by `ref`, if any. */
+function authoredPortOf(ref: unknown): AuthoredPortBrand | undefined {
+  if (typeof ref !== 'object' || ref === null) return undefined;
+  const brand = blindCast<
+    Record<PropertyKey, unknown>,
+    'reading the authored-port brand off an unknown object'
+  >(ref)[AUTHORED_PORT];
+  if (typeof brand !== 'object' || brand === null) return undefined;
+  const { node, name } = blindCast<
+    Partial<AuthoredPortBrand>,
+    'only this module writes the brand, always as { node, name }; the field checks below re-verify'
+  >(brand);
+  return typeof node === 'string' && typeof name === 'string' ? { node, name } : undefined;
+}
+
+/**
  * Builds the ref a provision() call hands back: the id (so a producer with no
  * exposed ports — or an untyped slot — can still be wired wholesale) plus one
  * ref-port per exposed contract, each the contract's own runtime value (so
@@ -34,7 +66,7 @@ import { topoSort } from './toposort.ts';
 function refFor(id: string, service: ServiceNode): ProvisionedRef {
   const ports: Record<string, unknown> = {};
   for (const [port, contract] of Object.entries(service.expose ?? {})) {
-    ports[port] = { ...contract, __providerId: id };
+    ports[port] = { ...contract, __providerId: id, [AUTHORED_PORT]: { node: id, name: port } };
   }
   return blindCast<
     ProvisionedRef,
@@ -45,14 +77,19 @@ function refFor(id: string, service: ServiceNode): ProvisionedRef {
 /**
  * The resource variant of refFor: a resource has exactly one port — the
  * contract it provides — flattened onto the ref itself, tagged with the
- * provider id. `id` is written last so a hostile contract value cannot
- * clobber it.
+ * provider id. `id` and the authored brand are written last so a hostile
+ * contract value cannot clobber them.
  */
 function refForResource(id: string, resource: ResourceNode): ProvisionedRef {
   return blindCast<
     ProvisionedRef,
     'the ref is the provided contract value tagged with the provider id — the `{ id } & RefPort<C>` shape the resource provision() overload pins'
-  >({ ...resource.provides, __providerId: id, id });
+  >({
+    ...resource.provides,
+    __providerId: id,
+    id,
+    [AUTHORED_PORT]: { node: id, name: RESOURCE_OUT_PORT },
+  });
 }
 
 /** A wired value's producer id: a ref-port's `__providerId`, or a bare ref's `id`. */
@@ -316,10 +353,16 @@ function validateParamNeedBinding(
  * across the ENTIRE recursive flatten, not per scope — a nested module may
  * forward in a producer provisioned by an ancestor scope, and it is the
  * shared `byId` (keyed by full address) that lets that resolve.
+ *
+ * `selfId` is this module's own node id — the root's given id when `address`
+ * is `undefined`, the full address otherwise. It anchors the authored view:
+ * children carry it as their `parent`, and this module's own boundary ports
+ * (and the authored edges touching them) are recorded against it.
  */
 function flatten(
   moduleNode: ModuleNode,
   address: string | undefined,
+  selfId: NodeId,
   wiring: Record<string, unknown>,
   secretWiring: Record<string, unknown>,
   paramWiring: Record<string, unknown>,
@@ -329,7 +372,10 @@ function flatten(
   inputBindings: ServiceInputBinding[],
   paramBindings: ParamBinding[],
   byId: Map<string, ServiceNode | ResourceNode | ModuleNode>,
+  ports: BoundaryPort[],
+  authoredEdges: AuthoredEdge[],
 ): Record<string, unknown> {
+  ports.push(...boundaryPortsOf(selfId, moduleNode));
   const localIds = new Set<string>();
   const used = new Set<string>();
   const usedSecrets = new Set<string>();
@@ -357,6 +403,32 @@ function flatten(
     for (const value of values) {
       for (const key of Object.keys(ctxInputs)) {
         if (value === ctxInputs[key]) used.add(key);
+      }
+    }
+  };
+
+  // The authored SOURCE endpoint a wiring value stands for: this module's own
+  // `in` port when the value is one of its forwarded ctx.inputs (identity,
+  // like markUsed — and checked FIRST, because a forwarded copy still carries
+  // the original producer's authored brand), else the producer `out` port the
+  // ref-port was built for. A whole ref wired wholesale into an untyped slot
+  // names no port, so it authors no edge.
+  const authoredSourceOf = (value: unknown): PortEndpoint | undefined => {
+    for (const key of Object.keys(ctxInputs)) {
+      if (value === ctxInputs[key]) return { node: selfId, direction: 'in', name: key };
+    }
+    const brand = authoredPortOf(value);
+    return brand === undefined
+      ? undefined
+      : { node: brand.node, direction: 'out', name: brand.name };
+  };
+
+  /** Records the authored edge each wiring entry declares: source port → the target's own `in` port. */
+  const recordAuthoredWiring = (targetId: NodeId, targetWiring: Record<string, unknown>): void => {
+    for (const [input, ref] of Object.entries(targetWiring)) {
+      const from = authoredSourceOf(ref);
+      if (from !== undefined) {
+        authoredEdges.push({ from, to: { node: targetId, direction: 'in', name: input } });
       }
     }
   };
@@ -479,7 +551,13 @@ function flatten(
         throw new LoadError(`provision("${id}") received a resource with an empty node type.`);
       }
       byId.set(fullAddress, child);
-      nodes.push({ id: fullAddress, node: child });
+      nodes.push({ id: fullAddress, parent: selfId, node: child });
+      ports.push({
+        node: fullAddress,
+        direction: 'out',
+        name: RESOURCE_OUT_PORT,
+        contractKind: child.provides.kind,
+      });
       return refForResource(fullAddress, child);
     }
 
@@ -538,8 +616,10 @@ function flatten(
         paramBindings.push({ serviceAddress: fullAddress, slot, binding });
       }
       const inputs = serviceInputs(child, fullAddress);
-      nodes.push(...inputs.nodes, { id: fullAddress, node: child });
+      nodes.push(...inputs.nodes, { id: fullAddress, parent: selfId, node: child });
       edges.push(...inputs.edges, ...wiringEdges(localWiring, fullAddress));
+      ports.push(...boundaryPortsOf(fullAddress, child));
+      recordAuthoredWiring(fullAddress, localWiring);
       pending.push({
         deps: child.inputs,
         wiring: localWiring,
@@ -569,6 +649,7 @@ function flatten(
     validateParamNeedBinding(child, id, localParams, moduleNode.name);
 
     edges.push(...wiringEdges(localWiring, fullAddress));
+    recordAuthoredWiring(fullAddress, localWiring);
     pending.push({
       deps: child.deps,
       wiring: localWiring,
@@ -579,6 +660,7 @@ function flatten(
     const childOutputs = flatten(
       child,
       fullAddress,
+      fullAddress,
       localWiring,
       localSecrets,
       localParams,
@@ -588,13 +670,27 @@ function flatten(
       inputBindings,
       paramBindings,
       byId,
+      ports,
+      authoredEdges,
     );
-    nodes.push({ id: fullAddress, node: child });
+    nodes.push({ id: fullAddress, parent: selfId, node: child });
     byId.set(fullAddress, child);
+    // Each returned output gets its OWN shallow copy branded as THIS module's
+    // out port — the same per-key copy trick ctx.inputs uses — so wiring it
+    // into a sibling authors an edge from the module boundary, not from the
+    // inner producer the flat view resolves to. `__providerId` and
+    // `satisfies` read through unchanged.
+    const brandedOutputs: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(childOutputs)) {
+      brandedOutputs[key] =
+        typeof value === 'object' && value !== null
+          ? { ...value, [AUTHORED_PORT]: { node: fullAddress, name: key } }
+          : value;
+    }
     return blindCast<
       ProvisionedRef,
       "a nested module's ProvisionedRef is its own id plus its already-validated ModuleOutputs, matching ProvisionedRef's mapped shape"
-    >({ id: fullAddress, ...childOutputs });
+    >({ id: fullAddress, ...brandedOutputs });
   };
 
   const ctx = blindCast<
@@ -661,6 +757,12 @@ function flatten(
         `Module "${moduleNode.name}"'s returned port for expose "${key}" does not satisfy its declared contract.`,
       );
     }
+    // The boundary edge the returned port authors: a child's output exposed
+    // by this module (out → out), or a re-exposed own input (in → out).
+    const from = authoredSourceOf(port);
+    if (from !== undefined) {
+      authoredEdges.push({ from, to: { node: selfId, direction: 'out', name: key } });
+    }
   }
 
   return outputs;
@@ -702,17 +804,36 @@ export function loadModule(root: ModuleNode, opts?: { id?: NodeId }): Graph {
   const inputBindings: ServiceInputBinding[] = [];
   const paramBindings: ParamBinding[] = [];
   const byId = new Map<string, ServiceNode | ResourceNode | ModuleNode>();
+  const ports: BoundaryPort[] = [];
+  const authoredEdges: AuthoredEdge[] = [];
 
-  flatten(root, undefined, {}, {}, {}, nodes, edges, pending, inputBindings, paramBindings, byId);
+  flatten(
+    root,
+    undefined,
+    rootId,
+    {},
+    {},
+    {},
+    nodes,
+    edges,
+    pending,
+    inputBindings,
+    paramBindings,
+    byId,
+    ports,
+    authoredEdges,
+  );
 
   for (const entry of pending) validateWiring(entry, byId);
   assertDependencyDag(edges);
 
-  const rootGraphNode: GraphNode = { id: rootId, node: root };
+  const rootGraphNode: GraphNode = { id: rootId, parent: undefined, node: root };
   return {
     root: rootGraphNode,
     nodes: [...topoSort(nodes, edges), rootGraphNode],
     edges,
+    ports,
+    authoredEdges,
     inputBindings,
     params: paramBindings,
   };

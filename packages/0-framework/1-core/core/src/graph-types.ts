@@ -6,7 +6,48 @@ export type NodeId = string;
 
 export interface GraphNode {
   readonly id: NodeId;
+  /**
+   * The containing node's id — `undefined` only on the root. Carried
+   * explicitly because containment is STATED, never derived: the dots in an
+   * address are a readable-uniqueness convention, and anything downstream
+   * (the platform's application topology included) treats the id as opaque.
+   */
+  readonly parent: NodeId | undefined;
   readonly node: ServiceNode | ResourceNode | DependencyEnd | ModuleNode;
+}
+
+/** The reserved name of a resource's single anonymous output port. Rejected as a user-declared port name (node.ts). */
+export const RESOURCE_OUT_PORT = '$out';
+
+/** One end of an authored edge: a boundary port named by its owning node, direction, and name. */
+export interface PortEndpoint {
+  readonly node: NodeId;
+  readonly direction: 'in' | 'out';
+  readonly name: string;
+}
+
+/**
+ * A declared boundary port: a module's dep/expose entry, a service's
+ * input/expose entry, or a resource's one anonymous output (`$out`).
+ * `contractKind` is the protocol brand riding the port — a DependencyEnd's
+ * `type` on an `in` port, the exposed Contract's `kind` on an `out` port.
+ */
+export interface BoundaryPort extends PortEndpoint {
+  readonly contractKind: string | undefined;
+}
+
+/**
+ * A pre-dereference edge, exactly as authored: module boundaries are
+ * ordinary edges (an input forwarded into a child is module-`in` →
+ * child-`in`; a child's output exposed by its module is child-`out` →
+ * module-`out`; a re-exposed own input is `in` → `out` on the same module),
+ * where the flat `edges` view resolves every forwarding chain through to the
+ * real producer. A wiring whose source names no port (a whole ref wired
+ * wholesale into an untyped slot) authors no edge here.
+ */
+export interface AuthoredEdge {
+  readonly from: PortEndpoint;
+  readonly to: PortEndpoint;
 }
 
 /**
@@ -58,6 +99,10 @@ export interface Graph {
   /** Root + one per input, topo-ordered (deps first). */
   readonly nodes: readonly GraphNode[];
   readonly edges: readonly Edge[];
+  /** Every declared boundary port, in declaration order. */
+  readonly ports: readonly BoundaryPort[];
+  /** The authored (pre-dereference) edges between boundary ports, in declaration order. */
+  readonly authoredEdges: readonly AuthoredEdge[];
   /** Every service input binding a `provision()` call supplied (ADR-0042). */
   readonly inputBindings: readonly ServiceInputBinding[];
   /** Every service param bound at provision — literal or source; unbound params are absent here and fall back to their `default` (see `buildConfig`). */

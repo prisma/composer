@@ -4,14 +4,17 @@ import { loadService } from './load-service.ts';
 import { isNode, type ModuleNode, type ServiceNode } from './node.ts';
 
 export type {
+  AuthoredEdge,
+  BoundaryPort,
   Edge,
   Graph,
   GraphNode,
   NodeId,
   ParamBinding,
+  PortEndpoint,
   ServiceInputBinding,
 } from './graph-types.ts';
-export { LoadError } from './graph-types.ts';
+export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
 
 /**
  * Builds the in-memory graph from a root node. A service root walks its own
