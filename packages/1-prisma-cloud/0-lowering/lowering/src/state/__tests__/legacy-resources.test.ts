@@ -784,6 +784,206 @@ describe('legacy compute-family rows against upstream providers', () => {
   });
 });
 
+describe('legacy bucket-family rows against upstream providers', () => {
+  const BUCKET_SECRET = 'bucket-secret-reveal-once';
+
+  const legacyBucketRow = (branchId?: string): CreatedResourceState => ({
+    resourceType: 'PrismaComposer.Bucket',
+    namespace: undefined,
+    fqn: 'files-bucket',
+    logicalId: 'files-bucket',
+    instanceId: 'inst-bucket',
+    providerVersion: 1,
+    status: 'created',
+    downstream: [],
+    bindings: [],
+    props: {
+      projectId: 'proj-1',
+      name: 'files',
+      ...(branchId !== undefined ? { branchId } : {}),
+    },
+    attr: { id: 'bkt-1', name: 'files' },
+  });
+
+  const legacyBucketKeyRow = (): CreatedResourceState => ({
+    resourceType: 'PrismaComposer.BucketKey',
+    namespace: undefined,
+    fqn: 'files-key',
+    logicalId: 'files-key',
+    instanceId: 'inst-key',
+    providerVersion: 1,
+    status: 'created',
+    downstream: [],
+    bindings: [],
+    props: { bucketId: 'bkt-1', name: 'files', role: 'read_write' },
+    attr: {
+      id: 'key-1',
+      bucketId: 'bkt-1',
+      accessKeyId: 'AKIA-LEGACY',
+      secretAccessKey: Redacted.make(BUCKET_SECRET),
+      endpoint: 'https://t3.storage.dev',
+      bucketName: 'user-bkt-1',
+    },
+  });
+
+  const apiBucket = {
+    id: 'bkt-1',
+    type: 'bucket',
+    url: 'https://api.prisma.io/v1/buckets/bkt-1',
+    name: 'files',
+    providerName: 'user-bkt-1',
+    status: 'ready',
+    createdAt: '2025-01-01T00:00:00.000Z',
+    project: { id: 'proj-1' },
+    branchId: null,
+  };
+
+  /** Only the endpoints these adoption paths hit; anything else throws loudly. */
+  const bucketClient = {
+    getBucket: (id: string) =>
+      id === 'bkt-1' ? Effect.succeed(apiBucket) : Effect.die(`unexpected getBucket ${id}`),
+    listBucketKeys: (bucketId: string) =>
+      bucketId === 'bkt-1'
+        ? Effect.succeed([
+            {
+              id: 'key-1',
+              type: 'bucketKey',
+              name: 'files',
+              valueHint: 'AKIA…GACY',
+              role: 'read_write',
+              createdAt: '2025-01-01T00:00:00.000Z',
+            },
+          ])
+        : Effect.die(`unexpected listBucketKeys ${bucketId}`),
+    createBucket: () => Effect.die('createBucket must not be called for an adopted legacy row'),
+    createBucketKey: () =>
+      Effect.die('createBucketKey must not be called while the persisted key still exists'),
+  } as unknown as Prisma.PrismaManagementClient;
+
+  // Same `any` leak through Provider.effect's typing as the services above.
+  const bucketService = () =>
+    Effect.runPromise(
+      Prisma.Bucket.Provider.pipe(
+        Effect.provide(
+          Prisma.BucketProvider().pipe(
+            Layer.provide(Layer.succeed(Prisma.PrismaClient, bucketClient)),
+          ),
+        ),
+      ) as Effect.Effect<Provider.ProviderService<Prisma.Bucket>, never, never>,
+    );
+
+  const bucketAccessKeyService = () =>
+    Effect.runPromise(
+      Prisma.BucketAccessKey.Provider.pipe(
+        Effect.provide(
+          Prisma.BucketAccessKeyProvider().pipe(
+            Layer.provide(Layer.succeed(Prisma.PrismaClient, bucketClient)),
+          ),
+        ),
+      ) as Effect.Effect<Provider.ProviderService<Prisma.BucketAccessKey>, never, never>,
+    );
+
+  test('maps a legacy Bucket row (either type-id era) to upstream field names, idempotently', () => {
+    const migrated = migrateLegacyResourceState(legacyBucketRow('branch_1')) as MigratedRow;
+    expect(migrated.resourceType).toBe('Prisma.Bucket');
+    expect(migrated.props).toEqual({ project: 'proj-1', name: 'files', branchId: 'branch_1' });
+    expect(migrated.attr).toMatchObject({ bucketId: 'bkt-1', name: 'files', projectId: 'proj-1' });
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
+
+    const prismaEra = { ...legacyBucketRow(), resourceType: 'Prisma.Bucket' };
+    expect((migrateLegacyResourceState(prismaEra) as MigratedRow).attr).toMatchObject({
+      bucketId: 'bkt-1',
+    });
+  });
+
+  test('maps a legacy BucketKey row onto Prisma.BucketAccessKey, keeping the Redacted secret', () => {
+    const migrated = migrateLegacyResourceState(legacyBucketKeyRow()) as MigratedRow;
+    expect(migrated.resourceType).toBe('Prisma.BucketAccessKey');
+    expect(migrated.props).toEqual({ bucket: 'bkt-1', name: 'files', role: 'read_write' });
+    expect(migrated.attr).toMatchObject({
+      bucketAccessKeyId: 'key-1',
+      bucketId: 'bkt-1',
+      accessKeyId: 'AKIA-LEGACY',
+      endpoint: 'https://t3.storage.dev',
+      bucketName: 'user-bkt-1',
+    });
+    const secret = migrated.attr['secretAccessKey'];
+    expect(Redacted.isRedacted(secret)).toBe(true);
+    expect(Redacted.value(secret as Redacted.Redacted<string>)).toBe(BUCKET_SECRET);
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
+  });
+
+  test('Bucket: diff plans NO action, and read finds the bucket (no create)', async () => {
+    const migrated = migrateLegacyResourceState(legacyBucketRow()) as MigratedRow;
+    const service = await bucketService();
+    if (service.diff === undefined || service.read === undefined) {
+      throw new Error('upstream provider must expose diff and read');
+    }
+    const diff = await Effect.runPromise(
+      service.diff({
+        id: 'files-bucket',
+        fqn: 'files-bucket',
+        instanceId: 'inst-bucket',
+        olds: migrated.props,
+        news: migrated.props,
+        output: migrated.attr,
+        session: undefined,
+        bindings: [],
+      } as never),
+    );
+    expect(diff).toBeUndefined();
+
+    const read = await Effect.runPromise(
+      service.read({
+        id: 'files-bucket',
+        fqn: 'files-bucket',
+        instanceId: 'inst-bucket',
+        olds: migrated.props,
+        output: migrated.attr,
+        session: undefined,
+        bindings: [],
+      } as never),
+    );
+    expect(read).toMatchObject({ bucketId: 'bkt-1', projectId: 'proj-1' });
+  });
+
+  test('BucketAccessKey: diff plans NO action; reconcile keeps the persisted secret WITHOUT minting', async () => {
+    const migrated = migrateLegacyResourceState(legacyBucketKeyRow()) as MigratedRow;
+    const service = await bucketAccessKeyService();
+    if (service.diff === undefined) throw new Error('upstream provider must expose diff');
+    const diff = await Effect.runPromise(
+      service.diff({
+        id: 'files-key',
+        fqn: 'files-key',
+        instanceId: 'inst-key',
+        olds: migrated.props,
+        news: migrated.props,
+        output: migrated.attr,
+        session: undefined,
+        bindings: [],
+      } as never),
+    );
+    expect(diff).toBeUndefined();
+
+    const reconciled = (await Effect.runPromise(
+      service.reconcile({
+        id: 'files-key',
+        fqn: 'files-key',
+        instanceId: 'inst-key',
+        olds: migrated.props,
+        news: migrated.props,
+        output: migrated.attr,
+        session: undefined,
+        bindings: [],
+      } as never),
+    )) as Record<string, unknown>;
+    expect(reconciled).toMatchObject({ bucketAccessKeyId: 'key-1', accessKeyId: 'AKIA-LEGACY' });
+    expect(Redacted.value(reconciled['secretAccessKey'] as Redacted.Redacted<string>)).toBe(
+      BUCKET_SECRET,
+    );
+  });
+});
+
 describe('state round-trip of legacy rows through the hosted state layer', () => {
   // The REAL layer (stateLayerAgainst → stock HTTP client → on-read
   // migration) against an in-process fake of the platform state API — the

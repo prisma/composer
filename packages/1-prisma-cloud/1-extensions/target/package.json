@@ -31,9 +31,9 @@
     "@prisma/orm-postgres": "8.0.0-rc.4",
     "@prisma/orm-toolchain": "8.0.0-rc.4",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.67",
+    "alchemy": "2.0.0-beta.74",
     "arktype": "^2.2.3",
-    "effect": "4.0.0-beta.103",
+    "effect": "4.0.0-rc.111",
     "pathe": "^2.0.3",
     "pg": "8.22.0"
   },

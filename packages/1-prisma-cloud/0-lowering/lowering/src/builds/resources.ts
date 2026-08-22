@@ -25,24 +25,26 @@ interface PlatformResource {
 }
 
 /**
- * Alchemy resource type → platform resource type.
+ * Alchemy resource type → platform resource type, keyed by upstream
+ * `alchemy/Prisma`'s type-ids and attribute names — the shapes the state
+ * store actually writes since the upstream provider adoption.
  *
- * Two of this package's resources are deliberately absent. `Prisma.BucketKey`
- * has no platform resource type to map onto. `PrismaCloud.ServiceKey` is a
- * value this deploy mints locally, not a platform resource at all — the
- * platform's `service_key` is what `Prisma.Connection` creates.
+ * Two resources are deliberately absent. `Prisma.BucketAccessKey` has no
+ * platform resource type to map onto. `PrismaCloud.ServiceKey` is a value
+ * this deploy mints locally, not a platform resource at all — the platform's
+ * `service_key` is what `Prisma.Connection` creates.
  *
  * Anything not listed — `PgWarm`, and every resource another extension
  * contributes — is not a Prisma Cloud resource and is not reported.
  */
 const PLATFORM_RESOURCES: Readonly<Record<string, PlatformResource>> = {
-  'Prisma.Project': { type: 'project', idField: 'id' },
-  'Prisma.Database': { type: 'database', idField: 'id' },
-  'Prisma.Connection': { type: 'service_key', idField: 'id' },
-  'Prisma.Bucket': { type: 'bucket', idField: 'id' },
-  'Prisma.ComputeService': { type: 'app', idField: 'id' },
+  'Prisma.Project': { type: 'project', idField: 'projectId' },
+  'Prisma.Database': { type: 'database', idField: 'databaseId' },
+  'Prisma.Connection': { type: 'service_key', idField: 'connectionId' },
+  'Prisma.Bucket': { type: 'bucket', idField: 'bucketId' },
+  'Prisma.App': { type: 'app', idField: 'appId' },
   'Prisma.Deployment': { type: 'deployment', idField: 'deploymentId' },
-  'Prisma.EnvironmentVariable': { type: 'config_variable', idField: 'id' },
+  'Prisma.EnvironmentVariable': { type: 'config_variable', idField: 'environmentVariableId' },
 };
 
 /**

@@ -90,7 +90,7 @@ has no support yet (buckets) or no Management API exists behind them.
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
 | `Prisma.App` | App | project, displayName, regionId, branchId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
-| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint moves |
+| `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
@@ -211,24 +211,7 @@ which would skip the artifact comparison and silently drop a code change.
 `compute/deployment-edge.ts` records the full argument and its test drives
 upstream's real diff.
 
-**Change propagation is wired by an environment fingerprint in the artifact
-path.** The platform freezes a deployment's environment at create, so a
-*value* change (a rotated URL) reaches a running service only through a new
-deployment. The deploy hook names the artifact hard-link directory from a hash
-of the service's environment material (`compute/deploy-fingerprint.ts`), so
-the resolved path upstream compares moves exactly when the environment does:
-unchanged service → identical path → reuse; changed environment or artifact →
-new path → replace. The hashed material is non-secret by construction —
-environment rows carry config literals and pointers, never secret values (see
-the [config/secret split](../03-domain-model/glossary.md#configuration--config-and-secrets))
-— and out-of-band rotation of a pointed platform variable is detected via its
-`updatedAt` metadata, read at preflight and carried across the CLI→Alchemy
-process boundary on the framework's preflight-transport channel. Secret-bearing
-rows contribute wiring identity only; a value re-issued under a stable resource
-identity does not move the fingerprint (the module comment records the
-accepted narrowing). When upstream's `Prisma.Deployment` gains `redeployOn`
-(inputs a deployment must be recreated for) and the pinned alchemy version
-includes it, the fingerprint moves onto that prop at the marked seam.
+**Change propagation is wired through `Prisma.Deployment.triggers`.** The platform freezes a deployment's environment at create, so a *value* change (a rotated URL) reaches a running service only through a new deployment. The compute descriptor declares one trigger member per environment row, carrying the same `Redacted` value the row writes; upstream folds the resolved members into a salted fingerprint inside its own encrypted state and plans a replacement exactly when one moved (and conservatively when a member cannot be resolved at plan time because the producing resource is itself changing). Unchanged service → same fingerprint → reuse; changed value or artifact → replace. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) moves the fingerprint too. No plaintext lands in state — the members are `Redacted` in props and only the salted hash is persisted. A platform variable a row merely POINTS at (operator-owned; Composer never reads its value) contributes a `<name>:updatedAt` member instead, read at preflight and carried across the CLI→Alchemy process boundary on the framework's preflight-transport channel, so an out-of-band rotation still ships a new deployment.
 
 The framework's core constructs these edges when lowering a connection (the
 `serialize` env-var records thread into `deploy` through the service SPI); no pack

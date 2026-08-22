@@ -18,8 +18,8 @@
     "@internal/dev-emulators": "workspace:0.11.0",
     "@internal/lowering": "workspace:0.11.0",
     "@internal/s3-protocol": "workspace:0.11.0",
-    "alchemy": "2.0.0-beta.67",
-    "effect": "4.0.0-beta.103",
+    "alchemy": "2.0.0-beta.74",
+    "effect": "4.0.0-rc.111",
     "tar": "^7.5.21"
   },
   "devDependencies": {

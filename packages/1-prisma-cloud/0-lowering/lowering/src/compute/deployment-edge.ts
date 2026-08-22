@@ -8,7 +8,8 @@
  * treats `{portMapping, skipCodeUpload, artifactPath, artifactContentType}`
  * as one block and returns "no opinion" if any is unresolved (a brand-new
  * variable always is), which would silently skip the artifact comparison.
- * Ordering only: shipping a CHANGED value is deploy-fingerprint.ts's job.
+ * Ordering only: shipping a CHANGED value is `Deployment.triggers`' job (the
+ * compute descriptor declares one member per environment row).
  */
 
 import * as Output from 'alchemy/Output';

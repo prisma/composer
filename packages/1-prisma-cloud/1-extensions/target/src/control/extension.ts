@@ -41,7 +41,11 @@ import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
-import { pointerUpdatedAtLookup, serializePointerUpdatedAt } from './pointer-timestamps.ts';
+import {
+  type PointerUpdatedAt,
+  pointerUpdatedAtLookup,
+  serializePointerUpdatedAt,
+} from './pointer-timestamps.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -314,7 +318,7 @@ function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'p
  */
 function lazyOptions(
   opts: PrismaCloudOptions,
-  pointerUpdatedAt: Prisma.PointerUpdatedAt,
+  pointerUpdatedAt: PointerUpdatedAt,
 ): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
