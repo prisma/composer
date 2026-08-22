@@ -22,6 +22,7 @@ import { notOk, ok, okVoid } from '@internal/foundation/result';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { type ControlDouble, createControlDouble } from '../../testing/control-double.ts';
+import { createDestroyCommand } from '../commands/destroy.ts';
 import { createComposerFamily } from '../family.ts';
 
 type Fixtures = Parameters<typeof createControlDouble>[0];
@@ -60,8 +61,8 @@ interface Harness {
 
 /**
  * Composer's family mounted at the top level of a test CLI, exactly as
- * `createComposerCli` mounts it — the same family, the same commands, only the
- * process around it replaced.
+ * `createComposerCli` mounts it — including `destroy`, which the bin mounts
+ * on top of the family now that the family no longer ships it.
  */
 function composerCli(
   spec: {
@@ -74,7 +75,7 @@ function composerCli(
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    commands: { ...family.commands },
+    commands: { ...family.commands, destroy: createDestroyCommand(double.operations) },
     config: {},
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),

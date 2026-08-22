@@ -10,7 +10,7 @@
     "dev:worker": "bun run src/worker/server.ts",
     "dev:runner": "bun run src/runner/server.ts",
     "deploy": "pnpm turbo run build --filter @prisma/example-cron... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )"
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${CRON_STACK_NAME:+--name \"$CRON_STACK_NAME\"} )"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-beta.103",

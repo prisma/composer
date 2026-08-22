@@ -13,9 +13,14 @@
  * scripts/check-family-static-graph.mjs enforces this against BUILT output,
  * where type-only imports have already been erased.
  *
- * The four commands close over the operations they are given, so a host can
+ * The commands close over the operations they are given, so a host can
  * mount this family against the test double and exercise real grammar, real
  * arg validation and real handlers with no alchemy behind them.
+ *
+ * The family ships `deploy` and `dev` only: `destroy` and `log` were retired
+ * from the family surface (2026-08-21 PM review), so hosts mounting the family
+ * — the `prisma` bin — never see them. They remain first-class commands of
+ * composer's own bin, mounted on top of the family in engine-cli.ts.
  */
 import { DOCS_BASE } from '@internal/foundation/errors';
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
@@ -24,9 +29,7 @@ import { destroyWithDeps } from '../operations/destroy.ts';
 import { devWithDeps } from '../operations/dev.ts';
 import { logWithDeps } from '../operations/log.ts';
 import { createDeployCommand } from './commands/deploy.ts';
-import { createDestroyCommand } from './commands/destroy.ts';
 import { createDevCommand } from './commands/dev.ts';
-import { createLogCommand } from './commands/log.ts';
 import { composerSection } from './section.ts';
 
 /**
@@ -62,9 +65,7 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
     configSection: composerSection,
     commands: {
       deploy: createDeployCommand(operations),
-      destroy: createDestroyCommand(operations),
       dev: createDevCommand(operations),
-      log: createLogCommand(operations),
     },
     docsBaseUrl: DOCS_BASE,
   });
