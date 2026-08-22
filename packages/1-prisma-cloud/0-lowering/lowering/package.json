@@ -4,7 +4,6 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.mjs",
-    "./buckets": "./dist/buckets.mjs",
     "./builds": "./dist/builds.mjs",
     "./compute": "./dist/compute.mjs",
     "./state": "./dist/state.mjs",

@@ -121,6 +121,21 @@ mock.module('alchemy/Prisma', () => ({
     ]);
     return Effect.succeed({ environmentVariableId: `${id}#cloud-id`, key: props.key });
   },
+  Bucket: (id: string, props: unknown) => {
+    recorded.bucket.push([id, props]);
+    return Effect.succeed({ bucketId: `${id}#cloud-id`, name: id });
+  },
+  BucketAccessKey: (id: string, props: unknown) => {
+    recorded.bucketKey.push([id, props]);
+    return Effect.succeed({
+      bucketAccessKeyId: `${id}#cloud-id`,
+      bucketId: (props as { bucket: string }).bucket,
+      accessKeyId: 'AKIA-BUCKET-STUB',
+      secretAccessKey: Redacted.make('bucket-secret-stub'),
+      endpoint: 'https://t3.storage.dev',
+      bucketName: 'user-bucket-stub',
+    });
+  },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
     return Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id });
@@ -152,21 +167,6 @@ mock.module('@internal/lowering', () => ({
   ServiceKey: (id: string, props: unknown) => {
     recorded.serviceKey.push([id, props]);
     return Effect.succeed({ value: `key-for-${id}` });
-  },
-  Bucket: (id: string, props: unknown) => {
-    recorded.bucket.push([id, props]);
-    return Effect.succeed({ id: `${id}#cloud-id`, name: id });
-  },
-  BucketKey: (id: string, props: unknown) => {
-    recorded.bucketKey.push([id, props]);
-    return Effect.succeed({
-      id: `${id}#cloud-id`,
-      bucketId: (props as { bucketId: string }).bucketId,
-      accessKeyId: 'AKIA-BUCKET-STUB',
-      secretAccessKey: Redacted.make('bucket-secret-stub'),
-      endpoint: 'https://t3.storage.dev',
-      bucketName: 'user-bucket-stub',
-    });
   },
   packageComputeArtifact: (opts: { id: string }) => {
     recorded.pkg.push([opts]);
@@ -497,7 +497,7 @@ describe("prismaCloud().nodes['credentials'] — the resource descriptor", () =>
 });
 
 describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", () => {
-  test('creates a Bucket + BucketKey; outputs carry the four S3Config names; entity carries the bucket id', async () => {
+  test('creates a Bucket + BucketAccessKey; outputs carry the four S3Config names; entity carries the bucket id', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
@@ -519,10 +519,10 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       // No credentials on the entity: secret material must never reach an entity.
       expect(result.entities).toEqual([{ kind: 'bucket', id: 'files-bucket#cloud-id' }]);
       expect(recorded.bucket.slice(before.bucket)).toEqual([
-        ['files-bucket', { projectId: 'shop-project#cloud-id', name: 'files' }],
+        ['files-bucket', { project: 'shop-project#cloud-id', name: 'files' }],
       ]);
       expect(recorded.bucketKey.slice(before.bucketKey)).toEqual([
-        ['files-key', { bucketId: 'files-bucket#cloud-id', name: 'files', role: 'read_write' }],
+        ['files-key', { bucket: 'files-bucket#cloud-id', name: 'files', role: 'read_write' }],
       ]);
     });
   });
@@ -541,7 +541,7 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       expect(recorded.bucket.slice(before)).toEqual([
         [
           'assets-bucket',
-          { projectId: 'shop-project#cloud-id', name: 'assets', branchId: 'branch_1' },
+          { project: 'shop-project#cloud-id', name: 'assets', branchId: 'branch_1' },
         ],
       ]);
     });

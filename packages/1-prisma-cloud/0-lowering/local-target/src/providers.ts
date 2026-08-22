@@ -7,9 +7,10 @@
  */
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { Providers } from '@internal/lowering';
-import { Bucket, BucketKey } from '@internal/lowering/buckets';
 import {
   App,
+  Bucket,
+  BucketAccessKey,
   Connection,
   Database,
   Deployment,
@@ -18,7 +19,7 @@ import {
 } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Layer from 'effect/Layer';
-import { LocalBucketKeyProvider, LocalBucketProvider } from './bucket.ts';
+import { LocalBucketAccessKeyProvider, LocalBucketProvider } from './bucket.ts';
 import {
   LocalAppProvider,
   LocalDeploymentProvider,
@@ -38,7 +39,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
       Deployment,
       EnvironmentVariable,
       Bucket,
-      BucketKey,
+      BucketAccessKey,
     ]),
   ).pipe(
     Layer.provide(
@@ -50,7 +51,7 @@ export const localTargetProviders = (input: LocalTargetProvidersInput): Layer.La
         LocalDeploymentProvider(input),
         LocalEnvironmentVariableProvider(input),
         LocalBucketProvider(input),
-        LocalBucketKeyProvider(input),
+        LocalBucketAccessKeyProvider(input),
       ),
     ),
     Layer.orDie,

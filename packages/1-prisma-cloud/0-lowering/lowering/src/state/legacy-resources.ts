@@ -33,7 +33,15 @@ const DEFAULT_REGION = 'us-east-1';
  */
 const CLAIMED_DATABASE_URL_KEYS: ReadonlySet<string> = new Set(RESERVED_DATABASE_URL_KEYS);
 
-type Family = 'Project' | 'Database' | 'Connection' | 'App' | 'Deployment' | 'EnvironmentVariable';
+type Family =
+  | 'Project'
+  | 'Database'
+  | 'Connection'
+  | 'App'
+  | 'Deployment'
+  | 'EnvironmentVariable'
+  | 'Bucket'
+  | 'BucketAccessKey';
 
 const FAMILY_BY_LEGACY_TYPE: Readonly<Record<string, Family>> = {
   'Prisma.Project': 'Project',
@@ -42,12 +50,16 @@ const FAMILY_BY_LEGACY_TYPE: Readonly<Record<string, Family>> = {
   'Prisma.ComputeService': 'App',
   'Prisma.Deployment': 'Deployment',
   'Prisma.EnvironmentVariable': 'EnvironmentVariable',
+  'Prisma.Bucket': 'Bucket',
+  'Prisma.BucketKey': 'BucketAccessKey',
   'PrismaComposer.Project': 'Project',
   'PrismaComposer.Database': 'Database',
   'PrismaComposer.Connection': 'Connection',
   'PrismaComposer.ComputeService': 'App',
   'PrismaComposer.Deployment': 'Deployment',
   'PrismaComposer.EnvironmentVariable': 'EnvironmentVariable',
+  'PrismaComposer.Bucket': 'Bucket',
+  'PrismaComposer.BucketKey': 'BucketAccessKey',
 };
 
 /** The type-id upstream registers each family under. */
@@ -58,6 +70,8 @@ const UPSTREAM_TYPE: Readonly<Record<Family, string>> = {
   App: 'Prisma.App',
   Deployment: 'Prisma.Deployment',
   EnvironmentVariable: 'Prisma.EnvironmentVariable',
+  Bucket: 'Prisma.Bucket',
+  BucketAccessKey: 'Prisma.BucketAccessKey',
 };
 
 /**
@@ -80,6 +94,10 @@ const isLegacyProps = (family: Family, props: Record<string, unknown>): boolean 
       return 'computeServiceId' in props;
     case 'EnvironmentVariable':
       return 'projectId' in props && !('project' in props);
+    case 'Bucket':
+      return 'projectId' in props && !('project' in props);
+    case 'BucketAccessKey':
+      return 'bucketId' in props && !('bucket' in props);
   }
 };
 
@@ -130,6 +148,18 @@ const migrateProps = (family: Family, props: unknown): unknown => {
         ...(props['branchId'] !== undefined ? { branchId: props['branchId'] } : {}),
       };
     }
+    case 'Bucket':
+      return {
+        project: props['projectId'],
+        name: props['name'],
+        ...(props['branchId'] !== undefined ? { branchId: props['branchId'] } : {}),
+      };
+    case 'BucketAccessKey':
+      return {
+        bucket: props['bucketId'],
+        name: props['name'],
+        role: props['role'],
+      };
   }
 };
 
@@ -269,6 +299,30 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
         isManagedBySystem: false,
         createdAt: EPOCH,
         updatedAt: EPOCH,
+      };
+    }
+    case 'Bucket': {
+      if (typeof attr['id'] !== 'string' || 'bucketId' in attr) return attr;
+      return {
+        bucketId: attr['id'],
+        name: attr['name'],
+        projectId: oldProps['projectId'],
+        createdAt: EPOCH,
+      };
+    }
+    case 'BucketAccessKey': {
+      if (typeof attr['id'] !== 'string' || 'bucketAccessKeyId' in attr) return attr;
+      const secret = attr['secretAccessKey'];
+      return {
+        bucketAccessKeyId: attr['id'],
+        bucketId: attr['bucketId'],
+        accessKeyId: attr['accessKeyId'],
+        // Legacy rows already persisted the secret Redacted (the reveal-once
+        // create response is the only copy) — keep it; wrap defensively if a
+        // row somehow carries plaintext.
+        secretAccessKey: Redacted.isRedacted(secret) ? secret : Redacted.make(String(secret ?? '')),
+        endpoint: attr['endpoint'],
+        bucketName: attr['bucketName'],
       };
     }
   }
