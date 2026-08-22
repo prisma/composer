@@ -55,7 +55,8 @@ describe('the prisma-composer binary', () => {
     const result = runCli(['--help']);
 
     // The engine's help renderer lists commands by usage line ('deploy
-    // <entry>'), no longer prefixed with the binary name.
+    // <entry>'), no longer prefixed with the binary name. The bin mounts
+    // destroy and log on top of the family, which no longer carries them.
     expect(result.status).toBe(0);
     expect(result.output).toContain('prisma-composer');
     expect(result.output).toContain('deploy <entry>');
