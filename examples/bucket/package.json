@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-bucket",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,9 +9,9 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
-    "@prisma/composer": "workspace:0.12.0",
-    "@prisma/composer-cli": "workspace:0.12.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.12.0",
+    "@prisma/composer": "workspace:0.13.0",
+    "@prisma/composer-cli": "workspace:0.13.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.13.0",
     "alchemy": "2.0.0-beta.74",
     "effect": "4.0.0-rc.111"
   },

@@ -1,6 +1,6 @@
 {
   "name": "@prisma/composer-cli",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "type": "module",
   "description": "Prisma Composer's command family and the `prisma-composer` CLI.",
   "bin": {
@@ -21,19 +21,19 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/composer": "workspace:0.12.0",
+    "@prisma/composer": "workspace:0.13.0",
     "alchemy": "2.0.0-beta.74",
     "c12": "^3.3.4",
     "effect": "4.0.0-rc.111",
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {
-    "@prisma/cli-engine": "0.2.0"
+    "@prisma/cli-engine": "0.2.2"
   },
   "devDependencies": {
-    "@internal/cli": "workspace:0.12.0",
-    "@internal/tsdown-config": "workspace:0.12.0",
-    "@prisma/cli-engine": "0.2.0",
+    "@internal/cli": "workspace:0.13.0",
+    "@internal/tsdown-config": "workspace:0.13.0",
+    "@prisma/cli-engine": "0.2.2",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"
