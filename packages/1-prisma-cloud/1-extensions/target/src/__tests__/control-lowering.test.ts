@@ -292,6 +292,9 @@ const containerEnv = (projectId: string, branchId?: string): Record<string, stri
     { appName: 'shop', stage: branchId },
     projectId,
     branchId,
+    // The real container always resolves the project's default Branch for the
+    // default stage (resolveContainer, ADR-0019) — mirror that here.
+    branchId === undefined ? 'br_default' : undefined,
   ).serialize(),
 });
 
@@ -326,9 +329,13 @@ const configFor = (descriptor: Descriptor) => ({
 
 describe("projectIdOf — narrowing ctx.application to this extension's own product", () => {
   test("accepts this extension's own application product", () => {
-    expect(projectIdOf({ projectId: 'shop-project-id', branchId: undefined })).toBe(
-      'shop-project-id',
-    );
+    expect(
+      projectIdOf({
+        projectId: 'shop-project-id',
+        branchId: undefined,
+        defaultBranchId: undefined,
+      }),
+    ).toBe('shop-project-id');
   });
 
   // ctx.application is `unknown`: core never reads the application hook's
@@ -348,6 +355,14 @@ describe("projectIdOf — narrowing ctx.application to this extension's own prod
       'an object whose branchId is not a string or undefined',
       { projectId: 'shop-project-id', branchId: 42 },
     ],
+    [
+      'an object missing defaultBranchId entirely',
+      { projectId: 'shop-project-id', branchId: undefined },
+    ],
+    [
+      'an object whose defaultBranchId is not a string or undefined',
+      { projectId: 'shop-project-id', branchId: undefined, defaultBranchId: 42 },
+    ],
   ])('throws, naming the hook that must run, on %s', (_label, value) => {
     expect(() => projectIdOf(value)).toThrow(/prisma-cloud: ctx\.application/);
     expect(() => projectIdOf(value)).toThrow(/application hook must run before any node lowers/);
@@ -363,6 +378,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       { appName: 'shop', stage: undefined },
       'shop-project-id',
       undefined,
+      'br_default',
     );
 
     const result = run<CloudApplication>(
@@ -372,7 +388,13 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       } as unknown as LowerContext),
     );
 
-    expect(result).toEqual({ projectId: 'shop-project-id', branchId: undefined });
+    // The default Branch id travels into the product: the database descriptors
+    // attach production databases to it (branchId ?? defaultBranchId).
+    expect(result).toEqual({
+      projectId: 'shop-project-id',
+      branchId: undefined,
+      defaultBranchId: 'br_default',
+    });
     expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
     // The claim is a direct Management API create, NOT an alchemy resource:
     // Composer must never plan a write or a delete for either variable, and a
@@ -398,7 +420,11 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       } as unknown as LowerContext),
     );
 
-    expect(result).toEqual({ projectId: 'shop-project-id', branchId: 'branch_1' });
+    expect(result).toEqual({
+      projectId: 'shop-project-id',
+      branchId: 'branch_1',
+      defaultBranchId: undefined,
+    });
     // The branch id never reaches the claim: the rows are project-level, so
     // one claim covers every stage of the project.
     expect(recorded.databaseUrlClaims.slice(beforeClaims)).toEqual(['shop-project-id']);
@@ -426,7 +452,11 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       // ctx.id is the module provision id — one Database per provisioned resource.
       const ctx = {
         id: 'data',
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: 'br_default',
+        },
       } as unknown as LowerContext;
 
       const result = run<LoweredResult>(resourceDescriptorOf(target, 'postgres')(ctx));
@@ -436,8 +466,16 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       // endpoint. The outputs above still carry one — same key, opposite
       // meaning, which is exactly why only the descriptor can decide.
       expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
+      // The default stage attaches the project's default Branch — matching the
+      // compute service — and names NO explicit display name (upstream refuses
+      // name + branch at create). Omitting the branch would not be neutral:
+      // upstream reads "no branch" as desired-unassigned and PATCHes branchId
+      // back to null on every redeploy.
       expect(recorded.db).toEqual([
-        ['data-db', { project: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
+        [
+          'data-db',
+          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+        ],
       ]);
       expect(recorded.conn).toEqual([
         [
@@ -456,7 +494,11 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
         id: 'data2',
-        application: { projectId: 'shop-project#cloud-id', branchId: 'branch_1' },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: 'branch_1',
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const before = recorded.db.length;
 
@@ -473,6 +515,46 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
             branchId: 'branch_1',
           },
         ],
+      ]);
+    });
+  });
+
+  test('deploy: fails loudly when the application carries NEITHER branch id — never creates an unassigned database', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const ctx = {
+        id: 'data3',
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
+      } as unknown as LowerContext;
+      const before = recorded.db.length;
+
+      expect(() => run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx))).toThrow(
+        /cannot attach database "data3" to a Branch/,
+      );
+      expect(recorded.db.slice(before)).toEqual([]);
+    });
+  });
+
+  test("local dev: the 'local' container has no Branches — the Database keeps the display name, no attachment", async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      // ADR-0041: `prisma-composer dev` runs this same descriptor against the
+      // dev container, whose projectId is the literal 'local' and which never
+      // resolves a Branch.
+      const ctx = {
+        id: 'data4',
+        application: { projectId: 'local', branchId: undefined, defaultBranchId: undefined },
+      } as unknown as LowerContext;
+      const before = recorded.db.length;
+
+      run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx));
+
+      expect(recorded.db.slice(before)).toEqual([
+        ['data4-db', { project: 'local', name: 'data4', region: 'us-east-1' }],
       ]);
     });
   });
@@ -502,7 +584,11 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
         id: 'files',
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const before = { bucket: recorded.bucket.length, bucketKey: recorded.bucketKey.length };
 
@@ -532,7 +618,11 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
         id: 'assets',
-        application: { projectId: 'shop-project#cloud-id', branchId: 'branch_1' },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: 'branch_1',
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const before = recorded.bucket.length;
 
@@ -554,7 +644,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
         id: 'auth',
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
 
       const result = run<MockedProvisioned>(serviceDescriptorOf(target, 'compute').provision(ctx));
@@ -578,7 +672,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const ctx = {
         id: 'auth2',
-        application: { projectId: 'shop-project#cloud-id', branchId: 'branch_1' },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: 'branch_1',
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const before = recorded.svc.length;
 
@@ -617,7 +715,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'auth',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         serviceId: 'auth-svc#cloud-id',
@@ -713,7 +815,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'auth',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         serviceId: 'auth-svc#cloud-id',
@@ -763,7 +869,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'consumer',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         serviceId: 'consumer-svc#cloud-id',
@@ -827,7 +937,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           address: 'ingest',
           node,
           graph,
-          application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+          application: {
+            projectId: 'shop-project#cloud-id',
+            branchId: undefined,
+            defaultBranchId: undefined,
+          },
         } as unknown as LowerContext;
         const provisioned = {
           projectId: 'shop-project#cloud-id',
@@ -900,7 +1014,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'ingest',
         node,
         graph,
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',
@@ -973,7 +1091,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'ingest',
         node,
         graph,
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',
@@ -1022,7 +1144,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           address: 'web',
           node,
           graph,
-          application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+          application: {
+            projectId: 'shop-project#cloud-id',
+            branchId: undefined,
+            defaultBranchId: undefined,
+          },
         } as unknown as LowerContext;
         const provisioned = {
           projectId: 'shop-project#cloud-id',
@@ -1078,7 +1204,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'web',
         node,
         graph,
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',
@@ -1121,7 +1251,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'auth3',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: 'branch_1' },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: 'branch_1',
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',
@@ -1176,7 +1310,11 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         address: 'auth',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         projectId: 'shop-project#cloud-id',
@@ -1363,7 +1501,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
           inputBindings: [{ serviceAddress: 'store', binding: { bucket: 'streams' } }],
           edges: [],
         },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
       } as unknown as LowerContext;
       const provisioned = {
         serviceId: 'store-svc#cloud-id',
@@ -1402,7 +1544,11 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
           address: 'store',
           node,
           graph: { inputBindings, edges: [] },
-          application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+          application: {
+            projectId: 'shop-project#cloud-id',
+            branchId: undefined,
+            defaultBranchId: undefined,
+          },
         }) as unknown as LowerContext;
       const serialize = (ctx: LowerContext, config: unknown) =>
         run<MockedS3StoreSerialized>(
@@ -1480,7 +1626,7 @@ describe("prismaCloud().nodes['s3-store'] — the service descriptor with extend
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = {
       id: 'store',
-      application: { projectId: 'p#cloud-id', branchId: undefined },
+      application: { projectId: 'p#cloud-id', branchId: undefined, defaultBranchId: undefined },
     } as unknown as LowerContext;
     const provisionResult = run<MockedProvisioned>(
       serviceDescriptorOf(target, 's3-store').provision(ctx),
@@ -1566,7 +1712,10 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       );
 
       expect(recorded.db.slice(before.db)).toEqual([
-        ['data-db', { project: 'shop-project#cloud-id', name: 'data', region: 'us-east-1' }],
+        [
+          'data-db',
+          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+        ],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([
         [
@@ -1900,7 +2049,11 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       address: 'events',
       node,
       graph,
-      application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+      application: {
+        projectId: 'shop-project#cloud-id',
+        branchId: undefined,
+        defaultBranchId: undefined,
+      },
       provisioned: new Map([
         ['reader.events', 'key-one'],
         ['writer.events', 'key-two'],
@@ -2001,7 +2154,11 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         address: 'multi',
         node,
         graph: { inputBindings: [], edges: [] },
-        application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+        },
         provisioned: new Map(),
       } as unknown as LowerContext;
       const provisioned = {

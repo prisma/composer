@@ -13,9 +13,14 @@
  */
 import type { ContainerDescriptor, LocateContainerInput } from '@internal/core/config';
 import { deserialize, PrismaCloudContainer } from '../container.ts';
+import { LOCAL_PROJECT_ID } from '../descriptors/shared.ts';
 
 function resolve(input: LocateContainerInput): PrismaCloudContainer {
-  return new PrismaCloudContainer({ appName: input.appName, stage: undefined }, 'local', undefined);
+  return new PrismaCloudContainer(
+    { appName: input.appName, stage: undefined },
+    LOCAL_PROJECT_ID,
+    undefined,
+  );
 }
 
 export function devContainerDescriptor(): ContainerDescriptor<PrismaCloudContainer> {

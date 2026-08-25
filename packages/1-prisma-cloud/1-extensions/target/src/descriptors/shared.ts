@@ -109,7 +109,16 @@ export function validateName(value: string, source: string): void {
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
 export interface CloudApplication {
   readonly projectId: string;
+  /** The named stage's Branch id; `undefined` on the default (production) stage. */
   readonly branchId: string | undefined;
+  /**
+   * The project's default Branch id, resolved by the container for the
+   * default stage (ADR-0019); `undefined` on a named stage. Exactly one of
+   * `branchId`/`defaultBranchId` is set on a deploy — descriptors that attach
+   * branch-scoped resources use `branchId ?? defaultBranchId`, so production
+   * attaches to the default Branch instead of leaving the resource unassigned.
+   */
+  readonly defaultBranchId: string | undefined;
 }
 
 export function isCloudApplication(value: unknown): value is CloudApplication {
@@ -120,7 +129,9 @@ export function isCloudApplication(value: unknown): value is CloudApplication {
     'projectId' in value &&
     typeof value.projectId === 'string' &&
     'branchId' in value &&
-    (value.branchId === undefined || typeof value.branchId === 'string')
+    (value.branchId === undefined || typeof value.branchId === 'string') &&
+    'defaultBranchId' in value &&
+    (value.defaultBranchId === undefined || typeof value.defaultBranchId === 'string')
   );
 }
 
@@ -137,4 +148,38 @@ export function cloudApplicationOf(application: unknown): CloudApplication {
 
 export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
+}
+
+/**
+ * The dev container's project id (local-dev spec § 5): `prisma-composer dev`
+ * resolves a purely local identity with no platform call — this literal, and
+ * never a Branch. The one application product allowed to carry NO branch id.
+ */
+export const LOCAL_PROJECT_ID = 'local';
+
+/**
+ * The Branch a stage's database attaches to: the named stage's Branch, or the
+ * project's default Branch on the default (production) stage. Never absent on
+ * a deploy — omitting the branch is not a neutral choice for
+ * `Prisma.Database`: upstream reads "no branch" as DESIRED-UNASSIGNED and
+ * PATCHes `branchId` back to `null` on every reconcile, which is how
+ * production databases ended up permanently "Unassigned" while their compute
+ * services sat on the default Branch. The container resolves exactly one of
+ * the two ids for every deploy (ADR-0019), so on a deploy both missing means
+ * the transport is broken — fail loudly rather than create an unassigned
+ * database. Only local dev (ADR-0041 runs these same descriptors against the
+ * dev container, which resolves no Branches) legitimately returns `undefined`.
+ */
+export function attachmentBranchIdOf(application: unknown, id: string): string | undefined {
+  const app = cloudApplicationOf(application);
+  const branchId = app.branchId ?? app.defaultBranchId;
+  if (branchId === undefined && app.projectId !== LOCAL_PROJECT_ID) {
+    throw new Error(
+      `prisma-cloud: cannot attach database "${id}" to a Branch — the resolved container ` +
+        "carries neither a stage Branch id nor the project's default Branch id. Container " +
+        'resolution (ADR-0019) always provides one for a deploy; this is a bug in the ' +
+        'container transport.',
+    );
+  }
+  return branchId;
 }

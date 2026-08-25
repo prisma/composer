@@ -13,7 +13,7 @@ import { runPackPreflight } from '../preflight.ts';
 import { isPnPostgresResourceNode } from '../prisma-next.ts';
 import { resolveTargetRef } from '../prisma-next-migrate.ts';
 import {
-  cloudApplicationOf,
+  attachmentBranchIdOf,
   DEFAULT_REGION,
   projectIdOf,
   type ResolvedCloudOptions,
@@ -29,11 +29,13 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
   const lowering: Lowering = ({ id, node, application, graph }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      const branchId = cloudApplicationOf(application).branchId;
-      // Same create rule as descriptors/postgres.ts: an explicit name cannot
-      // combine with branch attachment at create, so a named stage omits the
-      // name and carries the branchId in props (created attached, reconciled
-      // attached).
+      // Same attachment rule as descriptors/postgres.ts: EVERY deployed stage
+      // attaches its Branch (named stage → stage Branch, default stage → the
+      // project's default Branch), and an explicit name cannot combine with
+      // branch attachment at create — so the name is omitted and `branchId`
+      // in props keeps the attachment reconciled on every later deploy. Only
+      // local dev lowers without a Branch, keeping the display name.
+      const branchId = attachmentBranchIdOf(application, id);
       const db = yield* Prisma.Database(`${id}-db`, {
         project: projectIdOf(application),
         region: o().region ?? DEFAULT_REGION,
