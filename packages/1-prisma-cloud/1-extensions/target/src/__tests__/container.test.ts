@@ -592,8 +592,6 @@ describe('serialize()/deserialize() — the parent→child transport round trip'
     );
 
     expect(descriptor.deserialize(branchless.serialize()).branchless).toBe(true);
-    // Payloads from before the flag existed carry no key — they read as a
-    // deploy container, which must never be branchless.
     const legacyPayload = JSON.stringify({
       input: { appName: 'shop' },
       projectId: 'proj-1',

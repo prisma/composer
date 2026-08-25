@@ -1,22 +1,4 @@
-/**
- * Pins the upstream `Prisma.Database` (alchemy) semantics the database
- * descriptors depend on — against the REAL provider, with a fake Management
- * client.
- *
- * Deployed default-stage state can hold a database created under an explicit
- * display name with no branch attachment (branchId null), while the
- * descriptors hand upstream `{ branchId }` and no `name`. That combination
- * must converge IN PLACE:
- *
- *  1. diff plans an `update`, never a `replace` — the database (and its data)
- *     survives;
- *  2. reconcile PATCHes the existing database onto the Branch — no create, no
- *     delete, same databaseId;
- *  3. the converged state is stable — a second reconcile issues no PATCH.
- *
- * An alchemy upgrade that changes any of these fails here, before a deploy
- * destroys data.
- */
+/** Pins the upstream `Prisma.Database` semantics the database descriptors depend on — real provider, fake Management client. */
 import { describe, expect, test } from 'bun:test';
 import { InstanceId } from 'alchemy/InstanceId';
 import { PrismaClient, type PrismaManagementClient } from 'alchemy/Prisma/Client';
@@ -27,8 +9,6 @@ import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 
-// ——— A deployed default-stage database: explicit display name (the provision
-// id), no branch attachment.
 const PROJECT_ID = 'proj_1';
 const DEFAULT_BRANCH_ID = 'br_default';
 const DIRECT_URL = 'postgres://user:secret@db.prisma.example:5432/postgres';
@@ -49,7 +29,6 @@ const unassignedDb = (): ApiDatabase => ({
   branchId: null,
 });
 
-/** The persisted state attrs of that database (what alchemy stored). */
 const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   databaseId: db.id,
   databaseName: db.name,
@@ -68,11 +47,7 @@ const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   password: undefined,
 });
 
-/**
- * The attrs a LEGACY state row carries after `state/legacy-resources.ts`'s
- * `migrateAttr`: identity only — `defaultConnectionId: null`, and no
- * connection strings (the legacy store never held them).
- */
+/** State attrs as `legacy-resources.ts`'s `migrateAttr` writes them: identity only, no connection secrets. */
 const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   databaseId: db.id,
   databaseName: db.name,
@@ -91,8 +66,6 @@ const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   password: undefined,
 });
 
-// The props persisted in state (explicit name) and the props the descriptors
-// produce (no name; the default Branch attached).
 const oldProps = { project: PROJECT_ID, region: 'us-east-1', name: 'data' } as const;
 const newProps = { project: PROJECT_ID, region: 'us-east-1', branchId: DEFAULT_BRANCH_ID } as const;
 
@@ -153,9 +126,7 @@ function fakeClient(): { client: PrismaManagementClient; calls: FakeClientCalls 
   return { client, calls };
 }
 
-// The provider's lifecycle handlers, with loose request/response typing: the
-// real ProviderService request types carry engine-session fields the handlers
-// under test never read.
+// Loosely typed: the real request types carry engine-session fields the handlers never read.
 interface ProviderHandlers {
   diff: (req: unknown) => Effect.Effect<unknown, unknown, unknown>;
   reconcile: (req: unknown) => Effect.Effect<Database['Attributes'], unknown, unknown>;
@@ -163,8 +134,6 @@ interface ProviderHandlers {
 
 function handlersFor(client: PrismaManagementClient): ProviderHandlers {
   const resolved = Effect.gen(function* () {
-    // The resource class carries its own provider tag (Resource.ts wires
-    // `Service.Provider = Provider(type)`).
     return yield* Database.Provider;
   }).pipe(
     Effect.provide(DatabaseProvider()),
@@ -173,9 +142,7 @@ function handlersFor(client: PrismaManagementClient): ProviderHandlers {
   return Effect.runSync(resolved) as ProviderHandlers;
 }
 
-// The lifecycle services `createPhysicalName` reads when props carry no
-// explicit name. The same values every run — the generated physical name is
-// deterministic per resource instance, which is what makes it recoverable.
+// Fixed values keep `createPhysicalName`'s generated name deterministic.
 const provideLifecycle = <A>(eff: Effect.Effect<A, unknown, unknown>): Effect.Effect<A> =>
   eff.pipe(
     Effect.provideService(Stack, { name: 'shop' } as unknown as Stack['Service']),
@@ -199,7 +166,6 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    // A 'replace' would schedule the database — and its data — for deletion.
     expect(decision).toEqual({ action: 'update' });
   });
 
@@ -218,8 +184,6 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    // Upstream converges the display name (to its generated physical name)
-    // and the branch attachment in the same PATCH.
     expect(calls.update).toHaveLength(1);
     const [patchedId, patch] = calls.update[0] ?? ['', {}];
     expect(patchedId).toBe('db_1');
@@ -227,8 +191,6 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
     expect(typeof patch.name).toBe('string');
     expect(calls.create).toBe(0);
     expect(calls.delete).toBe(0);
-    // A state row that still carries its connection secrets recovers them
-    // without touching the default connection.
     expect(calls.rotate).toEqual([]);
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
@@ -261,15 +223,10 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    // Same in-place PATCH as a fully-stored row…
     expect(calls.update).toHaveLength(1);
     expect(calls.update[0]?.[1].branchId).toBe(DEFAULT_BRANCH_ID);
     expect(calls.create).toBe(0);
     expect(calls.delete).toBe(0);
-    // …but with no stored secrets to recover, upstream rotates the
-    // database's DEFAULT connection to re-mint them. The framework's own
-    // named Connection is a separate resource and is untouched; credentials
-    // minted outside the framework from the default connection stop working.
     expect(calls.rotate).toEqual(['conn_1']);
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);

@@ -113,17 +113,9 @@ export interface CloudApplication {
   readonly projectId: string;
   /** The named stage's Branch id; `undefined` on the default (production) stage. */
   readonly branchId: string | undefined;
-  /**
-   * The project's default Branch id, resolved by the container for the
-   * default stage (ADR-0019); `undefined` on a named stage. Exactly one of
-   * `branchId`/`defaultBranchId` is set on a deploy.
-   */
+  /** The project's default Branch id; a deploy carries exactly one of `branchId`/`defaultBranchId`. */
   readonly defaultBranchId: string | undefined;
-  /**
-   * The container declared it resolves NO Branches — the dev container
-   * (local-dev spec § 5) is the only one that does. Always `false` on a
-   * deploy.
-   */
+  /** Set only by the dev container, which resolves no Branches. */
   readonly branchless: boolean;
 }
 
@@ -159,16 +151,10 @@ export function projectIdOf(application: unknown): string {
 }
 
 /**
- * The Branch a stage's database attaches to: the named stage's Branch, or the
- * project's default Branch on the default (production) stage. Never absent on
- * a deploy — omitting the branch is not a neutral choice for
- * `Prisma.Database`: upstream reads "no branch" as DESIRED-UNASSIGNED and
- * PATCHes `branchId` back to `null` on every reconcile. The container
- * resolves exactly one of the two ids for every deploy (ADR-0019), so both
- * missing means the transport is broken — fail loudly rather than create an
- * unassigned database. Only a container that declared itself `branchless`
- * (the dev container — ADR-0041 runs these same descriptors against it, and
- * it resolves no Branches) legitimately returns `undefined`.
+ * The Branch a database attaches to. Upstream treats an omitted branch as
+ * desired-unassigned (`branchId` PATCHed back to `null` on reconcile), so a
+ * deploy container carrying neither id is a broken transport; only a
+ * `branchless` (dev) container returns `undefined`.
  */
 export function attachmentBranchIdOf(application: unknown, id: string): string | undefined {
   const app = cloudApplicationOf(application);
@@ -185,21 +171,11 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
 }
 
 /**
- * One Database (attached to the stage's Branch) plus its named Connection,
- * with the direct connection string unwrapped — the shared shape of the
- * `postgres` and `prisma-next` lowerings.
- *
  * Upstream refuses an explicit display name combined with branch attachment
- * at create (the Management API creates the database before attaching the
- * branch and exposes no idempotency key), so the name is omitted: upstream
- * creates under its recoverable generated physical name WITH the branchId in
- * the create call, and `branchId` staying in props keeps the attachment
- * reconciled on every later deploy. A branchless (dev) container takes the
- * `name` arm instead.
- *
- * The returned `url` is DIRECT, not pooled: PgWarm and the migration flows
- * depend on a direct connection, and upstream's `databaseUrl` is
- * pooled-first — so `directConnectionString` is bound explicitly.
+ * at create (create-then-attach, no idempotency key), so attached databases
+ * take the generated physical name; only the branchless (dev) container takes
+ * the `name` arm. The returned `url` is direct, not pooled — PgWarm and the
+ * migration flows need a direct connection.
  */
 export const stageDatabase = ({
   id,

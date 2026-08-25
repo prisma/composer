@@ -223,9 +223,7 @@ mock.module('../generated-param-resource.ts', () => ({
   GeneratedParamProvider: () => ({ stub: 'generated-param-provider' }),
 }));
 
-// PnMigration is a real Alchemy Resource (needs the Stack service); stub it so
-// the prisma-next lowering's data flow runs purely. The real migration engine
-// is pinned by pn-migration-resource.test.ts and the migrate integration test.
+// A real Alchemy Resource (needs the Stack service); stubbed so the lowering runs purely.
 mock.module('../pn-migration-resource.ts', () => ({
   ...RealPnMigration,
   PnMigration: (id: string, props: unknown) => {
@@ -316,8 +314,6 @@ const containerEnv = (projectId: string, branchId?: string): Record<string, stri
     { appName: 'shop', stage: branchId },
     projectId,
     branchId,
-    // The real container always resolves the project's default Branch for the
-    // default stage (resolveContainer, ADR-0019).
     branchId === undefined ? 'br_default' : undefined,
   ).serialize(),
 });
@@ -505,9 +501,6 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       // endpoint. The outputs above still carry one — same key, opposite
       // meaning, which is exactly why only the descriptor can decide.
       expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
-      // Upstream refuses an explicit name combined with branch attachment at
-      // create, and treats an omitted branch as desired-unassigned (branchId
-      // PATCHed back to null on reconcile).
       expect(recorded.db).toEqual([
         [
           'data-db',
@@ -581,8 +574,6 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
   test('local dev: a branchless container — the Database keeps the display name, no attachment', async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
-      // ADR-0041: `prisma-composer dev` runs this same descriptor against the
-      // dev container, which resolves no Branches and declares so.
       const ctx = {
         id: 'data4',
         application: {
@@ -604,8 +595,6 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
 });
 
 describe("prismaCloud().nodes['prisma-next'] — the resource descriptor", () => {
-  // A real, loadable PN project: config + emitted contract (the same fixture
-  // pn-config.test.ts and prisma-next.test.ts drive).
   const widgetConfig = path.join(
     import.meta.dir,
     'fixtures',

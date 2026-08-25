@@ -14,7 +14,6 @@
 import type { ContainerDescriptor, LocateContainerInput } from '@internal/core/config';
 import { deserialize, PrismaCloudContainer } from '../container.ts';
 
-/** The dev container's project id: a purely local identity, never a platform Project. */
 const LOCAL_PROJECT_ID = 'local';
 
 function resolve(input: LocateContainerInput): PrismaCloudContainer {
@@ -23,7 +22,6 @@ function resolve(input: LocateContainerInput): PrismaCloudContainer {
     LOCAL_PROJECT_ID,
     undefined,
     undefined,
-    // Branch-scoped descriptors branch on this declaration, not on the id.
     true,
   );
 }
