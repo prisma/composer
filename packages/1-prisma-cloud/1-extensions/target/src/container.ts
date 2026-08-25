@@ -47,6 +47,8 @@ export class PrismaCloudContainer implements ContainerInstance {
     readonly projectId: string,
     readonly branchId: string | undefined,
     readonly defaultBranchId?: string,
+    /** Set only by the dev container, which resolves no Branches. */
+    readonly branchless: boolean = false,
   ) {
     const stageBranchId = branchId ?? defaultBranchId;
     if (stageBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(stageBranchId)) {
@@ -61,6 +63,7 @@ export class PrismaCloudContainer implements ContainerInstance {
       projectId: this.projectId,
       ...(this.branchId !== undefined ? { branchId: this.branchId } : {}),
       ...(this.defaultBranchId !== undefined ? { defaultBranchId: this.defaultBranchId } : {}),
+      ...(this.branchless ? { branchless: true } : {}),
     });
   }
 }
@@ -126,8 +129,18 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   if (defaultBranchId !== undefined && typeof defaultBranchId !== 'string') {
     throw invalidPayloadError('"defaultBranchId" is not a string or absent');
   }
+  const branchless = parsed['branchless'];
+  if (branchless !== undefined && typeof branchless !== 'boolean') {
+    throw invalidPayloadError('"branchless" is not a boolean or absent');
+  }
 
-  return new PrismaCloudContainer({ appName, stage }, projectId, branchId, defaultBranchId);
+  return new PrismaCloudContainer(
+    { appName, stage },
+    projectId,
+    branchId,
+    defaultBranchId,
+    branchless ?? false,
+  );
 }
 
 /** The credentials this extension's container lifecycle accepts per call. */

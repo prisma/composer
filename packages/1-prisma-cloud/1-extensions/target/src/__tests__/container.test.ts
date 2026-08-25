@@ -581,6 +581,25 @@ describe('serialize()/deserialize() — the parent→child transport round trip'
     expect(restored.alchemyStage).toBe('br-default');
   });
 
+  test('a branchless (dev-shaped) instance round-trips its declaration; absence reads as false', () => {
+    const descriptor = containerDescriptor();
+    const branchless = new PrismaCloudContainer(
+      { appName: 'shop', stage: undefined },
+      'local',
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(descriptor.deserialize(branchless.serialize()).branchless).toBe(true);
+    const legacyPayload = JSON.stringify({
+      input: { appName: 'shop' },
+      projectId: 'proj-1',
+      defaultBranchId: 'br-default',
+    });
+    expect(descriptor.deserialize(legacyPayload).branchless).toBe(false);
+  });
+
   test("a named-stage instance's alchemyStage survives the round trip", () => {
     const instance = new PrismaCloudContainer(
       { appName: 'shop', stage: 'staging' },
@@ -618,6 +637,10 @@ describe('serialize()/deserialize() — the parent→child transport round trip'
     [
       'defaultBranchId not a string or absent',
       JSON.stringify({ input: { appName: 'a' }, projectId: 'p', defaultBranchId: 42 }),
+    ],
+    [
+      'branchless not a boolean or absent',
+      JSON.stringify({ input: { appName: 'a' }, projectId: 'p', branchless: 'yes' }),
     ],
   ])('rejects an invalid payload: %s', (_label, payload) => {
     const descriptor = containerDescriptor();

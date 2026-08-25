@@ -30,7 +30,12 @@ const SCRUBBED = {
 function computeCtx(): LowerContext {
   return {
     id: 'auth',
-    application: { projectId: 'shop-project#cloud-id', branchId: undefined },
+    application: {
+      projectId: 'shop-project#cloud-id',
+      branchId: undefined,
+      defaultBranchId: undefined,
+      branchless: false,
+    },
   } as unknown as LowerContext;
 }
 

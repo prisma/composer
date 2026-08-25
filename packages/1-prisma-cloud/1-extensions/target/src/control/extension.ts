@@ -384,9 +384,11 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     application: {
       provision: (ctx) =>
         Effect.gen(function* () {
-          const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
+          const { projectId, branchId, defaultBranchId, branchless } = prismaCloudContainerOf(
+            ctx.container,
+          );
           yield* Prisma.claimDatabaseUrlKeys(projectId);
-          return { projectId, branchId } satisfies CloudApplication;
+          return { projectId, branchId, defaultBranchId, branchless } satisfies CloudApplication;
         }),
     },
 

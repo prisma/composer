@@ -19,7 +19,13 @@ const build = {
 };
 
 const fakeContainer = () =>
-  new PrismaCloudContainer({ appName: 'app', stage: undefined }, 'local', undefined);
+  new PrismaCloudContainer(
+    { appName: 'app', stage: undefined },
+    'local',
+    undefined,
+    undefined,
+    true,
+  );
 
 /** Load never validates a binding, so a pass-anything schema is enough here (ADR-0042). */
 const anySchema: StandardSchemaV1<unknown, unknown> = {
