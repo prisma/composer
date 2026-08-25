@@ -2,23 +2,14 @@
 
 import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
-import * as Output from 'alchemy/Output';
-import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
-import * as Redacted from 'effect/Redacted';
 import { PgWarm } from '../pg-warm-resource.ts';
 import { packHeadRefHashes, resolvePrismaNextConfig } from '../pn-config.ts';
 import { PnMigration } from '../pn-migration-resource.ts';
 import { runPackPreflight } from '../preflight.ts';
 import { isPnPostgresResourceNode } from '../prisma-next.ts';
 import { resolveTargetRef } from '../prisma-next-migrate.ts';
-import {
-  attachmentBranchIdOf,
-  DEFAULT_REGION,
-  projectIdOf,
-  type ResolvedCloudOptions,
-  validateName,
-} from './shared.ts';
+import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared.ts';
 
 /**
  * The migration is a tracked `PnMigration` Alchemy resource keyed on the
@@ -29,27 +20,7 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
   const lowering: Lowering = ({ id, node, application, graph }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      // Same rule as descriptors/postgres.ts: an explicit name cannot combine
-      // with branch attachment at create, so the name is omitted and
-      // `branchId` in props keeps the attachment reconciled; the `name` arm
-      // is local-dev only (the dev container resolves no Branch).
-      const branchId = attachmentBranchIdOf(application, id);
-      const db = yield* Prisma.Database(`${id}-db`, {
-        project: projectIdOf(application),
-        region: o().region ?? DEFAULT_REGION,
-        ...(branchId !== undefined ? { branchId } : { name: id }),
-      });
-      const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
-      // Direct, not pooled — PgWarm and PnMigration below depend on it, and
-      // upstream's `databaseUrl` is pooled-first.
-      const url = Output.map(conn.directConnectionString, (value) => {
-        if (value === undefined) {
-          throw new Error(
-            `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
-          );
-        }
-        return Redacted.value(value);
-      });
+      const { db, url } = yield* stageDatabase({ id, application, region: o().region });
 
       if (!isPnPostgresResourceNode(node)) {
         // The registry routes 'prisma-next'-typed resource nodes here, so this

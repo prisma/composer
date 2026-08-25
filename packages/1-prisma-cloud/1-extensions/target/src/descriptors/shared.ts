@@ -1,8 +1,10 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
 import type { PointerUpdatedAt } from '@internal/lowering';
-import type * as Output from 'alchemy/Output';
-import type * as Prisma from 'alchemy/Prisma';
+import * as Output from 'alchemy/Output';
+import * as Prisma from 'alchemy/Prisma';
+import * as Effect from 'effect/Effect';
+import * as Redacted from 'effect/Redacted';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**
@@ -181,3 +183,48 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
   }
   return branchId;
 }
+
+/**
+ * One Database (attached to the stage's Branch) plus its named Connection,
+ * with the direct connection string unwrapped — the shared shape of the
+ * `postgres` and `prisma-next` lowerings.
+ *
+ * Upstream refuses an explicit display name combined with branch attachment
+ * at create (the Management API creates the database before attaching the
+ * branch and exposes no idempotency key), so the name is omitted: upstream
+ * creates under its recoverable generated physical name WITH the branchId in
+ * the create call, and `branchId` staying in props keeps the attachment
+ * reconciled on every later deploy. A branchless (dev) container takes the
+ * `name` arm instead.
+ *
+ * The returned `url` is DIRECT, not pooled: PgWarm and the migration flows
+ * depend on a direct connection, and upstream's `databaseUrl` is
+ * pooled-first — so `directConnectionString` is bound explicitly.
+ */
+export const stageDatabase = ({
+  id,
+  application,
+  region,
+}: {
+  readonly id: string;
+  readonly application: unknown;
+  readonly region: Prisma.Types.PrismaRegionId | undefined;
+}) =>
+  Effect.gen(function* () {
+    const branchId = attachmentBranchIdOf(application, id);
+    const db = yield* Prisma.Database(`${id}-db`, {
+      project: projectIdOf(application),
+      region: region ?? DEFAULT_REGION,
+      ...(branchId !== undefined ? { branchId } : { name: id }),
+    });
+    const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+    const url = Output.map(conn.directConnectionString, (value) => {
+      if (value === undefined) {
+        throw new Error(
+          `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
+        );
+      }
+      return Redacted.value(value);
+    });
+    return { db, url };
+  });
