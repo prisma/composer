@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
+import * as path from 'node:path';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
 import { containerEnvVarName } from '@internal/core/config';
@@ -32,6 +33,7 @@ import {
 } from '../descriptors/shared.ts';
 import * as RealGeneratedParam from '../generated-param-resource.ts';
 import * as RealPgWarm from '../pg-warm-resource.ts';
+import * as RealPnMigration from '../pn-migration-resource.ts';
 import * as RealS3Credentials from '../s3-credentials-resource.ts';
 
 // Stub the provider layer AND alchemy/Output so the compute target's data
@@ -53,6 +55,7 @@ const recorded: {
   bucket: Array<[string, unknown]>;
   bucketKey: Array<[string, unknown]>;
   generated: Array<[string, unknown]>;
+  pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
 } = {
   envVar: [],
@@ -68,6 +71,7 @@ const recorded: {
   bucket: [],
   bucketKey: [],
   generated: [],
+  pnMigrate: [],
   databaseUrlClaims: [],
 };
 
@@ -218,6 +222,18 @@ mock.module('../generated-param-resource.ts', () => ({
   GeneratedParamProvider: () => ({ stub: 'generated-param-provider' }),
 }));
 
+// PnMigration is a real Alchemy Resource (needs the Stack service); stub it so
+// the prisma-next lowering's data flow runs purely. The real migration engine
+// is pinned by pn-migration-resource.test.ts and the migrate integration test.
+mock.module('../pn-migration-resource.ts', () => ({
+  ...RealPnMigration,
+  PnMigration: (id: string, props: unknown) => {
+    recorded.pnMigrate.push([id, props]);
+    return Effect.succeed({});
+  },
+  PnMigrationProvider: () => ({ stub: 'pn-migration-provider' }),
+}));
+
 const { prismaCloud } = await import('../exports/control.ts');
 const { compute, envParam, envSecret, generatedParam, postgres, postgresContract, s3StoreService } =
   await import('../exports/index.ts');
@@ -225,6 +241,10 @@ const { dependency, module, provisionNeed, string } = await import('@internal/co
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/service-rpc');
 const { STREAMS_API_KEY } = await import('../streams-keys.ts');
+const { pnContract, pnPostgres } = await import('../exports/prisma-next.ts');
+const { default: widgetContractJson } = await import(
+  './fixtures/widget-contract/emitted/contract.json'
+);
 
 // The node registry erases each descriptor's P/S to `unknown`, so every hook
 // hands back Effect<unknown>. `A` is the caller's claim about what the hook
@@ -232,6 +252,9 @@ const { STREAMS_API_KEY } = await import('../streams-keys.ts');
 // `satisfies` at its definition.
 const run = <A>(eff: Effect.Effect<unknown, unknown, unknown>): A =>
   Effect.runSync(eff as Effect.Effect<A>);
+// For lowerings that cross an Effect.promise (the prisma-next config/ref reads).
+const runAsync = <A>(eff: Effect.Effect<unknown, unknown, unknown>): Promise<A> =>
+  Effect.runPromise(eff as Effect.Effect<A>);
 
 // ——— The handoff shapes AS THE MOCKS ABOVE PRODUCE THEM.
 //
@@ -575,6 +598,56 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       expect(recorded.db.slice(before)).toEqual([
         ['data4-db', { project: 'local', name: 'data4', region: 'us-east-1' }],
       ]);
+    });
+  });
+});
+
+describe("prismaCloud().nodes['prisma-next'] — the resource descriptor", () => {
+  // A real, loadable PN project: config + emitted contract (the same fixture
+  // pn-config.test.ts and prisma-next.test.ts drive).
+  const widgetConfig = path.join(
+    import.meta.dir,
+    'fixtures',
+    'widget-contract',
+    'source',
+    'prisma-next.config.ts',
+  );
+
+  test('default stage: the Database attaches the default Branch; the migration runs on its warmed url', async () => {
+    await withEnv({}, async () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = pnPostgres({
+        name: 'pndata',
+        contract: pnContract(widgetContractJson),
+        config: widgetConfig,
+      });
+      const ctx = {
+        id: 'pndata',
+        node,
+        graph: { edges: [], nodes: [] },
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: undefined,
+          defaultBranchId: 'br_default',
+          branchless: false,
+        },
+      } as unknown as LowerContext;
+      const before = { db: recorded.db.length, migrate: recorded.pnMigrate.length };
+
+      const result = await runAsync<LoweredResult>(
+        resourceDescriptorOf(target, 'prisma-next')(ctx),
+      );
+
+      expect(recorded.db.slice(before.db)).toEqual([
+        [
+          'pndata-db',
+          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+        ],
+      ]);
+      const [migrateId, migrateProps] = recorded.pnMigrate[before.migrate] ?? ['', {}];
+      expect(migrateId).toBe('pndata-migrate');
+      expect((migrateProps as { url: unknown }).url).toBe('postgres://pndata-conn');
+      expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'pndata-db#cloud-id' }]);
     });
   });
 });
