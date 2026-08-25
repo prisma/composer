@@ -47,6 +47,14 @@ export class PrismaCloudContainer implements ContainerInstance {
     readonly projectId: string,
     readonly branchId: string | undefined,
     readonly defaultBranchId?: string,
+    /**
+     * Declares that this container resolves NO Branches by design — the dev
+     * container (local-dev spec § 5). A deploy container never sets it:
+     * container resolution (ADR-0019) always produces a stage or default
+     * Branch id, and branch-scoped descriptors treat "no branch id and not
+     * branchless" as a broken transport.
+     */
+    readonly branchless: boolean = false,
   ) {
     const stageBranchId = branchId ?? defaultBranchId;
     if (stageBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(stageBranchId)) {
@@ -61,6 +69,7 @@ export class PrismaCloudContainer implements ContainerInstance {
       projectId: this.projectId,
       ...(this.branchId !== undefined ? { branchId: this.branchId } : {}),
       ...(this.defaultBranchId !== undefined ? { defaultBranchId: this.defaultBranchId } : {}),
+      ...(this.branchless ? { branchless: true } : {}),
     });
   }
 }
@@ -126,8 +135,19 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   if (defaultBranchId !== undefined && typeof defaultBranchId !== 'string') {
     throw invalidPayloadError('"defaultBranchId" is not a string or absent');
   }
+  // Absent means false: payloads from before the flag existed stay readable.
+  const branchless = parsed['branchless'];
+  if (branchless !== undefined && typeof branchless !== 'boolean') {
+    throw invalidPayloadError('"branchless" is not a boolean or absent');
+  }
 
-  return new PrismaCloudContainer({ appName, stage }, projectId, branchId, defaultBranchId);
+  return new PrismaCloudContainer(
+    { appName, stage },
+    projectId,
+    branchId,
+    defaultBranchId,
+    branchless ?? false,
+  );
 }
 
 /** The credentials this extension's container lifecycle accepts per call. */

@@ -34,6 +34,7 @@ function computeCtx(): LowerContext {
       projectId: 'shop-project#cloud-id',
       branchId: undefined,
       defaultBranchId: undefined,
+      branchless: false,
     },
   } as unknown as LowerContext;
 }

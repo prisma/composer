@@ -117,6 +117,12 @@ export interface CloudApplication {
    * `branchId`/`defaultBranchId` is set on a deploy.
    */
   readonly defaultBranchId: string | undefined;
+  /**
+   * The container declared it resolves NO Branches — the dev container
+   * (local-dev spec § 5) is the only one that does. Always `false` on a
+   * deploy.
+   */
+  readonly branchless: boolean;
 }
 
 export function isCloudApplication(value: unknown): value is CloudApplication {
@@ -129,7 +135,9 @@ export function isCloudApplication(value: unknown): value is CloudApplication {
     'branchId' in value &&
     (value.branchId === undefined || typeof value.branchId === 'string') &&
     'defaultBranchId' in value &&
-    (value.defaultBranchId === undefined || typeof value.defaultBranchId === 'string')
+    (value.defaultBranchId === undefined || typeof value.defaultBranchId === 'string') &&
+    'branchless' in value &&
+    typeof value.branchless === 'boolean'
   );
 }
 
@@ -149,13 +157,6 @@ export function projectIdOf(application: unknown): string {
 }
 
 /**
- * The dev container's project id (local-dev spec § 5): `prisma-composer dev`
- * resolves a purely local identity with no platform call — this literal, and
- * never a Branch. The one application product allowed to carry NO branch id.
- */
-export const LOCAL_PROJECT_ID = 'local';
-
-/**
  * The Branch a stage's database attaches to: the named stage's Branch, or the
  * project's default Branch on the default (production) stage. Never absent on
  * a deploy — omitting the branch is not a neutral choice for
@@ -163,14 +164,14 @@ export const LOCAL_PROJECT_ID = 'local';
  * PATCHes `branchId` back to `null` on every reconcile. The container
  * resolves exactly one of the two ids for every deploy (ADR-0019), so both
  * missing means the transport is broken — fail loudly rather than create an
- * unassigned database. Only local dev (ADR-0041 runs these same descriptors
- * against the dev container, which resolves no Branches) legitimately
- * returns `undefined`.
+ * unassigned database. Only a container that declared itself `branchless`
+ * (the dev container — ADR-0041 runs these same descriptors against it, and
+ * it resolves no Branches) legitimately returns `undefined`.
  */
 export function attachmentBranchIdOf(application: unknown, id: string): string | undefined {
   const app = cloudApplicationOf(application);
   const branchId = app.branchId ?? app.defaultBranchId;
-  if (branchId === undefined && app.projectId !== LOCAL_PROJECT_ID) {
+  if (branchId === undefined && !app.branchless) {
     throw new Error(
       `prisma-cloud: cannot attach database "${id}" to a Branch — the resolved container ` +
         "carries neither a stage Branch id nor the project's default Branch id. Container " +
