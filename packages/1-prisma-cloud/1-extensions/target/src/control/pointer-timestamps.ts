@@ -7,8 +7,10 @@
  * is not a place to put one.
  */
 import { readPreflightPayload } from '@internal/core/config';
-import type { PointerUpdatedAt } from '@internal/lowering';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
+
+/** The pointed platform variable's `updatedAt`, or undefined when it is unknown (dev, or a name the deploy just provisioned). */
+export type PointerUpdatedAt = (name: string) => string | undefined;
 
 /** The CLI-process side: what `preflight` hands the framework, or undefined when the deploy read no pointed variable at all. */
 export function serializePointerUpdatedAt(

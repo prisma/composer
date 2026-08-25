@@ -3,8 +3,6 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
-import { Bucket, BucketProvider } from './buckets/Bucket.ts';
-import { BucketKey, BucketKeyProvider } from './buckets/BucketKey.ts';
 import * as client from './client.ts';
 import { fromEnv, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
 
@@ -36,13 +34,15 @@ const prismaEnvironment = () =>
 
 /**
  * Upstream alchemy's live providers for the postgres family (Project,
- * Database, Connection) and the compute family (App, Deployment,
- * EnvironmentVariable), over upstream's management client, authenticated by
+ * Database, Connection), the compute family (App, Deployment,
+ * EnvironmentVariable), and the bucket family (Bucket, BucketAccessKey),
+ * over upstream's management client, authenticated by
  * {@link prismaEnvironment}.
  *
- * alchemy 2.0.0-beta.67 exports only the per-resource provider layers, so
- * they are composed by hand here. TODO: switch to upstream's
- * `liveProviderLayer` in the alchemy release that exports it.
+ * Composed from the per-resource provider layers rather than upstream's own
+ * `providers()` bundle: that bundle pulls in the profile store
+ * (`AlchemyProfile`/`CredentialsStore`), and Composer deliberately runs
+ * without one — no TTY prompt, no non-interactive hard-fail.
  */
 const upstreamPrismaProviders = () =>
   Layer.mergeAll(
@@ -52,6 +52,8 @@ const upstreamPrismaProviders = () =>
     Prisma.AppProvider(),
     Prisma.DeploymentProvider(),
     Prisma.EnvironmentVariableProvider(),
+    Prisma.BucketProvider(),
+    Prisma.BucketAccessKeyProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
     // Provide (NOT provideMerge) the node transport privately — mirrors
@@ -84,11 +86,11 @@ export const providers = () =>
       Prisma.App,
       Prisma.Deployment,
       Prisma.EnvironmentVariable,
-      Bucket,
-      BucketKey,
+      Prisma.Bucket,
+      Prisma.BucketAccessKey,
     ]),
   ).pipe(
-    Layer.provide(Layer.mergeAll(upstreamPrismaProviders(), BucketProvider(), BucketKeyProvider())),
+    Layer.provide(upstreamPrismaProviders()),
     Layer.provideMerge(NodeHttpClient.layerNodeHttp),
     Layer.provideMerge(client.layer()),
     Layer.provideMerge(fromEnv()),

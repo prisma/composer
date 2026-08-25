@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { rewriteWorkspaceDeps } from './set-version-utils.ts';
+import { stampSkillVersion } from './skill-frontmatter.ts';
 
 const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -59,4 +60,22 @@ for (const pkg of workspacePackages) {
   updatedCount++;
 }
 
-console.log(`\nDone! Updated ${updatedCount} packages.`);
+// The `prisma-composer` skill ships inside the `@prisma/composer` tarball, so
+// its `library_version` is part of the same lockstep stamp as the manifests:
+// the version a reader of the skill sees is the version they installed.
+const skillsDir = path.join(rootDir, 'skills');
+const skillDirEntries = await fs.readdir(skillsDir, { withFileTypes: true });
+
+let stampedSkills = 0;
+for (const entry of skillDirEntries) {
+  if (!entry.isDirectory()) continue;
+  const skillPath = path.join(skillsDir, entry.name, 'SKILL.md');
+  const source = await fs.readFile(skillPath, 'utf-8').catch(() => undefined);
+  if (source === undefined) continue;
+
+  await fs.writeFile(skillPath, stampSkillVersion(source, version));
+  console.log(`Stamped ${path.relative(rootDir, skillPath)} with ${version}`);
+  stampedSkills++;
+}
+
+console.log(`\nDone! Updated ${updatedCount} packages and ${stampedSkills} skills.`);

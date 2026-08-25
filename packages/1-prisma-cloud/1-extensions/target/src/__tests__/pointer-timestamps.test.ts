@@ -3,18 +3,14 @@
  * produces a payload from a real `runPreflight`, the framework transport
  * carries it as env vars, and the alchemy half rebuilds the lookup from
  * those vars alone — injecting a lookup directly would pass even if nothing
- * were transported. Assertions are on `deployEnvFingerprintMaterial` (the
- * exact hashed text); the digest itself is stubbed process-globally by a
- * sibling test via `mock.module`.
+ * were transported. Assertions are on the `<name>:updatedAt` trigger members
+ * the deploy hook builds from the lookup — the exact inputs
+ * `Prisma.Deployment.triggers` fingerprints.
  */
 import { describe, expect, test } from 'bun:test';
 import { Load, module } from '@internal/core';
 import { preflightEnv } from '@internal/core/config';
-import {
-  deployEnvFingerprintMaterial,
-  type EnvFingerprintEntry,
-  type ManagementApiClient,
-} from '@internal/lowering';
+import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import {
@@ -64,15 +60,8 @@ const fakePlatform = (updatedAt: string): ManagementApiClient =>
     },
   }) as unknown as ManagementApiClient;
 
-/** The service's rows as the deploy hook fingerprints them — the input document points at the rotating secret. */
-const envRows: readonly EnvFingerprintEntry[] = [
-  { key: 'COMPOSER_INGEST_PORT', value: '3000' },
-  {
-    key: 'COMPOSER_INGEST_INPUT',
-    value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
-    pointers: ['STRIPE_SECRET_KEY'],
-  },
-];
+/** The pointed platform variables serialize collected for this service — the input document points at the rotating secret. */
+const pointers = ['STRIPE_SECRET_KEY'];
 
 /** The CLI process: run the real preflight against a platform that last wrote the secret at `updatedAt`, and hand its findings to the framework transport. */
 async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
@@ -93,26 +82,28 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
 /**
  * The alchemy process: it never ran a preflight, so its own map is empty and
  * everything it knows comes from the transported env — exactly the state a
- * fresh `prismaCloud()` is in there. Returns the text the deployment's
- * fingerprint is the hash of.
+ * fresh `prismaCloud()` is in there. Returns the `<name>:updatedAt` trigger
+ * members the deploy hook declares on `Prisma.Deployment` — what upstream's
+ * fingerprint moves on.
  */
-function alchemyProcessMaterial(env: Record<string, string>): string {
-  return deployEnvFingerprintMaterial(envRows, pointerUpdatedAtLookup(new Map(), env));
+function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
+  const lookup = pointerUpdatedAtLookup(new Map(), env);
+  return Object.fromEntries(pointers.map((name) => [`${name}:updatedAt`, lookup(name) ?? '?']));
 }
 
 describe('the rotation signal across the CLI → alchemy process boundary', () => {
-  test('a secret rotated on the platform moves the fingerprint in the alchemy process', async () => {
-    const before = alchemyProcessMaterial(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const after = alchemyProcessMaterial(await cliProcess('2026-07-07T09:15:00.000Z'));
+  test('a secret rotated on the platform moves the trigger member in the alchemy process', async () => {
+    const before = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const after = alchemyProcessPointerTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
 
-    expect(after).not.toBe(before);
+    expect(after).not.toEqual(before);
   });
 
   test('an unchanged secret leaves it standing still — the deployment is reused', async () => {
-    const first = alchemyProcessMaterial(await cliProcess('2026-05-05T12:00:00.000Z'));
-    const second = alchemyProcessMaterial(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const first = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
+    const second = alchemyProcessPointerTriggers(await cliProcess('2026-05-05T12:00:00.000Z'));
 
-    expect(second).toBe(first);
+    expect(second).toEqual(first);
   });
 
   test('what the transport carries is the timestamp preflight read, under the pointed name', async () => {
@@ -124,15 +115,15 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
     });
   });
 
-  test('without the transport the alchemy process learns nothing — the fingerprint cannot move', async () => {
+  test('without the transport the alchemy process learns nothing — the trigger cannot move', async () => {
     // What the child saw before the timestamps were transported at all: every
     // name unknown, so a rotation is invisible. This is the failure the
     // transport exists to prevent.
-    const untransported = alchemyProcessMaterial({});
-    const rotated = alchemyProcessMaterial(await cliProcess('2026-07-07T09:15:00.000Z'));
+    const untransported = alchemyProcessPointerTriggers({});
+    const rotated = alchemyProcessPointerTriggers(await cliProcess('2026-07-07T09:15:00.000Z'));
 
-    expect(alchemyProcessMaterial({})).toBe(untransported);
-    expect(rotated).not.toBe(untransported);
+    expect(alchemyProcessPointerTriggers({})).toEqual(untransported);
+    expect(rotated).not.toEqual(untransported);
   });
 });
 

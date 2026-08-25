@@ -13,9 +13,11 @@ go stale **silently** — nothing fails when they're wrong:
   (`website/scripts/render-content.ts`), and `.github/workflows/deploy-docs.yml`
   redeploys the site whenever `docs/guides/**` changes on main. Editing a guide
   *is* shipping a site change; no generated file to commit.
-- **`skills/prisma-composer/SKILL.md`** — the agent-condensed mirror, installed
-  into other people's repos (`npx skills add`). An agent reading a stale skill
-  writes wrong code and blames the framework.
+- **`skills/prisma-composer/SKILL.md`** — the agent-condensed mirror. It ships
+  inside the `@prisma/composer` tarball and lands in other people's repos when
+  they run `prisma skills sync`, so it reaches them on their next upgrade
+  whether or not anyone re-runs an install command. An agent reading a stale
+  skill writes wrong code and blames the framework.
 
 **If your PR changes what a user can observe, update both in the same PR.**
 `docs/design/**` is for us; landing an ADR is not documenting.

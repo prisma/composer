@@ -12,6 +12,20 @@ export type {
   UpdateBuildBody,
 } from '../builds/api.ts';
 export { buildsApi } from '../builds/api.ts';
+export type {
+  ApplicationTopologyApi,
+  ApplicationTopologyApiOptions,
+  ApplicationTopologyBody,
+  ApplicationTopologyEdgeBody,
+  ApplicationTopologyEndpointBody,
+  ApplicationTopologyNodeBody,
+  ApplicationTopologyPortBody,
+} from '../builds/application-topology.ts';
+export {
+  applicationTopologyApi,
+  applicationTopologyContentHash,
+  composeApplicationTopology,
+} from '../builds/application-topology.ts';
 export type { BuildContainerRefs, BuildReporterOptions } from '../builds/reporter.ts';
 export { buildReporter } from '../builds/reporter.ts';
 export type { ReportableResource, ResourceReporter } from '../builds/resources.ts';

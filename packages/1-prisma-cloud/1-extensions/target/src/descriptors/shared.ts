@@ -1,10 +1,10 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
-import type { PointerUpdatedAt } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**

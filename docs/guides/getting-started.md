@@ -2,13 +2,16 @@
 
 ## First: give your agent the skill
 
-Composer is built to be driven by an agent, and this is the whole setup:
+Composer is built to be driven by an agent, and the skill that teaches it the
+API ships inside `@prisma/composer` itself. So the setup is two lines in
+[step 1](#1-project-setup) below — install the package, then copy the skill
+out of it:
 
 ```sh
-npx skills add prisma/composer
+pnpm prisma skills sync
 ```
 
-Your agent now knows the entire API and arrives prepped with the building
+Your agent then knows the entire API and arrives prepped with the building
 blocks it can compose — the ready-made Modules for scheduled jobs, blob
 storage, and event streams, plus the ones you write. From there you describe
 what you want ("a Next.js storefront calling an orders API with its own
@@ -17,7 +20,9 @@ TypeScript, not YAML.
 
 Do this even if you intend to write every line yourself. It costs one command,
 and it stops your agent inventing an API that doesn't exist the first time you
-ask it for help.
+ask it for help. Because the skill travelled inside the package, what your
+agent reads is the API of the version you installed — not whatever was on
+`main` the day it was fetched.
 
 It works because of three properties you'll see throughout this guide:
 capabilities arrive as **Modules** that snap together instead of integrations
@@ -59,8 +64,26 @@ You'll need:
 ```sh
 mkdir my-app && cd my-app && pnpm init
 pnpm add @prisma/composer @prisma/composer-prisma-cloud arktype
-pnpm add -D typescript @types/bun
+pnpm add -D typescript @types/bun prisma
+pnpm prisma skills sync
 ```
+
+`prisma` is the Prisma CLI; `prisma skills sync` copies the skill out of the
+installed `@prisma/composer` into the skill directories your agent runtimes
+read (`.claude/skills/`, `.cursor/skills/`, `.agents/skills/`,
+`.windsurf/skills/`). Add it to `postinstall` so an upgrade brings the
+matching skill with it — `|| exit 0` keeps installs that have no `prisma`
+binary (a production install with no dev dependencies) from failing:
+
+```jsonc
+// package.json
+"scripts": {
+  "postinstall": "prisma skills sync || exit 0"
+}
+```
+
+Those copies are derived from your lockfile, like `node_modules` — gitignore
+them rather than committing them.
 
 Then pin the `effect` constellation in your `package.json` — a workaround for
 an upstream bug in alchemy (Composer's deploy engine), whose own
@@ -74,13 +97,13 @@ it `resolutions`, pnpm nests it under `"pnpm"`:
 ```jsonc
 // package.json
 "overrides": {
-  "effect": "4.0.0-beta.103",
-  "@effect/sql-d1": "4.0.0-beta.103",
-  "@effect/sql-pg": "4.0.0-beta.103",
-  "@effect/vitest": "4.0.0-beta.103",
-  "@effect/platform-bun": "4.0.0-beta.103",
-  "@effect/platform-node": "4.0.0-beta.103",
-  "@effect/platform-node-shared": "4.0.0-beta.103"
+  "effect": "4.0.0-rc.111",
+  "@effect/sql-d1": "4.0.0-rc.111",
+  "@effect/sql-pg": "4.0.0-rc.111",
+  "@effect/vitest": "4.0.0-rc.111",
+  "@effect/platform-bun": "4.0.0-rc.111",
+  "@effect/platform-node": "4.0.0-rc.111",
+  "@effect/platform-node-shared": "4.0.0-rc.111"
 }
 ```
 

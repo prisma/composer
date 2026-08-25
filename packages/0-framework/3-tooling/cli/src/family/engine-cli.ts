@@ -21,7 +21,9 @@ import {
   loadConfig,
   type MountedTree,
 } from '@prisma/cli-engine';
-import { type ComposerOperations, createComposerFamily } from './family.ts';
+import { createDestroyCommand } from './commands/destroy.ts';
+import { createLogCommand } from './commands/log.ts';
+import { type ComposerOperations, createComposerFamily, realOperations } from './family.ts';
 import { createRuntime } from './runtime.ts';
 
 export const BINARY_NAME = 'prisma-composer';
@@ -38,23 +40,28 @@ export interface ComposerCliSpec {
 
 /**
  * Composer's commands mount at the top level of its own CLI (`prisma-composer
- * deploy`); under the `prisma` bin the same family mounts one level down
- * (`prisma composer deploy`). The family is identical either way — only the
- * mount paths differ, which is exactly the split `createCli` draws between
- * `commandFamilies` and `commands`.
+ * deploy`). The bin mounts more than the family carries: `destroy` and `log`
+ * were retired from the family (the surface the `prisma` bin mounts, per the
+ * 2026-08-21 PM review) but stay first-class commands of `prisma-composer`
+ * itself, so their definitions are mounted here on top of the family.
  */
-function mountedTree(family: CommandFamily): MountedTree {
-  return { ...family.commands };
+function mountedTree(family: CommandFamily, operations: ComposerOperations): MountedTree {
+  return {
+    ...family.commands,
+    destroy: createDestroyCommand(operations),
+    log: createLogCommand(operations),
+  };
 }
 
 export function createComposerCli(spec: ComposerCliSpec): Cli {
-  const family = createComposerFamily({ operations: spec.operations });
+  const operations = spec.operations ?? realOperations;
+  const family = createComposerFamily({ operations });
   return createCli({
     name: BINARY_NAME,
     version: spec.version,
     commandFamilies: [family],
     groups: {},
-    commands: mountedTree(family),
+    commands: mountedTree(family, operations),
   });
 }
 

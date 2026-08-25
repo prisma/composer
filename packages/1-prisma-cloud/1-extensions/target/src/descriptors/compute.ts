@@ -5,9 +5,6 @@ import type { ServiceLowering } from '@internal/core/deploy';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
-  deployEnvFingerprint,
-  type EnvFingerprintEntry,
-  fingerprintedArtifactPath,
   packageComputeArtifact,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
@@ -54,11 +51,29 @@ export interface ComputeProvisioned {
   readonly endpointDomain: Output.Output<string | undefined>;
 }
 
-/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, one fingerprint entry per row, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
+/** compute's serialize → deploy handoff: the env-var rows deploy must depend on, the deployment's replacement triggers, the resolved port it routes to, and the serialized input document (when the service declares one) for the deploy report. */
 export interface ComputeSerialized {
   readonly environment: readonly Prisma.EnvironmentVariable[];
-  /** What the deploy hook fingerprints the environment by — one entry per row of `environment`, in the same order. */
-  readonly envFingerprint: readonly EnvFingerprintEntry[];
+  /**
+   * What the deploy hook declares as `Prisma.Deployment.triggers` — one member
+   * per row of `environment`, carrying the SAME value the row writes (Redacted,
+   * possibly still an unresolved Output). The platform materializes env rows
+   * into a deployment only at create (PRO-211), so a changed value must replace
+   * the deployment; upstream folds these into a salted fingerprint inside its
+   * own state and plans that replacement. Because upstream resolves the actual
+   * values, a value re-issued under a stable resource identity (a connection
+   * rotated in place, a re-minted service key) moves the fingerprint too —
+   * closing the blind spot the deleted Composer-side fingerprint had to accept
+   * (ADR-0048 recorded it).
+   */
+  readonly triggers: Readonly<Record<string, unknown>>;
+  /**
+   * Operator-owned platform variables the environment POINTS at and Composer
+   * never writes — no value ever exists to trigger on, so each contributes its
+   * preflight `updatedAt` as a `<name>:updatedAt` trigger member at deploy
+   * time, and an out-of-band rotation still replaces the deployment.
+   */
+  readonly pointers: readonly string[];
   readonly port: number;
   readonly input?: InputDocumentRow;
 }
@@ -75,16 +90,13 @@ const envValue = (
 ): Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>> =>
   Output.isOutput(value) ? Output.map(value, Redacted.make) : Redacted.make(value);
 
-/**
- * The fingerprint stand-in for a row whose text this descriptor must NOT hash:
- * `kind` says which channel the row came from, and the sorted names of the
- * resources the value is built from say what produces it, so rewiring the row
- * to a different resource moves the fingerprint. `Output.upstreamAny` is the
- * same walker Alchemy builds its dependency graph with, so the names are the
- * planner's own — no guessing at what a reference points to.
- */
-const withheldSource = (kind: string, upstream: Record<string, unknown>): string =>
-  `${kind}:${Object.keys(upstream).sort().join(',')}`;
+/** One environment row and its trigger member: the resource AND the value it writes, so a row cannot exist without joining the deployment's replacement triggers. */
+interface EnvRow {
+  readonly record: Prisma.EnvironmentVariable;
+  readonly key: string;
+  readonly value: Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>>;
+  readonly pointers?: readonly string[];
+}
 
 /**
  * Returns the PRECISE descriptor type, not the erased `NodeDescriptor`: the
@@ -126,14 +138,7 @@ export function computeDescriptor(
         const branch = branchId !== undefined ? { branchId } : {};
         const projectId = provisioned.projectId;
         const svc = node as ServiceNode;
-        // One element per env row: the resource AND its fingerprint entry
-        // together, so a row cannot exist without one. An entry that carries
-        // text carries text that is secret-free BY CONSTRUCTION; the rest are
-        // `withheld` and have nowhere to put a value — see deploy-fingerprint.ts.
-        const rows: {
-          readonly record: Prisma.EnvironmentVariable;
-          readonly entry: EnvFingerprintEntry;
-        }[] = [];
+        const rows: EnvRow[] = [];
 
         for (const d of paramEntries(svc)) {
           const value =
@@ -151,45 +156,26 @@ export function computeDescriptor(
             d.owner === 'service' && isParamSource(value)
               ? encodeParamPointer(paramName(paramBindingFor(graph.params, address, d.name)))
               : encode(d.owner, value);
+          const wrapped = envValue(rowValue);
           const record = yield* Prisma.EnvironmentVariable(`${key}-var`, {
             project: projectId,
             key,
-            value: envValue(rowValue),
+            value: wrapped,
             class: cls,
             ...branch,
           });
-          // An own param is config, never a secret (ADR-0042): hash its text,
-          // and a pointer row's platform name joins `pointers`. A dependency
-          // input may carry a connection string or minted token: withheld.
-          if (d.owner === 'service') {
-            const pointer = isParamPointerRow(rowValue) ? decodeParamPointer(rowValue) : undefined;
-            rows.push({
-              record,
-              entry: {
-                key,
-                value: rowValue,
-                ...(pointer !== undefined ? { pointers: [pointer] } : {}),
-              },
-            });
-          } else if (Output.isOutput(value) || Object.keys(Output.upstreamAny(value)).length > 0) {
-            // Any Output stays withheld — `upstreamAny` alone is not the test,
-            // because an Output with no Resource ancestry (a literal or
-            // effect-built expression) would otherwise be pushed as an object.
-            rows.push({
-              record,
-              entry: {
-                key,
-                withheld: withheldSource(`input.${d.owner.input}`, Output.upstreamAny(value)),
-              },
-            });
-          } else {
-            // A dependency value already RESOLVED at plan time traces back to
-            // authored config (ADR-0042 routes secret values through pointers
-            // and resources, which are still Outputs here), so its text is
-            // hashed like a literal — a changed producer setting (e.g. a
-            // store's bucket) must move the consumer's fingerprint.
-            rows.push({ record, entry: { key, value: rowValue } });
-          }
+          // A pointer row triggers on its text (the platform NAME); the pointed
+          // variable's own rotation joins as a `<name>:updatedAt` member.
+          const pointer =
+            d.owner === 'service' && isParamPointerRow(rowValue)
+              ? decodeParamPointer(rowValue)
+              : undefined;
+          rows.push({
+            record,
+            key,
+            value: wrapped,
+            ...(pointer !== undefined ? { pointers: [pointer] } : {}),
+          });
         }
 
         const inputRow = serializeInput(
@@ -198,10 +184,10 @@ export function computeDescriptor(
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
         );
         if (inputRow !== undefined) {
-          // The document itself is secret-free by construction, so it is
-          // hashed verbatim; each `$secret` pointer names an OPERATOR-owned
+          // Each `$secret` pointer in the document names an OPERATOR-owned
           // platform variable Composer never writes, so its rotation shows up
           // only as that variable's `updatedAt`.
+          const inputValue = envValue(inputRow.value);
           rows.push({
             record: yield* Prisma.EnvironmentVariable(`${inputRow.key}-var`, {
               project: projectId,
@@ -209,11 +195,13 @@ export function computeDescriptor(
               // The defaults-applied document — secret leaves are `$secret`
               // pointers, generated leaves are `$generated` pointers, naming
               // platform vars, never values (ADR-0042).
-              value: envValue(inputRow.value),
+              value: inputValue,
               class: cls,
               ...branch,
             }),
-            entry: { key: inputRow.key, value: inputRow.value, pointers: inputRow.secrets },
+            key: inputRow.key,
+            value: inputValue,
+            pointers: inputRow.secrets,
           });
           // Each generated leaf: generate its value ONCE (the resource keeps it
           // stable across redeploys via its persisted output) and provision it
@@ -224,21 +212,20 @@ export function computeDescriptor(
             const resource = yield* GeneratedParam(`${inputRow.key}:${leaf.path}-generated`, {
               bytes: leaf.bytes,
             });
-            // A minted random value — withheld, and no `updatedAt` either:
-            // Composer rewrites this row every deploy, so the timestamp
-            // would churn the fingerprint.
+            // The generated value is mint-once-stable (the resource returns
+            // its persisted output), so this trigger member holds still across
+            // redeploys and moves exactly when the value is re-generated.
+            const generatedValue = envValue(resource.value);
             rows.push({
               record: yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
                 project: projectId,
                 key: leaf.varName,
-                value: envValue(resource.value),
+                value: generatedValue,
                 class: cls,
                 ...branch,
               }),
-              entry: {
-                key: leaf.varName,
-                withheld: `generated:${String(leaf.bytes)}:${String(leaf.redacted)}`,
-              },
+              key: leaf.varName,
+              value: generatedValue,
             });
           }
         }
@@ -296,21 +283,20 @@ export function computeDescriptor(
           const value = Output.isOutput(raw)
             ? Output.map(raw, (v) => encode('service', v))
             : encode('service', raw);
-          // May be a minted key (rpc, streams), so withheld regardless of
-          // brand; rewiring changes the producing resources, which is what
-          // moves the fingerprint.
+          // May be a minted key (rpc, streams) — Redacted keeps it out of
+          // plaintext state on both the row and the trigger member; upstream
+          // only ever persists the salted triggers fingerprint.
+          const providerValue = envValue(value);
           rows.push({
             record: yield* Prisma.EnvironmentVariable(`${key}-var`, {
               project: projectId,
               key,
-              value: envValue(value),
+              value: providerValue,
               class: cls,
               ...branch,
             }),
-            entry: {
-              key,
-              withheld: withheldSource(`provider.${entry.name}`, Output.upstreamAny(raw)),
-            },
+            key,
+            value: providerValue,
           });
         }
 
@@ -320,7 +306,9 @@ export function computeDescriptor(
         const port = typeof config.service['port'] === 'number' ? config.service['port'] : 3000;
         return {
           environment: rows.map((r) => r.record),
-          envFingerprint: rows.map((r) => r.entry),
+          // Keys are unique per row (one env var each), so no member collides.
+          triggers: Object.fromEntries(rows.map((r) => [r.key, r.value])),
+          pointers: [...new Set(rows.flatMap((r) => r.pointers ?? []))],
           port,
           ...(inputRow !== undefined ? { input: inputRow } : {}),
         };
@@ -344,30 +332,29 @@ export function computeDescriptor(
         // no platform preflight, so no rotation timestamps exist. That costs
         // nothing — the local Deployment provider reconciles unconditionally.
         const pointerUpdatedAt = o().pointerUpdatedAt;
-        // Effect.try, like the package hook: the hard-link/copy is filesystem
-        // work whose failure is a deploy error, not a defect.
-        const artifactPath = yield* Effect.try(() =>
-          fingerprintedArtifactPath(
-            artifact.path,
-            deployEnvFingerprint(serialized.envFingerprint, pointerUpdatedAt),
+        // Env keys never contain ':', so a `<name>:updatedAt` member cannot
+        // collide with a row's own trigger member.
+        const triggers = {
+          ...serialized.triggers,
+          ...Object.fromEntries(
+            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerUpdatedAt(name) ?? '?']),
           ),
-        );
+        };
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
           // only prop that can (PRO-211).
           app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
-          // The SAME bytes under a path named by a hash of this service's
-          // environment, so upstream plans a replace exactly when the
-          // environment (or the code) moved and reuses the deployment
-          // otherwise — see `deploy-fingerprint.ts` for what the hash covers,
-          // why no secret reaches it, and the hand-off to upstream's
-          // `redeployOn`.
-          artifactPath,
+          artifactPath: artifact.path,
           // The artifact IS a gzipped tar (see @internal/lowering's packager);
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.
           artifactContentType: ARTIFACT_CONTENT_TYPE,
+          // The environment's replacement seam: upstream salts and hashes the
+          // resolved members inside its own state and plans a replace exactly
+          // when one moved (or cannot be proven unmoved), because the platform
+          // materializes env rows into a deployment only at create (PRO-211).
+          triggers,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.
           portMapping: { http: serialized.port },

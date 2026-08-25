@@ -35,6 +35,7 @@ describe('node compatibility smoke test', () => {
     expect(result.status).toBe(0);
     expect(result.output).toContain('prisma-composer');
     expect(result.output).toContain('deploy <entry>');
+    expect(result.output).toContain('dev <entry>');
     expect(result.output).toContain('destroy <entry>');
   }, 15000);
 

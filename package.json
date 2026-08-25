@@ -17,6 +17,7 @@
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
     "check:npm-effect-resolution": "node scripts/check-npm-effect-resolution.mjs",
     "check:cli-engine-pin": "node scripts/check-cli-engine-pin.mjs",
+    "check:skill-packaging": "node scripts/check-skill-packaging.mjs",
     "check:orm-pins": "node scripts/check-orm-pins.mjs",
     "check:family-static-graph": "node scripts/check-family-static-graph.mjs",
     "check:floor-imports": "node scripts/check-floor-imports.mjs",
@@ -45,11 +46,7 @@
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"
-    ],
-    "patchedDependencies": {
-      "alchemy@2.0.0-beta.67": "patches/alchemy@2.0.0-beta.67.patch",
-      "@alchemy.run/node-utils@0.0.5": "patches/@alchemy.run__node-utils@0.0.5.patch"
-    }
+    ]
   },
-  "version": "0.10.0"
+  "version": "0.14.0"
 }

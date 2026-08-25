@@ -5,7 +5,7 @@ import { reportableResource, resourceReporter } from '../builds/resources.ts';
 const state = (over: Record<string, unknown>) => ({
   resourceType: 'Prisma.Database',
   status: 'created',
-  attr: { id: 'db_1' },
+  attr: { databaseId: 'db_1' },
   ...over,
 });
 
@@ -38,12 +38,12 @@ function fakeApi(): { api: BuildsApi; reported: Reported[]; settle: () => void }
 describe('reportableResource', () => {
   test('maps each Prisma Cloud resource onto its platform type', () => {
     const cases: readonly [string, string, BuildResourceType][] = [
-      ['Prisma.Project', 'id', 'project'],
-      ['Prisma.Database', 'id', 'database'],
-      ['Prisma.Connection', 'id', 'service_key'],
-      ['Prisma.Bucket', 'id', 'bucket'],
-      ['Prisma.ComputeService', 'id', 'app'],
-      ['Prisma.EnvironmentVariable', 'id', 'config_variable'],
+      ['Prisma.Project', 'projectId', 'project'],
+      ['Prisma.Database', 'databaseId', 'database'],
+      ['Prisma.Connection', 'connectionId', 'service_key'],
+      ['Prisma.Bucket', 'bucketId', 'bucket'],
+      ['Prisma.App', 'appId', 'app'],
+      ['Prisma.EnvironmentVariable', 'environmentVariableId', 'config_variable'],
     ];
 
     for (const [resourceType, idField, expected] of cases) {
@@ -87,7 +87,7 @@ describe('reportableResource', () => {
   });
 
   test('resources with no platform type are not reported', () => {
-    for (const resourceType of ['Prisma.BucketKey', 'PrismaCloud.ServiceKey', 'PgWarm']) {
+    for (const resourceType of ['Prisma.BucketAccessKey', 'PrismaCloud.ServiceKey', 'PgWarm']) {
       expect(reportableResource(state({ resourceType }))).toBeUndefined();
     }
   });
@@ -95,7 +95,7 @@ describe('reportableResource', () => {
   test('tasks, malformed records, and missing ids are not reported', () => {
     expect(reportableResource(state({ kind: 'action' }))).toBeUndefined();
     expect(reportableResource(state({ attr: undefined }))).toBeUndefined();
-    expect(reportableResource(state({ attr: { id: '' } }))).toBeUndefined();
+    expect(reportableResource(state({ attr: { databaseId: '' } }))).toBeUndefined();
     expect(reportableResource(state({ resourceType: 42 }))).toBeUndefined();
     expect(reportableResource(undefined)).toBeUndefined();
     expect(reportableResource('nonsense')).toBeUndefined();

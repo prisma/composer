@@ -240,6 +240,11 @@ jobs:
       - name: Check the cli-engine pin and externality
         run: pnpm check:cli-engine-pin
 
+      # The agent skill ships inside the @prisma/composer tarball, stamped
+      # with the version it ships in. Only the packed artifact can prove it.
+      - name: Check the skill ships in the tarball
+        run: pnpm check:skill-packaging
+
       - name: Every ORM-family pin agrees
         run: pnpm check:orm-pins
       # Same built package, second invariant: nothing statically reachable

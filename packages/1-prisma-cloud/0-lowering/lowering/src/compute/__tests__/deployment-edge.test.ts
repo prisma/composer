@@ -21,11 +21,6 @@ import { sha256, sha256Object } from 'alchemy/Util/sha256';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import {
-  deployEnvFingerprint,
-  type EnvFingerprintEntry,
-  fingerprintedArtifactPath,
-} from '../deploy-fingerprint.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
 
 /** A stack the resource constructors register into; nothing ever applies it. */
@@ -70,11 +65,12 @@ afterAll(() => {
 });
 
 /** The deploy hook's props, built by the same helper the descriptor uses. */
-const deploymentProps = (propArtifactPath: string = artifactPath) => ({
+const deploymentProps = (triggers?: Record<string, unknown>) => ({
   app: appAfterEnvironment(app.appId, environment),
-  artifactPath: propArtifactPath,
+  artifactPath,
   artifactContentType: 'application/gzip',
   portMapping: { http: 8080 },
+  ...(triggers !== undefined ? { triggers } : {}),
   start: true,
   promote: true,
 });
@@ -119,13 +115,17 @@ const deploymentService = () =>
     ) as Effect.Effect<Provider.ProviderService<Prisma.Deployment>, never, never>,
   );
 
-const persistedOutput = (artifactHash: string) => ({
+const persistedOutput = (
+  artifactHash: string,
+  triggersHash?: Redacted.Redacted<string> | string,
+) => ({
   deploymentId: 'dep-1',
   appId: 'app-1',
   foundryVersionId: 'fv-1',
   status: 'running',
   previewDomain: null,
   artifactHash,
+  ...(triggersHash !== undefined ? { triggersHash } : {}),
   appEndpointDomain: 'auth.prisma.app',
   createdAt: '2025-01-01T00:00:00.000Z',
 });
@@ -138,7 +138,7 @@ const persistedOutput = (artifactHash: string) => ({
  */
 const diffAgainst = async (
   output: Record<string, unknown>,
-  paths: { oldPath?: string; newPath?: string } = {},
+  triggers: { old?: Record<string, unknown>; new?: Record<string, unknown> } = {},
 ) => {
   const service = await deploymentService();
   if (service.diff === undefined) throw new Error('provider must expose diff');
@@ -148,8 +148,8 @@ const diffAgainst = async (
         id: 'auth-deploy',
         fqn: 'auth-deploy',
         instanceId: 'inst-deploy',
-        olds: { ...deploymentProps(paths.oldPath), app: 'app-1' },
-        news: deploymentProps(paths.newPath),
+        olds: { ...deploymentProps(triggers.old), app: 'app-1' },
+        news: deploymentProps(triggers.new),
         output,
         session: undefined,
         bindings: [],
@@ -188,7 +188,8 @@ describe('appAfterEnvironment — the edge Alchemy actually plans on', () => {
     expect(Output.isOutput(props.artifactPath)).toBe(false);
     expect(Output.isOutput(props.artifactContentType)).toBe(false);
     expect(Output.isOutput(props.portMapping)).toBe(false);
-    // The unresolved half is confined to `app`, which is the point.
+    // The unresolved half is confined to `app` and (possibly) `triggers`
+    // members, which is the point: upstream's replacement block stays resolved.
     expect(Output.isOutput(props.app)).toBe(true);
   });
 });
@@ -211,74 +212,98 @@ describe('upstream Deployment.diff while the new variable is still unresolved', 
 });
 
 /**
- * What each environment produces as a path, and what upstream plans for it.
- * The environment-value-only change is the case that has no other signal at
- * all: no Deployment prop moves, and the platform never returns a value — so
- * the fingerprint is the ONLY thing that can tell upstream to ship a fresh
- * deployment, which the platform requires because it materializes env rows
- * only at deployment create (PRO-211).
+ * What each environment declares as `triggers`, and what upstream plans for
+ * it. The environment-value-only change is the case that has no other signal
+ * at all: no other Deployment prop moves, and the platform never returns a
+ * value — so the triggers fingerprint is the ONLY thing that can tell
+ * upstream to ship a fresh deployment, which the platform requires because it
+ * materializes env rows only at deployment create (PRO-211). These members
+ * mirror the compute descriptor's: one Redacted member per env row, plus a
+ * `<name>:updatedAt` member per pointed platform variable.
  */
-const envRows = (port: string): readonly EnvFingerprintEntry[] => [
-  { key: 'COMPOSER_AUTH_PORT', value: port },
-  {
-    key: 'COMPOSER_AUTH_INPUT',
-    value: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
-    pointers: ['STRIPE_KEY'],
-  },
-];
+const envTriggers = (port: string, updatedAt = '2026-01-02T00:00:00.000Z') => ({
+  COMPOSER_AUTH_PORT: Redacted.make(port),
+  COMPOSER_AUTH_INPUT: Redacted.make('{"apiKey":{"$secret":"STRIPE_KEY"}}'),
+  'STRIPE_KEY:updatedAt': updatedAt,
+});
 
-const rotatedAt = (updatedAt: string) => () => updatedAt;
+/** Upstream's recorded fingerprint for these triggers — its salt, its formula (`triggersHashOf`), so the diff compares against exactly what a prior apply persisted. */
+const recordedTriggersHash = (triggers: Record<string, unknown>) =>
+  Effect.runPromise(
+    sha256Object({
+      salt: 'alchemy/Prisma.Deployment/triggers/v1',
+      triggers: Object.fromEntries(
+        Object.entries(triggers).map(([key, value]) => [
+          key,
+          Redacted.isRedacted(value) ? Redacted.value(value) : value,
+        ]),
+      ),
+    }),
+  );
 
-const pathForEnvironment = (
-  entries: readonly EnvFingerprintEntry[],
-  updatedAt = '2026-01-02T00:00:00.000Z',
-): string =>
-  fingerprintedArtifactPath(artifactPath, deployEnvFingerprint(entries, rotatedAt(updatedAt)));
-
-describe('the environment fingerprint, against upstream diff', () => {
+describe('the environment triggers, against upstream diff', () => {
   test('nothing changed — upstream reuses the deployment rather than replacing it', async () => {
-    const unchanged = pathForEnvironment(envRows('3000'));
-    const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
-      oldPath: unchanged,
-      newPath: unchanged,
-    });
-    // An update, not a replace: same path, same bytes, so upstream keeps the
-    // running deployment and only re-asserts start/promote. This is the reuse
-    // the per-deploy-generation path gave up and the fingerprint restores.
+    const unchanged = envTriggers('3000');
+    const diff = await diffAgainst(
+      persistedOutput(await artifactFingerprint(), await recordedTriggersHash(unchanged)),
+      { old: unchanged, new: unchanged },
+    );
+    // An update, not a replace: same triggers, same bytes, so upstream keeps
+    // the running deployment and only re-asserts start/promote.
     expect(diff).toEqual({ action: 'update' });
   });
 
   test('a changed environment VALUE plans a replace, though the bytes are identical', async () => {
-    const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
-      oldPath: pathForEnvironment(envRows('3000')),
-      newPath: pathForEnvironment(envRows('8080')),
-    });
+    const diff = await diffAgainst(
+      persistedOutput(await artifactFingerprint(), await recordedTriggersHash(envTriggers('3000'))),
+      { old: envTriggers('3000'), new: envTriggers('8080') },
+    );
     expect(diff).toEqual({ action: 'replace' });
   });
 
   test('a rotated POINTED platform variable plans a replace, though every row is identical', async () => {
+    const diff = await diffAgainst(
+      persistedOutput(await artifactFingerprint(), await recordedTriggersHash(envTriggers('3000'))),
+      {
+        old: envTriggers('3000'),
+        new: envTriggers('3000', '2026-06-30T09:15:00.000Z'),
+      },
+    );
+    expect(diff).toEqual({ action: 'replace' });
+  });
+
+  test('a changed artifact plans a replace under unchanged triggers', async () => {
+    const unchanged = envTriggers('3000');
+    const diff = await diffAgainst(
+      persistedOutput('the-previous-artifacts-fingerprint', await recordedTriggersHash(unchanged)),
+      { old: unchanged, new: unchanged },
+    );
+    expect(diff).toEqual({ action: 'replace' });
+  });
+
+  test('the FIRST deploy that declares triggers records the fingerprint without replacing', async () => {
+    // The persisted output predates triggers (no triggersHash recorded), so
+    // there is nothing to compare against: upstream lets the engine's plain
+    // update record the fingerprint instead of forcing a replacement. This is
+    // what makes adopting the seam free for already-deployed services.
     const diff = await diffAgainst(persistedOutput(await artifactFingerprint()), {
-      oldPath: pathForEnvironment(envRows('3000'), '2026-01-02T00:00:00.000Z'),
-      newPath: pathForEnvironment(envRows('3000'), '2026-06-30T09:15:00.000Z'),
+      new: envTriggers('3000'),
     });
-    expect(diff).toEqual({ action: 'replace' });
+    expect(diff).toEqual({ action: 'update' });
   });
 
-  test('a changed artifact plans a replace under an unchanged environment', async () => {
-    const unchanged = pathForEnvironment(envRows('3000'));
-    const diff = await diffAgainst(persistedOutput('the-previous-artifacts-fingerprint'), {
-      oldPath: unchanged,
-      newPath: unchanged,
-    });
+  test('a trigger member still unresolved at plan time replaces conservatively', async () => {
+    // The member reads an attribute of a resource the same deploy is changing,
+    // so the diff cannot prove the fingerprint unchanged — upstream replaces
+    // rather than silently reusing a deployment with a possibly-stale value.
+    const unresolved = {
+      ...envTriggers('3000'),
+      COMPOSER_AUTH_DB_URL: Output.map(newVariable.environmentVariableId, (value) => value),
+    };
+    const diff = await diffAgainst(
+      persistedOutput(await artifactFingerprint(), await recordedTriggersHash(envTriggers('3000'))),
+      { old: envTriggers('3000'), new: unresolved },
+    );
     expect(diff).toEqual({ action: 'replace' });
-  });
-
-  test('the fingerprinted path stays a plain value — the diff never degrades to update', () => {
-    // The replacement block {portMapping, skipCodeUpload, artifactPath,
-    // artifactContentType} must be RESOLVED at plan time or upstream returns
-    // no opinion and the engine falls back to a plain update — the silent
-    // artifact skip all over again. The fingerprinted path is a string
-    // computed before lowering, never an Output.
-    expect(Output.isOutput(pathForEnvironment(envRows('3000')))).toBe(false);
   });
 });

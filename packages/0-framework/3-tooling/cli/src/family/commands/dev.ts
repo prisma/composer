@@ -175,8 +175,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
         "Bring up the application whose root node is <entry>'s default export, entirely on " +
         'this machine.',
       description:
-        'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
-        'Logs are a separate command; run `log <entry>` to tail them.',
+        'Runs credential-free and watches the app for changes, reconverging on every edit.',
       examples: ['{bin} dev src/service.ts', '{bin} dev src/service.ts --fresh'],
     },
     args: {

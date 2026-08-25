@@ -63,13 +63,12 @@ describe('createComposerFamily()', () => {
     expect(createComposerFamily().configSection).toBe(composerSection);
   });
 
-  test('the family mounts the four commands', () => {
-    expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
-      'deploy',
-      'destroy',
-      'dev',
-      'log',
-    ]);
+  test('the family mounts deploy and dev only — destroy and log are retired', () => {
+    expect(Object.keys(createComposerFamily().commands).sort()).toEqual(['deploy', 'dev']);
+  });
+
+  test('the family ships no redirects for the retired spellings', () => {
+    expect(createComposerFamily().redirects).toEqual([]);
   });
 
   test('the operations seam defaults to the real control operations', () => {
@@ -94,9 +93,18 @@ describe('createComposerCli()', () => {
     expect(() => createComposerCli({ version: VERSION })).not.toThrow();
   });
 
-  test('the CLI mounts exactly what the family carries', () => {
-    const mounted = Object.keys(createComposerFamily().commands).sort();
-    expect(mounted).toEqual(['deploy', 'destroy', 'dev', 'log']);
+  test('the bin mounts destroy and log on top of the family', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-engine-cli-'));
+    try {
+      const host = fakeHost(dir);
+      expect(await runComposerCli(['--help'], host, { version: VERSION })).toBe(0);
+      const output = `${host.out.join('')}${host.err.join('')}`;
+      for (const usage of ['deploy <entry>', 'destroy <entry>', 'dev <entry>', 'log <entry>']) {
+        expect(output).toContain(usage);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('runComposerCli runs a real engine run to an exit code', async () => {

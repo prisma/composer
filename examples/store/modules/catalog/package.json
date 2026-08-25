@@ -1,6 +1,6 @@
 {
   "name": "@store/catalog",
-  "version": "0.10.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -19,13 +19,13 @@
     "pg": "8.22.0"
   },
   "peerDependencies": {
-    "@prisma/composer": "workspace:0.10.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.10.0"
+    "@prisma/composer": "workspace:0.14.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.14.0"
   },
   "devDependencies": {
-    "@prisma/cli-engine": "0.2.0",
-    "@prisma/composer": "workspace:0.10.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.10.0",
+    "@prisma/cli-engine": "0.2.3",
+    "@prisma/composer": "workspace:0.14.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.14.0",
     "@types/bun": "^1.3.13",
     "typescript": "^6.0.3"
   }
