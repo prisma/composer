@@ -2,23 +2,27 @@
  * The safety-critical migration decision + apply logic (ref-based
  * target per review R4), proven against a real local Postgres — isolated from
  * the Alchemy stack / Prisma Cloud provisioning. Exercises `applyPnMigration`
- * end to end in two shapes:
+ * end to end in three shapes (replay-only: the pipeline never synthesizes):
  *
- * No authored graph (empty migrations dir, the plain-schema deploy):
- *   - empty DB          → `init` (dbInit applies + signs the target marker)
+ * No authored graph (empty migrations dir):
+ *   - empty DB → the structured refusal: PnMigrationError
+ *     (MIGRATION_PATH_NOT_FOUND) naming both exits (`prisma db update` /
+ *     `prisma migration plan`), DB left untouched
+ *
+ * Authored baseline (EMPTY → widgetHash, built via PN's own migration-tools
+ * writers so hashes and manifests are the real thing):
+ *   - empty DB           → `migrate` replays the baseline and signs the marker
  *   - same target re-run → `noop`
  *   - no authored path   → throws PnMigrationError(MIGRATION_PATH_NOT_FOUND),
  *                          DB left unchanged
  *
- * Authored graph with a DATA invariant (built via PN's own migration-tools
- * writers, so hashes and manifests are the real thing):
+ * Authored graph with a DATA invariant:
  *   - a fresh DB whose target ref REQUIRES an invariant goes through
- *     `migrate` (never `dbInit` — additive-only synth can't run data steps),
- *     and the marker records the invariant
+ *     `migrate` and the marker records the invariant
  *   - re-run at the ref → `noop`
  *   - hash-match-but-invariant-missing (the A→A data-only self-edge, after a
- *     default `init`) triggers `migrate`, which applies the data step and
- *     stamps the invariant
+ *     default-head replay) triggers `migrate`, which applies the data step
+ *     and stamps the invariant
  *
  * Schema/marker setup uses PN's control client directly (the same machinery
  * the lowering drives). Environment-gated via the shared harness: skips
@@ -29,14 +33,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createPostgresControlClient } from '@prisma/orm-postgres/control';
-import { computeMigrationHash } from '@prisma/orm-toolchain/migration-tools/hash';
-import { writeMigrationPackage } from '@prisma/orm-toolchain/migration-tools/io';
-import { writeRef } from '@prisma/orm-toolchain/migration-tools/refs';
-import {
-  APP_SPACE_ID,
-  spaceMigrationDirectory,
-  spaceRefsDirectory,
-} from '@prisma/orm-toolchain/migration-tools/spaces';
 import {
   applyPnMigration,
   PnMigrationError,
@@ -55,6 +51,12 @@ import {
   type TestDatabase,
   type TestPostgres,
 } from './postgres-harness.ts';
+import {
+  authorWidgetBackfill,
+  authorWidgetInit,
+  BACKFILL_INVARIANT,
+  widgetHash,
+} from './widget-migrations-fixture.ts';
 
 const pg: TestPostgres | undefined = startTestPostgres();
 
@@ -65,9 +67,7 @@ if (pg === undefined) {
   );
 }
 
-const widgetHash = targetStorageHash(widgetContractJson);
 const gadgetHash = targetStorageHash(gadgetContractJson);
-const BACKFILL_INVARIANT = 'widget-name-backfill';
 
 async function readMarker(
   url: string,
@@ -83,110 +83,63 @@ async function readMarker(
   }
 }
 
-/**
- * Author the widget contract's migration graph the honest way — through PN's
- * own migration-tools writers (real manifest shape, real `migrationHash`):
- *   - init: EMPTY → widgetHash (the `CREATE TABLE "Widget"` DDL)
- *   - backfill: widgetHash → widgetHash, a `data`-class op carrying
- *     `invariantId` — the A→A self-edge only invariant routing can select
- *   - a named ref `with-backfill` = { hash: widgetHash, invariants: [...] }
- */
-async function authorWidgetMigrations(migrationsDir: string): Promise<void> {
-  const appDir = spaceMigrationDirectory(migrationsDir, APP_SPACE_ID);
+describe.skipIf(pg === undefined)(
+  'applyPnMigration — no authored graph (structured refusal)',
+  () => {
+    if (pg === undefined) return;
+    let migrationsDir: string;
+    // A database this suite owns — never the shared `postgres`/`public` the
+    // state-store suite uses — so the empty-DB assertion holds in any order.
+    let db: TestDatabase;
 
-  const initOps = [
-    {
-      id: 'table.Widget',
-      label: 'Create table "Widget"',
-      summary: 'Creates table "Widget"',
-      operationClass: 'additive' as const,
-      target: {
-        id: 'postgres',
-        details: { schema: 'public', objectType: 'table', name: 'Widget' },
-      },
-      precheck: [
-        {
-          description: 'ensure table "Widget" does not exist',
-          sql: 'SELECT (to_regclass($1)) IS NULL AS "result"',
-          params: ['"public"."Widget"'],
-        },
-      ],
-      execute: [
-        {
-          description: 'create table "Widget"',
-          sql: 'CREATE TABLE "public"."Widget" (\n  "id" character(36) NOT NULL,\n  "name" text NOT NULL,\n  PRIMARY KEY ("id")\n)',
-          params: [],
-        },
-      ],
-      postcheck: [
-        {
-          description: 'verify table "Widget" exists',
-          sql: 'SELECT (to_regclass($1)) IS NOT NULL AS "result"',
-          params: ['"public"."Widget"'],
-        },
-      ],
-    },
-  ];
-  const initMeta = {
-    from: null,
-    to: widgetHash,
-    providedInvariants: [],
-    createdAt: '2026-07-12T00:00:00.000Z',
-  };
-  await writeMigrationPackage(
-    path.join(appDir, '20260712T0001_init'),
-    { ...initMeta, migrationHash: computeMigrationHash(initMeta, initOps) },
-    initOps,
-  );
+    beforeAll(async () => {
+      migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-refuse-'));
+      db = await createTestDatabase(pg.url);
+    });
+    afterAll(async () => {
+      await db?.drop().catch(() => {});
+      if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
+    });
 
-  const backfillOps = [
-    {
-      id: `data_migration.${BACKFILL_INVARIANT}`,
-      label: `Data transform: ${BACKFILL_INVARIANT}`,
-      operationClass: 'data' as const,
-      invariantId: BACKFILL_INVARIANT,
-      target: { id: 'postgres' },
-      precheck: [],
-      execute: [
-        {
-          description: `Run ${BACKFILL_INVARIANT}`,
-          sql: 'UPDATE "public"."Widget" SET "name" = btrim("name")',
-          params: [],
-        },
-      ],
-      postcheck: [],
-    },
-  ];
-  const backfillMeta = {
-    from: widgetHash,
-    to: widgetHash,
-    providedInvariants: [BACKFILL_INVARIANT],
-    createdAt: '2026-07-12T00:00:01.000Z',
-  };
-  await writeMigrationPackage(
-    path.join(appDir, '20260712T0002_backfill'),
-    { ...backfillMeta, migrationHash: computeMigrationHash(backfillMeta, backfillOps) },
-    backfillOps,
-  );
+    test('empty DB, empty migrations dir → refuses with both exits named; DB untouched', async () => {
+      expect(await readMarker(db.url)).toBeNull();
 
-  await writeRef(spaceRefsDirectory(appDir), 'with-backfill', {
-    hash: widgetHash,
-    invariants: [BACKFILL_INVARIANT],
-  });
-}
+      const ref = await resolveTargetRef(migrationsDir, widgetContractJson);
+      expect(ref).toEqual({ hash: widgetHash, invariants: [] });
 
-describe.skipIf(pg === undefined)('applyPnMigration — no authored graph (dbInit path)', () => {
+      let thrown: unknown;
+      try {
+        await applyPnMigration({
+          url: db.url,
+          contractJson: widgetContractJson,
+          migrationsDir,
+          ref,
+        });
+      } catch (e) {
+        thrown = e;
+      }
+
+      expect(thrown).toBeInstanceOf(PnMigrationError);
+      const error = thrown as PnMigrationError;
+      expect(error.code).toBe('MIGRATION_PATH_NOT_FOUND');
+      // The refusal names both exits: local iteration and authoring the path.
+      expect(error.message).toContain('prisma db update');
+      expect(error.message).toContain('prisma contract emit && prisma migration plan');
+      // Nothing was applied — the pipeline never synthesizes.
+      expect(await readMarker(db.url)).toBeNull();
+    });
+  },
+);
+
+describe.skipIf(pg === undefined)('applyPnMigration — authored baseline (replay path)', () => {
   if (pg === undefined) return;
-  // An empty migrations dir: dbInit synthesizes the additive first-apply plan;
-  // `migrate` (no authored packages) finds no path between unrelated hashes.
   let migrationsDir: string;
-  // A database this suite owns — never the shared `postgres`/`public` the
-  // state-store suite uses — so the empty-DB assertion holds in any order.
   let db: TestDatabase;
   let url: string;
 
   beforeAll(async () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-mig-'));
+    await authorWidgetInit(migrationsDir);
     db = await createTestDatabase(pg.url);
     url = db.url;
   });
@@ -195,7 +148,7 @@ describe.skipIf(pg === undefined)('applyPnMigration — no authored graph (dbIni
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
   });
 
-  test('empty DB, no required invariants → init: applies the contract and signs the marker', async () => {
+  test('empty DB + committed baseline → migrate replays it and signs the marker', async () => {
     expect(await readMarker(url)).toBeNull();
 
     // No head.json on disk and no targetRef — the resolved default is the
@@ -210,7 +163,7 @@ describe.skipIf(pg === undefined)('applyPnMigration — no authored graph (dbIni
       ref,
     });
 
-    expect(outcome.action).toBe('init');
+    expect(outcome.action).toBe('migrate');
     expect(outcome.markerHashBefore).toBeNull();
     expect(outcome.targetHash).toBe(widgetHash);
     // The DB is now signed at the target hash.
@@ -260,21 +213,22 @@ describe.skipIf(pg === undefined)('applyPnMigration — authored graph with a da
 
   beforeAll(async () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-inv-'));
-    await authorWidgetMigrations(migrationsDir);
+    await authorWidgetInit(migrationsDir);
+    await authorWidgetBackfill(migrationsDir);
   });
   afterAll(async () => {
     pg.stop();
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
   });
 
-  test('fresh DB + ref with invariants → migrate (not dbInit); marker records the invariant; re-run no-ops', async () => {
+  test('fresh DB + ref with invariants → migrate; marker records the invariant; re-run no-ops', async () => {
     const db = await createTestDatabase(pg.url);
     try {
       const ref = await resolveTargetRef(migrationsDir, widgetContractJson, 'with-backfill');
       expect(ref).toEqual({ hash: widgetHash, invariants: [BACKFILL_INVARIANT] });
 
-      // (a) The fresh DB goes through migrate — dbInit is additive-only and
-      // would leave marker.invariants empty, silently skipping the data step.
+      // (a) The fresh DB replays the authored graph from empty, including the
+      // invariant-bearing data step.
       const first = await applyPnMigration({
         url: db.url,
         contractJson: widgetContractJson,
@@ -309,15 +263,16 @@ describe.skipIf(pg === undefined)('applyPnMigration — authored graph with a da
     const db = await createTestDatabase(pg.url);
     try {
       // First bring the DB to widgetHash WITHOUT the invariant: the default
-      // ref (head = emitted contract, zero invariants) chooses dbInit.
+      // ref (head = emitted contract, zero invariants) replays the baseline
+      // only — the data self-edge provides an invariant nothing requires yet.
       const headRef = await resolveTargetRef(migrationsDir, widgetContractJson);
-      const initOutcome = await applyPnMigration({
+      const baseline = await applyPnMigration({
         url: db.url,
         contractJson: widgetContractJson,
         migrationsDir,
         ref: headRef,
       });
-      expect(initOutcome.action).toBe('init');
+      expect(baseline.action).toBe('migrate');
       const before = await readMarker(db.url);
       expect(before?.storageHash).toBe(widgetHash);
       expect(before?.invariants ?? []).not.toContain(BACKFILL_INVARIANT);

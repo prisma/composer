@@ -4,8 +4,8 @@
  * one synthetic pack space (`gadget`, the gadget contract) migrate in ONE
  * `applyPnMigration` call —
  *
- *   - fresh DB → `init`: PN's aggregate pipeline applies BOTH spaces and
- *     signs a marker row per space;
+ *   - fresh DB → `migrate`: PN's aggregate pipeline replays the authored
+ *     graph of BOTH spaces from empty and signs a marker row per space;
  *   - re-run → the app-space marker says "at target", but with packs declared
  *     the `noop` short-circuit is suppressed: the call reports `migrate` and
  *     PN's per-space path resolution no-ops each up-to-date space;
@@ -42,6 +42,7 @@ import {
   type TestDatabase,
   type TestPostgres,
 } from './postgres-harness.ts';
+import { authorWidgetInit } from './widget-migrations-fixture.ts';
 
 const pgServer: TestPostgres | undefined = startTestPostgres();
 
@@ -168,6 +169,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
 
   beforeAll(async () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-pack-'));
+    await authorWidgetInit(migrationsDir);
     await materialisePackSpace(migrationsDir);
     db = await createTestDatabase(pgServer.url);
     url = db.url;
@@ -178,7 +180,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
   });
 
-  test('fresh DB → init applies BOTH spaces and signs a marker row per space', async () => {
+  test('fresh DB → migrate replays BOTH spaces and signs a marker row per space', async () => {
     const outcome = await applyPnMigration({
       url,
       contractJson: widgetContractJson,
@@ -187,7 +189,7 @@ describe.skipIf(pgServer === undefined)('applyPnMigration with a declared extens
       extensionPacks: [gadgetPack],
     });
 
-    expect(outcome.action).toBe('init');
+    expect(outcome.action).toBe('migrate');
     expect(outcome.markerHashBefore).toBeNull();
     expect(await readMarkerRows(url)).toEqual([
       { space: 'app', hash: widgetHash },
