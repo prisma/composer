@@ -16,19 +16,21 @@
  * A→A self-edge the deploy wrongly skips. The decision, given the live marker
  * and the target ref (see {@link decideMigrationAction}):
  *   - marker at ref.hash AND ref.invariants ⊆ marker.invariants → no-op
- *   - no marker (fresh DB) AND no required invariants           → `dbInit`
  *   - otherwise                                                  → `migrate`
  *
- * `dbInit` is additive-only synthesis — it NEVER runs app-space data steps —
- * so it is only correct when the ref requires no invariants; a fresh DB whose
- * target carries invariants goes through `migrate`, which walks the AUTHORED
- * graph (including the invariant-bearing data migrations) from empty.
- *
- * Never `dbUpdate`: synthesized diff-and-apply plans are never run against a
- * deployed database. A no-authored-path (`MIGRATION_PATH_NOT_FOUND`) or a
- * runner failure fails the deploy as a typed `PnMigrationError` (not swallowed).
- * PN applies each migration in its own transaction, so a failed apply is atomic
- * and resume-safe — the marker and schema are left as the last committed step.
+ * Replay-only (ADR-0022 as revised): the pipeline replays what was authored,
+ * it never authors. A fresh database (no marker) is not special — its start
+ * point is empty and `migrate` walks the AUTHORED graph from empty to the
+ * target, so the first deploy applies the committed baseline like any other
+ * migration. No synthesis of any kind runs at deploy: never `dbInit` (schema
+ * synthesized from the contract) and never `dbUpdate` (synthesized
+ * diff-and-apply). A missing authored path (`MIGRATION_PATH_NOT_FOUND`) is a
+ * structured refusal whose message names the two exits — `prisma db update`
+ * for local iteration, `prisma contract emit && prisma migration plan` to
+ * author the path for shipping. A runner failure fails the deploy as a typed
+ * `PnMigrationError` (not swallowed). PN applies each migration in its own
+ * transaction, so a failed apply is atomic and resume-safe — the marker and
+ * schema are left as the last committed step.
  */
 
 import { createPostgresControlClient } from '@prisma/orm-postgres/control';
@@ -43,7 +45,7 @@ import { normalizeSslMode, withConnectionRetry } from './pg-connection.ts';
 import type { PnExtensionPack } from './pn-config.ts';
 
 /** Which authored path the migration step took. */
-export type PnMigrationAction = 'noop' | 'init' | 'migrate';
+export type PnMigrationAction = 'noop' | 'migrate';
 
 /** A resolved migration target: a contract hash plus its required invariants. */
 export interface PnTargetRef {
@@ -62,15 +64,17 @@ export interface PnMigrationOutcome {
 
 /**
  * Why a migration failed the deploy. `MIGRATION_PATH_NOT_FOUND` — no authored
- * migration path from the marker's state to the target ref. `RUNNER_FAILED` —
- * a migration errored while applying. `INIT_FAILED` — the first-apply `dbInit`
- * failed (planning or runner). `TARGET_REF_NOT_FOUND` — the resource named a
- * `targetRef` with no readable `migrations/app/refs/<name>.json`.
+ * migration path from the marker's state (or from empty, for a fresh
+ * database) to the target ref. `RUNNER_FAILED` — a migration errored while
+ * applying. `CONTRACT_INVALID` — the contract carries no
+ * `storage.storageHash`, so no target can be resolved. `TARGET_REF_NOT_FOUND`
+ * — the resource named a `targetRef` with no readable
+ * `migrations/app/refs/<name>.json`.
  */
 export type PnMigrationFailureCode =
   | 'MIGRATION_PATH_NOT_FOUND'
   | 'RUNNER_FAILED'
-  | 'INIT_FAILED'
+  | 'CONTRACT_INVALID'
   | 'TARGET_REF_NOT_FOUND';
 
 /** A deploy-failing migration error — surfaced, never swallowed. */
@@ -87,6 +91,35 @@ export class PnMigrationError extends Error {
 }
 
 /**
+ * The replay-only refusal for a missing authored path. The pipeline never
+ * authors schema, so the only fix is to bring one of the two sides along:
+ * update the database directly (local iteration) or author and commit the
+ * missing migrations (shipping). The same message serves a deploy against a
+ * cloud database and a `dev` run against the local emulator database.
+ */
+function noPathRefusal(
+  summary: string,
+  markerHashBefore: string | null,
+  aggregate: boolean,
+): string {
+  // The marker speaks for the APP space only; with extension packs declared
+  // the failed space's own start state is unknown here, so no source-state
+  // claim is made for aggregate migrations.
+  const from = aggregate
+    ? 'The committed migrations/ directory has no authored path to the target in every declared migration space'
+    : markerHashBefore === null
+      ? 'The database carries no schema marker and the committed migrations/ directory has no authored path from empty to the target'
+      : `The committed migrations/ directory has no authored path from the database's current schema (${markerHashBefore}) to the target`;
+  return (
+    `${from} — the deploy pipeline only replays authored migrations, it never creates schema itself. ` +
+    'Iterating locally? Bring the database along with `prisma db update`. ' +
+    'Shipping? Author the migration path — `prisma contract emit && prisma migration plan --name <slug>` ' +
+    '(baseline first if the migration graph is empty) — and commit migrations/. ' +
+    `(${summary})`
+  );
+}
+
+/**
  * The target `storageHash` a contract heads to — `contractJson.storage.storageHash`.
  * Read defensively: `contractJson` crosses the boundary as `unknown`.
  */
@@ -100,7 +133,7 @@ export function targetStorageHash(contractJson: unknown): string {
     }
   }
   throw new PnMigrationError(
-    'INIT_FAILED',
+    'CONTRACT_INVALID',
     'the contract has no storage.storageHash — cannot determine the target schema version',
   );
 }
@@ -143,12 +176,10 @@ export async function resolveTargetRef(
 /**
  * The pure migration decision, mirroring PN's own verifier: the database is
  * AT the target when the marker's hash equals the ref's hash AND every ref
- * invariant is on the marker (marker invariants are monotonic). `dbInit` is
- * additive-only synthesis, so it is chosen only for a fresh DB whose
- * effective required invariants (`ref.invariants − marker.invariants`) are
- * empty; anything else — different hash, missing invariant (the A→A
- * data-only self-edge), or a fresh DB with required invariants — walks the
- * authored graph via `migrate`.
+ * invariant is on the marker (marker invariants are monotonic). Anything
+ * else — different hash, missing invariant (the A→A data-only self-edge),
+ * or a fresh DB (whose start point is empty) — walks the authored graph via
+ * `migrate`. The pipeline never synthesizes.
  */
 export function decideMigrationAction(
   marker: { readonly storageHash: string; readonly invariants: readonly string[] } | null,
@@ -157,13 +188,12 @@ export function decideMigrationAction(
   const markerInvariants = new Set(marker?.invariants ?? []);
   const missing = ref.invariants.filter((id) => !markerInvariants.has(id));
   if (marker !== null && marker.storageHash === ref.hash && missing.length === 0) return 'noop';
-  if (marker === null && missing.length === 0) return 'init';
   return 'migrate';
 }
 
 /**
  * Bring the database at `url` to the target ref via PN's authored migrations.
- * Reads the live marker, decides no-op / init / migrate
+ * Reads the live marker, decides no-op / migrate
  * ({@link decideMigrationAction}), applies, and throws a typed
  * {@link PnMigrationError} on a no-path or runner failure. `migrationsDir` is
  * the on-disk migrations root and `ref` the resolved target
@@ -225,27 +255,12 @@ async function runMigration(
       action = 'migrate';
     }
 
-    // Fresh/empty DB, no required invariants — first apply. `dbInit` is
-    // additive-only and signs the marker; it never runs a destructive or
-    // data step (which is exactly why it's ruled out when invariants are
-    // required — it would leave `marker.invariants` empty).
-    if (action === 'init') {
-      const result = await client.dbInit({
-        contract: contractJson,
-        mode: 'apply',
-        migrationsDir,
-      });
-      if (!result.ok) {
-        throw new PnMigrationError('INIT_FAILED', result.failure.summary, result.failure.why);
-      }
-      return { action, targetHash: ref.hash, markerHashBefore };
-    }
-
-    // Walk the AUTHORED migration graph toward the ref. With a named ref, PN
-    // targets its hash and threads its invariants into path planning (the
-    // same refHash/refInvariants/refName the CLI's `migrate --to` passes);
-    // with the default head, PN's own head-ref semantics apply. Fails on no
-    // path / runner error; never synthesizes.
+    // Walk the AUTHORED migration graph toward the ref — a fresh DB starts
+    // from empty and replays the committed baseline like any other migrate.
+    // With a named ref, PN targets its hash and threads its invariants into
+    // path planning (the same refHash/refInvariants/refName the CLI's
+    // `migrate --to` passes); with the default head, PN's own head-ref
+    // semantics apply. Fails on no path / runner error; never synthesizes.
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
@@ -254,11 +269,14 @@ async function runMigration(
         : {}),
     });
     if (!result.ok) {
-      const code: PnMigrationFailureCode =
-        result.failure.code === 'MIGRATION_PATH_NOT_FOUND'
-          ? 'MIGRATION_PATH_NOT_FOUND'
-          : 'RUNNER_FAILED';
-      throw new PnMigrationError(code, result.failure.summary, result.failure.why);
+      if (result.failure.code === 'MIGRATION_PATH_NOT_FOUND') {
+        throw new PnMigrationError(
+          'MIGRATION_PATH_NOT_FOUND',
+          noPathRefusal(result.failure.summary, markerHashBefore, extensionPacks.length > 0),
+          result.failure.why,
+        );
+      }
+      throw new PnMigrationError('RUNNER_FAILED', result.failure.summary, result.failure.why);
     }
     return { action, targetHash: ref.hash, markerHashBefore };
   } finally {
