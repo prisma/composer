@@ -25,8 +25,8 @@
  *     and stamps the invariant
  *
  * Schema/marker setup uses PN's control client directly (the same machinery
- * the lowering drives). Environment-gated via the shared harness: skips
- * cleanly without a local Postgres, runs on CI against the wired service.
+ * the lowering drives). The shared harness checks the environment: the suite
+ * skips cleanly without a local Postgres, runs on CI against the wired service.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
