@@ -253,17 +253,17 @@ export interface ConfigLoadRequest {
   /** The command's entry argument. Anchors the walk when no explicit path is given. */
   readonly entryPath: string;
   /**
-   * The `composer` config section's `configPath`, absolute or relative to
-   * `cwd`. When present the section wins: the walk is skipped, and so is the
-   * same-file check — that check exists to catch a walk finding one file while
-   * c12 loaded another, and a path the user named directly has no walk to
-   * disagree with.
+   * The `composer` config section's `configPath`, absolute — the section
+   * validator resolved a relative path against the config file that declared
+   * it, so this code never resolves it against `cwd`. When present the
+   * section wins: the walk is skipped, and so is the same-file check — that
+   * check exists to catch a walk finding one file while c12 loaded another,
+   * and a path the user named directly has no walk to disagree with.
    */
   readonly configPath?: string | undefined;
   /**
-   * The directory the command runs in: it anchors a relative `configPath` and
-   * is where the effect-resolution check looks for the installed tree.
-   * Defaults to the entry's directory.
+   * The directory the command runs in: where the effect-resolution check
+   * looks for the installed tree. Defaults to the entry's directory.
    */
   readonly cwd?: string | undefined;
 }
@@ -304,7 +304,7 @@ function configSource(request: ConfigLoadRequest): ConfigSource {
       : { ok: true, path: discovered, explicit: false };
   }
 
-  const configPath = path.resolve(cwd, request.configPath);
+  const configPath = path.resolve(request.configPath);
   if (!fs.existsSync(configPath)) {
     return {
       ok: false,

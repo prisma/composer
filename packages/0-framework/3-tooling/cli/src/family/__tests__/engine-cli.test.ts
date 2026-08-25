@@ -28,7 +28,7 @@ import { type ComposerSection, composerSection } from '../section.ts';
 
 const VERSION = '0.6.0-test';
 const NO_CONFIG = (): Promise<LoadedConfig> =>
-  Promise.resolve({ path: '/app/prisma.config.ts', sections: {}, diagnostics: [] });
+  Promise.resolve({ files: [{ path: '/app/prisma.config.ts', sections: {} }], diagnostics: [] });
 
 function fakeHost(cwd: string): HostProcess & { out: string[]; err: string[] } {
   const out: string[] = [];
@@ -193,13 +193,54 @@ describe('the composer section through the engine', () => {
     expect(result.presented?.data).toEqual({});
   });
 
-  test('a configPath reaches the handler as ctx.config', async () => {
+  test('a configPath reaches the handler as ctx.config, resolved against the declaring file', async () => {
+    // The harness seeds the config file at the run's cwd, `/`, so the
+    // section's relative path resolves against that directory — not against
+    // wherever this test process happens to run.
     const result = await probeCli({
       composer: { configPath: './x/prisma-composer.config.ts' },
     }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: './x/prisma-composer.config.ts',
+      configPath: path.join(path.sep, 'x', 'prisma-composer.config.ts'),
+    } satisfies ComposerSection);
+  });
+
+  /**
+   * The reason the section resolves paths at all. prisma.config.ts files form a
+   * chain — discovered from cwd up to the repo root and merged per key — so a
+   * `composer` section written once at the root reaches commands run in any
+   * subdirectory. The root file is the only one declaring `configPath`, and the
+   * run happens two directories below it, so both wrong answers are visible:
+   * resolving against cwd or against the nearest file on the chain would name
+   * `/repo/apps/shop/prisma-composer.config.ts`.
+   */
+  test('a configPath declared at the repo root names the same file from a subdirectory', async () => {
+    const repo = path.join(path.sep, 'repo');
+    const appDir = path.join(repo, 'apps', 'shop');
+    const cli = createTestCli({
+      commandFamilies: [
+        defineCommandFamily({ configSection: composerSection, commands: { probe } }),
+      ],
+      commands: { probe },
+      loadConfig: () =>
+        Promise.resolve({
+          files: [
+            { path: path.join(appDir, 'prisma.config.ts'), sections: {} },
+            {
+              path: path.join(repo, 'prisma.config.ts'),
+              sections: { composer: { configPath: './prisma-composer.config.ts' } },
+            },
+          ],
+          diagnostics: [],
+        }),
+    });
+
+    const result = await cli.run(['probe', '--json'], { cwd: appDir });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.presented?.data).toEqual({
+      configPath: path.join(repo, 'prisma-composer.config.ts'),
     } satisfies ComposerSection);
   });
 

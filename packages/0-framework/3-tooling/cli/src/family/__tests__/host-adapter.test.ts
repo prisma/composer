@@ -140,6 +140,8 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     // The section's own field, not just the fact that dev ran: `configPath`
     // travels in the operation's SECOND argument, so a handler that read the
     // section but forgot to pass it on would still satisfy the call count.
-    expect(double.calls.deps.dev[0]?.configPath).toBe('custom');
+    // The value arrives resolved against the config file that declared it
+    // (which the loader realpaths), not against the run's cwd.
+    expect(double.calls.deps.dev[0]?.configPath).toBe(path.join(fs.realpathSync(dir), 'custom'));
   });
 });
