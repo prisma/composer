@@ -17,7 +17,8 @@
  *     mock touches) — no cross-module Layer constructors involved;
  *   - the provider's `reconcile` routes to `applyPnMigration` — driven directly
  *     against the exported provider service, proven live against a real local
- *     Postgres (empty → init, re-run → no-op, no-path → rejects).
+ *     Postgres (empty DB + authored baseline → replay, re-run → no-op,
+ *     no-path → rejects).
  *
  * Self-isolating: the reconcile suite owns a uniquely-named database, so it
  * never touches tables another suite shares in the CI Postgres.
@@ -49,6 +50,7 @@ import {
   type TestDatabase,
   type TestPostgres,
 } from './postgres-harness.ts';
+import { authorWidgetInit } from './widget-migrations-fixture.ts';
 
 // Two trivial in-file Alchemy resources + providers — clean stand-ins for the
 // descriptor's providers, so the merge mechanism is exercised with values no
@@ -174,6 +176,9 @@ describe.skipIf(pg === undefined)('PnMigration reconcile routes through applyPnM
 
   beforeAll(async () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-res-'));
+    // Replay-only: the deploy pipeline applies only authored migrations, so
+    // the widget baseline must be on disk for the first reconcile to succeed.
+    await authorWidgetInit(migrationsDir);
     testDb = await createTestDatabase(pg.url);
     url = testDb.url;
   });

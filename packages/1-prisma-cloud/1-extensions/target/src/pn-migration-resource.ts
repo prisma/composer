@@ -75,7 +75,7 @@ export const PnMigration = Resource<PnMigration>('PrismaNext.Migration');
  * The `PnMigration` provider service. `reconcile` runs for both create and
  * update (Alchemy's unified lifecycle); `applyPnMigration` is idempotent via
  * the live marker read, so it is safe to run for either — the marker decides
- * no-op / init / migrate. A migration has nothing to enumerate (`list` → `[]`)
+ * no-op / migrate. A migration has nothing to enumerate (`list` → `[]`)
  * and nothing to tear down on its own (`delete` → no-op; the DB's own deletion
  * handles teardown). Exported so tests can drive `reconcile` directly, without
  * building an Effect layer.
@@ -102,7 +102,7 @@ export const pnMigrationProviderService: Provider.ProviderService<PnMigration> =
           ...(news.refName !== undefined ? { refName: news.refName } : {}),
         });
       },
-      // Surface PnMigrationError (no-path / runner / init) as-is — it fails the
+      // Surface PnMigrationError (no-path / runner) as-is — it fails the
       // deploy with its clear message; nothing is swallowed.
       catch: (error) => error,
     }).pipe(

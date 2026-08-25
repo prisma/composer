@@ -1,7 +1,7 @@
 /**
  * Resolves a `pnPostgres` resource's `prisma-next.config.ts` path to the
  * project facts the deploy needs (ADR-0022, slice 2): the on-disk migrations
- * directory the control client's `migrate`/`dbInit` read, and the declared
+ * directory the control client's `migrate` reads, and the declared
  * extension packs. Deploy-time only: loads PN's config (via c12) and applies
  * PN's own convention — `migrations.dir`, or the default `migrations/`,
  * relative to the config file's directory (mirrors the CLI's

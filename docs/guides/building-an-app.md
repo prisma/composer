@@ -152,15 +152,14 @@ checked, no SQL strings, no row mapping. The client is constructed on first
 access, so a service that brings its own Postgres client reads `db.url` and
 still gets contract-checked wiring and deploy-time migrations (ADR-0040).
 
-The workflow, once per schema change (all `prisma-next` commands — see the
-Prisma Next docs for the details):
+The workflow, once per schema change (Prisma Next commands, via the `prisma` CLI — see the Prisma Next docs for the details):
 
 1. Edit `contract.prisma` — your schema.
-2. `prisma-next contract emit` — regenerates `contract.json` +
-   `contract.d.ts` from it.
-3. `prisma-next migration plan` — authors the migration into `migrations/`.
-4. Deploy. The deploy applies `migrations/` before the service starts —
-   there's no `CREATE TABLE IF NOT EXISTS` anywhere in app code.
+2. `prisma contract emit` — regenerates `contract.json` + `contract.d.ts` from it.
+3. `prisma migration plan --name <slug>` — authors the migration into `migrations/`. On a brand-new project this authors the baseline (empty → your schema); commit `migrations/` with the change.
+4. Deploy. The deploy applies `migrations/` before the service starts — there's no `CREATE TABLE IF NOT EXISTS` anywhere in app code.
+
+The deploy is replay-only: it applies the migrations you authored and committed, and it never creates schema itself — a fresh database is brought up by replaying the committed baseline. If no authored path reaches the target contract, the deploy refuses and names the fix: author the missing migration as above, or — when you're just iterating against a local database — bring it along directly with `prisma db update`. Databases whose schema an older framework version synthesized at first deploy need a one-time retrofit; see [Deploying and operating](deploying.md#updating-a-database-whose-schema-an-older-version-synthesized).
 
 In your app, the emitted contract is wrapped once, and that one value is
 referenced by both the resource and every service that queries it:

@@ -3,8 +3,8 @@
  *
  *   - `decideMigrationAction`: the full decision matrix, mirroring PN's
  *     verifier ("at target" = hash equal AND ref invariants ⊆ marker
- *     invariants; `dbInit` only when nothing is required that additive-only
- *     synth can't provide).
+ *     invariants; everything else replays the authored graph — the pipeline
+ *     never synthesizes).
  *   - `resolveTargetRef`: the default synthesizes the app head from the
  *     emitted contract (PN's own loader behavior — no on-disk app
  *     `refs/head.json` today), an on-disk head wins when present, a named
@@ -57,11 +57,8 @@ describe('decideMigrationAction — the decision matrix', () => {
     ).toBe('migrate');
   });
 
-  test('fresh DB (no marker) with no required invariants → init', () => {
-    expect(decideMigrationAction(null, { hash: A, invariants: [] })).toBe('init');
-  });
-
-  test('fresh DB with required invariants → migrate (dbInit never runs data steps)', () => {
+  test('fresh DB (no marker) → migrate: the start point is empty, the graph is replayed', () => {
+    expect(decideMigrationAction(null, { hash: A, invariants: [] })).toBe('migrate');
     expect(decideMigrationAction(null, { hash: A, invariants: ['inv-1'] })).toBe('migrate');
   });
 
