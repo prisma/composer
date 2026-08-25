@@ -60,7 +60,7 @@ is a named postcondition established by a `data`-class migration step (a
 backfill, say), recorded on the marker once its step runs. The step compares
 marker to ref and takes one of two paths:
 
-```
+```text
 marker at ref.hash, and ref.invariants ⊆ marker.invariants  → no-op   (already there)
 otherwise                                                    → migrate (replay the authored graph)
 ```

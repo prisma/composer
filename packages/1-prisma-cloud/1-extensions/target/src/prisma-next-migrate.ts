@@ -97,9 +97,17 @@ export class PnMigrationError extends Error {
  * missing migrations (shipping). The same message serves a deploy against a
  * cloud database and a `dev` run against the local emulator database.
  */
-function noPathRefusal(summary: string, markerHashBefore: string | null): string {
-  const from =
-    markerHashBefore === null
+function noPathRefusal(
+  summary: string,
+  markerHashBefore: string | null,
+  aggregate: boolean,
+): string {
+  // The marker speaks for the APP space only; with extension packs declared
+  // the failed space's own start state is unknown here, so no source-state
+  // claim is made for aggregate migrations.
+  const from = aggregate
+    ? 'The committed migrations/ directory has no authored path to the target in every declared migration space'
+    : markerHashBefore === null
       ? 'The database carries no schema marker and the committed migrations/ directory has no authored path from empty to the target'
       : `The committed migrations/ directory has no authored path from the database's current schema (${markerHashBefore}) to the target`;
   return (
@@ -264,7 +272,7 @@ async function runMigration(
       if (result.failure.code === 'MIGRATION_PATH_NOT_FOUND') {
         throw new PnMigrationError(
           'MIGRATION_PATH_NOT_FOUND',
-          noPathRefusal(result.failure.summary, markerHashBefore),
+          noPathRefusal(result.failure.summary, markerHashBefore, extensionPacks.length > 0),
           result.failure.why,
         );
       }
