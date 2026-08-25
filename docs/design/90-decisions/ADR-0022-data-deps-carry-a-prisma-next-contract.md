@@ -58,26 +58,24 @@ target is a **ref** — `{ hash, invariants }` — and the live database carries
 **marker** recording its current `{ storageHash, invariants }`. An **invariant**
 is a named postcondition established by a `data`-class migration step (a
 backfill, say), recorded on the marker once its step runs. The step compares
-marker to ref and takes one of three paths:
+marker to ref and takes one of two paths:
 
 ```
 marker at ref.hash, and ref.invariants ⊆ marker.invariants  → no-op   (already there)
-fresh database, and ref requires no invariants              → dbInit  (additive synthesis)
-otherwise                                                    → migrate (walk the authored graph)
+otherwise                                                    → migrate (replay the authored graph)
 ```
 
-- **No-op.** The marker's `storageHash` equals the ref's hash and every
-  invariant the ref requires is already on the marker. The database is where it
-  needs to be.
-- **`dbInit`.** The database is fresh and the ref requires no invariants.
-  `dbInit` does additive-only synthesis and never runs data steps — which is
-  exactly why it is unsafe when invariants are required; that case falls through
-  to `migrate`.
-- **`migrate`.** Everything else — a different hash, a missing invariant (a pure
-  data change with no schema change is a self-edge from a hash to itself), or a
-  fresh database whose ref does require invariants. This walks the **authored**
-  migration graph. The deploy fails if no path exists, if a step is destructive
-  without explicit opt-in, or if the runner itself fails.
+- **No-op.** The marker's `storageHash` equals the ref's hash and every invariant the ref requires is already on the marker. The database is where it needs to be.
+- **`migrate`.** Everything else — a different hash, a missing invariant (a pure data change with no schema change is a self-edge from a hash to itself), or a fresh database, whose start point is simply empty. This replays the **authored** migration graph. The deploy fails if no path exists, if a step is destructive without explicit opt-in, or if the runner itself fails. The no-path failure is a structured refusal naming the two exits: iterating locally, bring the database along with `prisma db update`; shipping, author the migration path (`prisma contract emit && prisma migration plan --name <slug>`, baseline first if the graph is empty) and commit `migrations/`.
+
+**The pipeline replays what was authored; it never authors.** Synthesizing schema directly from the contract (`dbInit`, `dbUpdate`) is an authoring-time activity that belongs to the ORM's dev commands (`db init`/`db update`), held by the user or their agent. The deploy pipeline's entire schema job is the decision above.
+
+> **Revision (2026-08-25).** As first recorded, this ADR gave the first deploy of a fresh database a third path: no marker and no required invariants → `dbInit`, additive-only synthesis from the contract, signing the marker. That is reversed. Two reasons, the second observed in the field:
+>
+> 1. Synthesis at deploy time runs unreviewed schema operations in production — the one thing the rest of this ADR exists to prevent.
+> 2. The synthesized first deploy signs the marker without any authored migration existing, so the *first contract change* strands the user behind `MIGRATION_PATH_NOT_FOUND`: the graph has no edge from the marker's hash because no edge was ever authored. This was a verified field failure, not a hypothetical.
+>
+> Replay-only makes the trap structurally impossible: a marker can only carry a hash the authored graph reaches, and production only ever runs committed, reviewed migration artifacts. The replay cost for long histories has an answer inside the authored model: an authored squash edge (empty→Hn) is a legal graph edge, and shortest-path selection picks it — no pipeline support needed. Databases created by the old synthesis path carry accurate marker signatures; the retrofit (set a ref to the marker's hash and plan against it) is a documented recipe, not a command.
 
 The ref comes from the resource's optional `targetRef` (naming a
 `migrations/app/refs/<name>.json` file), or defaults to the head: the emitted
@@ -139,16 +137,7 @@ place that can actually enforce it, and it means a running service can never be
 crashed (nor meaningfully warned) by a runtime marker check. The framework
 injects the connection URL at hydrate, so user code never reads the environment.
 
-**The target must be a ref, not a bare hash.** A marker's invariants only ever
-accumulate — a step's postcondition, once recorded, is never removed. Keying the
-migration on `storageHash` alone has two failure modes Prisma Next's own model
-rules out. First, a pure data-invariant change is an A→A
-self-edge (the same hash), which a hash-keyed deploy would silently skip.
-Second, `dbInit` is additive-only synthesis that never runs app-space data
-steps, so first-applying a target that requires invariants through `dbInit` would
-leave `marker.invariants` empty while reporting success. Making the target a ref
-— hash equality plus invariant subset, mirroring Prisma Next's own verifier —
-closes both.
+**The target must be a ref, not a bare hash.** A marker's invariants only ever accumulate — a step's postcondition, once recorded, is never removed. Keying the migration on `storageHash` alone would silently skip a pure data-invariant change: it is an A→A self-edge (the same hash), which a hash-keyed deploy reads as "already there". Making the target a ref — hash equality plus invariant subset, mirroring Prisma Next's own verifier — closes this. (Before the replay-only revision, the ref also ruled `dbInit` out for invariant-bearing targets, since additive-only synthesis never runs the data steps that establish invariants; with synthesis gone, replay covers that case by construction.)
 
 ## Consequences
 
@@ -184,8 +173,8 @@ closes both.
 - **Deriving a database's contract set from wiring** instead of declaring it —
   superseded by the single-contract model; in the multi-contract extension the
   explicit declaration wins anyway (owner consent, visible edits).
-- **`dbUpdate` (synthesized plans) at deploy** — rejected outright; authored
-  migrations are the only production schema path.
+- **`dbUpdate` (synthesized plans) at deploy** — rejected outright; authored migrations are the only production schema path.
+- **`dbInit` (additive synthesis) on the first deploy of a fresh database** — adopted in the first version of this ADR, reversed by the 2026-08-25 revision above: it ran unreviewed operations in production and stranded users at their first contract change.
 - **A sibling npm package for the primitive** — cleanest isolation, rejected for
   package proliferation; the subpath entry achieves the isolation that matters.
 
