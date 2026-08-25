@@ -68,6 +68,29 @@ const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   password: undefined,
 });
 
+/**
+ * The attrs a LEGACY state row carries after `state/legacy-resources.ts`'s
+ * `migrateAttr`: identity only — `defaultConnectionId: null`, and no
+ * connection strings (the legacy store never held them).
+ */
+const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
+  databaseId: db.id,
+  databaseName: db.name,
+  projectId: db.project.id,
+  status: 'ready',
+  region: db.region?.id ?? null,
+  isDefault: false,
+  branchId: db.branchId,
+  defaultConnectionId: null,
+  createdAt: '1970-01-01T00:00:00.000Z',
+  directConnectionString: undefined,
+  pooledConnectionString: undefined,
+  accelerateConnectionString: undefined,
+  host: undefined,
+  user: undefined,
+  password: undefined,
+});
+
 // The props persisted in state (explicit name) and the props the descriptors
 // produce (no name; the default Branch attached).
 const oldProps = { project: PROJECT_ID, region: 'us-east-1', name: 'data' } as const;
@@ -75,6 +98,7 @@ const newProps = { project: PROJECT_ID, region: 'us-east-1', branchId: DEFAULT_B
 
 interface FakeClientCalls {
   update: Array<[string, { name?: string; branchId?: string | null }]>;
+  rotate: string[];
   create: number;
   delete: number;
 }
@@ -82,7 +106,7 @@ interface FakeClientCalls {
 /** A stateful fake Management client: one database, PATCHable, never deletable. */
 function fakeClient(): { client: PrismaManagementClient; calls: FakeClientCalls } {
   let current = unassignedDb();
-  const calls: FakeClientCalls = { update: [], create: 0, delete: 0 };
+  const calls: FakeClientCalls = { update: [], rotate: [], create: 0, delete: 0 };
   const client = {
     getDatabase: (id: string) =>
       id === current.id
@@ -96,6 +120,26 @@ function fakeClient(): { client: PrismaManagementClient; calls: FakeClientCalls 
         ...(patch.branchId !== undefined ? { branchId: patch.branchId } : {}),
       };
       return Effect.succeed(current);
+    },
+    rotateConnection: (id: string) => {
+      calls.rotate.push(id);
+      return Effect.succeed({
+        id,
+        type: 'connection',
+        url: `https://api.prisma.io/v1/connections/${id}`,
+        name: 'default',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        kind: 'postgres',
+        database: { id: current.id, url: current.url, name: current.name },
+        endpoints: {
+          direct: {
+            connectionString: DIRECT_URL,
+            host: 'db.prisma.example',
+            user: 'user',
+            password: 'rotated-secret',
+          },
+        },
+      });
     },
     createDatabase: () => {
       calls.create += 1;
@@ -183,8 +227,53 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
     expect(typeof patch.name).toBe('string');
     expect(calls.create).toBe(0);
     expect(calls.delete).toBe(0);
+    // A state row that still carries its connection secrets recovers them
+    // without touching the default connection.
+    expect(calls.rotate).toEqual([]);
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
+  });
+
+  test('a legacy-migrated state row (no stored secrets) attaches in place and rotates the DEFAULT connection', async () => {
+    const { client, calls } = fakeClient();
+    const handlers = handlersFor(client);
+
+    const decision = await Effect.runPromise(
+      provideLifecycle(
+        handlers.diff({
+          id: 'data-db',
+          olds: oldProps,
+          news: newProps,
+          output: legacyMigratedOutput(unassignedDb()),
+        }),
+      ),
+    );
+    expect(decision).toEqual({ action: 'update' });
+
+    const attrs = await Effect.runPromise(
+      provideLifecycle(
+        handlers.reconcile({
+          id: 'data-db',
+          olds: oldProps,
+          news: newProps,
+          output: legacyMigratedOutput(unassignedDb()),
+        }),
+      ),
+    );
+
+    // Same in-place PATCH as a fully-stored row…
+    expect(calls.update).toHaveLength(1);
+    expect(calls.update[0]?.[1].branchId).toBe(DEFAULT_BRANCH_ID);
+    expect(calls.create).toBe(0);
+    expect(calls.delete).toBe(0);
+    // …but with no stored secrets to recover, upstream rotates the
+    // database's DEFAULT connection to re-mint them. The framework's own
+    // named Connection is a separate resource and is untouched; credentials
+    // minted outside the framework from the default connection stop working.
+    expect(calls.rotate).toEqual(['conn_1']);
+    expect(attrs.databaseId).toBe('db_1');
+    expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
+    expect(attrs.directConnectionString).toBeDefined();
   });
 
   test('the converged state is stable — a second reconcile issues no PATCH', async () => {
