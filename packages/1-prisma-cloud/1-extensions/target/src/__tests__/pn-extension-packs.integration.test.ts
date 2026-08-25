@@ -42,7 +42,7 @@ import {
   type TestDatabase,
   type TestPostgres,
 } from './postgres-harness.ts';
-import { authorWidgetInit } from './widget-migrations-fixture.ts';
+import { authorWidgetInit, widgetHash } from './widget-migrations-fixture.ts';
 
 const pgServer: TestPostgres | undefined = startTestPostgres();
 
@@ -53,7 +53,6 @@ if (pgServer === undefined) {
   );
 }
 
-const widgetHash = targetStorageHash(widgetContractJson);
 const gadgetHash = targetStorageHash(gadgetContractJson);
 const PACK_SPACE_ID = 'gadget';
 

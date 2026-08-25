@@ -300,6 +300,8 @@ prisma migration plan --name <slug>
 
 With the graph empty, planning auto-baselines from the ref: it authors empty → the deployed hash, plus the migration from there to your new contract. Applying against the deployed database starts at the marker, so only the delta runs; a genuinely fresh database replays the whole path from empty. Commit `migrations/` and deploy — no special command or pipeline mode is involved.
 
+## Driving deploys from code
+
 Everything the CLI does is also callable in-process, from
 `@prisma/composer/control`: typed `deploy`, `destroy`, `dev`, and `log`
 operations that return structured results instead of printing and exiting.

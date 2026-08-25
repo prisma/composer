@@ -100,7 +100,7 @@ export class PnMigrationError extends Error {
 function noPathRefusal(summary: string, markerHashBefore: string | null): string {
   const from =
     markerHashBefore === null
-      ? 'The database is empty and the committed migrations/ directory has no authored path from empty to the target'
+      ? 'The database carries no schema marker and the committed migrations/ directory has no authored path from empty to the target'
       : `The committed migrations/ directory has no authored path from the database's current schema (${markerHashBefore}) to the target`;
   return (
     `${from} — the deploy pipeline only replays authored migrations, it never creates schema itself. ` +
