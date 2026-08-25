@@ -29,12 +29,10 @@ export function prismaNextDescriptor(o: () => ResolvedCloudOptions): NodeDescrip
   const lowering: Lowering = ({ id, node, application, graph }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      // Same attachment rule as descriptors/postgres.ts: EVERY deployed stage
-      // attaches its Branch (named stage → stage Branch, default stage → the
-      // project's default Branch), and an explicit name cannot combine with
-      // branch attachment at create — so the name is omitted and `branchId`
-      // in props keeps the attachment reconciled on every later deploy. Only
-      // local dev lowers without a Branch, keeping the display name.
+      // Same rule as descriptors/postgres.ts: an explicit name cannot combine
+      // with branch attachment at create, so the name is omitted and
+      // `branchId` in props keeps the attachment reconciled; the `name` arm
+      // is local-dev only (the dev container resolves no Branch).
       const branchId = attachmentBranchIdOf(application, id);
       const db = yield* Prisma.Database(`${id}-db`, {
         project: projectIdOf(application),

@@ -1,12 +1,12 @@
 /**
- * Pins the upstream `Prisma.Database` (alchemy) semantics the production
- * branch-attachment fix depends on — against the REAL provider, with a fake
- * Management client.
+ * Pins the upstream `Prisma.Database` (alchemy) semantics the database
+ * descriptors depend on — against the REAL provider, with a fake Management
+ * client.
  *
- * Deployed production apps created before the fix own a database that is
- * UNASSIGNED (branchId null) under an explicit display name (the provision
- * id). The fixed descriptors now hand upstream `{ branchId: defaultBranchId }`
- * and no `name`. These tests prove that transition converges IN PLACE:
+ * Deployed default-stage state can hold a database created under an explicit
+ * display name with no branch attachment (branchId null), while the
+ * descriptors hand upstream `{ branchId }` and no `name`. That combination
+ * must converge IN PLACE:
  *
  *  1. diff plans an `update`, never a `replace` — the database (and its data)
  *     survives;
@@ -14,8 +14,8 @@
  *     delete, same databaseId;
  *  3. the converged state is stable — a second reconcile issues no PATCH.
  *
- * If an alchemy upgrade changes any of these, this file fails before a
- * production deploy destroys someone's data.
+ * An alchemy upgrade that changes any of these fails here, before a deploy
+ * destroys data.
  */
 import { describe, expect, test } from 'bun:test';
 import { InstanceId } from 'alchemy/InstanceId';
@@ -27,8 +27,8 @@ import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 
-// ——— The world before the fix: a production database created by the old
-// lowering — explicit display name (the provision id), no branch attachment.
+// ——— A deployed default-stage database: explicit display name (the provision
+// id), no branch attachment.
 const PROJECT_ID = 'proj_1';
 const DEFAULT_BRANCH_ID = 'br_default';
 const DIRECT_URL = 'postgres://user:secret@db.prisma.example:5432/postgres';
@@ -68,7 +68,7 @@ const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   password: undefined,
 });
 
-// The OLD props the state carries, and the NEW props the fixed descriptors
+// The props persisted in state (explicit name) and the props the descriptors
 // produce (no name; the default Branch attached).
 const oldProps = { project: PROJECT_ID, region: 'us-east-1', name: 'data' } as const;
 const newProps = { project: PROJECT_ID, region: 'us-east-1', branchId: DEFAULT_BRANCH_ID } as const;
@@ -139,7 +139,7 @@ const provideLifecycle = <A>(eff: Effect.Effect<A, unknown, unknown>): Effect.Ef
     Effect.provideService(InstanceId, '00112233445566778899aabbccddeeff'),
   ) as unknown as Effect.Effect<A>;
 
-describe('upstream Prisma.Database — migrating a pre-fix unassigned production database', () => {
+describe('upstream Prisma.Database — converging an unassigned, explicitly named database', () => {
   test('diff plans an in-place UPDATE, never a replace', async () => {
     const { client } = fakeClient();
     const handlers = handlersFor(client);
@@ -155,9 +155,7 @@ describe('upstream Prisma.Database — migrating a pre-fix unassigned production
       ),
     );
 
-    // Branch attachment and display name both converge in place; anything
-    // else ('replace', or a framework default of replace-on-unknown) would
-    // schedule the production database for deletion.
+    // A 'replace' would schedule the database — and its data — for deletion.
     expect(decision).toEqual({ action: 'update' });
   });
 
@@ -176,18 +174,15 @@ describe('upstream Prisma.Database — migrating a pre-fix unassigned production
       ),
     );
 
-    // Exactly one PATCH: the branch attachment (with upstream's generated
-    // physical name replacing the explicit display name — name and branch
-    // converge in the same call).
+    // Upstream converges the display name (to its generated physical name)
+    // and the branch attachment in the same PATCH.
     expect(calls.update).toHaveLength(1);
     const [patchedId, patch] = calls.update[0] ?? ['', {}];
     expect(patchedId).toBe('db_1');
     expect(patch.branchId).toBe(DEFAULT_BRANCH_ID);
     expect(typeof patch.name).toBe('string');
-    // The database itself was neither re-created nor deleted…
     expect(calls.create).toBe(0);
     expect(calls.delete).toBe(0);
-    // …and the returned attributes keep its identity, now attached.
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
   });
@@ -219,8 +214,6 @@ describe('upstream Prisma.Database — migrating a pre-fix unassigned production
       ),
     );
 
-    // Same identity, still attached, and no further PATCH: redeploys after
-    // the migration deploy are no-ops for the database.
     expect(calls.update).toHaveLength(1);
     expect(second.databaseId).toBe('db_1');
     expect(second.branchId).toBe(DEFAULT_BRANCH_ID);

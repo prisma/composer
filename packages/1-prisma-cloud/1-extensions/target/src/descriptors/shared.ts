@@ -114,9 +114,7 @@ export interface CloudApplication {
   /**
    * The project's default Branch id, resolved by the container for the
    * default stage (ADR-0019); `undefined` on a named stage. Exactly one of
-   * `branchId`/`defaultBranchId` is set on a deploy — descriptors that attach
-   * branch-scoped resources use `branchId ?? defaultBranchId`, so production
-   * attaches to the default Branch instead of leaving the resource unassigned.
+   * `branchId`/`defaultBranchId` is set on a deploy.
    */
   readonly defaultBranchId: string | undefined;
 }
@@ -162,13 +160,12 @@ export const LOCAL_PROJECT_ID = 'local';
  * project's default Branch on the default (production) stage. Never absent on
  * a deploy — omitting the branch is not a neutral choice for
  * `Prisma.Database`: upstream reads "no branch" as DESIRED-UNASSIGNED and
- * PATCHes `branchId` back to `null` on every reconcile, which is how
- * production databases ended up permanently "Unassigned" while their compute
- * services sat on the default Branch. The container resolves exactly one of
- * the two ids for every deploy (ADR-0019), so on a deploy both missing means
- * the transport is broken — fail loudly rather than create an unassigned
- * database. Only local dev (ADR-0041 runs these same descriptors against the
- * dev container, which resolves no Branches) legitimately returns `undefined`.
+ * PATCHes `branchId` back to `null` on every reconcile. The container
+ * resolves exactly one of the two ids for every deploy (ADR-0019), so both
+ * missing means the transport is broken — fail loudly rather than create an
+ * unassigned database. Only local dev (ADR-0041 runs these same descriptors
+ * against the dev container, which resolves no Branches) legitimately
+ * returns `undefined`.
  */
 export function attachmentBranchIdOf(application: unknown, id: string): string | undefined {
   const app = cloudApplicationOf(application);

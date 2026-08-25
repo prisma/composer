@@ -293,7 +293,7 @@ const containerEnv = (projectId: string, branchId?: string): Record<string, stri
     projectId,
     branchId,
     // The real container always resolves the project's default Branch for the
-    // default stage (resolveContainer, ADR-0019) — mirror that here.
+    // default stage (resolveContainer, ADR-0019).
     branchId === undefined ? 'br_default' : undefined,
   ).serialize(),
 });
@@ -388,8 +388,6 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
       } as unknown as LowerContext),
     );
 
-    // The default Branch id travels into the product: the database descriptors
-    // attach production databases to it (branchId ?? defaultBranchId).
     expect(result).toEqual({
       projectId: 'shop-project-id',
       branchId: undefined,
@@ -466,11 +464,9 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       // endpoint. The outputs above still carry one — same key, opposite
       // meaning, which is exactly why only the descriptor can decide.
       expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'data-db#cloud-id' }]);
-      // The default stage attaches the project's default Branch — matching the
-      // compute service — and names NO explicit display name (upstream refuses
-      // name + branch at create). Omitting the branch would not be neutral:
-      // upstream reads "no branch" as desired-unassigned and PATCHes branchId
-      // back to null on every redeploy.
+      // Upstream refuses an explicit name combined with branch attachment at
+      // create, and treats an omitted branch as desired-unassigned (branchId
+      // PATCHed back to null on reconcile).
       expect(recorded.db).toEqual([
         [
           'data-db',

@@ -24,19 +24,14 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
   const lowering: Lowering = ({ id, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      // EVERY deployed stage attaches its Branch — a named stage its stage
-      // Branch, the default stage the project's default Branch — matching
-      // compute (`Prisma.App` attaches to the default Branch when no branch
-      // is named) and the branch-scoped deploy model. Upstream refuses an
-      // explicit display name combined with branch attachment at create (the
-      // Management API creates the database before attaching the branch and
-      // exposes no idempotency key), and the attachment wins: the name is
-      // omitted so upstream creates under its recoverable generated physical
+      // Upstream refuses an explicit display name combined with branch
+      // attachment at create (the Management API creates the database before
+      // attaching the branch and exposes no idempotency key), so the name is
+      // omitted: upstream creates under its recoverable generated physical
       // name WITH the branchId in the create call, and `branchId` staying in
-      // props keeps the attachment reconciled on every later deploy. Only
-      // local dev lowers without a Branch (ADR-0041's dev container resolves
-      // none), where the display name is safe — and there is no Console
-      // "Unassigned" to end up in.
+      // props keeps the attachment reconciled on every later deploy. Only the
+      // dev container resolves no Branch (ADR-0041), so the `name` arm is
+      // local-dev only.
       const branchId = attachmentBranchIdOf(application, id);
       const db = yield* Prisma.Database(`${id}-db`, {
         project: projectIdOf(application),
