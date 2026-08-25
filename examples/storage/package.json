@@ -15,7 +15,7 @@
     "@prisma/composer": "workspace:0.14.0",
     "@prisma/composer-prisma-cloud": "workspace:0.14.0",
     "alchemy": "2.0.0-beta.74",
-    "effect": "4.0.0-rc.111"
+    "effect": "4.0.0-rc.112"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.14.0",
@@ -25,12 +25,13 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "effect": "4.0.0-rc.111",
-    "@effect/sql-d1": "4.0.0-rc.111",
-    "@effect/sql-pg": "4.0.0-rc.111",
-    "@effect/vitest": "4.0.0-rc.111",
-    "@effect/platform-bun": "4.0.0-rc.111",
-    "@effect/platform-node": "4.0.0-rc.111",
-    "@effect/platform-node-shared": "4.0.0-rc.111"
+    "effect": "4.0.0-rc.112",
+    "@effect/sql-d1": "4.0.0-rc.112",
+    "@effect/sql-pg": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@effect/sql-sqlite-do": "4.0.0-rc.112"
   }
 }

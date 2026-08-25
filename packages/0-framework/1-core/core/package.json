@@ -20,7 +20,7 @@
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.74",
-    "effect": "4.0.0-rc.111",
+    "effect": "4.0.0-rc.112",
     "@internal/foundation": "workspace:0.14.0"
   },
   "devDependencies": {
