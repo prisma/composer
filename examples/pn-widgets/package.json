@@ -13,7 +13,7 @@
     "@prisma/composer": "workspace:0.14.0",
     "@prisma/composer-prisma-cloud": "workspace:0.14.0",
     "@prisma/orm-postgres": "8.0.0-rc.4",
-    "effect": "4.0.0-rc.111",
+    "effect": "4.0.0-rc.112",
     "pg": "8.22.0"
   },
   "devDependencies": {
@@ -25,12 +25,13 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
-    "effect": "4.0.0-rc.111",
-    "@effect/sql-d1": "4.0.0-rc.111",
-    "@effect/sql-pg": "4.0.0-rc.111",
-    "@effect/vitest": "4.0.0-rc.111",
-    "@effect/platform-bun": "4.0.0-rc.111",
-    "@effect/platform-node": "4.0.0-rc.111",
-    "@effect/platform-node-shared": "4.0.0-rc.111"
+    "effect": "4.0.0-rc.112",
+    "@effect/sql-d1": "4.0.0-rc.112",
+    "@effect/sql-pg": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.112",
+    "@effect/platform-bun": "4.0.0-rc.112",
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@effect/sql-sqlite-do": "4.0.0-rc.112"
   }
 }

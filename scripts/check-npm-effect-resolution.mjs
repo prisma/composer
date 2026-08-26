@@ -82,6 +82,7 @@ const CONSTELLATION_OVERRIDES = {
   effect: pinnedEffect,
   '@effect/sql-d1': pinnedEffect,
   '@effect/sql-pg': pinnedEffect,
+  '@effect/sql-sqlite-do': pinnedEffect,
   '@effect/vitest': pinnedEffect,
   '@effect/platform-bun': pinnedEffect,
   '@effect/platform-node': pinnedEffect,
