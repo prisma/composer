@@ -293,7 +293,7 @@ Local dev state is not migrated: if `prisma-composer dev` fails at plan time wit
 
 ## Updating a database whose schema an older version synthesized
 
-Older framework versions created a fresh `pnPostgres` database's schema at first deploy by synthesizing it from the contract, with no migration authored. Deploys are now replay-only — they apply only committed migrations — so the first contract change against such a database refuses with `MIGRATION_PATH_NOT_FOUND`: the migration graph has no edge reaching the database's current schema, because none was ever authored.
+Older framework versions created a fresh `postgres` database's schema at first deploy by synthesizing it from the contract, with no migration authored. Deploys are now replay-only — they apply only committed migrations — so the first contract change against such a database refuses with `MIGRATION_PATH_NOT_FOUND`: the migration graph has no edge reaching the database's current schema, because none was ever authored.
 
 The marker those deploys signed is an accurate signature of the schema, so the fix is to make the authored graph reach it. The refusal names the database's current hash. Set a ref to that hash — write `migrations/app/refs/db.json` (the ref `migration plan` reads its origin from) with `{ "hash": "<the marker's hash>", "invariants": [] }` — then emit and plan as usual:
 

@@ -2,7 +2,7 @@
 // Every `@prisma/orm-*` dependency spec must be a single exact version, and
 // every spec across the workspace must name the same one.
 //
-// The Prisma Next shells are one system split across several published
+// The Prisma ORM shells are one system split across several published
 // packages, and their types are only compatible within a version. Resolve two
 // versions of one shell into a tree and the codec and operation registries
 // silently diverge, `instanceof` stops holding, and a value produced by one
@@ -72,7 +72,7 @@ if (versions.size > 1) {
 }
 
 if (problems.length > 0) {
-  console.error('✖ orm-pins: the Prisma Next shells are not pinned consistently:\n');
+  console.error('✖ orm-pins: the Prisma ORM shells are not pinned consistently:\n');
   for (const problem of problems) console.error(`  ${problem}`);
   console.error(
     '\nEvery @prisma/orm-* spec must be one exact version, and all of them the same version.',

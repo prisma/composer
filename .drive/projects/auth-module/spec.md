@@ -11,11 +11,11 @@ Signup, login, sessions, and JWT verification as a composed module wrapping
 **Better Auth** (TypeScript library, in-process, owns Postgres tables — not a
 remote IdP). Dedicated-service shape: one Compute service, three consumer
 surfaces (`api` public HTTP, `session` rpc, `admin` rpc), plus a stateless
-`jwtVerifier()` binding. The Better Auth schema ships as a **Prisma Next
+`jwtVerifier()` binding. The Better Auth schema ships as a **Prisma ORM
 extension pack** (`auth:` contract space) carrying the contract and authored
 migrations: the consumer's one deploy migration step creates and evolves the
 auth tables beside their own, the database's marker is signed per space, and
-consumer tables FK `auth:User` via prisma-next ADR 226. Email (verification,
+consumer tables FK `auth:User` via prisma/orm ADR 226. Email (verification,
 reset, magic links) rides the `email` module (PR #146) through
 consumer-declared templates. The instance secret is platform-minted. Browsers
 reach Better Auth through a proxy route on the consumer app's origin.
@@ -33,15 +33,15 @@ reach Better Auth through a proxy route on the consumer app's origin.
    (the bucket is a platform primitive). D8's semantics (mint-once, stable,
    unexposed, no rotation) are unchanged — only the mechanism moves into
    the platform's existing secret representation.
-2. **Local testing bootstrap uses PN migrations.** `startLocalAuthServer`
-   runs the real PN `dbInit` path (control client, as
-   `prisma-next-migrate.ts` does deploy-side) against the caller's local
+2. **Local testing bootstrap uses Prisma ORM migrations.** `startLocalAuthServer`
+   runs the real Prisma ORM `dbInit` path (control client, as
+   `orm-migrate.ts` does deploy-side) against the caller's local
    database instead of applying a rendered `schema.sql`. DELETE
    `scripts/generate-schema.ts`, `src/pack/schema.sql`,
    `src/pack/schema-sql.ts`. The schema-conformance test keeps its real
-   assertion (migrate a scratch DB via PN, run Better Auth's schema
+   assertion (migrate a scratch DB via Prisma ORM, run Better Auth's schema
    generation, assert zero pending changes) minus the schema.sql-drift
-   half. Escape hatch: if bundling the PN control client into the testing
+   half. Escape hatch: if bundling the Prisma ORM control client into the testing
    export genuinely fails, STOP and report — do not silently revert to raw
    SQL.
 3. **Fetch composition is a framework concern.** `@internal/service-rpc`
@@ -51,15 +51,15 @@ reach Better Auth through a proxy route on the consumer app's origin.
    `serve.ts` uses the (now exported) `isRpcContract` type guard instead
    of the inline `kind !== 'rpc'` literal. First-class multi-port routing
    stays wired-egress territory; this is only the composition seam.
-4. **Prisma Next vocabulary.** Renames (types, functions, fields, and
+4. **Prisma ORM vocabulary.** Renames (types, functions, fields, and
    prose): `PnProject`/`resolvePnProject` → the loaded thing is a config —
-   `ResolvedPrismaNextConfig`/`resolvePrismaNextConfig`;
-   `packHead`/`packHeads` → `packHeadRefHash`/`packHeadRefHashes` (PN
+   `ResolvedOrmConfig`/`resolveOrmConfig`;
+   `packHead`/`packHeads` → `packHeadRefHash`/`packHeadRefHashes` (Prisma ORM
    terms: a pack's contract-space *head ref* and its *storage hash*);
    `PnPackRequirement`/`pnPackRequirement`/`packRequirementOf` →
    `RequiredPackHead`/`requiredPackHead`/`requiredPackHeadOf` (the concept
    is compose's own — the name now says what it is instead of
-   masquerading as PN glossary).
+   masquerading as Prisma ORM glossary).
 5. **No transient project identifiers in shipped code.** Comments
    referencing Drive slice/decision IDs (`S1`, `slice S2`, `D5`, `D12`,
    …) are forbidden in `packages/**` and `examples/**` — replace each
@@ -78,9 +78,9 @@ reach Better Auth through a proxy route on the consumer app's origin.
 |---|---|---|
 | D1 | Dedicated Compute service wrapping Better Auth; module owns its tables behind the boundary | ADR-0016; Better Auth is a library — our service hosts it |
 | D2 | The database is a boundary dependency (`db` slot), never self-provisioned by the module | Streams precedent (`store: s3()`); the root decides dedicated vs shared; sharing is a wiring choice, not a module-shape change (ADR-0013 one-provision-N-wirings) |
-| D3 | Better Auth's schema ships as a Prisma Next **extension pack** (`id: 'auth'`, contract + authored migration packages); Better Auth's own migrator never runs anywhere | Framework-owned deterministic migration (ADR-0005/0022); per-space marker signing and pack-shipped migrations are shipped PN machinery; `auth:User` FK falls out of PN ADR 226 |
-| D4 | Shared-DB-with-FK is the golden path from v1; dedicated DB is the same mechanism with an empty app space | No PN work needed; the FK story is the headline capability |
-| D5 | The db dep's schema assertion runs at **deploy time**: a preflight checks the wired resource's PN config lists the `auth` pack at the installed package's head hash, before the migration step | Boot-time is too late (service down after a green deploy); wiring-time reads a stale proxy artifact. `pnContract().satisfies` stays wireability-only for pack requirements |
+| D3 | Better Auth's schema ships as a Prisma ORM **extension pack** (`id: 'auth'`, contract + authored migration packages); Better Auth's own migrator never runs anywhere | Framework-owned deterministic migration (ADR-0005/0022); per-space marker signing and pack-shipped migrations are shipped Prisma ORM machinery; `auth:User` FK falls out of Prisma ORM ADR 226 |
+| D4 | Shared-DB-with-FK is the golden path from v1; dedicated DB is the same mechanism with an empty app space | No Prisma ORM work needed; the FK story is the headline capability |
+| D5 | The db dep's schema assertion runs at **deploy time**: a preflight checks the wired resource's Prisma ORM config lists the `auth` pack at the installed package's head hash, before the migration step | Boot-time is too late (service down after a green deploy); wiring-time reads a stale proxy artifact. `dataContract().satisfies` stays wireability-only for pack requirements |
 | D6 | Sessions: stateless JWT by default (15-min TTL, EdDSA via JWKS); instant logout is an explicit per-call opt-in via the `session` rpc port | "No DB access" is the JWT binding's whole value; revocation is a per-route decision |
 | D7 | Social OAuth is post-v1; the factory reserves an options-driven mechanism (per-provider secret slots + params) but v1 ships none | Zero-click-ops golden path; ADR-0029 has no optional secrets, so slots must be option-conditional |
 | D8 | The Better Auth instance secret is a **minted resource** (`authSecret`), mirroring `s3Credentials`: minted once deploy-side, stable across deploys, wired as a dependency binding; not exposed to consumers in v1; rotation unsupported in v1 (documented) | Zero-click-ops; the target already owns this exact pattern; rotating would invalidate sessions + AES-encrypted jwks rows |
@@ -135,7 +135,7 @@ packages/1-prisma-cloud/2-shared-modules/auth/
     │   ├── contract.json       # emitted (committed)
     │   ├── contract.d.ts       # emitted (committed)
     │   ├── schema.sql          # generated flat DDL (committed; used by testing export)
-    │   ├── migrations/         # authored PN migration packages (committed; v1: 0001_init)
+    │   ├── migrations/         # authored Prisma ORM migration packages (committed; v1: 0001_init)
     │   └── index.ts            # authPack descriptor (SqlControlExtensionDescriptor<'postgres'>)
     ├── execution/
     │   ├── auth-entrypoint.ts  # boot program
@@ -152,7 +152,7 @@ packages/1-prisma-cloud/2-shared-modules/auth/
 
 Planes (`architecture.config.json`, non-overlapping globs, email's pattern):
 `src/*.ts` → shared; `src/pack/**` → shared (descriptor + JSON only — the
-pack's `index.ts` must not import `@internal/lowering`/`effect`/PN control);
+pack's `index.ts` must not import `@internal/lowering`/`effect`/Prisma ORM control);
 `src/execution/**` → execution; `src/exports/index.ts`, `src/exports/pack.ts`,
 `src/exports/embedded.ts`, `src/exports/auth-service.ts` → shared (the
 service shim is re-exported from the authoring barrel — email's exact
@@ -333,18 +333,18 @@ Semantics:
 ### Db dependency — `authDb()`
 
 ```ts
-/** The auth service's claim on a PN-typed database that carries the auth pack. */
-export function authDb(): DependencyEnd<{ url: string }, PnPostgresContract>;
+/** The auth service's claim on a Prisma-ORM-typed database that carries the auth pack. */
+export function authDb(): DependencyEnd<{ url: string }, PostgresContract>;
 ```
 
-Built with core `dependency()`: `type: 'prisma-next'`, connection params
+Built with core `dependency()`: `type: 'postgres'`, connection params
 `{ url: string() }`, hydrate identity (`({url}) => ({url})`) — Better Auth
-builds its own pool; no PN client. Its `required` contract is
+builds its own pool; no Prisma ORM client. Its `required` contract is
 `pnPackRequirement({ packId: 'auth', headHash: AUTH_PACK_HEAD_HASH })` (§
 Target changes), where `AUTH_PACK_HEAD_HASH` is imported from
 `src/pack/index.ts` (the emitted contract's `storage.storageHash`).
 
-## The Prisma Next extension pack (`src/pack/`)
+## The Prisma ORM extension pack (`src/pack/`)
 
 - `contract.prisma`: PSL under `namespace auth` containing the Better Auth
   tables at the pinned version with plugins jwt+admin+magicLink+bearer:
@@ -353,17 +353,17 @@ Target changes), where `AUTH_PACK_HEAD_HASH` is imported from
   Better Auth's default (camelCase) column names, transcribed to PSL. Tables
   live in Postgres schema `auth` (PSL namespace → PG schema, as
   `resolveDdlSchemaForNamespaceStorage` maps it).
-- Emitted `contract.json`/`contract.d.ts`: produced by PN's contract emit
+- Emitted `contract.json`/`contract.d.ts`: produced by Prisma ORM's contract emit
   toolchain (same procedure as `@prisma-next/extension-supabase`'s
   `src/contract/`), committed. Control policy: **managed** (the default) —
   unlike Supabase's `external`, OUR migrations create these tables.
-- `migrations/0001_init`: one authored PN migration package creating the five
-  tables + indexes, authored with PN's migration tooling against the emitted
+- `migrations/0001_init`: one authored Prisma ORM migration package creating the five
+  tables + indexes, authored with Prisma ORM's migration tooling against the emitted
   contract; committed. `headRef = { hash: contract.storage.storageHash,
   invariants: [] }`.
 - `schema.sql`: flat DDL equivalent of applying the pack's migration graph to
   an empty database, generated by a package script (`pnpm generate:schema` —
-  runs PN `dbInit` in plan mode against the pack space and renders SQL),
+  runs Prisma ORM `dbInit` in plan mode against the pack space and renders SQL),
   committed. Consumed ONLY by the testing export (D16).
 - `index.ts`: exports `authPack` (`SqlControlExtensionDescriptor<'postgres'>`,
   `id: 'auth'`, `familyId: 'sql'`, `targetId: 'postgres'`, `version` from
@@ -378,7 +378,7 @@ Target changes), where `AUTH_PACK_HEAD_HASH` is imported from
 Consumer usage (shared DB, the golden path):
 
 ```ts
-// prisma-next.config.ts
+// prisma.config.ts
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 export default defineConfig({ ..., extensionPacks: [authPack] });
 ```
@@ -394,8 +394,8 @@ namespace public {
 }
 ```
 
-Cross-space relations are non-navigable in the generated client (PN ADR 226);
-the value is the real FK constraint. Dedicated-DB standalone: a PN project
+Cross-space relations are non-navigable in the generated client (Prisma ORM ADR 226);
+the value is the real FK constraint. Dedicated-DB standalone: a Prisma ORM project
 whose app space is empty and whose config lists only `authPack` (the smoke
 example, § Examples).
 
@@ -412,45 +412,45 @@ Four additions, no new machinery classes:
    `btoa(String.fromCharCode(...randomBytes(32)))` on first create;
    reconcile keeps existing output (stable across deploys). Registered in
    the same descriptor tables `s3Credentials` is.
-2. **`pnPackRequirement`** (in `prisma-next.ts`):
+2. **`pnPackRequirement`** (in `orm-postgres.ts`):
    ```ts
    export interface PnPackRequirement { readonly packId: string; readonly headHash: string; }
-   export function pnPackRequirement(req: PnPackRequirement): PnPostgresContract;
+   export function pnPackRequirement(req: PnPackRequirement): PostgresContract;
    ```
-   Returns a `'prisma-next'`-kind contract whose `__cmp` is
-   `{ packRequirement: req }`. `pnContract()`'s `satisfies` gains one branch
+   Returns a `'postgres'`-kind contract whose `__cmp` is
+   `{ packRequirement: req }`. `dataContract()`'s `satisfies` gains one branch
    BEFORE hash comparison: if `required.__cmp` carries `packRequirement`
    (checked defensively like `storageHashOf`), return `true` — wireability
    only; enforcement is the deploy preflight (D5).
 3. **Pack preflight** (new function in `preflight.ts`, invoked from the
    deploy lowering beside the existing pn migration-step construction in
-   `descriptors/prisma-next.ts`): for every dependency edge whose consumer
+   `descriptors/orm-postgres.ts`): for every dependency edge whose consumer
    `required.__cmp.packRequirement` is set and whose provider is a
-   `PnPostgresResourceNode` — load the resource's PN config (the same c12
+   `PostgresResourceNode` — load the resource's Prisma ORM config (the same c12
    load `resolveMigrationsDir` does), read `config.extensionPacks`. Fail the
    deploy with:
-   - missing: `prisma-next database "<resource name>" does not list extension
-     pack "<packId>" in its prisma-next.config.ts extensionPacks — service
+   - missing: `postgres database "<resource name>" does not list extension
+     pack "<packId>" in its prisma.config.ts extensionPacks — service
      "<consumer>" requires it. Add the pack and run migration plan.`
    - hash mismatch: `extension pack "<packId>" in "<config path>" is at head
      <found>, but the installed package requires <required>. Re-run
      migration plan so the pack's shipped migrations are materialised, then
      redeploy.`
-   A `packRequirement` edge wired to a non-`pnPostgres` provider fails:
+   A `packRequirement` edge wired to a non-`postgres` provider fails:
    `service "<consumer>" requires extension pack "<packId>", which only a
-   pnPostgres resource can carry.`
-4. **Multi-space migrate passthrough** (`prisma-next-migrate.ts` +
-   `pn-config.ts`): `loadConfig` already returns the config; surface
+   postgres resource can carry.`
+4. **Multi-space migrate passthrough** (`orm-migrate.ts` +
+   `orm-config.ts`): `loadConfig` already returns the config; surface
    `config.extensionPacks ?? []` alongside `resolveMigrationsDir` (new
    `resolvePnProject(configPath) → { migrationsDir, extensionPacks }`).
    Thread `extensionPacks` into `createPostgresControlClient({ connection,
    extensionPacks })` — client-creation options only; the client threads
    them into `dbInit`/`migrate` internally (amended 2026-07-22, D2: the
-   per-call options do not accept them, the creation options do). Decision change in `applyPnMigration`: when
+   per-call options do not accept them, the creation options do). Decision change in `applyOrmMigration`: when
    `extensionPacks.length > 0` and `decideMigrationAction` returns `noop`
-   for the app space, still call `client.migrate` (PN's per-space path
+   for the app space, still call `client.migrate` (Prisma ORM's per-space path
    resolution no-ops each up-to-date space); `noop` is returned to the
-   lowering only when packs are absent. The PnMigration resource key
+   lowering only when packs are absent. The OrmMigration resource key
    (hash+invariants) must additionally fold in each pack's
    `contractSpace.headRef.hash` (sorted by pack id) so a pack upgrade
    produces a distinct deploy step.
@@ -525,7 +525,7 @@ Pinned option values:
   `options: '-c search_path=auth'`, plus the target's connection hardening
   values (`connectionTimeoutMillis: 20_000`, `idleTimeoutMillis: 5_000`,
   pool `error` listener logging — copied semantics from
-  `prisma-next.ts`'s `resilientPool`, reimplemented locally; the module may
+  `orm-postgres.ts`'s `resilientPool`, reimplemented locally; the module may
   not import target internals).
 - `emailAndPassword: { enabled: true, requireEmailVerification: <S2: true / S1: false>,
   sendResetPassword: <cb>, revokeSessionsOnPasswordReset: true }`.
@@ -668,7 +668,7 @@ export function createEmbeddedAuth(inputs: EmbeddedAuthInputs): ReturnType<typeo
 Exactly `betterAuth(buildAuthOptions(...))` — nothing else. The consumer
 mounts `auth.handler` on their own `/api/auth/*` route and may use
 `auth.api.*` in-process. Schema: the consumer lists `authPack` in their own
-PN config (same pack, same migrations — embedded changes WHERE the library
+Prisma ORM config (same pack, same migrations — embedded changes WHERE the library
 runs, not who owns the schema). README documents this as the
 fully-idiomatic mode and its trade-off (no service boundary, no rpc ports).
 
@@ -704,8 +704,8 @@ server, from its outbox port), completes the flow — no cloud credentials.
 
 ### `examples/auth` (S1) — smoke harness, dedicated DB
 
-Root `module.ts`: `pnPostgres({ name: 'database', contract: <empty-app-space
-emitted contract>, config: './prisma-next.config.ts' })` with
+Root `module.ts`: `postgres({ name: 'database', contract: <empty-app-space
+emitted contract>, config: './prisma.config.ts' })` with
 `extensionPacks: [authPack]`; `provision(auth(), { deps: { db }, params:
 { baseUrl: envParam('AUTH_BASE_URL') } })`; an `api` compute service with
 `deps: { authApi: authApi(), verifier: jwtVerifier(), session:
@@ -719,7 +719,7 @@ against `startLocalAuthServer`.
 
 ### `examples/storefront-auth` rework (S3) — the real consumer, shared DB
 
-Replace the toy `modules/auth` with this module. One shared `pnPostgres`
+Replace the toy `modules/auth` with this module. One shared `postgres`
 database: app space = storefront's contract (gains
 `Profile.userId → auth:User @relation(..., onDelete: Cascade)`),
 `extensionPacks: [authPack]`. Storefront service proxies `/api/auth/*`,
@@ -757,7 +757,7 @@ pinned values (snapshot of `buildAuthOptions` output shape). Integration
 signup/login/JWT verify with real `jose`; bearer + cookie flows; magic-link
 e2e via capture; S2: against the email module's local server reading the
 outbox; embedded-vs-service parity (same flows through `createEmbeddedAuth`).
-Schema conformance: migrate a scratch DB with the pack (PN control client),
+Schema conformance: migrate a scratch DB with the pack (Prisma ORM control client),
 run Better Auth's schema generation against it, assert zero pending
 changes; also assert `schema.sql` equals regenerated output. Target unit
 tests: `pnPackRequirement` satisfies branch, preflight failure messages,
@@ -794,7 +794,7 @@ per-consumer contract slices on shared DBs · exposing the instance secret ·
 1. **Consume `@prisma-next/extension-better-auth` instead of authoring our
    own pack?** Discovered at planning time (2026-07-22): Linear project
    "BetterAuth Extension" (Terminal, lead Serhii Tatarintsev, in progress
-   since 2026-07-13) is building exactly the § Pack artifact in prisma-next
+   since 2026-07-13) is building exactly the § Pack artifact in prisma/orm
    itself — `spaceId: 'better-auth'`, managed control, BetterAuth core
    models (`user`, `session`, `account`, `verification`), plus a BetterAuth
    **database adapter** over contract-typed `sql-orm-client` collections.
@@ -829,8 +829,8 @@ improvised.
   codec, testing-export shape, exports discipline.
 - Prior art: `packages/1-prisma-cloud/2-shared-modules/{storage,streams,cron}`;
   target patterns: `s3-credentials*.ts`, `streams-keys.ts`,
-  `prisma-next{,-migrate}.ts`, `http.ts`.
-- Prisma Next (worktree `./prisma-next`): pack descriptor
+  `orm-postgres.ts`, `orm-migrate.ts`, `http.ts`.
+- Prisma ORM (worktree `./orm`): pack descriptor
   `packages/3-extensions/supabase/src/pack/index.ts`; per-space runner
   `packages/3-targets/3-targets/postgres/src/core/migrations/runner.ts`;
   seed phase `packages/1-framework/3-tooling/cli/src/utils/contract-space-seed-phase.ts`;

@@ -20,7 +20,7 @@ import ingestService from "./ingest.ts";
 import apiService from "./api.ts";
 
 export default module("datahub", ({ provision }) => {
-  const db = provision(postgres({ name: "db" })); // provides postgresContract
+  const db = provision(rawPostgres({ name: "db" })); // provides rawPostgresContract
   provision(ingestService, { deps: { db } }); // ingest.deps.db requires it
   provision(apiService, { deps: { db } }); // api.deps.db requires it
 });
@@ -83,14 +83,14 @@ again at Load — the point where the module body actually runs and the graph
 gets built — as a runtime backstop. There is no branching on what kind of
 thing produced the reference anywhere: a service's exposed port cannot fill a
 postgres-requiring slot, not because Load special-cases kinds, but because no
-service port carries a contract whose kind is `"postgres"`. `postgresContract`
+service port carries a contract whose kind is `"postgres"`. `rawPostgresContract`
 (the concrete Postgres contract) makes this precise: its `satisfies` compares
 `kind`, not object identity, so a duplicated copy of the postgres package
 elsewhere in a workspace still satisfies the same requirement.
 
-The `postgres()` factory has exactly two shapes, chosen by what you pass it.
+The `rawPostgres()` factory has exactly two shapes, chosen by what you pass it.
 `{ name }` returns the resource identity — the thing a module provisions,
-providing `postgresContract`. Called with no argument at all, it returns the
+providing `rawPostgresContract`. Called with no argument at all, it returns the
 dependency — the thing a service declares in its own `deps`, requiring that
 same contract; its binding is the typed connection config itself, and the app
 builds its own client from it. The two shapes are mutually exclusive at the
@@ -153,7 +153,7 @@ slot is a Load-time error pointing at deploying the composing module instead.
   them removes a whole parallel vocabulary and every place it forked.
 - **The `Dependable` dual-form** — a value that is both a provisionable identity
   and, via a `toDependency()` conversion interface, a slot usable directly in
-  `deps`, so a single-consumer app could write one `postgres({ name, client })`.
+  `deps`, so a single-consumer app could write one `rawPostgres({ name, client })`.
   Rejected: it added a bespoke core primitive (a conversion interface,
   `service()` input normalization, a `NormalizedDeps` type) and a spread-built
   dual object — for a convenience no example actually needed once resources are

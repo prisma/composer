@@ -1,7 +1,7 @@
 import node from '@prisma/composer/node';
 import { rpc } from '@prisma/composer/service-rpc';
 import { compute } from '@prisma/composer-prisma-cloud';
-import { pnPostgres } from '@prisma/composer-prisma-cloud/prisma-next';
+import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { catalogContract } from '@store/catalog/contract';
 import { ordersContract } from './contract.ts';
 import { ordersData } from './data.ts';
@@ -12,7 +12,7 @@ import { ordersData } from './data.ts';
 export default compute({
   name: 'orders',
   deps: {
-    db: pnPostgres(ordersData),
+    db: postgres(ordersData),
     catalog: rpc(catalogContract),
   },
   build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),

@@ -29,7 +29,7 @@ from the purpose, not the other way around.
   independently.
 - **Bundling or compiling your code.** Bundlers (tsdown, Bun.build, Alchemy) do
   that; the framework references the bundles.
-- **Generating data contracts.** Prisma Next produces those; the framework
+- **Generating data contracts.** Prisma ORM produces those; the framework
   references them.
 - **UI / client-framework bindings.** React hooks and Convex-style embedding are a
   deployment-target pack concern, not the core.

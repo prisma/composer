@@ -15,7 +15,7 @@ export const conn = <P extends Params, C>(
 
 /**
  * A stand-in provider contract — kind-satisfies, mirroring what a pack ships
- * for its resources (e.g. postgresContract): every value of the same kind
+ * for its resources (e.g. rawPostgresContract): every value of the same kind
  * satisfies, even across duplicated module instances.
  */
 export const providerContract = <K extends string, Cmp>(kind: K, cmp: Cmp): Contract<K, Cmp> =>

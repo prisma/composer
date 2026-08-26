@@ -1,6 +1,6 @@
 name: E2E deploy
 
-# Deploys examples/storefront-auth and examples/pn-widgets to real Prisma
+# Deploys examples/storefront-auth and examples/orm-demo to real Prisma
 # Cloud, verifies each round trip, then destroys them. Requires repo secret
 # PRISMA_SERVICE_TOKEN and repo variable PRISMA_WORKSPACE_ID.
 
@@ -47,8 +47,8 @@ jobs:
           stack-name: storefront-auth-ci-${{ github.run_id }}
           verify-command: bash scripts/e2e-verify.sh
 
-  deploy-pn-widgets:
-    name: Deploy, verify, destroy (pn-widgets)
+  deploy-orm-demo:
+    name: Deploy, verify, destroy (orm-demo)
     runs-on: ubuntu-latest
     # Not a data dependency — runs after storefront so the two deploys never
     # hold projects/databases concurrently (workspace DB-quota headroom).
@@ -65,17 +65,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/deploy-verify-destroy
         with:
-          working-directory: examples/pn-widgets
-          build-filter: '@prisma/example-pn-widgets...'
-          stack-name: pn-widgets-ci-${{ github.run_id }}
+          working-directory: examples/orm-demo
+          build-filter: '@prisma/example-orm-demo...'
+          stack-name: orm-demo-ci-${{ github.run_id }}
           verify-command: bun scripts/e2e-verify.ts
-          destroy-label: 'pn-widgets '
-          sweep-prefixes: storefront-auth pn-widgets hello canary bucket
+          destroy-label: 'orm-demo '
+          sweep-prefixes: storefront-auth orm-demo hello canary bucket
 
   deploy-bucket:
     name: Deploy, verify, destroy (bucket)
     runs-on: ubuntu-latest
-    needs: deploy-pn-widgets
+    needs: deploy-orm-demo
     timeout-minutes: 3
     # Secrets aren't available on forked-PR runs; skip rather than fail loudly.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -93,7 +93,7 @@ jobs:
           stack-name: bucket-ci-${{ github.run_id }}
           verify-command: bun scripts/e2e-verify.ts
           destroy-label: 'bucket '
-          sweep-prefixes: storefront-auth pn-widgets hello canary bucket
+          sweep-prefixes: storefront-auth orm-demo hello canary bucket
 
   cold-connect-canary:
     name: Cold-connect canary (FT-5226)
@@ -162,7 +162,7 @@ jobs:
           stack-name: streams-canary-ci-${{ github.run_id }}
           verify-command: bun "${{ github.workspace }}/scripts/cold-start-canary.ts"
           destroy-label: 'streams-canary '
-          sweep-prefixes: storefront-auth pn-widgets hello canary streams-canary bucket resolver
+          sweep-prefixes: storefront-auth orm-demo hello canary streams-canary bucket resolver
 
   logical-id-resolution:
     name: Logical-id resolution

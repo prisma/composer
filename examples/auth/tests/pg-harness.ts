@@ -1,5 +1,5 @@
 /**
- * A throwaway local Postgres for the prisma-next integration test — mirrors
+ * A throwaway local Postgres for the Prisma ORM integration test — mirrors
  * `packages/alchemy/src/state/__tests__/harness.ts` (the state store's harness)
  * so both suites share one Postgres availability contract and one CI service
  * container. Kept as a local copy rather than a cross-package import: that
@@ -126,7 +126,7 @@ export const startTestPostgres = (): TestPostgres | undefined => {
   if (initdb === undefined || pgCtl === undefined) {
     if (process.env['CI'] !== undefined) {
       throw new Error(
-        'CI is set but no Postgres is available for the prisma-next integration test: neither ' +
+        'CI is set but no Postgres is available for the Prisma ORM integration test: neither ' +
           'STATE_TEST_DATABASE_URL nor initdb/pg_ctl (PATH, Homebrew, or Ubuntu ' +
           '/usr/lib/postgresql/*/bin) were found. The CI test job wires a `services: postgres:` ' +
           'container and STATE_TEST_DATABASE_URL (see .github/workflows/ci.yml).',

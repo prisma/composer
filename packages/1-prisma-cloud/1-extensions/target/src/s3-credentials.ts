@@ -8,7 +8,7 @@ export interface CredentialsConfig {
 
 /**
  * The contract the `s3-credentials` resource provides — a minted SigV4 key
- * pair. `satisfies` compares KIND only (mirrors `postgresContract`); `__cmp` is
+ * pair. `satisfies` compares KIND only (mirrors `rawPostgresContract`); `__cmp` is
  * the config the resource offers, which core never inspects.
  */
 export const credentialsContract: Contract<'credentials', CredentialsConfig> = Object.freeze({

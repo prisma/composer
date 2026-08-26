@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Populate a git worktree with the reference clones the framework work needs:
-# prisma-next, ignite, datahub, open-chat (all gitignored, one clone per worktree).
+# orm, ignite, datahub, open-chat (all gitignored, one clone per worktree).
 #
 # Idempotent: clones that already exist are left untouched, so it is safe to run
 # on every session start. Wired as a SessionStart hook in .claude/settings.local.json;
@@ -42,7 +42,7 @@ while IFS='=' read -r name url; do
     echo "setup-worktree-refs: could not create $dest" >&2
   fi
 done <<'EOF'
-prisma-next=https://github.com/prisma/prisma-next
+orm=https://github.com/prisma/orm
 ignite=https://github.com/prisma/ignite
 datahub=https://github.com/prisma/datahub
 open-chat=https://github.com/prisma/open-chat

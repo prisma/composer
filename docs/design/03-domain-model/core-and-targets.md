@@ -16,14 +16,14 @@ Grounding example — a service with a Postgres dependency, deployed to Prisma C
 ```ts
 import { compute, postgres } from "@prisma/composer-prisma-cloud"
 
-export default compute({ db: postgres() }, ({ db }) => Bun.serve(/* uses db */))
+export default compute({ db: rawPostgres() }, ({ db }) => Bun.serve(/* uses db */))
 ```
 
 - **`@prisma/composer`** knows three kinds — **Service**, **Resource**, **Connection**
   — as a graph, plus the machinery to Load, validate, lower, and run that graph. It
   imports no deployment target. It never learns what "Postgres" or "Compute" is.
 - **`@prisma/composer-prisma-cloud`** (a target pack) provides the concrete vocabulary:
-  `compute()` — a Service; `postgres()` — a Resource; and connection types like
+  `compute()` — a Service; `rawPostgres()` — a Resource; and connection types like
   `http()`. Each is an ergonomic constructor that returns a **plain data object**
   carrying the metadata that routes it to an Alchemy Stack/Provider.
 
@@ -32,7 +32,7 @@ underneath.
 
 ## Constructors return data, not behaviour
 
-`postgres()` does not *do* anything — it returns a description:
+`rawPostgres()` does not *do* anything — it returns a description:
 
 ```ts
 // inside @prisma/composer-prisma-cloud — illustrative shape

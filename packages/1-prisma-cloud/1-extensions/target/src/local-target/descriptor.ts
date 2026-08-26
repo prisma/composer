@@ -16,8 +16,8 @@ import { localTargetProviders } from '@internal/local-target';
 import * as Prisma from '@internal/lowering';
 import * as Layer from 'effect/Layer';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
+import { OrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
-import { PnMigrationProvider } from '../pn-migration-resource.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import { devAttach } from './attach.ts';
 import { devContainerDescriptor } from './container.ts';
@@ -46,7 +46,7 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
         Layer.mergeAll(
           localTargetProviders(input),
           PgWarmProvider(),
-          PnMigrationProvider(),
+          OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
           Prisma.ServiceKeyProvider(),

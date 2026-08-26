@@ -3,7 +3,7 @@
 Signup, login, sessions, and JWT verification as a composed module wrapping
 [Better Auth](https://better-auth.com) (in-process TypeScript library — not a
 remote IdP), published as `@prisma/composer-prisma-cloud/auth`. One dedicated
-Compute service; the schema ships as a Prisma Next extension pack; the
+Compute service; the schema ships as a Prisma ORM extension pack; the
 instance secret is platform-minted.
 
 ## Contract scope
@@ -39,13 +39,13 @@ back office alone gets `admin`.
 import { module } from '@prisma/composer';
 import { envParam } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
-import { pnPostgres } from '@prisma/composer-prisma-cloud/prisma-next';
+import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { appContract } from './src/contract.ts';
 import apiService from './src/api/service.ts';
 
 export default module('app', ({ provision }) => {
   const db = provision(
-    pnPostgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
+    postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   const identity = provision(auth(), {
@@ -80,7 +80,7 @@ A complete, deployable copy of this wiring lives in `examples/auth`.
 ## The pack
 
 Better Auth's tables (`user`, `session`, `account`, `verification`, `jwks` —
-Postgres schema `auth`) ship as a Prisma Next extension pack with authored
+Postgres schema `auth`) ship as a Prisma ORM extension pack with authored
 migrations — Better Auth's own migrator never runs anywhere. Consumers:
 
 ```ts

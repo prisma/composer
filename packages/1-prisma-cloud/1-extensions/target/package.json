@@ -8,7 +8,7 @@
     "./connection": "./dist/connection.mjs",
     "./control": "./dist/control.mjs",
     "./local-target": "./dist/local-target.mjs",
-    "./prisma-next": "./dist/prisma-next.mjs",
+    "./orm": "./dist/orm.mjs",
     "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },

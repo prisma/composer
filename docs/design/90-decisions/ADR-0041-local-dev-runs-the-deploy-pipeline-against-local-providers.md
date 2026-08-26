@@ -62,7 +62,7 @@ For the Prisma Cloud extension, the substitution splits its twelve resource
 types four/eight. Four providers already run entirely locally and are shared
 verbatim: `ServiceKey` and `S3Credentials` (both mint via Web Crypto and persist
 in Alchemy state, never touching a platform), `PgWarm` (a real `select 1`
-against whatever URL it is handed), and `PnMigration` (real migrations against
+against whatever URL it is handed), and `OrmMigration` (real migrations against
 whatever URL it is handed). The remaining eight get local implementations in
 three clusters:
 

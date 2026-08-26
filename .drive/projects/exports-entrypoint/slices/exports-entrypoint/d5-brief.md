@@ -30,10 +30,10 @@ of `src/` + dynamic-import string literals for references to moved files.
 - Verify: exports map, `dist/` file list, and `bin` field byte-identical to HEAD.
 
 ## Package 2 — `@prisma/composer-prisma-cloud` (`packages/9-public/composer-prisma-cloud`)
-- `git mv` these 9 thin re-export entrypoints into `src/exports/`: `index.ts`, `control.ts`, `prisma-next.ts`, `testing.ts`, `cron.ts`, `storage.ts`, `storage-testing.ts`, `streams.ts`, `streams-testing.ts`.
+- `git mv` these 9 thin re-export entrypoints into `src/exports/`: `index.ts`, `control.ts`, `orm-postgres.ts`, `testing.ts`, `cron.ts`, `storage.ts`, `storage-testing.ts`, `streams.ts`, `streams-testing.ts`.
 - All import `@internal/...` — no relative fixes. Grep for path references + repoint if any.
 - tsdown: keep ALL NINE passes, the `externalizeFramework` resolve plugin, the `FRAMEWORK` map, all `outDir`/`external`/`dts:false` options, and `exports:false`. Update ONLY the entries that reference `src/…` files — repoint to `src/exports/…`:
-  - Pass 1: `{ index: 'src/exports/index.ts', control: 'src/exports/control.ts', 'prisma-next': 'src/exports/prisma-next.ts', testing: 'src/exports/testing.ts' }`
+  - Pass 1: `{ index: 'src/exports/index.ts', control: 'src/exports/control.ts', 'postgres': 'src/exports/orm.ts', testing: 'src/exports/testing.ts' }`
   - Pass 2 (→dist/cron): `{ index: 'src/exports/cron.ts' }`
   - Pass 4 (→dist/storage): `{ index: 'src/exports/storage.ts' }`
   - Pass 6 (→dist/storage): `{ testing: 'src/exports/storage-testing.ts' }`
@@ -41,7 +41,7 @@ of `src/` + dynamic-import string literals for references to moved files.
   - Pass 9 (→dist/streams): `{ testing: 'src/exports/streams-testing.ts' }`
   - Passes 3, 5, 8 read `@internal/*/dist/*.mjs` — LEAVE UNCHANGED.
 - Do NOT touch the hand-maintained `exports` map (nested keys `./cron/scheduler-entrypoint`, `./storage/storage-entrypoint`, `./storage/testing`, `./streams/…`).
-- architecture.config.json: repoint the 5 existing per-file globs 1:1 (`control`→control; `index`, `prisma-next`, `testing`, `cron`→shared). The `storage`/`storage-testing`/`streams`/`streams-testing` source files have NO globs today — leave them unmapped (a D6/follow-up concern, same as the storage/streams packages).
+- architecture.config.json: repoint the 5 existing per-file globs 1:1 (`control`→control; `index`, `prisma/orm`, `testing`, `cron`→shared). The `storage`/`storage-testing`/`streams`/`streams-testing` source files have NO globs today — leave them unmapped (a D6/follow-up concern, same as the storage/streams packages).
 - Verify: exports map + `dist/` file list (nested structure) byte-identical to HEAD.
 
 ## Scope

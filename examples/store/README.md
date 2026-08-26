@@ -48,7 +48,7 @@ typed RPC contracts. The whole composition is [module.ts](module.ts).
   `db.client.orm.public.Product.where({ id }).first()`, no SQL, no row mapping.
   Consumers wire only the exposed `rpc` port.
 - [modules/orders](modules/orders) — a Module with a **boundary input**: it
-  owns its (also Prisma Next-typed) Postgres but declares `deps: { catalog }`,
+  owns its (also Prisma-ORM-typed) Postgres but declares `deps: { catalog }`,
   so whoever provisions it supplies a producer of `catalogContract`.
   `placeOrder` calls catalog to price the order at placement time.
 - [modules/storefront](modules/storefront) — a real Next.js app. The page

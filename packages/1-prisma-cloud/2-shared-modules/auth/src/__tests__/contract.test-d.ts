@@ -9,9 +9,9 @@ import type { DependencyEnd, ModuleNode, ParamNeed, RefPort } from '@internal/co
 import { module, paramSource } from '@internal/core';
 import { emailSendContract, type emailSender } from '@internal/email';
 import node from '@internal/node';
-import { compute, type postgresContract } from '@internal/prisma-cloud';
-import type { PnPostgresContract } from '@internal/prisma-cloud/prisma-next';
-import { pnContract, pnPostgres } from '@internal/prisma-cloud/prisma-next';
+import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
+import type { PostgresContract } from '@internal/prisma-cloud/orm';
+import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { rpc } from '@internal/service-rpc';
 import { expectTypeOf, test } from 'vitest';
 import { auth } from '../auth-module.ts';
@@ -55,7 +55,7 @@ test('auth() is a ModuleNode with the db + email boundary deps, three ports, and
 test('the dependency factories hydrate to their pinned binding types', () => {
   expectTypeOf(authApi()).toExtend<DependencyEnd<AuthApiClient, typeof authApiContract>>();
   expectTypeOf(jwtVerifier()).toExtend<DependencyEnd<JwtVerifier, typeof authApiContract>>();
-  expectTypeOf(authDb()).toExtend<DependencyEnd<{ url: string }, PnPostgresContract>>();
+  expectTypeOf(authDb()).toExtend<DependencyEnd<{ url: string }, PostgresContract>>();
 });
 
 test('a verified session carries the pinned claim projections', () => {
@@ -78,10 +78,10 @@ test('the wire records use ISO strings and the banExpiresAt field name', () => {
 test('the module ports wire into their consumer slots; a wrong-kind port is rejected', () => {
   module('root', {}, ({ provision }) => {
     const db = provision(
-      pnPostgres({
+      postgres({
         name: 'database',
-        contract: pnContract(packContractJson),
-        config: './prisma-next.config.ts',
+        contract: dataContract(packContractJson),
+        config: './prisma.config.ts',
       }),
       { id: 'database' },
     );
@@ -106,5 +106,7 @@ test('the module ports wire into their consumer slots; a wrong-kind port is reje
   });
 
   // A postgres port does not satisfy an auth-api slot.
-  expectTypeOf<RefPort<typeof postgresContract>>().not.toExtend<RefPort<typeof authApiContract>>();
+  expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<
+    RefPort<typeof authApiContract>
+  >();
 });

@@ -12,12 +12,12 @@ Concretely, a service that depends on a database and another service writes this
 ```ts
 // service.ts — pure requirement: a contract, no driver, no factory
 export default compute({
-  deps: { db: postgres(), auth: rpc(authContract) },
+  deps: { db: rawPostgres(), auth: rpc(authContract) },
   build: node({ module: import.meta.url, entry: "../dist/server.js" }),
 });
 
 // server.ts — the app's own entry constructs and owns its client
-const { db, auth } = service.load();     // db: PostgresConfig ({ url }); auth: a typed rpc client
+const { db, auth } = service.load();     // db: RawPostgresConfig ({ url }); auth: a typed rpc client
 export const sql = new SQL({ url: db.url, max: 1, idleTimeout: 10 });
 await auth.verify({ token });            // auth came back ready to call
 ```
@@ -29,10 +29,10 @@ Two cases follow from "what the contract alone can construct":
   determine it, with no driver to choose. `rpc(contract)` binds to a typed
   generated client; `http()` binds to a thin fetch wrapper.
 - A **resource kind** (postgres) resolves to its **typed connection config** —
-  `PostgresConfig`, i.e. `{ url }`. The app constructs its own client from that
+  `RawPostgresConfig`, i.e. `{ url }`. The app constructs its own client from that
   config, with its own driver, in app code.
 
-So `postgres()` (no arguments) is the dependency, and `postgres({ name })` is the
+So `rawPostgres()` (no arguments) is the dependency, and `rawPostgres({ name })` is the
 provisionable identity. A declaration never carries a client factory; the
 framework constructs only the clients it can choose.
 
@@ -63,14 +63,14 @@ blessing or shipping a driver it cannot choose correctly for every app.
 So the declaration carries only what is irreducibly shared — the typed config the
 contract describes — and the driver choice is placed where it honestly lives: in
 app code, next to the app's other runtime choices. `load()` hands over
-`PostgresConfig`; the app writes `new SQL({ url: db.url })`. Because that
+`RawPostgresConfig`; the app writes `new SQL({ url: db.url })`. Because that
 construction never touches the dependency's contract, it cannot change which
 providers wire — provider-independence is a structural property, not a convention
 the app must remember to preserve.
 
 Handing back config rather than a client keeps every property that matters:
 
-- **DI is typed.** The binding is typed by the contract — `PostgresConfig` for
+- **DI is typed.** The binding is typed by the contract — `RawPostgresConfig` for
   postgres, `Client<C>` for rpc — so the app entry has full type information.
 - **The entry is wiring-free** in the sense that matters: it never reads the
   environment, a key name, or the topology. `load()` hands it the binding and it
@@ -86,7 +86,7 @@ for the framework to model; it is ordinary app code.
 
 ## Consequences
 
-- **A postgres dependency's `load()` value is `PostgresConfig`, not a client.**
+- **A postgres dependency's `load()` value is `RawPostgresConfig`, not a client.**
   App code constructs the client — one `new SQL(...)` (or the app's driver of
   choice) at module scope. This is the visible obligation for app authors.
 - **`load()`'s return type is mixed by design:** a derived client for
@@ -112,11 +112,11 @@ decision stops short of it.
 
 ## Alternatives considered
 
-- **A client factory in the declaration** (`postgres({ client })`). Rejected: it
+- **A client factory in the declaration** (`rawPostgres({ client })`). Rejected: it
   conflates requirement with consumption mechanics, and the driver choice is
   irreducible — a postgres client's type *is* the choice, so it can only be
   placed, and app code is its honest home. The same objection rejects **named
-  adapters in the declaration** (`postgres({ driver: bunSql })`): keeping any
+  adapters in the declaration** (`rawPostgres({ driver: bunSql })`): keeping any
   stipulation out of `deps` is precisely what makes provider-independence
   structural rather than conventional.
 - **A `clients` map on the service** (`compute({ deps, clients: { db: bunSql } })`).

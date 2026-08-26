@@ -10,7 +10,7 @@ Three slices: two stacked (postgres family, then compute family) and one paralle
 
 ### Slice 1 — Postgres family adoption (TML-3154)
 
-Bump alchemy to the first released beta containing the Prisma provider; wire upstream live providers + `PrismaEnvironment` auth; rename our collection tag; swap `Project`/`Database`/`Connection` to upstream classes; rewire postgres/prisma-next descriptors; create-then-PATCH branch attach; `directConnectionString`; state-row migration (mechanics decided here: aliases vs SQL); rebind postgres emulator provider.
+Bump alchemy to the first released beta containing the Prisma provider; wire upstream live providers + `PrismaEnvironment` auth; rename our collection tag; swap `Project`/`Database`/`Connection` to upstream classes; rewire postgres/prisma/orm descriptors; create-then-PATCH branch attach; `directConnectionString`; state-row migration (mechanics decided here: aliases vs SQL); rebind postgres emulator provider.
 
 - **Builds on:** nothing (first slice).
 - **Hands to:** slice 2 — alchemy bumped, upstream live-provider wiring + auth layer in place, collection tag renamed, state-migration mechanism proven on the postgres rows.

@@ -28,7 +28,7 @@ describe('storage()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('storage.db')).toBe('postgres');
+    expect(typeOf('storage.db')).toBe('raw-postgres');
     expect(typeOf('storage.credentials')).toBe('credentials');
     expect(typeOf('storage.service')).toBe('s3-store');
 

@@ -5,7 +5,7 @@ in the framework's plane; the framework **lowers** that into the Alchemy/Effect
 **provisioning plane**, which provisions it to run as Prisma Cloud hosting
 primitives.
 
-This is the same shape as Prisma Next: an authored data contract lowers to an IR
+This is the same shape as Prisma ORM: an authored data contract lowers to an IR
 / plan, which executes against a database. Here, an authored topology lowers to a
 resource graph, which deploys to the cloud.
 
@@ -94,7 +94,7 @@ Layer); the wire is valid iff the provided capability satisfies the required one
 Alchemy type-checks it.
 
 - **First-class** (Postgres): framework-native treatment — Postgres data uses
-  Prisma Next data contracts (hashed, verifiable). (Compute is a Service's target,
+  Prisma ORM data contracts (hashed, verifiable). (Compute is a Service's target,
   not a Resource; a stream is a connection style.)
 - **BYO** (object storage, cache, queues, third-party): *any* Alchemy resource,
   exposed through a capability Layer. The Module depends on the capability, not

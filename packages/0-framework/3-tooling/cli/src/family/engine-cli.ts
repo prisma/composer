@@ -17,6 +17,8 @@ import {
   type CliRunHooks,
   type CommandFamily,
   createCli,
+  defineCommandFamily,
+  defineConfigSection,
   type HostProcess,
   loadConfig,
   type MountedTree,
@@ -53,13 +55,28 @@ function mountedTree(family: CommandFamily, operations: ComposerOperations): Mou
   };
 }
 
+/**
+ * The ORM's slice of prisma.config.ts, declared so a config shared with the
+ * unified `prisma` CLI loads here: the engine rejects any top-level key no
+ * mounted family declares, and this bin does not mount the ORM family. The
+ * value passes through unvalidated — the ORM CLI owns its section's shape,
+ * and no composer command reads it.
+ */
+export const foreignOrmSectionFamily: CommandFamily = defineCommandFamily({
+  configSection: defineConfigSection({
+    name: 'orm',
+    validate: (raw) => ({ ok: true, value: raw, diagnostics: [] }),
+  }),
+  commands: {},
+});
+
 export function createComposerCli(spec: ComposerCliSpec): Cli {
   const operations = spec.operations ?? realOperations;
   const family = createComposerFamily({ operations });
   return createCli({
     name: BINARY_NAME,
     version: spec.version,
-    commandFamilies: [family],
+    commandFamilies: [family, foreignOrmSectionFamily],
     groups: {},
     commands: mountedTree(family, operations),
   });

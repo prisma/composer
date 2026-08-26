@@ -1,5 +1,5 @@
 /**
- * The `auth` contract space as a Prisma Next extension pack (mirrors
+ * The `auth` contract space as a Prisma ORM extension pack (mirrors
  * `@prisma/orm-extension-supabase`'s `supabasePack`): the emitted Better
  * Auth contract plus the shipped migration packages, in-memory. A consumer
  * lists `authPack` in their `prisma.config.ts` and their normal
