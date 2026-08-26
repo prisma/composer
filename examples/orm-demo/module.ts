@@ -16,7 +16,7 @@ import widgetsService from './src/service.ts';
  */
 export default module('orm-demo', ({ provision }) => {
   const db = provision(
-    postgres({ name: 'database', contract: widgetContract, config: './orm.config.ts' }),
+    postgres({ name: 'database', contract: widgetContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   provision(widgetsService, { id: 'widgets', deps: { db } });

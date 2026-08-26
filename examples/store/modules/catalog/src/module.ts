@@ -17,7 +17,7 @@ import { catalogContract } from './contract.ts';
 import { catalogData } from './data.ts';
 import catalogService from './service.ts';
 
-const config = fileURLToPath(new URL('../orm.config.ts', import.meta.url));
+const config = fileURLToPath(new URL('../prisma.config.ts', import.meta.url));
 
 export default module('catalog', { expose: { rpc: catalogContract } }, ({ provision }) => {
   const db = provision(postgres({ name: 'database', contract: catalogData, config }));

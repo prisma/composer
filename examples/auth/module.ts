@@ -30,7 +30,7 @@ import opsService from './src/ops/service.ts';
  */
 export default module('auth-example', ({ provision }) => {
   const db = provision(
-    postgres({ name: 'database', contract: appContract, config: './orm.config.ts' }),
+    postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   const mail = provision(email(), {

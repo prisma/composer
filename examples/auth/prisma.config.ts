@@ -8,7 +8,7 @@ import { defineConfig } from '@prisma/orm-postgres/config';
 // the deploy's migration step migrates BOTH spaces. The deploy lowering loads
 // this file by path (from the postgres resource's `config`); the app build
 // never imports it.
-// Regenerate contract.{json,d.ts}: prisma contract emit --config orm.config.ts
+// Regenerate contract.{json,d.ts}: prisma contract emit --config prisma.config.ts
 export default definePrismaConfig({
   orm: defineConfig({
     contract: './contract.prisma',

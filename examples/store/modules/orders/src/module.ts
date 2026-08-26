@@ -13,7 +13,7 @@ import { ordersContract } from './contract.ts';
 import { ordersData } from './data.ts';
 import ordersService from './service.ts';
 
-const config = fileURLToPath(new URL('../orm.config.ts', import.meta.url));
+const config = fileURLToPath(new URL('../prisma.config.ts', import.meta.url));
 
 export default module(
   'orders',

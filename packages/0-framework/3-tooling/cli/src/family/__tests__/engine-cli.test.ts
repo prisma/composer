@@ -21,7 +21,7 @@ import {
 } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import { createTestCli } from '@prisma/cli-engine/testing';
-import { createComposerCli, runComposerCli } from '../engine-cli.ts';
+import { createComposerCli, foreignOrmSectionFamily, runComposerCli } from '../engine-cli.ts';
 import { createComposerFamily, realOperations } from '../family.ts';
 import { createRuntime } from '../runtime.ts';
 import { type ComposerSection, composerSection } from '../section.ts';
@@ -180,7 +180,10 @@ const probe = defineCommand({
 
 function probeCli(sections: Record<string, unknown>) {
   return createTestCli({
-    commandFamilies: [defineCommandFamily({ configSection: composerSection, commands: { probe } })],
+    commandFamilies: [
+      defineCommandFamily({ configSection: composerSection, commands: { probe } }),
+      foreignOrmSectionFamily,
+    ],
     commands: { probe },
     config: sections,
   });
@@ -205,6 +208,23 @@ describe('the composer section through the engine', () => {
 
   test('an invalid section fails the command rather than reaching the handler', async () => {
     const result = await probeCli({ composer: { configPath: 42 } }).run(['probe']);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.presented).toBeUndefined();
+  });
+
+  test("a shared config's orm section is recognised and ignored", async () => {
+    const result = await probeCli({
+      composer: { configPath: './x/prisma-composer.config.ts' },
+      orm: { contract: './contract.prisma' },
+    }).run(['probe', '--json']);
+    expect(result.exitCode).toBe(0);
+    expect(result.presented?.data).toEqual({
+      configPath: './x/prisma-composer.config.ts',
+    } satisfies ComposerSection);
+  });
+
+  test('a truly unknown section still fails the run', async () => {
+    const result = await probeCli({ tpyo: {} }).run(['probe']);
     expect(result.exitCode).not.toBe(0);
     expect(result.presented).toBeUndefined();
   });
