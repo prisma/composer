@@ -5,7 +5,7 @@
 > the strategic reasoning (one product identity; why now, with agents). The decision
 > differs in three ways: the framework is **Prisma App** — not "Prisma Composer"; the
 > building block is a **System** — not "Hex"; and the registry (proposed here as
-> "Hexicon") is **deferred**, its name reopened. **Prisma Next → Prisma Data** remains
+> "Hexicon") is **deferred**, its name reopened. **Prisma ORM → Prisma Data** remains
 > proposed. Where this doc says "Prisma Composer" read "Prisma App", and where it says
 > "Hex" read "System".
 
@@ -45,8 +45,8 @@ And the platform around them:
 - **MakerKit → Prisma Composer.** "MakerKit" sounds like a standalone starter kit and
   doesn't sit in the family. What it actually does is *compose* the other pieces into
   an app — so the name should just say that. Prisma Composer belongs.
-- **Prisma Next → Prisma Data.** This one's a bigger call, so it has [its own
-  write-up](prisma-data-rename.md). Short version: Prisma Next was going to become
+- **Prisma ORM → Prisma Data.** This one's a bigger call, so it has [its own
+  write-up](prisma-data-rename.md). Short version: Prisma ORM was going to become
   "Prisma 8", but it isn't really the next ORM — it's a different product with a
   different mental model, and a version number would promise a smooth upgrade we can't
   honor (and cap us at "still an ORM"). "Data" names what people actually care about,
@@ -56,7 +56,7 @@ And the platform around them:
 
 ## One product, many components
 
-Right now each product has its own identity — MakerKit, Prisma Next, Prisma Postgres,
+Right now each product has its own identity — MakerKit, Prisma ORM, Prisma Postgres,
 Prisma Compute (and in the past, Accelerate, Pulse, Optimize). They read like separate
 products that happen to share a logo.
 
@@ -127,7 +127,7 @@ before it ever ships.
 ## So, the pitch
 
 One identity — the **Prisma App** — with components named for what they do in
-context. Rename **MakerKit → Prisma Composer** and **Prisma Next → Prisma Data**.
+context. Rename **MakerKit → Prisma Composer** and **Prisma ORM → Prisma Data**.
 Build **Hexicon** as the Hex registry (hosting stays on npm). And **Prisma Dev** to
 run it all locally.
 

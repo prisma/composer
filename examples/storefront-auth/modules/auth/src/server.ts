@@ -7,7 +7,7 @@ import { serve } from '@prisma/composer/service-rpc';
 import { SQL } from 'bun';
 import service from './service.ts';
 
-const { db } = service.load(); // db: PostgresConfig — the app owns its client
+const { db } = service.load(); // db: RawPostgresConfig — the app owns its client
 const { signingKey } = service.input(); // signingKey: SecretString — redacts everywhere but expose() (ADR-0042)
 const port = service.port();
 

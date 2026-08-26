@@ -3,7 +3,7 @@
   "version": "0.15.0",
   "private": true,
   "type": "module",
-  "description": "Signup, login, sessions, and JWT verification as a composed module wrapping Better Auth; ships the auth contract space as a Prisma Next extension pack.",
+  "description": "Signup, login, sessions, and JWT verification as a composed module wrapping Better Auth; ships the auth contract space as a Prisma ORM extension pack.",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",

@@ -2,7 +2,7 @@
  * Local postgres-cluster providers: upstream alchemy's `Prisma.Database` and
  * `Prisma.Connection` become clients of the `postgres-main` emulator daemon
  * (one named, persistent `@prisma/dev` server per `Database` resource).
- * `PgWarm`/`PnMigration` are not here — the hosted ones run against whatever
+ * `PgWarm`/`OrmMigration` are not here — the hosted ones run against whatever
  * URL they are handed. Attributes match upstream's shapes; the daemon's
  * DIRECT connection string maps to `directConnectionString` and
  * `databaseUrl`, everything else is left absent. Instance names come from

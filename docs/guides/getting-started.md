@@ -41,7 +41,7 @@ build, a deploy. At the end there's a section on
 
 The app is deliberately tiny — a `quotes` API and a public `gateway` that
 calls it, no database — so you can see the whole shape at once. Adding a
-Postgres (including a Prisma Next-typed one) is the first thing to do after,
+Postgres (including a Prisma-ORM-typed one) is the first thing to do after,
 and [Building an app](building-an-app.md#databases) covers it.
 
 You'll need:
@@ -434,7 +434,7 @@ your built server file, then make three changes to the server itself:
    `envSecret`. [Building an app § Service
    input](building-an-app.md#service-input) has the how-to-choose table and
    both shapes.
-3. If it talks to Postgres: declare `deps: { db: postgres() }` and build your
+3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.
 
@@ -478,6 +478,6 @@ the wiring for free.
 - [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
-  [pn-widgets](../../examples/pn-widgets/) (one service + one Prisma
+  [orm-demo](../../examples/orm-demo/) (one service + one Prisma
   Next-typed database) or [store](../../examples/store/) (four modules, cron,
   a Next.js storefront).

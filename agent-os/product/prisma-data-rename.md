@@ -1,8 +1,8 @@
-# Renaming Prisma Next → Prisma Data
+# Renaming Prisma ORM → Prisma Data
 
 ## The decision
 
-At GA, **Prisma Next becomes Prisma Data** — not "Prisma 8", which was the original
+At GA, **Prisma ORM becomes Prisma Data** — not "Prisma 8", which was the original
 plan. Prisma ORM keeps its name and continues to serve everyone already on it; Prisma
 Data is the product we point new work at.
 
@@ -19,7 +19,7 @@ here's your upgrade path." Prisma Data can't honor that promise:
   is more than an ORM, and the name should fit what it's becoming, not what it evolved
   from.
 
-Forcing Prisma Next into a Prisma 8 shape is also a large, painful compatibility
+Forcing Prisma ORM into a Prisma 8 shape is also a large, painful compatibility
 project — one we take on only to ship a name that misrepresents the product.
 
 ## Why "Data"

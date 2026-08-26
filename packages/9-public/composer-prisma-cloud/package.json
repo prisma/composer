@@ -2,7 +2,7 @@
   "name": "@prisma/composer-prisma-cloud",
   "version": "0.15.0",
   "type": "module",
-  "description": "The Prisma Cloud target for Prisma Composer: compute(), postgres(), the target extension, and first-party modules realized on Prisma Cloud (cron).",
+  "description": "The Prisma Cloud target for Prisma Composer: compute(), postgres() (ORM-managed, via /orm), rawPostgres(), the target extension, and first-party modules realized on Prisma Cloud (cron).",
   "exports": {
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
@@ -10,7 +10,7 @@
     "./local-target/compute-main": "./dist/compute-main.mjs",
     "./local-target/buckets-main": "./dist/buckets-main.mjs",
     "./local-target/postgres-main": "./dist/postgres-main.mjs",
-    "./prisma-next": "./dist/prisma-next.mjs",
+    "./orm": "./dist/orm.mjs",
     "./testing": "./dist/testing.mjs",
     "./auth": "./dist/auth/index.mjs",
     "./auth/pack": "./dist/auth/pack.mjs",

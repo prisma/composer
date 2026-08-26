@@ -84,11 +84,11 @@ exception needed. This de-risks D5 (the public packages).
 **This entry recorded an accepted characteristic that has since been rejected.
 Kept for the history of how it happened.**
 
-Originally: target's `pg-connection.ts` and `prisma-next.ts` were IMPLEMENTATION
+Originally: target's `pg-connection.ts` and `orm-postgres.ts` were IMPLEMENTATION
 homes (not thin re-exports), and three internal modules imported them from
-`src/exports/` (`pg-warm-resource.ts`, `prisma-next-migrate.ts` →
-`./exports/pg-connection.ts`; `descriptors/prisma-next.ts` →
-`../exports/prisma-next.ts`). That inverts prisma-next's shape, was green
+`src/exports/` (`pg-warm-resource.ts`, `orm-migrate.ts` →
+`./exports/pg-connection.ts`; `descriptors/orm-postgres.ts` →
+`../exports/orm.ts`). That inverts prisma/orm's shape, was green
 (lint:deps clean — compatible planes), and was ACCEPTED as a consequence of the
 slice's deliberate relocation-not-refactor choice, with the purer form noted as
 an optional future refactor.

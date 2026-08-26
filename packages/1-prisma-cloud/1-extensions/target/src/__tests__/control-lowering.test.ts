@@ -32,8 +32,8 @@ import {
   type ResolvedCloudOptions,
 } from '../descriptors/shared.ts';
 import * as RealGeneratedParam from '../generated-param-resource.ts';
+import * as RealOrmMigration from '../orm-migration-resource.ts';
 import * as RealPgWarm from '../pg-warm-resource.ts';
-import * as RealPnMigration from '../pn-migration-resource.ts';
 import * as RealS3Credentials from '../s3-credentials-resource.ts';
 
 // Stub the provider layer AND alchemy/Output so the compute target's data
@@ -224,23 +224,30 @@ mock.module('../generated-param-resource.ts', () => ({
 }));
 
 // A real Alchemy Resource (needs the Stack service); stubbed so the lowering runs purely.
-mock.module('../pn-migration-resource.ts', () => ({
-  ...RealPnMigration,
-  PnMigration: (id: string, props: unknown) => {
+mock.module('../orm-migration-resource.ts', () => ({
+  ...RealOrmMigration,
+  OrmMigration: (id: string, props: unknown) => {
     recorded.pnMigrate.push([id, props]);
     return Effect.succeed({});
   },
-  PnMigrationProvider: () => ({ stub: 'pn-migration-provider' }),
+  OrmMigrationProvider: () => ({ stub: 'pn-migration-provider' }),
 }));
 
 const { prismaCloud } = await import('../exports/control.ts');
-const { compute, envParam, envSecret, generatedParam, postgres, postgresContract, s3StoreService } =
-  await import('../exports/index.ts');
+const {
+  compute,
+  envParam,
+  envSecret,
+  generatedParam,
+  rawPostgres,
+  rawPostgresContract,
+  s3StoreService,
+} = await import('../exports/index.ts');
 const { dependency, module, provisionNeed, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
 const { RPC_PEER_KEY } = await import('@internal/service-rpc');
 const { STREAMS_API_KEY } = await import('../streams-keys.ts');
-const { pnContract, pnPostgres } = await import('../exports/prisma-next.ts');
+const { dataContract, postgres } = await import('../exports/orm.ts');
 const { default: widgetContractJson } = await import(
   './fixtures/widget-contract/emitted/contract.json'
 );
@@ -251,7 +258,7 @@ const { default: widgetContractJson } = await import(
 // `satisfies` at its definition.
 const run = <A>(eff: Effect.Effect<unknown, unknown, unknown>): A =>
   Effect.runSync(eff as Effect.Effect<A>);
-// For lowerings that cross an Effect.promise (the prisma-next config/ref reads).
+// For lowerings that cross an Effect.promise (the ORM config/ref reads).
 const runAsync = <A>(eff: Effect.Effect<unknown, unknown, unknown>): Promise<A> =>
   Effect.runPromise(eff as Effect.Effect<A>);
 
@@ -479,7 +486,7 @@ describe('prismaCloud().application.provision (once-per-lowering hook)', () => {
   });
 });
 
-describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
+describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () => {
   test("creates a Database + Connection in the application's project; url unwraps the Redacted connection string", async () => {
     await withEnv({}, () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
@@ -494,7 +501,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
         },
       } as unknown as LowerContext;
 
-      const result = run<LoweredResult>(resourceDescriptorOf(target, 'postgres')(ctx));
+      const result = run<LoweredResult>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       expect(result.outputs).toEqual({ url: 'postgres://data-conn' });
       // The entity carries NO `url`: a connection string is not a public
@@ -533,7 +540,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       } as unknown as LowerContext;
       const before = recorded.db.length;
 
-      run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx));
+      run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       // A named stage attaches the branch at create, which upstream only
       // permits WITHOUT an explicit display name — so `name` is absent here.
@@ -564,7 +571,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       } as unknown as LowerContext;
       const before = recorded.db.length;
 
-      expect(() => run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx))).toThrow(
+      expect(() => run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx))).toThrow(
         /cannot attach database "data3" to a Branch/,
       );
       expect(recorded.db.slice(before)).toEqual([]);
@@ -585,7 +592,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       } as unknown as LowerContext;
       const before = recorded.db.length;
 
-      run<Outputs>(resourceDescriptorOf(target, 'postgres')(ctx));
+      run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       expect(recorded.db.slice(before)).toEqual([
         ['data4-db', { project: 'local', name: 'data4', region: 'us-east-1' }],
@@ -594,21 +601,21 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
   });
 });
 
-describe("prismaCloud().nodes['prisma-next'] — the resource descriptor", () => {
+describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
   const widgetConfig = path.join(
     import.meta.dir,
     'fixtures',
     'widget-contract',
     'source',
-    'prisma-next.config.ts',
+    'prisma.config.ts',
   );
 
   test('default stage: the Database attaches the default Branch; the migration runs on its warmed url', async () => {
     await withEnv({}, async () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
-      const node = pnPostgres({
+      const node = postgres({
         name: 'pndata',
-        contract: pnContract(widgetContractJson),
+        contract: dataContract(widgetContractJson),
         config: widgetConfig,
       });
       const ctx = {
@@ -624,9 +631,7 @@ describe("prismaCloud().nodes['prisma-next'] — the resource descriptor", () =>
       } as unknown as LowerContext;
       const before = { db: recorded.db.length, migrate: recorded.pnMigrate.length };
 
-      const result = await runAsync<LoweredResult>(
-        resourceDescriptorOf(target, 'prisma-next')(ctx),
-      );
+      const result = await runAsync<LoweredResult>(resourceDescriptorOf(target, 'postgres')(ctx));
 
       expect(recorded.db.slice(before.db)).toEqual([
         [
@@ -788,7 +793,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const node = compute({
         name: 'test-service',
         deps: {
-          db: postgres(),
+          db: rawPostgres(),
         },
         build: {
           extension: '@prisma/composer/node',
@@ -886,7 +891,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
       const node = compute({
         name: 'test-service',
         deps: {
-          db: postgres(),
+          db: rawPostgres(),
         },
         build: {
           extension: '@prisma/composer/node',
@@ -1761,14 +1766,14 @@ describe('s3StoreService() authoring factory', () => {
   test("routes to the 's3-store' lowering but keeps compute's deps/expose/load", () => {
     const node = s3StoreService({
       name: 'store',
-      deps: { db: postgres() },
+      deps: { db: rawPostgres() },
       build,
-      expose: { store: postgresContract },
+      expose: { store: rawPostgresContract },
     });
     expect(node.type).toBe('s3-store');
     expect(node.kind).toBe('service');
     expect(Object.keys(node.inputs)).toEqual(['db']);
-    expect(node.expose).toEqual({ store: postgresContract });
+    expect(node.expose).toEqual({ store: rawPostgresContract });
     expect(typeof node.load).toBe('function');
     expect(typeof node.input).toBe('function');
     // The reserved compute param survives the type override.
@@ -1787,14 +1792,14 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
         entry: 'server.js',
       };
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(postgres({ name: 'data' }), { id: 'data' });
-        provision(compute({ name: 'auth', deps: { main: postgres() }, build }), {
+        const db = provision(rawPostgres({ name: 'data' }), { id: 'data' });
+        provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
             main: db,
           },
         });
-        provision(compute({ name: 'billing', deps: { store: postgres() }, build }), {
+        provision(compute({ name: 'billing', deps: { store: rawPostgres() }, build }), {
           id: 'billing',
           deps: {
             store: db,
@@ -2330,8 +2335,8 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(postgres({ name: 'db' }), { id: 'db' });
-        provision(compute({ name: 'auth', deps: { main: postgres() }, build }), {
+        const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
+        provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
             main: db,
@@ -2376,8 +2381,8 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(postgres({ name: 'data' }), { id: 'data' });
-        provision(compute({ name: 'auth', deps: { main: postgres() }, build }), {
+        const db = provision(rawPostgres({ name: 'data' }), { id: 'data' });
+        provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
             main: db,

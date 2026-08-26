@@ -14,7 +14,7 @@ and **Module** (← System ← Hex), recorded in
 [ADR-0025](../../docs/design/90-decisions/ADR-0025-name-the-unit-of-composition-module.md).
 **"Prisma App" names the artifact** — the thing you build and deploy — never the
 tool.
-**Prisma Data** (← Prisma Next) is still proposed. The **registry** name is deferred
+**Prisma Data** (← Prisma ORM) is still proposed. The **registry** name is deferred
 until the registry itself is built; **Prism** is on its shortlist.
 
 ## The Prisma product family
@@ -26,7 +26,7 @@ building an app is actually *for*:
 |---|---|---|
 | Prisma Postgres | persist | my data has a home |
 | Prisma Compute | execute | my code runs |
-| Prisma Data *(← Prisma Next)* | data | I model, access, and manage my data |
+| Prisma Data *(← Prisma ORM)* | data | I model, access, and manage my data |
 | Prisma Composer *(← Prisma App ← MakerKit)* | compose | my app comes together from parts |
 | Durable Streams | stream | my events flow and survive |
 | Connection | connect | my services reach each other |

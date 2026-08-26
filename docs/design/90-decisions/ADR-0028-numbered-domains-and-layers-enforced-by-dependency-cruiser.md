@@ -13,7 +13,7 @@ packages/
     3-tooling/            #   assemble, the CLI implementation
   1-prisma-cloud/         # the Prisma Cloud target; may import 0-framework
     0-lowering/           #   the Alchemy provider
-    1-extensions/         #   compute(), postgres(), the target descriptor
+    1-extensions/         #   compute(), rawPostgres(), the target descriptor
     2-shared-modules/            #   first-party modules realized on this target (cron)
   9-public/               # the ONLY publishable packages; imports both domains
     compose/              #   → @prisma/composer (bin + curated re-exports + subpaths)
@@ -38,7 +38,7 @@ extension descriptors, deploy), **execution** (boot, serve, `load()`), and
 **shared**. Control and execution never import each other's code; both may import
 shared. A multi-plane package maps its entrypoints per plane (e.g. `src/core/**`
 shared, `src/exports/control.ts` control, `src/exports/runtime.ts` execution),
-exactly as Prisma Next's multi-plane adapters do.
+exactly as Prisma ORM's multi-plane adapters do.
 
 **Internal packages use the `@internal/*` scope** (`@internal/core`,
 `@internal/lowering`, …), all `"private": true`. The scope is publish-proof twice
@@ -57,18 +57,18 @@ tree.
 **Enforcement is dependency-cruiser**, data-driven from
 `architecture.config.json` mapping directory globs to `{domain, layer, plane}`,
 run as `pnpm lint:deps` locally, in lint-staged, and in CI — the same shape as
-Prisma Next's, copied with plane support from day one.
+Prisma ORM's, copied with plane support from day one.
 
 ## Reasoning
 
 ADR-0027 constrained the published surface to two packages and declared internal
 seams free — but "free" without structure decays into a tangle, and a
-`"private": true` flag is invisible when browsing. Prisma Next already solved
+`"private": true` flag is invisible when browsing. Prisma ORM already solved
 both problems with a mechanism proven in this codebase's sibling: directory
 placement dictates allowed dependencies, package name dictates how consumers
 import, and a machine checks the difference. We adopt it rather than invent one.
 
-The one divergence is `9-public`. Prisma Next publishes everything and needs no
+The one divergence is `9-public`. Prisma ORM publishes everything and needs no
 such domain; we publish exactly two names, and putting them in a numbered
 terminal domain makes ADR-0027's constraint *physical* — "what do users install"
 is answered by `ls packages/9-public`, and the publish pipeline can enforce
@@ -121,6 +121,6 @@ cruiser lands.
   two-public-package constraint this organizes.
 - [ADR-0017](ADR-0017-control-plane-loads-through-the-app-config.md) — the
   control/execution import surfaces the plane rules enforce.
-- Prisma Next: `docs/architecture docs/Package-Layering.md` and ADR 140 — the
+- Prisma ORM: `docs/architecture docs/Package-Layering.md` and ADR 140 — the
   pattern adopted here, including `architecture.config.json` and the
   dependency-cruiser setup.

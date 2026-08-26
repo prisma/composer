@@ -191,7 +191,7 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
-  examples/pn-widgets:
+  examples/orm-demo:
     dependencies:
       '@prisma/composer':
         specifier: workspace:0.15.0

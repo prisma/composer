@@ -10,10 +10,10 @@
  * be committed.)
  */
 import node from '@prisma/composer/node';
-import { bucket, compute, postgres } from '@prisma/composer-prisma-cloud';
+import { bucket, compute, rawPostgres } from '@prisma/composer-prisma-cloud';
 
 export default compute({
   name: 'web',
-  deps: { db: postgres(), store: bucket() },
+  deps: { db: rawPostgres(), store: bucket() },
   build: node({ module: import.meta.url, entry: 'built/web-server.mjs' }),
 });

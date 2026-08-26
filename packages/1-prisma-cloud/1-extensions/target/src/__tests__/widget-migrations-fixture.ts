@@ -19,7 +19,7 @@ import {
   spaceMigrationDirectory,
   spaceRefsDirectory,
 } from '@prisma/orm-toolchain/migration-tools/spaces';
-import { targetStorageHash } from '../prisma-next-migrate.ts';
+import { targetStorageHash } from '../orm-migrate.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
   type: 'json',
 };

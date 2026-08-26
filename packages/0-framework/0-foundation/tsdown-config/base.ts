@@ -1,12 +1,12 @@
 import type { UserConfig } from 'tsdown';
 
 /**
- * Base `tsdown` configuration for the workspace. Mirrors prisma-next's
- * `@prisma-next/tsdown`: emit `.mjs` + `.d.mts` to `dist`, keep node_modules
+ * Base `tsdown` configuration for the workspace. Mirrors prisma/orm's
+ * tsdown base: emit `.mjs` + `.d.mts` to `dist`, keep node_modules
  * external, and let tsdown own each package's `exports`/`main`/`types` so the
  * manifest never drifts from what was built.
  *
- * The workspace runs tsdown 0.22.4 — the same version prisma-next pins —
+ * The workspace runs tsdown 0.22.4 — the same version prisma/orm pins —
  * whose typed `exports` API is `{ enabled: 'local-only', customExports,
  * exclude }`, not the `exports: true` shorthand. `customExports` strips the
  * `exports/` prefix that `src/exports/*.ts` entries produce (see below), so

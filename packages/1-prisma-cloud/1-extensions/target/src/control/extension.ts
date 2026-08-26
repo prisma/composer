@@ -21,8 +21,8 @@ import {
 } from '../container.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
-import { postgresDescriptor } from '../descriptors/postgres.ts';
-import { prismaNextDescriptor } from '../descriptors/prisma-next.ts';
+import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
 import { s3StoreDescriptor } from '../descriptors/s3-store.ts';
 import type {
@@ -33,8 +33,8 @@ import type {
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
+import { OrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
-import { PnMigrationProvider } from '../pn-migration-resource.ts';
 import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
 import { prismaCloudReporter } from '../reporting/reporter.ts';
@@ -347,7 +347,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         Layer.mergeAll(
           Prisma.providers(),
           PgWarmProvider(),
-          PnMigrationProvider(),
+          OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
           Prisma.ServiceKeyProvider(),
@@ -398,8 +398,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     provisions: PROVISIONERS,
 
     nodes: {
+      'raw-postgres': rawPostgresDescriptor(o),
       postgres: postgresDescriptor(o),
-      'prisma-next': prismaNextDescriptor(o),
       compute: computeDescriptor(o),
       credentials: s3CredentialsDescriptor(o),
       's3-store': s3StoreDescriptor(o),

@@ -289,7 +289,7 @@ const deliveryModeSchema = type("'resend'|'smtp'|'none'");
 export function emailService(opts?: { deliveryUrl?: string }): /* ServiceNode */ {
   return compute({
     name: 'email',
-    deps: { db: postgres() },
+    deps: { db: rawPostgres() },
     params: {
       deliveryMode: param(deliveryModeSchema),
       deliveryUrl: string({ default: opts?.deliveryUrl ?? 'https://api.resend.com' }),
@@ -318,7 +318,7 @@ export function email(opts?: { name?: string; deliveryUrl?: string }): ModuleNod
       expose: { send: emailSendContract, outbox: emailOutboxContract },
     },
     ({ params, secrets, provision }) => {
-      const db = provision(postgres({ name: 'db' }), { id: 'db' });
+      const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
       const service = provision(emailService({ deliveryUrl: opts?.deliveryUrl }), {
         id: 'service',
         deps: { db },

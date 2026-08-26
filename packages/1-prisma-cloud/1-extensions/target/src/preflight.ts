@@ -34,9 +34,9 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
-import { resolvePrismaNextConfig } from './pn-config.ts';
+import { resolveOrmConfig } from './orm-config.ts';
+import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
-import { isPnPostgresResourceNode, requiredPackHeadOf } from './prisma-next.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -287,13 +287,13 @@ export async function runPreflight(
 /**
  * The extension-pack half of the deploy preflight: every dependency edge
  * whose required contract carries a `requiredPackHead` must be wired to a
- * `pnPostgres` resource whose `prisma-next.config.ts` lists that pack at the
+ * `postgres` resource whose `prisma.config.ts` lists that pack at the
  * required head hash. Enforced HERE — at deploy time, before the migration
- * step constructs — because wireability (`pnContract().satisfies`)
+ * step constructs — because wireability (`dataContract().satisfies`)
  * deliberately says yes to every required pack head (the authoring-side
  * contract value cannot see the resource's config), and boot time would be
  * too late: the service would be down after a green deploy. Invoked from the
- * `prisma-next` descriptor's lowering, beside the migration-step
+ * `postgres` descriptor's lowering, beside the migration-step
  * construction.
  */
 export async function runPackPreflight(graph: Graph): Promise<void> {
@@ -310,22 +310,22 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     const provider =
       node !== undefined &&
       (node.kind === 'resource' || node.kind === 'service') &&
-      isPnPostgresResourceNode(node)
+      isPostgresResourceNode(node)
         ? node
         : undefined;
     if (provider === undefined) {
       throw new Error(
         `service "${edge.to}" requires extension pack "${requirement.packId}", which only a ` +
-          'pnPostgres resource can carry.',
+          'postgres resource can carry.',
       );
     }
 
-    const { extensionPacks } = await resolvePrismaNextConfig(provider.config);
+    const { extensionPacks } = await resolveOrmConfig(provider.config);
     const pack = extensionPacks.find((p) => p.id === requirement.packId);
     if (pack === undefined) {
       throw new Error(
-        `prisma-next database "${provider.name}" does not list extension pack ` +
-          `"${requirement.packId}" in its prisma-next.config.ts extensions — service ` +
+        `postgres database "${provider.name}" does not list extension pack ` +
+          `"${requirement.packId}" in its prisma.config.ts extensions — service ` +
           `"${edge.to}" requires it. Add the pack and run migration plan.`,
       );
     }
@@ -335,7 +335,7 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     const head = pack.contractSpace?.headRef.hash;
     if (head !== requirement.headHash) {
       throw new Error(
-        `prisma-next database "${provider.name}" lists extension pack ` +
+        `postgres database "${provider.name}" lists extension pack ` +
           `"${requirement.packId}" at head ${head ?? '(no contract space)'}, but service ` +
           `"${edge.to}" requires ${requirement.headHash}. Upgrade the pack and run ` +
           'migration plan.',

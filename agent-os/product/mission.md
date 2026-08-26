@@ -55,7 +55,7 @@ without changing app code, enabling fast iteration and easy isolation.
 
 ### Collaboration Features
 - **Composable Components:** Compose pre-packaged units with explicit “ports” (dependencies) and link them together safely.
-- **Prisma Next integration:** Seamless integration with Prisma Next so common workflows work out of the box.
+- **Prisma ORM integration:** Seamless integration with Prisma ORM so common workflows work out of the box.
 
 ### Advanced Features
 - **Platform interface contract:** Artifact structure + metadata map (JSON) for Prisma Compute/Foundry to provision and run

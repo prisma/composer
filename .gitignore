@@ -26,14 +26,14 @@ packages/e2e-tests/.tmp-output
 .prisma-composer/
 .makerkit/
 
-# Local clone of prisma-next used as a scaffolding reference; not part of this repo.
-/prisma-next/
+# Local clone of prisma/orm used as a scaffolding reference; not part of this repo.
+/orm/
 
 # External reference checkouts, populated per-worktree by
 # scripts/setup-worktree-refs.sh (never commit).
 ignite/
 pdp-control-plane/
-prisma-next/
+orm/
 datahub/
 open-chat/
 

@@ -2,13 +2,13 @@ import { module } from '@prisma/composer';
 import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
 import { email } from '@prisma/composer-prisma-cloud/email';
-import { pnPostgres } from '@prisma/composer-prisma-cloud/prisma-next';
+import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import apiService from './src/api/service.ts';
 import { appContract } from './src/contract.ts';
 import opsService from './src/ops/service.ts';
 
 /**
- * The auth example: a dedicated Prisma Next database carrying ONLY the auth
+ * The auth example: a dedicated Prisma ORM database carrying ONLY the auth
  * extension pack (empty app space), the `auth()` module wired to it, the
  * `email()` module wired as its `email` boundary dep (verification/reset/
  * magic-link delivery — the module-depends-on-module proof), and two
@@ -30,7 +30,7 @@ import opsService from './src/ops/service.ts';
  */
 export default module('auth-example', ({ provision }) => {
   const db = provision(
-    pnPostgres({ name: 'database', contract: appContract, config: './prisma-next.config.ts' }),
+    postgres({ name: 'database', contract: appContract, config: './orm.config.ts' }),
     { id: 'database' },
   );
   const mail = provision(email(), {

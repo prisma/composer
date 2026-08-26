@@ -1,15 +1,15 @@
-import { compute, postgres } from '../../exports/index.ts';
+import { compute, rawPostgres } from '../../exports/index.ts';
 
 // Importing this module must run nothing (invariant 3): constructing nodes is
-// pure, and the postgres() dependency carries no user code — its binding is
-// PostgresConfig, built by identity hydrate. This marker just proves the
+// pure, and the rawPostgres() dependency carries no user code — its binding is
+// RawPostgresConfig, built by identity hydrate. This marker just proves the
 // module evaluated without throwing or reading the environment.
 export const imported = true;
 
 export default compute({
   name: 'test-service',
   deps: {
-    db: postgres(),
+    db: rawPostgres(),
   },
   build: {
     extension: '@prisma/composer/node',
