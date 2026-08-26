@@ -18,9 +18,9 @@ import { loadConfig } from '@prisma/orm-toolchain/config-loader';
 import { resolve } from 'pathe';
 
 /** One declared extension pack, in the shape the control client accepts.
- *  Derived from the client's own options (orm-toolchain 8.0.0-rc.7 made the
- *  config's descriptor generics narrower than the client's, so deriving from
- *  the config no longer satisfies the client's parameter type). */
+ *  Derived from the client's own options (since orm-toolchain 8.0.0-rc.7 the
+ *  config's descriptor generics are narrower than the client's, so deriving
+ *  from the config no longer satisfies the client's parameter type). */
 export type PnExtensionPack = NonNullable<
   NonNullable<Parameters<typeof createPostgresControlClient>[0]>['extensions']
 >[number];
@@ -45,8 +45,8 @@ export interface ResolvedPrismaNextConfig {
 export async function resolvePrismaNextConfig(
   configPath: string,
 ): Promise<ResolvedPrismaNextConfig> {
-  // orm-toolchain 8.0.0-rc.7: loadConfig answers a Result carrying the
-  // config plus per-section diagnostics instead of throwing.
+  // Since orm-toolchain 8.0.0-rc.7, loadConfig answers a Result carrying
+  // the config plus per-section diagnostics instead of throwing.
   const loaded = await loadConfig(configPath);
   if (!loaded.ok) throw loaded.failure;
   const config = loaded.value.config;
@@ -54,13 +54,13 @@ export async function resolvePrismaNextConfig(
     // `resolve(configPath, '..')` is the config file's directory; the
     // migrations root is `migrations.dir` (or the default) relative to it.
     migrationsDir: resolve(configPath, '..', config.migrations?.dir ?? 'migrations'),
-    // orm-toolchain 8.0.0-rc.7 types the config's descriptors narrower than
-    // the control client accepts, and the descriptor generics are invariant,
-    // so the two types reject each other in both directions. The values are
-    // the same objects the client consumes.
+    // Since orm-toolchain 8.0.0-rc.7 the config's descriptors are typed
+    // narrower than the control client accepts, and the descriptor generics
+    // are invariant, so the two types reject each other in both directions.
+    // The values are the same objects the client consumes.
     extensionPacks: blindCast<
       readonly PnExtensionPack[],
-      'orm rc.7 config descriptors and control-client descriptors are invariant-incompatible'
+      'orm config descriptors and control-client descriptors are invariant-incompatible'
     >(config.extensions ?? []),
   };
 }
