@@ -5,6 +5,7 @@ import { defineConfig } from '@prisma/orm-postgres/config';
 // loads it (by path, from the pnPostgres resource's `config`) to find the
 // migrations — the app build never imports it. `db.connection` is dead
 // weight: the framework injects the URL at hydrate (no-globals).
+// Regenerate contract.{json,d.ts}: prisma contract emit --config prisma-next.config.ts
 export default definePrismaConfig({
   orm: defineConfig({
     contract: './contract.prisma',

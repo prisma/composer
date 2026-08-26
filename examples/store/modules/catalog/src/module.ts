@@ -2,7 +2,7 @@
  * The catalog Module: a reusable unit that owns its own Postgres — a Prisma
  * Next-typed one (ADR-0022). The resource carries two doors: `contract`
  * (types + wires the resource, gives the deploy its target storageHash) and
- * `config` (the prisma.config.ts PATH the deploy's migration step loads
+ * `config` (the prisma-next.config.ts PATH the deploy's migration step loads
  * to find migrations/ — never imported by the app build). A consumer wires
  * only the exposed rpc contract — it never sees the database.
  *
@@ -17,7 +17,7 @@ import { catalogContract } from './contract.ts';
 import { catalogData } from './data.ts';
 import catalogService from './service.ts';
 
-const config = fileURLToPath(new URL('../prisma.config.ts', import.meta.url));
+const config = fileURLToPath(new URL('../prisma-next.config.ts', import.meta.url));
 
 export default module('catalog', { expose: { rpc: catalogContract } }, ({ provision }) => {
   const db = provision(pnPostgres({ name: 'database', contract: catalogData, config }));
