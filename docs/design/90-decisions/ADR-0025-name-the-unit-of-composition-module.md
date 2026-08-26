@@ -64,8 +64,7 @@ repository is ESM-only, so there's no CommonJS `module` global to shadow.
 The evaluation method behind this choice — and behind "System" failing before
 it — is simple: say the candidate noun out loud in the sentences developers
 actually use (install it, publish it, name a small one, name a big one, use it
-next to "service") and check whether every sentence still sounds natural. The
-full rubric is recorded in `agent-os/product/vocabulary-tests.md`.
+next to "service") and check whether every sentence still sounds natural.
 
 Two rules fall out of this and are worth stating on their own. First,
 **identity is the registry's job, not the unit noun's** — "the registry" being
@@ -106,8 +105,7 @@ where most of the actual usage is.
   failed once modules got small: "install the cron system" reads as a category
   error in English (a system is something you *operate*, not something you
   install), and "this system uses the cron system and an image-resizer system"
-  is barely sayable. The full failure record is in
-  `agent-os/product/vocabulary-tests.md`.
+  is barely sayable.
 - **Component.** A natural word for the unit, and it matches C4's architecture
   sense. Disqualified by a collision one level down:
   a Module *contains* React components in the flagship examples, so "the
@@ -124,10 +122,6 @@ where most of the actual usage is.
 
 ## Related
 
-- `agent-os/product/vocabulary-tests.md` — the spoken-sentence rubric and the
-  "System" failure record.
-- `agent-os/product/naming.md` — product-name tests and the register model's
-  place in the family story.
 - [ADR-0014](ADR-0014-one-authoring-primitive.md) — the single-primitive model
   this renames; its shape stands unchanged, its framework, package, and CLI
   names are superseded by

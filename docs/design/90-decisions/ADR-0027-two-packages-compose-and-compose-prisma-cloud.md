@@ -101,4 +101,3 @@ family's unpublish — two names is the entire republish burden.
   (package / extension / Module) this leans on.
 - [ADR-0014](ADR-0014-one-authoring-primitive.md) — the
   single-primitive model and the unified-CLI note.
-- `agent-os/product/naming.md` — the family table and distribution model.
