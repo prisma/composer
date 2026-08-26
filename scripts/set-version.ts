@@ -60,7 +60,7 @@ for (const pkg of workspacePackages) {
   updatedCount++;
 }
 
-// The `prisma-composer` skill ships inside the `@prisma/composer` tarball, so
+// The `prisma-composer-core-concepts` skill ships inside the `@prisma/composer` tarball, so
 // its `library_version` is part of the same lockstep stamp as the manifests:
 // the version a reader of the skill sees is the version they installed.
 const skillsDir = path.join(rootDir, 'skills');

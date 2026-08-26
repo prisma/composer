@@ -91,7 +91,7 @@ describe('the shipped skill', () => {
     const rootVersion = JSON.parse(
       await readFile(path.join(repoRoot, 'package.json'), 'utf-8'),
     ).version;
-    const source = await readFile(path.join(repoRoot, 'skills/prisma-composer/SKILL.md'), 'utf-8');
+    const source = await readFile(path.join(repoRoot, 'skills/prisma-composer-core-concepts/SKILL.md'), 'utf-8');
 
     assert.deepEqual(readSkillFrontmatter(source), {
       library: '@prisma/composer',
