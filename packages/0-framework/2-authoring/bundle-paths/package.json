@@ -1,6 +1,6 @@
 {
   "name": "@internal/bundle-paths",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "private": true,
   "type": "module",
   "description": "The path-containment predicate and bundle symlink validation shared by assembly and packaging (ADR-0047's boundary, defined once).",
@@ -17,6 +17,6 @@
   "devDependencies": {
     "typescript": "^6.0.3",
     "tsdown": "^0.22.7",
-    "@internal/tsdown-config": "workspace:0.14.0"
+    "@internal/tsdown-config": "workspace:0.15.0"
   }
 }

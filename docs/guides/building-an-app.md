@@ -181,12 +181,12 @@ deps: { db: pnPostgres(catalogData) }
 ```
 
 An options object is the resource end — the module that owns the database
-provisions it, naming the `prisma-next.config.ts` path (relative to the
+provisions it, naming the `prisma.config.ts` path (relative to the
 module file) so the deploy can find `migrations/`:
 
 ```ts
 const db = provision(
-  pnPostgres({ name: 'database', contract: catalogData, config: './prisma-next.config.ts' }),
+  pnPostgres({ name: 'database', contract: catalogData, config: './prisma.config.ts' }),
 );
 ```
 

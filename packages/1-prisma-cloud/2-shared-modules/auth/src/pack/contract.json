@@ -41,7 +41,7 @@
               "accessTokenExpiresAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -55,7 +55,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -97,7 +97,7 @@
               "refreshTokenExpiresAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -111,7 +111,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -191,14 +191,14 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
               "expiresAt": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -252,14 +252,14 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
               "expiresAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -294,7 +294,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -369,7 +369,7 @@
               "banExpires": {
                 "nullable": true,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -390,7 +390,7 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -439,7 +439,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               }
@@ -521,14 +521,14 @@
               "createdAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
               "expiresAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -549,7 +549,7 @@
               "updatedAt": {
                 "nullable": false,
                 "type": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "kind": "scalar"
                 }
               },
@@ -604,7 +604,7 @@
                   "nullable": true
                 },
                 "accessTokenExpiresAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": true,
                   "typeRef": "Tstz"
@@ -615,7 +615,7 @@
                   "nullable": false
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -650,7 +650,7 @@
                   "nullable": true
                 },
                 "refreshTokenExpiresAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": true,
                   "typeRef": "Tstz"
@@ -661,7 +661,7 @@
                   "nullable": true
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": false,
                   "typeRef": "Tstz"
@@ -710,13 +710,13 @@
             "jwks": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": false,
                   "typeRef": "Tstz"
                 },
                 "expiresAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": true,
                   "typeRef": "Tstz"
@@ -749,7 +749,7 @@
             "session": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -759,7 +759,7 @@
                   "typeRef": "Tstz"
                 },
                 "expiresAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": false,
                   "typeRef": "Tstz"
@@ -785,7 +785,7 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": false,
                   "typeRef": "Tstz"
@@ -845,7 +845,7 @@
             "user": {
               "columns": {
                 "banExpires": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": true,
                   "typeRef": "Tstz"
@@ -861,7 +861,7 @@
                   "nullable": true
                 },
                 "createdAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -901,7 +901,7 @@
                   "nullable": true
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -929,7 +929,7 @@
             "verification": {
               "columns": {
                 "createdAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -939,7 +939,7 @@
                   "typeRef": "Tstz"
                 },
                 "expiresAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "nativeType": "timestamptz",
                   "nullable": false,
                   "typeRef": "Tstz"
@@ -955,7 +955,7 @@
                   "nullable": false
                 },
                 "updatedAt": {
-                  "codecId": "pg/timestamptz@1",
+                  "codecId": "pg/timestamptz-string@1",
                   "default": {
                     "expression": "now()",
                     "kind": "function"
@@ -1000,10 +1000,10 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "6bbd4dc1c19c8aa5e0d60c9755e0f8ea07ba1c01d20c48cf3aa7226e4ee7d33f",
+    "storageHash": "9e4dbceec6522a4ffb997dfe82c437de70264962803f6a2c63eb196281232b32",
     "types": {
       "Tstz": {
-        "codecId": "pg/timestamptz@1",
+        "codecId": "pg/timestamptz-string@1",
         "kind": "codec-instance",
         "nativeType": "timestamptz"
       }
@@ -1019,6 +1019,7 @@
       "returning": true
     },
     "sql": {
+      "checkConstraint": true,
       "defaultInInsert": true,
       "enums": true,
       "lateral": true,
@@ -1030,7 +1031,7 @@
   "meta": {},
   "_generated": {
     "warning": "⚠️  GENERATED FILE - DO NOT EDIT",
-    "message": "This file is automatically generated by \"prisma-next contract emit\".",
-    "regenerate": "To regenerate, run: prisma-next contract emit"
+    "message": "This file is automatically generated by \"prisma contract emit\".",
+    "regenerate": "To regenerate, run: prisma contract emit"
   }
 }

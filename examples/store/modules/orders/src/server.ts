@@ -28,7 +28,7 @@ const handler = serve(service, {
     },
     listOrders: async () => {
       const rows = await db.client.orm.public.Order.orderBy((o) => o.placedAt.desc())
-        .take(20)
+        .limit(20)
         .all();
       return {
         orders: rows.map((o) => ({ ...o, placedAt: new Date(o.placedAt).toISOString() })),

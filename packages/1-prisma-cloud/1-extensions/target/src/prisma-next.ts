@@ -60,7 +60,7 @@ export interface PnPostgresBinding<Ct> {
 
 /**
  * The `prisma-next` resource node: a core Resource node plus `config`, the
- * `prisma-next.config.ts` path the deploy-only migration lowering loads to
+ * `prisma.config.ts` path the deploy-only migration lowering loads to
  * find the migrations directory — the app build never imports it.
  */
 export class PnPostgresResourceNode<
@@ -105,7 +105,7 @@ export function pnContract(contract: unknown): unknown {
       // A required pack head is wireable to ANY pn database: whether the
       // wired resource's config actually lists the pack at the required head
       // is enforced by the deploy preflight, not here — the authoring-side
-      // contract value cannot see the resource's prisma-next.config.ts.
+      // contract value cannot see the resource's prisma.config.ts.
       if (requiredPackHeadOf(required) !== undefined) return true;
       const requiredHash = storageHashOf(required);
       return requiredHash !== undefined && requiredHash === storageHashOf(value);
@@ -116,7 +116,7 @@ export function pnContract(contract: unknown): unknown {
 
 /**
  * `{ name, contract, config, targetRef? }` — the resource identity a module
- * provisions. `config` is the deploy-only `prisma-next.config.ts` path;
+ * provisions. `config` is the deploy-only `prisma.config.ts` path;
  * `targetRef` optionally names a ref as the migration target.
  */
 export function pnPostgres<C extends PnPostgresContract>(opts: {

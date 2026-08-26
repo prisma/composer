@@ -9,5 +9,5 @@ model Order {
   productName String
   quantity    Int
   totalCents  Int
-  placedAt    DateTime @default(now())
+  placedAt    TimestamptzString @default(now())
 }

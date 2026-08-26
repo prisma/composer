@@ -2,7 +2,7 @@
 name: prisma-composer
 metadata:
   library: "@prisma/composer"
-  library_version: "0.14.0"
+  library_version: "0.15.0"
 description: >-
   How to write, test, and deploy an app with Prisma Composer
   (`@prisma/composer`): declare services with `compute()` and typed
@@ -328,13 +328,13 @@ export const catalogData = pnContract<Contract>(contractJson);
 
 The dependency end is `deps: { db: pnPostgres(catalogData) }`. The resource
 end (inside the module that owns the database) also names the
-`prisma-next.config.ts` path, which the deploy's migration step loads to find
+`prisma.config.ts` path, which the deploy's migration step loads to find
 `migrations/` — committed migrations are replayed at deploy, before the
 service starts:
 
 ```ts
 const db = provision(
-  pnPostgres({ name: 'database', contract: catalogData, config: './prisma-next.config.ts' }),
+  pnPostgres({ name: 'database', contract: catalogData, config: './prisma.config.ts' }),
 );
 ```
 
