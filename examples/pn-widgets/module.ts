@@ -11,12 +11,12 @@ import widgetsService from './src/service.ts';
  * passes it through as the Prisma resource name, and the Connection API rejects
  * names shorter than 3 characters. The resource carries two doors (ADR-0022):
  * `contract` (consumed — types + wires the resource, gives the deploy its
- * target storageHash) and `config` (the prisma-next.config.ts PATH the deploy
+ * target storageHash) and `config` (the prisma.config.ts PATH the deploy
  * migration step loads to find migrations/ — never imported by the app build).
  */
 export default module('pn-widgets', ({ provision }) => {
   const db = provision(
-    pnPostgres({ name: 'database', contract: widgetContract, config: './prisma-next.config.ts' }),
+    pnPostgres({ name: 'database', contract: widgetContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   provision(widgetsService, { id: 'widgets', deps: { db } });

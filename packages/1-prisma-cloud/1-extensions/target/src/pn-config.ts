@@ -1,5 +1,5 @@
 /**
- * Resolves a `pnPostgres` resource's `prisma-next.config.ts` path to the
+ * Resolves a `pnPostgres` resource's `prisma.config.ts` path to the
  * project facts the deploy needs (ADR-0022, slice 2): the on-disk migrations
  * directory the control client's `migrate` reads, and the declared
  * extension packs. Deploy-time only: loads PN's config (via c12) and applies
@@ -18,7 +18,7 @@ import { loadConfig } from '@prisma/orm-toolchain/config-loader';
 import { resolve } from 'pathe';
 
 /** One declared extension pack, in the shape the control client accepts.
- *  Derived from the client's own options (orm-toolchain 8.0.0-rc.4 made the
+ *  Derived from the client's own options (orm-toolchain 8.0.0-rc.7 made the
  *  config's descriptor generics narrower than the client's, so deriving from
  *  the config no longer satisfies the client's parameter type). */
 export type PnExtensionPack = NonNullable<
@@ -26,7 +26,7 @@ export type PnExtensionPack = NonNullable<
 >[number];
 
 /**
- * What the deploy reads out of one `prisma-next.config.ts`.
+ * What the deploy reads out of one `prisma.config.ts`.
  *
  * The packs are `extensionPacks` here, not `extensions`: Prisma Next calls the
  * key the user types `extensions`, but `extensions` is already Composer's word
@@ -45,7 +45,7 @@ export interface ResolvedPrismaNextConfig {
 export async function resolvePrismaNextConfig(
   configPath: string,
 ): Promise<ResolvedPrismaNextConfig> {
-  // orm-toolchain 8.0.0-rc.4: loadConfig answers a Result carrying the
+  // orm-toolchain 8.0.0-rc.7: loadConfig answers a Result carrying the
   // config plus per-section diagnostics instead of throwing.
   const loaded = await loadConfig(configPath);
   if (!loaded.ok) throw loaded.failure;
@@ -54,13 +54,13 @@ export async function resolvePrismaNextConfig(
     // `resolve(configPath, '..')` is the config file's directory; the
     // migrations root is `migrations.dir` (or the default) relative to it.
     migrationsDir: resolve(configPath, '..', config.migrations?.dir ?? 'migrations'),
-    // orm-toolchain 8.0.0-rc.4 types the config's descriptors narrower than
+    // orm-toolchain 8.0.0-rc.7 types the config's descriptors narrower than
     // the control client accepts, and the descriptor generics are invariant,
     // so the two types reject each other in both directions. The values are
     // the same objects the client consumes.
     extensionPacks: blindCast<
       readonly PnExtensionPack[],
-      'orm rc.4 config descriptors and control-client descriptors are invariant-incompatible'
+      'orm rc.7 config descriptors and control-client descriptors are invariant-incompatible'
     >(config.extensions ?? []),
   };
 }

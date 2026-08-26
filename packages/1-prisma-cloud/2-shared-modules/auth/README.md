@@ -45,7 +45,7 @@ import apiService from './src/api/service.ts';
 
 export default module('app', ({ provision }) => {
   const db = provision(
-    pnPostgres({ name: 'database', contract: appContract, config: './prisma-next.config.ts' }),
+    pnPostgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   const identity = provision(auth(), {
@@ -84,12 +84,12 @@ Postgres schema `auth`) ship as a Prisma Next extension pack with authored
 migrations — Better Auth's own migrator never runs anywhere. Consumers:
 
 ```ts
-// prisma-next.config.ts
+// prisma.config.ts
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 export default defineConfig({ ..., extensions: [authPack] });
 ```
 
-Run `prisma-next migration plan` once — it materialises the pack's shipped
+Run `prisma migration plan` once — it materialises the pack's shipped
 migrations into `migrations/auth/` — and deploy: the ONE migration step
 creates and evolves the auth tables beside your own, marker-signed per
 space. On a shared database your own contract can FK `auth:User`
@@ -104,7 +104,7 @@ model Profile {
 }
 ```
 
-Upgrade procedure: bump this package → `prisma-next migration plan` (the new
+Upgrade procedure: bump this package → `prisma migration plan` (the new
 shipped migrations materialise) → deploy. The deploy preflight fails loudly
 when a wired database's config is missing the pack or is at a stale head.
 
