@@ -17,7 +17,7 @@
     "pg": "8.22.0"
   },
   "devDependencies": {
-    "@prisma/cli-engine": "0.2.3",
+    "@prisma/cli-engine": "0.3.0",
     "@prisma/composer": "workspace:0.14.0",
     "@prisma/composer-cli": "workspace:0.14.0",
     "@prisma/management-api-sdk": "^1.47.0",

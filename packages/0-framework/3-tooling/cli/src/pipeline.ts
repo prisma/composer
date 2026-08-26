@@ -25,10 +25,11 @@ export interface PipelineDeps {
   readonly config?: PrismaAppConfig | undefined;
   /**
    * The config file to load, named explicitly instead of discovered —
-   * absolute, or relative to `cwd`. When present the entry-anchored walk is
-   * skipped entirely, so a config that does not sit above the entry is still
-   * usable — and the walk's path-mismatch check has nothing left to check.
-   * Supplied by the engine's `composer` config section.
+   * absolute. When present the entry-anchored walk is skipped entirely, so a
+   * config that does not sit above the entry is still usable — and the walk's
+   * path-mismatch check has nothing left to check. Supplied by the engine's
+   * `composer` config section, whose validator already resolved a relative
+   * path against the config file that declared it.
    */
   readonly configPath?: string | undefined;
 }

@@ -9,7 +9,7 @@ import type { HostProcess, LoadedConfig } from '@prisma/cli-engine';
 import { createRuntime, detectPackageManager } from '../runtime.ts';
 
 const noConfig = (): Promise<LoadedConfig> =>
-  Promise.resolve({ path: '/app/prisma.config.ts', sections: {}, diagnostics: [] });
+  Promise.resolve({ files: [{ path: '/app/prisma.config.ts', sections: {} }], diagnostics: [] });
 
 interface FakeHost extends HostProcess {
   readonly listeners: Map<string, Set<() => void>>;
@@ -237,8 +237,7 @@ describe('createRuntime()', () => {
 
   test('the loader is exposed as loadConfig, and its result is passed through untouched', async () => {
     const config: LoadedConfig = {
-      path: '/app/prisma.config.ts',
-      sections: { composer: { configPath: 'x.ts' } },
+      files: [{ path: '/app/prisma.config.ts', sections: { composer: { configPath: 'x.ts' } } }],
       diagnostics: [],
     };
     const runtime = createRuntime(fakeHost(), () => Promise.resolve(config));
