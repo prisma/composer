@@ -57,9 +57,12 @@ export default module('store', ({ provision }) => {
 ```
 
 Because ports are typed, **the compiler verifies every wire**. A dependency
-wired to the wrong producer, a missing RPC handler, a config value of the
-wrong shape: all of it fails `tsc`, not the deploy. Typecheck, then build,
-then deploy; don't use the cloud to find out whether the app is correct.
+wired to the wrong producer, a missing RPC handler, a literal input value of
+the wrong shape: all of it fails `tsc`, not the deploy. Env-bound input is
+the exception: those values exist only at deploy, so secret-binding
+mismatches and missing platform variables surface as early deploy-time
+refusals instead (see Two channels below). Typecheck, then build, then
+deploy; don't use the cloud to find out whether the wiring is correct.
 
 Composer itself is target-agnostic: `@prisma/composer` carries authoring,
 testing, and the CLI, coupled to no platform. A deploy target is an extension
@@ -233,8 +236,9 @@ including the first schema of a new database, follows one loop:
    replays the whole path from empty.
 
 If no authored path reaches the target contract, deploy (and `dev` against a
-stale local database) refuses with `MIGRATION_PATH_NOT_FOUND` and names the
-exits: author the missing migration, or, when iterating against a local
+stale local database) refuses with `MIGRATION_PATH_NOT_FOUND`; its message
+lists the two ways out: author the missing migration, or, when iterating
+against a local
 database only, `prisma db update`. Never skip step 3 before a deploy. See
 `examples/store/modules/catalog` for the complete pattern.
 
@@ -298,7 +302,7 @@ node whose product is secret material reports no resource line at all.
 by name; a producer that omits one fails the deploy, naming the edge, the
 param, and what the producer did supply:
 
-```
+```text
 Connection input "auth.db" declares param "url", but its producer "db" did not
 supply it — the producer's outputs carry [host].
 ```
