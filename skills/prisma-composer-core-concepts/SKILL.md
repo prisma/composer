@@ -16,10 +16,13 @@ description: >-
 # Prisma Composer core concepts
 
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
-handed to the `prisma-composer` CLI. This file covers the concepts you cannot
-observe from the code or the CLI's help output: the model, the invariants, and
-the failure modes. For command flags, run the command with `--help`; for
-working code, read `examples/` in the prisma/composer repo.
+handed to the `prisma-composer` CLI. This file covers structures,
+hierarchies, relationships, and workflows: the concepts you cannot observe
+from the code or the CLI's help output. It is not a CLI reference; discover
+any individual command and its flags with `--help`. The Prisma platform
+moves fast, so treat this file as the stable conceptual core and find
+current, fuller documentation at <https://www.prisma.io/docs>. For working
+code, read `examples/` in the prisma/composer repo.
 
 Two principles govern everything and are binding
 (`docs/design/01-principles/`):
@@ -250,20 +253,20 @@ removing a node removes its deployed resource. The Prisma Cloud target
 requires exactly two environment variables: `PRISMA_SERVICE_TOKEN` and
 `PRISMA_WORKSPACE_ID`. There is no interactive login.
 
-**Stages.** A stage is an environment name chosen on the command line
-(`--stage pr-42`), never written in the topology. The identical graph
-deploys everywhere. On the Prisma Cloud target, a Prisma App is one Project
-and a stage is a Branch of it, with its own running services, its own empty
-database, its own configuration. A stage
-name must be a valid git ref name; an invalid name is a hard error.
+**Stages.** A stage is an environment name chosen on the command line at
+deploy time, never written in the topology. The identical graph deploys
+everywhere. On the Prisma Cloud target, a Prisma App is one Project and a
+stage is a Branch of it, with its own running services, its own empty
+database, its own configuration. A stage name must be a valid git ref name;
+an invalid name is a hard error.
 
 **Destroy** always requires an explicit target: a bare destroy is an error,
-and `--stage` with `--production` is too. Destroying a stage deletes its
-Branch after removing its resources. The production Branch is never deleted,
-only the resources inside it; destroying production also deletes the Project
-once it's empty, but a Project still holding another stage's resources is
-kept. Destroy never creates anything: destroying a never-deployed stage
-fails rather than standing one up.
+and naming a stage and production together is too. Destroying a stage
+deletes its Branch after removing its resources. The production Branch is
+never deleted, only the resources inside it; destroying production also
+deletes the Project once it's empty, but a Project still holding another
+stage's resources is kept. Destroy never creates anything: destroying a
+never-deployed stage fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by
 [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine
@@ -323,19 +326,19 @@ expected failure.
 
 ## Local development
 
-`prisma-composer dev module.ts` runs the whole app on this machine, wired as
-it deploys, against local emulators. No cloud credentials are needed or
-read. Concepts that surprise:
+The `dev` command runs the whole app on this machine, wired as it deploys,
+against local emulators. No cloud credentials are needed or read. Concepts
+that surprise:
 
 1. It runs the same pipeline as deploy, so **build first**, exactly like
    deploy. It watches built output and restarts a service when its build
    changes.
 2. Ctrl-C stops the app's processes but leaves local databases, buckets, and
-   their data up: the next `dev` is a warm start. `--fresh` wipes this app's
-   local instances and data first.
-3. `dev` does not print service logs; `prisma-composer log` is a separate,
-   read-only command that follows the already-running app's merged logs. It
-   never builds, provisions, starts, or stops anything.
+   their data up: the next `dev` is a warm start. Starting clean, wiping
+   this app's local instances and data first, is an explicit opt-in flag.
+3. `dev` does not print service logs; `log` is a separate, read-only command
+   that follows the already-running app's merged logs. It never builds,
+   provisions, starts, or stops anything.
 4. An unset secret doesn't block a local run: it becomes a placeholder plus a
    warning, and only the code path that spends it fails, at the external
    service it calls.
