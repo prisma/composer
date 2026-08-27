@@ -7,10 +7,10 @@ import { resolvePrismaDevModulePath } from '../postgres.ts';
 /**
  * `resolvePrismaDevModulePath`'s two-step resolution (local-dev spec § 4,
  * REVISED — operator review of #162): resolve `@prisma/dev` directly from
- * the app's own node_modules first; on failure, resolve `prisma` (which
- * apps typically depend on, and which carries `@prisma/dev` as its own
- * dependency) and resolve `@prisma/dev` from there; both failing throws the
- * pinned error.
+ * the app's own node_modules first; on failure, resolve the exported
+ * `prisma/package.json` (the package has no root export) and resolve
+ * `@prisma/dev` from its dependency tree; both failing throws the pinned
+ * error.
  */
 describe('resolvePrismaDevModulePath', () => {
   let cwd: string;
@@ -35,6 +35,18 @@ describe('resolvePrismaDevModulePath', () => {
     fs.writeFileSync(path.join(modDir, 'index.js'), 'module.exports = {};\n');
   }
 
+  function writePrismaPackage(): void {
+    const modDir = path.join(cwd, 'node_modules', 'prisma');
+    fs.mkdirSync(modDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(modDir, 'package.json'),
+      JSON.stringify({
+        name: 'prisma',
+        exports: { './package.json': './package.json' },
+      }),
+    );
+  }
+
   test('resolves @prisma/dev directly when the app depends on it', () => {
     writeModule(path.join(cwd, 'node_modules'), '@prisma/dev');
 
@@ -44,7 +56,7 @@ describe('resolvePrismaDevModulePath', () => {
   });
 
   test("falls back to resolving @prisma/dev from prisma's own dependency tree", () => {
-    writeModule(path.join(cwd, 'node_modules'), 'prisma');
+    writePrismaPackage();
     writeModule(path.join(cwd, 'node_modules', 'prisma', 'node_modules'), '@prisma/dev');
 
     const resolved = resolvePrismaDevModulePath(cwd);
@@ -61,7 +73,7 @@ describe('resolvePrismaDevModulePath', () => {
   });
 
   test('prisma installed but without @prisma/dev throws the pinned error', () => {
-    writeModule(path.join(cwd, 'node_modules'), 'prisma');
+    writePrismaPackage();
 
     expect(() => resolvePrismaDevModulePath(cwd)).toThrow(
       'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.',
