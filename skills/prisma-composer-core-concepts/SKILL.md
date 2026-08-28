@@ -262,10 +262,12 @@ an invalid name is a hard error.
 
 **Destroy** always requires an explicit target: a bare destroy is an error,
 and naming a stage and production together is too. Destroying a stage
-deletes its Branch after removing its resources. The production Branch is
-never deleted, only the resources inside it; destroying production also
-deletes the Project once it's empty, but a Project still holding another
-stage's resources is kept. Destroy never creates anything: destroying a
+deletes its Branch after removing its resources. Destroying production
+removes only the resources inside the production Branch, never the Branch
+itself directly; once the Project is empty it is deleted too, and that
+deletion takes the production Branch with it. A Project still holding
+another stage's resources is kept. Destroy never creates anything:
+destroying a
 never-deployed stage fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by
