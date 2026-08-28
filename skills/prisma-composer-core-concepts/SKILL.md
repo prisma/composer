@@ -72,10 +72,11 @@ testing, and the CLI, coupled to no platform. A deploy target is an extension
 registered in the deploy config; `@prisma/composer-prisma-cloud` is the
 Prisma Cloud target (`compute`, `rawPostgres`, `postgres`, `bucket`,
 `envSecret`, `envParam`, and the shared `/cron`, `/storage`, `/streams`,
-`/orm` modules) and the one this skill's deploy sections assume. Exactly these two
-packages appear in an app's `package.json`. Compose an
-existing Module before implementing a capability yourself; wiring one in is a
-couple of lines.
+`/orm` modules) and the one this skill's deploy sections assume. These are
+the only two Composer packages a basic Prisma Cloud app needs; an extension
+adds its own `prisma-composer-*` package alongside them. Compose an existing
+Module before implementing a capability yourself; wiring one in is a couple
+of lines.
 
 Within the entry graph (everything reachable from `module.ts`), relative
 imports may use `./service.js` or extensionless `./service`: the CLI maps
