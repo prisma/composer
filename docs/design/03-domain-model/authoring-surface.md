@@ -12,12 +12,12 @@ Grounding example — a service with a Postgres dependency:
 ```ts
 import { compute, postgres } from "@prisma/composer-prisma-cloud"
 
-export default compute({ db: postgres() }, ({ db }) =>
+export default compute({ db: rawPostgres() }, ({ db }) =>
   Bun.serve({ port, fetch: async () => Response.json(await db`select 1 as ok`) })
 )
 ```
 
-`postgres()` is a **Resource** the service depends on; `compute(deps, handler)` is a
+`rawPostgres()` is a **Resource** the service depends on; `compute(deps, handler)` is a
 **Service**. The framework provisions the Postgres and the compute unit, injects a typed
 `db` client into the handler, and serves — with no `process.env` in the service code.
 The vocabulary (`compute`, `postgres`, `http`, …) belongs to the target; the wiring
@@ -34,7 +34,7 @@ consumes and produces them:
 ```ts
 // a service with an Input (db) and an Output (its API)
 export default compute(
-  { db: postgres() },
+  { db: rawPostgres() },
   ({ db }) => ({ api: Auth.serve(buildApp(db)) })   // returned ⇒ Output
 )
 ```
@@ -58,7 +58,7 @@ provider happened to publish.
 export const Auth = http(AuthInterface)   // neutral connection type
 
 export default compute(
-  { db: postgres(), auth: Auth },          // Auth as dependency ⇒ Input ⇒ typed client
+  { db: rawPostgres(), auth: Auth },          // Auth as dependency ⇒ Input ⇒ typed client
   (deps) => ({ web: next(deps) })          // 'web' Output served by a Next.js adapter
 )
 ```
@@ -81,7 +81,7 @@ import store, { Auth } from "./storefront-service"
 export default module("storefront",
   { auth: Auth, web: http(StoreInterface) },   // module-level ports
   ({ auth, provision }) => {
-    const db  = provision(postgres())           // the Module owns resources
+    const db  = provision(rawPostgres())           // the Module owns resources
     const svc = provision(store, { db, auth })  // forward module Input → service Input
     return { web: svc.web }                      // forward service Output → module Output
   }
@@ -97,7 +97,7 @@ complete.
 
 ## The returned data is the manifest
 
-A constructor like `compute(...)` or `postgres()` runs no logic — it returns a plain
+A constructor like `compute(...)` or `rawPostgres()` runs no logic — it returns a plain
 data object (see [core and targets](core-and-targets.md)). That object *is* the
 manifest: there is no separate framework manifest file (the platform's
 `compute.manifest.json` stays — it only names the boot entrypoint). The same value is

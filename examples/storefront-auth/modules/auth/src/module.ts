@@ -15,7 +15,7 @@
  * same as this enclosing module, so a defaulted id would read as "auth.auth".
  */
 import { module, secret } from '@prisma/composer';
-import { postgres } from '@prisma/composer-prisma-cloud';
+import { rawPostgres } from '@prisma/composer-prisma-cloud';
 import { authContract } from './contract.ts';
 import authService from './service.ts';
 
@@ -26,7 +26,7 @@ export default module(
   // point of the forwarding model.
   { secrets: { signingKey: secret() }, expose: { rpc: authContract } },
   ({ secrets, provision }) => {
-    const db = provision(postgres({ name: 'database' }));
+    const db = provision(rawPostgres({ name: 'database' }));
     const service = provision(authService, {
       id: 'service',
       deps: { db },

@@ -5,7 +5,7 @@
  *
  * Derives module groups from architecture.config.json and encodes the
  * same-layer/downward-only semantics for domains and layers, plus the
- * control/execution plane split (ADR-0017). Copied from Prisma Next's
+ * control/execution plane split (ADR-0017). Copied from Prisma ORM's
  * implementation (its Package-Layering doc and ADR 140), with two additions:
  * 9-public is a sink (no internal package imports it), and examples plus the
  * integration tests may import only the 9-public packages.
@@ -228,6 +228,8 @@ export default {
         'vitest\\..*config',
         'tsdown\\.config',
         'next\\.config',
+        'prisma\\.config',
+        'prisma\\.config',
         '\\.d\\.ts$',
         '\\.d\\.mts$',
         'dist',

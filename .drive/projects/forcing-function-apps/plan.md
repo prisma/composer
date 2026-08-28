@@ -97,8 +97,8 @@ current deployment, and cut the team's real instance over. Closes M1.
 
 ### Follow-ups (evidence from the S2+S3 port)
 
-- **pnPostgres conversion of `@workspace/db`** (ADR-0022): datahub's db layer
-  is prisma-next with a contract — exactly what `pnPostgres` types. Converting
+- **postgres conversion of `@workspace/db`** (ADR-0022): datahub's db layer
+  is prisma/orm with a contract — exactly what `postgres` types. Converting
   would also eliminate the phantom-dependency fragility the port had to pin
   around (`@prisma-next/*` + `pg` reached only via hoisting; adding the cloud
   target package broke the hoist and silently degraded `db.orm` to `any`).

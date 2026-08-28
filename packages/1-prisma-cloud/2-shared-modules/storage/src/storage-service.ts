@@ -9,7 +9,7 @@
  * schedule-free `cronScheduler()`.
  */
 import node from '@internal/node';
-import { postgres, s3Credentials, s3StoreService } from '@internal/prisma-cloud';
+import { rawPostgres, s3Credentials, s3StoreService } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { s3Contract } from './contract.ts';
 
@@ -18,7 +18,7 @@ const storageInputSchema = type({ bucket: 'string' });
 export function storageService() {
   return s3StoreService({
     name: 'storage',
-    deps: { db: postgres(), credentials: s3Credentials() },
+    deps: { db: rawPostgres(), credentials: s3Credentials() },
     input: storageInputSchema,
     build: node({
       module: new URL('./storage-service.mjs', import.meta.url).href,

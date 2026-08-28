@@ -328,9 +328,31 @@ const migrateAttr = (family: Family, attr: unknown, props: unknown): unknown => 
   }
 };
 
+/**
+ * Type-id renames where the props/attr shapes are unchanged: rewriting the
+ * `resourceType` (here and on any nested `old` row) is the whole migration.
+ */
+const RENAMED_TYPES: Readonly<Record<string, string>> = {
+  'PrismaNext.Migration': 'PrismaOrm.Migration',
+};
+
+const renameResourceType = (
+  row: Record<string, unknown>,
+  renamed: string,
+): Record<string, unknown> => {
+  const migrated: Record<string, unknown> = { ...row, resourceType: renamed };
+  const old = row['old'];
+  if (isRecord(old) && typeof old['resourceType'] === 'string') {
+    migrated['old'] = migrateResourceRow(old);
+  }
+  return migrated;
+};
+
 const migrateResourceRow = (row: Record<string, unknown>): Record<string, unknown> => {
   const resourceType = row['resourceType'];
   if (typeof resourceType !== 'string') return row;
+  const renamed = RENAMED_TYPES[resourceType];
+  if (renamed !== undefined) return renameResourceType(row, renamed);
   const family = FAMILY_BY_LEGACY_TYPE[resourceType];
   if (family === undefined) return row;
 

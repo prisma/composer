@@ -135,7 +135,7 @@ prevent.
 
 A streams contract **names the streams it transports**, each with an
 **optional event definition**. Untyped streams are retained deliberately —
-the parity is `postgres()`, which binds a real resource without a schema
+the parity is `rawPostgres()`, which binds a real resource without a schema
 contract — but "untyped" only drops the event type, never the lifecycle:
 no variant of the API requires the app to name streams in call sites, create
 them, or heal them.
@@ -172,7 +172,7 @@ const delivery = await events.jobs.tail({ offset: nextOffset });
 - `durableStreams(contract)` hydrates to **one handle per declared stream**,
   keyed by name. The handle owns the name; no `STREAM` constant.
 - Bare `durableStreams()` (no contract) is retained for dynamic stream names
-  (e.g. per-tenant streams, and the raw parity with `postgres()`): it
+  (e.g. per-tenant streams, and the raw parity with `rawPostgres()`): it
   hydrates to a client whose surface is `stream(name)` returning an untyped
   handle. Same lifecycle ownership; the name is data, not app-side protocol
   handling.
@@ -279,7 +279,7 @@ review of the as-built branch:
 
 - **The provider contract is the postgres pattern** (`7b07aa0`): the
   module's port is `Contract<'streams', StreamDefs>` with an honest empty
-  def map as its unread placeholder — the same encoding `postgresContract`
+  def map as its unread placeholder — the same encoding `rawPostgresContract`
   uses. The consumer's required type is equally wide (kind is the whole
   wiring requirement); literal handle typing comes from the generic
   parameter. The `never`-typed `__cmp` and its cast are deleted.

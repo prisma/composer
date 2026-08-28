@@ -11,25 +11,25 @@ import {
   PROTECTED_PROJECT_NAMES,
 } from './ci-cleanup-utils.ts';
 
-const PREFIXES = ['storefront-auth', 'pn-widgets'];
+const PREFIXES = ['storefront-auth', 'orm-demo'];
 
 describe('isEphemeralCiProjectName', () => {
   it('matches exactly <prefix>-ci-<digits> for each given prefix', () => {
     assert.equal(isEphemeralCiProjectName('storefront-auth-ci-12345', PREFIXES), true);
-    assert.equal(isEphemeralCiProjectName('pn-widgets-ci-1234567890', PREFIXES), true);
+    assert.equal(isEphemeralCiProjectName('orm-demo-ci-1234567890', PREFIXES), true);
   });
 
   it('rejects the standing (non-ci) app names', () => {
     assert.equal(isEphemeralCiProjectName('storefront-auth', PREFIXES), false);
-    assert.equal(isEphemeralCiProjectName('pn-widgets', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('orm-demo', PREFIXES), false);
   });
 
   it('rejects near-misses: wrong prefix, missing run id, non-digit id, extra suffix', () => {
     assert.equal(isEphemeralCiProjectName('datahub-ci-123', PREFIXES), false);
-    assert.equal(isEphemeralCiProjectName('pn-widgets-ci-', PREFIXES), false);
-    assert.equal(isEphemeralCiProjectName('pn-widgets-ci-abc', PREFIXES), false);
-    assert.equal(isEphemeralCiProjectName('pn-widgets-ci-123-extra', PREFIXES), false);
-    assert.equal(isEphemeralCiProjectName('a-pn-widgets-ci-123', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('orm-demo-ci-', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('orm-demo-ci-abc', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('orm-demo-ci-123-extra', PREFIXES), false);
+    assert.equal(isEphemeralCiProjectName('a-orm-demo-ci-123', PREFIXES), false);
   });
 
   it('never matches the hosted deploy-state project, even with a hostile prefix', () => {
@@ -43,12 +43,12 @@ describe('isEphemeralCiProjectName', () => {
   });
 
   it('treats prefixes literally — regex metacharacters cannot widen the match', () => {
-    assert.equal(isEphemeralCiProjectName('pn-widgetsX-ci-1', ['pn-widgets.']), false);
+    assert.equal(isEphemeralCiProjectName('orm-demoX-ci-1', ['orm-demo.']), false);
     assert.equal(isEphemeralCiProjectName('anything-ci-1', ['.*']), false);
   });
 
   it('requires at least one prefix', () => {
-    assert.throws(() => isEphemeralCiProjectName('pn-widgets-ci-1', []));
+    assert.throws(() => isEphemeralCiProjectName('orm-demo-ci-1', []));
   });
 });
 
@@ -72,7 +72,7 @@ describe('isLegacyStaleProjectName', () => {
 
 // --- deleteProjectDeep: the 409 → compute-teardown → retry sequencing, with a mocked fetch ---
 
-const PROJECT = { id: 'proj_1', name: 'pn-widgets-ci-42' };
+const PROJECT = { id: 'proj_1', name: 'orm-demo-ci-42' };
 const OK: HttpResponse = { status: 200, ok: true, body: '{}' };
 const GONE: HttpResponse = { status: 404, ok: false, body: 'not found' };
 const ACTIVE_DEPLOYMENT: HttpResponse = {

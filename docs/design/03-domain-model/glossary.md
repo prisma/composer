@@ -67,7 +67,7 @@ provisioned third-party account is a Resource too — a Stripe product, a Tigris
 bucket, a Prisma-brokered Mailchimp account. The test is whether something manages
 its lifecycle, not whether it's first-party.
 
-- **First-class**: Prisma **Postgres** (data, via Prisma Next contracts) —
+- **First-class**: Prisma **Postgres** (data, via Prisma ORM contracts) —
   the framework-native treatment.
 - **BYO**: any Alchemy resource (object storage, cache, queue, provisioned
   third-party) exposed through a capability Layer. The Module depends on the
@@ -193,7 +193,7 @@ that external thing as a node, provision it (a Resource) or wrap it in a Service
 
 ### Data Contract
 
-A **Prisma Next** contract — a deterministic, hashable description of the schema
+A **Prisma ORM** contract — a deterministic, hashable description of the schema
 slice a Module may access (identified by its `storageHash`). A Module's Data Input
 declares the contract it requires; this is also the per-Module least-privilege scope.
 
@@ -209,7 +209,7 @@ shared, the enclosing **implicit root Module** that wires it to its consumers. T
 owner owns the schema and the migration; each consumer connects via a Data Input
 declaring the contract slice it needs. The owner's schema must satisfy the
 **aggregate** — the union of every consumer's contract — and consumer slices must
-not overlap (a Prisma Next concept). The cloud can verify the live DB satisfies the
+not overlap (a Prisma ORM concept). The cloud can verify the live DB satisfies the
 aggregate via the marker/ledger.
 
 ## Planes & process
@@ -224,7 +224,7 @@ The deploy report calls a thing on the hosting plane a **Deployment entity**
 ### Lowering
 
 The compilation from one plane to the next: authoring topology → provisioning
-resource graph → hosting primitives. Analogous to Prisma Next lowering a contract
+resource graph → hosting primitives. Analogous to Prisma ORM lowering a contract
 to a plan.
 
 ### Control plane / Execution plane
@@ -325,7 +325,7 @@ conform (dependency inversion).
 ### provision
 
 The Module-scoped operator that turns a dependency descriptor into an **owned
-Resource** (`provision(postgres())`) or instantiates and wires an owned node
+Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node
 (`provision(svc, { db })`). Ownership and provisioning are a Module concern; a
 Service only *requires*. Forwarding is just passing a Module's Inputs down and
 returning owned nodes' Outputs up.
@@ -472,7 +472,7 @@ is where the framework's own binding layer gets built.
   application you build and deploy. Use **Topology** for the wired graph and
   **Module** for a unit; **App** for the composed whole.
 - **Descriptor** → an internal/substrate term; avoid in the authoring vocabulary
-  (and note Prisma Next uses "Descriptor" for its own components).
+  (and note Prisma ORM uses "Descriptor" for its own components).
 - **Durable Stream as "the backbone"** → streams are *one of two* transports
   (alongside request/response), not the universal substrate. See the streaming
   reconciliation note in the decisions log.

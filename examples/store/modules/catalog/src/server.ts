@@ -2,7 +2,7 @@ import { serve } from '@prisma/composer/service-rpc';
 import type { Product } from './contract.ts';
 import service from './service.ts';
 
-// load() hydrates `db` into the { url, client } Prisma Next binding (ADR-0040)
+// load() hydrates `db` into the { url, client } Prisma ORM binding (ADR-0040)
 // — no SQL, no row mapping; queries are typed by contract.prisma's emitted contract.
 const { db } = service.load();
 const port = service.port();

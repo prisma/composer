@@ -133,9 +133,6 @@ under Alternatives.
 
 ## Related
 
-- `agent-os/product/vocabulary-tests.md` — the referential test battery and
-  the "Prisma App" failure record.
-- `agent-os/product/naming.md` — the family table and register model.
 - [ADR-0014](ADR-0014-one-authoring-primitive.md) — the framework, package,
   and CLI names this ADR supersedes; its single-primitive decision stands.
 - [ADR-0025](ADR-0025-name-the-unit-of-composition-module.md) — the unit noun

@@ -1,7 +1,7 @@
 import { serve } from '@prisma/composer/service-rpc';
 import service from './service.ts';
 
-// load() hydrates both deps: `db` is the { url, client } Prisma Next binding
+// load() hydrates both deps: `db` is the { url, client } Prisma ORM binding
 // (ADR-0040), `catalog` a typed client of catalogContract — both plain async calls.
 const { db, catalog } = service.load();
 const port = service.port();

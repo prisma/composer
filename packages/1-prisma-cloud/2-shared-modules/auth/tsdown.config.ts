@@ -35,7 +35,7 @@ export default defineConfig([
     external: [/^bun$/, /^bun:/],
     noExternal: [
       /^@internal\//,
-      // `@prisma/orm-*` (the Prisma Next shells) are excluded: this entrypoint
+      // `@prisma/orm-*` (the Prisma ORM shells) are excluded: this entrypoint
       // must not carry the ORM, which the app resolves from its own facade.
       /^@prisma\/(?!orm-)/,
       /^arktype/,

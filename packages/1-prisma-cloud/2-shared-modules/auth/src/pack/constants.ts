@@ -1,6 +1,6 @@
 /**
  * The pack's identity constants — the ONE place each value lives, so
- * adopting prisma-next's own Better Auth extension later is a contained
+ * adopting Prisma ORM's own Better Auth extension later is a contained
  * swap. Import-light on purpose: the runtime side (authDb's pack
  * requirement, the store's schema qualification) reads these without
  * pulling the descriptor's migration-tools dependency into an app bundle.

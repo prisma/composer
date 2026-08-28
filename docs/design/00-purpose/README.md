@@ -17,7 +17,7 @@ between Modules, and the topology they produce. It borrows everything underneath
 rather than reinventing it:
 
 - **Alchemy** — the resource model and the provisioning engine.
-- **Prisma Next** — data contracts, the interface to data resources.
+- **Prisma ORM** — data contracts, the interface to data resources.
 - **Prisma Cloud** — hosting, as one deployment target (shipped as an extension pack).
 
 ## Read next

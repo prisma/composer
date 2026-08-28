@@ -1,6 +1,6 @@
 /**
  * The local-dev schema bootstrap: bring a caller-supplied local database to
- * the auth pack's head through the REAL Prisma Next `dbInit` path — the same
+ * the auth pack's head through the REAL Prisma ORM `dbInit` path — the same
  * loader → planner → runner pipeline (control client + extension packs) a
  * consumer deploy runs — never a rendered SQL file, so local dev and deploy
  * cannot drift.
@@ -77,7 +77,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
     throw new Error(
       'local auth bootstrap: the database already carries contract space(s) ' +
         `${rows.map((row) => `"${row.space}"`).join(', ')} but not "${AUTH_PACK_ID}" — list ` +
-        "authPack in that project's prisma-next.config.ts extensions and run its migration " +
+        "authPack in that project's prisma.config.ts extensions and run its migration " +
         'plan; the local server only initialises databases it owns entirely.',
     );
   }
@@ -112,7 +112,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
       });
       if (!result.ok) {
         throw new Error(
-          `local auth bootstrap: prisma-next dbInit failed: ${result.failure.summary}` +
+          `local auth bootstrap: Prisma ORM dbInit failed: ${result.failure.summary}` +
             (result.failure.why !== undefined ? ` — ${result.failure.why}` : ''),
         );
       }

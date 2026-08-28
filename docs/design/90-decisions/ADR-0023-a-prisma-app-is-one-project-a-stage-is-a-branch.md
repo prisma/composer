@@ -12,7 +12,7 @@ Concretely, this app:
 
 ```ts
 export default module('storefront-auth', {}, ({ provision }) => {
-  const db = provision('database', postgres({ name: 'database' }));
+  const db = provision('database', rawPostgres({ name: 'database' }));
   const auth = provision('auth', authService, { db });
   provision('storefront', storefrontService, { auth: auth.rpc });
   return {};

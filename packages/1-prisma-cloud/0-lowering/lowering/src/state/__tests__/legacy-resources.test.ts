@@ -176,6 +176,22 @@ describe('migrateLegacyResourceState (pure mapping)', () => {
     expect(migrated.old.props).toEqual({ project: 'proj-1', name: 'data', region: 'us-east-1' });
   });
 
+  test('renames PrismaNext.Migration rows to PrismaOrm.Migration with props untouched, idempotently', () => {
+    const props = { url: DIRECT_URL, targetHash: 'abc', invariants: [], packHeadRefHashes: [] };
+    const row = {
+      ...legacyDatabaseRow(),
+      resourceType: 'PrismaNext.Migration',
+      props,
+      old: { ...legacyDatabaseRow(), resourceType: 'PrismaNext.Migration', props },
+    };
+    const migrated = migrateLegacyResourceState(row) as MigratedRow & { old: MigratedRow };
+    expect(migrated.resourceType).toBe('PrismaOrm.Migration');
+    expect(migrated.props).toEqual(props);
+    expect(migrated.old.resourceType).toBe('PrismaOrm.Migration');
+    expect(migrated.old.props).toEqual(props);
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
+  });
+
   test('maps the unreleased PrismaComposer.* type-ids too, and passes foreign rows through', () => {
     const composerEra = { ...legacyDatabaseRow(), resourceType: 'PrismaComposer.Database' };
     expect((migrateLegacyResourceState(composerEra) as MigratedRow).resourceType).toBe(

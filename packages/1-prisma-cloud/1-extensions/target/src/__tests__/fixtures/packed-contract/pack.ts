@@ -19,7 +19,7 @@ export const GADGET_PACK_HEAD_HASH: string = gadgetContractJson.storage.storageH
 const contractSpace: PgPackContractSpace = {
   contractJson: blindCast<
     PgPackContractSpace['contractJson'],
-    'JSON import widened the emitted contract literal types; the file is exactly what prisma-next contract emit wrote'
+    'JSON import widened the emitted contract literal types; the file is exactly what prisma contract emit wrote'
   >(gadgetContractJson),
   migrations: [],
   headRef: { hash: GADGET_PACK_HEAD_HASH, invariants: [] },

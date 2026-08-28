@@ -77,7 +77,7 @@ describe('authDb()', () => {
   test('claims the auth pack at the installed head, binding the bare url', async () => {
     const dep = authDb();
     expect(dep.kind).toBe('dependency');
-    expect(dep.type).toBe('prisma-next');
+    expect(dep.type).toBe('postgres');
     expect(requiredPackHeadOf(dep.required)).toEqual({
       packId: AUTH_PACK_ID,
       headHash: AUTH_PACK_HEAD_HASH,

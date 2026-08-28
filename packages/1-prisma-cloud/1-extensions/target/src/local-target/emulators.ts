@@ -2,8 +2,8 @@
  * Dev emulator bring-up (local-dev spec § 5, ADR-0041 D4): ensures the
  * machine-scoped daemons this topology's node kinds need. Compute is always
  * ensured — every app has services; buckets only when the graph uses the
- * `s3` resource kind; postgres only when the graph uses the `postgres` or
- * `prisma-next` resource kind (REVISED — Postgres is a first-class daemon
+ * `s3` resource kind; postgres only when the graph uses the `raw-postgres` or
+ * `postgres` resource kind (REVISED — Postgres is a first-class daemon
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
  * Idempotent: `ensureDaemon` itself adopts an already-healthy daemon, so
@@ -30,7 +30,7 @@ function usesBuckets(input: LocalTargetEmulatorsInput): boolean {
 function usesPostgres(input: LocalTargetEmulatorsInput): boolean {
   return input.graph.nodes.some(
     (n) =>
-      n.node.kind === 'resource' && (n.node.type === 'postgres' || n.node.type === 'prisma-next'),
+      n.node.kind === 'resource' && (n.node.type === 'raw-postgres' || n.node.type === 'postgres'),
   );
 }
 

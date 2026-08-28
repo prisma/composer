@@ -17,7 +17,7 @@ Layer.mergeAll(
   Prisma.EnvironmentVariableProvider(),
 ),
 // + Composer's own resources: Bucket, BucketKey, ServiceKey,
-//   GeneratedParam, S3Credentials, PnMigration, PgWarm
+//   GeneratedParam, S3Credentials, OrmMigration, PgWarm
 ```
 
 and a lowered compute service is upstream resources wired by Composer's descriptors:

@@ -12,7 +12,7 @@ names users install are not. The two public packages:
   target-agnostic authoring surfaces as subpath exports — `@prisma/compose/rpc`,
   `@prisma/compose/node`, `@prisma/compose/nextjs`.
 - **`@prisma/compose-prisma-cloud`** — the Prisma Cloud target: `compute()`,
-  `postgres()`, the Alchemy provider and lowering (absorbing `@prisma/alchemy`),
+  `rawPostgres()`, the Alchemy provider and lowering (absorbing `@prisma/alchemy`),
   and the first-party modules realized on Prisma Cloud — cron first — as subpath
   entrypoints (`@prisma/compose-prisma-cloud/cron`).
 
@@ -101,4 +101,3 @@ family's unpublish — two names is the entire republish burden.
   (package / extension / Module) this leans on.
 - [ADR-0014](ADR-0014-one-authoring-primitive.md) — the
   single-primitive model and the unified-CLI note.
-- `agent-os/product/naming.md` — the family table and distribution model.

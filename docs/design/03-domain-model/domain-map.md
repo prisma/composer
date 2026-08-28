@@ -18,7 +18,7 @@ flowchart TB
   Input["Input — requires"]
   Output["Output — provides"]
   Conn["Connection"]
-  DC["Data Contract — Prisma Next"]
+  DC["Data Contract — Prisma ORM"]
 
   Topology -->|contains| Module
   Topology -->|contains| Resource

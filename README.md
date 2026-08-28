@@ -138,7 +138,7 @@ flowchart TB
 
 Each box is a **Module**: a boundary that owns some code and data and is
 reachable only through typed ports. catalog and orders each own their own
-Postgres — a [Prisma Next](https://github.com/prisma/prisma-next)-typed one,
+Postgres — a [Prisma ORM](https://github.com/prisma/orm)-typed one,
 with migrations applied at deploy — and the root never sees them; the only
 edges are the exposed, contract-typed RPC ports. Because nothing reaches
 inside a boundary, every dependency in the app is an explicit,
@@ -157,7 +157,7 @@ have.
 | Guide | Covers |
 | --- | --- |
 | [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
-| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma Next-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
+| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma-ORM-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
 | [Deploying and operating](docs/guides/deploying.md) | Stages, destroy, CI, how apps behave in production |
 
@@ -167,7 +167,7 @@ Complete, deployable apps under [`examples/`](examples/):
 
 | Example | Demonstrates |
 | --- | --- |
-| [pn-widgets](examples/pn-widgets/) | The minimal app: one service + one Prisma Next-typed Postgres |
+| [orm-demo](examples/orm-demo/) | The minimal app: one service + one Prisma-ORM-typed Postgres |
 | [storefront-auth](examples/storefront-auth/) | Next.js frontend + API service, a reusable Module owning its database, secrets |
 | [store](examples/store/) | Four modules, typed databases with migrations, the shared cron module |
 | [cron](examples/cron/) | Scheduled jobs: `defineSchedule` + `serveSchedule` + the cron module |
