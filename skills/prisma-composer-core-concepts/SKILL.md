@@ -2,8 +2,8 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.15.0"
-  version: 2026.8.26
+  library_version: "0.16.0"
+  version: 2026.8.28
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
   (`@prisma/composer`): wiring its services and Modules, running it locally,
@@ -42,7 +42,7 @@ app, executing nothing when imported. Three node kinds exist:
 | Kind | Declared with | Purpose |
 | --- | --- | --- |
 | Service | `compute()` | A running unit of your code; atomic, Composer sees only its ports |
-| Resource | `postgres()`, `bucket()` | A stateful managed dependency |
+| Resource | `rawPostgres()`, `bucket()` | A stateful managed dependency |
 | Module | `module()` | A grouping boundary; runs no code of its own, exposes typed ports |
 
 Nodes connect through **ports**: `deps` declares what a node requires,
@@ -70,9 +70,9 @@ deploy; don't use the cloud to find out whether the wiring is correct.
 Composer itself is target-agnostic: `@prisma/composer` carries authoring,
 testing, and the CLI, coupled to no platform. A deploy target is an extension
 registered in the deploy config; `@prisma/composer-prisma-cloud` is the
-Prisma Cloud target (`compute`, `postgres`, `bucket`, `envSecret`,
-`envParam`, and the shared `/cron`, `/storage`, `/streams`, `/prisma-next`
-modules) and the one this skill's deploy sections assume. Exactly these two
+Prisma Cloud target (`compute`, `rawPostgres`, `postgres`, `bucket`,
+`envSecret`, `envParam`, and the shared `/cron`, `/storage`, `/streams`,
+`/orm` modules) and the one this skill's deploy sections assume. Exactly these two
 packages appear in an app's `package.json`. Compose an
 existing Module before implementing a capability yourself; wiring one in is a
 couple of lines.
@@ -98,7 +98,7 @@ produces and the platform boots:
 // service.ts
 export default compute({
   name: 'auth',
-  deps: { db: postgres() },
+  deps: { db: rawPostgres() },
   build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: authContract },
 });
@@ -118,7 +118,7 @@ client back from `load()`.
 
 | The value is… | Declare | Provide | Read |
 | --- | --- | --- | --- |
-| produced by another node | `deps: { db: postgres() }` | wire at `provision()` | `load()` |
+| produced by another node | `deps: { db: rawPostgres() }` | wire at `provision()` | `load()` |
 | anything else (config or credential) | one field of the `input` schema | bind at `provision()`: literal, `envParam()`, or `envSecret()` | `input()` |
 
 The service declares its whole incoming configuration, plain values and
@@ -218,12 +218,12 @@ imports it.
 
 Two kinds of Postgres dependency:
 
-1. **`postgres()`**: the binding is `{ url }` and the app owns its client.
-2. **`pnPostgres(...)`**: a Prisma Next-typed database. `load()` returns the
+1. **`rawPostgres()`**: the binding is `{ url }` and the app owns its client.
+2. **`postgres(...)`**: a Prisma-ORM-typed database. `load()` returns the
    typed client Composer constructs from your data contract, so queries are
-   compile-time checked. One `pnContract`-wrapped value (emitted from
+   compile-time checked. One `dataContract`-wrapped value (emitted from
    `contract.prisma` by `prisma contract emit`) is referenced by both the
-   dependency end (`deps: { db: pnPostgres(catalogData) }`) and the resource
+   dependency end (`deps: { db: postgres(catalogData) }`) and the resource
    end, which also names the `prisma.config.ts` path so the deploy's
    migration step can find `migrations/`.
 
@@ -392,7 +392,7 @@ provision exactly like your own:
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
 
-`bucket()` (imported alongside `postgres`) is a raw S3-compatible bucket:
+`bucket()` (imported alongside `rawPostgres`) is a raw S3-compatible bucket:
 the dependency end receives `{ url, bucket, accessKeyId, secretAccessKey }`,
 shape-compatible with `/storage`'s `s3()` dependency, so a service wired to
 `s3()` can be rewired to a `bucket` resource unchanged.
