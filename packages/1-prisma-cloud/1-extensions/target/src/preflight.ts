@@ -206,24 +206,22 @@ const fillFailedError = (key: string, error: unknown): Error =>
   );
 
 /**
- * Every step names a concrete place and action: a literal export in this
- * terminal (or a repository secret in GitHub Actions), or the exact Console
- * page and section. No platform vocabulary ("deploy shell", env-var classes).
+ * The message is a runnable fix, not a description: the exact `project env
+ * add` command with the real names, project, and scope, plus the Console
+ * page as the no-CLI alternative. No platform vocabulary ("deploy shell",
+ * env-var classes).
  */
 function missingError(
   missing: readonly MissingBinding[],
+  projectId: string,
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
   const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
-  const firstName = missing[0]?.name ?? 'NAME';
-  const shellStep =
-    process.env['GITHUB_ACTIONS'] === 'true'
-      ? "In GitHub: add each one as a repository secret and pass it to the deploy step's env block in the workflow file."
-      : `In the terminal you deploy from, set the variable and deploy again: export ${firstName}=<value>` +
-        ' The deploy saves it to your Prisma project, so this is needed only once.';
+  const pairs = missing.map((m) => `${m.name}=<value>`).join(' ');
+  const scopeFlag = branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
   const consoleStep =
     branchId === undefined
       ? 'add each one under Production. Those values apply when the default branch deploys to production.'
@@ -232,8 +230,8 @@ function missingError(
     `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
       'Set the value in one of these two places, then deploy again:\n' +
-      `  - ${shellStep}\n` +
-      `  - In the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
+      `  - Run: prisma project env add ${pairs} --project ${projectId} ${scopeFlag}\n` +
+      `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
 
@@ -293,7 +291,7 @@ export async function runPreflight(
     }
     missing.push(meta);
   }
-  if (missing.length > 0) throw missingError(missing, branchId, input.stage);
+  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
   return updatedAt;
 }
 
