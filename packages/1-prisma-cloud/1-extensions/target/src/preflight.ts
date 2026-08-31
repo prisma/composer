@@ -220,16 +220,18 @@ function missingError(
       ? 'the production environment'
       : `the "${stage ?? branchId}" environment`;
   const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const countPhrase =
+    missing.length === 1 ? '1 required setting is' : `${missing.length} required settings are`;
   const setWhereYouRun =
     process.env['GITHUB_ACTIONS'] === 'true'
-      ? 'Add each as a repository secret and pass it to the deploy step under `env:`'
-      : 'Set each as an environment variable where you run the deploy';
+      ? "Add each missing value as a repository secret and pass it to the deploy step's env block."
+      : 'Set each missing value as an environment variable where you run the deploy.';
   return new Error(
-    `Deploy failed: ${missing.length} required setting(s) are missing for ${where}:\n` +
+    `Deploy failed. ${countPhrase} missing for ${where}:\n` +
       `${lines.join('\n')}\n\n` +
-      'Fix either way:\n' +
-      `  - ${setWhereYouRun} — the deploy saves it to ${where} for future deploys.\n` +
-      `  - Or add it to ${where} in the Prisma Console, under the project's environment variables.`,
+      'To fix this, do one of the following:\n' +
+      `  - ${setWhereYouRun} The next deploy saves it to ${where}.\n` +
+      `  - Add it in the Prisma Console, under the project's environment variables for ${where}.`,
   );
 }
 
