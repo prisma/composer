@@ -321,6 +321,20 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
+  test('in GitHub Actions, the missing-setting remedy names repository secrets', async () => {
+    state.rows = [];
+
+    const error: unknown = await withEnv({ GITHUB_ACTIONS: 'true' }, () =>
+      runPreflight(
+        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        { client: fakeClient(state) },
+      ),
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('repository secret');
+  });
+
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
     await runPreflight(
       { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },

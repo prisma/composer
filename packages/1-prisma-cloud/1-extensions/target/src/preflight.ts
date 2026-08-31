@@ -205,22 +205,31 @@ const fillFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
   );
 
+/**
+ * The message speaks the reader's language, not the platform's: no "deploy
+ * shell", no env-var class/override/template vocabulary. The GitHub Actions
+ * variant names the concrete place a CI user sets a value.
+ */
 function missingError(
   missing: readonly MissingBinding[],
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
-  const scope =
+  const where =
     branchId === undefined
-      ? 'the production class (project-level template)'
-      : `the preview class of stage "${stage ?? branchId}" (branch override or template)`;
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
+      ? 'the production environment'
+      : `the "${stage ?? branchId}" environment`;
+  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const setWhereYouRun =
+    process.env['GITHUB_ACTIONS'] === 'true'
+      ? 'Add each as a repository secret and pass it to the deploy step under `env:`'
+      : 'Set each as an environment variable where you run the deploy';
   return new Error(
-    `Deploy preflight failed — ${missing.length} env var(s) (secret or env-sourced param) are not ` +
-      `provisioned on Prisma Cloud for ${scope}, and are absent from the deploy shell:\n` +
+    `Deploy failed: ${missing.length} required setting(s) are missing for ${where}:\n` +
       `${lines.join('\n')}\n\n` +
-      'Set each in the deploy shell environment (the CLI will provision it on deploy), or create ' +
-      `it on the platform (Prisma Console or the Management API) in ${scope}.`,
+      'Fix either way:\n' +
+      `  - ${setWhereYouRun} — the deploy saves it to ${where} for future deploys.\n` +
+      `  - Or add it to ${where} in the Prisma Console, under the project's environment variables.`,
   );
 }
 
