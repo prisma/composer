@@ -205,12 +205,6 @@ const fillFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
   );
 
-/**
- * The message is a runnable fix, not a description: the exact `project env
- * add` command with the real names, project, and scope, plus the Console
- * page as the no-CLI alternative. No platform vocabulary ("deploy shell",
- * env-var classes).
- */
 function missingError(
   missing: readonly MissingBinding[],
   projectId: string,
@@ -221,7 +215,8 @@ function missingError(
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
   const pairs = missing.map((m) => `${m.name}=<value>`).join(' ');
-  const scopeFlag = branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  const scopeFlag =
+    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
   const consoleStep =
     branchId === undefined
       ? 'add each one under Production. Those values apply when the default branch deploys to production.'
