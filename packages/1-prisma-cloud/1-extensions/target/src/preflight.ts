@@ -222,7 +222,7 @@ function missingError(
   const shellStep =
     process.env['GITHUB_ACTIONS'] === 'true'
       ? "In GitHub: add each one as a repository secret and pass it to the deploy step's env block in the workflow file."
-      : `In this terminal, before you deploy again: export ${firstName}=<value>` +
+      : `In the terminal you deploy from, set the variable and deploy again: export ${firstName}=<value>` +
         ' The deploy saves it to your Prisma project, so this is needed only once.';
   const consoleStep =
     branchId === undefined
