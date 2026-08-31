@@ -206,32 +206,34 @@ const fillFailedError = (key: string, error: unknown): Error =>
   );
 
 /**
- * The message speaks the reader's language, not the platform's: no "deploy
- * shell", no env-var class/override/template vocabulary. The GitHub Actions
- * variant names the concrete place a CI user sets a value.
+ * Every step names a concrete place and action: a literal export in this
+ * terminal (or a repository secret in GitHub Actions), or the exact Console
+ * page and section. No platform vocabulary ("deploy shell", env-var classes).
  */
 function missingError(
   missing: readonly MissingBinding[],
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
-  const where =
-    branchId === undefined
-      ? 'the production environment'
-      : `the "${stage ?? branchId}" environment`;
   const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
   const countPhrase =
-    missing.length === 1 ? '1 required setting is' : `${missing.length} required settings are`;
-  const setWhereYouRun =
+    missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
+  const firstName = missing[0]?.name ?? 'NAME';
+  const shellStep =
     process.env['GITHUB_ACTIONS'] === 'true'
-      ? "Add each missing value as a repository secret and pass it to the deploy step's env block."
-      : 'Set each missing value as an environment variable where you run the deploy.';
+      ? "In GitHub: add each one as a repository secret and pass it to the deploy step's env block in the workflow file."
+      : `In this terminal, before you deploy again: export ${firstName}=<value>` +
+        ' The deploy saves it to your Prisma project, so this is needed only once.';
+  const consoleStep =
+    branchId === undefined
+      ? 'add each one under Production. Those values apply when the default branch deploys to production.'
+      : `add each one under Preview. Preview values apply to every branch deploy, including "${stage ?? branchId}".`;
   return new Error(
-    `Deploy failed. ${countPhrase} missing for ${where}:\n` +
+    `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
-      'To fix this, do one of the following:\n' +
-      `  - ${setWhereYouRun} The next deploy saves it to ${where}.\n` +
-      `  - Add it in the Prisma Console, under the project's environment variables for ${where}.`,
+      'Set the value in one of these two places, then deploy again:\n' +
+      `  - ${shellStep}\n` +
+      `  - In the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
 
