@@ -207,20 +207,34 @@ const fillFailedError = (key: string, error: unknown): Error =>
 
 function missingError(
   missing: readonly MissingBinding[],
+  projectId: string,
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
-  const scope =
+  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const countPhrase =
+    missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
+  const scopeFlag =
+    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  // `project env add` takes a single KEY=VALUE per call; the placeholder is
+  // quoted so a pasted command is not read as a shell redirection.
+  const commands = missing.map(
+    (m) => `prisma project env add ${m.name}="<value>" --project ${projectId} ${scopeFlag}`,
+  );
+  const runStep =
+    commands.length === 1
+      ? `Run: ${commands[0]}`
+      : `Run, once per setting:\n${commands.map((cmd) => `      ${cmd}`).join('\n')}`;
+  const consoleStep =
     branchId === undefined
-      ? 'the production class (project-level template)'
-      : `the preview class of stage "${stage ?? branchId}" (branch override or template)`;
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
+      ? 'add each one under Production. Those values apply when the default branch deploys to production.'
+      : `add each one under Preview. Preview values apply to every branch deploy, including "${stage ?? branchId}".`;
   return new Error(
-    `Deploy preflight failed — ${missing.length} env var(s) (secret or env-sourced param) are not ` +
-      `provisioned on Prisma Cloud for ${scope}, and are absent from the deploy shell:\n` +
+    `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
-      'Set each in the deploy shell environment (the CLI will provision it on deploy), or create ' +
-      `it on the platform (Prisma Console or the Management API) in ${scope}.`,
+      'Set the value in one of these two places, then deploy again:\n' +
+      `  - ${runStep}\n` +
+      `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
 
@@ -280,7 +294,7 @@ export async function runPreflight(
     }
     missing.push(meta);
   }
-  if (missing.length > 0) throw missingError(missing, branchId, input.stage);
+  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
   return updatedAt;
 }
 
