@@ -319,7 +319,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(message).toContain('service "ingest"');
     expect(message).toContain('production');
     expect(message).toContain(
-      'prisma project env add STRIPE_SECRET_KEY=<value> --project proj --role production',
+      'prisma project env add STRIPE_SECRET_KEY="<value>" --project proj --role production',
     );
     expect(state.posts).toEqual([]);
   });

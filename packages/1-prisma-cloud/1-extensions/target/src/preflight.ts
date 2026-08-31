@@ -214,9 +214,17 @@ function missingError(
   const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
-  const pairs = missing.map((m) => `${m.name}=<value>`).join(' ');
   const scopeFlag =
     branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  // `project env add` takes a single KEY=VALUE per call; the placeholder is
+  // quoted so a pasted command is not read as a shell redirection.
+  const commands = missing.map(
+    (m) => `prisma project env add ${m.name}="<value>" --project ${projectId} ${scopeFlag}`,
+  );
+  const runStep =
+    commands.length === 1
+      ? `Run: ${commands[0]}`
+      : `Run, once per setting:\n${commands.map((cmd) => `      ${cmd}`).join('\n')}`;
   const consoleStep =
     branchId === undefined
       ? 'add each one under Production. Those values apply when the default branch deploys to production.'
@@ -225,7 +233,7 @@ function missingError(
     `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
       'Set the value in one of these two places, then deploy again:\n' +
-      `  - Run: prisma project env add ${pairs} --project ${projectId} ${scopeFlag}\n` +
+      `  - ${runStep}\n` +
       `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
