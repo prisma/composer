@@ -6,7 +6,7 @@ App without re-deriving the API from documentation each time.
 
 ## What's in the box
 
-One skill, `prisma-composer`, covering the whole story: the mental model
+One skill, `prisma-composer-core-concepts`, covering the whole story: the mental model
 (Modules, `compute()`, `service.load()`), RPC contracts, databases, reusable
 modules (cron/storage/streams), config params, secrets, testing
 (`mockService`/`bootstrapService`), deploying (`prisma-composer deploy`,
@@ -71,7 +71,8 @@ surface change lands in both. For anyone editing the skill:
   nothing, the surface doesn't ship — name it under *What Composer doesn't do
   yet* instead of extrapolating.
 - **The skill must be self-contained.** It gets installed into other repos, so
-  no link may resolve outside `skills/prisma-composer/`. Repo docs may be
+  no link may resolve outside `skills/prisma-composer-core-concepts/`. Repo
+  docs may be
   named in prose ("`docs/design/10-domains/testing.md` in the prisma/composer
   repo"), never linked relatively.
 - **Teach concepts, not procedures.** Name the moving parts and the command
