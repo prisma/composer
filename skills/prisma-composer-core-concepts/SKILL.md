@@ -3,7 +3,7 @@ name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
   library_version: "0.16.0"
-  version: 2026.8.28
+  version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
   (`@prisma/composer`): wiring its services and Modules, running it locally,
@@ -19,10 +19,13 @@ A **Prisma App** is a tree of typed declarations composed in TypeScript and
 handed to the `prisma-composer` CLI. This file covers structures,
 hierarchies, relationships, and workflows: the concepts you cannot observe
 from the code or the CLI's help output. It is not a CLI reference; discover
-any individual command and its flags with `--help`. The Prisma platform
-moves fast, so treat this file as the stable conceptual core and find
-current, fuller documentation at <https://www.prisma.io/docs>. For working
-code, read `examples/` in the prisma/composer repo.
+any individual command and its flags with `--help`. Commands named here
+belong to the `prisma-composer` CLI itself; a host CLI that embeds Composer
+may not carry every verb, so confirm a command exists via `--help` rather
+than inferring it. The Prisma platform moves fast, so treat this file as the
+stable conceptual core and find current, fuller documentation at
+<https://www.prisma.io/docs>. For working code, read `examples/` in the
+prisma/composer repo.
 
 Two principles govern everything and are binding
 (`docs/design/01-principles/`):
@@ -70,17 +73,22 @@ deploy; don't use the cloud to find out whether the wiring is correct.
 Composer itself is target-agnostic: `@prisma/composer` carries authoring,
 testing, and the CLI, coupled to no platform. A deploy target is an extension
 registered in the deploy config; `@prisma/composer-prisma-cloud` is the
-Prisma Cloud target (`compute`, `rawPostgres`, `postgres`, `bucket`,
-`envSecret`, `envParam`, and the shared `/cron`, `/storage`, `/streams`,
-`/orm` modules) and the one this skill's deploy sections assume. These are
-the only two Composer packages a basic Prisma Cloud app needs; an extension
-adds its own `prisma-composer-*` package alongside them. Compose an existing
-Module before implementing a capability yourself; wiring one in is a couple
-of lines.
+Prisma Cloud target and the one this skill's deploy sections assume. Its
+root exports `compute`, `rawPostgres`, `bucket`, `envSecret`, and
+`envParam`; the ORM vocabulary (`postgres`, `dataContract`) lives under the
+`/orm` subpath, alongside the shared `/cron`, `/storage`, `/streams`,
+`/auth`, and `/email` modules. These are the only two Composer packages a
+basic Prisma Cloud app needs, and nothing installs them for you: a fresh
+project starts with neither, so add both as dependencies first. An
+extension adds its own `prisma-composer-*` package alongside them. Compose
+an existing Module before implementing a capability yourself; wiring one in
+is a couple of lines.
 
-Within the entry graph (everything reachable from `module.ts`), relative
-imports may use `./service.js` or extensionless `./service`: the CLI maps
-both to the `.ts` source under Node, and Bun does this natively.
+Within the entry graph (everything reachable from `module.ts`), write
+relative imports with explicit `.ts` extensions (`./service.ts`, with
+`allowImportingTsExtensions` in tsconfig): that form resolves everywhere.
+The `prisma-composer` CLI also maps `./service.js` and extensionless
+`./service` to the `.ts` source, but other hosts may not.
 
 ## The service node is the only doorway
 
@@ -212,21 +220,26 @@ Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).
 It registers extensions (`prismaCloud()`, `nodeBuild()`, `nextjsBuild()` when
 the app has a Next.js service) and the deploy-state backend
-(`prismaState()`). It is read only by deploy and destroy; app code never
-imports it.
+(`prismaState()`). It is read by the CLI's operations (deploy, destroy, and
+dev; a `dev` run without one refuses, naming the missing file) and never
+imported by app code.
 
 ## Databases and migrations
 
 Two kinds of Postgres dependency:
 
 1. **`rawPostgres()`**: the binding is `{ url }` and the app owns its client.
-2. **`postgres(...)`**: a Prisma-ORM-typed database. `load()` returns the
-   typed client Composer constructs from your data contract, so queries are
-   compile-time checked. One `dataContract`-wrapped value (emitted from
-   `contract.prisma` by `prisma contract emit`) is referenced by both the
-   dependency end (`deps: { db: postgres(catalogData) }`) and the resource
-   end, which also names the `prisma.config.ts` path so the deploy's
-   migration step can find `migrations/`.
+2. **`postgres(...)`**: a Prisma-ORM-typed database. The binding is
+   `{ url, client }` (ADR-0040): the raw connection URL plus the typed
+   client Composer constructs from your data contract, lazily on first
+   access, so queries go through `binding.client` and are compile-time
+   checked. Both `postgres` and `dataContract` import from
+   `@prisma/composer-prisma-cloud/orm`, not the package root. One
+   `dataContract`-wrapped value (emitted from `contract.prisma` by
+   `prisma contract emit`) is referenced by both the dependency end
+   (`deps: { db: postgres(catalogData) }`) and the resource end, which also
+   names the `prisma.config.ts` path so the deploy's migration step can
+   find `migrations/`.
 
 **Deploys are replay-only**: they apply the migrations committed under
 `migrations/` and never create schema themselves. Every schema change,
@@ -392,6 +405,8 @@ provision exactly like your own:
 | `cron` from `/cron` | An always-on scheduler firing your schedule at your runner service | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
+| `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database) | `api`, `session`, `admin` |
+| `email` from `/email` | Transactional email with a stored outbox (own service and database) | `send`, `outbox` |
 
 `bucket()` (imported alongside `rawPostgres`) is a raw S3-compatible bucket:
 the dependency end receives `{ url, bucket, accessKeyId, secretAccessKey }`,
@@ -420,26 +435,37 @@ today the blocks above plus your own Modules are the whole set, so verify a
    crashes into a 502 restart loop unless the pool is small and
    reconnect-friendly (`new SQL({ url, max: 1, idleTimeout: 10 })` for Bun)
    and the process logs `uncaughtException`/`unhandledRejection` instead of
-   dying.
+   dying. Under `dev` watch-restarts against the local emulator, add
+   `prepare: false` as well: restarted processes collide on
+   prepared-statement names in the emulator's shared session.
 4. **Cold starts reset service-to-service connections.** A call into a
    scaled-to-zero service can get `ECONNRESET`; retry it.
 5. **Bind `0.0.0.0`, not loopback.** The platform routes external HTTP to
-   the VM;
-   a loopback-only listener is unreachable.
+   the VM; a loopback-only listener is unreachable.
 6. **The ingress buffers streaming responses.** An open SSE tail delivers
    nothing and times out at 60s; don't build on streamed HTTP responses.
-7. **A provision id shorter than 3 characters is rejected by the platform**
-   (name the database `'database'`, not `'db'`), and a service whose name
-   equals its enclosing Module's reads as `auth.auth` unless given an
-   explicit `id`.
+7. **Naming rules fail at load, not typecheck.** Provision ids and declared
+   node names must be ASCII letters and digits only (`[A-Za-z0-9]`): they
+   derive config keys and address segments, so a hyphenated name like
+   `my-db` passes `tsc` and then fails the load. The root module's name is
+   exempt. A provision id shorter than 3 characters is rejected by the
+   platform (name the database `'database'`, not `'db'`), and a service
+   whose name equals its enclosing Module's reads as `auth.auth` unless
+   given an explicit `id`.
 8. **`MIGRATION_PATH_NOT_FOUND`**: see Databases above; author the missing
    migration, don't skip the plan step.
+9. **Date/time columns hand back `Temporal.*` values on read.** Bun and
+   stock Node ship no global `Temporal`, so a service with `DateTime`
+   contract columns compiles and deploys, then fails on the first timestamp
+   read. Provide the global at the server entry
+   (`import 'temporal-polyfill/global'`) or use string column types.
 
 ## What Composer doesn't do yet
 
 Name the gap instead of inventing an API:
 
-1. **No interactive auth.** Deploys authenticate only via a static
+1. **No interactive auth in the `prisma-composer` CLI.** Its deploys
+   authenticate only via a static
    `PRISMA_SERVICE_TOKEN`; there is no `login` flow.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a
    co-located handler without HTTP; use `bootstrapService` with a loopback
