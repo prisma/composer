@@ -610,7 +610,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
     'prisma.config.ts',
   );
 
-  test('default stage: the Database attaches the default Branch; the migration runs on its warmed url', async () => {
+  test('default stage: the Database attaches the default Branch; the migration persists compact contract attestation on its warmed url', async () => {
     await withEnv({}, async () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const node = postgres({
@@ -640,9 +640,54 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
         ],
       ]);
       const [migrateId, migrateProps] = recorded.pnMigrate[before.migrate] ?? ['', {}];
+      const persisted = migrateProps as Record<string, unknown>;
       expect(migrateId).toBe('pndata-migrate');
-      expect((migrateProps as { url: unknown }).url).toBe('postgres://pndata-conn');
+      expect(persisted['url']).toBe('postgres://pndata-conn');
+      expect(persisted['currentContractHash']).toBe(widgetContractJson.storage.storageHash);
+      expect(persisted['targetHash']).toBe(widgetContractJson.storage.storageHash);
+      expect(persisted['migrationsDir']).toBe(path.join(path.dirname(widgetConfig), 'migrations'));
+      expect(persisted['configPath']).toBe(widgetConfig);
+      expect(persisted['packHeadRefHashes']).toEqual([]);
+      expect('contractJson' in persisted).toBe(false);
       expect(result.entities).toEqual([{ kind: 'postgres-database', id: 'pndata-db#cloud-id' }]);
+    });
+  });
+
+  test('a contract larger than 100 KB does not enlarge newly persisted migration props', async () => {
+    await withEnv({}, async () => {
+      const oversizedProof = 'x'.repeat(110_001);
+      expect(oversizedProof.length).toBeGreaterThan(100_000);
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const lower = async (contractJson: unknown) => {
+        const node = postgres({
+          name: 'oversized',
+          contract: dataContract(contractJson),
+          config: widgetConfig,
+        });
+        const ctx = {
+          id: 'oversized',
+          node,
+          graph: { edges: [], nodes: [] },
+          application: {
+            projectId: 'shop-project#cloud-id',
+            branchId: undefined,
+            defaultBranchId: 'br_default',
+            branchless: false,
+          },
+        } as unknown as LowerContext;
+        const before = recorded.pnMigrate.length;
+        await runAsync<LoweredResult>(resourceDescriptorOf(target, 'postgres')(ctx));
+        return recorded.pnMigrate[before]?.[1];
+      };
+
+      const compact = await lower(widgetContractJson);
+      const oversized = await lower({ ...widgetContractJson, oversizedProof });
+      const compactJson = JSON.stringify(compact);
+      const oversizedJson = JSON.stringify(oversized);
+
+      expect(oversizedJson).toBe(compactJson);
+      expect(oversizedJson).not.toContain(oversizedProof);
+      expect('contractJson' in ((oversized ?? {}) as Record<string, unknown>)).toBe(false);
     });
   });
 });
