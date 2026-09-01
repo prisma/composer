@@ -133,6 +133,123 @@ describe("the real providers' tags resolve by type (direct context, no cross-mod
   });
 });
 
+const widgetConfig = path.join(
+  import.meta.dir,
+  'fixtures',
+  'widget-contract',
+  'source',
+  'prisma.config.ts',
+);
+const gadgetConfig = path.join(
+  import.meta.dir,
+  'fixtures',
+  'gadget-contract',
+  'source',
+  'prisma.config.ts',
+);
+const widgetHash = targetStorageHash(widgetContractJson);
+const gadgetHash = targetStorageHash(gadgetContractJson);
+
+const reconcile = (input: {
+  readonly url: string;
+  readonly migrationsDir: string;
+  readonly configPath: string;
+  readonly currentContractHash: string;
+  readonly targetHash: string;
+  readonly invariants?: readonly string[];
+  readonly packHeadRefHashes?: readonly string[];
+  readonly refName?: string;
+}) =>
+  ormMigrationProviderService.reconcile({
+    id: 'db',
+    fqn: 'db',
+    instanceId: 'db',
+    news: {
+      url: input.url,
+      migrationsDir: input.migrationsDir,
+      configPath: input.configPath,
+      currentContractHash: input.currentContractHash,
+      targetHash: input.targetHash,
+      invariants: input.invariants ?? [],
+      packHeadRefHashes: input.packHeadRefHashes ?? [],
+      ...(input.refName !== undefined ? { refName: input.refName } : {}),
+    },
+    olds: undefined,
+    output: undefined,
+    // The plan session / bindings are unused by this provider's reconcile.
+    session: undefined as never,
+    bindings: undefined as never,
+  });
+
+const matchFailure = <A>(effect: Effect.Effect<A, unknown, never>) =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.match({
+        onSuccess: () => ({ failed: false as const, error: undefined }),
+        onFailure: (error: unknown) => ({ failed: true as const, error }),
+      }),
+    ),
+  );
+
+describe('OrmMigration contract loading and attestation', () => {
+  const impossibleUrl = 'postgres://127.0.0.1:1/never-opened';
+
+  test('a mismatched config-loaded contract fails before any database access', async () => {
+    const outcome = await matchFailure(
+      reconcile({
+        url: impossibleUrl,
+        migrationsDir: path.join(path.dirname(widgetConfig), 'migrations'),
+        configPath: widgetConfig,
+        currentContractHash: gadgetHash,
+        targetHash: widgetHash,
+      }),
+    );
+
+    expect(outcome.failed).toBe(true);
+    expect(outcome.error).toBeInstanceOf(OrmMigrationError);
+    expect((outcome.error as OrmMigrationError).code).toBe('CONTRACT_IDENTITY_MISMATCH');
+  });
+
+  test('a missing emitted contract artifact fails before any database access', async () => {
+    const dir = fs.mkdtempSync(path.join(import.meta.dir, 'tmp-missing-contract-'));
+    try {
+      const configPath = path.join(dir, 'prisma.config.ts');
+      const contractPath = path.relative(
+        dir,
+        path.join(import.meta.dir, 'fixtures', 'widget-contract', 'source', 'contract.ts'),
+      );
+      fs.writeFileSync(
+        configPath,
+        `import { definePrismaConfig } from '@prisma/cli-engine';\n` +
+          "import { defineConfig } from '@prisma/orm-postgres/config';\n\n" +
+          'export default definePrismaConfig({\n' +
+          '  orm: defineConfig({\n' +
+          `    contract: ${JSON.stringify(contractPath)},\n` +
+          "    output: './missing',\n" +
+          "    db: { connection: 'postgres://localhost:5432/placeholder' },\n" +
+          '  }),\n' +
+          '});\n',
+      );
+
+      const outcome = await matchFailure(
+        reconcile({
+          url: impossibleUrl,
+          migrationsDir: path.join(dir, 'migrations'),
+          configPath,
+          currentContractHash: widgetHash,
+          targetHash: widgetHash,
+        }),
+      );
+
+      expect(outcome.failed).toBe(true);
+      expect(outcome.error).toBeInstanceOf(OrmMigrationError);
+      expect((outcome.error as OrmMigrationError).code).toBe('CONTRACT_ARTIFACT_UNREADABLE');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 const pg: TestPostgres | undefined = startTestPostgres();
 
 if (pg === undefined) {
@@ -148,32 +265,6 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
   let testDb: TestDatabase;
   let url: string;
 
-  // Drive the reconcile through the exported provider service directly — no
-  // Effect layer to build, so the routing assertion can't be flaked by
-  // environment-specific layer internals.
-  const reconcile = (contractJson: unknown) =>
-    ormMigrationProviderService.reconcile({
-      id: 'db',
-      fqn: 'db',
-      instanceId: 'db',
-      news: {
-        url,
-        contractJson,
-        migrationsDir,
-        targetHash: targetStorageHash(contractJson),
-        invariants: [],
-        // No packs declared: reconcile must not touch configPath (the path
-        // deliberately points nowhere).
-        packHeadRefHashes: [],
-        configPath: path.join(migrationsDir, 'no-such-prisma.config.ts'),
-      },
-      olds: undefined,
-      output: undefined,
-      // The plan session / bindings are unused by this provider's reconcile.
-      session: undefined as never,
-      bindings: undefined as never,
-    });
-
   beforeAll(async () => {
     migrationsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pn-res-'));
     // Replay-only: the deploy pipeline applies only authored migrations, so
@@ -188,28 +279,52 @@ describe.skipIf(pg === undefined)('OrmMigration reconcile routes through applyOr
     if (migrationsDir !== undefined) fs.rmSync(migrationsDir, { recursive: true, force: true });
   });
 
-  test('reconcile applies the contract then no-ops on the resolved props', async () => {
-    const targetHash = targetStorageHash(widgetContractJson);
-    const first = await Effect.runPromise(reconcile(widgetContractJson));
-    expect(first.storageHash).toBe(targetHash);
-    const second = await Effect.runPromise(reconcile(widgetContractJson));
-    expect(second.storageHash).toBe(targetHash);
+  test('reconcile loads the config-declared contract, applies it, then no-ops on the resolved props', async () => {
+    const first = await Effect.runPromise(
+      reconcile({
+        url,
+        migrationsDir,
+        configPath: widgetConfig,
+        currentContractHash: widgetHash,
+        targetHash: widgetHash,
+      }),
+    );
+    expect(first.storageHash).toBe(widgetHash);
+    const second = await Effect.runPromise(
+      reconcile({
+        url,
+        migrationsDir,
+        configPath: widgetConfig,
+        currentContractHash: widgetHash,
+        targetHash: widgetHash,
+      }),
+    );
+    expect(second.storageHash).toBe(widgetHash);
   });
 
   test('reconcile re-throws a no-path failure: the Effect REJECTS with OrmMigrationError', async () => {
     // Ensure the DB is signed at widgetHash (idempotent if already there).
-    await Effect.runPromise(reconcile(widgetContractJson));
+    await Effect.runPromise(
+      reconcile({
+        url,
+        migrationsDir,
+        configPath: widgetConfig,
+        currentContractHash: widgetHash,
+        targetHash: widgetHash,
+      }),
+    );
 
     // Target a DIFFERENT contract (gadget) with no authored migration path. The
     // provider's `catch: (e) => e` must route the thrown OrmMigrationError into
     // the Effect's error channel — so the reconcile FAILS, not succeeds.
-    const outcome = await Effect.runPromise(
-      reconcile(gadgetContractJson).pipe(
-        Effect.match({
-          onSuccess: () => ({ failed: false as const, error: undefined }),
-          onFailure: (error: unknown) => ({ failed: true as const, error }),
-        }),
-      ),
+    const outcome = await matchFailure(
+      reconcile({
+        url,
+        migrationsDir,
+        configPath: gadgetConfig,
+        currentContractHash: gadgetHash,
+        targetHash: gadgetHash,
+      }),
     );
 
     expect(outcome.failed).toBe(true);

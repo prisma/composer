@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import {
+  loadContractJson,
   type PnExtensionPack,
   packHeadRefHashes,
   resolveMigrationsDir,
@@ -19,6 +20,9 @@ import {
   GADGET_PACK_ID,
   gadgetPack,
 } from './fixtures/packed-contract/pack.ts';
+import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
+  type: 'json',
+};
 
 const widgetConfig = path.join(
   import.meta.dir,
@@ -48,6 +52,26 @@ describe('resolveOrmConfig', () => {
   test('a config with no extension packs yields []', async () => {
     const project = await resolveOrmConfig(widgetConfig);
     expect(project.extensionPacks).toEqual([]);
+  });
+
+  test('resolves the emitted contract artifact path from the config output', async () => {
+    const project = await resolveOrmConfig(widgetConfig);
+    expect(project.contractArtifactPath).toBe(
+      path.join(path.dirname(widgetConfig), '..', 'emitted', 'contract.json'),
+    );
+    expect(path.isAbsolute(project.contractArtifactPath)).toBe(true);
+  });
+
+  test('without explicit output, the emitted contract path defaults next to the contract source', async () => {
+    const project = await resolveOrmConfig(packedConfig);
+    expect(project.contractArtifactPath).toBe(
+      path.join(path.dirname(packedConfig), 'contract.json'),
+    );
+  });
+
+  test('loadContractJson reads the emitted contract the config identifies', async () => {
+    const project = await resolveOrmConfig(widgetConfig);
+    expect(await loadContractJson(project.contractArtifactPath)).toEqual(widgetContractJson);
   });
 
   test('surfaces declared extension packs with their contract-space heads', async () => {

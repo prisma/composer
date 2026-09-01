@@ -67,14 +67,19 @@ export interface OrmMigrationOutcome {
  * migration path from the marker's state (or from empty, for a fresh
  * database) to the target ref. `RUNNER_FAILED` — a migration errored while
  * applying. `CONTRACT_INVALID` — the contract carries no
- * `storage.storageHash`, so no target can be resolved. `TARGET_REF_NOT_FOUND`
- * — the resource named a `targetRef` with no readable
- * `migrations/app/refs/<name>.json`.
+ * `storage.storageHash`, so no target can be resolved.
+ * `CONTRACT_ARTIFACT_UNREADABLE` — the emitted `contract.json` identified by
+ * `prisma.config.ts` could not be loaded. `CONTRACT_IDENTITY_MISMATCH` — the
+ * config-loaded emitted contract's storage hash does not match the database
+ * resource's declared current contract. `TARGET_REF_NOT_FOUND` — the resource
+ * named a `targetRef` with no readable `migrations/app/refs/<name>.json`.
  */
 export type OrmMigrationFailureCode =
   | 'MIGRATION_PATH_NOT_FOUND'
   | 'RUNNER_FAILED'
   | 'CONTRACT_INVALID'
+  | 'CONTRACT_ARTIFACT_UNREADABLE'
+  | 'CONTRACT_IDENTITY_MISMATCH'
   | 'TARGET_REF_NOT_FOUND';
 
 /** A deploy-failing migration error — surfaced, never swallowed. */
