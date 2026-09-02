@@ -182,7 +182,8 @@ deps: { db: postgres(catalogData) }
 
 An options object is the resource end — the module that owns the database
 provisions it, naming the `prisma.config.ts` path (relative to the
-module file) so the deploy can find `migrations/`:
+module file) so the deploy can reload the emitted `contract.json` and find
+`migrations/`:
 
 ```ts
 const db = provision(
@@ -191,7 +192,11 @@ const db = provision(
 ```
 
 Because both ends share the contract value, the deploy refuses to wire a
-service against a database whose schema doesn't match.
+service against a database whose schema doesn't match. The migration resource
+persists only compact contract identity in deploy state; the full emitted
+contract is reloaded from `prisma.config.ts` at reconcile time. If that
+artifact is missing, unreadable, or no longer matches the declared contract,
+the deploy fails before touching the database.
 [`examples/orm-demo`](../../examples/orm-demo/) is the minimal working
 version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is

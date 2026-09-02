@@ -89,9 +89,11 @@ or invalidity.
    run against a contract the runtime's validator would reject — the
    storage-hash check at wiring remains the compatibility check that matters
    (ADR-0022).
-3. `OrmMigration` and the deploy lowering are untouched: provisioning
-   `postgres({ name, contract, config })` still migrates at deploy. An app
-   owning its client gets framework-run migrations with no operator step.
+3. `postgres({ name, contract, config })` still migrates at deploy. The
+   migration resource now persists only compact contract identity and reloads
+   the emitted contract artifact from `prisma.config.ts` at reconcile time, so
+   an app owning its client still gets framework-run migrations with no
+   operator step.
 
 ## Alternatives considered
 

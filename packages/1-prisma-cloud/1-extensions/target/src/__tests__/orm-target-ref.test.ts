@@ -113,6 +113,18 @@ describe('resolveTargetRef', () => {
     });
   });
 
+  test('a named targetRef can point behind the current contract head', async () => {
+    await withTempDir(async (dir) => {
+      const refsDir = spaceRefsDirectory(spaceMigrationDirectory(dir, APP_SPACE_ID));
+      fs.mkdirSync(refsDir, { recursive: true });
+      await writeRef(refsDir, 'baseline', { hash: B, invariants: [] });
+      expect(await resolveTargetRef(dir, contractJson, 'baseline')).toEqual({
+        hash: B,
+        invariants: [],
+      });
+    });
+  });
+
   test('a missing named targetRef fails loudly with TARGET_REF_NOT_FOUND', async () => {
     await withTempDir(async (dir) => {
       let thrown: unknown;

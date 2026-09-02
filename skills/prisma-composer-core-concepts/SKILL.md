@@ -239,7 +239,7 @@ Two kinds of Postgres dependency:
    `prisma contract emit`) is referenced by both the dependency end
    (`deps: { db: postgres(catalogData) }`) and the resource end, which also
    names the `prisma.config.ts` path so the deploy's migration step can
-   find `migrations/`.
+   reload the emitted `contract.json` and find `migrations/`.
 
 **Deploys are replay-only**: they apply the migrations committed under
 `migrations/` and never create schema themselves. Every schema change,
@@ -256,8 +256,12 @@ If no authored path reaches the target contract, deploy (and `dev` against a
 stale local database) refuses with `MIGRATION_PATH_NOT_FOUND`; its message
 lists the two ways out: author the missing migration, or, when iterating
 against a local
-database only, `prisma db update`. Never skip step 3 before a deploy. See
-`examples/store/modules/catalog` for the complete pattern.
+database only, `prisma db update`. The tracked migration resource persists only
+compact contract identity in deploy state; if the emitted contract artifact
+named by `prisma.config.ts` is missing, unreadable, or no longer matches the
+declared `dataContract(...)` value, deploy fails before touching the database.
+Never skip step 3 before a deploy. See `examples/store/modules/catalog` for the
+complete pattern.
 
 ## Deploy model: converge, don't script
 
