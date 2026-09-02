@@ -244,7 +244,7 @@ describe('createRuntime()', () => {
       const bin = path.join(dir, 'fake-package-bin');
       fs.writeFileSync(
         bin,
-        '#!/usr/bin/env node\nprocess.exit(process.argv[2] === "ok" ? 0 : 1);\n',
+        '#!/usr/bin/env node\nprocess.exit(process.argv[2] === "ok value" ? 0 : 1);\n',
         {
           mode: 0o755,
         },
@@ -254,7 +254,7 @@ describe('createRuntime()', () => {
 
       const child = spawn({
         command: bin,
-        args: ['ok'],
+        args: ['ok value'],
         cwd: dir,
         env: process.env,
         output: 'inherit',
