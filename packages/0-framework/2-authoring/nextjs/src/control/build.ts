@@ -134,6 +134,63 @@ async function collectSymlinks(root: string): Promise<string[]> {
   return links;
 }
 
+/**
+ * Windows standalone output can contain absolute package links. An absolute
+ * build-machine path cannot ship, even when its target belongs to Next's
+ * declared trace root. Stage that exact target at the corresponding bundle
+ * path, then preserve the link as a relative in-bundle link.
+ *
+ * The link is never dereferenced: its target is copied separately and the
+ * topology remains a link. Targets outside the declared trace root are left
+ * untouched for the bundle validator to reject.
+ */
+async function stageAbsoluteStandaloneLinkTargets(
+  bundleDir: string,
+  manifest: ServerFilesManifest,
+): Promise<string[]> {
+  const tracingRoot = manifest.tracingRoot;
+  if (tracingRoot === undefined || (await lstatIfPresent(tracingRoot)) === undefined) return [];
+
+  const tracedRootReal = await fs.promises.realpath(tracingRoot);
+  const stagedSources = new Set<string>();
+  let staged = true;
+  while (staged) {
+    staged = false;
+    for (const linkPath of await collectSymlinks(bundleDir)) {
+      const rawTarget = await fs.promises.readlink(linkPath);
+      if (!path.isAbsolute(rawTarget)) continue;
+
+      let sourceReal: string;
+      try {
+        sourceReal = await fs.promises.realpath(linkPath);
+      } catch {
+        continue;
+      }
+      if (!isWithin(tracedRootReal, sourceReal)) continue;
+
+      const target = path.join(bundleDir, path.relative(tracedRootReal, sourceReal));
+      if (!isWithin(bundleDir, target) || target === linkPath) continue;
+      if (await hasSymlinkAncestor(bundleDir, target)) continue;
+      if ((await lstatIfPresent(target)) === undefined) {
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.cp(sourceReal, target, { recursive: true, verbatimSymlinks: true });
+      }
+
+      const sourceStat = await fs.promises.stat(sourceReal);
+      const relativeTarget = path.relative(path.dirname(linkPath), target);
+      await fs.promises.rm(linkPath, { recursive: true, force: true });
+      await fs.promises.symlink(
+        relativeTarget,
+        linkPath,
+        sourceStat.isDirectory() ? 'dir' : 'file',
+      );
+      stagedSources.add(sourceReal);
+      staged = true;
+    }
+  }
+  return [...stagedSources];
+}
+
 /** In-bundle link targets that the standalone tree does not contain — the
  * repairs staging has to make. */
 async function missingLinkTargets(bundleDir: string): Promise<string[]> {
@@ -234,7 +291,8 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     recursive: true,
     verbatimSymlinks: true,
   });
-  const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
+  const stagedAbsoluteLinkTargets = await stageAbsoluteStandaloneLinkTargets(bundleDir, manifest);
+  const stagedMissingLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
 
   // The documented copy: Next omits the client assets from standalone; place
   // them beside the app's server.js so it serves them (docs: `cp -r public
@@ -279,7 +337,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   return {
     dir: workDir,
     entry: path.posix.join('bundle', appRel.split(path.sep).join('/'), 'server.js'),
-    watch: [standaloneRoot, ...stagedLinkTargets],
+    watch: [standaloneRoot, ...stagedAbsoluteLinkTargets, ...stagedMissingLinkTargets],
   };
 }
 

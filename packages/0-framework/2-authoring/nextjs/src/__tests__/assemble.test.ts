@@ -179,6 +179,55 @@ describe('assemble()', () => {
     expect(result.watch).toContain(source);
   }, 20_000);
 
+  test('rewrites an absolute package link to its staged in-bundle target', async () => {
+    const root = makeAppRoot();
+    const { appRel } = writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(root, 'node_modules', 'pg');
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "pg";\n');
+    const linkDir = path.join(standalone, appRel, '.next', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(source, path.join(linkDir, 'pg-traced'), 'dir');
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const bundle = path.join(cwd, '.prisma-composer', 'artifacts', 'storefront.web', 'bundle');
+    const bundledTarget = path.join(bundle, 'node_modules', 'pg');
+    const bundledLink = path.join(bundle, appRel, '.next', 'node_modules', 'pg-traced');
+    expect(fs.lstatSync(bundledLink).isSymbolicLink()).toBe(true);
+    expect(path.resolve(path.dirname(bundledLink), fs.readlinkSync(bundledLink))).toBe(
+      bundledTarget,
+    );
+    expect(fs.readFileSync(path.join(bundledTarget, 'index.js'), 'utf8')).toContain('pg');
+    expect(result.watch).toContain(fs.realpathSync(source));
+  }, 20_000);
+
+  test('rejects an absolute package link outside the declared tracing root', async () => {
+    const root = makeAppRoot();
+    const { appRel } = writeNextBuild(root);
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-outside-'));
+    tmpDirs.push(outside);
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'must not ship');
+    const linkDir = path.join(root, '.next', 'standalone', appRel, '.next', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(outside, path.join(linkDir, 'escaped'), 'dir');
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd: root,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/assembled bundle contains a symlink whose target escapes the bundle/);
+  }, 20_000);
+
   test('refuses a manifest whose app location escapes its tracing root', async () => {
     const root = makeAppRoot();
     writeNextBuild(root);
