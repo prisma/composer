@@ -23,7 +23,8 @@
     "@internal/foundation": "workspace:0.16.0",
     "@prisma/cli-engine": "0.3.0",
     "c12": "^3.3.4",
-    "chokidar": "^4.0.3"
+    "chokidar": "^4.0.3",
+    "execa": "^9.6.1"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.16.0",

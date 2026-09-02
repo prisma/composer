@@ -12,7 +12,6 @@
  * story: this CLI has no login flow and mounts no auth commands, so there is
  * nothing to store — the two variables ARE the credential.
  */
-import { spawn } from 'node:child_process';
 import {
   EnvironmentCredentialManager,
   type HostProcess,
@@ -20,6 +19,7 @@ import {
   type Runtime,
   type SpawnChild,
 } from '@prisma/cli-engine';
+import { execa } from 'execa';
 
 /** Where the management API lives. Matches the lowering client's default origin; the env var is the escape hatch for staging. */
 const DEFAULT_MANAGEMENT_API_BASE_URL = 'https://api.prisma.io';
@@ -33,17 +33,20 @@ const DEFAULT_AUTH_BASE_URL = 'https://auth.prisma.io';
  * side of that seam.
  */
 const spawnChild: SpawnChild = (request) => {
-  const child = spawn(request.command, [...request.args], {
+  const child = execa(request.command, request.args, {
     cwd: request.cwd,
     stdio: 'inherit',
     env: request.env,
+    extendEnv: false,
+    reject: false,
   });
   return {
-    ended: new Promise((resolve, reject) => {
-      child.on('error', reject);
-      child.on('close', (exitCode, signal) => {
-        resolve({ exitCode, signal });
-      });
+    ended: child.then((result) => {
+      if (result.exitCode === undefined && result.signal === undefined) throw result;
+      return {
+        exitCode: result.exitCode ?? null,
+        signal: result.signal ?? null,
+      };
     }),
     kill: (signal) => {
       child.kill(signal);

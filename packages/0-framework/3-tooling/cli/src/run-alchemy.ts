@@ -1,11 +1,10 @@
 /**
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
- * Alchemy" call): hand the terminal to the generated stack file. Resolves the
- * workspace's own installed `alchemy` bin (walking up `node_modules/.bin`
- * from the generated file's package dir) rather than going through
- * `bunx`/`npx`, so this works the same under node and bun — the resolved
- * bin's own launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch
- * from there, driven by the env it inherits.
+ * Alchemy" call): hand the terminal to the generated stack file.
+ *
+ * Resolves the workspace's installed `alchemy` bin. The actual child runner
+ * uses Execa, which handles package-manager shims and shebangs on Windows
+ * without a shell while preserving argv boundaries.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -13,10 +12,10 @@
  * `spawnAlchemy` is the default for programmatic hosts driving
  * `@prisma/composer/control`, which have no engine to borrow.
  */
-import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
+import { execa } from 'execa';
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
 export function resolveAlchemyBin(startDir: string): string {
@@ -131,15 +130,15 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  */
 export const spawnAlchemy: RunAlchemy = async (invocation) => {
   const line = alchemyCommandLine(invocation);
-  return new Promise<AlchemyOutcome>((resolve, reject) => {
-    const child = spawn(line.command, [...line.args], {
-      cwd: line.cwd,
-      stdio: 'inherit',
-      env: { ...process.env, ...line.env },
-    });
-    child.on('error', reject);
-    child.on('close', (exitCode, signal) => {
-      resolve({ exitCode, signal });
-    });
+  const result = await execa(line.command, line.args, {
+    cwd: line.cwd,
+    stdio: 'inherit',
+    env: line.env,
+    reject: false,
   });
+  if (result.exitCode === undefined && result.signal === undefined) throw result;
+  return {
+    exitCode: result.exitCode ?? null,
+    signal: result.signal ?? null,
+  };
 };
