@@ -25,6 +25,7 @@
  * Paths are file-relative (ADR-0004): `appDir` resolves against
  * `dirname(build.module)`.
  */
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,11 +135,25 @@ async function collectSymlinks(root: string): Promise<string[]> {
   return links;
 }
 
+async function createAbsoluteLinkStagingRoot(bundleDir: string): Promise<string> {
+  const base = path.join(bundleDir, '.prisma-composer-absolute-links');
+  for (let suffix = 0; ; suffix += 1) {
+    const candidate = suffix === 0 ? base : `${base}-${suffix}`;
+    try {
+      await fs.promises.mkdir(candidate);
+      return candidate;
+    } catch (error) {
+      if (error instanceof Error && Reflect.get(error, 'code') === 'EEXIST') continue;
+      throw error;
+    }
+  }
+}
+
 /**
  * Windows standalone output can contain absolute package links. An absolute
  * build-machine path cannot ship, even when its target belongs to Next's
- * declared trace root. Stage that exact target at the corresponding bundle
- * path, then preserve the link as a relative in-bundle link.
+ * declared trace root. Stage that exact target under a fresh, collision-free
+ * bundle directory, then preserve the link as a relative in-bundle link.
  *
  * The link is never dereferenced: its target is copied separately and the
  * topology remains a link. Targets outside the declared trace root are left
@@ -153,6 +168,9 @@ async function stageAbsoluteStandaloneLinkTargets(
 
   const tracedRootReal = await fs.promises.realpath(tracingRoot);
   const stagedSources = new Set<string>();
+  const stagedTargets = new Map<string, string>();
+  let stagingRoot: string | undefined;
+  let nextStagedTarget = 0;
   let staged = true;
   while (staged) {
     staged = false;
@@ -168,12 +186,13 @@ async function stageAbsoluteStandaloneLinkTargets(
       }
       if (!isWithin(tracedRootReal, sourceReal)) continue;
 
-      const target = path.join(bundleDir, path.relative(tracedRootReal, sourceReal));
-      if (!isWithin(bundleDir, target) || target === linkPath) continue;
-      if (await hasSymlinkAncestor(bundleDir, target)) continue;
-      if ((await lstatIfPresent(target)) === undefined) {
-        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      let target = stagedTargets.get(sourceReal);
+      if (target === undefined) {
+        stagingRoot ??= await createAbsoluteLinkStagingRoot(bundleDir);
+        target = path.join(stagingRoot, String(nextStagedTarget));
+        nextStagedTarget += 1;
         await fs.promises.cp(sourceReal, target, { recursive: true, verbatimSymlinks: true });
+        stagedTargets.set(sourceReal, target);
       }
 
       const sourceStat = await fs.promises.stat(sourceReal);
