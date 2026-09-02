@@ -19,6 +19,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - run: pnpm turbo run build --filter=@internal/cli...
+
       - name: Verify package-bin spawning
         run: >-
           pnpm exec bun test
