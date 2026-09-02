@@ -207,6 +207,71 @@ describe('assemble()', () => {
     expect(result.watch).toContain(fs.realpathSync(source));
   }, 20_000);
 
+  test('stages a traced sibling referenced by a relative link inside an absolute target', async () => {
+    const root = makeAppRoot();
+    const { appRel } = writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const store = path.join(root, 'node_modules', '.pnpm', 'pkg@1.0.0', 'node_modules');
+    const source = path.join(store, 'pkg');
+    const sibling = path.join(store, 'helper');
+    fs.mkdirSync(source, { recursive: true });
+    fs.mkdirSync(sibling, { recursive: true });
+    fs.writeFileSync(path.join(sibling, 'marker.txt'), 'traced sibling\n');
+    fs.symlinkSync('../helper', path.join(source, 'helper'), 'dir');
+    const linkDir = path.join(standalone, appRel, '.next', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(source, path.join(linkDir, 'pkg-traced'), 'dir');
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const bundle = path.join(cwd, '.prisma-composer', 'artifacts', 'storefront.web', 'bundle');
+    const bundledLink = path.join(bundle, appRel, '.next', 'node_modules', 'pkg-traced');
+    const bundledTarget = path.resolve(path.dirname(bundledLink), fs.readlinkSync(bundledLink));
+    const nestedLink = path.join(bundledTarget, 'helper');
+    const nestedTarget = path.resolve(path.dirname(nestedLink), fs.readlinkSync(nestedLink));
+    expect(fs.lstatSync(nestedLink).isSymbolicLink()).toBe(true);
+    expect(nestedTarget.startsWith(`${bundle}${path.sep}`)).toBe(true);
+    expect(fs.readFileSync(path.join(nestedTarget, 'marker.txt'), 'utf8')).toContain(
+      'traced sibling',
+    );
+    expect(result.watch).toContain(fs.realpathSync(source));
+    expect(result.watch).toContain(fs.realpathSync(sibling));
+  }, 20_000);
+
+  test('rejects an external nested link even when relocation would make it hit bundle content', async () => {
+    const root = makeAppRoot();
+    const { appRel } = writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(root, 'pkg');
+    fs.mkdirSync(source);
+    const outsideName = `${path.basename(root)}-outside`;
+    const outside = path.join(path.dirname(root), outsideName);
+    tmpDirs.push(outside);
+    fs.mkdirSync(outside);
+    fs.writeFileSync(path.join(outside, 'marker.txt'), 'outside trace\n');
+    fs.symlinkSync(path.relative(source, outside), path.join(source, 'escaped'), 'dir');
+    const collision = path.join(standalone, outsideName);
+    fs.mkdirSync(collision);
+    fs.writeFileSync(path.join(collision, 'marker.txt'), 'bundle collision\n');
+    const linkDir = path.join(standalone, appRel, '.next', 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(source, path.join(linkDir, 'pkg-traced'), 'dir');
+
+    await expect(
+      assemble({
+        address: 'storefront.web',
+        cwd: root,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }),
+    ).rejects.toThrow(/symlink outside the declared tracing root/);
+  }, 20_000);
+
   test('does not let an occupied bundle path shadow an absolute-link target', async () => {
     const root = makeAppRoot();
     const { appRel } = writeNextBuild(root);

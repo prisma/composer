@@ -171,41 +171,76 @@ async function stageAbsoluteStandaloneLinkTargets(
   const stagedTargets = new Map<string, string>();
   let stagingRoot: string | undefined;
   let nextStagedTarget = 0;
-  let staged = true;
-  while (staged) {
-    staged = false;
-    for (const linkPath of await collectSymlinks(bundleDir)) {
-      const rawTarget = await fs.promises.readlink(linkPath);
-      if (!path.isAbsolute(rawTarget)) continue;
 
-      let sourceReal: string;
+  /** Copies one trusted target and repairs links whose meaning relocation would change. */
+  async function stageSource(sourceReal: string): Promise<string> {
+    const existing = stagedTargets.get(sourceReal);
+    if (existing !== undefined) return existing;
+
+    stagingRoot ??= await createAbsoluteLinkStagingRoot(bundleDir);
+    const target = path.join(stagingRoot, String(nextStagedTarget));
+    nextStagedTarget += 1;
+    stagedTargets.set(sourceReal, target);
+
+    const sourceStat = await fs.promises.stat(sourceReal);
+    await fs.promises.cp(sourceReal, target, { recursive: true, verbatimSymlinks: true });
+    stagedSources.add(sourceReal);
+
+    if (!sourceStat.isDirectory()) return target;
+    for (const stagedLink of await collectSymlinks(target)) {
+      const sourceLink = path.join(sourceReal, path.relative(target, stagedLink));
+      const rawTarget = await fs.promises.readlink(sourceLink);
+      const sourceTarget = path.isAbsolute(rawTarget)
+        ? rawTarget
+        : path.resolve(path.dirname(sourceLink), rawTarget);
+      if (!path.isAbsolute(rawTarget) && isWithin(sourceReal, sourceTarget)) continue;
+
+      let nestedSourceReal: string;
       try {
-        sourceReal = await fs.promises.realpath(linkPath);
+        nestedSourceReal = await fs.promises.realpath(sourceLink);
       } catch {
-        continue;
+        throw new Error(
+          `cannot stage ${sourceReal}: it contains a dangling symlink (${sourceLink} -> ${rawTarget})`,
+        );
       }
-      if (!isWithin(tracedRootReal, sourceReal)) continue;
-
-      let target = stagedTargets.get(sourceReal);
-      if (target === undefined) {
-        stagingRoot ??= await createAbsoluteLinkStagingRoot(bundleDir);
-        target = path.join(stagingRoot, String(nextStagedTarget));
-        nextStagedTarget += 1;
-        await fs.promises.cp(sourceReal, target, { recursive: true, verbatimSymlinks: true });
-        stagedTargets.set(sourceReal, target);
+      if (!isWithin(tracedRootReal, nestedSourceReal)) {
+        throw new Error(
+          `cannot stage ${sourceReal}: it contains a symlink outside the declared tracing root (${sourceLink} -> ${rawTarget})`,
+        );
       }
 
-      const sourceStat = await fs.promises.stat(sourceReal);
-      const relativeTarget = path.relative(path.dirname(linkPath), target);
-      await fs.promises.rm(linkPath, { recursive: true, force: true });
+      const nestedTarget = await stageSource(nestedSourceReal);
+      const nestedStat = await fs.promises.stat(nestedSourceReal);
+      await fs.promises.rm(stagedLink, { recursive: true, force: true });
       await fs.promises.symlink(
-        relativeTarget,
-        linkPath,
-        sourceStat.isDirectory() ? 'dir' : 'file',
+        path.relative(path.dirname(stagedLink), nestedTarget),
+        stagedLink,
+        nestedStat.isDirectory() ? 'dir' : 'file',
       );
-      stagedSources.add(sourceReal);
-      staged = true;
     }
+    return target;
+  }
+
+  for (const linkPath of await collectSymlinks(bundleDir)) {
+    const rawTarget = await fs.promises.readlink(linkPath);
+    if (!path.isAbsolute(rawTarget)) continue;
+
+    let sourceReal: string;
+    try {
+      sourceReal = await fs.promises.realpath(linkPath);
+    } catch {
+      continue;
+    }
+    if (!isWithin(tracedRootReal, sourceReal)) continue;
+
+    const target = await stageSource(sourceReal);
+    const sourceStat = await fs.promises.stat(sourceReal);
+    await fs.promises.rm(linkPath, { recursive: true, force: true });
+    await fs.promises.symlink(
+      path.relative(path.dirname(linkPath), target),
+      linkPath,
+      sourceStat.isDirectory() ? 'dir' : 'file',
+    );
   }
   return [...stagedSources];
 }
