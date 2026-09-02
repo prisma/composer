@@ -3,7 +3,7 @@
  * Alchemy" call): hand the terminal to the generated stack file.
  *
  * Resolves the workspace's installed `alchemy` bin. The actual child runner
- * uses Execa, which handles package-manager shims and shebangs on Windows
+ * uses cross-spawn, which handles package-manager shims and shebangs on Windows
  * without a shell while preserving argv boundaries.
  *
  * This module composes the invocation; it does not decide how the child is
@@ -15,7 +15,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { execa } from 'execa';
+import spawn from 'cross-spawn';
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
 export function resolveAlchemyBin(startDir: string): string {
@@ -130,15 +130,15 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  */
 export const spawnAlchemy: RunAlchemy = async (invocation) => {
   const line = alchemyCommandLine(invocation);
-  const result = await execa(line.command, line.args, {
-    cwd: line.cwd,
-    stdio: 'inherit',
-    env: line.env,
-    reject: false,
+  return new Promise<AlchemyOutcome>((resolve, reject) => {
+    const child = spawn(line.command, [...line.args], {
+      cwd: line.cwd,
+      stdio: 'inherit',
+      env: { ...process.env, ...line.env },
+    });
+    child.on('error', reject);
+    child.on('close', (exitCode, signal) => {
+      resolve({ exitCode, signal });
+    });
   });
-  if (result.exitCode === undefined && result.signal === undefined) throw result;
-  return {
-    exitCode: result.exitCode ?? null,
-    signal: result.signal ?? null,
-  };
 };

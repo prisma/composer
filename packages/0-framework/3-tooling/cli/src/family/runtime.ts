@@ -19,7 +19,7 @@ import {
   type Runtime,
   type SpawnChild,
 } from '@prisma/cli-engine';
-import { execa } from 'execa';
+import spawn from 'cross-spawn';
 
 /** Where the management API lives. Matches the lowering client's default origin; the env var is the escape hatch for staging. */
 const DEFAULT_MANAGEMENT_API_BASE_URL = 'https://api.prisma.io';
@@ -33,20 +33,17 @@ const DEFAULT_AUTH_BASE_URL = 'https://auth.prisma.io';
  * side of that seam.
  */
 const spawnChild: SpawnChild = (request) => {
-  const child = execa(request.command, request.args, {
+  const child = spawn(request.command, [...request.args], {
     cwd: request.cwd,
     stdio: 'inherit',
     env: request.env,
-    extendEnv: false,
-    reject: false,
   });
   return {
-    ended: child.then((result) => {
-      if (result.exitCode === undefined && result.signal === undefined) throw result;
-      return {
-        exitCode: result.exitCode ?? null,
-        signal: result.signal ?? null,
-      };
+    ended: new Promise((resolve, reject) => {
+      child.on('error', reject);
+      child.on('close', (exitCode, signal) => {
+        resolve({ exitCode, signal });
+      });
     }),
     kill: (signal) => {
       child.kill(signal);
