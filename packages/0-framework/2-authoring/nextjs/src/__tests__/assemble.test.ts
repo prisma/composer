@@ -167,9 +167,12 @@ describe('assemble()', () => {
       'node_modules',
       '.pnpm',
     );
-    expect(fs.readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))).toBe(
-      '../semver@6.3.1/node_modules/semver',
-    );
+    expect(
+      fs
+        .readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))
+        .split(path.sep)
+        .join('/'),
+    ).toBe('../semver@6.3.1/node_modules/semver');
     expect(
       fs.readFileSync(
         path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),

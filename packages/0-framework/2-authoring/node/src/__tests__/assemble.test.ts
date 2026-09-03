@@ -817,7 +817,9 @@ describe('assemble() — the directory form', () => {
     // own resolution finds the dependency the same way it did before assembly.
     const linked = path.join(first.dir, 'bundle', 'node_modules', 'dep');
     expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(linked)).toBe('.pnpm/dep@1.0.0/node_modules/dep');
+    expect(fs.readlinkSync(linked).split(path.sep).join('/')).toBe(
+      '.pnpm/dep@1.0.0/node_modules/dep',
+    );
     const loaded = await import(pathToFileURL(path.join(first.dir, first.entry)).href);
     expect(loaded.default).toBe(marker);
 

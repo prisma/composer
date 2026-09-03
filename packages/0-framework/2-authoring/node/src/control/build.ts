@@ -30,7 +30,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertBundleSymlinksStayInside, isWithin } from '@internal/bundle-paths';
+import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -143,8 +143,7 @@ async function resolveDir(
     source: dirPath,
     sourceField: 'dir',
     entry: path.relative(dirPath, entryPath).split(path.sep).join('/'),
-    copyInto: (bundleDir) =>
-      fs.promises.cp(dirPath, bundleDir, { recursive: true, verbatimSymlinks: true }),
+    copyInto: (bundleDir) => copyTreeVerbatim(dirPath, bundleDir),
   };
 }
 

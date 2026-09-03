@@ -28,7 +28,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertBundleSymlinksStayInside, isWithin } from '@internal/bundle-paths';
+import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -184,7 +184,7 @@ async function stageMissingStandaloneLinkTargets(
       if (!isWithin(tracedRootReal, sourceReal)) continue;
 
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.cp(source, target, { recursive: true, verbatimSymlinks: true });
+      await copyTreeVerbatim(source, target);
       stagedSources.add(source);
       staged = true;
     }
@@ -230,10 +230,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // Ship the standalone tree as `next build` produced it. Framework-emitted
   // links stay links; the packager validates that every target remains inside
   // the assembled bundle before emitting it into the archive.
-  await fs.promises.cp(standaloneRoot, bundleDir, {
-    recursive: true,
-    verbatimSymlinks: true,
-  });
+  await copyTreeVerbatim(standaloneRoot, bundleDir);
   const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
 
   // The documented copy: Next omits the client assets from standalone; place
@@ -242,17 +239,11 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const appOut = path.join(bundleDir, appRel);
   const staticSrc = path.join(appDir, '.next', 'static');
   if (fs.existsSync(staticSrc)) {
-    await fs.promises.cp(staticSrc, path.join(appOut, '.next', 'static'), {
-      recursive: true,
-      verbatimSymlinks: true,
-    });
+    await copyTreeVerbatim(staticSrc, path.join(appOut, '.next', 'static'));
   }
   const publicSrc = path.join(appDir, 'public');
   if (fs.existsSync(publicSrc)) {
-    await fs.promises.cp(publicSrc, path.join(appOut, 'public'), {
-      recursive: true,
-      verbatimSymlinks: true,
-    });
+    await copyTreeVerbatim(publicSrc, path.join(appOut, 'public'));
   }
 
   // Fail here, at the cause, rather than in the packager: a dangling or
