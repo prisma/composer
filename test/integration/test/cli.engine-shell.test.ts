@@ -15,9 +15,9 @@
  * `dist/bin.mjs` — the same binary a consumer installs.
  */
 import { describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import spawn from 'cross-spawn';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const composerBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-composer');
@@ -27,7 +27,7 @@ function runCli(args: readonly string[], extraEnv: Record<string, string> = {}) 
   const env = { ...process.env };
   delete env['PRISMA_SERVICE_TOKEN'];
   delete env['PRISMA_WORKSPACE_ID'];
-  const result = spawnSync(composerBin, [...args], {
+  const result = spawn.sync(composerBin, [...args], {
     cwd: integrationDir,
     encoding: 'utf8',
     env: { ...env, ...extraEnv },

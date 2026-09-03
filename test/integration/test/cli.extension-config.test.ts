@@ -20,8 +20,8 @@
  * comes from the credential rather than from a variable the handler reads.
  */
 import { describe, expect, test } from 'bun:test';
-import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
+import spawn from 'cross-spawn';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const prismaAppBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-composer');
@@ -48,7 +48,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
   // Spawns the real CLI, which resolves /control entries and evaluates a config —
   // inherently slower than bun test's default 5000ms, so give it real headroom.
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnSync(process.execPath, [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawn.sync(prismaAppBin, ['deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env: {
@@ -82,7 +82,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
     const env: NodeJS.ProcessEnv = { ...process.env, PRISMA_SERVICE_TOKEN: serviceToken({}) };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnSync(process.execPath, [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawn.sync(prismaAppBin, ['deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env,
