@@ -126,6 +126,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
+      # pnpm cannot create a Windows .CMD shim for a workspace bin before its
+      # dist entry exists. Unix permits the equivalent dangling symlink. Link
+      # again after the build so the installed-CLI test exercises pnpm's real
+      # Windows shim; offline + ignore-scripts keeps this a pure relink.
+      - name: Link built workspace binaries on Windows
+        if: runner.os == 'Windows'
+        run: pnpm install --frozen-lockfile --offline --ignore-scripts
       - name: Test
         if: runner.os != 'Windows'
         env:
