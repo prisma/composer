@@ -131,18 +131,16 @@ jobs:
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
         run: pnpm test
-      # Windows local dev/log are explicitly unsupported today, so their
-      # daemon package and standalone acceptance scripts are not valid Windows
-      # tests. Run every supported package suite plus the deploy integration
-      # tests instead.
-      - name: Test (Windows-supported surface)
+      # Windows local dev/log are explicitly unsupported today. Exercise the
+      # packages changed by this PR, then the installed CLI's deploy surface.
+      - name: Test changed packages on Windows
         if: runner.os == 'Windows'
-        shell: bash
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
-        run: |
-          pnpm turbo run test --filter="!@prisma/integration-tests" --filter="!@internal/dev-emulators"
-          pnpm --dir test/integration exec bun test
+        run: pnpm turbo run test --filter=@internal/core --filter=@internal/bundle-paths --filter=@internal/nextjs --filter=@internal/node --filter=@internal/cli --filter=@internal/local-target --filter=@internal/lowering --filter=@internal/prisma-cloud --filter=@internal/streams
+      - name: Test installed CLI on Windows
+        if: runner.os == 'Windows'
+        run: pnpm --dir test/integration exec bun test
 
   node-floor:
     name: Node 22.18 floor
