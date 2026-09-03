@@ -101,6 +101,53 @@ jobs:
       - name: Test scripts (cast-ratchet unit tests)
         run: pnpm test:scripts
 
+  platform-tests:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Start PostgreSQL 16
+        id: postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: postgres
+          password: postgres
+          database: postgres
+          postgres-version: '16'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      # Workspace binaries do not exist during the initial install.
+      - name: Link built workspace binaries on Windows
+        if: runner.os == 'Windows'
+        run: pnpm install --frozen-lockfile --offline --ignore-scripts
+      - name: Test
+        if: runner.os != 'Windows'
+        env:
+          STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
+        run: pnpm test
+      # Local dev/log are not supported on Windows.
+      - name: Test changed packages on Windows
+        if: runner.os == 'Windows'
+        env:
+          STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
+        run: pnpm turbo run test --filter=@internal/core --filter=@internal/bundle-paths --filter=@internal/nextjs --filter=@internal/node --filter=@internal/cli --filter=@internal/local-target --filter=@internal/prisma-cloud --filter=@internal/streams
+      - name: Test artifact packaging on Windows
+        if: runner.os == 'Windows'
+        run: pnpm --filter @internal/lowering exec bun test src/__tests__/artifact.test.ts
+      - name: Test installed CLI on Windows
+        if: runner.os == 'Windows'
+        run: pnpm --dir test/integration exec bun test
+
   node-floor:
     name: Node 22.18 floor
     # The published packages declare `engines.node: >=22.18.0`, but every suite

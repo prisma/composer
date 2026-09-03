@@ -23,11 +23,13 @@
     "@internal/foundation": "workspace:0.16.0",
     "@prisma/cli-engine": "0.3.0",
     "c12": "^3.3.4",
-    "chokidar": "^4.0.3"
+    "chokidar": "^4.0.3",
+    "cross-spawn": "^7.0.6"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.16.0",
     "@types/bun": "^1.3.13",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"

@@ -1,11 +1,9 @@
 /**
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
- * Alchemy" call): hand the terminal to the generated stack file. Resolves the
- * workspace's own installed `alchemy` bin (walking up `node_modules/.bin`
- * from the generated file's package dir) rather than going through
- * `bunx`/`npx`, so this works the same under node and bun — the resolved
- * bin's own launcher (`alchemy/bin/cli.js`) does its own node/bun dispatch
- * from there, driven by the env it inherits.
+ * Alchemy" call): hand the terminal to the generated stack file.
+ *
+ * Resolves the installed `alchemy` bin and launches package-manager shims with
+ * cross-spawn.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -13,10 +11,10 @@
  * `spawnAlchemy` is the default for programmatic hosts driving
  * `@prisma/composer/control`, which have no engine to borrow.
  */
-import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
+import spawn from 'cross-spawn';
 
 /** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
 export function resolveAlchemyBin(startDir: string): string {

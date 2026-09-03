@@ -8,6 +8,37 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+/** Restores directory-link metadata lost by `fs.cp` on Windows. */
+export async function repairWindowsDirectorySymlinks(root: string): Promise<void> {
+  if (process.platform !== 'win32') return;
+
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await fs.promises.readdir(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        const target = await fs.promises.readlink(full);
+        const resolvedTarget = path.resolve(path.dirname(full), target);
+        try {
+          if (!(await fs.promises.stat(resolvedTarget)).isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        await fs.promises.unlink(full);
+        await fs.promises.symlink(target, full, 'dir');
+      } else if (entry.isDirectory()) {
+        await visit(full);
+      }
+    }
+  };
+
+  await visit(root);
+}
+
+export async function copyTreeVerbatim(source: string, destination: string): Promise<void> {
+  await fs.promises.cp(source, destination, { recursive: true, verbatimSymlinks: true });
+  await repairWindowsDirectorySymlinks(destination);
+}
+
 /** Lexical containment: `candidate` is `root` itself or below it. Both paths
  * must already be absolute or share a resolution base; no filesystem access. */
 export function isWithin(root: string, candidate: string): boolean {

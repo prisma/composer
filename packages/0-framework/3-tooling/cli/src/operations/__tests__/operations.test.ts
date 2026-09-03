@@ -859,7 +859,22 @@ function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
   };
 }
 
-describe('dev()', () => {
+describe.skipIf(process.platform !== 'win32')('local operations on Windows', () => {
+  test('dev and log return their platform refusal before touching the pipeline', async () => {
+    const devResult = await silently(() => devWithDeps({ entry: 'service.ts' }, {}));
+    const logResult = await silently(() => logWithDeps({ entry: 'service.ts' }, {}));
+
+    expect(devResult.ok).toBe(false);
+    if (devResult.ok) throw new Error('unreachable');
+    expect(devResult.failure.code).toBe('DEV.PLATFORM_UNSUPPORTED');
+
+    expect(logResult.ok).toBe(false);
+    if (logResult.ok) throw new Error('unreachable');
+    expect(logResult.failure.code).toBe('LOG.PLATFORM_UNSUPPORTED');
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('dev()', () => {
   test('a throw after services start (endpoint merge) is a pipeline failure, and the started services are stopped again', async () => {
     const app = makeAppDir('hello-dev');
     let stops = 0;
@@ -1081,7 +1096,7 @@ describe('dev()', () => {
   }, 15_000);
 });
 
-describe('log()', () => {
+describe.skipIf(process.platform === 'win32')('log()', () => {
   test('merges every attachment into one stream and reports the running services', async () => {
     const attachments = [
       linesAttachment([{ address: 'a', url: 'http://a' }], [{ service: 'a', line: 'from-a' }]),

@@ -114,8 +114,14 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     );
 
     expect(exitCode).toBe(2);
-    expect(host.out.join('')).toContain('CLI.CONFIG_NOT_FOUND');
-    expect(host.out.join('')).toContain(path.join(dir, 'not-here.config.ts'));
+    expect(JSON.parse(host.out.join(''))).toMatchObject({
+      envelope: {
+        error: {
+          code: 'CLI.CONFIG_NOT_FOUND',
+          where: { path: path.join(dir, 'not-here.config.ts') },
+        },
+      },
+    });
     expect(double.calls.dev).toEqual([]);
   });
 

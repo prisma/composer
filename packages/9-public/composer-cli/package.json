@@ -24,6 +24,7 @@
     "@prisma/composer": "workspace:0.16.0",
     "alchemy": "2.0.0-beta.74",
     "c12": "^3.3.4",
+    "cross-spawn": "^7.0.6",
     "effect": "4.0.0-rc.112",
     "esbuild": "^0.28.1"
   },

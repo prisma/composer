@@ -161,10 +161,6 @@ function main(): void {
 
   let state: BucketsState = { buckets: {}, credentials: {} };
 
-  function schedulePersist(): void {
-    void stateFile.write(state);
-  }
-
   const store = fsStore((physicalName) => state.buckets[physicalName]?.dir);
 
   function json(res: http.ServerResponse, status: number, body: unknown): void {
@@ -211,7 +207,7 @@ function main(): void {
 
     await fs.promises.mkdir(parsed.dir, { recursive: true });
     state.buckets[physicalName] = { app, name, dir: parsed.dir };
-    schedulePersist();
+    await stateFile.write(state);
     res.writeHead(204);
     res.end();
   }
@@ -244,19 +240,19 @@ function main(): void {
       );
     }
     state.credentials[parsed.accessKeyId] = { app, secretAccessKey: parsed.secretAccessKey };
-    schedulePersist();
+    await stateFile.write(state);
     res.writeHead(204);
     res.end();
   }
 
-  function handleDeleteApp(res: http.ServerResponse, app: string): void {
+  async function handleDeleteApp(res: http.ServerResponse, app: string): Promise<void> {
     for (const [key, reg] of Object.entries(state.buckets)) {
       if (reg.app === app) delete state.buckets[key];
     }
     for (const [key, cred] of Object.entries(state.credentials)) {
       if (cred.app === app) delete state.credentials[key];
     }
-    schedulePersist();
+    await stateFile.write(state);
     res.writeHead(204);
     res.end();
   }
