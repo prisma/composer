@@ -48,7 +48,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
   // Spawns the real CLI, which resolves /control entries and evaluates a config —
   // inherently slower than bun test's default 5000ms, so give it real headroom.
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawnSync(process.execPath, [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env: {
@@ -82,7 +82,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
     const env: NodeJS.ProcessEnv = { ...process.env, PRISMA_SERVICE_TOKEN: serviceToken({}) };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnSync('bun', [prismaAppBin, 'deploy', fixtureEntry], {
+    const result = spawnSync(process.execPath, [prismaAppBin, 'deploy', fixtureEntry], {
       cwd: integrationDir,
       encoding: 'utf8',
       env,
