@@ -14,7 +14,10 @@ function shippedSources(): { file: string; text: string }[] {
       if (entry.isDirectory()) {
         if (entry.name !== '__tests__') walk(full);
       } else if (entry.name.endsWith('.ts')) {
-        out.push({ file: path.relative(srcDir, full), text: fs.readFileSync(full, 'utf8') });
+        out.push({
+          file: path.relative(srcDir, full).split(path.sep).join('/'),
+          text: fs.readFileSync(full, 'utf8'),
+        });
       }
     }
   };
