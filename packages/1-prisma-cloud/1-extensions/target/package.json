@@ -14,7 +14,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "test:types": "vitest --typecheck --run",
     "build": "tsdown",
     "clean": "rm -rf dist"

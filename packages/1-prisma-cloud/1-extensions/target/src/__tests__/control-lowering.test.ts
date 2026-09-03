@@ -16,10 +16,6 @@ import { secretString } from '@internal/foundation/arktype';
 import * as RealPrismaAlchemy from '@internal/lowering';
 import * as RealOutput from 'alchemy/Output';
 import * as RealAlchemyPrisma from 'alchemy/Prisma';
-// `database-branch-convergence.test.ts` imports this subpath directly. Cache it
-// before mocking the parent barrel so Bun cannot replace the subpath module on
-// platforms whose test-file order loads this file first.
-import 'alchemy/Prisma/Database';
 import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
