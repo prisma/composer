@@ -28,7 +28,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
+import {
+  assertBundleSymlinksStayInside,
+  copyTreeVerbatim,
+  isWithin,
+  repairWindowsDirectorySymlinks,
+} from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -232,6 +237,10 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // the assembled bundle before emitting it into the archive.
   await copyTreeVerbatim(standaloneRoot, bundleDir);
   const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
+  // A pnpm link can be dangling when Next emits standalone, then become valid
+  // only after its omitted virtual-store target is staged above. On Windows,
+  // now is the first point where Node can recover that it is a directory link.
+  await repairWindowsDirectorySymlinks(bundleDir);
 
   // The documented copy: Next omits the client assets from standalone; place
   // them beside the app's server.js so it serves them (docs: `cp -r public
