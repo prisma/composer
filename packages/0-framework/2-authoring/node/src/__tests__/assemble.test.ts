@@ -115,7 +115,7 @@ describe('assemble()', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/no built entry at .*dist\/server\.js/);
+    ).rejects.toThrow(/no built entry at .*dist[\\/]server\.js/);
   });
 
   test('rejects an entry that resolves inside the deploy-owned working dir', async () => {
@@ -403,7 +403,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/no built directory at .*dist\/server/);
+    ).rejects.toThrow(/no built directory at .*dist[\\/]server/);
   });
 
   test('rejects a dir that is a file — that is the single-file form, without dir', async () => {
@@ -431,7 +431,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/no built entry at .*server\/start\.js.*resolves inside dir/s);
+    ).rejects.toThrow(/no built entry at .*server[\\/]start\.js.*resolves inside dir/s);
   });
 
   test('rejects an entry that escapes dir with ../ — the file it names exists, so only the escape can reject it', async () => {
@@ -523,6 +523,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.join(serviceDir, 'dist', 'shared', 'util.js'),
       path.join(serviceDir, 'dist', 'server', 'util.js'),
+      'file',
     );
     writeServiceModule(serviceDir);
 
@@ -532,7 +533,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/util\.js/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle[\\/]util\.js/s);
   });
 
   test('rejects an escaping directory symlink without descending into it', async () => {
@@ -544,6 +545,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.join(serviceDir, 'dist', 'shared'),
       path.join(serviceDir, 'dist', 'server', 'vendor'),
+      'dir',
     );
     writeServiceModule(serviceDir);
 
@@ -553,7 +555,7 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle\/vendor/s);
+    ).rejects.toThrow(/symlink whose target escapes the bundle.*bundle[\\/]vendor/s);
   });
 
   test('preserves a relative directory symlink whose target stays inside the built tree', async () => {
@@ -562,7 +564,11 @@ describe('assemble() — the directory form', () => {
       'start.js': 'export default "app-entry";\n',
       'node_modules/real/index.js': 'export const value = 1;\n',
     });
-    fs.symlinkSync('real', path.join(serviceDir, 'dist', 'server', 'node_modules', 'linked'));
+    fs.symlinkSync(
+      'real',
+      path.join(serviceDir, 'dist', 'server', 'node_modules', 'linked'),
+      'dir',
+    );
     writeServiceModule(serviceDir);
 
     const result = await assemble({
@@ -586,7 +592,11 @@ describe('assemble() — the directory form', () => {
     writeTree(path.join(serviceDir, 'dist', 'real'), {
       'start.js': 'export default "app-entry";\n',
     });
-    fs.symlinkSync(path.join(serviceDir, 'dist', 'real'), path.join(serviceDir, 'dist', 'server'));
+    fs.symlinkSync(
+      path.join(serviceDir, 'dist', 'real'),
+      path.join(serviceDir, 'dist', 'server'),
+      'dir',
+    );
     writeServiceModule(serviceDir);
 
     await expect(
@@ -609,6 +619,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.join(serviceDir, 'dist-real-file.js'),
       path.join(serviceDir, 'dist', 'server'),
+      'file',
     );
     writeServiceModule(serviceDir);
 
@@ -715,6 +726,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.relative(serviceNodeModules, workspacePackage),
       path.join(serviceNodeModules, 'runtime-fixture'),
+      'dir',
     );
     writeServiceModule(serviceDir);
 
@@ -779,6 +791,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.relative(serviceNodeModules, storePackage),
       path.join(serviceNodeModules, 'dep'),
+      'dir',
     );
     writeServiceModule(serviceDir);
 
@@ -842,6 +855,7 @@ describe('assemble() — the directory form', () => {
     fs.symlinkSync(
       path.relative(path.join(serviceDir, 'node_modules'), nestedLib),
       path.join(serviceDir, 'node_modules', 'lib'),
+      'dir',
     );
     writeServiceModule(serviceDir);
 
@@ -851,6 +865,6 @@ describe('assemble() — the directory form', () => {
         address: 'svc',
         cwd: makeCwd(),
       }),
-    ).rejects.toThrow(/stage to the same bundle path.*node_modules\/dup.*packages\/lib/s);
+    ).rejects.toThrow(/stage to the same bundle path.*node_modules[\\/]dup.*packages[\\/]lib/s);
   }, 20_000);
 });

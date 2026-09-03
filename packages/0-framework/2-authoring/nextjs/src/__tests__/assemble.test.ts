@@ -34,7 +34,7 @@ function writeNextBuild(root: string): { appRel: string } {
   fs.writeFileSync(path.join(appOut, 'server.js'), '// standalone server\n');
   fs.mkdirSync(path.join(standalone, 'node_modules', 'next'), { recursive: true });
   fs.writeFileSync(path.join(standalone, 'node_modules', 'next', 'marker.txt'), 'next\n');
-  fs.symlinkSync('next', path.join(standalone, 'node_modules', 'next-linked'));
+  fs.symlinkSync('next', path.join(standalone, 'node_modules', 'next-linked'), 'dir');
   // Client assets — omitted from standalone by Next, at the app root.
   fs.mkdirSync(path.join(root, '.next', 'static'), { recursive: true });
   fs.writeFileSync(path.join(root, '.next', 'static', 'chunk.js'), '// static asset\n');
@@ -148,7 +148,7 @@ describe('assemble()', () => {
     fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
     const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
     fs.mkdirSync(linkDir, { recursive: true });
-    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'), 'dir');
 
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
     tmpDirs.push(cwd);
@@ -200,7 +200,7 @@ describe('assemble()', () => {
     const standalone = path.join(root, '.next', 'standalone');
     const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
     fs.mkdirSync(linkDir, { recursive: true });
-    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'), 'dir');
     const manifestPath = path.join(root, '.next', 'required-server-files.json');
     fs.writeFileSync(manifestPath, JSON.stringify({ relativeAppDir: 'apps/web', config: {} }));
 
@@ -229,10 +229,14 @@ describe('assemble()', () => {
     fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
     fs.writeFileSync(path.join(root, 'outside-the-bundle.txt'), 'must not ship');
     // Copied verbatim into the bundle by staging, where it points outside.
-    fs.symlinkSync(path.join(root, 'outside-the-bundle.txt'), path.join(source, 'escaped.txt'));
+    fs.symlinkSync(
+      path.join(root, 'outside-the-bundle.txt'),
+      path.join(source, 'escaped.txt'),
+      'file',
+    );
     const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
     fs.mkdirSync(linkDir, { recursive: true });
-    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'));
+    fs.symlinkSync('../semver@6.3.1/node_modules/semver', path.join(linkDir, 'semver'), 'dir');
 
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
     tmpDirs.push(cwd);

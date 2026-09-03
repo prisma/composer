@@ -214,7 +214,8 @@ async function copyTracedEntry(
       ? path.join(bundleDir, path.relative(dirPath, realTarget))
       : stagedRuntimePath(realTarget, stagingRoot, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
-    await fs.promises.symlink(linkTarget, destination);
+    const linkType = (await fs.promises.stat(realTarget)).isDirectory() ? 'dir' : 'file';
+    await fs.promises.symlink(linkTarget, destination, linkType);
     return;
   }
   if (stat.isDirectory()) {
