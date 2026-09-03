@@ -60,8 +60,6 @@ describe('the engine is the sole signal listener', () => {
       expect(before.SIGINT).toBe(0);
       expect(before.SIGTERM).toBe(0);
 
-      // The whole point: importing the provider tree must leave the signal
-      // surface exactly as it found it, so the engine's handler is the only one.
       expect(afterConfigEvaluation.SIGINT).toBe(0);
       expect(afterConfigEvaluation.SIGTERM).toBe(0);
       expect(afterConfigEvaluation.exit).toBe(0);
@@ -76,9 +74,6 @@ describe('the engine is the sole signal listener', () => {
 
       expect(afterLocalTargets.SIGINT).toBe(0);
       expect(afterLocalTargets.SIGTERM).toBe(0);
-      // The exit hook too: it is the single registration that installed all
-      // three upstream, so a local-target import that armed only it would slip
-      // past a check that looked at the two signals alone.
       expect(afterLocalTargets.exit).toBe(0);
     },
     SUBPROCESS_TEST_TIMEOUT_MS,

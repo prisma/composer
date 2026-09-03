@@ -8,12 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** Repairs the one piece of link metadata `fs.cp` loses on Windows: whether a
- * relative symlink targets a directory. Without the explicit type, Node
- * recreates it as a file link and the copied tree contains a dangling link.
- *
- * This is also callable after a framework stages an initially missing target:
- * only then can we know that the link is a directory link. */
+/** Restores directory-link metadata lost by `fs.cp` on Windows. */
 export async function repairWindowsDirectorySymlinks(root: string): Promise<void> {
   if (process.platform !== 'win32') return;
 
@@ -26,7 +21,6 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
         try {
           if (!(await fs.promises.stat(resolvedTarget)).isDirectory()) continue;
         } catch {
-          // Keep a dangling link dangling so bundle validation reports it.
           continue;
         }
         await fs.promises.unlink(full);
@@ -40,8 +34,6 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
   await visit(root);
 }
 
-/** Copies a file tree without dereferencing links, retaining the native
- * implementation's performance and metadata behavior. */
 export async function copyTreeVerbatim(source: string, destination: string): Promise<void> {
   await fs.promises.cp(source, destination, { recursive: true, verbatimSymlinks: true });
   await repairWindowsDirectorySymlinks(destination);

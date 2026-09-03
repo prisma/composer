@@ -2,9 +2,8 @@
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
- * Resolves the workspace's installed `alchemy` bin. The actual child runner
- * uses cross-spawn, which handles package-manager shims and shebangs on Windows
- * without a shell while preserving argv boundaries.
+ * Resolves the installed `alchemy` bin and launches package-manager shims with
+ * cross-spawn.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what

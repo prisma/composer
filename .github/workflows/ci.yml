@@ -126,10 +126,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
-      # pnpm cannot create a Windows .CMD shim for a workspace bin before its
-      # dist entry exists. Unix permits the equivalent dangling symlink. Link
-      # again after the build so the installed-CLI test exercises pnpm's real
-      # Windows shim; offline + ignore-scripts keeps this a pure relink.
+      # Workspace binaries do not exist during the initial install.
       - name: Link built workspace binaries on Windows
         if: runner.os == 'Windows'
         run: pnpm install --frozen-lockfile --offline --ignore-scripts
@@ -138,10 +135,7 @@ jobs:
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
         run: pnpm test
-      # Windows local dev/log are explicitly unsupported today. Exercise the
-      # packages changed by this PR, then the installed CLI's deploy surface.
-      # Lowering is covered by its changed artifact test directly: its existing
-      # resource-reporter deadline test does not settle under Bun on Windows.
+      # Local dev/log are not supported on Windows.
       - name: Test changed packages on Windows
         if: runner.os == 'Windows'
         env:

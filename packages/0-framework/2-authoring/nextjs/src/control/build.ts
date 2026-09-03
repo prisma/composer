@@ -237,9 +237,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // the assembled bundle before emitting it into the archive.
   await copyTreeVerbatim(standaloneRoot, bundleDir);
   const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
-  // A pnpm link can be dangling when Next emits standalone, then become valid
-  // only after its omitted virtual-store target is staged above. On Windows,
-  // now is the first point where Node can recover that it is a directory link.
+  // Staging can make previously dangling directory links repairable.
   await repairWindowsDirectorySymlinks(bundleDir);
 
   // The documented copy: Next omits the client assets from standalone; place
