@@ -114,20 +114,21 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: Install PostgreSQL tools (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install postgresql@17
-          echo "$(brew --prefix postgresql@17)/bin" >> "$GITHUB_PATH"
-      - name: Add preinstalled PostgreSQL tools to PATH (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: echo "$PGBIN" >> "$GITHUB_PATH"
+      - name: Start PostgreSQL 16
+        id: postgres
+        uses: ikalnytskyi/action-setup-postgres@c4dda34aae1c821e3a771b68b73b13af3198a7ee # v8
+        with:
+          username: postgres
+          password: postgres
+          database: postgres
+          postgres-version: '16'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build packages
         run: pnpm build
       - name: Test
+        env:
+          STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
         run: pnpm test
 
   node-floor:
