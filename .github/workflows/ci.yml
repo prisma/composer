@@ -101,6 +101,29 @@ jobs:
       - name: Test scripts (cast-ratchet unit tests)
         run: pnpm test:scripts
 
+  spawn-platforms:
+    name: Spawn adapters (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build CLI dependencies
+        run: pnpm turbo run build --filter=@internal/cli...
+      - name: Test child-process adapters
+        run: >-
+          pnpm exec bun test
+          packages/0-framework/3-tooling/cli/src/family/__tests__/runtime.test.ts
+          packages/0-framework/3-tooling/cli/src/__tests__/run-alchemy.test.ts
+
   node-floor:
     name: Node 22.18 floor
     # The published packages declare `engines.node: >=22.18.0`, but every suite
