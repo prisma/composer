@@ -137,6 +137,7 @@ jobs:
       # tests instead.
       - name: Test (Windows-supported surface)
         if: runner.os == 'Windows'
+        shell: bash
         env:
           STATE_TEST_DATABASE_URL: ${{ steps.postgres.outputs.connection-uri }}
         run: |

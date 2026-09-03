@@ -17,21 +17,14 @@
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import spawn from 'cross-spawn';
-
-const integrationDir = path.resolve(import.meta.dir, '..');
-const composerBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-composer');
+import { integrationDir, spawnComposer } from './spawn-composer.ts';
 
 /** Runs the bin with no credential in the environment unless the caller adds one. */
 function runCli(args: readonly string[], extraEnv: Record<string, string> = {}) {
   const env = { ...process.env };
   delete env['PRISMA_SERVICE_TOKEN'];
   delete env['PRISMA_WORKSPACE_ID'];
-  const result = spawn.sync(composerBin, [...args], {
-    cwd: integrationDir,
-    encoding: 'utf8',
-    env: { ...env, ...extraEnv },
-  });
+  const result = spawnComposer(args, { ...env, ...extraEnv });
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 

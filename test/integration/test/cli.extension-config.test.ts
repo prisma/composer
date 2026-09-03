@@ -21,10 +21,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import spawn from 'cross-spawn';
+import { integrationDir, spawnComposer } from './spawn-composer.ts';
 
-const integrationDir = path.resolve(import.meta.dir, '..');
-const prismaAppBin = path.join(integrationDir, 'node_modules', '.bin', 'prisma-composer');
 const fixtureEntry = path.join(
   integrationDir,
   'test',
@@ -48,14 +46,10 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
   // Spawns the real CLI, which resolves /control entries and evaluates a config —
   // inherently slower than bun test's default 5000ms, so give it real headroom.
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawn.sync(prismaAppBin, ['deploy', fixtureEntry], {
-      cwd: integrationDir,
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PRISMA_SERVICE_TOKEN: serviceToken({ workspace_id: 'ws-integration-test' }),
-        PRISMA_WORKSPACE_ID: 'ws-integration-test',
-      },
+    const result = spawnComposer(['deploy', fixtureEntry], {
+      ...process.env,
+      PRISMA_SERVICE_TOKEN: serviceToken({ workspace_id: 'ws-integration-test' }),
+      PRISMA_WORKSPACE_ID: 'ws-integration-test',
     });
 
     // Engine 0.2.0: a non-TTY run answers with a structured result frame on
@@ -82,11 +76,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
     const env: NodeJS.ProcessEnv = { ...process.env, PRISMA_SERVICE_TOKEN: serviceToken({}) };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawn.sync(prismaAppBin, ['deploy', fixtureEntry], {
-      cwd: integrationDir,
-      encoding: 'utf8',
-      env,
-    });
+    const result = spawnComposer(['deploy', fixtureEntry], env);
 
     const output = result.stdout + result.stderr;
     expect(result.status).not.toBe(0);
