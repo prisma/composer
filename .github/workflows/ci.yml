@@ -101,10 +101,10 @@ jobs:
       - name: Test scripts (cast-ratchet unit tests)
         run: pnpm test:scripts
 
-  spawn-platforms:
-    name: Spawn adapters (${{ matrix.os }})
+  platform-tests:
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -114,15 +114,21 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
+      - name: Install PostgreSQL tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install postgresql@17
+          echo "$(brew --prefix postgresql@17)/bin" >> "$GITHUB_PATH"
+      - name: Add preinstalled PostgreSQL tools to PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "$PGBIN" >> "$GITHUB_PATH"
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build CLI dependencies
-        run: pnpm turbo run build --filter=@internal/cli...
-      - name: Test child-process adapters
-        run: >-
-          pnpm exec bun test
-          packages/0-framework/3-tooling/cli/src/family/__tests__/runtime.test.ts
-          packages/0-framework/3-tooling/cli/src/__tests__/run-alchemy.test.ts
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      - name: Test
+        run: pnpm test
 
   node-floor:
     name: Node 22.18 floor
