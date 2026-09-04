@@ -8,10 +8,16 @@ import node from '../exports/index.ts';
 
 const tmpDirs: string[] = [];
 
-/** A tmp dir standing in for a service package: src/service.ts + a dist/ sibling. */
-function makeServiceDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-node-assemble-'));
+/** A scratch directory kept outside the host temporary root that dependency tracing excludes. */
+function makeProjectDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.homedir(), `.${prefix}`));
   tmpDirs.push(dir);
+  return dir;
+}
+
+/** A scratch dir standing in for a service package: src/service.ts + a dist/ sibling. */
+function makeServiceDir(): string {
+  const dir = makeProjectDir('prisma-composer-node-assemble-');
   fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
   return dir;
 }
@@ -632,7 +638,7 @@ describe('assemble() — the directory form', () => {
     ).rejects.toThrow(/dir .* is itself a symlink/s);
   });
 
-  test('stages bare runtime dependencies traced from a directory entry (Astro Node output shape)', async () => {
+  test('stages npm-style bare runtime dependencies traced from a directory entry', async () => {
     const serviceDir = makeServiceDir();
     const cwd = makeCwd();
     writeTree(path.join(serviceDir, 'dist'), {
@@ -702,9 +708,43 @@ describe('assemble() — the directory form', () => {
     expect(fs.existsSync(path.join(staged, 'bun', 'index.js'))).toBe(true);
   }, 20_000);
 
+  test('excludes host filesystem paths from runtime dependency staging', async () => {
+    const serviceDir = makeServiceDir();
+    const cwd = makeCwd();
+    const hostTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-host-path-'));
+    tmpDirs.push(hostTmpDir);
+    const temporaryFile = path.join(hostTmpDir, 'host-only.txt');
+    fs.writeFileSync(temporaryFile, 'must not be staged\n');
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': [
+        'import fs from "node:fs";',
+        'try { fs.readFileSync("/etc/hosts"); } catch {}',
+        'try { fs.readFileSync("/proc/self/status"); } catch {}',
+        'try { fs.readFileSync("/sys/kernel/uevent_seqnum"); } catch {}',
+        'try { fs.readFileSync("/dev/null"); } catch {}',
+        `try { fs.readFileSync(${JSON.stringify(temporaryFile)}); } catch {}`,
+        'export default "app-entry";',
+        '',
+      ].join('\n'),
+    });
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+      }),
+      address: 'svc',
+      cwd,
+    });
+
+    expect(fs.readdirSync(path.join(result.dir, 'bundle'))).toEqual(['server']);
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual(['server/entry.mjs']);
+  }, 20_000);
+
   test('re-roots workspace package dependencies under a Node lookup path', async () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-workspace-'));
-    tmpDirs.push(workspaceRoot);
+    const workspaceRoot = makeProjectDir('prisma-composer-workspace-');
     const serviceDir = path.join(workspaceRoot, 'apps', 'web');
     fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
     writeTree(path.join(serviceDir, 'dist'), {
@@ -761,8 +801,7 @@ describe('assemble() — the directory form', () => {
     // straight into "cannot find module dep". The root must reach the store
     // whichever directory the deploy was invoked from, so both runs here must
     // produce byte-identical layouts.
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-pnpm-'));
-    tmpDirs.push(workspaceRoot);
+    const workspaceRoot = makeProjectDir('prisma-composer-pnpm-');
     const serviceDir = path.join(workspaceRoot, 'apps', 'web');
     fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
     writeTree(path.join(serviceDir, 'dist'), {
