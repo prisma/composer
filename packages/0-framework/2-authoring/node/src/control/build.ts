@@ -310,12 +310,17 @@ async function stageRuntimeDependencies(options: {
     await Promise.all(
       [...fileList].sort().map(async (relative) => {
         const source = path.resolve(base, relative);
+        const origin = await realPathOrSelf(source);
         const isHostPath = hostPathRoots.some(
-          (root) => isWithin(root, source) || isWithin(source, root),
+          (root) =>
+            isWithin(root, source) ||
+            isWithin(source, root) ||
+            isWithin(root, origin) ||
+            isWithin(origin, root),
         );
         if (isHostPath) return undefined;
 
-        return { source, origin: await realPathOrSelf(source) };
+        return { source, origin };
       }),
     )
   ).filter((entry) => entry !== undefined);

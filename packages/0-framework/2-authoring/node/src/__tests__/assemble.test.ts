@@ -714,16 +714,33 @@ describe('assemble() — the directory form', () => {
     const hostTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-host-path-'));
     tmpDirs.push(hostTmpDir);
     const temporaryFile = path.join(hostTmpDir, 'host-only.txt');
-    fs.writeFileSync(temporaryFile, 'must not be staged\n');
+    writeTree(hostTmpDir, {
+      'host-only.txt': 'must not be staged\n',
+      'package.json': JSON.stringify({
+        name: 'host-runtime',
+        version: '1.0.0',
+        type: 'module',
+        main: 'index.js',
+      }),
+      'index.js': 'export const marker = "must not be staged";\n',
+    });
+    const serviceNodeModules = path.join(serviceDir, 'node_modules');
+    fs.mkdirSync(serviceNodeModules, { recursive: true });
+    fs.symlinkSync(
+      path.relative(serviceNodeModules, hostTmpDir),
+      path.join(serviceNodeModules, 'host-runtime'),
+      'dir',
+    );
     writeTree(path.join(serviceDir, 'dist'), {
       'server/entry.mjs': [
+        'import { marker } from "host-runtime";',
         'import fs from "node:fs";',
         'try { fs.readFileSync("/etc/hosts"); } catch {}',
         'try { fs.readFileSync("/proc/self/status"); } catch {}',
         'try { fs.readFileSync("/sys/kernel/uevent_seqnum"); } catch {}',
         'try { fs.readFileSync("/dev/null"); } catch {}',
         `try { fs.readFileSync(${JSON.stringify(temporaryFile)}); } catch {}`,
-        'export default "app-entry";',
+        'export default marker;',
         '',
       ].join('\n'),
     });
