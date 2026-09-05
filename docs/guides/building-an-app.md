@@ -550,6 +550,11 @@ ships. Three things to know:
   stages the packages it imports beside `dir`, so framework output that keeps
   bare imports (Astro's Node adapter, for example) boots without you copying
   `node_modules` into the build.
+- Host filesystem paths are not runtime dependencies. The trace ignores
+  `/etc`, `/proc`, `/sys`, `/dev`, and the operating system temporary
+  directory instead of copying machine-specific files or letting them widen
+  the staging root. If your server reads one of those paths, the deployed
+  runtime must provide it.
 - `entry` must be a file inside `dir`. Pointing it outside with `../` is an
   error, not an escape hatch — only `dir` is copied verbatim; everything else
   arrives through the trace.

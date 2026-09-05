@@ -1,0 +1,1 @@
+[unrelated bug or code smell] `packages/0-framework/0-foundation/tsdown-config/base.ts` still uses tsdown's deprecated `skipNodeModulesBundle` option; package builds warn to use `deps.skipNodeModulesBundle`. This shared build-config migration is outside the Node staging fix.

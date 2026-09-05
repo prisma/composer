@@ -28,6 +28,7 @@
  * `bundle/`.
  */
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
@@ -273,7 +274,9 @@ function stagingRootFor(
  * The trace itself runs from the filesystem root so nothing it finds is dropped
  * for sitting outside a narrower base — a pnpm virtual store at the workspace
  * root is outside the app directory, and dropping it would silently ship a
- * bundle missing its dependencies.
+ * bundle missing its dependencies. Host filesystem roots are removed from the
+ * trace before staging-root calculation: they describe the deploy machine, not
+ * runtime dependencies.
  *
  * The graph is traced under both the default (node) conditions and the "bun"
  * condition, and the union is staged: Compute boots the bundle with Bun, which
@@ -297,13 +300,30 @@ async function stageRuntimeDependencies(options: {
     nodeFileTrace([entryPath], { base, processCwd: moduleDir, conditions: ['bun'] }),
   ]);
   const fileList = new Set([...nodeTrace.fileList, ...bunTrace.fileList]);
+  const hostPathSpecs = ['/etc', '/proc', '/sys', '/dev', os.tmpdir()];
+  const hostPathRoots = [
+    ...hostPathSpecs.map((spec) => path.resolve(spec)),
+    ...(await Promise.all(hostPathSpecs.map(realPathOrSelf))),
+  ];
 
-  const tracedEntries = await Promise.all(
-    [...fileList].sort().map(async (relative) => {
-      const source = path.resolve(base, relative);
-      return { source, origin: await realPathOrSelf(source) };
-    }),
-  );
+  const tracedEntries = (
+    await Promise.all(
+      [...fileList].sort().map(async (relative) => {
+        const source = path.resolve(base, relative);
+        const origin = await realPathOrSelf(source);
+        const isHostPath = hostPathRoots.some(
+          (root) =>
+            isWithin(root, source) ||
+            isWithin(source, root) ||
+            isWithin(root, origin) ||
+            isWithin(origin, root),
+        );
+        if (isHostPath) return undefined;
+
+        return { source, origin };
+      }),
+    )
+  ).filter((entry) => entry !== undefined);
 
   const stagingRoot = stagingRootFor(
     moduleDir,
