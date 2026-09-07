@@ -25,10 +25,10 @@
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.17.0",
-    "@types/bun": "^1.3.13",
+    "@types/bun": "^1.4.0",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -34,9 +34,9 @@
     "arktype": "^2.2.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.13",
+    "@types/bun": "^1.4.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "tsdown": "^0.22.7",
     "@internal/tsdown-config": "workspace:0.17.0"
   }
