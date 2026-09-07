@@ -42,7 +42,7 @@
     "cross-spawn": "^7.0.6",
     "effect": "4.0.0-rc.112",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.60.0"
+    "@prisma/management-api-sdk": "^1.70.0"
   },
   "devDependencies": {
     "@effect/vitest": "4.0.0-rc.112",
@@ -56,7 +56,7 @@
     "@internal/service-rpc": "workspace:0.17.0",
     "@internal/tsdown-config": "workspace:0.17.0",
     "@types/node": "^26.0.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",

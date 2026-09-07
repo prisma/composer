@@ -17,7 +17,7 @@
     "@prisma/composer-prisma-cloud": "workspace:0.17.0",
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "arktype": "^2.2.3",
-    "hono": "^4.12.31"
+    "hono": "^4.13.5"
   },
   "devDependencies": {
     "@prisma/cli-engine": "0.3.0",

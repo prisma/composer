@@ -16,7 +16,7 @@
   "dependencies": {
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "arktype": "^2.2.3",
-    "pg": "8.22.0"
+    "pg": "8.23.0"
   },
   "peerDependencies": {
     "@prisma/composer": "workspace:0.17.0",
