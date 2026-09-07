@@ -188,7 +188,10 @@ describe('containerDescriptor().ensure()', () => {
     const state = newFakeState();
 
     await withEnv(baseEnv, async () => {
-      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        region: () => 'us-east-1',
+      });
       const instance = await descriptor.ensure({ appName: 'storefront', stage: 'staging' });
 
       expect(isPrismaCloudContainer(instance)).toBe(true);
@@ -204,7 +207,10 @@ describe('containerDescriptor().ensure()', () => {
     const state = newFakeState();
 
     await withEnv(baseEnv, async () => {
-      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        region: () => 'us-east-1',
+      });
       const instance = await descriptor.ensure({ appName: 'storefront', stage: undefined });
 
       expect(instance.projectId).toBe('proj-1');

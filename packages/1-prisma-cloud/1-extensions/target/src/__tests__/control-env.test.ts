@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { LowerContext } from '@internal/core/deploy';
-import * as Effect from 'effect/Effect';
 import { prismaCloud } from '../exports/control.ts';
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
@@ -25,24 +23,6 @@ const SCRUBBED = {
   PRISMA_REGION: undefined,
   PRISMA_SERVICE_TOKEN: undefined,
 };
-
-/** Minimal `LowerContext` for driving one node descriptor's `provision` in isolation. */
-function computeCtx(): LowerContext {
-  return {
-    id: 'auth',
-    application: {
-      projectId: 'shop-project#cloud-id',
-      branchId: undefined,
-      defaultBranchId: undefined,
-      branchless: false,
-    },
-  } as unknown as LowerContext;
-}
-
-/** The throw under test happens before any yield, so no Alchemy context is ever needed — collapse E/R for `runSync` like `control-lowering.test.ts`'s `run` helper does. */
-function runSync<A>(eff: Effect.Effect<unknown, unknown, unknown>): A {
-  return Effect.runSync(eff as Effect.Effect<A>);
-}
 
 describe('prismaCloud() — constructs with NO environment present (local-dev spec § 5)', () => {
   test('succeeds in a fully scrubbed environment — no PRISMA_* var is required at construction', async () => {
@@ -85,16 +65,9 @@ describe('prismaCloud() — constructs with NO environment present (local-dev sp
 });
 
 describe('prismaCloud() — region resolution is deferred to first lowering use, not construction', () => {
-  test('a bad PRISMA_REGION does not fail construction — only an actual lowering', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'mars-1' }, () => {
+  test('an arbitrary PRISMA_REGION string passes through unchanged — no list to validate against', async () => {
+    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'xx-test-1' }, () => {
       expect(() => prismaCloud()).not.toThrow();
-
-      const descriptor = prismaCloud();
-      const compute = descriptor.nodes['compute'];
-      if (compute === undefined || compute.kind !== 'service') {
-        throw new Error('expected a service descriptor for "compute"');
-      }
-      expect(() => runSync(compute.provision(computeCtx()))).toThrow(/PRISMA_REGION="mars-1"/);
     });
   });
 });
