@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ManagementApiClient } from '@internal/lowering';
 import { prismaCloud } from '../exports/control.ts';
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
@@ -64,10 +65,47 @@ describe('prismaCloud() — constructs with NO environment present (local-dev sp
   });
 });
 
+/** A stub client covering only what `ensure` calls for a project that does not exist yet; records every project-create body. */
+const fakeClient = (projectCreateBodies: Array<Record<string, unknown>>): ManagementApiClient => {
+  const page = <T>(data: T[]) =>
+    Promise.resolve({
+      data: { data, pagination: { nextCursor: null, hasMore: false } },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+  const GET = (path: string) => {
+    if (path === '/v1/projects') return page([]);
+    if (path === '/v1/projects/{projectId}/branches') {
+      return page([{ id: 'br-default', gitName: 'main', isDefault: true }]);
+    }
+    throw new Error(`fakeClient: unexpected GET ${path}`);
+  };
+  const POST = (path: string, init: { body?: Record<string, unknown> } = {}) => {
+    if (path !== '/v1/projects') throw new Error(`fakeClient: unexpected POST ${path}`);
+    projectCreateBodies.push(init.body ?? {});
+    return Promise.resolve({
+      data: { data: { id: 'proj-1' } },
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    });
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: test stub — see the doc comment above.
+  return { GET, POST } as any as ManagementApiClient;
+};
+
 describe('prismaCloud() — region resolution is deferred to first lowering use, not construction', () => {
   test('an arbitrary PRISMA_REGION string passes through unchanged — no list to validate against', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'xx-test-1' }, () => {
+    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'xx-test-1' }, async () => {
       expect(() => prismaCloud()).not.toThrow();
+
+      const projectCreateBodies: Array<Record<string, unknown>> = [];
+      const container = prismaCloud().container;
+      expect(container).toBeDefined();
+      await container?.ensure(
+        { appName: 'storefront', stage: undefined },
+        { workspaceId: 'ws-123', client: fakeClient(projectCreateBodies) },
+      );
+      expect(projectCreateBodies[0]?.['region']).toBe('xx-test-1');
     });
   });
 });
