@@ -29,6 +29,11 @@ token is the only authentication.
 
 ## Build first
 
+Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
+for hoisted installations. On Windows it prefers `alchemy.exe`, then
+`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
+Windows shim must not be reported as a missing Alchemy dependency.
+
 `prisma-composer deploy` does not build for you — it assembles what your
 build produced:
 
