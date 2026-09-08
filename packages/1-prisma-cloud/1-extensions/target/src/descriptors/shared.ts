@@ -1,5 +1,6 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
+import type { ProjectRegion } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
@@ -67,7 +68,7 @@ export interface ServiceProviderParam extends ProviderParamEntry {
  */
 export interface ResolvedCloudOptions {
   readonly workspaceId: string;
-  readonly region?: Prisma.Types.PrismaRegionId;
+  readonly region?: ProjectRegion;
   /**
    * This extension's reserved provider params, keyed by need brand —
    * edge-derived (`ProviderParam`) or service-derived (`ServiceProviderParam`).
@@ -88,9 +89,6 @@ export interface ResolvedCloudOptions {
    */
   readonly pointerUpdatedAt: PointerUpdatedAt;
 }
-
-/** Where a resource lands when the deploy names no region. */
-export const DEFAULT_REGION: Prisma.Types.PrismaRegionId = 'us-east-1';
 
 // Prisma's Connection create constrains `name` to 3–65 chars (Management API:
 // POST /v1/connections); applied here to every id-derived resource name as the
@@ -184,13 +182,14 @@ export const stageDatabase = ({
 }: {
   readonly id: string;
   readonly application: unknown;
-  readonly region: Prisma.Types.PrismaRegionId | undefined;
+  readonly region: ProjectRegion | undefined;
 }) =>
   Effect.gen(function* () {
     const branchId = attachmentBranchIdOf(application, id);
+    // 'inherit' resolves to the project's default region on the platform.
     const db = yield* Prisma.Database(`${id}-db`, {
       project: projectIdOf(application),
-      region: region ?? DEFAULT_REGION,
+      region: region ?? 'inherit',
       ...(branchId !== undefined ? { branchId } : { name: id }),
     });
     const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });

@@ -26,7 +26,6 @@ import {
 } from '../serializer.ts';
 import {
   cloudApplicationOf,
-  DEFAULT_REGION,
   projectIdOf,
   type ResolvedCloudOptions,
   validateName,
@@ -119,7 +118,7 @@ export function computeDescriptor(
         const svc = yield* Prisma.App(`${id}-svc`, {
           project: projectId,
           displayName: id,
-          regionId: o().region ?? DEFAULT_REGION,
+          ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
         });
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };

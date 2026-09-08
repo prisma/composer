@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Every job here creates a fresh per-run Project, and a new Project needs a region.
+  PRISMA_REGION: us-east-1
+
 # Fixed group (not per-ref): only one real-cloud deploy runs at a time.
 # cancel-in-progress stays false so a kill mid-deploy/destroy can't orphan resources.
 concurrency:
