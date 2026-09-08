@@ -44,6 +44,17 @@ afterEach(() => {
 });
 
 describe('resolveAlchemyBin()', () => {
+  test.skipIf(process.platform !== 'win32')('finds Windows-only package-manager shims', () => {
+    for (const filename of ['alchemy.cmd', 'alchemy.exe']) {
+      const dir = makeTmpDir();
+      const binDir = path.join(dir, 'node_modules', '.bin');
+      fs.mkdirSync(binDir, { recursive: true });
+      const bin = path.join(binDir, filename);
+      fs.writeFileSync(bin, '');
+      expect(resolveAlchemyBin(dir)).toBe(bin);
+    }
+  });
+
   test('finds node_modules/.bin/alchemy in the given directory', () => {
     const dir = makeTmpDir();
     const bin = installFakeAlchemy(dir);
