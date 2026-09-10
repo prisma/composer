@@ -41,7 +41,9 @@ describe('resolveOrmConfig', () => {
     const project = await resolveOrmConfig(widgetConfig);
     // The widget config sets no `migrations.dir`, so PN's default `migrations/`
     // resolves next to the config file (its `source/` directory).
-    expect(project.migrationsDir).toBe(path.join(path.dirname(widgetConfig), 'migrations'));
+    expect(path.normalize(project.migrationsDir)).toBe(
+      path.join(path.dirname(widgetConfig), 'migrations'),
+    );
     expect(path.isAbsolute(project.migrationsDir)).toBe(true);
   });
 

@@ -5,6 +5,9 @@
  * CLI that misreports its TTY, leaks signal listeners, or never exits.
  */
 import { describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { HostProcess, LoadedConfig } from '@prisma/cli-engine';
 import { createRuntime, detectPackageManager } from '../runtime.ts';
 
@@ -233,6 +236,33 @@ describe('createRuntime()', () => {
 
   test('a spawn adapter is wired — without one the engine refuses every spawning command', () => {
     expect(typeof createRuntime(fakeHost(), noConfig).spawn).toBe('function');
+  });
+
+  test('the spawn adapter runs a package-bin shebang without a shell', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-runtime-spawn-'));
+    try {
+      const bin = path.join(dir, 'fake-package-bin');
+      fs.writeFileSync(
+        bin,
+        '#!/usr/bin/env node\nprocess.exit(process.argv[2] === "ok value" ? 0 : 1);\n',
+        {
+          mode: 0o755,
+        },
+      );
+      const spawn = createRuntime(fakeHost(), noConfig).spawn;
+      if (spawn === undefined) throw new Error('Runtime has no spawn adapter');
+
+      const child = spawn({
+        command: bin,
+        args: ['ok value'],
+        cwd: dir,
+        env: process.env,
+        output: 'inherit',
+      });
+      expect(await child.ended).toEqual({ exitCode: 0, signal: null });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test('the loader is exposed as loadConfig, and its result is passed through untouched', async () => {

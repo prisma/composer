@@ -242,26 +242,29 @@ describe('spawnAlchemy()', () => {
    * a failure: a signal-killed child has NO exit code, and saying otherwise
    * loses the only evidence that the user aborted.
    */
-  test('a signal-killed child comes back as the signal with a null exit code', async () => {
-    const dir = makeTmpDir();
-    installFakeAlchemy(dir, [
-      'process.kill(process.pid, "SIGTERM");',
-      'setTimeout(() => {}, 5000);',
-    ]);
+  test.skipIf(process.platform === 'win32')(
+    'a signal-killed child comes back as the signal with a null exit code',
+    async () => {
+      const dir = makeTmpDir();
+      installFakeAlchemy(dir, [
+        'process.kill(process.pid, "SIGTERM");',
+        'setTimeout(() => {}, 5000);',
+      ]);
 
-    expect(
-      await spawnAlchemy({
-        action: 'deploy',
-        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-        stage: 'test',
-        cwd: dir,
-        env: {},
-      }),
-    ).toEqual({
-      exitCode: null,
-      signal: 'SIGTERM',
-    });
-  });
+      expect(
+        await spawnAlchemy({
+          action: 'deploy',
+          stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+          stage: 'test',
+          cwd: dir,
+          env: {},
+        }),
+      ).toEqual({
+        exitCode: null,
+        signal: 'SIGTERM',
+      });
+    },
+  );
 
   test('raises the structured error when the app has no alchemy installed', async () => {
     const dir = makeTmpDir();

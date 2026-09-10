@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { LowerContext } from '@internal/core/deploy';
-import * as Effect from 'effect/Effect';
+import type { ManagementApiClient } from '@internal/lowering';
 import { prismaCloud } from '../exports/control.ts';
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
@@ -25,24 +24,6 @@ const SCRUBBED = {
   PRISMA_REGION: undefined,
   PRISMA_SERVICE_TOKEN: undefined,
 };
-
-/** Minimal `LowerContext` for driving one node descriptor's `provision` in isolation. */
-function computeCtx(): LowerContext {
-  return {
-    id: 'auth',
-    application: {
-      projectId: 'shop-project#cloud-id',
-      branchId: undefined,
-      defaultBranchId: undefined,
-      branchless: false,
-    },
-  } as unknown as LowerContext;
-}
-
-/** The throw under test happens before any yield, so no Alchemy context is ever needed — collapse E/R for `runSync` like `control-lowering.test.ts`'s `run` helper does. */
-function runSync<A>(eff: Effect.Effect<unknown, unknown, unknown>): A {
-  return Effect.runSync(eff as Effect.Effect<A>);
-}
 
 describe('prismaCloud() — constructs with NO environment present (local-dev spec § 5)', () => {
   test('succeeds in a fully scrubbed environment — no PRISMA_* var is required at construction', async () => {
@@ -84,17 +65,47 @@ describe('prismaCloud() — constructs with NO environment present (local-dev sp
   });
 });
 
+/** A stub client covering only what `ensure` calls for a project that does not exist yet; records every project-create body. */
+const fakeClient = (projectCreateBodies: Array<Record<string, unknown>>): ManagementApiClient => {
+  const page = <T>(data: T[]) =>
+    Promise.resolve({
+      data: { data, pagination: { nextCursor: null, hasMore: false } },
+      error: undefined,
+      response: new Response(null, { status: 200 }),
+    });
+  const GET = (path: string) => {
+    if (path === '/v1/projects') return page([]);
+    if (path === '/v1/projects/{projectId}/branches') {
+      return page([{ id: 'br-default', gitName: 'main', isDefault: true }]);
+    }
+    throw new Error(`fakeClient: unexpected GET ${path}`);
+  };
+  const POST = (path: string, init: { body?: Record<string, unknown> } = {}) => {
+    if (path !== '/v1/projects') throw new Error(`fakeClient: unexpected POST ${path}`);
+    projectCreateBodies.push(init.body ?? {});
+    return Promise.resolve({
+      data: { data: { id: 'proj-1' } },
+      error: undefined,
+      response: new Response(null, { status: 201 }),
+    });
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: test stub — see the doc comment above.
+  return { GET, POST } as any as ManagementApiClient;
+};
+
 describe('prismaCloud() — region resolution is deferred to first lowering use, not construction', () => {
-  test('a bad PRISMA_REGION does not fail construction — only an actual lowering', async () => {
-    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'mars-1' }, () => {
+  test('an arbitrary PRISMA_REGION string passes through unchanged — no list to validate against', async () => {
+    await withEnv({ PRISMA_WORKSPACE_ID: 'ws-123', PRISMA_REGION: 'xx-test-1' }, async () => {
       expect(() => prismaCloud()).not.toThrow();
 
-      const descriptor = prismaCloud();
-      const compute = descriptor.nodes['compute'];
-      if (compute === undefined || compute.kind !== 'service') {
-        throw new Error('expected a service descriptor for "compute"');
-      }
-      expect(() => runSync(compute.provision(computeCtx()))).toThrow(/PRISMA_REGION="mars-1"/);
+      const projectCreateBodies: Array<Record<string, unknown>> = [];
+      const container = prismaCloud().container;
+      expect(container).toBeDefined();
+      await container?.ensure(
+        { appName: 'storefront', stage: undefined },
+        { workspaceId: 'ws-123', client: fakeClient(projectCreateBodies) },
+      );
+      expect(projectCreateBodies[0]?.['region']).toBe('xx-test-1');
     });
   });
 });

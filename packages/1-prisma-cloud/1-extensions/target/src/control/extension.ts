@@ -11,7 +11,6 @@ import * as Prisma from '@internal/lowering';
 import { prismaStateLayer } from '@internal/lowering/state';
 import { RPC_PEER_KEY } from '@internal/service-rpc';
 import * as Output from 'alchemy/Output';
-import * as AlchemyPrisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import {
@@ -181,16 +180,7 @@ export interface PrismaCloudOptions {
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
-  region?: AlchemyPrisma.Types.PrismaRegionId;
-}
-
-// Upstream's KNOWN_REGION_IDS is the runtime source of truth PrismaRegionId is
-// derived from, so this can never fall behind — no hand-maintained list, no
-// exhaustiveness gymnastics to keep it honest.
-const KNOWN_REGION_SET: ReadonlySet<string> = new Set(AlchemyPrisma.KNOWN_REGION_IDS);
-
-function isComputeRegion(value: string): value is AlchemyPrisma.Types.PrismaRegionId {
-  return KNOWN_REGION_SET.has(value);
+  region?: Prisma.ProjectRegion;
 }
 
 /** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
@@ -282,11 +272,10 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * `PRISMA_WORKSPACE_ID`: nothing in this file reads `ResolvedCloudOptions.workspaceId`
  * downstream — it exists only so a caller MAY pin an explicit workspace, and
  * the real workspace check for a real deploy lives where the value actually
- * matters, `container.ts`'s `ensureContainer`/`locateContainer`. Region
- * validation stays eager-on-call (a garbage `PRISMA_REGION` still fails
- * loudly), but an ABSENT one resolves to `undefined` without touching
- * anything else — required for `prisma-composer dev`, which never sets
- * `PRISMA_REGION` and must not fail on its absence (local-dev spec § 5).
+ * matters, `container.ts`'s `ensureContainer`/`locateContainer`. An absent
+ * `PRISMA_REGION` resolves to `undefined` without touching anything else —
+ * required for `prisma-composer dev`, which never sets `PRISMA_REGION` and
+ * must not fail on its absence (local-dev spec § 5).
  */
 function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
@@ -299,13 +288,14 @@ function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'p
   if (region === undefined || region.length === 0) {
     return { workspaceId, providerParams: PROVIDER_PARAMS };
   }
-  if (!isComputeRegion(region)) {
-    throw new Error(
-      `prismaCloud(): environment variable PRISMA_REGION="${region}" is not a known region ` +
-        `(expected one of: ${AlchemyPrisma.KNOWN_REGION_IDS.join(', ')}).`,
-    );
-  }
-  return { workspaceId, region, providerParams: PROVIDER_PARAMS };
+  return {
+    workspaceId,
+    region: blindCast<
+      Prisma.ProjectRegion,
+      'PRISMA_REGION is untyped operator input; the Management API validates it on project creation and names the valid ids on a 422'
+    >(region),
+    providerParams: PROVIDER_PARAMS,
+  };
 }
 
 /**
@@ -340,7 +330,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
 
-    container: containerDescriptor(),
+    container: containerDescriptor({ region: () => o().region }),
 
     providers: () =>
       asProvidersLayer(

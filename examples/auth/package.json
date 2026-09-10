@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-auth",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,9 +12,9 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${AUTH_STACK_NAME:+--name \"$AUTH_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@prisma/composer": "workspace:0.16.0",
-    "@prisma/composer-cli": "workspace:0.16.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.16.0",
+    "@prisma/composer": "workspace:0.17.0",
+    "@prisma/composer-cli": "workspace:0.17.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.17.0",
     "@prisma/orm-postgres": "8.0.0-rc.8",
     "arktype": "^2.2.3",
     "hono": "^4.12.31"

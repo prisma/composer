@@ -511,7 +511,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       expect(recorded.db).toEqual([
         [
           'data-db',
-          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
         ],
       ]);
       expect(recorded.conn).toEqual([
@@ -549,7 +549,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
           'data2-db',
           {
             project: 'shop-project#cloud-id',
-            region: 'us-east-1',
+            region: 'inherit',
             branchId: 'branch_1',
           },
         ],
@@ -595,7 +595,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       run<Outputs>(resourceDescriptorOf(target, 'raw-postgres')(ctx));
 
       expect(recorded.db.slice(before)).toEqual([
-        ['data4-db', { project: 'local', name: 'data4', region: 'us-east-1' }],
+        ['data4-db', { project: 'local', name: 'data4', region: 'inherit' }],
       ]);
     });
   });
@@ -636,7 +636,7 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       expect(recorded.db.slice(before.db)).toEqual([
         [
           'pndata-db',
-          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
         ],
       ]);
       const [migrateId, migrateProps] = recorded.pnMigrate[before.migrate] ?? ['', {}];
@@ -749,10 +749,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         endpointDomain: 'https://auth-svc.example',
       });
       expect(recorded.svc).toEqual([
-        [
-          'auth-svc',
-          { project: 'shop-project#cloud-id', displayName: 'auth', regionId: 'us-east-1' },
-        ],
+        ['auth-svc', { project: 'shop-project#cloud-id', displayName: 'auth' }],
       ]);
     });
   });
@@ -779,7 +776,6 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
           {
             project: 'shop-project#cloud-id',
             displayName: 'auth2',
-            regionId: 'us-east-1',
             branchId: 'branch_1',
           },
         ],
@@ -1826,7 +1822,7 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       expect(recorded.db.slice(before.db)).toEqual([
         [
           'data-db',
-          { project: 'shop-project#cloud-id', region: 'us-east-1', branchId: 'br_default' },
+          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
         ],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([

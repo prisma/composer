@@ -25,6 +25,7 @@ interface FakeState {
   projects: FakeProject[];
   branches: Record<string, FakeBranch[]>;
   projectCreateCalls: number;
+  projectCreateBodies: Array<Record<string, unknown>>;
   branchCreateCalls: number;
   deleteBranchCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
@@ -38,6 +39,7 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   projects: [],
   branches: {},
   projectCreateCalls: 0,
+  projectCreateBodies: [],
   branchCreateCalls: 0,
   deleteBranchCalls: [],
   deleteProjectCalls: [],
@@ -85,6 +87,7 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
   ) => {
     if (path === '/v1/projects') {
       state.projectCreateCalls++;
+      state.projectCreateBodies.push(init.body ?? {});
       const id = `proj-${state.projectCreateCalls}`;
       const project: FakeProject = {
         id,
@@ -188,7 +191,10 @@ describe('containerDescriptor().ensure()', () => {
     const state = newFakeState();
 
     await withEnv(baseEnv, async () => {
-      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        region: () => 'us-east-1',
+      });
       const instance = await descriptor.ensure({ appName: 'storefront', stage: 'staging' });
 
       expect(isPrismaCloudContainer(instance)).toBe(true);
@@ -196,6 +202,7 @@ describe('containerDescriptor().ensure()', () => {
       expect(instance.branchId).toBe('br-proj-1-1');
       expect(instance.alchemyStage).toBe('br-proj-1-1');
       expect(state.projectCreateCalls).toBe(1);
+      expect(state.projectCreateBodies[0]?.['region']).toBe('us-east-1');
       expect(state.branchCreateCalls).toBe(1);
     });
   });
@@ -204,13 +211,17 @@ describe('containerDescriptor().ensure()', () => {
     const state = newFakeState();
 
     await withEnv(baseEnv, async () => {
-      const descriptor = containerDescriptor({ client: fakeClient(state) });
+      const descriptor = containerDescriptor({
+        client: fakeClient(state),
+        region: () => 'us-east-1',
+      });
       const instance = await descriptor.ensure({ appName: 'storefront', stage: undefined });
 
       expect(instance.projectId).toBe('proj-1');
       expect(instance.branchId).toBeUndefined();
       expect(instance.defaultBranchId).toBe('br-default-proj-1');
       expect(instance.alchemyStage).toBe('br-default-proj-1');
+      expect(state.projectCreateBodies[0]?.['region']).toBe('us-east-1');
       expect(state.branchCreateCalls).toBe(0);
     });
   });

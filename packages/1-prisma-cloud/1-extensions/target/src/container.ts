@@ -20,6 +20,7 @@ import {
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
+  type ProjectRegion,
   resolveContainer,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
@@ -149,6 +150,13 @@ type PrismaCloudCredentials = ContainerCredentials<ManagementApiClient>;
 /** Construction-time injection. Per-call credentials outrank it wherever both are present. */
 interface ContainerDeps {
   readonly client?: ManagementApiClient;
+  /**
+   * Getter for the configured deploy region — evaluated at ensure time, not construction time,
+   * so `prismaCloud()` still constructs with no environment present (local-dev spec § 5).
+   * When the getter returns undefined and the Project does not exist yet, ensure fails with an
+   * actionable error asking the user to set the region.
+   */
+  readonly region?: () => ProjectRegion | undefined;
 }
 
 const workspaceRequiredError = (): Error =>
@@ -205,10 +213,12 @@ async function ensureContainer(
 
   // All typed failures are caught and carried as a failure *value*, so
   // runPromise only rejects on a genuine defect.
+  const region = deps?.region?.();
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    ...(region !== undefined ? { region } : {}),
     ensure: true,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
