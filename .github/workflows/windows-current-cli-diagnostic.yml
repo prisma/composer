@@ -1,0 +1,39 @@
+name: Windows current CLI diagnostic
+on:
+  pull_request:
+    paths: ['.github/workflows/windows-current-cli-diagnostic.yml', '.github/scripts/assemble-current-cli.mjs']
+permissions:
+  contents: read
+jobs:
+  assemble:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        template: [next, minimal]
+    env:
+      DO_NOT_TRACK: '1'
+      CREATE_PRISMA_DISABLE_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm turbo run build --filter=@prisma/composer...
+      - name: Scaffold published CLI with npm
+        run: npx --yes create-prisma@0.11.7 windows-app --json --no-deploy --template ${{ matrix.template }} --authoring typescript --package-manager npm
+      - name: Build
+        working-directory: windows-app
+        run: npm run build
+      - name: Assemble published Composer
+        continue-on-error: true
+        working-directory: windows-app
+        run: node ../.github/scripts/assemble-current-cli.mjs ${{ matrix.template }}
+      - name: Install Composer PR
+        working-directory: windows-app
+        run: npm install ../packages/9-public/composer
+      - name: Assemble Composer PR
+        working-directory: windows-app
+        run: node ../.github/scripts/assemble-current-cli.mjs ${{ matrix.template }}
