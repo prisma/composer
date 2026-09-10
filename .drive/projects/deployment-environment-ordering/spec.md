@@ -1,24 +1,40 @@
 # Design brief: complete environment updates before deployment creation
 
+## Problem
+
+When an application changes its configuration, Composer can create its replacement
+deployment before it finishes writing the updated environment variables. Prisma
+Compute copies those variables into the deployment at creation time. The new
+deployment can therefore run with old configuration, even though the project
+variables show the updated values once the deployment command finishes.
+
+This happened during the Console migration: the new application required a
+57-field input document, but its deployment captured the previous 51-field
+`COMPOSER_CONSOLE_INPUT` document. Runtime input validation rejected the missing
+fields, so the server failed to start. Updating the project variable afterward
+could not repair that deployment because its configuration had already been copied.
+
+The same race can silently retain an old value when no fields are missing. For
+example, changing a tracking ID and deploying can leave the new deployment using
+the previous ID.
+
 ## Purpose
 
-Ensure that a Composer deployment captures its intended environment configuration.
-This is the direct fix for the configuration ordering bug and can ship independently
-of the application readiness proposal, which is tracked separately.
+Make each deployment wait until Composer has successfully written all environment
+variables it needs. A replacement must capture the updated input document; if a
+required write fails, Composer must not create the replacement.
 
-Prisma Compute snapshots environment variables when a deployment is created.
-Updating those variables afterward does not change the deployment's configuration.
-Composer must finish its environment updates before creating the deployment.
+Application readiness is a separate proposal. This brief addresses the stale
+configuration that causes the failure described above.
 
-The Console migration exposed a violation of this ordering: a deployment received
-the previous 51-field input document instead of the required 57-field document.
-Runtime validation failed before the server started.
+## Cause and proposed fix
 
 A local probe confirms the dependency issue. Composer currently depends on
 variable IDs, which Alchemy, the deployment engine, can resolve from persisted
 state while value updates remain pending. Depending on the whole resource preserves
-the dependency. The existing 12 deployment-edge tests pass but do not cover this
-persisted-state failure. A complete lifecycle regression test remains required.
+the dependency. The original 12 deployment-edge tests passed without covering this
+persisted-state failure. [Implementation PR #282](https://github.com/prisma/composer/pull/282)
+adds lifecycle regressions for the failure and the proposed fix.
 
 ## At a glance
 
