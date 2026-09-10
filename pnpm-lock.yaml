@@ -1068,6 +1068,9 @@ importers:
       '@internal/service-rpc':
         specifier: workspace:0.17.0
         version: link:../../../0-framework/2-authoring/service-rpc
+      '@prisma/compute':
+        specifier: 0.1.0-beta.0
+        version: 0.1.0-beta.0
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -2695,6 +2698,10 @@ packages:
     engines: {node: '>=22.12.0'}
     peerDependencies:
       '@prisma/management-api-sdk': ^1.55.0
+
+  '@prisma/compute@0.1.0-beta.0':
+    resolution: {integrity: sha512-QBG/UsMcohAc5IFInVQ6bRuEFnDiBdeGRQOFmaNvBW+GmqyGJsBaGDxJ3BrUAKmrIzzapTE5RmTYCcH7gY9VwQ==}
+    engines: {node: '>=22.12.0'}
 
   '@prisma/config@7.9.0':
     resolution: {integrity: sha512-CsoK2mhl0u+N4/8V+XroQMOUNIic4isqD+E2HBG8l1yGEKo62CFDu3FHo0FdwItjl6XkW+omA1STSzeN1DAXlg==}
@@ -7006,6 +7013,8 @@ snapshots:
       string-width: 8.2.2
     transitivePeerDependencies:
       - magicast
+
+  '@prisma/compute@0.1.0-beta.0': {}
 
   '@prisma/config@7.9.0':
     dependencies:
