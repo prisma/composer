@@ -49,9 +49,10 @@ The two ends of the resource pull in opposite directions, so they enter by
 different doors. The **contract** is *consumed*: it types and wires the resource
 and gives the deploy the schema version to migrate to. The
 **`prisma.config.ts`** is *located*, by path only — deploy-only metadata
-the migration step reads to find the migrations directory. The app build never
-imports it, because importing it would pull Prisma ORM's CLI, migration engine,
-and source providers into the user's bundle. One contract per database.
+the migration step reads to find the emitted `contract.json` and the
+migrations directory. The app build never imports it, because importing it
+would pull Prisma ORM's CLI, migration engine, and source providers into the
+user's bundle. One contract per database.
 
 At deploy, the lowering gains a migration step per `postgres` resource. Its
 target is a **ref** — `{ hash, invariants }` — and the live database carries a
@@ -80,9 +81,11 @@ otherwise                                                    → migrate (replay
 The ref comes from the resource's optional `targetRef` (naming a
 `migrations/app/refs/<name>.json` file), or defaults to the head: the emitted
 contract's hash with zero invariants. The tracked migration resource is keyed on
-the ref's identity (hash plus sorted invariants), so a data-only change still
-produces a distinct deploy step. Synthesized diff-and-apply (`dbUpdate`) is never
-run against a deployed database — only `migrate` is.
+the ref's identity (hash plus sorted invariants), and its persisted props carry
+only compact contract identity plus the config/migrations paths — not the full
+emitted contract — so a data-only change still produces a distinct deploy step
+without pushing `contract.json` into Alchemy state. Synthesized diff-and-apply
+(`dbUpdate`) is never run against a deployed database — only `migrate` is.
 
 Bare `postgres()` is unchanged: the untyped escape hatch, the `any` of data
 deps, the same role `http()` plays for communication.
@@ -111,19 +114,21 @@ own subpath entry, never re-exported from the index — so a service that opts o
 never loads `@prisma/orm-postgres` or `pg` at runtime.
 
 **Consume the contract; locate the config.** The runtime and the type system
-only need to *consume* the contract: `contract.json` (the data the framework
-hands the runtime at *hydrate* — the boot-time step that builds each
-dependency's client) and `contract.d.ts` (types), both lightweight and
-importable into the app build with no deploy machinery attached. The deploy migration step needs to
-*locate* the config — the `prisma.config.ts` from which Prisma ORM resolves
-the migrations directory — but it needs only the **path**, a string, read at
-deploy time. Passing the config as a path rather than an import is what keeps
-Prisma ORM's CLI and migration engine out of the user's bundle while still
-giving the deploy lowering what it needs. A single contract is Prisma ORM's
-mainline single-space model, so the user authors one contract that serves every
-consuming module. Each consumer sees the full contract type; per-consumer
-least-privilege slices are the deferred multi-contract extension (see
-Alternatives).
+need to *consume* the contract: `contract.json` (the data the framework hands
+the runtime at *hydrate* — the boot-time step that builds each dependency's
+client) and `contract.d.ts` (types), both lightweight and importable into the
+app build with no deploy machinery attached. The deploy migration step needs to
+*locate* the config — the `prisma.config.ts` from which Prisma ORM resolves the
+emitted `contract.json` output and the migrations directory — but it needs only
+the **path**, a string, read at deploy time. Passing the config as a path
+rather than an import is what keeps Prisma ORM's CLI and migration engine out
+of the user's bundle while still giving the deploy lowering what it needs. The
+migration resource therefore persists only a compact attestation of the current
+declared contract and reloads the full emitted contract at reconcile time. A
+single contract is Prisma ORM's mainline single-space model, so the user
+authors one contract that serves every consuming module. Each consumer sees the
+full contract type; per-consumer least-privilege slices are the deferred
+multi-contract extension (see Alternatives).
 
 **Schema checking is a build/deploy-time job, not a runtime one.** The
 authoritative check is the deploy. `migrate` walks the authored graph from the

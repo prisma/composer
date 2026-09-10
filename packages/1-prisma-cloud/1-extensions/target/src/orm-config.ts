@@ -1,8 +1,9 @@
 /**
  * Resolves a `postgres` resource's `prisma.config.ts` path to the
- * project facts the deploy needs (ADR-0022, slice 2): the on-disk migrations
- * directory the control client's `migrate` reads, and the declared
- * extension packs. Deploy-time only: loads PN's config (via c12) and applies
+ * project facts the deploy needs (ADR-0022, slice 2): the emitted
+ * `contract.json` artifact path, the on-disk migrations directory the control
+ * client's `migrate` reads, and the declared extension packs. Deploy-time
+ * only: loads PN's config (via c12) and applies
  * PN's own convention — `migrations.dir`, or the default `migrations/`,
  * relative to the config file's directory (mirrors the CLI's
  * `resolveMigrationPaths`). Imported by `control.ts` + tests, never by
@@ -37,6 +38,8 @@ export type PnExtensionPack = NonNullable<
 export interface ResolvedOrmConfig {
   /** The absolute migrations directory PN reads authored migration packages from. */
   readonly migrationsDir: string;
+  /** The absolute emitted contract artifact path the config identifies. */
+  readonly contractArtifactPath: string;
   /** The config's declared extension packs (`[]` when it declares none). */
   readonly extensionPacks: readonly PnExtensionPack[];
 }
@@ -48,10 +51,20 @@ export async function resolveOrmConfig(configPath: string): Promise<ResolvedOrmC
   const loaded = await loadConfig(configPath);
   if (!loaded.ok) throw loaded.failure;
   const config = loaded.value.config;
+  if (config.contract === undefined) {
+    throw new Error(`Prisma ORM config at "${configPath}" did not declare orm.contract.`);
+  }
+  if (config.contract.output === undefined) {
+    throw new Error(`Prisma ORM config at "${configPath}" did not resolve orm.contract.output.`);
+  }
   return {
     // `resolve(configPath, '..')` is the config file's directory; the
     // migrations root is `migrations.dir` (or the default) relative to it.
     migrationsDir: resolve(configPath, '..', config.migrations?.dir ?? 'migrations'),
+    // Prisma ORM's normalized contract config carries the emitted
+    // `contract.json` path directly on `contract.output`, relative to the
+    // config file. That is the supported, config-declared artifact path.
+    contractArtifactPath: resolve(configPath, '..', config.contract.output),
     // Since orm-toolchain 8.0.0-rc.7 the config's descriptors are typed
     // narrower than the control client accepts, and the descriptor generics
     // are invariant, so the two types reject each other in both directions.
@@ -66,6 +79,16 @@ export async function resolveOrmConfig(configPath: string): Promise<ResolvedOrmC
 /** The absolute migrations directory PN reads authored migration packages from. */
 export async function resolveMigrationsDir(configPath: string): Promise<string> {
   return (await resolveOrmConfig(configPath)).migrationsDir;
+}
+
+/** Loads the emitted `contract.json` at the resolved artifact path. */
+export async function loadContractJson(contractArtifactPath: string): Promise<unknown> {
+  // Freshen the specifier so repeated dev-loop reconciles re-read the file
+  // after `prisma contract emit` updates it in place.
+  const loaded = await import(`${contractArtifactPath}?t=${Date.now()}`, {
+    with: { type: 'json' },
+  });
+  return loaded.default;
 }
 
 /**
