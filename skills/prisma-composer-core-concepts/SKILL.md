@@ -411,7 +411,7 @@ provision exactly like your own:
 
 | Import | What it provisions | Exposes |
 | --- | --- | --- |
-| `cron` from `/cron` | An always-on scheduler firing your schedule at your runner service | nothing |
+| `cron` from `/cron` | An always-on scheduler (it holds Compute's keep-awake guard) firing your schedule at your runner service; `input` on `cron()` binds the runner's input schema | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
 | `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database) | `api`, `session`, `admin` |

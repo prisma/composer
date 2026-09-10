@@ -357,6 +357,28 @@ provision(cron({ schedule, runner: promotionsService }), {
 });
 ```
 
+A runner that declares an `input` schema ([below](#service-input)) takes its
+binding on `cron()` itself, with `envSecret(...)` where the schema expects a
+secret. It is required exactly when the runner declares a schema, the same
+rule `provision()` applies:
+
+```ts
+provision(
+  cron({
+    schedule,
+    runner: ingestService,
+    input: { token: envSecret('INGEST_TOKEN') },
+  }),
+  { deps: { catalog: catalog.rpc } },
+);
+```
+
+**The scheduler is the one service in your app that never sleeps.** Compute
+scales an idle service to zero, and the scheduler receives no requests of its
+own, so it holds the platform's keep-awake guard for its whole lifetime. One
+warm instance per app is the cost of the clock; the runner sleeps like any
+other service and wakes when the scheduler calls it.
+
 [`examples/storage`](../../examples/storage/) and
 [`examples/streams`](../../examples/streams/) show the other two, including
 the streams module's secret binding.

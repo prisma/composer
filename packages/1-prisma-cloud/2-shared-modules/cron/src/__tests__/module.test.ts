@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Load, LoadError, module } from '@internal/core';
 import node from '@internal/node';
-import { compute } from '@internal/prisma-cloud';
+import { compute, envSecret } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { triggerContract } from '../contract.ts';
@@ -62,6 +62,56 @@ describe('cron()', () => {
       serviceAddress: 'cron.scheduler',
       binding: { jobs: [{ jobId: 'tick', every: '2s' }] },
     });
+  });
+
+  test("forwards the runner's input binding, so a runner that needs a credential can be wrapped", () => {
+    const runnerWithInput = compute({
+      name: 'runner',
+      deps: { worker: rpc(workerContract) },
+      input: type({ token: 'string' }),
+      build,
+      expose: { trigger: triggerContract },
+    });
+    const token = envSecret('INGEST_TOKEN');
+    const root = module('root', {}, ({ provision }) => {
+      const w = provision(worker(), { id: 'worker' });
+      provision(cron({ schedule, runner: runnerWithInput, input: { token } }), {
+        id: 'cron',
+        deps: { worker: w.work },
+      });
+      return {};
+    });
+
+    const graph = Load(root);
+
+    expect(graph.inputBindings).toContainEqual({
+      serviceAddress: 'cron.runner',
+      binding: { token },
+    });
+  });
+
+  test('a runner that declares an input schema but is wrapped without a binding fails at Load, naming the runner', () => {
+    const runnerWithInput = compute({
+      name: 'runner',
+      deps: { worker: rpc(workerContract) },
+      input: type({ token: 'string' }),
+      build,
+      expose: { trigger: triggerContract },
+    });
+    const root = module('root', {}, ({ provision }) => {
+      const w = provision(worker(), { id: 'worker' });
+      // Bypasses the compile-time requirement to exercise Load's runtime backstop.
+      provision(cron({ schedule, runner: runnerWithInput } as never), {
+        id: 'cron',
+        deps: { worker: w.work },
+      });
+      return {};
+    });
+
+    expect(() => Load(root)).toThrow(LoadError);
+    expect(() => Load(root)).toThrow(
+      'Input of provisioned service "runner" is not bound (module "cron")',
+    );
   });
 
   test("an invalid wiring — the runner's own dep left unwired into the cron module — throws at Load", () => {

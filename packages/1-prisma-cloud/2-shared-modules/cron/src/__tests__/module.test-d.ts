@@ -9,7 +9,7 @@
  */
 import type { ModuleNode } from '@internal/core';
 import node from '@internal/node';
-import { compute } from '@internal/prisma-cloud';
+import { compute, envSecret } from '@internal/prisma-cloud';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { test } from 'vitest';
@@ -44,6 +44,14 @@ const notARunner = compute({
   expose: { work: workerContract },
 });
 
+const runnerWithInput = compute({
+  name: 'runner-with-input',
+  deps: { worker: rpc(workerContract) },
+  input: type({ token: 'string' }),
+  build,
+  expose: { trigger: triggerContract },
+});
+
 const schedule = defineSchedule({ tick: '2s' });
 
 test("cron() yields a ModuleNode whose boundary deps are exactly the runner's own deps", () => {
@@ -60,4 +68,15 @@ test('a runner exposing extra ports beyond trigger still compiles', () => {
 test('a runner that does not expose { trigger: triggerContract } is rejected', () => {
   // @ts-expect-error notARunner exposes `work`, not the required `trigger`
   cron({ schedule, runner: notARunner });
+});
+
+test('a runner with an input schema requires its binding on cron(), and accepts envSecret leaves', () => {
+  cron({ schedule, runner: runnerWithInput, input: { token: envSecret('INGEST_TOKEN') } });
+  // @ts-expect-error the runner declares an input schema, so `input` is required
+  cron({ schedule, runner: runnerWithInput });
+});
+
+test('a runner without an input schema rejects a binding', () => {
+  // @ts-expect-error the runner declares no input schema
+  cron({ schedule, runner, input: { token: 'x' } });
 });
