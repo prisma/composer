@@ -243,6 +243,10 @@ What deployed apps actually run into, and what to do about it:
   them — editing one by hand doesn't survive.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
+- **The `cron` scheduler stays awake on purpose.** It holds Compute's
+  keep-awake guard for its whole lifetime, so it never scales to zero: one warm
+  instance per app is the cost of the clock. Every other service, the runner
+  included, sleeps as usual.
 - **Streaming responses don't stream.** The platform's HTTP front door (the
   ingress) buffers a response until it completes, so an open SSE tail
   delivers nothing and times out at 60s. Don't build on streamed HTTP
