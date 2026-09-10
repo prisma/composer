@@ -291,6 +291,11 @@ that arrives as an ordinary, exactly-pinned npm dependency of
 imports or configures it; consult alchemy's own docs for the engine itself.
 What matters operationally:
 
+Alchemy is resolved from the nearest `node_modules/.bin`, including hoisted
+ancestor directories. Windows resolves `alchemy.exe`, then `alchemy.cmd`,
+then the extensionless shim; POSIX resolves `alchemy`. No global Alchemy
+installation is needed.
+
 1. Deploy and destroy write the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then run the alchemy CLI
    against it as a child process; `dev` does the same at
