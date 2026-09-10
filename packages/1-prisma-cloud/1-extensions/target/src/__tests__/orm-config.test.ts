@@ -58,7 +58,7 @@ describe('resolveOrmConfig', () => {
 
   test('resolves the emitted contract artifact path from the config output', async () => {
     const project = await resolveOrmConfig(widgetConfig);
-    expect(project.contractArtifactPath).toBe(
+    expect(path.normalize(project.contractArtifactPath)).toBe(
       path.join(path.dirname(widgetConfig), '..', 'emitted', 'contract.json'),
     );
     expect(path.isAbsolute(project.contractArtifactPath)).toBe(true);
@@ -66,7 +66,7 @@ describe('resolveOrmConfig', () => {
 
   test('without explicit output, the emitted contract path defaults next to the contract source', async () => {
     const project = await resolveOrmConfig(packedConfig);
-    expect(project.contractArtifactPath).toBe(
+    expect(path.normalize(project.contractArtifactPath)).toBe(
       path.join(path.dirname(packedConfig), 'contract.json'),
     );
   });

@@ -645,7 +645,9 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       expect(persisted['url']).toBe('postgres://pndata-conn');
       expect(persisted['currentContractHash']).toBe(widgetContractJson.storage.storageHash);
       expect(persisted['targetHash']).toBe(widgetContractJson.storage.storageHash);
-      expect(persisted['migrationsDir']).toBe(path.join(path.dirname(widgetConfig), 'migrations'));
+      expect(path.normalize(persisted['migrationsDir'] as string)).toBe(
+        path.join(path.dirname(widgetConfig), 'migrations'),
+      );
       expect(persisted['configPath']).toBe(widgetConfig);
       expect(persisted['packHeadRefHashes']).toEqual([]);
       expect('contractJson' in persisted).toBe(false);
