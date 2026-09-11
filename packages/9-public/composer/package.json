@@ -35,6 +35,7 @@
   "dependencies": {
     "@effect/sql-d1": "4.0.0-rc.112",
     "@effect/sql-sqlite-do": "4.0.0-rc.112",
+    "@effect/vitest": "4.0.0-rc.112",
     "@standard-schema/spec": "^1.1.0",
     "alchemy": "2.0.0-beta.74",
     "arktype": "^2.2.3",
@@ -45,7 +46,6 @@
     "@prisma/management-api-sdk": "^1.60.0"
   },
   "devDependencies": {
-    "@effect/vitest": "4.0.0-rc.112",
     "@internal/assemble": "workspace:0.17.0",
     "@internal/cli": "workspace:0.17.0",
     "@internal/core": "workspace:0.17.0",

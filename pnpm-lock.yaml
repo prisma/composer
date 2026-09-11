@@ -1222,6 +1222,9 @@ importers:
       '@effect/sql-sqlite-do':
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112(effect@4.0.0-rc.112)
+      '@effect/vitest':
+        specifier: 4.0.0-rc.112
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.0)))
       '@prisma/management-api-sdk':
         specifier: ^1.60.0
         version: 1.60.0
@@ -1247,9 +1250,6 @@ importers:
         specifier: ^0.28.1
         version: 0.28.2
     devDependencies:
-      '@effect/vitest':
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112)(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.0)))
       '@internal/assemble':
         specifier: workspace:0.17.0
         version: link:../../0-framework/3-tooling/assemble
