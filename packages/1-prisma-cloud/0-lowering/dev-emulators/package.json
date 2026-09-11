@@ -30,7 +30,7 @@
     "@types/pg": "^8.20.0",
     "@types/proper-lockfile": "^4.1.4",
     "pg": "^8.22.0",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3"
   },
   "license": "Apache-2.0",
