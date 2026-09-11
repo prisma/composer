@@ -3,6 +3,7 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import type * as Redacted from 'effect/Redacted';
+import pkg from '../package.json' with { type: 'json' };
 
 /**
  * The Prisma service token used to authenticate Management API calls. Kept
@@ -63,6 +64,17 @@ const normalizeBaseUrl = (value: string): Effect.Effect<string, Error> =>
         ? cause
         : new Error(`Invalid Prisma Management API URL: ${String(cause)}`),
   });
+
+/**
+ * Headers the Management API records in its deploy analytics: which tool sent
+ * the request, and whether it ran in GitHub Actions. The API behaves the same
+ * without them.
+ */
+export const deploySourceHeaders = (): Record<string, string> => ({
+  'x-prisma-deploy-source': process.env['GITHUB_ACTIONS'] === 'true' ? 'github-action' : 'composer',
+  'x-prisma-client-name': 'composer',
+  'x-prisma-client-version': pkg.version,
+});
 
 /**
  * The Management API origin every Prisma-Cloud client in this package uses —
