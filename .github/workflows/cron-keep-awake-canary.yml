@@ -1,0 +1,48 @@
+name: Cron keep-awake canary
+
+# Deploys examples/cron to real Prisma Cloud, leaves it alone for 14 minutes,
+# and checks from the runner's deployment log that the scheduler kept firing:
+# proof that the scheduler's KeepAwakeGuard keeps its instance awake on
+# Compute. Runs manually, weekly, or on a pull request labeled `cron-canary`;
+# not on every PR, since the wait alone is 14 minutes.
+# Requires repo secret PRISMA_SERVICE_TOKEN and repo variable PRISMA_WORKSPACE_ID.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+env:
+  PRISMA_REGION: us-east-1
+
+# Shares the E2E deploy group: only one real-cloud deploy runs at a time.
+concurrency:
+  group: e2e-deploy
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: Deploy, wait, verify, destroy (cron)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request' || (github.event.label.name == 'cron-canary' && github.event.pull_request.head.repo.full_name == github.repository)
+    env:
+      PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+      PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/deploy-verify-destroy
+        with:
+          working-directory: examples/cron
+          build-filter: '@prisma/example-cron...'
+          stack-name: cron-canary-ci-${{ github.run_id }}
+          verify-command: bun "${{ github.workspace }}/scripts/cron-keep-awake-canary.ts"
+          destroy-label: 'cron-canary '
+          sweep-prefixes: storefront-auth orm-demo hello canary streams-canary bucket resolver cron-canary
