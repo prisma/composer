@@ -109,26 +109,27 @@ tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
-## The consumer overrides block
+## alchemy's floating dependencies are pinned in the public packages
 
-Until alchemy's `effect`-family ranges match its code (the upstream
-`TaggedErrorClass` drift: its dependency/peer ranges float to effect versions
-that removed APIs its shipped code still calls), every consumer tree carries a
-constellation `overrides` block pinning `effect`, `@effect/sql-d1`,
-`@effect/sql-pg`, `@effect/vitest`, and `@effect/platform-bun`/`-node`/
-`-node-shared` to `@prisma/composer`'s exact pin. It lives in three kinds of
-places — keep them in lockstep when the pin moves:
+alchemy's `effect`-family ranges float past what its code supports (the
+upstream `TaggedErrorClass` drift), and a floater whose newest release names
+an `effect` peer that does not exist yet sends npm into hours of backtracking
+instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
+`effect`). Consumers carry no overrides block; instead the public packages
+pin, in `dependencies`, every package alchemy declares with a floating range
+so a consumer's npm resolves our copy:
 
-- `examples/*/package.json` — the consumer-shaped fixtures (literal versions).
-- The docs that show a consumer `package.json`:
-  `docs/guides/getting-started.md` (literal versions) and
-  `docs/guides/deploying.md`.
-- `scripts/check-npm-effect-resolution.mjs` — its healthy shapes install with
-  the same block (`CONSTELLATION_OVERRIDES`, derived from the pin
-  automatically; only the package-name list can go stale).
+- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
+  `@effect/sql-sqlite-do`, `@effect/vitest`.
+- `@prisma/composer-prisma-cloud` — the optional platform peers:
+  `@effect/platform-bun`, `@effect/platform-node`,
+  `@effect/platform-node-shared`.
 
-When alchemy fixes its ranges, delete the block everywhere at once — a
-half-removed block is the same drift hazard as a stale companion pin.
+When alchemy adds a floating `effect`-family dependency, add its pin next to
+these; `check-npm-effect-resolution` installs the tarballs bare and fails when
+the install backtracks or resolves a second `effect`. The only case left to a
+consumer's own `overrides` is an app that pins a different `effect` itself
+(documented in `docs/guides/deploying.md`).
 
 ## Breakage classes seen in practice
 

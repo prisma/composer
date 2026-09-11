@@ -187,27 +187,22 @@ second effect that alchemy picks up; deploying with it would crash inside
 alchemy.
 ```
 
-This happens when another dependency in your app floats to a newer `effect`
-and your package manager hoists that copy where alchemy resolves it — npm
-allows this with only a warning, and without the check the deploy would crash
-mid-run with a `TypeError` from inside alchemy. Today the floating dependency
-is alchemy itself: its own `effect`-family dependency and peer ranges
-(`@effect/sql-d1`, `@effect/sql-pg`, `@effect/vitest`, `@effect/platform-*`)
-float past the versions its shipped code supports — an upstream alchemy bug
-(the `TaggedErrorClass` drift, reported upstream), so every consumer app needs
-the constellation pinned until alchemy fixes its ranges. The fix is to pin the
-whole `effect` constellation to `@prisma/composer`'s exact pin, in your app's
-`package.json`:
+This happens when your app, or another dependency of it, pins a different
+`effect` than `@prisma/composer` does and your package manager hoists that copy
+where alchemy resolves it. npm allows this with only a warning, and without
+the check the deploy would crash mid-run with a `TypeError` from inside
+alchemy. A plain Composer app never hits it: `@prisma/composer` and
+`@prisma/composer-prisma-cloud` pin every `effect`-family package alchemy
+would otherwise float, so a fresh install resolves a single `effect`.
+
+The fix is to use the same `effect` as Composer. Match your own `effect`
+dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
+or, when a dependency you cannot change pins another version, force
+Composer's in your app's `package.json`:
 
 ```json
 "overrides": {
-  "effect": "<required>",
-  "@effect/sql-d1": "<required>",
-  "@effect/sql-pg": "<required>",
-  "@effect/vitest": "<required>",
-  "@effect/platform-bun": "<required>",
-  "@effect/platform-node": "<required>",
-  "@effect/platform-node-shared": "<required>"
+  "effect": "<required>"
 }
 ```
 
@@ -215,7 +210,6 @@ yarn spells the block `resolutions`, and pnpm nests it under
 `"pnpm": { "overrides": ... }`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
-The repo's `examples/*` manifests carry this exact block.
 
 ## Production behavior
 
