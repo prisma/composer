@@ -131,7 +131,13 @@ function collectEffectVersions(node, found = new Map()) {
 const CLI_CHECK_MARKER = 'alchemy resolves effect@';
 
 /** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
-function installApp(label, tarballs, extraDependencies = {}, overrides = undefined) {
+function installApp(
+  label,
+  tarballs,
+  extraDependencies = {},
+  overrides = undefined,
+  timeoutMs = undefined,
+) {
   const appDir = join(work, label);
   mkdirSync(appDir, { recursive: true });
   writeFileSync(
@@ -147,10 +153,18 @@ function installApp(label, tarballs, extraDependencies = {}, overrides = undefin
   const result = spawnSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
     cwd: appDir,
     encoding: 'utf-8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
-  if (result.error) fail(`[${label}] failed to spawn npm: ${result.error}`);
-  process.stderr.write(result.stderr);
-  return { appDir, status: result.status, output: `${result.stdout}${result.stderr}` };
+  const timedOut = result.error?.code === 'ETIMEDOUT';
+  if (result.error && !timedOut) fail(`[${label}] failed to spawn npm: ${result.error}`);
+  process.stderr.write(result.stderr ?? '');
+  return {
+    appDir,
+    status: result.status,
+    timedOut,
+    output: `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  };
 }
 
 /** The version of the `effect` that Node resolves from alchemy's installed position, plus its entry path. */
@@ -358,6 +372,44 @@ async function checkAdversarialShape(tarballs) {
   );
 }
 
+/**
+ * A consumer that ships NO overrides block — the unified `prisma` CLI installs
+ * @prisma/composer-cli this way, and so does anyone who skipped the guide.
+ * alchemy's own `dependencies` float (`@effect/sql-d1`, `@effect/sql-sqlite-do`,
+ * `@effect/vitest` at `>=4.0.0-rc.110 || >=4.0.0`), so the newest adapter on
+ * the registry wins unless our packages pin it exactly. When the adapters
+ * publish ahead of `effect` itself, the newest adapter's `effect` peer names a
+ * version that does not exist, and npm does not fail: it backtracks for hours
+ * (2026-09-11, `@effect/*@4.0.0-rc.114` with `effect` still at rc.113 stalled
+ * every install of @prisma/cli). Pinning the whole floating set in
+ * @prisma/composer's `dependencies` is what keeps this install terminating.
+ */
+const BARE_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+
+async function checkBareInstallTerminates(tarballs) {
+  const label = 'bare-install-no-overrides';
+  const { status, timedOut, output } = installApp(
+    label,
+    tarballs,
+    {},
+    undefined,
+    BARE_INSTALL_TIMEOUT_MS,
+  );
+  if (timedOut) {
+    fail(
+      `[${label}] npm install did not finish within ${BARE_INSTALL_TIMEOUT_MS / 1000}s. ` +
+        'npm is backtracking over one of the effect-family packages alchemy declares with ' +
+        'a floating range: a dependency alchemy pulls in resolves to a version whose ' +
+        '`effect` peer no published `effect` satisfies. Pin that package exactly in ' +
+        "@prisma/composer's `dependencies` (next to @effect/sql-d1).",
+    );
+  }
+  if (status !== 0) {
+    fail(`[${label}] npm install failed without overrides (exit ${status}):\n${output}`);
+  }
+  process.stderr.write(`[${label}] OK — a consumer without overrides installs and terminates\n`);
+}
+
 work = mkdtempSync(join(tmpdir(), 'npm-effect-check-'));
 try {
   const tarballDir = join(work, 'tarballs');
@@ -369,6 +421,7 @@ try {
   await checkShape('composer-and-cli', [composerTgz, composerCliTgz]);
   await checkShape('composer-cli-and-prisma-cloud', [composerTgz, composerCliTgz, prismaCloudTgz]);
   await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
+  await checkBareInstallTerminates([composerTgz, composerCliTgz]);
 
   process.stderr.write(
     `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
