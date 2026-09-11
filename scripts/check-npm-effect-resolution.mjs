@@ -69,25 +69,18 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
   fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
 }
 
-// The consumer-side workaround for the upstream alchemy bug (the
-// "TaggedErrorClass" drift): alchemy's own `effect`-family dependency and
-// peer ranges float (`>=4.0.0-beta.100 || >=4.0.0`) past the versions its
-// shipped code can actually run, so a fresh npm install resolves the floaters
-// to the newest beta, whose peer floors reject our pin and drag in a second
-// `effect`. Until alchemy fixes its ranges, every consumer tree (the
-// examples, the getting-started guide, and the healthy shapes here) pins the
-// whole constellation with this overrides block; delete it — here, in
-// examples/*, and in the docs — when alchemy's ranges match its code.
-const CONSTELLATION_OVERRIDES = {
-  effect: pinnedEffect,
-  '@effect/sql-d1': pinnedEffect,
-  '@effect/sql-pg': pinnedEffect,
-  '@effect/sql-sqlite-do': pinnedEffect,
-  '@effect/vitest': pinnedEffect,
-  '@effect/platform-bun': pinnedEffect,
-  '@effect/platform-node': pinnedEffect,
-  '@effect/platform-node-shared': pinnedEffect,
-};
+// alchemy's own `effect`-family ranges float (`@effect/sql-d1`,
+// `@effect/sql-sqlite-do`, `@effect/vitest` as dependencies, the platform
+// adapters as optional peers, all `>=4.0.0-rc.110 || >=4.0.0`). The public
+// packages pin every one of them exactly in `dependencies`, so a consumer's
+// npm resolves our copy instead of the newest on the registry. The healthy
+// shapes below install bare — no overrides — because that is how the unified
+// `prisma` CLI and anyone who follows the guide installs us. They run under a
+// timeout: when a floater's newest release names an `effect` peer no published
+// version satisfies, npm does not fail, it backtracks for hours (2026-09-11,
+// `@effect/*@4.0.0-rc.114` with `effect` still at rc.113 stalled every install
+// of @prisma/cli until @effect/vitest was pinned).
+const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 // `process.exit` skips the normal-path cleanup, so a failure deliberately
 // keeps the scratch installs and prints where they are for inspection.
@@ -236,14 +229,21 @@ function assertCliStarts(label, appDir) {
 }
 
 async function checkShape(label, tarballs) {
-  // Healthy shapes install the way a scaffolded consumer does: with the
-  // constellation overrides block the examples and getting-started guide
-  // ship. The check proves that shape genuinely dedupes.
   const {
     appDir,
     status: installStatus,
+    timedOut,
     output: installOutput,
-  } = installApp(label, tarballs, {}, CONSTELLATION_OVERRIDES);
+  } = installApp(label, tarballs, {}, undefined, INSTALL_TIMEOUT_MS);
+  if (timedOut) {
+    fail(
+      `[${label}] npm install did not finish within ${INSTALL_TIMEOUT_MS / 1000}s. npm is ` +
+        'backtracking over an effect-family package alchemy declares with a floating range: ' +
+        'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
+        "`effect` satisfies. Pin that package exactly in @prisma/composer's `dependencies` " +
+        '(next to @effect/sql-d1).',
+    );
+  }
   if (installStatus !== 0) {
     fail(`[${label}] npm install failed (exit ${installStatus}):\n${installOutput}`);
   }
@@ -372,44 +372,6 @@ async function checkAdversarialShape(tarballs) {
   );
 }
 
-/**
- * A consumer that ships NO overrides block — the unified `prisma` CLI installs
- * @prisma/composer-cli this way, and so does anyone who skipped the guide.
- * alchemy's own `dependencies` float (`@effect/sql-d1`, `@effect/sql-sqlite-do`,
- * `@effect/vitest` at `>=4.0.0-rc.110 || >=4.0.0`), so the newest adapter on
- * the registry wins unless our packages pin it exactly. When the adapters
- * publish ahead of `effect` itself, the newest adapter's `effect` peer names a
- * version that does not exist, and npm does not fail: it backtracks for hours
- * (2026-09-11, `@effect/*@4.0.0-rc.114` with `effect` still at rc.113 stalled
- * every install of @prisma/cli). Pinning the whole floating set in
- * @prisma/composer's `dependencies` is what keeps this install terminating.
- */
-const BARE_INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
-
-async function checkBareInstallTerminates(tarballs) {
-  const label = 'bare-install-no-overrides';
-  const { status, timedOut, output } = installApp(
-    label,
-    tarballs,
-    {},
-    undefined,
-    BARE_INSTALL_TIMEOUT_MS,
-  );
-  if (timedOut) {
-    fail(
-      `[${label}] npm install did not finish within ${BARE_INSTALL_TIMEOUT_MS / 1000}s. ` +
-        'npm is backtracking over one of the effect-family packages alchemy declares with ' +
-        'a floating range: a dependency alchemy pulls in resolves to a version whose ' +
-        '`effect` peer no published `effect` satisfies. Pin that package exactly in ' +
-        "@prisma/composer's `dependencies` (next to @effect/sql-d1).",
-    );
-  }
-  if (status !== 0) {
-    fail(`[${label}] npm install failed without overrides (exit ${status}):\n${output}`);
-  }
-  process.stderr.write(`[${label}] OK — a consumer without overrides installs and terminates\n`);
-}
-
 work = mkdtempSync(join(tmpdir(), 'npm-effect-check-'));
 try {
   const tarballDir = join(work, 'tarballs');
@@ -421,10 +383,9 @@ try {
   await checkShape('composer-and-cli', [composerTgz, composerCliTgz]);
   await checkShape('composer-cli-and-prisma-cloud', [composerTgz, composerCliTgz, prismaCloudTgz]);
   await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
-  await checkBareInstallTerminates([composerTgz, composerCliTgz]);
 
   process.stderr.write(
-    `\nOK — npm dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
+    `\nOK — a bare npm install dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
       'catches the adversarial tree at start-up.\n',
   );
 } finally {

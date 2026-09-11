@@ -431,13 +431,13 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 1. **Every `prisma-composer` command halts at start-up on an `effect`
    version conflict** (`Dependency conflict: alchemy resolves effect@...`).
-   Another dependency floated a newer `effect` and the package manager
-   hoisted it over Composer's pin. Pin the whole `effect` constellation in
-   the app's `package.json` `overrides` (yarn: `resolutions`; pnpm:
-   `pnpm.overrides`): `effect` plus `@effect/sql-d1`, `@effect/sql-pg`,
-   `@effect/vitest`, and `@effect/platform-bun`/`-node`/`-node-shared`, all
-   at Composer's exact pin, then reinstall. The repo's examples carry the
-   block.
+   The app, or one of its dependencies, pins a different `effect` and the
+   package manager hoisted it over Composer's pin. Match the app's own
+   `effect` to `@prisma/composer`'s exact pin, or force it with
+   `"overrides": { "effect": "<pin>" }` in the app's `package.json` (yarn:
+   `resolutions`; pnpm: `pnpm.overrides`), then reinstall. A plain Composer
+   app never hits this: the public packages pin every `effect`-family
+   package alchemy would float.
 2. **A deployed `/rpc/<method>` returns `401` to anything but a wired
    peer.** Not a broken deploy; see Contracts above.
 3. **Scale-to-zero closes idle database connections.** A persistent client
