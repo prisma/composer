@@ -3,8 +3,15 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import * as client from './client.ts';
-import { fromEnv, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
+import {
+  deploySourceHeaders,
+  fromEnv,
+  managementApiBaseUrl,
+  PrismaCredentials,
+} from './credentials.ts';
 
 /** The collection of Prisma resource providers. */
 export class Providers extends Provider.ProviderCollection<Providers>()('PrismaComposer') {}
@@ -33,6 +40,19 @@ const prismaEnvironment = () =>
   );
 
 /**
+ * A node:http transport that adds deploy-source headers to every request.
+ * Used privately by upstreamPrismaProviders — not exposed as the ambient
+ * HttpClient, so the artifact-upload path is unaffected.
+ */
+const prismaManagementHttpLayer = Layer.effect(
+  HttpClient.HttpClient,
+  Effect.gen(function* () {
+    const base = yield* HttpClient.HttpClient;
+    return HttpClient.mapRequest(base, HttpClientRequest.setHeaders(deploySourceHeaders()));
+  }),
+).pipe(Layer.provide(NodeHttpClient.layerNodeHttp));
+
+/**
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
  * EnvironmentVariable), and the bucket family (Bucket, BucketAccessKey),
@@ -56,10 +76,10 @@ const upstreamPrismaProviders = () =>
     Prisma.BucketAccessKeyProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
-    // Provide (NOT provideMerge) the node transport privately — mirrors
+    // Provide (NOT provideMerge) the transport privately — mirrors
     // upstream's Providers.ts: it must serve only the Prisma management
     // client, never override the ambient HttpClient of other providers.
-    Layer.provide(NodeHttpClient.layerNodeHttp),
+    Layer.provide(prismaManagementHttpLayer),
     Layer.provideMerge(prismaEnvironment()),
   );
 
