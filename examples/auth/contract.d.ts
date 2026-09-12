@@ -22,6 +22,7 @@ import type {
 
 import type {
   ContractWithTypeMaps,
+  RelationKeys,
   TypeMaps as TypeMapsType,
 } from '@prisma/orm-postgres/family-contract/types';
 import type {
@@ -242,6 +243,13 @@ export type FieldOutputTypes = { readonly public: Record<string, never> };
 export type FieldInputTypes = { readonly public: Record<string, never> };
 export type StorageColumnTypes = { readonly public: {} };
 export type StorageColumnInputTypes = { readonly public: {} };
+
+export namespace Models {}
+
+export declare const models: {
+  public: {};
+};
+
 export type TypeMaps = TypeMapsType<
   CodecTypes,
   QueryOperationTypes,
@@ -299,7 +307,7 @@ type ContractBase = Omit<
       readonly id: 'auth';
       readonly kind: 'extension';
       readonly targetId: 'postgres';
-      readonly version: '0.14.0';
+      readonly version: '0.18.0';
     };
   };
   readonly meta: {};

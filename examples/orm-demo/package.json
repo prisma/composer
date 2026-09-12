@@ -12,7 +12,7 @@
   "dependencies": {
     "@prisma/composer": "workspace:0.18.0",
     "@prisma/composer-prisma-cloud": "workspace:0.18.0",
-    "@prisma/orm-postgres": "8.0.0-rc.8",
+    "@prisma/orm-postgres": "8.0.0-rc.10",
     "effect": "4.0.0-rc.112",
     "pg": "8.22.0"
   },
