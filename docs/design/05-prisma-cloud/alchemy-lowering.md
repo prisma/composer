@@ -181,7 +181,7 @@ How the pieces map:
   `Database → Connection`, whose url is written as that service's **explicitly
   named** variable — the same `serialize` path as any other config value.
 - **The connection** lowers to two edges: the producer's endpoint domain flows
-  into a named `EnvironmentVariable`, and that variable's **id flows into the
+  into a named `EnvironmentVariable`, and that **whole resource flows into the
   consumer's `Deployment`** through its `app` prop.
 - Every `EnvironmentVariable` a Deployment boots with is threaded into its
   `app` — database URLs and connection URLs alike — so the deployment
@@ -196,14 +196,17 @@ deployment-create call literally contains the materialized env map, so the
 environment is genuinely an input to a deployment (see the
 [config lifecycle](pdp-data-model.md#the-config-lifecycle--what-is-resolved-when)).
 The edge's job is **ordering**: the variable write completes before
-deployment-create, so the first deployment boots with a complete environment.
+deployment-create, so new and replacement deployments boot with the completed
+configuration updates.
 Without it the two race — the failure documented as PRO-211 in `gotchas.md`.
 
 **Why the edge rides `app`.** Upstream's `Prisma.Deployment` has no
 `environment` prop (Composer's deleted one did). Alchemy derives its dependency
 graph from the resource references a prop's *value* is built from, so the
-descriptor builds `app` as an Output over the app id AND every variable's id,
-resolving to the app id itself: the graph gains the edges. It cannot ride
+descriptor builds `app` as an Output over the app id AND every whole variable
+resource, resolving to the app id itself: the graph gains the edges. A persisted
+variable ID can resolve before its pending value update finishes; the whole
+resource keeps that update as a dependency. The edge cannot ride
 `artifactPath` (or any of upstream's other replacement-block props): the diff
 reads that block as one unit and gives no opinion the moment any member is
 unresolved — and a brand-new variable's reference IS unresolved at plan time —
