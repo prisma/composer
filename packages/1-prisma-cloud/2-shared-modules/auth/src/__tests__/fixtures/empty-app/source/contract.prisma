@@ -1,3 +1,3 @@
-// use prisma-next
+// use prisma-8
 // An empty app space: the dedicated-DB shape (the smoke example) — the only
 // contract content is the implicit public namespace.
