@@ -16,12 +16,16 @@ import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
 
-/** Walks up from `startDir` looking for `node_modules/.bin/alchemy`. */
+/** Walks up from `startDir` looking for the installed Alchemy executable. */
 export function resolveAlchemyBin(startDir: string): string {
+  const names =
+    process.platform === 'win32' ? ['alchemy.exe', 'alchemy.cmd', 'alchemy'] : ['alchemy'];
   let dir = startDir;
   while (true) {
-    const candidate = path.join(dir, 'node_modules', '.bin', 'alchemy');
-    if (fs.existsSync(candidate)) return candidate;
+    for (const name of names) {
+      const candidate = path.join(dir, 'node_modules', '.bin', name);
+      if (fs.existsSync(candidate)) return candidate;
+    }
     const parent = path.dirname(dir);
     if (parent === dir) {
       throw new CliStructuredError(

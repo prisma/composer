@@ -1,4 +1,4 @@
-// use prisma-next
+// use prisma-8
 //
 // The pn-widgets data contract, authored in PSL. One model — a Widget with a
 // uuid id and a text label. `prisma-next contract emit` turns this into

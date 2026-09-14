@@ -44,6 +44,17 @@ afterEach(() => {
 });
 
 describe('resolveAlchemyBin()', () => {
+  test.skipIf(process.platform !== 'win32')('finds Windows-only package-manager shims', () => {
+    for (const filename of ['alchemy.cmd', 'alchemy.exe']) {
+      const dir = makeTmpDir();
+      const binDir = path.join(dir, 'node_modules', '.bin');
+      fs.mkdirSync(binDir, { recursive: true });
+      const bin = path.join(binDir, filename);
+      fs.writeFileSync(bin, '');
+      expect(resolveAlchemyBin(dir)).toBe(bin);
+    }
+  });
+
   test('finds node_modules/.bin/alchemy in the given directory', () => {
     const dir = makeTmpDir();
     const bin = installFakeAlchemy(dir);
@@ -177,6 +188,39 @@ describe('alchemyInvocation()', () => {
 });
 
 describe('spawnAlchemy()', () => {
+  test.skipIf(process.platform !== 'win32')('runs a cmd shim with literal arguments', async () => {
+    const dir = makeTmpDir();
+    const script = path.join(dir, 'capture.cjs');
+    const captureFile = path.join(dir, 'capture.json');
+    fs.writeFileSync(
+      script,
+      'require("node:fs").writeFileSync(process.env.CAPTURE_FILE, JSON.stringify(process.argv.slice(2)));',
+    );
+    const binDir = path.join(dir, 'node_modules', '.bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(binDir, 'alchemy.cmd'),
+      `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`,
+    );
+    const stage = 'spaces & symbols';
+    expect(
+      await spawnAlchemy({
+        action: 'deploy',
+        stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+        stage,
+        cwd: dir,
+        env: { CAPTURE_FILE: captureFile },
+      }),
+    ).toEqual({ exitCode: 0, signal: null });
+    expect(JSON.parse(fs.readFileSync(captureFile, 'utf8'))).toEqual([
+      'deploy',
+      '.prisma-composer/alchemy.run.ts',
+      '--yes',
+      '--stage',
+      stage,
+    ]);
+  });
+
   test('runs the invocation in its cwd with its env additions merged over the invoking environment', async () => {
     const dir = makeTmpDir();
     const captureFile = path.join(dir, 'capture.json');

@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.17.0"
+  library_version: "0.20.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
@@ -239,7 +239,7 @@ Two kinds of Postgres dependency:
    `prisma contract emit`) is referenced by both the dependency end
    (`deps: { db: postgres(catalogData) }`) and the resource end, which also
    names the `prisma.config.ts` path so the deploy's migration step can
-   find `migrations/`.
+   reload the emitted `contract.json` and find `migrations/`.
 
 **Deploys are replay-only**: they apply the migrations committed under
 `migrations/` and never create schema themselves. Every schema change,
@@ -256,8 +256,12 @@ If no authored path reaches the target contract, deploy (and `dev` against a
 stale local database) refuses with `MIGRATION_PATH_NOT_FOUND`; its message
 lists the two ways out: author the missing migration, or, when iterating
 against a local
-database only, `prisma db update`. Never skip step 3 before a deploy. See
-`examples/store/modules/catalog` for the complete pattern.
+database only, `prisma db update`. The tracked migration resource persists only
+compact contract identity in deploy state; if the emitted contract artifact
+named by `prisma.config.ts` is missing, unreadable, or no longer matches the
+declared `dataContract(...)` value, deploy fails before touching the database.
+Never skip step 3 before a deploy. See `examples/store/modules/catalog` for the
+complete pattern.
 
 ## Deploy model: converge, don't script
 
@@ -290,6 +294,11 @@ that arrives as an ordinary, exactly-pinned npm dependency of
 `@prisma/composer` (2.0.0-beta.74 at this library version). Your code never
 imports or configures it; consult alchemy's own docs for the engine itself.
 What matters operationally:
+
+Alchemy is resolved from the nearest `node_modules/.bin`, including hoisted
+ancestor directories. Windows resolves `alchemy.exe`, then `alchemy.cmd`,
+then the extensionless shim; POSIX resolves `alchemy`. No global Alchemy
+installation is needed.
 
 1. Deploy and destroy write the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then run the alchemy CLI
@@ -402,7 +411,7 @@ provision exactly like your own:
 
 | Import | What it provisions | Exposes |
 | --- | --- | --- |
-| `cron` from `/cron` | An always-on scheduler firing your schedule at your runner service | nothing |
+| `cron` from `/cron` | An always-on scheduler (it holds Compute's keep-awake guard) firing your schedule at your runner service; `input` on `cron()` binds the runner's input schema | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
 | `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database) | `api`, `session`, `admin` |
@@ -422,13 +431,13 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 1. **Every `prisma-composer` command halts at start-up on an `effect`
    version conflict** (`Dependency conflict: alchemy resolves effect@...`).
-   Another dependency floated a newer `effect` and the package manager
-   hoisted it over Composer's pin. Pin the whole `effect` constellation in
-   the app's `package.json` `overrides` (yarn: `resolutions`; pnpm:
-   `pnpm.overrides`): `effect` plus `@effect/sql-d1`, `@effect/sql-pg`,
-   `@effect/vitest`, and `@effect/platform-bun`/`-node`/`-node-shared`, all
-   at Composer's exact pin, then reinstall. The repo's examples carry the
-   block.
+   The app, or one of its dependencies, pins a different `effect` and the
+   package manager hoisted it over Composer's pin. Match the app's own
+   `effect` to `@prisma/composer`'s exact pin, or force it with
+   `"overrides": { "effect": "<pin>" }` in the app's `package.json` (yarn:
+   `resolutions`; pnpm: `pnpm.overrides`), then reinstall. A plain Composer
+   app never hits this: the public packages pin every `effect`-family
+   package alchemy would float.
 2. **A deployed `/rpc/<method>` returns `401` to anything but a wired
    peer.** Not a broken deploy; see Contracts above.
 3. **Scale-to-zero closes idle database connections.** A persistent client

@@ -21,16 +21,21 @@
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { resolveOrmConfig } from './orm-config.ts';
-import { applyOrmMigration } from './orm-migrate.ts';
+import { loadContractJson, resolveOrmConfig } from './orm-config.ts';
+import { applyOrmMigration, OrmMigrationError, targetStorageHash } from './orm-migrate.ts';
 
 export interface OrmMigrationProps {
   /** The live DB connection string (an Alchemy Output at wiring time, resolved at apply). */
   readonly url: string;
-  /** The deserialized contract (`node.provides.__cmp.contractJson`) — what migrate applies. */
-  readonly contractJson: unknown;
   /** On-disk migrations root, resolved from the resource's `prisma.config.ts`. */
   readonly migrationsDir: string;
+  /**
+   * The current declared contract's `storage.storageHash`, persisted as compact
+   * attestation and checked against the config-loaded emitted contract before
+   * any database access. Distinct from `targetHash`: a named ref can point
+   * behind the current contract head.
+   */
+  readonly currentContractHash: string;
   /** The target ref's hash — half the diff/identity key. */
   readonly targetHash: string;
   /**
@@ -53,8 +58,7 @@ export interface OrmMigrationProps {
   readonly packHeadRefHashes: readonly string[];
   /**
    * The resource's `prisma.config.ts` path — where reconcile reloads the
-   * declared extension-pack descriptors from when `packHeadRefHashes` is
-   * non-empty.
+   * emitted contract artifact and any declared extension-pack descriptors.
    */
   readonly configPath: string;
 }
@@ -89,17 +93,32 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
   reconcile: ({ news }) =>
     Effect.tryPromise({
       try: async () => {
-        // Descriptors are reloaded here, not carried in props: props persist
-        // in Alchemy state and a descriptor is live code. Loaded only when
-        // the key says packs are declared, so a pack-free project never pays
-        // (or depends on) the config load at apply time.
-        const extensionPacks =
-          news.packHeadRefHashes.length > 0
-            ? (await resolveOrmConfig(news.configPath)).extensionPacks
-            : [];
+        // The config is reloaded here, not carried in props: props persist in
+        // Alchemy state and the emitted contract is a deploy-time artifact.
+        const { contractArtifactPath, extensionPacks } = await resolveOrmConfig(news.configPath);
+        let contractJson: unknown;
+        try {
+          contractJson = await loadContractJson(contractArtifactPath);
+        } catch (error) {
+          const summary = error instanceof Error ? error.message : String(error);
+          throw new OrmMigrationError(
+            'CONTRACT_ARTIFACT_UNREADABLE',
+            `could not load the emitted contract identified by "${news.configPath}" at ` +
+              `"${contractArtifactPath}": ${summary}`,
+          );
+        }
+        const loadedContractHash = targetStorageHash(contractJson);
+        if (loadedContractHash !== news.currentContractHash) {
+          throw new OrmMigrationError(
+            'CONTRACT_IDENTITY_MISMATCH',
+            `the emitted contract identified by "${news.configPath}" has storage hash ` +
+              `"${loadedContractHash}", but the database resource declared ` +
+              `"${news.currentContractHash}"`,
+          );
+        }
         return applyOrmMigration({
           url: news.url,
-          contractJson: news.contractJson,
+          contractJson,
           migrationsDir: news.migrationsDir,
           ref: { hash: news.targetHash, invariants: news.invariants },
           extensionPacks,
