@@ -18,7 +18,6 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       PRISMA_REGION: us-east-1
       APP_NAME: windows-next-${{ github.run_id }}
-      APP_DIR: ${{ runner.temp }}/windows-next-${{ github.run_id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -34,7 +33,7 @@ jobs:
         run: npm pack --ignore-scripts
       - name: Install Composer PR and build
         run: |
-          Set-Location $env:APP_DIR
+          Set-Location "$env:RUNNER_TEMP/$env:APP_NAME"
           npm install "$env:GITHUB_WORKSPACE/packages/9-public/composer/prisma-composer-0.20.0.tgz" @prisma/composer-prisma-cloud@0.20.0 @prisma/orm-postgres@8.0.0-rc.11
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
@@ -44,7 +43,7 @@ jobs:
           PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
           PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
         run: |
-          Set-Location $env:APP_DIR
+          Set-Location "$env:RUNNER_TEMP/$env:APP_NAME"
           $lines = npm exec --offline --yes=false -- prisma deploy module.ts --json
           $lines
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -62,7 +61,7 @@ jobs:
           PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
           PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
         run: |
-          Set-Location $env:APP_DIR
+          Set-Location "$env:RUNNER_TEMP/$env:APP_NAME"
           $lines = npm exec --offline --yes=false -- prisma project show $env:APP_NAME --json
           if ($LASTEXITCODE -ne 0) { throw 'Could not resolve diagnostic project for cleanup' }
           $result = $lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object kind -eq 'result' | Select-Object -Last 1
