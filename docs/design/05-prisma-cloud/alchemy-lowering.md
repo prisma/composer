@@ -166,10 +166,10 @@ flowchart TB
     DBs[(Database storefront-db)] --> Cs[Connection] -- url --> EVs["EnvironmentVariable(STOREFRONT_DB_URL)"]
     Sa[App auth] --> Da[Deployment_a]
     Ss[App storefront] --> Ds[Deployment_s]
-    EVa -- id ref --> Da
-    EVs -- id ref --> Ds
+    EVa -- resource ref --> Da
+    EVs -- resource ref --> Ds
     Da -- appEndpointDomain --> EVu["EnvironmentVariable(STOREFRONT_AUTH_URL)"]
-    EVu -- id ref --> Ds
+    EVu -- resource ref --> Ds
   end
 ```
 
