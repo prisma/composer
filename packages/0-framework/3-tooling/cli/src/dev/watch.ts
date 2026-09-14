@@ -49,7 +49,7 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
 export interface WatchHandle {
   /** Resolves once chokidar's OS-level watches are attached — a change made before this can be missed entirely. Also resolves on `stop()` so an awaiting caller can never hang. */
   readonly ready: Promise<void>;
-  /** Stops every OS-level watcher and resolves only after chokidar has released them. */
+  /** Awaits every watcher close; rejects with an AggregateError if any close fails. */
   stop(): Promise<void>;
 }
 

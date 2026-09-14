@@ -1,8 +1,7 @@
 /**
- * The dev executor — run-dev.ts's pipeline (local-dev spec § 6) with console
- * and signal handling removed: events out through `onEvent`, lifetime owned by
+ * The dev executor (local-dev spec § 6): events out through `onEvent`, lifetime owned by
  * the returned DevSession. The operation NEVER touches process signal
- * handlers — the host does (see run-dev.ts). Reached only by lazy import
+ * handlers — the host does (see family/commands/dev.ts). Reached only by lazy import
  * from dev.ts — this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
  */

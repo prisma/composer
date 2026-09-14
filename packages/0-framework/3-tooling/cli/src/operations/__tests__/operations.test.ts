@@ -22,6 +22,7 @@ import type {
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
+import * as Watch from '../../dev/watch.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
@@ -909,42 +910,48 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(stops).toBe(1);
   }, 15_000);
 
-  test('a startServices that throws mid-start is rolled back: the partially-started attachment is stopped again', async () => {
-    const app = makeAppDir('hello-dev');
-    let stops = 0;
-    const attachment: LocalTargetAttachment = {
-      // Models a partial start: some services came up before the throw, so
-      // the rollback must stop this attachment even though startServices
-      // never returned.
-      startServices: () => Promise.reject(new Error('service two failed to bind its port')),
-      stopServices: () => {
-        stops += 1;
-        return Promise.resolve();
-      },
-      endpoints: () => Promise.resolve([]),
-      logs: async function* () {},
-    };
-
-    const result = await silently(() =>
-      devWithDeps(
-        {
-          entry: app.entryPath,
-          cwd: app.dir,
+  test.each(['success', 'sync failure', 'async failure'] as const)(
+    'a partial start is rolled back and preserves its failure after cleanup %s',
+    async (cleanup) => {
+      const app = makeAppDir('hello-dev');
+      let stops = 0;
+      const attachment: LocalTargetAttachment = {
+        // Models a partial start: some services came up before the throw, so
+        // the rollback must stop this attachment even though startServices
+        // never returned.
+        startServices: () => Promise.reject(new Error('service two failed to bind its port')),
+        stopServices: () => {
+          stops += 1;
+          if (cleanup === 'sync failure') throw new Error('cleanup failed');
+          if (cleanup === 'async failure') return Promise.reject(new Error('cleanup failed'));
+          return Promise.resolve();
         },
-        {
-          config: devConfigWith(attachment),
-          runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
-        },
-      ),
-    );
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
-    expect(result.failure.message).toBe('service two failed to bind its port');
-    expect(stops).toBe(1);
-  }, 15_000);
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            entry: app.entryPath,
+            cwd: app.dir,
+          },
+          {
+            config: devConfigWith(attachment),
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
+      expect(result.failure.message).toBe('service two failed to bind its port');
+      expect(stops).toBe(1);
+    },
+    15_000,
+  );
 
   test.each(['synchronous', 'asynchronous'] as const)(
     'stop() surfaces a %s cleanup failure and still finishes',
@@ -992,7 +999,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     async (phase) => {
       const app = makeAppDir('shutdown-race');
       const watched = path.join(app.dir, 'output.txt');
-      fs.writeFileSync(watched, 'before');
+      let triggerChange = () => {};
+      const watch = spyOn(Watch, 'startWatch').mockImplementation((_targets, onChange) => {
+        triggerChange = onChange;
+        return { ready: Promise.resolve(), stop: async () => {} };
+      });
       let resume = () => {};
       const blockedWork = new Promise<void>((resolve) => {
         resume = resolve;
@@ -1039,10 +1050,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
             return { exitCode: 0, signal: null };
           },
         },
-      );
+      ).finally(() => watch.mockRestore());
       if (!start.ok) throw new Error('expected a started session');
       try {
-        fs.writeFileSync(watched, 'after');
+        triggerChange();
         const deadline = Date.now() + 5000;
         while (!entered && rebuildFailure === undefined && Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 25));
