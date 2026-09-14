@@ -8,6 +8,7 @@ import {
   State,
   type StateService,
 } from 'alchemy/State';
+import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
@@ -25,8 +26,6 @@ import {
   releaseDeployLease,
 } from '../lease.ts';
 import { FakeStateApi } from './fake-state-api.ts';
-
-process.env['PRISMA_SERVICE_TOKEN'] = 'test-service-token';
 
 const PROJECT_ID = 'proj-1';
 const BRANCH_ID = 'br-1';
@@ -312,7 +311,14 @@ describe('prismaStateLayer against the platform state API', () => {
       Effect.gen(function* () {
         const service = yield* yield* State;
         return yield* use(service).pipe(Effect.orDie);
-      }).pipe(Effect.provide(layer)) as Effect.Effect<A>,
+      }).pipe(
+        Effect.provide(layer),
+        // Do not depend on when another test first snapshots the process environment.
+        Effect.provideService(
+          ConfigProvider.ConfigProvider,
+          ConfigProvider.fromEnvRecord({ PRISMA_SERVICE_TOKEN: 'test-service-token' }),
+        ),
+      ) as Effect.Effect<A>,
     );
   };
 
