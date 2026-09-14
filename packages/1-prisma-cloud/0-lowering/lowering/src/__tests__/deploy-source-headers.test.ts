@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import pkg from '../../package.json' with { type: 'json' };
 import { deploySourceHeaders } from '../credentials.ts';
 
 describe('deploySourceHeaders', () => {
@@ -31,10 +32,8 @@ describe('deploySourceHeaders', () => {
     expect(deploySourceHeaders()['x-prisma-client-name']).toBe('composer');
   });
 
-  test('sets x-prisma-client-version to the package version string', () => {
-    const version = deploySourceHeaders()['x-prisma-client-version'] ?? '';
-    expect(version.length).toBeGreaterThan(0);
-    // Semver-shaped: digits separated by dots.
-    expect(version).toMatch(/^\d+\.\d+\.\d+/);
+  test('sets x-prisma-client-version to the package version', () => {
+    expect(pkg.version.length).toBeGreaterThan(0);
+    expect(deploySourceHeaders()['x-prisma-client-version']).toBe(pkg.version);
   });
 });
