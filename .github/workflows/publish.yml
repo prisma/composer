@@ -185,8 +185,8 @@ jobs:
           fi
           gh api repos/prisma/prisma-cli/dispatches \
             -f event_type=product-published \
-            -F 'client_payload[package]=@prisma/composer-cli' \
-            -F "client_payload[version]=$VERSION"
+            -f 'client_payload[package]=@prisma/composer-cli' \
+            -f "client_payload[version]=$VERSION"
 
       # --- Dev follow-up, release pushes only (devVersion is empty otherwise).
       # The release steps above already ran the full check battery against this
