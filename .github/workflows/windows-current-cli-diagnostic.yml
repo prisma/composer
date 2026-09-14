@@ -15,8 +15,10 @@ jobs:
     env:
       DO_NOT_TRACK: '1'
       CREATE_PRISMA_DISABLE_TELEMETRY: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
       PRISMA_REGION: us-east-1
       APP_NAME: windows-next-${{ github.run_id }}
+      APP_DIR: ${{ runner.temp }}/windows-next-${{ github.run_id }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -25,14 +27,15 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm turbo run build --filter=@prisma/composer...
       - name: Scaffold published CLI with npm
+        working-directory: ${{ runner.temp }}
         run: npx --yes create-prisma@0.12.0 $env:APP_NAME --json --no-deploy --template next --authoring typescript --package-manager npm
       - name: Pack Composer PR
         working-directory: packages/9-public/composer
         run: npm pack --ignore-scripts
       - name: Install Composer PR and build
         run: |
-          Set-Location $env:APP_NAME
-          npm install ../packages/9-public/composer/prisma-composer-0.20.0.tgz
+          Set-Location $env:APP_DIR
+          npm install "$env:GITHUB_WORKSPACE/packages/9-public/composer/prisma-composer-0.20.0.tgz" @prisma/composer-prisma-cloud@0.20.0 @prisma/orm-postgres@8.0.0-rc.11
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run build
       - name: Deploy and verify seeded page
@@ -41,7 +44,7 @@ jobs:
           PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
           PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
         run: |
-          Set-Location $env:APP_NAME
+          Set-Location $env:APP_DIR
           $lines = npm exec --offline --yes=false -- prisma deploy module.ts --json
           $lines
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -59,7 +62,7 @@ jobs:
           PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
           PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
         run: |
-          Set-Location $env:APP_NAME
+          Set-Location $env:APP_DIR
           $lines = npm exec --offline --yes=false -- prisma project show $env:APP_NAME --json
           if ($LASTEXITCODE -ne 0) { throw 'Could not resolve diagnostic project for cleanup' }
           $result = $lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object kind -eq 'result' | Select-Object -Last 1
