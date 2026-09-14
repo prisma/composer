@@ -9,7 +9,8 @@ import { pathToFileURL } from 'node:url';
 import type { ModuleNode, ServiceNode } from '@internal/core';
 import { isNode } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
-import { CliError } from './cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
+import { registerEntryResolution } from './entry-resolution.ts';
 import { explainJsxLoadError } from './jsx-load-error.ts';
 
 export interface LoadedEntry {
@@ -19,14 +20,26 @@ export interface LoadedEntry {
 }
 
 export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEntry> {
+  registerEntryResolution();
   const resolvedPath = path.resolve(cwd, entryArg);
   let mod: unknown;
   try {
     mod = await import(pathToFileURL(resolvedPath).href);
   } catch (error) {
     const explained = explainJsxLoadError(error, resolvedPath);
-    if (explained !== undefined) throw new CliError(explained);
-    throw error;
+    if (explained !== undefined) {
+      throw new CliStructuredError('COMPOSE.ENTRY_UNLOADABLE', explained.summary, {
+        why: explained.why,
+        fix: explained.fix,
+        where: { path: resolvedPath },
+        cause: error,
+      });
+    }
+    throw new CliStructuredError(
+      'COMPOSE.ENTRY_UNLOADABLE',
+      `Failed to import entry module "${resolvedPath}": ${error instanceof Error ? error.message : String(error)}`,
+      { where: { path: resolvedPath }, cause: error },
+    );
   }
   const root: unknown = blindCast<
     { default?: unknown },
@@ -34,9 +47,13 @@ export async function loadEntry(entryArg: string, cwd: string): Promise<LoadedEn
   >(mod).default;
 
   if (!isNode(root) || root.kind === 'dependency' || root.kind === 'resource') {
-    throw new CliError(
-      `Entry module "${resolvedPath}" must default-export a node (a service or a module) — ` +
-        'construct it with service() or module() from @prisma/composer.',
+    throw new CliStructuredError(
+      'COMPOSE.ENTRY_EXPORT_INVALID',
+      `Entry module "${resolvedPath}" must default-export a node (a service or a module).`,
+      {
+        fix: 'Construct it with service() or module() from @prisma/composer.',
+        where: { path: resolvedPath },
+      },
     );
   }
 

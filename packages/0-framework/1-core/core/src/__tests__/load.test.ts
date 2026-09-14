@@ -40,7 +40,7 @@ describe('Load', () => {
 
     const graph = Load(root, { id: 'hello' });
 
-    expect(graph.root).toEqual({ id: 'hello', node: root });
+    expect(graph.root).toEqual({ id: 'hello', parent: undefined, node: root });
     expect(graph.nodes.map((n) => n.id)).toEqual(['hello']);
     expect(graph.edges).toEqual([]);
   });

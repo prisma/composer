@@ -11,7 +11,7 @@
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
-import { CliError } from './cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 
 /** Walks up from `startDir` looking for `node_modules/alchemy` (mirrors resolveAlchemyBin). Undefined when absent — the check skips rather than second-guessing later, clearer failures. */
 export function findAlchemyPackageDir(startDir: string): string | undefined {
@@ -81,29 +81,63 @@ export function requiredEffectVersion(startDir: string): string | undefined {
   return typeof version === 'string' ? version : undefined;
 }
 
-/** Pure comparison + message rendering, separated so tests cover the rule without a filesystem. Returns the error message, or undefined when the tree is healthy or either side is unknown. */
+export interface EffectMismatchParts {
+  /** Keeps the `alchemy resolves effect@` marker — scripts/check-npm-effect-resolution.mjs pins it in CI. */
+  readonly summary: string;
+  readonly why: string;
+  readonly fix: string;
+  readonly meta: { readonly found: string; readonly required: string };
+}
+
+/** Pure comparison + parts rendering, separated so tests cover the rule without a filesystem. Returns the structured error parts, or undefined when the tree is healthy or either side is unknown. */
 export function effectMismatchError(
   found: string | undefined,
   required: string | undefined,
-): string | undefined {
+): EffectMismatchParts | undefined {
   if (found === undefined || required === undefined || found === required) return undefined;
-  return (
-    `Dependency conflict: alchemy resolves effect@${found}, but @prisma/composer requires ` +
-    `effect@${required}. Your package manager installed a second effect that alchemy picks up; ` +
-    'deploying with it would crash inside alchemy.\n\n' +
-    "Fix: add this to your app's package.json, then reinstall:\n\n" +
-    `  "overrides": { "effect": "${required}" }\n\n` +
-    '(npm uses "overrides"; yarn calls it "resolutions", pnpm "pnpm.overrides".)'
-  );
+  return {
+    summary:
+      `Dependency conflict: alchemy resolves effect@${found}, but @prisma/composer requires ` +
+      `effect@${required}.`,
+    why:
+      'Your package manager installed a second effect that alchemy picks up; ' +
+      'deploying with it would crash inside alchemy.',
+    fix:
+      "Add this to your app's package.json, then reinstall:\n\n" +
+      `  "overrides": { "effect": "${required}" }\n\n` +
+      '(npm uses "overrides"; yarn calls it "resolutions", pnpm "pnpm.overrides".)',
+    meta: { found, required },
+  };
 }
 
-/** Runs the preflight from the app's directory; throws CliError on a mismatched tree, no-op otherwise. */
-export function checkEffectResolution(cwd: string): void {
+/**
+ * Runs the preflight from the app's directory and RETURNS the
+ * DEPS.EFFECT_VERSION_CONFLICT error for a mismatched tree; undefined when the
+ * tree is healthy or alchemy is not installed.
+ *
+ * This is the form the config-load machinery uses. The check belongs on the
+ * config-load path rather than at import time because that is the first moment
+ * anything actually loads alchemy's provider tree — the break it explains —
+ * and because a check that runs at import time takes out commands that never
+ * touch alchemy at all, help among them.
+ */
+export function effectResolutionDiagnostic(cwd: string): CliStructuredError | undefined {
   const alchemyDir = findAlchemyPackageDir(cwd);
-  if (alchemyDir === undefined) return;
-  const message = effectMismatchError(
+  if (alchemyDir === undefined) return undefined;
+  const parts = effectMismatchError(
     resolveEffectVersionFrom(alchemyDir),
     requiredEffectVersion(cwd),
   );
-  if (message !== undefined) throw new CliError(message);
+  if (parts === undefined) return undefined;
+  return new CliStructuredError('DEPS.EFFECT_VERSION_CONFLICT', parts.summary, {
+    why: parts.why,
+    fix: parts.fix,
+    meta: parts.meta,
+  });
+}
+
+/** The throwing form, used by the executor-load diagnosis — the one caller left now that the bin runs no start-up preflight of its own. */
+export function checkEffectResolution(cwd: string): void {
+  const diagnostic = effectResolutionDiagnostic(cwd);
+  if (diagnostic !== undefined) throw diagnostic;
 }

@@ -8,6 +8,7 @@
  * not import.
  */
 import type {
+  ContainerCredentials,
   ContainerDescriptor,
   ContainerInstance,
   LocateContainerInput,
@@ -19,6 +20,7 @@ import {
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
+  type ProjectRegion,
   resolveContainer,
 } from '@internal/lowering';
 import * as Effect from 'effect/Effect';
@@ -46,6 +48,8 @@ export class PrismaCloudContainer implements ContainerInstance {
     readonly projectId: string,
     readonly branchId: string | undefined,
     readonly defaultBranchId?: string,
+    /** Set only by the dev container, which resolves no Branches. */
+    readonly branchless: boolean = false,
   ) {
     const stageBranchId = branchId ?? defaultBranchId;
     if (stageBranchId !== undefined && !ALCHEMY_STAGE_PATTERN.test(stageBranchId)) {
@@ -60,6 +64,7 @@ export class PrismaCloudContainer implements ContainerInstance {
       projectId: this.projectId,
       ...(this.branchId !== undefined ? { branchId: this.branchId } : {}),
       ...(this.defaultBranchId !== undefined ? { defaultBranchId: this.defaultBranchId } : {}),
+      ...(this.branchless ? { branchless: true } : {}),
     });
   }
 }
@@ -125,8 +130,33 @@ export function deserialize(serialized: string): PrismaCloudContainer {
   if (defaultBranchId !== undefined && typeof defaultBranchId !== 'string') {
     throw invalidPayloadError('"defaultBranchId" is not a string or absent');
   }
+  const branchless = parsed['branchless'];
+  if (branchless !== undefined && typeof branchless !== 'boolean') {
+    throw invalidPayloadError('"branchless" is not a boolean or absent');
+  }
 
-  return new PrismaCloudContainer({ appName, stage }, projectId, branchId, defaultBranchId);
+  return new PrismaCloudContainer(
+    { appName, stage },
+    projectId,
+    branchId,
+    defaultBranchId,
+    branchless ?? false,
+  );
+}
+
+/** The credentials this extension's container lifecycle accepts per call. */
+type PrismaCloudCredentials = ContainerCredentials<ManagementApiClient>;
+
+/** Construction-time injection. Per-call credentials outrank it wherever both are present. */
+interface ContainerDeps {
+  readonly client?: ManagementApiClient;
+  /**
+   * Getter for the configured deploy region — evaluated at ensure time, not construction time,
+   * so `prismaCloud()` still constructs with no environment present (local-dev spec § 5).
+   * When the getter returns undefined and the Project does not exist yet, ensure fails with an
+   * actionable error asking the user to set the region.
+   */
+  readonly region?: () => ProjectRegion | undefined;
 }
 
 const workspaceRequiredError = (): Error =>
@@ -135,33 +165,60 @@ const workspaceRequiredError = (): Error =>
 const tokenRequiredError = (): Error =>
   new Error('environment variable PRISMA_SERVICE_TOKEN is required.');
 
-function requireWorkspaceId(): string {
-  const workspaceId = process.env['PRISMA_WORKSPACE_ID'];
+/**
+ * The caller's workspace id, or — only when the caller passed no credentials
+ * at all — the env protocol, which is what the alchemy child process and
+ * existing programmatic hosts have set.
+ */
+function requireWorkspaceId(credentials: PrismaCloudCredentials | undefined): string {
+  const workspaceId =
+    credentials === undefined ? process.env['PRISMA_WORKSPACE_ID'] : credentials.workspaceId;
   if (workspaceId === undefined || workspaceId.length === 0) throw workspaceRequiredError();
   return workspaceId;
 }
 
-function requireTokenUnlessInjected(
-  deps: { readonly client?: ManagementApiClient } | undefined,
-): void {
-  if (deps?.client === undefined && (process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
+function requireTokenUnlessInjected(client: ManagementApiClient | undefined): void {
+  if (client === undefined && (process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
     throw tokenRequiredError();
   }
 }
 
+function clientFor(
+  credentials: PrismaCloudCredentials | undefined,
+  deps: ContainerDeps | undefined,
+): ManagementApiClient | undefined {
+  return credentials?.client ?? deps?.client;
+}
+
+/** Runs against the injected client when there is one, and against an env-built one otherwise. */
+function runWithClient<A, E>(
+  program: Effect.Effect<A, E, ManagementClient>,
+  client: ManagementApiClient | undefined,
+): Promise<A> {
+  return Effect.runPromise(
+    client !== undefined
+      ? program.pipe(Effect.provideService(ManagementClient, client))
+      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv())))),
+  );
+}
+
 async function ensureContainer(
   input: LocateContainerInput,
-  deps: { readonly client?: ManagementApiClient } | undefined,
+  credentials: PrismaCloudCredentials | undefined,
+  deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer> {
-  const workspaceId = requireWorkspaceId();
-  requireTokenUnlessInjected(deps);
+  const workspaceId = requireWorkspaceId(credentials);
+  const client = clientFor(credentials, deps);
+  requireTokenUnlessInjected(client);
 
   // All typed failures are caught and carried as a failure *value*, so
   // runPromise only rejects on a genuine defect.
+  const region = deps?.region?.();
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
+    ...(region !== undefined ? { region } : {}),
     ensure: true,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
@@ -173,11 +230,7 @@ async function ensureContainer(
     ),
   );
 
-  const provided =
-    deps?.client !== undefined
-      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
-      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
-  const outcome = await Effect.runPromise(provided);
+  const outcome = await runWithClient(program, client);
   if (!outcome.ok) throw new Error(outcome.message);
   return new PrismaCloudContainer(
     input,
@@ -189,10 +242,12 @@ async function ensureContainer(
 
 async function locateContainer(
   input: LocateContainerInput,
-  deps: { readonly client?: ManagementApiClient } | undefined,
+  credentials: PrismaCloudCredentials | undefined,
+  deps: ContainerDeps | undefined,
 ): Promise<PrismaCloudContainer | undefined> {
-  const workspaceId = requireWorkspaceId();
-  requireTokenUnlessInjected(deps);
+  const workspaceId = requireWorkspaceId(credentials);
+  const client = clientFor(credentials, deps);
+  requireTokenUnlessInjected(client);
 
   const program = resolveContainer({
     workspaceId,
@@ -207,11 +262,7 @@ async function locateContainer(
     ),
   );
 
-  const provided =
-    deps?.client !== undefined
-      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
-      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
-  const outcome = await Effect.runPromise(provided);
+  const outcome = await runWithClient(program, client);
   if (!outcome.ok) return undefined;
   return new PrismaCloudContainer(
     input,
@@ -228,9 +279,11 @@ async function locateContainer(
  */
 async function removeStageBranch(
   branchId: string,
-  deps: { readonly client?: ManagementApiClient } | undefined,
+  credentials: PrismaCloudCredentials | undefined,
+  deps: ContainerDeps | undefined,
 ): Promise<void> {
-  requireTokenUnlessInjected(deps);
+  const client = clientFor(credentials, deps);
+  requireTokenUnlessInjected(client);
   const program = deleteBranch(branchId).pipe(
     Effect.map(() => ({ ok: true as const })),
     Effect.catchTag('PrismaApiError', (e) =>
@@ -240,11 +293,7 @@ async function removeStageBranch(
       }),
     ),
   );
-  const provided =
-    deps?.client !== undefined
-      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
-      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
-  const outcome = await Effect.runPromise(provided);
+  const outcome = await runWithClient(program, client);
   if (!outcome.ok) throw new Error(outcome.message);
 }
 
@@ -258,9 +307,11 @@ async function removeStageBranch(
  */
 async function removeAppProject(
   projectId: string,
-  deps: { readonly client?: ManagementApiClient } | undefined,
+  credentials: PrismaCloudCredentials | undefined,
+  deps: ContainerDeps | undefined,
 ): Promise<void> {
-  if (deps?.client === undefined && (process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
+  const client = clientFor(credentials, deps);
+  if (client === undefined && (process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) {
     console.warn(`Skipped removing the Project (${projectId}): PRISMA_SERVICE_TOKEN is not set.`);
     return;
   }
@@ -268,11 +319,7 @@ async function removeAppProject(
     Effect.map(() => ({ ok: true as const })),
     Effect.catchTag('PrismaApiError', (e) => Effect.succeed({ ok: false as const, error: e })),
   );
-  const provided =
-    deps?.client !== undefined
-      ? program.pipe(Effect.provideService(ManagementClient, deps.client))
-      : program.pipe(Effect.provide(managementClientLayer().pipe(Layer.provide(fromEnv()))));
-  const outcome = await Effect.runPromise(provided);
+  const outcome = await runWithClient(program, client);
   if (outcome.ok) {
     console.log(`Removed the Project (${projectId}) — nothing was left in it.`);
     return;
@@ -286,16 +333,16 @@ async function removeAppProject(
   );
 }
 
-export function containerDescriptor(deps?: {
-  readonly client?: ManagementApiClient;
-}): ContainerDescriptor<PrismaCloudContainer> {
+export function containerDescriptor(
+  deps?: ContainerDeps,
+): ContainerDescriptor<PrismaCloudContainer, ManagementApiClient> {
   return {
-    ensure: (input) => ensureContainer(input, deps),
-    locate: (input) => locateContainer(input, deps),
-    remove: (instance) =>
+    ensure: (input, credentials) => ensureContainer(input, credentials, deps),
+    locate: (input, credentials) => locateContainer(input, credentials, deps),
+    remove: (instance, credentials) =>
       instance.input.stage !== undefined
-        ? removeStageBranch(instance.branchId ?? missingBranchId(instance), deps)
-        : removeAppProject(instance.projectId, deps),
+        ? removeStageBranch(instance.branchId ?? missingBranchId(instance), credentials, deps)
+        : removeAppProject(instance.projectId, credentials, deps),
     deserialize,
   };
 }

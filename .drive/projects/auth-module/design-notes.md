@@ -11,24 +11,24 @@ The central design problem: the module owns Better Auth's Postgres tables,
 consumers need real FKs to `auth.user.id`, and the framework must be able to
 assert the schema is present.
 
-- **Bare `postgres()` dep + Better Auth's own migrator at boot** — rejected.
+- **Bare `rawPostgres()` dep + Better Auth's own migrator at boot** — rejected.
   Nothing the framework can see asserts the schema; boot-time DDL from a
   third-party migration engine is exactly the nondeterministic mutation the
   principles forbid. Also loses the FK story entirely.
-- **A dedicated pnPostgres contract per mode (exact-match v1, "slice
+- **A dedicated postgres contract per mode (exact-match v1, "slice
   satisfaction" milestone 2)** — collapsed. The two-milestone split assumed
-  Prisma Next lacked multi-contract-per-database. It doesn't: contract
+  Prisma ORM lacked multi-contract-per-database. It doesn't: contract
   spaces are fully shipped — extension packs ship `contractSpace =
   { contractJson, headRef, migrations }`, the CLI seed phase materialises
   pack-shipped migrations, `planAllSpaces`/`executePerSpace` plan and apply
   per space, and `prisma_contract.marker` keys one row per space (each space
   signs the DB with its own hash). The Supabase pack ships zero migrations
   only because GoTrue owns its tables; the machinery is generic.
-- **Winner: the auth package ships a Prisma Next extension pack**
+- **Winner: the auth package ships a Prisma ORM extension pack**
   (`id: 'auth'`) carrying the Better Auth schema contract and authored
   migration packages. The consumer lists it in `extensionPacks`; one deploy
   migration step brings every space to head; `auth:User` FKs come from
-  prisma-next ADR 226 unchanged. Dedicated-DB standalone use is the same
+  prisma/orm ADR 226 unchanged. Dedicated-DB standalone use is the same
   mechanism with an empty app space, not a separate mode.
 
 ## Where the "does this DB carry the auth schema?" check runs
@@ -41,9 +41,9 @@ assert the schema is present.
   the worst failure shape (Will: "boot time is already too late").
 - **Winner: deploy-time preflight.** The db dependency carries a pack
   requirement (`packId` + head hash from the installed package); the deploy
-  lowering checks the wired resource's PN config lists the pack at that
+  lowering checks the wired resource's Prisma ORM config lists the pack at that
   hash before the migration step runs, and the same deploy then migrates
-  the auth space and signs the marker. `pnContract().satisfies` stays
+  the auth space and signs the marker. `dataContract().satisfies` stays
   wireability-only for pack requirements.
 
 ## Instance secret

@@ -1,5 +1,7 @@
 # ADR-0005: Users build their app; the framework assembles deploy artifacts from built output
 
+Superseded in part by [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md): assembly may trace the declared entry's runtime files and preserve symlinks whose targets remain inside the final bundle; it still never dereferences a link or guesses an entry.
+
 ## Decision
 
 The framework never initiates or configures a user's build. The contract is:
@@ -30,7 +32,11 @@ disciplines bound it — each was violated in the first real out-of-repo deploy:
   symlinked (non-hoisted) `node_modules` is a **hard error** at package time,
   never dereferenced — the user's to fix (a hoisted linker: npm, or pnpm/bun
   `node-linker=hoisted`), because that same non-flat install also crashes a Next
-  standalone server at boot.
+  standalone server at boot. *(Amended by
+  [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md): a
+  symlink whose resolved target stays inside the assembled bundle is preserved
+  as a symlink; only links that escape the bundle or dangle are hard errors. A
+  link is still never dereferenced.)*
 - **Code boundary, not runtime.** A plain `node()` service relies on the Compute
   runtime's `bun` auto-install for the dynamic requires its bundler missed (e.g.
   `pg/lib/*`); a `nextjs()` artifact *disables* auto-install (its `sharp` /
@@ -105,6 +111,9 @@ declared location fails loudly — an error naming the resolved path and saying
   output, never *how* to produce it.
 - Any monorepo layout deploys — the app's deep location is found, not assumed;
   a non-hoisted (symlinked) `node_modules` fails fast with an actionable error.
+  *(Amended by [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md):
+  it fails only when a link's resolved target lands outside the bundle or is
+  missing.)*
 - Deploy never writes into `node_modules` or the user's build output; staging is
   deploy-owned, keyed by graph address.
 - The wrapper bundle resolves the user's own dependencies (the service module

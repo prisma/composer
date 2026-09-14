@@ -8,9 +8,9 @@
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
 import { requiredPackHead } from '@internal/prisma-cloud';
-// Type-only, and type-only it must stay: the value surface of ./prisma-next
+// Type-only, and type-only it must stay: the value surface of ./orm
 // carries pg (node: imports), which this authoring barrel must never bundle.
-import type { PnPostgresContract } from '@internal/prisma-cloud/prisma-next';
+import type { PostgresContract } from '@internal/prisma-cloud/orm';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
@@ -232,9 +232,9 @@ export const authAdminContract = contract({
  * at the installed package's head. Hydrates to the bare `{ url }` — Better
  * Auth builds its own pool; no PN client.
  */
-export function authDb(): DependencyEnd<{ url: string }, PnPostgresContract> {
+export function authDb(): DependencyEnd<{ url: string }, PostgresContract> {
   return dependency({
-    type: 'prisma-next',
+    type: 'postgres',
     connection: {
       params: { url: string() },
       hydrate: ({ url }) => ({ url }),

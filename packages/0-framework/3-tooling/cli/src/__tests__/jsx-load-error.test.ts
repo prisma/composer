@@ -12,21 +12,21 @@ describe('explainJsxLoadError()', () => {
     const error = unknownExtensionError(
       'Unknown file extension ".tsx" for /app/src/mailer/templates.tsx',
     );
-    const message = explainJsxLoadError(error, '/app/module.ts');
+    const parts = explainJsxLoadError(error, '/app/module.ts');
 
-    expect(message).toBeDefined();
-    expect(message).toContain('/app/src/mailer/templates.tsx');
-    expect(message).toContain("node's own module loader");
-    expect(message).toContain('JSX transform');
-    expect(message).toContain('examples/email/scripts/build.ts');
+    expect(parts).toBeDefined();
+    expect(parts?.summary).toContain('/app/src/mailer/templates.tsx');
+    expect(parts?.why).toContain("node's own module loader");
+    expect(parts?.why).toContain('JSX transform');
+    expect(parts?.fix).toContain('examples/email/scripts/build.ts');
   });
 
   test('handles .jsx the same way', () => {
     const error = unknownExtensionError('Unknown file extension ".jsx" for /app/src/widget.jsx');
-    const message = explainJsxLoadError(error, '/app/module.ts');
+    const parts = explainJsxLoadError(error, '/app/module.ts');
 
-    expect(message).toBeDefined();
-    expect(message).toContain('/app/src/widget.jsx');
+    expect(parts).toBeDefined();
+    expect(parts?.summary).toContain('/app/src/widget.jsx');
   });
 
   test('leaves an unknown-extension error for a non-JSX file alone', () => {

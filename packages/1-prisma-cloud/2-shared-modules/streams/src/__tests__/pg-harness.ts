@@ -1,6 +1,6 @@
 /**
  * A throwaway local Postgres for the streams integration test — the same
- * availability contract as the state-store / prisma-next harnesses (honors
+ * availability contract as the state-store / Prisma ORM harnesses (honors
  * `STATE_TEST_DATABASE_URL`, else spins an ephemeral `initdb`/`pg_ctl` cluster,
  * else returns `undefined` locally so the caller skips loudly; on CI the
  * absence of both throws). Kept as a local copy per the workspace convention

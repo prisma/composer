@@ -1,33 +1,54 @@
 /**
  * Local bucket-cluster providers (local-dev spec § 4): both `Bucket` and
- * `BucketKey` are clients of the machine-global bucket emulator — already up
- * by the time these run, since the extension's `localTarget.emulators` hook
- * ensures it before converge.
+ * `BucketAccessKey` are clients of the machine-global bucket emulator —
+ * already up by the time these run, since the extension's
+ * `localTarget.emulators` hook ensures it before converge.
  */
 import * as path from 'node:path';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { bucketsClient } from '@internal/dev-emulators';
-import { Bucket, BucketKey } from '@internal/lowering/buckets';
 import { mintKeyPair } from '@internal/s3-protocol';
+import { Bucket, BucketAccessKey } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import type * as Layer from 'effect/Layer';
+import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
+import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
-/** `Bucket` → registers `<app>--<news.name>` with the bucket emulator, backed by an in-project data root. */
+/** Upstream lets `name` default to the resource's logical ID; locally a bucket must have a concrete name to register under. */
+const bucketNameOf = (news: { readonly name?: string | undefined }, id: string): string =>
+  news.name ?? id;
+
+/** Reads a bucket id from upstream's `bucket` input: a plain string or a resolved `Prisma.Bucket` attributes record. */
+function bucketIdOfInput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Predicate.isObject(value) && typeof value['bucketId'] === 'string') {
+    return value['bucketId'];
+  }
+  return 'local';
+}
+
+/** `Bucket` → registers `<app>--<name>` with the bucket emulator, backed by an in-project data root. */
 export function LocalBucketProvider(
   input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<Bucket>> {
   const service: Provider.ProviderService<Bucket> = {
     list: () => Effect.succeed([]),
-    reconcile: ({ news }) =>
+    reconcile: ({ news, id }) =>
       Effect.tryPromise({
         try: async () => {
           const app = appNameOf(input.container);
-          const dir = path.join(input.devDir, 'buckets', news.name);
-          await bucketsClient().putBucket(app, news.name, dir);
-          return { id: news.name, name: news.name };
+          const name = bucketNameOf(news, id);
+          const dir = path.join(input.devDir, 'buckets', name);
+          await bucketsClient().putBucket(app, name, dir);
+          return {
+            bucketId: name,
+            name,
+            projectId: projectIdOfInput(news.project),
+            createdAt: DEV_TIMESTAMP,
+          };
         },
         catch: (cause) => cause,
       }),
@@ -39,18 +60,18 @@ export function LocalBucketProvider(
 }
 
 /**
- * `BucketKey` → mint-once-stable (the same lifecycle as `ServiceKey`/
+ * `BucketAccessKey` → mint-once-stable (the same lifecycle as `ServiceKey`/
  * `S3Credentials`: reuse `output`'s pair when present, mint only on first
  * create) — but ALWAYS re-registers the (prior or fresh) pair with the
  * emulator, so a bucket emulator whose own state was wiped self-heals on the
  * next converge.
  */
-export function LocalBucketKeyProvider(
+export function LocalBucketAccessKeyProvider(
   input: LocalTargetProvidersInput,
-): Layer.Layer<Provider.Provider<BucketKey>> {
-  const service: Provider.ProviderService<BucketKey> = {
+): Layer.Layer<Provider.Provider<BucketAccessKey>> {
+  const service: Provider.ProviderService<BucketAccessKey> = {
     list: () => Effect.succeed([]),
-    reconcile: ({ news, output }) =>
+    reconcile: ({ news, output, id }) =>
       Effect.tryPromise({
         try: async () => {
           const app = appNameOf(input.container);
@@ -63,13 +84,14 @@ export function LocalBucketKeyProvider(
               : mintKeyPair();
           const client = bucketsClient();
           await client.putCredentials(app, pair.accessKeyId, pair.secretAccessKey);
+          const bucketId = bucketIdOfInput(news.bucket);
           return {
-            id: news.name,
-            bucketId: news.bucketId,
+            bucketAccessKeyId: news.name ?? id,
+            bucketId,
             accessKeyId: pair.accessKeyId,
             secretAccessKey: Redacted.make(pair.secretAccessKey),
             endpoint: client.baseUrl,
-            bucketName: `${app}--${news.name}`,
+            bucketName: `${app}--${bucketId}`,
           };
         },
         catch: (cause) => cause,
@@ -77,5 +99,5 @@ export function LocalBucketKeyProvider(
     delete: () => Effect.void,
     read: ({ output }) => Effect.succeed(output),
   };
-  return Provider.effect(BucketKey, Effect.succeed(service));
+  return Provider.effect(BucketAccessKey, Effect.succeed(service));
 }

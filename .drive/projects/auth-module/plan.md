@@ -19,7 +19,7 @@ Linear: project "Composer auth module" (Terminal) — S1 [TML-3076], S2
 **Outcome:** `@internal/auth` exists and deploys. Email+password signup,
 login, logout, sessions, JWTs with JWKS verification, `session` + `admin`
 ports, proxy helper, local testing export. `examples/auth` (dedicated DB via
-an empty-app-space PN project) deploys to real Prisma Cloud and its smoke
+an empty-app-space Prisma ORM project) deploys to real Prisma Cloud and its smoke
 script passes.
 
 **Contents (spec sections):** Package layout · Contracts · Pack (contract,
@@ -124,35 +124,35 @@ Two operator decisions:
 
 ## Open items (recorded during S2, 2026-07-23)
 
-- **Upstream PN change: contract must sign extension HEAD HASHES, not just
+- **Upstream Prisma ORM change: contract must sign extension HEAD HASHES, not just
   versions (decided 2026-07-24, Will).** The correct pack-compatibility
   check reads the wired database's emitted app contract — its signed
   `extensionPacks` section — and asks "is my required head hash present?"
   Today that section carries only `{ kind, id, familyId, targetId, version }`
   (`ExtensionPackRef` → `PackRefBase`, no hash field), so the check isn't
   expressible and compose's current preflight compares a descriptor against
-  itself (inert). Fix, at `~/Projects/prisma/prisma-next`: contract emit
+  itself (inert). Fix, at `~/Projects/prisma/orm`: contract emit
   records each extension's `contractSpace.headRef.hash` in the
   `ExtensionPackRef` written into the composed contract. THEN compose's
   preflight becomes a trivial hash-presence check against the wired
   resource's contract. For PR #163 now: delete the inert head-comparison
-  branch of `runPackPreflight` (keep the "pack not listed" branch); PN's own
+  branch of `runPackPreflight` (keep the "pack not listed" branch); Prisma ORM's own
   migrate/verify still catches real stale-head drift until the proper check
   lands. This supersedes the earlier "compare against on-disk refs/head.json"
   idea.
 
 
-- **Latent (NOT yet live): a future Prisma Next flips the config field
-    `extensionPacks` → `extensions`.** `pn-config.ts` reads
+- **Latent (NOT yet live): a future Prisma ORM flips the config field
+    `extensionPacks` → `extensions`.** `orm-config.ts` reads
     `config.extensionPacks`. The ADR-0042 migration is on **published
     `@prisma-next/config@0.16.0`, which STILL validates `extensionPacks`**
     (its `config-validation` rejects `extensions`), so the field compose
     reads is populated and the pack path works — verified on-branch, and the
     pack tests pass. The rename lives only in the **unpublished** local
-    `./prisma-next` checkout (also labelled 0.16.0 but ahead of npm). When
+    `./orm` checkout (also labelled 0.16.0 but ahead of npm). When
     that rename ships, `config.extensionPacks` becomes `undefined → []`,
     silently emptying the preflight pack lookup and the
-    `packHeadRefHashes` diff key. Fix before adopting that PN: read
+    `packHeadRefHashes` diff key. Fix before adopting that Prisma ORM: read
     `config.extensions ?? config.extensionPacks`. (Corrects the earlier note
     that pegged the break to 0.16 — it's a later published version.)
 

@@ -26,14 +26,14 @@ packages/e2e-tests/.tmp-output
 .prisma-composer/
 .makerkit/
 
-# Local clone of prisma-next used as a scaffolding reference; not part of this repo.
-/prisma-next/
+# Local clone of prisma/orm used as a scaffolding reference; not part of this repo.
+/orm/
 
 # External reference checkouts, populated per-worktree by
 # scripts/setup-worktree-refs.sh (never commit).
 ignite/
 pdp-control-plane/
-prisma-next/
+orm/
 datahub/
 open-chat/
 
@@ -57,6 +57,11 @@ open-chat/
 .agents/skills/
 .claude/skills/
 skills-lock.json
+
+# Skills staged into a package's tarball by `prepack`
+# (scripts/stage-skills.mjs). The tracked source is the repo-root `skills/`
+# tree; these copies are regenerated on every `pnpm pack`/`pnpm publish`.
+/packages/9-public/composer/skills/
 
 # Next.js build output (any location — a stray copy under an unexpected path once got committed)
 .next/

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CliError } from '../cli-error.ts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { validateStageName } from '../validate-stage.ts';
 
 describe('validateStageName()', () => {
@@ -8,6 +8,6 @@ describe('validateStageName()', () => {
   });
 
   test.each(['foo..bar', 'foo bar', 'foo~1'])('rejects %s', (stage) => {
-    expect(() => validateStageName(stage)).toThrow(CliError);
+    expect(() => validateStageName(stage)).toThrow(CliStructuredError);
   });
 });

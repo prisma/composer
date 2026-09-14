@@ -10,8 +10,16 @@
  * listing exactly what is missing and where to set it.
  *
  * Control-plane only (imported by control.ts → prisma-composer.config.ts); runs
- * in the CLI parent, so it builds its own Management API client from env — the
- * same credential path `container.ts`'s `ensure`/`locate` use.
+ * in the CLI parent, on the caller's Management API client when it passed one,
+ * and otherwise on a client built from env — the same credential path
+ * `container.ts`'s `ensure`/`locate` use.
+ *
+ * It also returns WHEN each of those names was last written. This is the only
+ * place in a deploy that reads those rows off the platform, so it is where the
+ * reading belongs; the compute deploy hook folds the timestamps into its
+ * environment fingerprint so that rotating a secret or an env-sourced param
+ * out of band ships a new deployment. A timestamp, never a value: env-var
+ * values are write-only and the API never returns one.
  */
 import type { Graph } from '@internal/core';
 import type { PreflightInput } from '@internal/core/config';
@@ -26,9 +34,9 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
-import { resolvePrismaNextConfig } from './pn-config.ts';
+import { resolveOrmConfig } from './orm-config.ts';
+import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
-import { isPnPostgresResourceNode, requiredPackHeadOf } from './prisma-next.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -36,15 +44,12 @@ type EnvClass = 'production' | 'preview';
 const classFor = (branchId: string | undefined): EnvClass =>
   branchId === undefined ? 'production' : 'preview';
 
-/**
- * Does `key` exist for the target stage's scope? Default stage → any
- * production-class template. Named stage → a preview template (branchId null)
- * OR this branch's own override — the platform's preview materialization
- * (pdp-data-model.md). Metadata read only; env-var values are write-only.
- */
 /** The fields of one env-var list page that preflight consumes (metadata only; values are write-only). */
 interface EnvVarListPage {
-  readonly data: readonly { readonly branchId: string | null }[];
+  readonly data: readonly {
+    readonly branchId: string | null;
+    readonly updatedAt: string;
+  }[];
   readonly pagination: { readonly nextCursor: string | null; readonly hasMore: boolean };
 }
 interface EnvVarListResult {
@@ -76,24 +81,45 @@ async function listEnvVars(
   >(res);
 }
 
-async function existsOnPlatform(
+/** What the platform holds for one name: whether it is there at all, and when it last changed. */
+interface PlatformVariable {
+  readonly exists: boolean;
+  /** The latest `updatedAt` across every row visible to this stage — undefined when the name is absent. */
+  readonly updatedAt?: string;
+}
+
+/**
+ * What the platform holds for `key` in the target stage's scope. Default stage
+ * → any production-class template. Named stage → a preview template (branchId
+ * null) OR this branch's own override — the platform's preview materialization
+ * (pdp-data-model.md). Metadata read only; env-var values are write-only.
+ *
+ * The whole list is walked rather than short-circuiting on the first visible
+ * row, because the newest `updatedAt` across every visible row is the rotation
+ * signal the compute deploy hook fingerprints on: stopping early would make
+ * that timestamp depend on where the page boundary happened to fall, and a
+ * fingerprint that moves for that reason would redeploy for no reason. A key
+ * with more rows than one page (a template plus many per-branch overrides) is
+ * rare, so this costs one request in practice.
+ */
+async function readPlatformVariable(
   client: ManagementApiClient,
   projectId: string,
   branchId: string | undefined,
   key: string,
-): Promise<boolean> {
+): Promise<PlatformVariable> {
   const cls = classFor(branchId);
-  // Default stage → any production template counts; named stage → a preview
-  // template (branchId null) OR this branch's own override.
   const visible = (row: { branchId: string | null }): boolean =>
     branchId === undefined || row.branchId === null || row.branchId === branchId;
 
   // The list is paginated: a key with more preview rows (template + many
   // per-branch overrides) than one page must be followed to the end, or a
-  // present name is falsely reported missing. Short-circuits as soon as a
-  // visible row is seen; bounded (drivePagesAsync) so broken pagination
+  // present name is falsely reported missing. Walked to the end (no
+  // short-circuit) because the LATEST updatedAt across visible rows feeds
+  // the deploy fingerprint; bounded (drivePagesAsync) so broken pagination
   // fails loudly instead of looping.
-  let found = false;
+  let exists = false;
+  let latest: string | undefined;
   await drivePagesAsync(
     `environment variables named "${key}"`,
     async (cursor) => {
@@ -107,18 +133,27 @@ async function existsOnPlatform(
       return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
     },
     (data) => {
-      found = data.some(visible);
-      return found;
+      for (const row of data) {
+        if (!visible(row)) continue;
+        exists = true;
+        // Parsed, not string-compared: lexicographic order breaks the moment
+        // two rows serialize with different precision or UTC designators.
+        if (latest === undefined || Date.parse(row.updatedAt) > Date.parse(latest)) {
+          latest = row.updatedAt;
+        }
+      }
+      return false;
     },
   );
-  return found;
+  return latest === undefined ? { exists } : { exists, updatedAt: latest };
 }
 
 /**
  * Provision `key`=`value` directly via the Management API for the target
  * stage's scope (a production template for the default stage; a preview branch
- * override for a named stage — the same scope the pack writes config rows to,
- * EnvironmentVariable.ts). A 409 means a concurrent deploy already provisioned
+ * override for a named stage — the same scope the pack's config rows are
+ * written to, through alchemy's `Prisma.EnvironmentVariable`). A 409 means a
+ * concurrent deploy already provisioned
  * it — tolerated. The value is never logged.
  */
 async function fillMissing(
@@ -127,7 +162,7 @@ async function fillMissing(
   branchId: string | undefined,
   key: string,
   value: string,
-): Promise<void> {
+): Promise<string | undefined> {
   const res = await client.POST('/v1/environment-variables', {
     body: {
       projectId,
@@ -140,12 +175,20 @@ async function fillMissing(
   if (res.error !== undefined && res.response.status !== 409) {
     throw fillFailedError(key, res.error);
   }
+  // The created row's timestamp, so this deploy fingerprints on the same value
+  // the next one will read back. A 409 (a concurrent deploy won the race)
+  // returns no row: the name reads as unknown for this run and the next deploy
+  // picks its timestamp up, which redeploys once — the safe direction.
+  return res.data?.data.updatedAt;
 }
 
 interface MissingBinding {
   readonly name: string;
   readonly serviceAddress: string;
 }
+
+/** The preflight input typed against this extension's own client — the concrete form of the framework's erased `PreflightInput<unknown>`. */
+export type PrismaCloudPreflightInput = PreflightInput<ManagementApiClient>;
 
 // ——— Preflight errors (centralized; ADR-0029). Values are never logged. ———
 
@@ -164,20 +207,34 @@ const fillFailedError = (key: string, error: unknown): Error =>
 
 function missingError(
   missing: readonly MissingBinding[],
+  projectId: string,
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
-  const scope =
+  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const countPhrase =
+    missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
+  const scopeFlag =
+    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  // `project env add` takes a single KEY=VALUE per call; the placeholder is
+  // quoted so a pasted command is not read as a shell redirection.
+  const commands = missing.map(
+    (m) => `prisma project env add ${m.name}="<value>" --project ${projectId} ${scopeFlag}`,
+  );
+  const runStep =
+    commands.length === 1
+      ? `Run: ${commands[0]}`
+      : `Run, once per setting:\n${commands.map((cmd) => `      ${cmd}`).join('\n')}`;
+  const consoleStep =
     branchId === undefined
-      ? 'the production class (project-level template)'
-      : `the preview class of stage "${stage ?? branchId}" (branch override or template)`;
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
+      ? 'add each one under Production. Those values apply when the default branch deploys to production.'
+      : `add each one under Preview. Preview values apply to every branch deploy, including "${stage ?? branchId}".`;
   return new Error(
-    `Deploy preflight failed — ${missing.length} env var(s) (secret or env-sourced param) are not ` +
-      `provisioned on Prisma Cloud for ${scope}, and are absent from the deploy shell:\n` +
+    `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
-      'Set each in the deploy shell environment (the CLI will provision it on deploy), or create ' +
-      `it on the platform (Prisma Console or the Management API) in ${scope}.`,
+      'Set the value in one of these two places, then deploy again:\n' +
+      `  - ${runStep}\n` +
+      `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
 
@@ -198,13 +255,13 @@ async function managementClient(): Promise<ManagementApiClient> {
  * shell where possible, and fails loudly on anything absent from both.
  * `envParam` leaves of an input binding are NOT checked here — they resolve
  * from the deploy shell at serialize, and an unset one is an omitted key the
- * schema arbitrates. Accepts an injected client for tests; otherwise builds
- * one from env.
+ * schema arbitrates. Uses the caller's client (`input.credentials`), then an
+ * injected one for tests, then a client built from env.
  */
 export async function runPreflight(
-  input: PreflightInput,
+  input: PrismaCloudPreflightInput,
   deps?: { readonly client?: ManagementApiClient },
-): Promise<void> {
+): Promise<ReadonlyMap<string, string>> {
   const { projectId, branchId } = prismaCloudContainerOf(input.container);
 
   // One check per platform NAME (many leaves/services, secret or param, may
@@ -218,32 +275,39 @@ export async function runPreflight(
   for (const meta of [...collected.secrets, ...collected.envParams]) {
     if (!names.has(meta.name)) names.set(meta.name, meta);
   }
-  if (names.size === 0) return;
+  if (names.size === 0) return new Map();
 
-  const client = deps?.client ?? (await managementClient());
+  const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
   const missing: MissingBinding[] = [];
+  const updatedAt = new Map<string, string>();
   for (const meta of names.values()) {
-    if (await existsOnPlatform(client, projectId, branchId, meta.name)) continue;
+    const platform = await readPlatformVariable(client, projectId, branchId, meta.name);
+    if (platform.exists) {
+      if (platform.updatedAt !== undefined) updatedAt.set(meta.name, platform.updatedAt);
+      continue;
+    }
     const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
-      await fillMissing(client, projectId, branchId, meta.name, shellValue);
+      const filled = await fillMissing(client, projectId, branchId, meta.name, shellValue);
+      if (filled !== undefined) updatedAt.set(meta.name, filled);
       continue;
     }
     missing.push(meta);
   }
-  if (missing.length > 0) throw missingError(missing, branchId, input.stage);
+  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
+  return updatedAt;
 }
 
 /**
  * The extension-pack half of the deploy preflight: every dependency edge
  * whose required contract carries a `requiredPackHead` must be wired to a
- * `pnPostgres` resource whose `prisma-next.config.ts` lists that pack at the
+ * `postgres` resource whose `prisma.config.ts` lists that pack at the
  * required head hash. Enforced HERE — at deploy time, before the migration
- * step constructs — because wireability (`pnContract().satisfies`)
+ * step constructs — because wireability (`dataContract().satisfies`)
  * deliberately says yes to every required pack head (the authoring-side
  * contract value cannot see the resource's config), and boot time would be
  * too late: the service would be down after a green deploy. Invoked from the
- * `prisma-next` descriptor's lowering, beside the migration-step
+ * `postgres` descriptor's lowering, beside the migration-step
  * construction.
  */
 export async function runPackPreflight(graph: Graph): Promise<void> {
@@ -260,23 +324,35 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     const provider =
       node !== undefined &&
       (node.kind === 'resource' || node.kind === 'service') &&
-      isPnPostgresResourceNode(node)
+      isPostgresResourceNode(node)
         ? node
         : undefined;
     if (provider === undefined) {
       throw new Error(
         `service "${edge.to}" requires extension pack "${requirement.packId}", which only a ` +
-          'pnPostgres resource can carry.',
+          'postgres resource can carry.',
       );
     }
 
-    const { extensionPacks } = await resolvePrismaNextConfig(provider.config);
+    const { extensionPacks } = await resolveOrmConfig(provider.config);
     const pack = extensionPacks.find((p) => p.id === requirement.packId);
     if (pack === undefined) {
       throw new Error(
-        `prisma-next database "${provider.name}" does not list extension pack ` +
-          `"${requirement.packId}" in its prisma-next.config.ts extensionPacks — service ` +
+        `postgres database "${provider.name}" does not list extension pack ` +
+          `"${requirement.packId}" in its prisma.config.ts extensions — service ` +
           `"${edge.to}" requires it. Add the pack and run migration plan.`,
+      );
+    }
+    // A pack listed at the wrong head is the failure this check exists for:
+    // the migration step would take the database to the configured head while
+    // the service is typed against a different one.
+    const head = pack.contractSpace?.headRef.hash;
+    if (head !== requirement.headHash) {
+      throw new Error(
+        `postgres database "${provider.name}" lists extension pack ` +
+          `"${requirement.packId}" at head ${head ?? '(no contract space)'}, but service ` +
+          `"${edge.to}" requires ${requirement.headHash}. Upgrade the pack and run ` +
+          'migration plan.',
       );
     }
   }

@@ -41,19 +41,19 @@ fix. Reach for workarounds only after that check says otherwise.
 **floored at their own version**:
 
 ```jsonc
-// @effect/platform-bun@4.0.0-beta.103
-"peerDependencies": { "effect": "^4.0.0-beta.103" }
+// @effect/platform-bun@4.0.0-rc.111
+"peerDependencies": { "effect": "^4.0.0-rc.111" }
 ```
 
-That caret is a range, not an exact pin: it accepts `4.0.0-beta.104` and stable
-`4.x`, but nothing below `4.0.0-beta.103`. So an `effect` **older** than any
+That caret is a range, not an exact pin: it accepts `4.0.0-rc.112` and stable
+`4.x`, but nothing below `4.0.0-rc.111`. So an `effect` **older** than any
 companion in the tree is unsatisfiable, and npm resolves that by installing a
 *second* `effect`. Pinning every package in this repo to the same beta is the
 simple way to stay above every floor at once. Treat them as one constellation,
 never as individual bumps.
 
-alchemy sits on top with a deliberately loose range (`>=4.0.0-beta.100 ||
->=4.0.0` at beta.67). That range is what lets a stray dependency drag a
+alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.110 ||
+>=4.0.0` at beta.74). That range is what lets a stray dependency drag a
 different `effect` in, and it is why the CLI preflight exists.
 
 ## Two audiences, two failure modes
@@ -109,6 +109,28 @@ tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
+## alchemy's floating dependencies are pinned in the public packages
+
+alchemy's `effect`-family ranges float past what its code supports (the
+upstream `TaggedErrorClass` drift), and a floater whose newest release names
+an `effect` peer that does not exist yet sends npm into hours of backtracking
+instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
+`effect`). Consumers carry no overrides block; instead the public packages
+pin, in `dependencies`, every package alchemy declares with a floating range
+so a consumer's npm resolves our copy:
+
+- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
+  `@effect/sql-sqlite-do`, `@effect/vitest`.
+- `@prisma/composer-prisma-cloud` — the optional platform peers:
+  `@effect/platform-bun`, `@effect/platform-node`,
+  `@effect/platform-node-shared`.
+
+When alchemy adds a floating `effect`-family dependency, add its pin next to
+these; `check-npm-effect-resolution` installs the tarballs bare and fails when
+the install backtracks or resolves a second `effect`. The only case left to a
+consumer's own `overrides` is an app that pins a different `effect` itself
+(documented in `docs/guides/deploying.md`).
+
 ## Breakage classes seen in practice
 
 - **Removed `effect` combinators.** `Schedule.both`/`Schedule.either`
@@ -153,8 +175,38 @@ version:
 pnpm patch alchemy@<version>   # edit lib/Resource.d.ts, then patch-commit
 ```
 
-At the time of writing this is still required: on alchemy 2.0.0-beta.67,
-`lowering` alone reports 17 errors without the patch and none with it.
+History: alchemy 2.0.0-beta.67 needed the patch (`lowering` alone reported 17
+errors without it); upstream fixed the declaration by 2.0.0-beta.74 and the
+patch was deleted with that bump. The check above stays — the inconsistency
+could regress in a future release.
+
+## The @alchemy.run/node-utils patch
+
+**Resolved — the patch was deleted with the beta.74 bump**: alchemy no longer
+ships a file-lock module at all (`@alchemy.run/node-utils` 2.x exports only
+`ignore`), so there is nothing left to patch. The history and the standing
+check below stay, because the property it protected still matters.
+
+The patch was
+[alchemy-run/node-utils#6](https://github.com/alchemy-run/node-utils/pull/6)
+("fix(lockfile): scope exit hooks to owned locks"), vendored against
+node-utils 0.0.5. Without it, `lib/lockfile.js` called `exitHook(...)` at module scope, so merely
+importing `alchemy` registered a SIGINT, a SIGTERM, and an `exit` listener on
+the process. Composer's commands run inside the Prisma CLI engine, and the
+engine owns the whole signal policy: the first Ctrl-C aborts the command and
+waits for teardown, a second one force-exits. A stray SIGINT listener that
+calls `process.exit(130)` on its own pre-empts that, killing the process while
+the engine's cleanup is still running. The engine's family test suite asserts
+that after a composer command's config evaluation the engine is the sole
+SIGINT/SIGTERM listener, and that assertion is what fails if a stray listener
+is ever reintroduced.
+
+On every alchemy bump, re-run the standing check (the CLI's signal-listeners
+test suite runs the same probe):
+
+```bash
+node -e 'const c=()=>process.listenerCount("SIGINT")+process.listenerCount("SIGTERM");const b=c();import("alchemy").then(()=>console.log(c(),"listeners registered by a bare import (must be 0)"))'
+```
 
 ## Keeping the regression check honest
 

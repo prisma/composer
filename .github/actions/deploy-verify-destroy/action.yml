@@ -24,7 +24,7 @@ inputs:
   sweep-prefixes:
     description: Space-separated project-name prefixes for ci-cleanup.ts
     required: false
-    default: storefront-auth pn-widgets hello
+    default: storefront-auth orm-demo hello
 
 runs:
   using: composite

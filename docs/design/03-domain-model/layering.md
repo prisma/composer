@@ -5,7 +5,7 @@ in the framework's plane; the framework **lowers** that into the Alchemy/Effect
 **provisioning plane**, which provisions it to run as Prisma Cloud hosting
 primitives.
 
-This is the same shape as Prisma Next: an authored data contract lowers to an IR
+This is the same shape as Prisma ORM: an authored data contract lowers to an IR
 / plan, which executes against a database. Here, an authored topology lowers to a
 resource graph, which deploys to the cloud.
 
@@ -23,8 +23,8 @@ resource graph, which deploys to the cloud.
   wires, and provisions. Nouns: Resource, Platform, Binding, Layer, Provider,
   Stack, Config. The framework adopts Alchemy's *definition language*; the
   apply *engine* is an open question (see below).
-- **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: ComputeService /
-  ComputeVersion, Database (1:1 within an Environment), Stream, endpoint. Prisma
+- **Hosting plane (Prisma Cloud)** — what actually runs. Nouns: App /
+  Deployment, Database (1:1 within an Environment), Stream, endpoint. Prisma
   Cloud is *one* target; another target's pack maps the same authoring nouns to
   its own hosting primitives. The framework's deploy report calls a thing on
   this plane a **Deployment entity** (`DeployedEntity`): its kind, platform id,
@@ -35,7 +35,7 @@ resource graph, which deploys to the cloud.
 | Authoring (Prisma Composer) | Provisioning (Alchemy/Effect) | Hosting (Prisma Cloud) |
 | --- | --- | --- |
 | **Module** (bounded context) | a subgraph: Resources/Platforms + a Layer exposing its ports | **no single object** — spans Compute services + a DB schema slice + streams + endpoints |
-| **Service** (your code; entrypoint + ingress) | Platform (compute Resource running the bundle) | ComputeService → ComputeVersion (tar.gz bundle + manifest + endpoint) |
+| **Service** (your code; entrypoint + ingress) | App + Deployment (ordinary Resources) | App → Deployment (tar.gz bundle + manifest + endpoint) |
 | **Resource** (managed lifecycle, state-first) | Alchemy Resource + Provider (`reconcile`/`delete`/…); Postgres via the Prisma Postgres provider | a Database (1:1 in an Environment), bucket, cache, or provisioned third-party |
 | **Input/Output — communication** (request/response, stream) | Binding (RPC/HTTP client; stream pub/sub) | endpoint URL + injected client; stream |
 | **Data Input** (method TCP/HTTP + contract) | data binding to a Postgres Resource | connection injected, scoped by contract |
@@ -94,7 +94,7 @@ Layer); the wire is valid iff the provided capability satisfies the required one
 Alchemy type-checks it.
 
 - **First-class** (Postgres): framework-native treatment — Postgres data uses
-  Prisma Next data contracts (hashed, verifiable). (Compute is a Service's target,
+  Prisma ORM data contracts (hashed, verifiable). (Compute is a Service's target,
   not a Resource; a stream is a connection style.)
 - **BYO** (object storage, cache, queues, third-party): *any* Alchemy resource,
   exposed through a capability Layer. The Module depends on the capability, not
@@ -120,40 +120,12 @@ reproduce-in-the-emulator goal (see `../00-purpose/goals.md`).
 
 ## Provisioning & state
 
-Provisioning runs through **Alchemy's engine**, invoked from the client or a
-privileged CD environment (see claim 3). The engine keeps a **state store** —
-the source of truth for what's provisioned. State sits on a spectrum from
-local, to branch-hosted, to eventually platform-run:
+Provisioning runs through **Alchemy's engine**, invoked from the client or a privileged CD environment (see claim 3). The engine keeps a **state store** — the source of truth for what's provisioned. State sits on a spectrum from local, to platform-hosted (where we are), to eventually platform-run:
 
 - **Local** — Alchemy's local or Cloudflare-backed state. Fine for a solo
   developer; nothing else needs to see it.
-- **Branch-hosted** — a `StateService` implementation
-  (`@internal/lowering/state`) backed by a framework-owned Prisma Postgres
-  database in each stage's Branch of the app's own Project (ADR-0034),
-  native to the Workspace → Project → Branch hierarchy
-  (Pulumi/Terraform-Cloud-style hosted state, without the BYO-state
-  bootstrap). Bootstrap is automatic: the Management API finds or creates
-  the stage's state database from the container ids the CLI already
-  resolves, so a deployer needs nothing beyond the service token and
-  workspace id it already has, and the state's lifetime is the
-  environment's — deleting the Branch or Project deletes it. Concurrency is
-  a per-`(stack, stage)` advisory lock, so two deployers can never race the
-  same stack. `prismaCloud()` supplies this as the default deploy state for
-  every service and Module; an explicit state layer always overrides it.
-  This is framework-owned operational infrastructure, not a user-topology
-  Resource — ambient per stage, never declared by a Module (the containers
-  it lives in are created before the engine runs, which sidesteps the
-  chicken-and-egg of provisioning the store itself). Like hosted-state
-  backends generally, it also holds state for the user's BYO resources in
-  other clouds.
-- **Server-side runs** — the platform executes the apply loop itself
-  (git-push-style deploys). Once state is platform-hosted, moving the engine
-  server-side is incremental — the same evolution Pulumi/Terraform Cloud
-  followed. This step's platform surface is implementing Alchemy's own HTTP
-  `StateApi` (bearer auth → workspace RBAC) as a Management API endpoint; once
-  it exists, the branch-hosted store's visible databases disappear and the
-  platform can answer "what's provisioned in this project" natively (the
-  platform side of the inspectable-topology goal).
+- **Platform-hosted** — the Management API implements Alchemy's own HTTP `StateApi` wire contract per Branch of the app's own Project (`…/branches/{branchId}/alchemy-state`, ADR-0045), and the framework's state layer (`@internal/lowering/state`) is Alchemy's stock HTTP client pointed at it — Pulumi/Terraform-Cloud-style hosted state, native to the Workspace → Project → Branch hierarchy, with no BYO-state bootstrap and no visible state database. A deployer needs nothing beyond the service token it already has, and the state's lifetime is the environment's — deleting the Branch or Project deletes it. Concurrency is a server-side per-`(stack, stage)` deploy lease held around the run: while a lease is live a second deploy of the same stack and stage is refused, and a run that outlives its lease (a crashed deploy's lease expires after its TTL) has every further state operation rejected by the server — so a takeover deploy can proceed without the stale run corrupting shared state. `prismaCloud()` supplies this as the default deploy state for every service and Module; an explicit state layer always overrides it. Like hosted-state backends generally, it also holds state for the user's BYO resources in other clouds, and it lets the platform answer "what's provisioned in this project" natively (the platform side of the inspectable-topology goal).
+- **Server-side runs** — the platform executes the apply loop itself (git-push-style deploys). With state already platform-hosted, moving the engine server-side is incremental — the same evolution Pulumi/Terraform Cloud followed.
 
 ## Open questions
 

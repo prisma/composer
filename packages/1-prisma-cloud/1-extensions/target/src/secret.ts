@@ -19,12 +19,16 @@ export interface EnvSecretPayload {
 }
 
 const RESERVED_SECRET_PREFIX = 'COMPOSER_';
-const POISONED_SECRET_NAMES: ReadonlySet<string> = new Set(['DATABASE_URL', 'DATABASE_URL_POOLED']);
+/** The names Prisma Cloud owns: it seeds and manages them, so Composer never binds one. */
+const PLATFORM_OWNED_SECRET_NAMES: ReadonlySet<string> = new Set([
+  'DATABASE_URL',
+  'DATABASE_URL_POOLED',
+]);
 
 /**
  * Binds a secret slot to a named Prisma Cloud platform env var (ADR-0029). The
  * value is provisioned out-of-band; only the name is carried. The name may not
- * use the framework's reserved `COMPOSER_` prefix or the poisoned
+ * use the framework's reserved `COMPOSER_` prefix or the platform-owned
  * `DATABASE_URL(_POOLED)` keys.
  */
 export function envSecret(name: string): SecretSource<EnvSecretPayload> {
@@ -39,10 +43,11 @@ export function envSecret(name: string): SecretSource<EnvSecretPayload> {
         "reserved for the framework's own generated config keys.",
     );
   }
-  if (POISONED_SECRET_NAMES.has(name)) {
+  if (PLATFORM_OWNED_SECRET_NAMES.has(name)) {
     throw new Error(
-      `envSecret name "${name}" is reserved — ${[...POISONED_SECRET_NAMES].join(' and ')} are ` +
-        'poisoned at project provision and cannot back a secret.',
+      `envSecret name "${name}" is reserved — ${[...PLATFORM_OWNED_SECRET_NAMES].join(' and ')} ` +
+        'are seeded and managed by Prisma Cloud itself, so the framework refuses to bind them. ' +
+        'Declare the database your service uses and read its url from that connection.',
     );
   }
   return secretSource<EnvSecretPayload>({ [PRISMA_CLOUD_SECRET_SOURCE]: true, name });

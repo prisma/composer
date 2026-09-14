@@ -1,4 +1,5 @@
 /** The local-target stack's own provider aggregation (ADR-0041; naming, operator 2026-07-23 — the seam is `localTarget`, "dev" names the user-facing feature only) — the local-target counterpart of `deploy.ts`'s `mergedProviders`, kept in its own module so `lower()` learns nothing about it (deploy.ts's REVISED — operator review of #162). */
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import {
   type ContainerInstance,
@@ -6,10 +7,10 @@ import {
   type LocalTargetDescriptor,
   type PrismaAppConfig,
 } from './app-config.ts';
-import { LowerError } from './deploy.ts';
 
-function noLocalTargetSupportError(id: string): LowerError {
-  return new LowerError(
+function noLocalTargetSupportError(id: string): CliStructuredError {
+  return new CliStructuredError(
+    'DEV.TARGET_UNSUPPORTED',
     `extension "${id}" has no dev support — it declares no \`localTarget\` descriptor (ADR-0041).`,
   );
 }

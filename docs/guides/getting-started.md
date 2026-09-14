@@ -2,13 +2,16 @@
 
 ## First: give your agent the skill
 
-Composer is built to be driven by an agent, and this is the whole setup:
+Composer is built to be driven by an agent, and the skill that teaches it the
+API ships inside `@prisma/composer` itself. So the setup is two lines in
+[step 1](#1-project-setup) below — install the package, then copy the skill
+out of it:
 
 ```sh
-npx skills add prisma/composer
+pnpm prisma skills sync
 ```
 
-Your agent now knows the entire API and arrives prepped with the building
+Your agent then knows the entire API and arrives prepped with the building
 blocks it can compose — the ready-made Modules for scheduled jobs, blob
 storage, and event streams, plus the ones you write. From there you describe
 what you want ("a Next.js storefront calling an orders API with its own
@@ -17,7 +20,9 @@ TypeScript, not YAML.
 
 Do this even if you intend to write every line yourself. It costs one command,
 and it stops your agent inventing an API that doesn't exist the first time you
-ask it for help.
+ask it for help. Because the skill travelled inside the package, what your
+agent reads is the API of the version you installed — not whatever was on
+`main` the day it was fetched.
 
 It works because of three properties you'll see throughout this guide:
 capabilities arrive as **Modules** that snap together instead of integrations
@@ -36,11 +41,16 @@ build, a deploy. At the end there's a section on
 
 The app is deliberately tiny — a `quotes` API and a public `gateway` that
 calls it, no database — so you can see the whole shape at once. Adding a
-Postgres (including a Prisma Next-typed one) is the first thing to do after,
+Postgres (including a Prisma-ORM-typed one) is the first thing to do after,
 and [Building an app](building-an-app.md#databases) covers it.
 
 You'll need:
 
+- **Node 22.18 or newer** — check with `node --version` before anything else.
+  Composer hands your TypeScript entry file straight to Node, and Node runs
+  `.ts` directly only from 22.18.0, the release that turns type stripping on by
+  default. On anything older `prisma-composer` stops at
+  `ERR_UNKNOWN_FILE_EXTENSION` naming your own file; 22.17 is not close enough.
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).
@@ -54,8 +64,26 @@ You'll need:
 ```sh
 mkdir my-app && cd my-app && pnpm init
 pnpm add @prisma/composer @prisma/composer-prisma-cloud arktype
-pnpm add -D typescript @types/bun
+pnpm add -D typescript @types/bun prisma
+pnpm prisma skills sync
 ```
+
+`prisma` is the Prisma CLI; `prisma skills sync` copies the skill out of the
+installed `@prisma/composer` into the skill directories your agent runtimes
+read (`.claude/skills/`, `.cursor/skills/`, `.agents/skills/`,
+`.windsurf/skills/`). Add it to `postinstall` so an upgrade brings the
+matching skill with it — `|| exit 0` keeps installs that have no `prisma`
+binary (a production install with no dev dependencies) from failing:
+
+```jsonc
+// package.json
+"scripts": {
+  "postinstall": "prisma skills sync || exit 0"
+}
+```
+
+Those copies are derived from your lockfile, like `node_modules` — gitignore
+them rather than committing them.
 
 ```jsonc
 // tsconfig.json
@@ -64,7 +92,6 @@ pnpm add -D typescript @types/bun
     "target": "ES2022",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
@@ -73,6 +100,11 @@ pnpm add -D typescript @types/bun
   "include": ["module.ts", "src"]
 }
 ```
+
+Within your entry graph you may write relative imports as `./service.js` or
+extensionless `./service` — both forms resolve correctly under both runtimes.
+The CLI maps `.js`/extensionless specifiers to the matching `.ts` source under
+Node; Bun does this natively.
 
 This is what you're about to create:
 
@@ -376,7 +408,7 @@ your built server file, then make three changes to the server itself:
    `envSecret`. [Building an app § Service
    input](building-an-app.md#service-input) has the how-to-choose table and
    both shapes.
-3. If it talks to Postgres: declare `deps: { db: postgres() }` and build your
+3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.
 
@@ -420,6 +452,6 @@ the wiring for free.
 - [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
-  [pn-widgets](../../examples/pn-widgets/) (one service + one Prisma
+  [orm-demo](../../examples/orm-demo/) (one service + one Prisma
   Next-typed database) or [store](../../examples/store/) (four modules, cron,
   a Next.js storefront).

@@ -1,8 +1,14 @@
+import type { paths } from '@prisma/management-api-sdk';
 import * as Data from 'effect/Data';
 import * as Effect from 'effect/Effect';
 import { type ManagementApiClient, ManagementClient } from './client.ts';
 import { call, callVoid, PrismaApiError } from './http.ts';
 import { collectPages, drivePages } from './pagination.ts';
+
+/** The region ids the Management API accepts for a new Project — the platform's published contract, not a Composer-owned list. */
+export type ProjectRegion = NonNullable<
+  NonNullable<paths['/v1/projects']['post']['requestBody']>['content']['application/json']['region']
+>;
 
 export interface ResolveContainerOptions {
   /** The workspace to resolve the Project in. */
@@ -13,6 +19,12 @@ export interface ResolveContainerOptions {
   readonly stage?: string;
   /** Create the Project/Branch if absent (default `true`). `false` finds only — used by `destroy`. */
   readonly ensure?: boolean;
+  /**
+   * The region to stamp on the Project at creation time. Required when creating a new Project
+   * (`ensure: true` and no matching Project found). Omit for find-only (`ensure: false`) or when
+   * the Project already exists — the platform's stored default region is used then.
+   */
+  readonly region?: ProjectRegion;
 }
 
 /** Raised with `ensure: false` when the app's Project (or a named stage's Branch) doesn't exist. */
@@ -34,6 +46,8 @@ interface ProjectSummary {
   readonly name: string;
   readonly createdAt: string;
   readonly workspace: { readonly id: string };
+  /** Set on projects created with a logical id; null or absent on older projects. */
+  readonly logicalId?: string | null;
 }
 
 const listAllProjects = (
@@ -57,37 +71,71 @@ const bareWorkspaceId = (id: string): string =>
   id.startsWith('wksp_') ? id.slice('wksp_'.length) : id;
 
 /**
- * Finds the app's Project by name in the workspace — PDP allows duplicate
- * project names, so more than one can match; the oldest wins. Creates one
- * if none match, unless `ensure` is `false` (find-only — `destroy`), in
- * which case an absent Project fails with `ContainerNotFoundError`. No
- * ownership marker and no `--project` override (both deferred — see
- * ADR-0019).
+ * Finds the app's Project by logical id or name in the workspace, creating
+ * one if absent. Logical id match (exact, workspace-unique) is preferred over
+ * display-name match (oldest-wins fallback for projects without a logical id).
+ * Creates one if none match, unless `ensure` is `false` (find-only —
+ * `destroy`), in which case an absent Project fails with
+ * `ContainerNotFoundError`. No ownership marker and no `--project` override
+ * (both deferred — see ADR-0019).
  */
 const resolveProject = (
   client: ManagementApiClient,
   workspaceId: string,
   appName: string,
   ensure: boolean,
+  region: ProjectRegion | undefined,
 ): Effect.Effect<string, PrismaApiError | ContainerNotFoundError> =>
   Effect.gen(function* () {
     const projects = yield* listAllProjects(client);
-    const oldest = projects
-      .filter(
-        (p) =>
-          bareWorkspaceId(p.workspace.id) === bareWorkspaceId(workspaceId) && p.name === appName,
-      )
+    const workspaceProjects = projects.filter(
+      (p) => bareWorkspaceId(p.workspace.id) === bareWorkspaceId(workspaceId),
+    );
+
+    const logicalIdMatch = workspaceProjects.find(
+      (p) => p.logicalId != null && p.logicalId === appName,
+    );
+    if (logicalIdMatch !== undefined) return logicalIdMatch.id;
+
+    const nameMatch = workspaceProjects
+      .filter((p) => p.name === appName)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-    if (oldest !== undefined) return oldest.id;
+    if (nameMatch !== undefined) return nameMatch.id;
 
     if (!ensure) return yield* Effect.fail(new ContainerNotFoundError({ appName }));
 
+    if (region === undefined) {
+      return yield* Effect.fail(
+        new PrismaApiError({
+          status: 0,
+          message:
+            `project "${appName}" does not exist yet and no deploy region is configured. ` +
+            "Set the region via prismaCloud({ region: '<id>' }) in your config, or set the " +
+            'PRISMA_REGION environment variable',
+        }),
+      );
+    }
+
     // createDatabase: false — the platform default database is never used
-    // (composer poisons DATABASE_URL at provision), so don't create it. The
+    // (composer claims DATABASE_URL with a placeholder at provision), so don't create it. The
     // API 403s this for user actors, but deploys authenticate as workspace
     // actors (service tokens), which are allowed.
     const created = yield* call(() =>
-      client.POST('/v1/projects', { body: { name: appName, workspaceId, createDatabase: false } }),
+      client.POST('/v1/projects', {
+        body: { name: appName, workspaceId, createDatabase: false, logicalId: appName, region },
+      }),
+    ).pipe(
+      Effect.catch((err) =>
+        err.status === 409
+          ? Effect.fail(
+              new PrismaApiError({
+                status: 409,
+                message:
+                  'a project with this name already exists in the workspace; rename your Composer module or free the name.',
+              }),
+            )
+          : Effect.fail(err),
+      ),
     );
     return created.data.id;
   });
@@ -195,7 +243,13 @@ export const resolveContainer = (
   Effect.gen(function* () {
     const client = yield* ManagementClient;
     const ensure = opts.ensure ?? true;
-    const projectId = yield* resolveProject(client, opts.workspaceId, opts.appName, ensure);
+    const projectId = yield* resolveProject(
+      client,
+      opts.workspaceId,
+      opts.appName,
+      ensure,
+      opts.region,
+    );
     if (opts.stage === undefined) {
       const defaultBranchId = yield* resolveDefaultBranchId(client, projectId);
       return { projectId, defaultBranchId };

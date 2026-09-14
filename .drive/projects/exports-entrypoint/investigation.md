@@ -1,9 +1,9 @@
 # Plan: separate package source from exports via `src/exports/` entrypoints
 
 Branch: `claude/prisma-exports-entrypoint-996287` (based on origin/main).
-Reference: prisma-next (cloned read-only into the session scratchpad).
+Reference: prisma/orm (cloned read-only into the session scratchpad).
 
-## The pattern in prisma-next
+## The pattern in prisma/orm
 
 Sources studied: `.agents/rules/multi-plane-packages.mdc`,
 `multi-plane-entrypoints.mdc`, `no-barrel-files.mdc`, `cli-package-exports.mdc`,
@@ -36,10 +36,10 @@ Sources studied: `.agents/rules/multi-plane-packages.mdc`,
   internals (e.g. `core/src` has `index.ts`, `testing.ts`, `deploy.ts`,
   `app-config.ts` next to `graph.ts`, `hydrate.ts`, `toposort.ts`, …). Nothing
   marks which files are public.
-- `@internal/tsdown-config` already mirrors prisma-next's base (`exports: true`)
+- `@internal/tsdown-config` already mirrors prisma/orm's base (`exports: true`)
   but 7 of 15 packages opt out with `exports: false` and hand-maintain their
   maps. Its doc comment claims tsdown 0.15.x; the workspace actually has
-  0.22.4 — the same version prisma-next uses, so `enabled: 'local-only'` +
+  0.22.4 — the same version prisma/orm uses, so `enabled: 'local-only'` +
   `customExports` port directly.
 - `architecture.config.json` has 61 entries, mostly per-file globs
   (`core/src/deploy.ts` → control, `core/src/graph.ts` → shared, …) because
@@ -57,7 +57,7 @@ docs-only PRs).
 
 ### Phase 0 — tooling: `@internal/tsdown-config`
 
-- Port prisma-next's `customExports` (strip `exports/` prefix, `./` → `.`,
+- Port prisma/orm's `customExports` (strip `exports/` prefix, `./` → `.`,
   single-entry collapse fix) into `baseConfig`.
 - Switch `exports: true` → `exports: { enabled: 'local-only', customExports,
   exclude: [/bin\./] }` (excludes the CLI bin from importable subpaths).
@@ -80,7 +80,7 @@ no `src/core/` shuffle needed.
 | `@internal/assemble` | `index.ts` |
 | `@internal/cli` | `index.ts` (`bin.ts` stays internal; excluded from exports) |
 | `@internal/lowering` | `index.ts`, `compute.ts`, `postgres.ts`, `state.ts` (replacing the `compute/index.ts`-style subdir entries with thin exports files) |
-| `@internal/prisma-cloud` (target) | `index.ts`, `control.ts`, `prisma-next.ts`, `testing.ts`, `pg-connection.ts` → `exports/connection.ts` |
+| `@internal/prisma-cloud` (target) | `index.ts`, `control.ts`, `orm-postgres.ts`, `testing.ts`, `pg-connection.ts` → `exports/connection.ts` |
 | `@internal/cron` | `index.ts`, `scheduler-service.ts`, `scheduler-entrypoint.ts` |
 | `@internal/storage` / `@internal/streams` | `index.ts`, `*-service.ts`, `*-entrypoint.ts`, `testing.ts` |
 | `@prisma/composer` | all 11 subpath files (`index`, `config`, `deploy`, `testing`, `casts`, `assertions`, `rpc`, `node`, `node-control`, `nextjs`, `nextjs-control`) — these are already thin re-exports, pure moves |
@@ -91,7 +91,7 @@ hand-maintain `{types, default}` conditional exports "for the public packages'
 dts bundling", and `@prisma/composer` needs `exports: false` anyway (its bin
 entry plus `noExternal` bundling). Try auto-generation first; keep a manual map
 **only** where the generated one demonstrably breaks consumer type resolution,
-and document the exception in the rule (prisma-next's `cli-package-exports.mdc`
+and document the exception in the rule (prisma/orm's `cli-package-exports.mdc`
 treats manual maps as exception-only, same stance).
 
 Test fallout: within-package tests that import a moved file
@@ -135,7 +135,7 @@ fails on a known-bad import (glob order: specific before `src/**`).
 
 ### Risks
 
-- tsdown 0.22.4 `customExports` shape: prisma-next runs the identical version
+- tsdown 0.22.4 `customExports` shape: prisma/orm runs the identical version
   with this exact hook, so this is a copy, not an experiment.
 - Generated string-form exports (`"./x": "./dist/x.mjs"`) rely on TS finding
   the sibling `dist/x.d.mts`; the packages already built this way (`core`,

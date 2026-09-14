@@ -1,4 +1,4 @@
-// use prisma-next
+// use prisma-8
 //
 // catalog's data contract: the menu, and a single-row Special pointing at the
 // current special of the day (the promotions cron job advances it).

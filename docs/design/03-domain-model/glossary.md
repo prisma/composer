@@ -67,7 +67,7 @@ provisioned third-party account is a Resource too — a Stripe product, a Tigris
 bucket, a Prisma-brokered Mailchimp account. The test is whether something manages
 its lifecycle, not whether it's first-party.
 
-- **First-class**: Prisma **Postgres** (data, via Prisma Next contracts) —
+- **First-class**: Prisma **Postgres** (data, via Prisma ORM contracts) —
   the framework-native treatment.
 - **BYO**: any Alchemy resource (object storage, cache, queue, provisioned
   third-party) exposed through a capability Layer. The Module depends on the
@@ -193,7 +193,7 @@ that external thing as a node, provision it (a Resource) or wrap it in a Service
 
 ### Data Contract
 
-A **Prisma Next** contract — a deterministic, hashable description of the schema
+A **Prisma ORM** contract — a deterministic, hashable description of the schema
 slice a Module may access (identified by its `storageHash`). A Module's Data Input
 declares the contract it requires; this is also the per-Module least-privilege scope.
 
@@ -209,7 +209,7 @@ shared, the enclosing **implicit root Module** that wires it to its consumers. T
 owner owns the schema and the migration; each consumer connects via a Data Input
 declaring the contract slice it needs. The owner's schema must satisfy the
 **aggregate** — the union of every consumer's contract — and consumer slices must
-not overlap (a Prisma Next concept). The cloud can verify the live DB satisfies the
+not overlap (a Prisma ORM concept). The cloud can verify the live DB satisfies the
 aggregate via the marker/ledger.
 
 ## Planes & process
@@ -224,7 +224,7 @@ The deploy report calls a thing on the hosting plane a **Deployment entity**
 ### Lowering
 
 The compilation from one plane to the next: authoring topology → provisioning
-resource graph → hosting primitives. Analogous to Prisma Next lowering a contract
+resource graph → hosting primitives. Analogous to Prisma ORM lowering a contract
 to a plan.
 
 ### Control plane / Execution plane
@@ -325,7 +325,7 @@ conform (dependency inversion).
 ### provision
 
 The Module-scoped operator that turns a dependency descriptor into an **owned
-Resource** (`provision(postgres())`) or instantiates and wires an owned node
+Resource** (`provision(rawPostgres())`) or instantiates and wires an owned node
 (`provision(svc, { db })`). Ownership and provisioning are a Module concern; a
 Service only *requires*. Forwarding is just passing a Module's Inputs down and
 returning owned nodes' Outputs up.
@@ -357,7 +357,7 @@ substituted at any Input) and a real deployment.
 ## Provisioning plane — the compile target (Alchemy / Effect)
 
 The exact substrate the authoring nouns lower **down to**, grounded in what our
-providers already use (`packages/alchemy`, `alchemy@2.0.0-beta.59`,
+providers already use (`packages/alchemy`, `alchemy@2.0.0-beta.74`,
 `effect@4-beta`). Building the next layer of abstraction means defining each
 authoring noun as *the compile-target terms it emits*. Two families: Alchemy's
 IaC definition language, and the Effect primitives Alchemy is itself built on.
@@ -375,17 +375,16 @@ is in `layering.md`; this is the term-by-term catalogue.
   `→` **Topology / implicit root Module**.
 - **Resource\<Type, Props, Attributes>** — a managed entity with a string type
   tag, desired-input **Props**, and cloud-returned **Attributes**. Declared, then
-  `yield*`-ed. Ours: `Prisma.Project`, `Database`, `Connection`,
-  `ComputeService`, `Deployment`, `EnvironmentVariable`.
-  `→` a **Service** lowers to `ComputeService` + `Deployment` (+
-  `EnvironmentVariable`); a first-class **Resource** (Postgres) lowers to
-  `Project` + `Database` + `Connection`.
+  `yield*`-ed. Composer binds upstream alchemy's: `Prisma.Project`, `Database`,
+  `Connection`, `App`, `Deployment`, `EnvironmentVariable`.
+  `→` a **Service** lowers to `App` + `Deployment` (+ `EnvironmentVariable`); a
+  first-class **Resource** (Postgres) lowers to `Database` + `Connection`.
 - **Props** — the desired configuration passed at declare time; diffed against
-  the last deploy to detect change. (We put the artifact's `artifactHash` in
-  Props so a rebuild registers as a change.) `→` a node's **Inputs** +
+  the last deploy to detect change. (A rebuild registers as a change because the
+  artifact is content-addressed: new bytes, new `artifactPath`.) `→` a node's **Inputs** +
   **Configuration**.
-- **Attributes / Output\<T>** — values the cloud returns (`deployedUrl`,
-  `versionId`, ids); lazy references that flow into other Resources' Props.
+- **Attributes / Output\<T>** — values the cloud returns (`appEndpointDomain`,
+  `deploymentId`, ids); lazy references that flow into other Resources' Props.
   Resource-to-resource wiring is Output → Props. `→` a node's **Outputs**; a
   **connection** (Output→Input) lowers to Output→Props, plus an
   `EnvironmentVariable` when the consumer reads it at runtime (what `AUTH_URL`
@@ -397,11 +396,7 @@ is in `layering.md`; this is the term-by-term catalogue.
   *above* providers, not inside them.
 - **Stage** — an isolated instance of a Stack (`dev`, `staging`, `prod`,
   `pr-42`) with its own state and physical names. `→` **Environment**.
-- **State store** — persists each Resource's state per stack+stage so the engine
-  can diff the next deploy. `prismaCloud()` defaults every deploy to a
-  Prisma-hosted, workspace-scoped store (`@internal/lowering/state`); an
-  explicit state layer always overrides it. Control-plane infra, never a
-  topology node.
+- **State store** — persists each Resource's state per stack+stage so the engine can diff the next deploy. `prismaCloud()` defaults every deploy to platform-hosted state behind the Management API, scoped to the stage's Branch (`@internal/lowering/state`, ADR-0045); an explicit state layer always overrides it. Control-plane infra, never a topology node.
 
 ### Alchemy — engine verbs (provider lifecycle)
 
@@ -417,9 +412,11 @@ These two Alchemy concepts exist but our stack does not use them — and that ga
 is where the framework's own binding layer gets built.
 
 - **Platform** — Alchemy's Resource-that-carries-runtime-code (Cloudflare
-  Worker, AWS Lambda, Container). We model Prisma Compute as **ordinary
-  Resources** (`ComputeService` + `Deployment` + artifact) instead, because
-  Compute isn't an Alchemy-native platform.
+  Worker, AWS Lambda, Container). Alchemy's `Prisma.Compute` is one, but
+  Composer lowers to the **ordinary Resources** (`App` + `Deployment` +
+  artifact) instead — see the compute-family decision in the adoption notes:
+  a service's own origin is an input to its own environment, which one
+  composite resource cannot express.
 - **Binding** (`bind()`) — Alchemy's "the binding *is* the client" for a
   Platform: one call emits permissions + env and hands back a typed SDK client.
   We do **not** use it. The framework's binding/DI (capability `Tag` + `Layer` +
@@ -475,7 +472,7 @@ is where the framework's own binding layer gets built.
   application you build and deploy. Use **Topology** for the wired graph and
   **Module** for a unit; **App** for the composed whole.
 - **Descriptor** → an internal/substrate term; avoid in the authoring vocabulary
-  (and note Prisma Next uses "Descriptor" for its own components).
+  (and note Prisma ORM uses "Descriptor" for its own components).
 - **Durable Stream as "the backbone"** → streams are *one of two* transports
   (alongside request/response), not the universal substrate. See the streaming
   reconciliation note in the decisions log.

@@ -16,14 +16,14 @@ runtime.
 
 ## 3. A module — [modules/catalog/src/module.ts](modules/catalog/src/module.ts)
 
-catalog owns its own Postgres — a **Prisma Next-typed** one. Three pieces:
+catalog owns its own Postgres — a **Prisma-ORM-typed** one. Three pieces:
 
 - [contract.prisma](modules/catalog/contract.prisma): the data schema. Emit
   turns it into a typed contract; `migration plan` authors
   [migrations/](modules/catalog/migrations), which the deploy applies before
   the service ever starts — no `create table if not exists` in app code.
 - [src/service.ts](modules/catalog/src/service.ts): the service declares
-  `deps: { db: pnPostgres(catalogData) }` and what it exposes; that's the
+  `deps: { db: postgres(catalogData) }` and what it exposes; that's the
   whole declaration.
 - [src/server.ts](modules/catalog/src/server.ts): `load()` hands it the `{ url, client }`
   binding — `db.client.orm.public.Product.where({ id }).first()`. No SQL strings, no
@@ -78,7 +78,7 @@ contracts the real modules serve. No Postgres, no server, no cloud.
 ## Likely questions
 
 - **"What actually got deployed?"** Each compute service is a Prisma Compute
-  VM; each module's `postgres()` is a Prisma Postgres database. The deploy
+  VM; each module's `rawPostgres()` is a Prisma Postgres database. The deploy
   derives the graph from the code above — same code could target another
   extension pack.
 - **"What's in an edge?"** At runtime: an env var (`CATALOG_URL`) the

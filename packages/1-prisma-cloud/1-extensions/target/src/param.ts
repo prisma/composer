@@ -19,14 +19,18 @@ export interface EnvParamPayload {
 }
 
 const RESERVED_PARAM_PREFIX = 'COMPOSER_';
-const POISONED_PARAM_NAMES: ReadonlySet<string> = new Set(['DATABASE_URL', 'DATABASE_URL_POOLED']);
+/** The names Prisma Cloud owns: it seeds and manages them, so Composer never binds one. */
+const PLATFORM_OWNED_PARAM_NAMES: ReadonlySet<string> = new Set([
+  'DATABASE_URL',
+  'DATABASE_URL_POOLED',
+]);
 
 /**
  * Binds a param slot to a named Prisma Cloud platform env var — the non-secret
  * sibling of `envSecret` (spec: env-sourced config params). The platform
  * injects the value into the running instance per stage; the param's own
  * schema validates it at boot, unredacted. The name may not use the
- * framework's reserved `COMPOSER_` prefix or the poisoned
+ * framework's reserved `COMPOSER_` prefix or the platform-owned
  * `DATABASE_URL(_POOLED)` keys — same parity as `envSecret`.
  */
 export function envParam(name: string): ParamSource<EnvParamPayload> {
@@ -41,10 +45,11 @@ export function envParam(name: string): ParamSource<EnvParamPayload> {
         "reserved for the framework's own generated config keys.",
     );
   }
-  if (POISONED_PARAM_NAMES.has(name)) {
+  if (PLATFORM_OWNED_PARAM_NAMES.has(name)) {
     throw new Error(
-      `envParam name "${name}" is reserved — ${[...POISONED_PARAM_NAMES].join(' and ')} are ` +
-        'poisoned at project provision and cannot back a param.',
+      `envParam name "${name}" is reserved — ${[...PLATFORM_OWNED_PARAM_NAMES].join(' and ')} ` +
+        'are seeded and managed by Prisma Cloud itself, so the framework refuses to bind them. ' +
+        'Declare the database your service uses and read its url from that connection.',
     );
   }
   return paramSource<EnvParamPayload>({ [PRISMA_CLOUD_PARAM_SOURCE]: true, name });

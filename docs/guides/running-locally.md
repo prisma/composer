@@ -46,6 +46,21 @@ buckets, and their data stay up, so the next `prisma-composer dev` is a warm
 start — same ports, same data. `--fresh` is what wipes this app's local
 instances and data before starting.
 
+Shutdown closes the file watchers and waits for any in-flight rebuild or
+deployment before stopping services. A rebuild that has not reached deployment
+is skipped once shutdown begins, so it cannot restart the app after it stops.
+Cleanup failures are reported, but do not prevent the remaining services from
+being stopped or the session from finishing.
+
+`--fresh` is also the fix when a framework upgrade leaves stale rows in this
+app's local dev state — the symptom is a plan-time error naming an
+unregistered resource type (for example
+`No provider is registered for resource type 'PrismaComposer.Database'`).
+Local dev state is never migrated across framework versions. Note `--fresh`
+wipes local *data* too — database contents, bucket objects, instance state —
+not just the resource bookkeeping; the next start rebuilds empty resources.
+Use it when the local data is disposable, which in a dev loop it usually is.
+
 ## Logs
 
 ```sh

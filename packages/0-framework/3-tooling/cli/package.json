@@ -1,11 +1,14 @@
 {
   "name": "@internal/cli",
-  "version": "0.6.0",
+  "version": "0.20.0",
   "type": "module",
   "description": "The `prisma-composer` deploy CLI.",
   "exports": {
     ".": "./dist/index.mjs",
+    "./control": "./dist/control.mjs",
+    "./family": "./dist/family.mjs",
     "./report": "./dist/report.mjs",
+    "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -15,16 +18,18 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/assemble": "workspace:0.6.0",
-    "@internal/core": "workspace:0.6.0",
-    "@internal/foundation": "workspace:0.6.0",
+    "@internal/assemble": "workspace:0.20.0",
+    "@internal/core": "workspace:0.20.0",
+    "@internal/foundation": "workspace:0.20.0",
+    "@prisma/cli-engine": "0.4.0",
     "c12": "^3.3.4",
     "chokidar": "^4.0.3",
-    "clipanion": "^3.2.1"
+    "cross-spawn": "^7.0.6"
   },
   "devDependencies": {
-    "@internal/tsdown-config": "workspace:0.6.0",
+    "@internal/tsdown-config": "workspace:0.20.0",
     "@types/bun": "^1.3.13",
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"
@@ -32,11 +37,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/prisma/compose.git",
+    "url": "https://github.com/prisma/composer.git",
     "directory": "packages/0-framework/3-tooling/cli"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "private": true,
   "types": "./dist/index.d.mts"

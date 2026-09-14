@@ -2,7 +2,7 @@
 
 This guide covers everything you reach for once
 [Getting started](getting-started.md) has shown you the shape: giving a
-service a database (plain or Prisma Next-typed), packaging pieces as reusable
+service a database (plain or Prisma-ORM-typed), packaging pieces as reusable
 Modules, the cron/storage/streams modules that ship with the framework, and
 the service input — configuration and secrets as one schema.
 
@@ -10,13 +10,13 @@ the service input — configuration and secrets as one schema.
 
 A Prisma App is a tree of **Modules**. At the leaves are **services** —
 `compute()`, the units that run your code — and **resources** — stateful
-things like `postgres()`. A parent module wires them together; your code
+things like `rawPostgres()`. A parent module wires them together; your code
 never participates in the wiring, it just receives the results:
 
 ```ts
 compute({
   name: 'auth',                 // the service's name in the app graph
-  deps: { db: postgres() },     // what it needs         → read via service.load()
+  deps: { db: rawPostgres() },     // what it needs         → read via service.load()
   input: authInput,             // its incoming config   → read via service.input()
   build: node({ module: import.meta.url, entry: '../dist/server.mjs' }),
   expose: { rpc: authContract },// what it offers to other services
@@ -124,7 +124,7 @@ Two limits worth knowing:
 There are two ways for a service to get a Postgres, depending on how much you
 want the framework to do.
 
-### `postgres()` — bring your own client
+### `rawPostgres()` — bring your own client
 
 The dependency delivers connection config — `{ url }` — and nothing else. You
 build the client you already know (`pg`, Bun's `SQL`, an ORM) in your server
@@ -141,10 +141,10 @@ const sql = new SQL({ url: db.url, max: 1, idleTimeout: 10 });
 connections get closed; see
 [Deploying and operating](deploying.md#production-behavior).)
 
-### `pnPostgres()` — a Prisma Next-typed database
+### `postgres()` — a Prisma-ORM-typed database
 
 If you want typed queries and managed migrations, make the database a
-[Prisma Next](https://github.com/prisma/prisma-next) one. `load()` then
+[Prisma ORM](https://github.com/prisma/orm) one. `load()` then
 returns `{ url, client }`: the raw connection string, plus a client generated
 from your schema — queries like
 `db.client.orm.public.Product.where({ id }).first()` are compile-time
@@ -152,48 +152,52 @@ checked, no SQL strings, no row mapping. The client is constructed on first
 access, so a service that brings its own Postgres client reads `db.url` and
 still gets contract-checked wiring and deploy-time migrations (ADR-0040).
 
-The workflow, once per schema change (all `prisma-next` commands — see the
-Prisma Next docs for the details):
+The workflow, once per schema change (Prisma ORM commands, via the `prisma` CLI — see the Prisma ORM docs for the details):
 
 1. Edit `contract.prisma` — your schema.
-2. `prisma-next contract emit` — regenerates `contract.json` +
-   `contract.d.ts` from it.
-3. `prisma-next migration plan` — authors the migration into `migrations/`.
-4. Deploy. The deploy applies `migrations/` before the service starts —
-   there's no `CREATE TABLE IF NOT EXISTS` anywhere in app code.
+2. `prisma contract emit` — regenerates `contract.json` + `contract.d.ts` from it.
+3. `prisma migration plan --name <slug>` — authors the migration into `migrations/`. On a brand-new project this authors the baseline (empty → your schema); commit `migrations/` with the change.
+4. Deploy. The deploy applies `migrations/` before the service starts — there's no `CREATE TABLE IF NOT EXISTS` anywhere in app code.
+
+The deploy is replay-only: it applies the migrations you authored and committed, and it never creates schema itself — a fresh database is brought up by replaying the committed baseline. If no authored path reaches the target contract, the deploy refuses and names the fix: author the missing migration as above, or — when you're just iterating against a local database — bring it along directly with `prisma db update`. Databases whose schema an older framework version synthesized at first deploy need a one-time retrofit; see [Deploying and operating](deploying.md#updating-a-database-whose-schema-an-older-version-synthesized).
 
 In your app, the emitted contract is wrapped once, and that one value is
 referenced by both the resource and every service that queries it:
 
 ```ts
 // src/data.ts
-import { pnContract } from '@prisma/composer-prisma-cloud/prisma-next';
+import { dataContract } from '@prisma/composer-prisma-cloud/orm';
 import type { Contract } from '../contract.d.ts';
 import contractJson from '../contract.json' with { type: 'json' };
 
-export const catalogData = pnContract<Contract>(contractJson);
+export const catalogData = dataContract<Contract>(contractJson);
 ```
 
-`pnPostgres` is both ends of the edge, told apart by what you pass it. The
+`postgres` is both ends of the edge, told apart by what you pass it. The
 contract alone is the dependency end — the service declaring what it queries:
 
 ```ts
-deps: { db: pnPostgres(catalogData) }
+deps: { db: postgres(catalogData) }
 ```
 
 An options object is the resource end — the module that owns the database
-provisions it, naming the `prisma-next.config.ts` path (relative to the
-module file) so the deploy can find `migrations/`:
+provisions it, naming the `prisma.config.ts` path (relative to the
+module file) so the deploy can reload the emitted `contract.json` and find
+`migrations/`:
 
 ```ts
 const db = provision(
-  pnPostgres({ name: 'database', contract: catalogData, config: './prisma-next.config.ts' }),
+  postgres({ name: 'database', contract: catalogData, config: './prisma.config.ts' }),
 );
 ```
 
 Because both ends share the contract value, the deploy refuses to wire a
-service against a database whose schema doesn't match.
-[`examples/pn-widgets`](../../examples/pn-widgets/) is the minimal working
+service against a database whose schema doesn't match. The migration resource
+persists only compact contract identity in deploy state; the full emitted
+contract is reloaded from `prisma.config.ts` at reconcile time. If that
+artifact is missing, unreadable, or no longer matches the declared contract,
+the deploy fails before touching the database.
+[`examples/orm-demo`](../../examples/orm-demo/) is the minimal working
 version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is
 the full pattern inside a reusable Module.
@@ -217,7 +221,7 @@ export default module(
   'auth',
   { secrets: { signingKey: secret() }, expose: { rpc: authContract } },
   ({ secrets, provision }) => {
-    const db = provision(postgres({ name: 'database' }));
+    const db = provision(rawPostgres({ name: 'database' }));
     const service = provision(authService, {
       id: 'service',
       deps: { db },
@@ -353,6 +357,28 @@ provision(cron({ schedule, runner: promotionsService }), {
 });
 ```
 
+A runner that declares an `input` schema ([below](#service-input)) takes its
+binding on `cron()` itself, with `envSecret(...)` where the schema expects a
+secret. It is required exactly when the runner declares a schema, the same
+rule `provision()` applies:
+
+```ts
+provision(
+  cron({
+    schedule,
+    runner: ingestService,
+    input: { token: envSecret('INGEST_TOKEN') },
+  }),
+  { deps: { catalog: catalog.rpc } },
+);
+```
+
+**The scheduler is the one service in your app that never sleeps.** Compute
+scales an idle service to zero, and the scheduler receives no requests of its
+own, so it holds the platform's keep-awake guard for its whole lifetime. One
+warm instance per app is the cost of the clock; the runner sleeps like any
+other service and wakes when the scheduler calls it.
+
 [`examples/storage`](../../examples/storage/) and
 [`examples/streams`](../../examples/streams/) show the other two, including
 the streams module's secret binding.
@@ -377,7 +403,7 @@ and choosing the channel is most of the decision:
 
 | The value is… | Declare it as | Provide it | Read it |
 | --- | --- | --- | --- |
-| produced by another node — a database, another service | a dependency: `deps: { db: postgres() }` | wire it at `provision()` | `service.load()` |
+| produced by another node — a database, another service | a dependency: `deps: { db: rawPostgres() }` | wire it at `provision()` | `service.load()` |
 | anything else — a region, a flag, a job list, a credential | one field of the service's `input` schema | bind it at `provision()`: a literal, `envParam()`, or `envSecret()` | `service.input()` |
 
 Dependencies are covered above. This section is the second row.
@@ -540,13 +566,20 @@ finds its siblings exactly where the build left them — resolve them against
 `import.meta.url`, not the working directory.
 
 Nothing is guessed: you name the directory and the entry, and that is what
-ships. Two things to know:
+ships. Three things to know:
 
-- The tree must contain no symlinks — the platform's packager rejects them, so
-  assembly fails early and names the link rather than shipping a broken
-  artifact. Have your build emit real files.
+- Symlinks are kept as symlinks, never followed and copied. A link whose target
+  resolves inside the built output ships as-is. A link that points outside it,
+  or at something that isn't there, fails the deploy with an error naming the
+  link, rather than shipping a broken artifact or packaging files from your
+  machine.
+- The entry's runtime imports ship too. Deploy traces the file you named and
+  stages the packages it imports beside `dir`, so framework output that keeps
+  bare imports (Astro's Node adapter, for example) boots without you copying
+  `node_modules` into the build.
 - `entry` must be a file inside `dir`. Pointing it outside with `../` is an
-  error, not an escape hatch — only `dir` is copied.
+  error, not an escape hatch — only `dir` is copied verbatim; everything else
+  arrives through the trace.
 
 Without `dir` you get the single-file form above, unchanged.
 

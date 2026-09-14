@@ -14,7 +14,10 @@ function shippedSources(): { file: string; text: string }[] {
       if (entry.isDirectory()) {
         if (entry.name !== '__tests__') walk(full);
       } else if (entry.name.endsWith('.ts')) {
-        out.push({ file: path.relative(srcDir, full), text: fs.readFileSync(full, 'utf8') });
+        out.push({
+          file: path.relative(srcDir, full).split(path.sep).join('/'),
+          text: fs.readFileSync(full, 'utf8'),
+        });
       }
     }
   };
@@ -24,7 +27,7 @@ function shippedSources(): { file: string; text: string }[] {
 
 // A built dist entry PLUS every relative chunk it (transitively) imports or
 // re-exports, concatenated. tsup/rolldown hoists code shared between entries
-// (e.g. pg-connection.ts, used by both control.ts and prisma-next.ts) into a
+// (e.g. pg-connection.ts, used by both control.ts and orm-postgres.ts) into a
 // chunk, leaving the entry file a thin re-export shim — so a token check that
 // reads only the entry file would go vacuous. Following the shim's own imports
 // makes the check see the real code again.
@@ -50,8 +53,8 @@ function builtEntryGraph(entryFileName: string): string {
   return parts.join('\n');
 }
 
-describe('entry map: authoring + control + local-target + prisma-next + testing, no other runtime entry', () => {
-  test("package.json exports '.', './connection', './control', './local-target', './prisma-next', and './testing' (cron lives in @internal/cron)", () => {
+describe('entry map: authoring + control + local-target + orm + testing, no other runtime entry', () => {
+  test("package.json exports '.', './connection', './control', './local-target', './orm', and './testing' (cron lives in @internal/cron)", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
     // `./package.json` is a conventional manifest export, not a code entry.
     const codeEntries = Object.keys(pkg.exports).filter((k) => k !== './package.json');
@@ -60,7 +63,7 @@ describe('entry map: authoring + control + local-target + prisma-next + testing,
       './connection',
       './control',
       './local-target',
-      './prisma-next',
+      './orm',
       './testing',
     ]);
   });
@@ -122,7 +125,7 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/generated-pointer lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), teardown.ts (shell token), compute.ts (exposes the resolved port as PORT), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
+  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/generated-pointer lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env; plus the env the preflight transport is read from, which pointer-timestamps.ts takes as an argument rather than reaching for), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), compute.ts (exposes the resolved port as PORT), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -133,14 +136,13 @@ describe('invariant 4: environment touches are confined to the config serializer
     });
 
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
-      { file: 'compute.ts', count: 1 },
+      { file: 'compute.ts', count: 2 },
       { file: 'container.ts', count: 3 },
-      { file: 'control/extension.ts', count: 2 },
+      { file: 'control/extension.ts', count: 3 },
       { file: 'local-target/preflight.ts', count: 2 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 12 },
-      { file: 'teardown.ts', count: 1 },
-      { file: 'testing.ts', count: 3 },
+      { file: 'testing.ts', count: 4 },
     ]);
   });
 });
@@ -232,10 +234,10 @@ describe('invariant 6 (ADR-0017, extension config): the authoring entry never re
   });
 });
 
-describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-next entry', () => {
-  test('no module reachable from src/index.ts imports the /prisma-next entry — Prisma Next stays opt-in', () => {
-    // prisma-next.ts (and transitively @prisma-next/postgres + pg) is
-    // imported only by an app that explicitly imports the ./prisma-next
+describe('invariant 7 (ADR-0022): the authoring entry never reaches the orm entry', () => {
+  test('no module reachable from src/index.ts imports the /orm entry — Prisma ORM stays opt-in', () => {
+    // orm-postgres.ts (and transitively @prisma/orm-postgres + pg) is
+    // imported only by an app that explicitly imports the ./orm
     // subpath. A reachable import from the authoring barrel would drag that
     // dependency tree into every service, defeating the whole point of the
     // dedicated subpath entry (ADR-0022, design-notes.md "opt-out stays real").
@@ -267,8 +269,7 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     expect(seen.size).toBeGreaterThan(0);
     for (const [file, specs] of seen) {
       const offending = specs.filter(
-        (spec) =>
-          /\/prisma-next(\.ts)?$/.test(spec) || spec.startsWith('@prisma-next/') || spec === 'pg',
+        (spec) => /\/orm(\.ts)?$/.test(spec) || spec.startsWith('@prisma/orm-') || spec === 'pg',
       );
       expect({ file: path.relative(srcDir, file), offending }).toEqual({
         file: path.relative(srcDir, file),
@@ -277,32 +278,32 @@ describe('invariant 7 (ADR-0022): the authoring entry never reaches the prisma-n
     }
   });
 
-  test('the built dist/index.mjs graph contains no @prisma-next/* or pg tokens', () => {
+  test('the built dist/index.mjs graph contains no @prisma/orm-* or pg tokens', () => {
     const built = builtEntryGraph('index.mjs');
     expect(built.length).toBeGreaterThan(0);
-    expect(built).not.toContain('@prisma-next/');
+    expect(built).not.toContain('@prisma/orm-');
     expect(built.includes('"pg"') || built.includes("'pg'")).toBe(false);
   });
 
-  // The ./prisma-next authoring entry legitimately bundles
-  // @prisma-next/postgres/runtime (the typed client) and pg (its runtime
+  // The ./orm authoring entry legitimately bundles
+  // @prisma/orm-postgres/runtime (the typed client) and pg (its runtime
   // connect-retry, slice 3). But the deploy-only machinery — the CLI config
   // loader, the control client, and the migration/config/resource/warm modules
-  // — must NEVER leak into it, or every service using pnPostgres would pull the
+  // — must NEVER leak into it, or every service using postgres would pull the
   // CLI into its runtime bundle. The entry file is a re-export shim whose real
   // code lives in a chunk (pg-connection.ts is shared with control.ts), so we
   // check the whole reachable graph, not just the shim.
-  test('the built dist/prisma-next.mjs graph contains no deploy-only machinery', () => {
-    const built = builtEntryGraph('prisma-next.mjs');
+  test('the built dist/orm.mjs graph contains no deploy-only machinery', () => {
+    const built = builtEntryGraph('orm.mjs');
     // Positive marker: the graph reached the real runtime code in the chunk,
     // so the forbidden-token checks below are not vacuous.
-    expect(built).toContain('@prisma-next/postgres/runtime');
+    expect(built).toContain('@prisma/orm-postgres/runtime');
     for (const token of [
-      '@prisma-next/cli',
+      '@prisma/orm-toolchain/cli',
       'postgres/control',
-      'pn-config',
-      'pn-migration-resource',
-      'prisma-next-migrate',
+      'orm-config',
+      'orm-migration-resource',
+      'orm-migrate',
       'pg-warm-resource',
     ]) {
       expect({ token, present: built.includes(token) }).toEqual({ token, present: false });

@@ -51,6 +51,17 @@ describe('bootstrapService', () => {
     expect(portAtBoot).toBe('4711');
   });
 
+  test('defaults HOST to the Compute listen-all address before boot', async () => {
+    const app = compute({ name: 'web', deps: {}, build });
+    let hostAtBoot: string | undefined;
+    await withEnv({ HOST: undefined, PORT: undefined, COMPOSER_PORT: undefined }, () =>
+      bootstrapService(app, { service: { port: 4711 }, inputs: {} }, async () => {
+        hostAtBoot = process.env['HOST'];
+      }),
+    );
+    expect(hostAtBoot).toBe('0.0.0.0');
+  });
+
   test('writes the input document row so input() reads it like a deployed boot', async () => {
     const app = compute({
       name: 'web',

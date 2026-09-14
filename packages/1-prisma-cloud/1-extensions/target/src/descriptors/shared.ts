@@ -1,7 +1,11 @@
 /** Helpers shared by the per-node-kind descriptors under `src/descriptors/` and the extension factory in `control.ts`. */
 
-import type * as Prisma from '@internal/lowering';
-import type * as Output from 'alchemy/Output';
+import type { ProjectRegion } from '@internal/lowering';
+import * as Output from 'alchemy/Output';
+import * as Prisma from 'alchemy/Prisma';
+import * as Effect from 'effect/Effect';
+import * as Redacted from 'effect/Redacted';
+import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**
@@ -64,7 +68,7 @@ export interface ServiceProviderParam extends ProviderParamEntry {
  */
 export interface ResolvedCloudOptions {
   readonly workspaceId: string;
-  readonly region?: Prisma.ComputeRegion;
+  readonly region?: ProjectRegion;
   /**
    * This extension's reserved provider params, keyed by need brand —
    * edge-derived (`ProviderParam`) or service-derived (`ServiceProviderParam`).
@@ -74,10 +78,17 @@ export interface ResolvedCloudOptions {
    * place a brand is named).
    */
   readonly providerParams: ReadonlyMap<symbol, ProviderParam | ServiceProviderParam>;
+  /**
+   * When a platform variable a row POINTS at was last written, by name — the
+   * out-of-band rotation signal the compute deploy hook folds into its
+   * environment fingerprint. The deploy preflight supplies the times (it
+   * already reads exactly these names off the platform) and transports them to
+   * the alchemy process. Always present: a run with no times to offer — every
+   * `prisma-composer dev` run, which talks to no platform — supplies a lookup
+   * that answers "unknown" for every name, so no caller has to.
+   */
+  readonly pointerUpdatedAt: PointerUpdatedAt;
 }
-
-/** Where a resource lands when the deploy names no region. */
-export const DEFAULT_REGION: Prisma.ComputeRegion = 'us-east-1';
 
 // Prisma's Connection create constrains `name` to 3–65 chars (Management API:
 // POST /v1/connections); applied here to every id-derived resource name as the
@@ -98,7 +109,12 @@ export function validateName(value: string, source: string): void {
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
 export interface CloudApplication {
   readonly projectId: string;
+  /** The named stage's Branch id; `undefined` on the default (production) stage. */
   readonly branchId: string | undefined;
+  /** The project's default Branch id; a deploy carries exactly one of `branchId`/`defaultBranchId`. */
+  readonly defaultBranchId: string | undefined;
+  /** Set only by the dev container, which resolves no Branches. */
+  readonly branchless: boolean;
 }
 
 export function isCloudApplication(value: unknown): value is CloudApplication {
@@ -109,7 +125,11 @@ export function isCloudApplication(value: unknown): value is CloudApplication {
     'projectId' in value &&
     typeof value.projectId === 'string' &&
     'branchId' in value &&
-    (value.branchId === undefined || typeof value.branchId === 'string')
+    (value.branchId === undefined || typeof value.branchId === 'string') &&
+    'defaultBranchId' in value &&
+    (value.defaultBranchId === undefined || typeof value.defaultBranchId === 'string') &&
+    'branchless' in value &&
+    typeof value.branchless === 'boolean'
   );
 }
 
@@ -127,3 +147,59 @@ export function cloudApplicationOf(application: unknown): CloudApplication {
 export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
+
+/**
+ * The Branch a database attaches to. Upstream treats an omitted branch as
+ * desired-unassigned (`branchId` PATCHed back to `null` on reconcile), so a
+ * deploy container carrying neither id is a broken transport; only a
+ * `branchless` (dev) container returns `undefined`.
+ */
+export function attachmentBranchIdOf(application: unknown, id: string): string | undefined {
+  const app = cloudApplicationOf(application);
+  const branchId = app.branchId ?? app.defaultBranchId;
+  if (branchId === undefined && !app.branchless) {
+    throw new Error(
+      `prisma-cloud: cannot attach database "${id}" to a Branch — the resolved container ` +
+        "carries neither a stage Branch id nor the project's default Branch id. Container " +
+        'resolution (ADR-0019) always provides one for a deploy; this is a bug in the ' +
+        'container transport.',
+    );
+  }
+  return branchId;
+}
+
+/**
+ * Upstream refuses an explicit display name combined with branch attachment
+ * at create (create-then-attach, no idempotency key), so attached databases
+ * take the generated physical name; only the branchless (dev) container takes
+ * the `name` arm. The returned `url` is direct, not pooled — PgWarm and the
+ * migration flows need a direct connection.
+ */
+export const stageDatabase = ({
+  id,
+  application,
+  region,
+}: {
+  readonly id: string;
+  readonly application: unknown;
+  readonly region: ProjectRegion | undefined;
+}) =>
+  Effect.gen(function* () {
+    const branchId = attachmentBranchIdOf(application, id);
+    // 'inherit' resolves to the project's default region on the platform.
+    const db = yield* Prisma.Database(`${id}-db`, {
+      project: projectIdOf(application),
+      region: region ?? 'inherit',
+      ...(branchId !== undefined ? { branchId } : { name: id }),
+    });
+    const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+    const url = Output.map(conn.directConnectionString, (value) => {
+      if (value === undefined) {
+        throw new Error(
+          `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
+        );
+      }
+      return Redacted.value(value);
+    });
+    return { db, url };
+  });

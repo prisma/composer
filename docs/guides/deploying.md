@@ -29,6 +29,11 @@ token is the only authentication.
 
 ## Build first
 
+Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
+for hoisted installations. On Windows it prefers `alchemy.exe`, then
+`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
+Windows shim must not be reported as a missing Alchemy dependency.
+
 `prisma-composer deploy` does not build for you — it assembles what your
 build produced:
 
@@ -36,16 +41,7 @@ build produced:
 turbo run build && prisma-composer deploy module.ts
 ```
 
-Deploy state (what's already provisioned, so re-deploys diff instead of
-recreate) is stored with the environment it describes, not on your machine —
-that's the `prismaState()` line in `prisma-composer.config.ts`. Each
-environment keeps a small framework-owned database named
-`prisma-composer-state` inside the app's Project, attached to that
-environment's Branch. Everyone deploying the app shares it, your laptop and
-CI see the same world, and two concurrent deploys of the same environment
-lock each other out instead of corrupting it. Destroying or deleting an
-environment removes its state with it — don't delete the state database by
-hand, or the next deploy will re-provision from scratch.
+Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `prismaState()` line in `prisma-composer.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
 
 ## Production and stages
 
@@ -116,12 +112,7 @@ prisma-composer destroy module.ts --stage staging  # staging only; production un
 prisma-composer destroy module.ts --production     # production's resources
 ```
 
-`--stage` and `--production` together is an error too. Destroying a stage
-removes its resources, then its state database, then deletes its Branch;
-destroying production removes the resources and its state database, but the
-production Branch itself always survives.
-Destroy never creates: tearing down a stage that was never deployed fails
-with "nothing deployed" rather than provisioning one first.
+`--stage` and `--production` together is an error too. The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
 Destroying production also removes the app's Project once nothing is left in
 it, so hand-run stacks don't pile up as empty Projects in your workspace. If
@@ -196,28 +187,27 @@ second effect that alchemy picks up; deploying with it would crash inside
 alchemy.
 ```
 
-This happens when another dependency in your app floats to a newer `effect`
-and your package manager hoists that copy where alchemy resolves it — npm
-allows this with only a warning, and without the check the deploy would crash
-mid-run with a `TypeError` from inside alchemy. The fix is the one the error
-prints — pin the version your package manager should use everywhere, in your
-app's `package.json`:
+This happens when your app, or another dependency of it, pins a different
+`effect` than `@prisma/composer` does and your package manager hoists that copy
+where alchemy resolves it. npm allows this with only a warning, and without
+the check the deploy would crash mid-run with a `TypeError` from inside
+alchemy. A plain Composer app never hits it: `@prisma/composer` and
+`@prisma/composer-prisma-cloud` pin every `effect`-family package alchemy
+would otherwise float, so a fresh install resolves a single `effect`.
+
+The fix is to use the same `effect` as Composer. Match your own `effect`
+dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
+or, when a dependency you cannot change pins another version, force
+Composer's in your app's `package.json`:
 
 ```json
-"overrides": { "effect": "<required>" }
+"overrides": {
+  "effect": "<required>"
+}
 ```
 
-yarn spells it `resolutions`:
-
-```json
-"resolutions": { "effect": "<required>" }
-```
-
-and pnpm nests it under `pnpm`:
-
-```json
-"pnpm": { "overrides": { "effect": "<required>" } }
-```
+yarn spells the block `resolutions`, and pnpm nests it under
+`"pnpm": { "overrides": ... }`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
 
@@ -247,6 +237,10 @@ What deployed apps actually run into, and what to do about it:
   them — editing one by hand doesn't survive.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
+- **The `cron` scheduler stays awake on purpose.** It holds Compute's
+  keep-awake guard for its whole lifetime, so it never scales to zero: one warm
+  instance per app is the cost of the clock. Every other service, the runner
+  included, sleeps as usual.
 - **Streaming responses don't stream.** The platform's HTTP front door (the
   ingress) buffers a response until it completes, so an open SSE tail
   delivers nothing and times out at 60s. Don't build on streamed HTTP
@@ -259,42 +253,116 @@ When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
 
-## Upgrading from workspace-hosted state
+## Upgrading from an older state store
 
-Older framework versions kept deploy state in a workspace-level
-`prisma-composer-state` project instead of inside each environment. There is
-no automated migration — a deploy under the new store starts from empty state
-and would re-provision resources it can't see. Cut over per app:
+Older framework versions stored deploy state differently: first in a workspace-level `prisma-composer-state` project, later in a small `prisma-composer-state` database on each environment's Branch. The current version stores state behind the platform's API and never reads either legacy store — there is no automated migration. The cutover is the same for both generations: destroy, upgrade, redeploy.
 
-1. On the **old** framework version, destroy every environment: each
-   `--stage`, then `--production`.
+Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the stage predates the platform state API — instead of blindly recreating every resource and failing halfway. Cut over per app:
+
+1. On the **old** framework version, destroy every environment: each `--stage`, then `--production`. (Equivalent: delete the stage's Branch — or the whole Project, for production — in the Console or via the Management API.)
 2. Upgrade the framework packages.
-3. Deploy again — each environment provisions fresh state in its own Branch.
-4. Delete the workspace-level `prisma-composer-state` project from the
-   Console whenever convenient; nothing reads it after the upgrade.
-
-### If you upgraded before destroying
-
-A deploy on the new version starts from empty state, finds the resources the
-old state was tracking, and refuses to touch them:
-
-```
-PrismaApiError: {"error":{"code":"app:already_exists", ...}}
-EnvironmentVariable "COMPOSER_..." exists but is untracked in this deploy
-state — refusing to overwrite a reserved COMPOSER_ key.
-```
-
-The old state cannot be read back. Recover by removing the leftovers so the
-next deploy recreates everything under fresh state — either:
-
-- Delete the app's Project in the Console (everything in it goes: apps,
-  databases, environment variables), then deploy again. Simplest, and right
-  whenever the Project holds nothing you created outside the framework.
-- Or downgrade the framework packages, run the destroys from step 1, upgrade
-  again, and deploy.
+3. Deploy again — each environment starts fresh, hosted behind the platform state API.
 
 Recreated apps get new generated URLs; anything pointing at the old ones
 needs updating.
+
+Legacy leftovers are inert and safe to remove whenever convenient — nothing reads them after the upgrade, and each costs only a database quota slot:
+
+- Branch-hosted generation: destroying on the old version already removed the environment's `prisma-composer-state` database. If you skipped that and deleted Branches by hand instead, each Branch took its database with it — but production's, on the default Branch, survives: delete it in the Console.
+- Workspace-hosted generation: delete the workspace-level `prisma-composer-state` project from the Console.
+
+## Upgrading to the upstream Prisma resources
+
+Framework versions that manage databases, apps, deployments, and environment variables through upstream alchemy's Prisma provider adopt each environment's existing resources in place — deploy state already in the platform state API is migrated automatically on read (rows written under retired type-ids), and existing databases and connections are adopted, never replaced. The first redeploy can still converge database *properties* in place — Branch attachment and display name — as the one-time effects below describe. Stages still on the older SQL state store are not migrated — destroy and redeploy them, as the section above describes.
+
+**A service's deployment is replaced exactly when its artifact or environment changed, and reused otherwise.** The platform freezes a deployment's environment when the deployment is created, so a changed value only takes effect through a new one — the framework declares each service's environment values as the deployment's replacement triggers (alchemy's `Prisma.Deployment.triggers`), so a changed variable, a value re-issued in place (a connection rotated in place, a re-minted service key), or an out-of-band rotation of a platform variable a row points at all ship a new deployment, and an unchanged service redeploys nothing. No plaintext lands in deploy state — alchemy persists only a salted fingerprint of the trigger values. A replacement uploads the artifact, starts it, moves the stable endpoint over, and removes the old deployment; your service's URL does not change.
+
+**`DATABASE_URL` and `DATABASE_URL_POOLED` hold the placeholder `"-"`, and the framework never modifies or deletes them.** At provision the framework claims both names (production and preview class, project level) with the placeholder, using create-only writes: if the variable already exists — yours, or one Prisma Cloud seeded — the claim does nothing. The placeholder is deliberate. Without it, Prisma Cloud fills a missing `DATABASE_URL` in on the first deploy with a live credential to one of your app's own databases, and anything reading `process.env.DATABASE_URL` directly would quietly work against a database it was never wired to. With it, a direct read fails loudly. Nothing you declare can carry those names — `envSecret`/`envParam` reject them — and every database URL your services use comes from the connection they declare.
+
+On the first deploy after the upgrade, the framework also **stops tracking** the two variables in deploy state. The deploy log reports them as `retained`: the entry is dropped from state and no call is made to Prisma Cloud.
+
+Deleting the variables by hand is not useful: the next deploy's claim (or the platform's own template filler) recreates them. If you genuinely want a value there — for a tool outside the framework that insists on `DATABASE_URL` — set your own value in the Console; both the framework's claim and the platform's filler are create-only and will leave your value alone.
+
+**Stage (`--stage`) environments see two one-time effects on their first deploy after the upgrade**, because a branch-attached database can no longer carry an explicit display name at create:
+
+- Each existing stage database is **renamed** to a generated physical name (`<app>-<resource>-db-<stage>-<suffix>`). The database itself, its data, and its ID are untouched — only the display name in the Console changes.
+- The database's **default connection credentials are rotated** during that same reconcile. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (for example, copied out of the Console) stop working and must be re-issued.
+
+**Production databases created by earlier versions attach to the default Branch on their next deploy.** Earlier versions created the default stage's databases with no Branch — they showed as *Unassigned* in the Console, and every redeploy re-enforced that — while the same stage's compute services sat on the default Branch. Every database now attaches to its stage's Branch: a named stage to its stage Branch, production to the project's default Branch, matching the compute services and the Branch-scoped model above. The first production deploy after the upgrade converges each existing database **in place**: it is attached to the default Branch and renamed to the same generated physical-name shape stages use (an explicit display name cannot be combined with branch attachment). The database, its data, and its ID are untouched — this is an update of the existing database, never a replacement.
+
+That same reconcile can also **rotate the database's default connection credentials**, exactly as the stage bullet above describes: rotation happens when the deploy state carries no stored connection secrets for the database — always the case for state migrated from the legacy store. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (Console-copied URLs, BI tools, backup jobs) stop working and must be re-issued.
+
+Local dev state is not migrated: if `prisma-composer dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
+
+## Updating a database whose schema an older version synthesized
+
+Older framework versions created a fresh `postgres` database's schema at first deploy by synthesizing it from the contract, with no migration authored. Deploys are now replay-only — they apply only committed migrations — so the first contract change against such a database refuses with `MIGRATION_PATH_NOT_FOUND`: the migration graph has no edge reaching the database's current schema, because none was ever authored.
+
+The marker those deploys signed is an accurate signature of the schema, so the fix is to make the authored graph reach it. The refusal names the database's current hash. Set a ref to that hash — write `migrations/app/refs/db.json` (the ref `migration plan` reads its origin from) with `{ "hash": "<the marker's hash>", "invariants": [] }` — then emit and plan as usual:
+
+```bash
+prisma contract emit
+prisma migration plan --name <slug>
+```
+
+With the graph empty, planning auto-baselines from the ref: it authors empty → the deployed hash, plus the migration from there to your new contract. Applying against the deployed database starts at the marker, so only the delta runs; a genuinely fresh database replays the whole path from empty. Commit `migrations/` and deploy — no special command or pipeline mode is involved.
+
+## Driving deploys from code
+
+Everything the CLI does is also callable in-process, from
+`@prisma/composer/control`: typed `deploy`, `destroy`, `dev`, and `log`
+operations that return structured results instead of printing and exiting.
+The `prisma-composer` commands are thin renderers over these same operations,
+so the two surfaces can't drift.
+
+```ts
+import { deploy } from '@prisma/composer/control';
+
+const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
+if (result.outcome === 'deployed') {
+  // result.summary — the deployed topology (app name + each node's
+  // address and entities), when the deploy engine reported one.
+} else {
+  console.error(result.failure.message); // same fix-naming text the CLI prints
+}
+```
+
+What to know before embedding it:
+
+- **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
+  exactly like the CLI. `destroy` takes a discriminated target —
+  `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
+  silent default to production and no flag-combination footgun.
+- **Failures are results, not throws.** Every operation resolves to either
+  its success shape or `{ outcome: 'failed', failure }`, where
+  `failure.kind` is one of `invalid-input`, `unsupported-platform`, `pipeline`
+  (anything between loading the deploy stack and the deploy engine — including
+  the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
+  reported with the same fix-naming message the CLI prints), or `execution`
+  (the engine ran and failed). An `execution` failure's optional
+  `diagnostics` object carries the exit code and an exact reproduce command —
+  details of the current execution mechanism, handy for printing a hint but
+  not something to build on; branch on `message`/`cause` for anything
+  durable. Importing the module executes nothing until you call an operation.
+- **`summary` is best-effort.** It rides a result file the deploy engine's
+  child process writes; a deploy that converged without writing one still
+  succeeds, with `summary: undefined`.
+- **The engine's own output still streams to your process's stdio.** That is
+  the current mechanism, not a promise: the operations return structured
+  results but don't capture the live deploy output; run them where that
+  output belongs, or with stdio redirected. Capturing it would be a new
+  option on the operations.
+- **`dev` resolves to `{ outcome: 'started', session }` or a failure** —
+  never an exit code. The session is `{ endpoints, stop(), closed }`, with
+  progress (`ready`, `converge-failed`, `watch-error`, …) delivered through
+  `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
+  `session.stop()` is yours.
+- **`log` resolves to `{ outcome: 'attached', appName, services, lines }` or
+  a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
+  own (stopping early — `break`, `lines.return()` — also ends it cleanly).
+  Zero running services is a valid result (empty `services`, finished
+  stream), not an error. A consumer that falls behind loses oldest lines
+  past a bounded queue and is told via a `lines-dropped` event.
 
 ## The full picture
 

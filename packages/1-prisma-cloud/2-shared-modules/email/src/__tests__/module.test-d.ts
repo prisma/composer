@@ -7,7 +7,7 @@
 import type { ModuleNode, ParamNeed, RefPort, SecretNeed } from '@internal/core';
 import { module, paramSource, secretSource } from '@internal/core';
 import node from '@internal/node';
-import { compute, type postgresContract } from '@internal/prisma-cloud';
+import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
 import { rpc } from '@internal/service-rpc';
 import { expectTypeOf, test } from 'vitest';
 import { emailOutboxContract, type emailSendContract, emailSender } from '../contract.ts';
@@ -58,5 +58,5 @@ test("the module's outbox port wires into a consumer's rpc(emailOutboxContract) 
 
 test('the outbox slot accepts an outbox port but rejects a wrong-kind (postgres) one', () => {
   expectTypeOf<RefPort<typeof emailOutboxContract>>().toExtend<typeof emailOutboxContract>();
-  expectTypeOf<RefPort<typeof postgresContract>>().not.toExtend<typeof emailOutboxContract>();
+  expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<typeof emailOutboxContract>();
 });

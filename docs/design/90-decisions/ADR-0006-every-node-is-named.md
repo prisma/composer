@@ -45,7 +45,7 @@ standing deployment in the same workspace.
 One nuance at the core layer: a dependency end constructed by an authoring
 surface with no room for a name argument (e.g. `rpc(contract)`, which takes
 only the contract) defaults its name to the connection's type. Pack factories
-that take an options object (`http({ name })`, `postgres({ name, … })`)
+that take an options object (`http({ name })`, `rawPostgres({ name, … })`)
 require the explicit name.
 
 ## Consequences

@@ -44,9 +44,14 @@ build` and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The bin is runtime-agnostic — no bun-only APIs anywhere in the
 CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
-type stripping imports the user's `.ts` entry natively). One inherent caveat:
-an app whose service module imports bun APIs can only deploy under bun, since
-loading the graph imports that module — the app's choice, not a CLI limit.
+type stripping imports the user's `.ts` entry natively). Under node, the CLI
+also registers a synchronous resolve hook (`node:module` `registerHooks`) so
+that relative imports inside the entry graph may use `./x.js` or extensionless
+`./x` specifiers for `.ts` source files without requiring
+`allowImportingTsExtensions`; `.mjs` and `.cjs` specifiers map to `.mts` and
+`.cts` respectively. Bun resolves these natively and the hook is a no-op there. One inherent caveat: an app whose service module imports
+bun APIs can only deploy under bun, since loading the graph imports that module
+— the app's choice, not a CLI limit.
 
 ## The pipeline
 
@@ -61,9 +66,10 @@ loading the graph imports that module — the app's choice, not a CLI limit.
    composing Module. The deploy root must be a Module — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
    `module('name', ({ provision }) => { provision(...); })`).
-3. **Load the config + validate coverage.** `prisma-composer.config.ts` — found by
-   walking up from the deploy entry, loaded with c12, never imported by app
-   code — supplies the extension registries and the deploy's one state store
+3. **Load the config + validate coverage.** `prisma-composer.config.ts` (or its
+   `.mts`/`.mjs`/`.js` spelling; `.ts` wins when several sit in one directory) —
+   found by walking up from the deploy entry, loaded with c12, never imported
+   by app code — supplies the extension registries and the deploy's one state store
    (ADR-0017). Every node's and build descriptor's `(extension, type)` must
    have a registry entry; a gap errors naming the extension to add to the
    config. Extension factories validate their own environment during config
@@ -130,26 +136,9 @@ targets **production**; `--stage <name>` targets a **named stage**.
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
   environment.
-- **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or
-  `--production`; a bare `destroy` is an error, so an omitted or mistyped
-  stage can never silently tear down production. `destroy` resolves
-  find-only (no container is ever created); after `alchemy destroy` succeeds
-  and after every extension's `teardown` has run, the CLI removes each
-  resolved container. That two-loop order — every teardown, then every
-  removal — is what keeps a stage's deploy state deleted before its
-  container goes.
+- **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or `--production`; a bare `destroy` is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
 
-**Prisma Cloud's own containers** are its app's **Project** and, for a named
-stage, that stage's **Branch** — found by name, created if absent on deploy,
-never created on destroy; each stage's deploy state lives in a
-framework-owned `prisma-composer-state` database attached to its Branch
-(production's on the Project's implicit default Branch). See
-[ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
-(App = one Project, Stage = Branch),
-[ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
-(stage resolution mechanics), and
-[ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)
-(deploy state lives on the stage's Branch).
+**Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — found by name, created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
 
 ## Build ownership
 
@@ -193,15 +182,23 @@ every node already carries:
 - **`@internal/assemble`** owns the orchestration this seam drives: routing
   every service node in the loaded graph to its registry's assemble entry
   (one bundle per full address — the root is always a Module). The CLI is
-  its first consumer; the future
-  programmatic deploy API is its second — so its public surface carries no CLI
-  concepts (no `CliError`, no argv/usage anything). It throws its own
-  `AssembleError`; the CLI's `main.ts` maps it (the existing destroy-path
-  wrapping already does, since `AssembleError extends Error`).
+  its first consumer; the programmatic control API is its second —
+  `@prisma/composer/control`'s typed `deploy`/`destroy`/`dev`/`log`
+  operations, implemented in `@internal/cli`'s `src/operations/` with the CLI
+  as a thin renderer over them
+  ([ADR-0043](../90-decisions/ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md)).
+  So assemble's public surface carries no CLI
+  concepts (no argv/usage anything). It throws its own `AssembleError` — a
+  structured error with `ASSEMBLE.*` codes (ADR-0044) — which the CLI
+  renders like any other structured failure (the destroy path re-codes an
+  assemble failure to `DEPLOY.BUILD_REQUIRED` with the original as `cause`).
 
 ## Error surface
 
-The CLI's quality lives in its errors; each failure names its fix:
+The CLI's quality lives in its errors; each failure is a structured error with
+a dotted `NAMESPACE.SUBCODE` code (ADR-0044) rendered as
+`✖ summary (CODE)`, with Why/Fix/Where lines whenever the error provides
+them:
 
 | Failure | Error tells the user |
 | --- | --- |

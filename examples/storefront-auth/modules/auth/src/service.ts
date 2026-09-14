@@ -1,16 +1,16 @@
 import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
-import { compute, postgres } from '@prisma/composer-prisma-cloud';
+import { compute, rawPostgres } from '@prisma/composer-prisma-cloud';
 import { type } from 'arktype';
 import { authContract } from './contract.ts';
 
-// The `db` dependency is pure requirement: its binding is PostgresConfig
+// The `db` dependency is pure requirement: its binding is RawPostgresConfig
 // (`{ url }`), and the app builds its own SQL client from it in server.ts
 // (ADR-0015). No driver choice lives in the declaration.
 export default compute({
   name: 'auth',
   deps: {
-    db: postgres(),
+    db: rawPostgres(),
   },
   // The whole incoming configuration as ONE schema (ADR-0042): a single
   // secret field, typed as the redacting SecretString box. The auth module

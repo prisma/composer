@@ -146,20 +146,21 @@ registry). What we deliberately didn't do:
   Design the mock-bindings slice against that distinction rather than relying on
   it accidentally.
 
-# Prisma Next data contract — deferred at project close (2026-07-12)
+# Prisma ORM data contract — deferred at project close (2026-07-12)
 
 - **Multi-contract / contract-space extension** — full design preserved in
   ADR-0022 §Alternatives ("Deferred, not rejected"). Prerequisite spike before
-  pickup: confirm PN handles multiple peer app-authored spaces in one database
-  end-to-end (PN ADR 212's monorepo-aggregator case).
+  pickup: confirm Prisma ORM handles multiple peer app-authored spaces in one database
+  end-to-end (Prisma ORM ADR 212's monorepo-aggregator case).
 - **Dev-time story** — resolved by ADR-0041: the "lowering unchanged" half of
   the parked sketch survives, but substitution happens at the Alchemy provider
   boundary (local providers for the same resource types), not by serving a
   local copy of the Management API — see
   `docs/design/90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md`
   and `docs/design/10-domains/local-dev.md`.
-- **Factory name** — `pnPostgres` is a placeholder; Prisma Next → Prisma Data
-  rename incoming at GA. Rename the factory when the product name lands.
+- **Factory name** — resolved 2026-08-26: the product name landed as Prisma ORM
+  (v8), and the factory was renamed `pnPostgres` → `postgres` (entrypoint
+  `./prisma-next` → `./orm`, kind `'prisma-next'` → `'postgres'`).
 
 # Standalone effect-resolution slice — deferred (2026-08-03, TML-3158)
 

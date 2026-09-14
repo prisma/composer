@@ -13,7 +13,7 @@ general; let composition produce the richness.
 ## Don't reinvent the wheel
 
 Where an established solution exists in the ecosystem — Alchemy for provisioning,
-Prisma Next for data contracts, Prisma Cloud for hosting — use it rather than
+Prisma ORM for data contracts, Prisma Cloud for hosting — use it rather than
 building our own. The framework builds only the composition layer that's
 genuinely missing.
 

@@ -6,6 +6,7 @@ import {
   ContainerNotFoundError,
   deleteBranch,
   deleteProject,
+  type ProjectRegion,
   resolveContainer,
 } from '../container.ts';
 import { PrismaApiError } from '../http.ts';
@@ -15,6 +16,7 @@ interface FakeProject {
   name: string;
   createdAt: string;
   workspace: { id: string };
+  logicalId?: string | null;
 }
 
 interface FakeBranch {
@@ -47,6 +49,8 @@ interface FakeState {
   projectsCursorRunaway?: boolean;
   /** When set, GET /v1/projects reports hasMore but returns no nextCursor — more pages that cannot be fetched. */
   projectsCursorMissing?: boolean;
+  /** When set, POST /v1/projects responds with a 409 (name already in use). */
+  projectCreateConflict?: boolean;
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -133,12 +137,16 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
     if (path === '/v1/projects') {
       state.projectCreateCalls++;
       state.projectCreateBodies.push(init.body ?? {});
+      if (state.projectCreateConflict === true) {
+        return Promise.resolve(errorResponse(409));
+      }
       const id = `proj-${state.projectCreateCalls}`;
       const project: FakeProject = {
         id,
         name: String(init.body?.['name']),
         createdAt: new Date(state.projectCreateCalls).toISOString(),
         workspace: { id: String(init.body?.['workspaceId']) },
+        logicalId: typeof init.body?.['logicalId'] === 'string' ? init.body['logicalId'] : null,
       };
       state.projects.push(project);
       // The platform creates every Project with its default Branch.
@@ -206,7 +214,13 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
 
 const run = (
   state: FakeState,
-  opts: { workspaceId: string; appName: string; stage?: string; ensure?: boolean },
+  opts: {
+    workspaceId: string;
+    appName: string;
+    stage?: string;
+    ensure?: boolean;
+    region?: ProjectRegion;
+  },
 ) =>
   Effect.runPromise(
     resolveContainer(opts).pipe(Effect.provideService(ManagementClient, fakeClient(state))),
@@ -220,7 +234,11 @@ describe('resolveContainer — Project resolution', () => {
   });
 
   test('no matching project creates one, resolving its default Branch id', async () => {
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(result.defaultBranchId).toBe('br-default-proj-1');
@@ -229,9 +247,44 @@ describe('resolveContainer — Project resolution', () => {
   });
 
   test('project creation opts out of the platform default database', async () => {
-    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'us-east-1' });
 
     expect(state.projectCreateBodies[0]?.['createDatabase']).toBe(false);
+  });
+
+  test('project creation sends the configured region to the platform', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'ap-southeast-1' });
+
+    expect(state.projectCreateBodies[0]?.['region']).toBe('ap-southeast-1');
+  });
+
+  test('no region when a new project is needed fails with an actionable error', async () => {
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).status).toBe(0);
+    expect((error as PrismaApiError).message).toContain('"storefront"');
+    expect((error as PrismaApiError).message).toContain('prismaCloud({ region:');
+    expect((error as PrismaApiError).message).toContain('PRISMA_REGION');
+  });
+
+  test('an existing project resolves without a region — region is not required for find', async () => {
+    state.projects.push({
+      id: 'proj-existing',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+    state.branches['proj-existing'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-existing');
+    expect(state.projectCreateCalls).toBe(0);
   });
 
   test('adopt-oldest: several projects share the name — the oldest is adopted, none created', async () => {
@@ -273,7 +326,11 @@ describe('resolveContainer — Project resolution', () => {
       workspace: { id: 'ws-2' },
     });
 
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(state.projectCreateCalls).toBe(1);
@@ -287,7 +344,11 @@ describe('resolveContainer — Project resolution', () => {
       workspace: { id: 'ws-1' },
     });
 
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(state.projectCreateCalls).toBe(1);
@@ -386,6 +447,70 @@ describe('resolveContainer — Project resolution', () => {
     expect((error as PrismaApiError).message).toContain(
       'reported more pages but returned no cursor',
     );
+  });
+
+  test('logical id match: a project whose logical id equals appName is adopted even when another project has a matching name', async () => {
+    state.projects.push(
+      {
+        id: 'proj-slug',
+        name: 'old-display-name',
+        logicalId: 'storefront',
+        createdAt: new Date(1).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+      {
+        id: 'proj-name-only',
+        name: 'storefront',
+        createdAt: new Date(2).toISOString(),
+        workspace: { id: 'ws-1' },
+      },
+    );
+    state.branches['proj-slug'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-slug');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('name fallback: a project with no logical id is still found by display name when no logical id match exists', async () => {
+    state.projects.push({
+      id: 'proj-legacy',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+    state.branches['proj-legacy'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-legacy');
+    expect(state.projectCreateCalls).toBe(0);
+  });
+
+  test('project creation sends the module name as the logical id', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'us-east-1' });
+
+    expect(state.projectCreateBodies[0]?.['logicalId']).toBe('storefront');
+  });
+
+  test('a 409 on project create surfaces a clear name-conflict error', async () => {
+    state.projectCreateConflict = true;
+
+    const error: unknown = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).status).toBe(409);
+    expect((error as PrismaApiError).message).toContain('already exists');
+    expect((error as PrismaApiError).message).toContain('free the name');
   });
 });
 

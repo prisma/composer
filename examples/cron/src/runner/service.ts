@@ -10,7 +10,9 @@ import { compute } from '@prisma/composer-prisma-cloud';
 import { defineSchedule, triggerContract } from '@prisma/composer-prisma-cloud/cron';
 import { workerContract } from '../worker/contract.ts';
 
-export const schedule = defineSchedule({ tick: '2s', mrr: '5s' });
+// `heartbeat` is the keep-awake canary's job (scripts/cron-keep-awake-canary.ts):
+// a multi-minute interval only fires if the scheduler survives Compute's idle timeout.
+export const schedule = defineSchedule({ tick: '2s', mrr: '5s', heartbeat: '5m' });
 
 export default compute({
   name: 'runner',

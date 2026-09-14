@@ -20,8 +20,8 @@ import {
 } from '../container.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
-import { postgresDescriptor } from '../descriptors/postgres.ts';
-import { prismaNextDescriptor } from '../descriptors/prisma-next.ts';
+import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
+import { rawPostgresDescriptor } from '../descriptors/raw-postgres.ts';
 import { s3CredentialsDescriptor } from '../descriptors/s3-credentials.ts';
 import { s3StoreDescriptor } from '../descriptors/s3-store.ts';
 import type {
@@ -32,14 +32,19 @@ import type {
 } from '../descriptors/shared.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
+import { OrmMigrationProvider } from '../orm-migration-resource.ts';
 import { PgWarmProvider } from '../pg-warm-resource.ts';
-import { PnMigrationProvider } from '../pn-migration-resource.ts';
-import { runPreflight } from '../preflight.ts';
+import { type PrismaCloudPreflightInput, runPreflight } from '../preflight.ts';
 import { RESERVED_PROVIDER_PARAMS } from '../provider-params.ts';
+import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
-import { runTeardown } from '../teardown.ts';
+import {
+  type PointerUpdatedAt,
+  pointerUpdatedAtLookup,
+  serializePointerUpdatedAt,
+} from './pointer-timestamps.ts';
 
 /**
  * ADR-0031's registered provisioner for RPC_PEER_KEY: mints one `ServiceKey`
@@ -152,7 +157,7 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
   Output.map(provisioned.endpointDomain, (v) => {
     if (v === undefined) {
       throw new Error(
-        `ComputeService for "${address}" reported no endpointDomain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
+        `the App for "${address}" reported no endpoint domain at provision — cannot resolve the service's own origin (Management API predates the PRO-200 fix?)`,
       );
     }
     return v;
@@ -175,16 +180,7 @@ export interface PrismaCloudOptions {
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
-  region?: Prisma.ComputeRegion;
-}
-
-// Prisma.COMPUTE_REGIONS is the runtime source of truth ComputeRegion is
-// derived from, so this can never fall behind — no hand-maintained list, no
-// exhaustiveness gymnastics to keep it honest.
-const KNOWN_REGION_SET: ReadonlySet<string> = new Set(Prisma.COMPUTE_REGIONS);
-
-function isComputeRegion(value: string): value is Prisma.ComputeRegion {
-  return KNOWN_REGION_SET.has(value);
+  region?: Prisma.ProjectRegion;
 }
 
 /** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
@@ -276,13 +272,12 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * `PRISMA_WORKSPACE_ID`: nothing in this file reads `ResolvedCloudOptions.workspaceId`
  * downstream — it exists only so a caller MAY pin an explicit workspace, and
  * the real workspace check for a real deploy lives where the value actually
- * matters, `container.ts`'s `ensureContainer`/`locateContainer`. Region
- * validation stays eager-on-call (a garbage `PRISMA_REGION` still fails
- * loudly), but an ABSENT one resolves to `undefined` without touching
- * anything else — required for `prisma-composer dev`, which never sets
- * `PRISMA_REGION` and must not fail on its absence (local-dev spec § 5).
+ * matters, `container.ts`'s `ensureContainer`/`locateContainer`. An absent
+ * `PRISMA_REGION` resolves to `undefined` without touching anything else —
+ * required for `prisma-composer dev`, which never sets `PRISMA_REGION` and
+ * must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
+function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -293,13 +288,14 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
   if (region === undefined || region.length === 0) {
     return { workspaceId, providerParams: PROVIDER_PARAMS };
   }
-  if (!isComputeRegion(region)) {
-    throw new Error(
-      `prismaCloud(): environment variable PRISMA_REGION="${region}" is not a known region ` +
-        `(expected one of: ${Prisma.COMPUTE_REGIONS.join(', ')}).`,
-    );
-  }
-  return { workspaceId, region, providerParams: PROVIDER_PARAMS };
+  return {
+    workspaceId,
+    region: blindCast<
+      Prisma.ProjectRegion,
+      'PRISMA_REGION is untyped operator input; the Management API validates it on project creation and names the valid ids on a 422'
+    >(region),
+    providerParams: PROVIDER_PARAMS,
+  };
 }
 
 /**
@@ -310,29 +306,38 @@ function resolveOptions(opts: PrismaCloudOptions): ResolvedCloudOptions {
  * environment present, since it also builds the `localTarget` descriptor, which must
  * never require `PRISMA_WORKSPACE_ID`/`PRISMA_REGION`/`PRISMA_SERVICE_TOKEN`.
  */
-function lazyOptions(opts: PrismaCloudOptions): () => ResolvedCloudOptions {
+function lazyOptions(
+  opts: PrismaCloudOptions,
+  pointerUpdatedAt: PointerUpdatedAt,
+): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= resolveOptions(opts);
+    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
     return cached;
   };
 }
 
 /** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
-  const o = lazyOptions(opts);
+  // When each pointed-at platform variable was last written — filled by the
+  // deploy preflight, read by the environment fingerprint. A closure, not a
+  // module variable, so two `prismaCloud()` extensions cannot share it. In
+  // the alchemy process (no preflight) the lookup falls back to what the CLI
+  // transported (pointer-timestamps.ts).
+  const preflightTimestamps = new Map<string, string>();
+  const o = lazyOptions(opts, pointerUpdatedAtLookup(preflightTimestamps, process.env));
 
   return {
     id: PRISMA_CLOUD_EXTENSION_ID,
 
-    container: containerDescriptor(),
+    container: containerDescriptor({ region: () => o().region }),
 
     providers: () =>
       asProvidersLayer(
         Layer.mergeAll(
           Prisma.providers(),
           PgWarmProvider(),
-          PnMigrationProvider(),
+          OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),
           Prisma.ServiceKeyProvider(),
@@ -342,36 +347,38 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // Deploy-time prerequisite check (ADR-0029): verify every pointer secret in
     // the provision manifest exists for the resolved stage, filling absent-but-
     // in-shell names via a direct API POST — before any stack file or Alchemy.
-    preflight: (input) => runPreflight(input),
+    // Timestamps are kept for this process AND serialized onto the preflight
+    // transport for the alchemy process. The parameter annotation is what
+    // recovers this extension's own client type from the framework's erased
+    // one; without it `input.credentials` arrives as `unknown`.
+    preflight: (input: PrismaCloudPreflightInput) =>
+      runPreflight(input).then((timestamps) => {
+        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
+        return serializePointerUpdatedAt(timestamps);
+      }),
 
-    // Destroy-time cleanup (ADR-0034): remove the stage's deploy-state
-    // database, once alchemy destroy has finished reading it and before the
-    // CLI removes the Branch/Project.
-    teardown: (input) => runTeardown(input),
+    // Records the deploy as a Build so it appears in the Console, and passes
+    // the build's id into the apply so the state store can report what the
+    // run touched. Deploy only — the CLI does not run this for destroy.
+    reporter: prismaCloudReporter(),
 
-    // Runs once per lowering, before any service: references the CLI-ensured
-    // Project, with the poison DATABASE_URL variables written immediately so
-    // nothing can ever rely on the platform default. Per-binding service keys
-    // are no longer minted here (ADR-0031): core's provision phase invokes
-    // `provisions` below, graph-wide, before any service lowers.
+    // No teardown: deploy state lives behind the platform state API, scoped
+    // to the stage's Branch — deleting the Branch/Project deletes it
+    // platform-side.
+
+    // Runs once per lowering, before any service: resolves the CLI-ensured
+    // Project into the application handle, and claims the project's
+    // `DATABASE_URL`/`DATABASE_URL_POOLED` with a placeholder
+    // (`claimDatabaseUrlKeys` explains why). Create-only and outside the
+    // resource graph — alchemy never plans a write or delete for them.
     application: {
       provision: (ctx) =>
         Effect.gen(function* () {
-          const { projectId, branchId } = prismaCloudContainerOf(ctx.container);
-          for (const key of ['DATABASE_URL', 'DATABASE_URL_POOLED']) {
-            yield* Prisma.EnvironmentVariable(`${key}-poison`, {
-              projectId,
-              key,
-              // "-", not "": the API rejects empty env-var values with
-              // "String must contain at least 1 character" (verified at the R4
-              // deploy proof). Any garbage value fails a real connect loudly.
-              value: '-',
-              class: branchId ? 'preview' : 'production',
-              ...(branchId !== undefined ? { branchId } : {}),
-            });
-          }
-
-          return { projectId, branchId } satisfies CloudApplication;
+          const { projectId, branchId, defaultBranchId, branchless } = prismaCloudContainerOf(
+            ctx.container,
+          );
+          yield* Prisma.claimDatabaseUrlKeys(projectId);
+          return { projectId, branchId, defaultBranchId, branchless } satisfies CloudApplication;
         }),
     },
 
@@ -381,8 +388,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     provisions: PROVISIONERS,
 
     nodes: {
+      'raw-postgres': rawPostgresDescriptor(o),
       postgres: postgresDescriptor(o),
-      'prisma-next': prismaNextDescriptor(o),
       compute: computeDescriptor(o),
       credentials: s3CredentialsDescriptor(o),
       's3-store': s3StoreDescriptor(o),

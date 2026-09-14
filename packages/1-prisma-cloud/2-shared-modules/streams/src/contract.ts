@@ -73,7 +73,7 @@ export type StreamsContract<D extends StreamDefs = StreamDefs> = Contract<'strea
 
 /**
  * The `streams()` module's own exposed port: a general streams provider,
- * satisfied by kind alone — the `postgresContract` pattern. The module
+ * satisfied by kind alone — the `rawPostgresContract` pattern. The module
  * cannot know its eventual consumers' stream names (different consumers of
  * one module each name their own), and the server genuinely serves any
  * stream, so what a consumer requires of its provider is only "is a streams
@@ -102,7 +102,7 @@ const connectionParams = {
  * `streamsContract(defs)`, hydrates to one handle per declared stream name —
  * the handle owns the name, so no call site names it again. Called with no
  * argument, hydrates to a `StreamsClient` for dynamic stream names (e.g.
- * per-tenant streams) — the `postgres()` parity: the same lifecycle
+ * per-tenant streams) — the `rawPostgres()` parity: the same lifecycle
  * ownership, the name is data rather than a wiring-time declaration.
  */
 export function durableStreams<D extends StreamDefs>(

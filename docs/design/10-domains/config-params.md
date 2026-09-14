@@ -79,7 +79,7 @@ provision(web, { params: { appOrigin: envParam('APP_ORIGIN') } });
 
 Both bindings suit an origin the operator genuinely knows — a custom domain
 they provisioned. A service's own *platform-assigned* origin is not a param at
-all: the target resolves it and app code reads `ComputeService.origin()`
+all: the target resolves it and app code reads the service's `origin()`
 (ADR-0039).
 
 Resolution order per param: binding, else `default`, else absent (only legal

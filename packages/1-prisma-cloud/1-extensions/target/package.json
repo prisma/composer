@@ -1,6 +1,6 @@
 {
   "name": "@internal/prisma-cloud",
-  "version": "0.6.0",
+  "version": "0.20.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -8,44 +8,39 @@
     "./connection": "./dist/connection.mjs",
     "./control": "./dist/control.mjs",
     "./local-target": "./dist/local-target.mjs",
-    "./prisma-next": "./dist/prisma-next.mjs",
+    "./orm": "./dist/orm.mjs",
     "./testing": "./dist/testing.mjs",
     "./package.json": "./package.json"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "test": "bun test --isolate",
     "test:types": "vitest --typecheck --run",
     "build": "tsdown",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.6.0",
-    "@internal/dev-emulators": "workspace:0.6.0",
-    "@internal/foundation": "workspace:0.6.0",
-    "@internal/local-target": "workspace:0.6.0",
-    "@internal/lowering": "workspace:0.6.0",
-    "@internal/node": "workspace:0.6.0",
-    "@internal/s3-protocol": "workspace:0.6.0",
-    "@internal/service-rpc": "workspace:0.6.0",
-    "@prisma-next/cli": "0.16.0",
-    "@prisma-next/config-loader": "0.16.0",
-    "@prisma-next/contract": "0.16.0",
-    "@prisma-next/migration-tools": "0.16.0",
-    "@prisma-next/postgres": "0.16.0",
-    "@prisma-next/sql-contract": "0.16.0",
+    "@internal/core": "workspace:0.20.0",
+    "@internal/dev-emulators": "workspace:0.20.0",
+    "@internal/foundation": "workspace:0.20.0",
+    "@internal/local-target": "workspace:0.20.0",
+    "@internal/lowering": "workspace:0.20.0",
+    "@internal/node": "workspace:0.20.0",
+    "@internal/s3-protocol": "workspace:0.20.0",
+    "@internal/service-rpc": "workspace:0.20.0",
+    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "@prisma/orm-toolchain": "8.0.0-rc.11",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.67",
+    "alchemy": "2.0.0-beta.74",
     "arktype": "^2.2.3",
-    "effect": "4.0.0-beta.103",
+    "effect": "4.0.0-rc.112",
     "pathe": "^2.0.3",
     "pg": "8.22.0"
   },
   "devDependencies": {
-    "@prisma-next/target-postgres": "0.16.0",
-    "@internal/tsdown-config": "workspace:0.6.0",
+    "@internal/tsdown-config": "workspace:0.20.0",
+    "@prisma/cli-engine": "0.4.0",
     "@types/bun": "^1.3.13",
-    "@types/pg": "8.20.0",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
@@ -53,11 +48,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/prisma/compose.git",
+    "url": "https://github.com/prisma/composer.git",
     "directory": "packages/1-prisma-cloud/1-extensions/target"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.18.0"
   },
   "private": true,
   "types": "./dist/index.d.mts"

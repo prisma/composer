@@ -12,24 +12,24 @@ in each dispatch section's header.
 ## D1 — Topology scaffold
 
 *Entries #1 and #2 below were rewritten in D1b (2026-07-16) after the
-operator dropped `pnPostgres` for plain `postgres()` on both ends (spec:
+operator dropped `postgres` for plain `rawPostgres()` on both ends (spec:
 open-chat-port Chosen design #7). Both workarounds they originally described
 are gone from the code; the underlying framework gaps are not fixed, so the
 findings stay, sharpened by having tried the fix.*
 
-### 1. A `pnPostgres` resource cannot satisfy a plain `postgres()` dependency — and the converse is blocked too
+### 1. A `postgres` resource cannot satisfy a plain `rawPostgres()` dependency — and the converse is blocked too
 
-**Where hit:** D1 wired `pnPostgres({ name, contract, config })` provisioning
-a `pnPostgres(contract)` dependency. D1b then tried the shape this port
-actually wants: provision a `pnPostgres` resource (framework-run migrations,
+**Where hit:** D1 wired `postgres({ name, contract, config })` provisioning
+a `postgres(contract)` dependency. D1b then tried the shape this port
+actually wants: provision a `postgres` resource (framework-run migrations,
 ADR-0022) but consume it through open-chat's own `pg.Pool` — i.e. a plain
-`postgres()` dependency, since open-chat's `src/prisma/db.ts` builds its own
+`rawPostgres()` dependency, since open-chat's `src/prisma/db.ts` builds its own
 client from `{ url }` and does not accept a framework-built typed client.
 
 **Symptom:** TypeScript rejects it at the `provision()` call site.
-`pnPostgres({ ... })` returns a `ResourceNode<Contract<'prisma-next', PnCmp>>`;
-`postgres()`'s dependency end requires a `Contract<'postgres', PostgresConfig>`.
-The two contracts' `kind` literals (`'prisma-next'` vs `'postgres'`) don't
+`postgres({ ... })` returns a `ResourceNode<Contract<'postgres', OrmCmp>>`;
+`rawPostgres()`'s dependency end requires a `Contract<'raw-postgres', RawPostgresConfig>`.
+The two contracts' `kind` literals (`'postgres'` vs `'postgres'`) don't
 match, so assignability fails before `satisfies` is ever reached at Load —
 "framework migrations + my own client" is inexpressible.
 
@@ -39,24 +39,24 @@ places at once, both using the SAME type parameter as the contract they're
 declared on: the provision-site TypeScript assignability check
 (`ResourceNode<C>` against a dependency's required contract, in `node.ts`),
 and `satisfies(required: Contract<Kind, unknown>)`'s own signature. A
-`prisma-next` database genuinely IS a Postgres database — its `PnCmp` carries
+`prisma/orm` database genuinely IS a Postgres database — its `OrmCmp` carries
 a `{ url }`-shaped connection underneath the typed client — but nothing in
-`Contract`'s shape lets a `'prisma-next'`-kinded contract declare "I also
+`Contract`'s shape lets a `'postgres'`-kinded contract declare "I also
 satisfy `'postgres'`". Kind equality is baked into the type itself, not a
 policy `satisfies` chooses, so a cross-kind subtype relation can't be
 expressed at all.
 
-**Also tried, also blocked — the converse:** "provision a `pnPostgres`
+**Also tried, also blocked — the converse:** "provision a `postgres`
 resource but run my own migrations" (skip ADR-0022's framework-run migration)
-is equally inexpressible. `PnPostgresResourceNode`'s `config` field (the
-`prisma-next.config.ts` path) is required on the resource overload's argument
-type — there is no `pnPostgres({ name, contract })` without it. And given a
-`config` anyway, `prismaNextDescriptor`'s lowering
-(`packages/1-prisma-cloud/1-extensions/target/src/descriptors/prisma-next.ts`)
-unconditionally runs `PnMigration(...)` — no flag or resource variant
+is equally inexpressible. `PostgresResourceNode`'s `config` field (the
+`prisma.config.ts` path) is required on the resource overload's argument
+type — there is no `postgres({ name, contract })` without it. And given a
+`config` anyway, `postgresDescriptor`'s lowering
+(`packages/1-prisma-cloud/1-extensions/target/src/descriptors/orm-postgres.ts`)
+unconditionally runs `OrmMigration(...)` — no flag or resource variant
 provisions the database and connection without migrating it.
 
-**Workaround used:** neither direction — this port uses plain `postgres()`
+**Workaround used:** neither direction — this port uses plain `rawPostgres()`
 on both ends (`module.ts`'s resource, `service.ts`'s dependency) and keeps
 running open-chat's own `db:init`/`db:push` as an operator step (D3). Per
 ADR-0022 the contract hash is the thing and migrations are only the means, so
@@ -64,18 +64,18 @@ this doesn't need the framework to run them; open-chat gets neither
 framework-run migrations nor the typed client, by design (Chosen design #7)
 — it only ever needed the URL.
 
-**Recommendation:** let a `prisma-next` contract's `satisfies` accept a
+**Recommendation:** let a `prisma/orm` contract's `satisfies` accept a
 `Contract<'postgres', unknown>` too, not just its own kind, when its
 underlying storage genuinely is Postgres — which needs `Kind` widened off
 `satisfies`'s parameter type, not just the value returned. Caution: a naive
-"no required hash → satisfied" rule is wrong — it would let a `pnPostgres`
+"no required hash → satisfied" rule is wrong — it would let a `postgres`
 resource satisfy an unrelated `s3()`/`streams()` dependency too, since those
 also have no required-hash concept. Any fix has to compare kind-compatibility
 explicitly, not merely "hash present or absent". Not attempted here — a
 `Contract` type change, out of scope for an app port.
 
 > **Update (D6):** ADR-0040 dissolved the practical case by widening the
-> binding rather than the kind system: a `pnPostgres` dependency now hydrates
+> binding rather than the kind system: a `postgres` dependency now hydrates
 > to `{ url, client }`, so an app that owns its client declares the
 > contract-carrying dependency and reads `url`. The cross-kind `satisfies`
 > recommendation above was considered and rejected in ADR-0040.
@@ -83,9 +83,9 @@ explicitly, not merely "hash present or absent". Not attempted here — a
 ### 2. Version skew: framework's bundled `@prisma-next` 0.15.0 vs open-chat's 0.13.0-emitted `contract.json`
 
 **Where hit:** D1's boot-time smoke test of the launcher (`chatService.run()`
-with fabricated `COMPOSER_*` env vars) when it still used `pnPostgres`.
+with fabricated `COMPOSER_*` env vars) when it still used `postgres`.
 
-**Symptom (as hit under `pnPostgres`, before D1b removed it):**
+**Symptom (as hit under `postgres`, before D1b removed it):**
 
 ```text
 ContractValidationError: Contract structural validation failed:
@@ -102,11 +102,11 @@ thrown from inside `service.load()`.
 **Cause:** the pkg.pr.new preview's `@prisma/composer-prisma-cloud` declares
 its own `@prisma-next/*` dependencies at `0.15.0`; open-chat is pinned to
 `@prisma-next/postgres@^0.13.0`, and `src/prisma/contract.json` was emitted
-by that 0.13-vintage `prisma-next` CLI. Bun installs both — the top-level
+by that 0.13-vintage `prisma/orm` CLI. Bun installs both — the top-level
 hoisted `@prisma-next/postgres@0.13.0` (open-chat's own) and a *nested*
 `node_modules/@prisma/composer-prisma-cloud/node_modules/@prisma-next/*@0.15.0`
 (composer's own) — because the version ranges don't overlap. When
-`pnPostgres(contract)`'s `hydrate` called into the *0.15.0* runtime with
+`postgres(contract)`'s `hydrate` called into the *0.15.0* runtime with
 open-chat's *0.13-emitted* `contractJson`, the newer runtime's structural
 validator rejected it: `execution.mutations.defaults[].ref.namespace` is a
 field the 0.13 emitter didn't write. A genuine data-format incompatibility,
@@ -126,10 +126,10 @@ So `db`'s failure would have poisoned the *entire* `load()` call — the
 launcher could not have called `service.load()` even just to read the
 harmless, trivially-hydrated `streams.url`.
 
-**Status:** not hit anymore — D1b dropped `pnPostgres` entirely (Chosen
+**Status:** not hit anymore — D1b dropped `postgres` entirely (Chosen
 design #7), so this port never calls into the 0.15.0 runtime with open-chat's
 0.13-emitted contract. Recorded so the incompatibility isn't lost: any future
-port or app that DOES need `pnPostgres`'s typed client will still hit it.
+port or app that DOES need `postgres`'s typed client will still hit it.
 
 > **Update (D6):** retired for this port twice over. The binding's client is
 > now lazy (ADR-0040), so a service that only reads `url` never runs the
@@ -584,16 +584,16 @@ should lazy-import provider namespaces so unused providers' peers stay
 genuinely optional. An app deploying to Prisma Cloud should not need to know
 alchemy's Cloudflare provider exists.
 
-### 12. A plain-`postgres()` app has no path to its own provisioned database at deploy — the port's documented "app runs its own migrations" step can't be automated
+### 12. A plain-`rawPostgres()` app has no path to its own provisioned database at deploy — the port's documented "app runs its own migrations" step can't be automated
 
-> **Resolved by framework PR #154 (ADR-0040).** `pnPostgres(contract)`'s
+> **Resolved by framework PR #154 (ADR-0040).** `postgres(contract)`'s
 > binding now carries `{ url, client }` with the typed client built lazily on
 > first access — so "framework-run migrations + my own client" is expressible.
 > The port switched its `database` resource to
-> `pnPostgres({ name, contract, config })` and its dependency to
-> `pnPostgres(chatData)`; the launcher reads `db.url` and never constructs
+> `postgres({ name, contract, config })` and its dependency to
+> `postgres(chatData)`; the launcher reads `db.url` and never constructs
 > the client. The deploy migrates the database itself (`[database-migrate]`,
-> a `PrismaNext.Migration` resource, in the plan) and the operator step below
+> a `PrismaOrm.Migration` resource, in the plan) and the operator step below
 > is gone — verified end to end in D6. Recommendation (a) below (surfacing
 > connection values to the deploy shell) remains open as a general
 > affordance, but this port no longer needs it.
@@ -606,14 +606,14 @@ every DB-backed route 500s: nothing ever applied the schema to the freshly
 provisioned `database` resource.
 
 **Cause.** This port's settled design (Chosen design #7, PR #1) is a plain
-`postgres()` resource with the app owning its schema —
-`prisma-next db init` against the provisioned URL. That step needs the URL,
+`rawPostgres()` resource with the app owning its schema —
+`prisma db init` against the provisioned URL. That step needs the URL,
 and the framework never surfaces it to the operator: the deploy resolves the
 DSN internally (it writes `COMPOSER_CHAT_DB_URL` into the service's env),
 but the CLI has only `deploy` and `destroy` — no outputs/state read — and
 the deployment report prints resource ids, not connection strings.
-`pnPostgres()` has managed deploy-time migrations, but can't satisfy a plain
-`postgres()` dependency (#1), so an app that owns its own pool is locked out
+`postgres()` has managed deploy-time migrations, but can't satisfy a plain
+`rawPostgres()` dependency (#1), so an app that owns its own pool is locked out
 of both mechanisms. Earlier dispatches papered over this without noticing:
 D3/D4 ran `db init` by hand against a Management-API-minted connection, an
 operator step outside the deploy that FRICTION.md never recorded as such.
@@ -622,17 +622,17 @@ operator step outside the deploy that FRICTION.md never recorded as such.
 mint a connection on the `database` resource
 (`POST /v1/databases/{id}/connections`, DSN in
 `endpoints.direct.connectionString` — PRO-212), then
-`bunx prisma-next db init --db <dsn> -y` (additive-only, safe to rerun).
+`bunx prisma db init --db <dsn> -y` (additive-only, safe to rerun).
 After it, every DB-backed route works — see the D5 verification.
 
 **Recommendation.** Either of two affordances closes this: (a) a
 `prisma-composer` way to read a provisioned resource's connection values
 from the deploy shell (an outputs command, or a post-deploy hook handed the
-resolved bindings), or (b) a migrations hook on plain `postgres()` — "run
+resolved bindings), or (b) a migrations hook on plain `rawPostgres()` — "run
 this command against the resolved URL before the dependent service starts" —
-the deploy already sequences exactly this for `pnPostgres()`.
+the deploy already sequences exactly this for `postgres()`.
 
-## D6 — pnPostgres with framework-run migrations (ADR-0040 build)
+## D6 — postgres with framework-run migrations (ADR-0040 build)
 
 Framework version under test: pkg.pr.new preview of `prisma/composer` PR
 #154 (`@prisma/composer{,-prisma-cloud}@1909260` — the `{ url, client }`

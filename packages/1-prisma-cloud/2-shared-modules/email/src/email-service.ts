@@ -12,7 +12,7 @@
  */
 import { secretString } from '@internal/foundation/arktype';
 import node from '@internal/node';
-import { compute, postgres } from '@internal/prisma-cloud';
+import { compute, rawPostgres } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
 
@@ -26,7 +26,7 @@ const emailInputSchema = type({
 export function emailService() {
   return compute({
     name: 'email',
-    deps: { db: postgres() },
+    deps: { db: rawPostgres() },
     input: emailInputSchema,
     expose: { send: emailSendContract, outbox: emailOutboxContract },
     build: node({

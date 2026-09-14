@@ -65,7 +65,7 @@ describe('email()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('email.db')).toBe('postgres');
+    expect(typeOf('email.db')).toBe('raw-postgres');
     expect(typeOf('email.service')).toBe('compute');
     expect(graph.edges).toContainEqual({
       from: 'email.db',

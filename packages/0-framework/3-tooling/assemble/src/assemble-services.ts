@@ -2,6 +2,7 @@
 import type { Graph, GraphNode, ServiceNode } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import type { Bundle } from '@internal/core/deploy';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { AssembleError } from './assemble-error.ts';
 
 export interface AssembledServices {
@@ -28,21 +29,24 @@ function buildDescriptorAssemble(
   const extensionDescriptor = config.extensions.find((candidate) => candidate.id === extension);
   if (extensionDescriptor === undefined) {
     throw new AssembleError(
-      `No extension "${extension}" is configured (needed by service "${node.name}"'s build) — ` +
-        "add it to prisma-composer.config.ts's `extensions`.",
+      'ASSEMBLE.EXTENSION_MISSING',
+      `No extension "${extension}" is configured (needed by service "${node.name}"'s build).`,
+      { fix: "Add it to prisma-composer.config.ts's `extensions`." },
     );
   }
   const nodeDescriptor = extensionDescriptor.nodes[type];
   if (nodeDescriptor === undefined) {
     throw new AssembleError(
-      `Extension "${extension}" has no descriptor for build type "${type}" ` +
-        `(known: ${Object.keys(extensionDescriptor.nodes).join(', ')}).`,
+      'ASSEMBLE.DESCRIPTOR_MISSING',
+      `Extension "${extension}" has no descriptor for build type "${type}".`,
+      { why: `Known types: ${Object.keys(extensionDescriptor.nodes).join(', ')}.` },
     );
   }
   if (nodeDescriptor.kind !== 'build') {
     throw new AssembleError(
-      `Extension "${extension}"'s descriptor for type "${type}" is a "${nodeDescriptor.kind}" descriptor — ` +
-        'assembling a service build needs a "build" descriptor.',
+      'ASSEMBLE.DESCRIPTOR_KIND_MISMATCH',
+      `Extension "${extension}"'s descriptor for type "${type}" is a "${nodeDescriptor.kind}" descriptor.`,
+      { why: 'Assembling a service build needs a "build" descriptor.' },
     );
   }
   return nodeDescriptor.assemble({
@@ -64,12 +68,27 @@ export async function assembleServices(
     (n): n is GraphNode & { node: ServiceNode } => n.node.kind === 'service',
   );
   if (serviceNodes.length === 0) {
-    throw new AssembleError('The loaded graph has no service to assemble.');
+    throw new AssembleError(
+      'ASSEMBLE.SERVICE_MISSING',
+      'The loaded graph has no service to assemble.',
+    );
   }
 
   const bundles: Record<string, Bundle> = {};
   for (const { id, node } of serviceNodes) {
-    bundles[id] = await runAssembler(node, id, cwd);
+    try {
+      bundles[id] = await runAssembler(node, id, cwd);
+    } catch (error) {
+      // A foreign build failure (the RunAssembler or a descriptor's own
+      // assemble) is structured here, at the loop that knows the address
+      // (base-type rule 6); an already-structured error passes through.
+      if (CliStructuredError.is(error)) throw error;
+      throw new AssembleError(
+        'ASSEMBLE.BUILD_FAILED',
+        error instanceof Error ? error.message : String(error),
+        { meta: { address: id }, cause: error },
+      );
+    }
   }
   return { bundles };
 }

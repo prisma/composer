@@ -1,4 +1,5 @@
-import { type Edge, type GraphNode, LoadError, type NodeId } from './graph-types.ts';
+import { InternalError } from '@internal/foundation/errors';
+import type { Edge, GraphNode, NodeId } from './graph-types.ts';
 
 /**
  * Stable topological sort: every edge's `from` precedes its `to` in the
@@ -55,7 +56,7 @@ export function topoSort(nodes: readonly GraphNode[], edges: readonly Edge[]): G
   // if that guard were ever bypassed, dropping nodes silently would be far
   // worse than failing — so assert completeness.
   if (order.length !== nodes.length) {
-    throw new LoadError(
+    throw new InternalError(
       `topological sort processed ${order.length} of ${nodes.length} nodes — ` +
         'the graph contains a cycle that slipped past the DAG validation.',
     );

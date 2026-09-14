@@ -71,7 +71,7 @@ cross-ref; main changed it for the bearer key), `composer/tsdown.config.ts`,
 `streams/tsdown.config.ts`, `cli/package.json`, `cli/tsdown.config.ts`, plus
 tests: `core/src/__tests__/lowering.test.ts`, `node/src/__tests__/{assemble,node}.test.ts`,
 `cli/src/__tests__/run.test.ts`, `target/src/__tests__/{control-lowering,extension,invariants}.test.ts`,
-`streams/src/__tests__/entrypoint.integration.test.ts`, `target/src/descriptors/prisma-next.ts`.
+`streams/src/__tests__/entrypoint.integration.test.ts`, `target/src/descriptors/orm-postgres.ts`.
 Remember the two grep gaps: internal non-test source importing an entrypoint, and
 DYNAMIC `await import('…')` string literals.
 

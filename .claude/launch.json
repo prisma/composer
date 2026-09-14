@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd website && COMPOSER_PORT=\"${PORT:-3000}\" pnpm run dev"
+      ],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

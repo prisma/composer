@@ -20,7 +20,7 @@ wiring it in.
 import { compute, postgres } from "@prisma/composer-prisma-cloud";
 import node from "@prisma/composer/node";
 
-const db = postgres(); // a dependency slot: the binding is typed config (ADR-0015)
+const db = rawPostgres(); // a dependency slot: the binding is typed config (ADR-0015)
 
 export default compute({
   name: "hello",
@@ -34,7 +34,7 @@ import { postgres } from "@prisma/composer-prisma-cloud";
 import service from "./service.ts";
 
 export default module("hello", ({ provision }) => {
-  const db = provision(postgres({ name: "db" }));
+  const db = provision(rawPostgres({ name: "db" }));
   provision(service, { deps: { db } });
 });
 ```

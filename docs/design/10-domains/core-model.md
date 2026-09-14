@@ -66,7 +66,7 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
 | `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types `prisma-composer.config.ts` is checked against (ADR-0017) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
-| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `postgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `postgresContract`, `http()` | `@prisma/composer` only |
+| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract`, `http()` | `@prisma/composer` only |
 | `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
@@ -141,7 +141,7 @@ SPI and never see the graph, never sequence anything, never call another tool.
 
 | Path | Where it executes | Core does (the actor) | Pack / adapter tools used |
 | --- | --- | --- | --- |
-| **provision** | deploy machine, via Alchemy | provision the application once (Project + poison vars), then walk the DAG realizing each service's host | `ExtensionDescriptor.application.provision`, then `ServiceLowering.provision` → identity (App) |
+| **provision** | deploy machine, via Alchemy | provision the application once (the Project reference), then walk the DAG realizing each service's host | `ExtensionDescriptor.application.provision`, then `ServiceLowering.provision` → identity (App) |
 | **deploy** | deploy machine, via Alchemy | build each service's typed `Config`, have the pack encode it *first*, assemble via the build adapter, then ship the build | `ServiceLowering.serialize`, the **build adapter's `assemble`**, then `package` + `deploy` |
 | **run** | inside the bundle, in the VM | provide `hydrate` (typed `Config` → each dependency's binding); the node's `run` resolves + stashes config and boots the entry, the node's `load` hydrates on demand | the node's `run` / `load`, each connection's `hydrate` |
 
@@ -150,7 +150,7 @@ running": provision creates identity-bearing infrastructure that changes only wh
 the topology changes; deploy ships a specific build (keyed by artifact hash) and
 changes on every push. The seam between them is the only window where connection
 config can land — an environment variable needs the consumer's projectId (exists
-after provision) and is read at version start, never after (PRO-211: so it must
+after provision) and is read at deployment create, never after (PRO-211: so it must
 exist before deploy). Core sequences `provision → serialize → package → deploy`
 for every service, which **eliminates the fresh-deploy config race by
 construction**, for every target pack ever written. One producer-side asymmetry: a
@@ -276,7 +276,7 @@ interface BuildAdapter {
 // ——— Nodes ———
 
 // A Resource's identity: the ONE place a piece of infrastructure exists. A module
-// provisions it (`h.provision("db", postgres({ name: "db" }))`) and wires the
+// provisions it (`h.provision("db", rawPostgres({ name: "db" }))`) and wires the
 // returned ref into each consumer's dependency slot — a resource is never
 // created because a service mentioned it. `provides` is the Contract it offers
 // (its single port); the routing `type` is DERIVED as `provides.kind`, so a
@@ -504,8 +504,7 @@ type NodeDescriptor =
   | { readonly kind: "build"; assemble(input: AssembleInput): Promise<Bundle> }
 
 // The application's shared infrastructure: on Prisma Cloud, the one Project
-// (the config namespace and lifecycle boundary) plus the poison DATABASE_URL
-// variables. Its product (e.g. { projectId }) reaches every later SPI call of
+// (the config namespace and lifecycle boundary). Its product (e.g. { projectId }) reaches every later SPI call of
 // the SAME extension via LowerContext.application. Core declares it `unknown`
 // and never reads it — the extension narrows with its own guard (ADR-0033).
 interface ApplicationDescriptor {
@@ -549,8 +548,8 @@ interface ServiceLowering<P = unknown, S = unknown> {
   package(ctx: LowerContext, input: PackageInput):
     Effect.Effect<Artifact, unknown, unknown>
   // deploy: ship the packaged artifact into the provisioned thing and run it
-  // (version → upload → start → promote). Consumes `serialized`'s env records
-  // via the Deployment's environment prop (the edge). Returns the node's
+  // (create → upload → start → promote). Builds the deployment's props out of
+  // `serialized`'s env records, which is the ordering edge. Returns the node's
   // outputs — what dependent nodes' connection params resolve against — plus
   // the entities it became on the deployment target, for the deploy report.
   deploy(ctx: LowerContext, provisioned: P, artifact: Artifact,
@@ -611,7 +610,7 @@ type Outputs = Readonly<Record<string, unknown>>
 // `url` is present only when the descriptor declares the address publicly
 // reachable — a connection string is never a `url` (no core-level rule is safe:
 // `url` on compute is an endpoint, on postgres it would be a DSN). A descriptor
-// constructing one holds `deployment.deployedUrl` — an Output<T>, not a T,
+// constructing one holds `deployment.appEndpointDomain` — an Output<T>, not a T,
 // because the stack effect runs before Alchemy applies — so construction sites
 // traffic in `Input<DeployedEntity>` (LoweredResult.entities above); apply
 // resolves them before any reader sees them.
@@ -693,8 +692,8 @@ In the mixed case the hand-written stack supplies providers itself, yields a
 the nodes it composes.
 
 **Core's deploy-path sequencing** — the control flow no extension can misorder.
-First, each extension's `application.provision` runs once (the Project reference,
-with the poison `DATABASE_URL` variables). Then walk the graph in topological
+First, each extension's `application.provision` runs once (the Project
+reference). Then walk the graph in topological
 order (the module body's provision order; the dependency DAG Load validated). Each
 module-provisioned **resource** lowers exactly once via its extension's
 `nodes[type]` `{ kind: "resource" }` entry (e.g. one Database + Connection — its
@@ -723,18 +722,20 @@ resource descriptions — Alchemy executes them in dependency order and runs
 unordered resources concurrently; declaration order is never consulted. So core
 realizes the sequence as **dependency edges**: most arise naturally from value flow
 (the env var consumes the project id and the producer's URL), and the one that
-doesn't — deploy-after-serialize — exists because the `Deployment` resource
-declares the environment records it boots with as a prop, which is PDP's own
-dataflow restored (the version-create call literally contains the materialized env
-map). See the lowering graphs in
+doesn't — deploy-after-serialize — exists because the service descriptor builds
+the `Deployment`'s props out of the environment records it boots with, which is
+PDP's own dataflow restored (the deployment-create call literally contains the
+materialized env map). See the lowering graphs in
 [`../05-prisma-cloud/alchemy-lowering.md`](../05-prisma-cloud/alchemy-lowering.md).
 This is what makes the fresh-deploy config race (PRO-211) structurally impossible
-on every target — the edge's **ordering** job. Its second job, **propagating** a
-wire whose value genuinely changes, is not yet wired: the env-var resource exposes
-only `{ id, key }`, so a changed value doesn't diff the consumer's `Deployment`.
-The fix is provenance-based (the consumer depends on the *source node's* version,
-never on the value or a hash of it) and is a deferred follow-up — narrow in
-practice, since promoted service endpoints are stable across producer redeploys.
+on every target — the edge's **ordering** job. Its second job, **propagating**
+a wire whose value genuinely changes, is wired by the deploy hook: a deploy
+whose environment differs from the running deployment's replaces the
+deployment, so changed values reach the running service. Secret *values* are
+never hashed or persisted for this — the mechanism keys off the non-secret
+material Composer's rows carry (ADR-0042 pointers) and platform metadata. The
+long-term carrier is the deployment resource itself (inputs it must be
+recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
 the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
@@ -868,31 +869,31 @@ import { resource, dependency, service, configOf, hydrate, string, number,
   type Contract, type Deps, type DependencyEnd, type Loaded, type ResourceNode,
   type RunnableServiceNode } from "@prisma/composer"
 
-export interface PostgresConfig { readonly url: string }
+export interface RawPostgresConfig { readonly url: string }
 
 // The contract a Postgres provides AND its consumers require. satisfies()
 // compares KIND, not identity — a pack module can be duplicated across a
 // workspace (same rationale as the Symbol.for node brand), and every
 // duplicate's contract must still satisfy.
-export const postgresContract: Contract<"postgres", PostgresConfig> = Object.freeze({
+export const rawPostgresContract: Contract<"postgres", RawPostgresConfig> = Object.freeze({
   kind: "postgres", __cmp: { url: "" },
   satisfies: (required) => required.kind === "postgres",
 })
 
 // ONE postgres factory, two shapes. { name }: the identity a module provisions —
-// the ONE place the database exists, providing postgresContract. postgres()
+// the ONE place the database exists, providing rawPostgresContract. rawPostgres()
 // (no args): the consumer's dependency requiring it. No client factory — the
-// dependency's BINDING is the typed config PostgresConfig itself (hydrate is
+// dependency's BINDING is the typed config RawPostgresConfig itself (hydrate is
 // the identity on its values); the app builds its own client from { url } in
 // app code (ADR-0015).
-export function postgres(opts: { name: string }): ResourceNode<typeof postgresContract>
-export function postgres(): DependencyEnd<PostgresConfig, typeof postgresContract>
+export function postgres(opts: { name: string }): ResourceNode<typeof rawPostgresContract>
+export function rawPostgres(): DependencyEnd<RawPostgresConfig, typeof rawPostgresContract>
 export function postgres(opts?: { name: string }): unknown {
-  if (opts?.name !== undefined) return resource({ name: opts.name, extension: "@prisma/composer-prisma-cloud", provides: postgresContract })
+  if (opts?.name !== undefined) return resource({ name: opts.name, extension: "@prisma/composer-prisma-cloud", provides: rawPostgresContract })
   return dependency({
     type: "postgres",
     connection: { params: { url: string() }, hydrate: (v) => v },
-    required: postgresContract,
+    required: rawPostgresContract,
   })
 }
 
@@ -954,8 +955,8 @@ export const compute = <D extends Deps>(def: {
 // writer drifts. Keys are UPPER_SNAKE(address ▸ owner ▸ name): the address prefix
 // makes them unique per service within the shared project namespace (auth's db.url
 // ↔ AUTH_DB_URL); an empty address yields the address-free stash keys run() writes
-// and load() reads (DB_URL). The platform's DATABASE_URL is never among them — it
-// is forbidden and poisoned at project provision (see alchemy-lowering.md).
+// and load() reads (DB_URL). The platform's DATABASE_URL is never among them — the
+// name is rejected at authoring time (see alchemy-lowering.md).
 export const configKey = (address: string, d: ConfigDeclaration): string => /* UPPER_SNAKE(address ▸ owner ▸ name) */
 
 // Boot readers/writers — process.env is touched ONLY here in the pack.
@@ -1004,18 +1005,12 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     preflight: (input) => runPreflight(input),
 
     // Runs ONCE per lowering, before any node — REFERENCES the CLI-ensured Project
-    // (it no longer creates one) and writes the poison DATABASE_URL variables so
-    // nothing can rely on the platform default. Its product reaches this
-    // extension's own nodes via ctx.application.
+    // (it neither creates one nor provisions anything of its own). Its product
+    // reaches this extension's own nodes via ctx.application.
     application: {
       provision: () =>
-        Effect.gen(function* () {
+        Effect.sync(() => {
           const projectId = o.projectId    // set by the CLI in the deploy env; required
-          for (const key of ["DATABASE_URL", "DATABASE_URL_POOLED"]) {
-            yield* Prisma.EnvironmentVariable(`${key}-poison`, {
-              projectId, key, value: "-", class: "production",  // "-": the API rejects "" (verified at the deploy proof)
-            })
-          }
           return { projectId } satisfies CloudApplication
         }),
     },
@@ -1038,10 +1033,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       postgres: Object.assign(
         ({ id, application }) =>
           Effect.gen(function* () {
-            const db = yield* Prisma.Database(`${id}-db`, { projectId: projectIdOf(application), name: id })
-            const conn = yield* Prisma.Connection(`${id}-conn`, { databaseId: db.id, name: id })
-            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.connectionString })  // FT-5226 cold-start
-            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.id }] }
+            const db = yield* Prisma.Database(`${id}-db`, { project: projectIdOf(application), name: id, region })
+            const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id })
+            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
+            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
           }),
         { kind: "resource" as const },
       ),
@@ -1058,10 +1053,10 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // real string (from the CLI env, not a resource attribute).
         provision: ({ id, application }) =>
           Effect.gen(function* () {
-            const svc = yield* Prisma.ComputeService(`${id}-svc`, {
-              projectId: projectIdOf(application), name: id, region: o.region ?? "us-east-1",
+            const svc = yield* Prisma.App(`${id}-svc`, {
+              project: projectIdOf(application), displayName: id, regionId: o.region ?? "us-east-1",
             })
-            return { serviceId: svc.id, projectId: projectIdOf(application) }  // : ComputeProvisioned
+            return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
           }),
 
         // Encode the typed Config into the runtime environment — one env var per
@@ -1076,8 +1071,8 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
               const value = d.owner === "service" ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name]
               if (value === undefined) continue
               records.push(yield* Prisma.EnvironmentVariable(`${configKey(address, d)}-var`, {
-                projectId: provisioned.projectId, key: configKey(address, d),
-                value: encode(d.owner, value), class: "production",
+                project: provisioned.projectId, key: configKey(address, d),
+                value: Redacted.make(encode(d.owner, value)), class: "production",
               }))
             }
             const port = typeof config.service.port === "number" ? config.service.port : 3000
@@ -1091,21 +1086,23 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         package: ({ id }, { assembled, address }) =>
           Effect.try(() => Prisma.packageComputeArtifact({ id, bundleDir: assembled.dir, appEntry: assembled.entry, address })),
 
-        // version → upload → start → promote. The environment prop references
-        // serialize's records, so the version depends on them (the edge that kills
-        // PRO-211). Returns a LoweredResult: `url` IS published here — a Compute
-        // service's deployed URL is a public endpoint, and this descriptor is the
-        // only party that knows it. Both fields are still Output refs until apply.
+        // create → upload → start → promote. The app id is read through
+        // serialize's env-var records, so the deployment depends on them — the
+        // ordering edge that kills PRO-211. Returns a LoweredResult: `url` IS
+        // published here — a Compute service's deployed URL is a public endpoint,
+        // and this descriptor is the only party that knows it. Both fields are
+        // still Output refs until apply.
         deploy: ({ id }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
             const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
-              computeServiceId: provisioned.serviceId,   // Input<string> accepts the Output ref — no cast
-              artifactPath: artifact.path, artifactHash: artifact.sha256,
-              environment: serialized.environment, port: serialized.port,
+              app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
+              artifactPath: artifact.path,
+              artifactContentType: "application/gzip",
+              portMapping: { http: serialized.port }, start: true, promote: true,
             })
             return {
-              outputs: { url: deployment.deployedUrl, projectId: provisioned.projectId },
-              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.deployedUrl }],
+              outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
+              entities: [{ kind: "compute-service", id: provisioned.serviceId, url: deployment.appEndpointDomain }],
             }
           }),
       },
@@ -1168,14 +1165,14 @@ only; the app writes and bundles its own entry:
 
 ```ts
 // src/service.ts — the authored service: name + deps + build + where it lives.
-// No handler, no driver. `db` is a DEPENDENCY (a slot): `postgres()` requires
-// postgresContract and never provisions anything — the composing module owns the
-// database and wires its ref in. Its binding is `PostgresConfig` ({ url }); the
+// No handler, no driver. `db` is a DEPENDENCY (a slot): `rawPostgres()` requires
+// rawPostgresContract and never provisions anything — the composing module owns the
+// database and wires its ref in. Its binding is `RawPostgresConfig` ({ url }); the
 // app builds its own client in server.ts (ADR-0015).
 import { compute, postgres } from "@prisma/composer-prisma-cloud"
 import node from "@prisma/composer/node"
 
-const db = postgres()
+const db = rawPostgres()
 
 export default compute({
   name: "hello",                                // ADR-0006: every node named
@@ -1186,14 +1183,14 @@ export default compute({
 })
 
 // src/module.ts — the app root: the module OWNS the database. It provisions the
-// identity `postgres({ name })` and wires its ref into the service's slot (the
+// identity `rawPostgres({ name })` and wires its ref into the service's slot (the
 // contract matches); its name names the app (ADR-0006).
 import { module } from "@prisma/composer"
 import { postgres } from "@prisma/composer-prisma-cloud"
 import service from "./service.ts"
 
 export default module("hello", (h) => {
-  const db = h.provision("db", postgres({ name: "db" }))
+  const db = h.provision("db", rawPostgres({ name: "db" }))
   h.provision("hello", service, { db })
 })
 
@@ -1203,7 +1200,7 @@ export default module("hello", (h) => {
 import { SQL } from "bun"                        // the APP's choice of client
 import service from "./service"
 
-const { db, port } = service.load()             // db: PostgresConfig ({ url }); port: number
+const { db, port } = service.load()             // db: RawPostgresConfig ({ url }); port: number
 const sql = new SQL({ url: db.url })             // module-scoped: one pool per process
 Bun.serve({ port, hostname: "0.0.0.0",
   fetch: async () => Response.json(await sql`select 1 as ok`) })
@@ -1218,8 +1215,8 @@ Bun.serve({ port, hostname: "0.0.0.0",
 // Alchemy — no bundle map, no hand-written stack file.
 ```
 
-`service.load()` is typed end to end by the chain `postgres()` →
-`PostgresConfig` → `compute({ deps: { db } })` captures `{ db: PostgresConfig }` →
+`service.load()` is typed end to end by the chain `rawPostgres()` →
+`RawPostgresConfig` → `compute({ deps: { db } })` captures `{ db: RawPostgresConfig }` →
 `load()` returns it, and the app types its own `sql` from `db.url`. The app never
 annotates a dependency type. Note where Bun appears: only in `server.ts` (the
 `new SQL` client and `Bun.serve`, the app's own entry) — the app's choice, since
@@ -1235,7 +1232,7 @@ model promises. The config round-trip is proven separately at the pack level
 ### Two services, connected — the module (a framework-hosted consumer)
 
 The storefront-auth shape: `auth` is a self-served Hono service shaped like the
-one above — its `db` is a `postgres()` dependency whose binding is the config
+one above — its `db` is a `rawPostgres()` dependency whose binding is the config
 its own server builds a client from, while the composing module below owns and
 provisions the database; `storefront` is a **framework-hosted**
 Next.js service whose page pulls the `auth`
@@ -1272,7 +1269,7 @@ import { postgres } from "@prisma/composer-prisma-cloud"
 import authService from "./modules/auth/src/service"
 import storefrontService from "./modules/storefront/src/service"
 export default module("storefront-auth", (h) => {
-  const db = h.provision("db", postgres({ name: "db" }))
+  const db = h.provision("db", rawPostgres({ name: "db" }))
   const authRef = h.provision("auth", authService, { db })         // db→auth dependency edge
   h.provision("storefront", storefrontService, { auth: authRef })  // auth→storefront dependency edge
 })

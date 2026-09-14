@@ -21,6 +21,6 @@ export default defineConfig([
     exports: false,
     clean: false,
     skipNodeModulesBundle: false,
-    noExternal: [/^@internal\//, /^@prisma\//, /^arktype/, /^@standard-schema\//],
+    noExternal: [/^@internal\//, /^@prisma\/(?!orm-)/, /^arktype/, /^@standard-schema\//],
   },
 ]);

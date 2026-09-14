@@ -4,7 +4,7 @@ import { configOf, hydrateSync, isNode, number, param, service, string } from '@
 import { secretString } from '@internal/foundation/arktype';
 import { RPC_ACCEPTED_KEYS_ENV } from '@internal/service-rpc';
 import { type } from 'arktype';
-import { compute, postgres, postgresContract } from '../exports/index.ts';
+import { compute, rawPostgres, rawPostgresContract } from '../exports/index.ts';
 import { bootstrapService } from '../exports/testing.ts';
 import { configKey, deserialize, encode } from '../serializer.ts';
 import { RPC_ACCEPTED_KEYS_PARAM } from '../service-keys.ts';
@@ -36,9 +36,15 @@ const build = {
 };
 
 /** Sets env vars for the duration of `fn`, restoring whatever was there before. */
-async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> | T): Promise<T> {
+async function withEnv<T>(
+  values: Record<string, string | undefined>,
+  fn: () => Promise<T> | T,
+): Promise<T> {
   const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(values)) process.env[k] = v;
+  for (const [k, v] of Object.entries(values)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   try {
     return await fn();
   } finally {
@@ -49,38 +55,38 @@ async function withEnv<T>(values: Record<string, string>, fn: () => Promise<T> |
   }
 }
 
-describe('postgres({ name })', () => {
-  test('returns a branded resource identity providing postgresContract; type is the contract kind', () => {
-    const node = postgres({ name: 'db' });
+describe('rawPostgres({ name })', () => {
+  test('returns a branded resource identity providing rawPostgresContract; type is the contract kind', () => {
+    const node = rawPostgres({ name: 'db' });
 
     expect(isNode(node)).toBe(true);
     expect(node.kind).toBe('resource');
-    expect(node.type).toBe('postgres');
+    expect(node.type).toBe('raw-postgres');
     expect(node.extension).toBe('@prisma/composer-prisma-cloud');
     expect(node.name).toBe('db');
-    expect(node.provides).toBe(postgresContract);
+    expect(node.provides).toBe(rawPostgresContract);
     expect('connection' in node).toBe(false);
   });
 });
 
-describe('postgres()', () => {
-  test('returns a branded dependency end requiring postgresContract, declaring { url: string }', () => {
-    const end = postgres();
+describe('rawPostgres()', () => {
+  test('returns a branded dependency end requiring rawPostgresContract, declaring { url: string }', () => {
+    const end = rawPostgres();
 
     expect(isNode(end)).toBe(true);
     expect(end.kind).toBe('dependency');
-    expect(end.type).toBe('postgres');
-    expect(end.name).toBe('postgres');
-    expect(end.required).toBe(postgresContract);
+    expect(end.type).toBe('raw-postgres');
+    expect(end.name).toBe('raw-postgres');
+    expect(end.required).toBe(rawPostgresContract);
     expect(end.connection.params).toEqual({ url: string() });
   });
 
   test('the binding IS the typed config — hydrate is the identity on its values (ADR-0015)', () => {
-    const end = postgres();
+    const end = rawPostgres();
 
     const binding = end.connection.hydrate({ url: 'postgres://u:p@host:5432/db' });
 
-    // No client factory: load() hands the app PostgresConfig, which it turns
+    // No client factory: load() hands the app RawPostgresConfig, which it turns
     // into its own client. hydrate returns its input unchanged.
     expect(binding).toEqual({ url: 'postgres://u:p@host:5432/db' });
   });
@@ -103,7 +109,7 @@ describe('compute()', () => {
   });
 
   test('is inert until run or load — constructing the node hydrates nothing', () => {
-    const db = postgres();
+    const db = rawPostgres();
     const node = compute({
       name: 'test-service',
       deps: { db },
@@ -117,7 +123,7 @@ describe('compute()', () => {
     const node = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -134,7 +140,7 @@ describe('compute()', () => {
     expect(() =>
       compute({
         name: 'test-service',
-        deps: { port: postgres() },
+        deps: { port: rawPostgres() },
         build,
       }),
     ).toThrow(/dependency "port" collides with the reserved service param/);
@@ -179,7 +185,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -194,7 +200,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -228,7 +234,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -255,7 +261,7 @@ describe("the config serializer (shared by run() and /control's serialize)", () 
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -310,7 +316,7 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -336,7 +342,7 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -352,7 +358,7 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
   });
 
   test('a postgres dependency in deps round-trips through run()/load() — the binding is its config', async () => {
-    const db = postgres();
+    const db = rawPostgres();
     const app = compute({ name: 'test-service', deps: { db }, build });
 
     let loaded: unknown;
@@ -402,6 +408,26 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
       }),
     );
     expect(portAtBoot).toBe('3000');
+  });
+
+  test('run() binds framework servers to the Compute network unless the author set HOST', async () => {
+    const app = compute({ name: 'ingest', deps: {}, build });
+    let defaultHost: string | undefined;
+    let explicitHost: string | undefined;
+
+    await withEnv({ COMPOSER_INGEST_PORT: '', COMPOSER_PORT: '', HOST: undefined }, () =>
+      app.run('ingest', async () => {
+        defaultHost = process.env['HOST'];
+      }),
+    );
+    await withEnv({ COMPOSER_INGEST_PORT: '', COMPOSER_PORT: '', HOST: '127.0.0.1' }, () =>
+      app.run('ingest', async () => {
+        explicitHost = process.env['HOST'];
+      }),
+    );
+
+    expect(defaultHost).toBe('0.0.0.0');
+    expect(explicitHost).toBe('127.0.0.1');
   });
 
   // Reserved provider params (ADR-0031) are the provider-side counterpart of
@@ -546,7 +572,7 @@ describe('compute().run(address, boot) → load() — the round trip', () => {
 
 describe('bootstrapService(service, config, boot) — the in-process integration seam', () => {
   test("stashes the given Config address-free (like run('', ...)) so the booted entry's load() reads it", async () => {
-    const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
+    const app = compute({ name: 'test-service', deps: { db: rawPostgres() }, build });
 
     let deps: unknown;
     await withEnv({ COMPOSER_DB_URL: '', COMPOSER_PORT: '' }, () =>
@@ -563,7 +589,7 @@ describe('bootstrapService(service, config, boot) — the in-process integration
   });
 
   test('needs no pre-set environment — the caller supplies the Config directly, unlike run()', async () => {
-    const app = compute({ name: 'test-service', deps: { db: postgres() }, build });
+    const app = compute({ name: 'test-service', deps: { db: rawPostgres() }, build });
 
     let deps: unknown;
     await withEnv({ COMPOSER_DB_URL: 'stale', COMPOSER_PORT: 'stale' }, () =>
@@ -605,7 +631,7 @@ describe('compute().load()', () => {
   test('returns the deps, memoized per process (same object on re-load)', async () => {
     const app = compute({
       name: 'test-service',
-      deps: { db: postgres() },
+      deps: { db: rawPostgres() },
       build,
     });
 
@@ -671,7 +697,7 @@ describe('the config pipeline over extension nodes', () => {
     const app = compute({
       name: 'test-service',
       deps: {
-        db: postgres(),
+        db: rawPostgres(),
       },
       build,
     });
@@ -738,7 +764,7 @@ describe('structured params + target-owned serialization (ADR-0018/0019)', () =>
   });
 
   test('configOf reports a schema projection, not a scalar type tag', () => {
-    const app = compute({ name: 's', deps: { db: postgres() }, build });
+    const app = compute({ name: 's', deps: { db: rawPostgres() }, build });
     const portDecl = configOf(app).find((d) => d.owner === 'service' && d.name === 'port');
     expect(portDecl?.schema).toEqual({ vendor: '@prisma/composer' });
   });

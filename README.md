@@ -10,16 +10,42 @@ databases, schedules, secrets — compose them into a **Prisma App**, and
 `prisma-composer deploy` provisions all of it. There is no infrastructure
 configuration to write or maintain.
 
+## You need Node 22.18 or newer
+
+```sh
+node --version
+```
+
+**On anything older, Composer cannot load your app at all.** Your entry file is
+TypeScript and `prisma-composer` hands it straight to Node — the framework
+never bundles or transforms your code. Node runs `.ts` files directly only from
+**22.18.0**, the release that turns type stripping on by default. Before that,
+`prisma-composer deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own
+entry file, which reads as a broken file rather than a Node that is too old.
+
+22.17 is not close enough, and Node 20 never gets it: the default changed in
+22.18.0 exactly. The `streams` module's local stand-in additionally needs
+Node's built-in `node:sqlite`, unflagged since 22.13 — so 22.18 covers both.
+
 ## Start with the skill
 
 Composer is built to be driven by an agent, so the first thing to do is give
-your agent the skill:
+your agent the skill. It ships inside `@prisma/composer`, so it arrives with
+the package; `prisma skills sync` copies it into the skill directories your
+agent runtimes read:
 
 ```sh
-npx skills add prisma/composer
+pnpm add @prisma/composer
+pnpm add -D prisma
+pnpm prisma skills sync
 ```
 
-That's the whole setup. Your agent now knows the entire API and arrives
+That's the whole setup — and because the skill travelled in the tarball, it
+describes the exact version you installed. Add
+`"postinstall": "prisma skills sync || exit 0"` to your `package.json` and
+every upgrade brings the matching skill with it.
+
+Your agent now knows the entire API and arrives
 prepped with the **building blocks** it can snap together — ready-made
 Modules for scheduled jobs, blob storage, and event streams, alongside the
 ones you write. Ask it for what you want ("a Next.js storefront calling an
@@ -112,7 +138,7 @@ flowchart TB
 
 Each box is a **Module**: a boundary that owns some code and data and is
 reachable only through typed ports. catalog and orders each own their own
-Postgres — a [Prisma Next](https://github.com/prisma/prisma-next)-typed one,
+Postgres — a [Prisma ORM](https://github.com/prisma/orm)-typed one,
 with migrations applied at deploy — and the root never sees them; the only
 edges are the exposed, contract-typed RPC ports. Because nothing reaches
 inside a boundary, every dependency in the app is an explicit,
@@ -131,7 +157,7 @@ have.
 | Guide | Covers |
 | --- | --- |
 | [Getting started](docs/guides/getting-started.md) | Your first app end to end; porting an existing Node or Next.js app |
-| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma Next-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
+| [Building an app](docs/guides/building-an-app.md) | Contracts, databases (plain + Prisma-ORM-typed with migrations), reusable Modules, cron/storage/streams, config, secrets |
 | [Testing](docs/guides/testing.md) | Unit tests with `mockService`, integration tests with `bootstrapService` |
 | [Deploying and operating](docs/guides/deploying.md) | Stages, destroy, CI, how apps behave in production |
 
@@ -141,7 +167,7 @@ Complete, deployable apps under [`examples/`](examples/):
 
 | Example | Demonstrates |
 | --- | --- |
-| [pn-widgets](examples/pn-widgets/) | The minimal app: one service + one Prisma Next-typed Postgres |
+| [orm-demo](examples/orm-demo/) | The minimal app: one service + one Prisma-ORM-typed Postgres |
 | [storefront-auth](examples/storefront-auth/) | Next.js frontend + API service, a reusable Module owning its database, secrets |
 | [store](examples/store/) | Four modules, typed databases with migrations, the shared cron module |
 | [cron](examples/cron/) | Scheduled jobs: `defineSchedule` + `serveSchedule` + the cron module |
@@ -161,8 +187,10 @@ deploy target. The convention is an npm package named `prisma-composer-*` —
 that name is how you (and your agent) find one. The ecosystem is new: the
 first-party set above is the whole catalogue today, and it's growing.
 
-The agent-facing version of the guides lives in [`skills/`](skills/) and
-installs with `npx skills add prisma/composer`.
+The agent-facing version of the guides lives in [`skills/`](skills/), ships
+inside the `@prisma/composer` tarball, and installs with `prisma skills sync`
+(see [`skills/README.md`](skills/README.md), which also covers installing it
+from GitHub without the package).
 
 ## Design & internals
 

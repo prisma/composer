@@ -177,7 +177,7 @@ minted values (rpc accepted keys, streams API key) become target-owned reserved
 params — declared, schema-validated, carried by the normal serialize/stash
 pipeline — deleting `restashAddressFree` and the raw env scrapes it fed;
 (B) the streams contract names its streams (optional per-stream event schema,
-untyped retained as the `postgres()` parity), `durableStreams(contract)`
+untyped retained as the `rawPostgres()` parity), `durableStreams(contract)`
 hydrates to per-stream handles that own ensure-create and the proven-safe
 404 heal, so no stream lifecycle code remains in userspace.
 

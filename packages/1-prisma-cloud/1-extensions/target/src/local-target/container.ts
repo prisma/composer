@@ -6,12 +6,24 @@
  * produce/consume the identical wire shape (ADR-0037's transport), so the
  * SAME env var either narrows to a real hosted container or this local one
  * depending on which one the CLI resolved.
+ *
+ * The lifecycle's `credentials` argument is deliberately not taken: local dev
+ * is credential-free and must never start requiring a workspace id or a
+ * platform client.
  */
 import type { ContainerDescriptor, LocateContainerInput } from '@internal/core/config';
 import { deserialize, PrismaCloudContainer } from '../container.ts';
 
+const LOCAL_PROJECT_ID = 'local';
+
 function resolve(input: LocateContainerInput): PrismaCloudContainer {
-  return new PrismaCloudContainer({ appName: input.appName, stage: undefined }, 'local', undefined);
+  return new PrismaCloudContainer(
+    { appName: input.appName, stage: undefined },
+    LOCAL_PROJECT_ID,
+    undefined,
+    undefined,
+    true,
+  );
 }
 
 export function devContainerDescriptor(): ContainerDescriptor<PrismaCloudContainer> {

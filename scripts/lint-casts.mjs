@@ -9,7 +9,7 @@
  * The merge-base is checked out into a temporary git worktree. HEAD's biome
  * config + plugin are copied into the scanned tree so biome auto-discovers them
  * at the tree root — this anchors the config's relative `files.includes`
- * excludes (e.g. `!docs`, `!prisma-next`) to the same root for both scans, so
+ * excludes (e.g. `!docs`, `!orm`) to the same root for both scans, so
  * the two counts are comparable. (Passing `--config-path` to a foreign cwd
  * instead anchors those excludes inconsistently.) The baseline is thus "the old
  * source measured by the current rule" — which lets the PR that first

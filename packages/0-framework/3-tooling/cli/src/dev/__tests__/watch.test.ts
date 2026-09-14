@@ -1,7 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import chokidar, { FSWatcher } from 'chokidar';
 import { startWatch, watchTargetsFrom } from '../watch.ts';
 
 function tempDir(): string {
@@ -29,6 +30,29 @@ describe('watchTargetsFrom()', () => {
 });
 
 describe('startWatch()', () => {
+  test('stop settles synchronous watcher cleanup failures and is idempotent', async () => {
+    const watcher = new FSWatcher();
+    const createWatcher = spyOn(chokidar, 'watch').mockReturnValue(watcher);
+    const closeWatcher = spyOn(watcher, 'close').mockImplementation(() => {
+      throw new Error('watch close failed');
+    });
+    try {
+      const watch = startWatch(
+        [{ address: 'app', paths: [path.join(os.tmpdir(), 'output.js')] }],
+        () => {},
+      );
+      const closing = watch.stop();
+      expect(watch.stop()).toBe(closing);
+      await expect(closing).rejects.toBeInstanceOf(AggregateError);
+      await watch.ready;
+      expect(closeWatcher).toHaveBeenCalledTimes(1);
+    } finally {
+      closeWatcher.mockRestore();
+      createWatcher.mockRestore();
+      await watcher.close();
+    }
+  });
+
   test('debounces a burst of changes across several files into one callback, 300ms after the last change', async () => {
     const dir = tempDir();
     const fileA = path.join(dir, 'a.txt');

@@ -1,13 +1,13 @@
 # Gotchas
 
 A running log of surprises, workarounds, and undocumented behaviour hit while
-_consuming_ **Prisma Next**, **Prisma Compute**, or **Prisma Postgres** in this
+_consuming_ **Prisma ORM**, **Prisma Compute**, or **Prisma Postgres** in this
 project. Each entry captures friction a real user of these products would also hit.
 
 Each entry is also filed as a Triage-state Linear ticket in the matching gotchas
 project so the team can pick it up:
 
-- Prisma Next → [`pn-gotchas`](https://linear.app/prisma-company/project/pn-gotchas-a6f6f5157a5c/overview)
+- Prisma ORM → [`pn-gotchas`](https://linear.app/prisma-company/project/pn-gotchas-a6f6f5157a5c/overview)
 - Prisma Compute → [`compute-gotchas`](https://linear.app/prisma-company/project/compute-gotchas-dd3ac34b5ad4/overview)
 - Prisma Postgres → [`ppg-gotchas`](https://linear.app/prisma-company/project/ppg-gotchas-afe77336f696/overview)
 
@@ -203,7 +203,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 
 **Cause (corrected after reading pdp-control-plane source).** Env vars are `ConfigVariable` rows **materialized into a version at version-create time** (`materializeBranchEnvVars` resolves the branch's map and hands it to Foundry with the version) and frozen there — version start does not re-resolve, and updating a variable touches only the row, never an existing version. So the race is the env-var POST vs the consumer's **version-create** call, issued by one apply with no dependency edge between them. Consequences: (1) a version created before the row exists never sees it, regardless of VM recycles; (2) config changes take effect only via a new version — there is no restart-on-config-change. _The original filing (and this entry's first version) claimed boot-time application and recycle-healing; the source model contradicts that. Our one observed recycle-heal is treated as a platform bug, not behavior to rely on._
 
-**Workaround.** Give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). In Prisma Composer this is the Connection primitive's corrected lowering: `Deployment` declares its expected environment records as a prop, which both orders the write first and redeploys the consumer when a value changes. Manual stacks: create the variable, then ship a new version.
+**Workaround.** Two halves, both handled in Prisma Composer. **Ordering:** give the consumer's version-create a real dependency on the env-var write in the deploy graph — the version genuinely consumes the environment (PDP's version-create call contains the materialized map). The consumer's deployment reads its app id through every variable's id, so the planner schedules each write ahead of version-create (`compute/deployment-edge.ts` in `@internal/lowering`; alchemy's `Prisma.Deployment` has no prop for the environment itself). **Propagation:** since a version's environment is frozen at create, a changed variable *value* reaches a running service only via a new version — so the deploy hook declares each service's environment values as `Prisma.Deployment.triggers` (one `Redacted` member per row, shipped in alchemy 2.0.0-beta.74 as the renamed `redeployOn`): upstream folds the resolved members into a salted fingerprint in its own state and replaces the deployment exactly when one moved; an unchanged service is reused. Because upstream resolves the actual values, a value re-issued under a stable resource identity (a connection rotated in place, a re-minted service key) replaces too — this closed the narrowing the earlier Composer-side fingerprint had to accept (ADR-0048). Out-of-band rotation of a pointed platform variable is still caught via `updatedAt` metadata read at preflight, joined as a `<name>:updatedAt` trigger member. See the change-propagation note in [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md). Manual stacks: create the variable, then ship a new version.
 
 **Reproduction.**
 
@@ -214,7 +214,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-211](https://linear.app/prisma-company/issue/PRO-211/compute-fresh-deploys-race-env-var-creation-against-first-version)
-- Race + edge analysis: [`packages/app-cloud/src/target.ts`](packages/app-cloud/src/target.ts) (the corrected ordering comment — the `deploy`/`serialize` edge)
+- Race + edge analysis: [`packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/compute/deployment-edge.ts) (why the edge rides `app`, and what it does not do)
 - Related: [`dogfood-report.md`](dogfood-report.md)
 
 ---
@@ -300,7 +300,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **References.**
 
 - Upstream: [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with)
-- Fix: [`packages/alchemy/src/compute/ComputeService.ts`](packages/alchemy/src/compute/ComputeService.ts), [`packages/alchemy/src/postgres/Database.ts`](packages/alchemy/src/postgres/Database.ts)
+- Fix: both resources are alchemy's `Prisma.App` / `Prisma.Database`, which encode the two opposite mechanisms the Cause describes: `App` passes `branchId` in the create body (`node_modules/alchemy/src/Prisma/App.ts`), while `Database` creates project-scoped and attaches the Branch afterwards via `PATCH` (`.../Database.ts`, `branchNeedsSync`)
 
 ---
 
@@ -309,10 +309,12 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while) — _"First connection to a freshly-provisioned Postgres is rejected while the upstream is cold — breaks deploy-time migrations"_
 **Product:** Prisma Postgres (edge proxy / cold-start)
 **Version:** node-postgres (`pg` 8.21) via `@prisma-next/driver-postgres`; PPg direct connection; connecting at deploy time
-**First hit:** `examples/pn-widgets` — the `pnPostgres` deploy-migrate lowering connects to the DB the instant it is provisioned
+**First hit:** `examples/orm-demo` — the `postgres` deploy-migrate lowering connects to the DB the instant it is provisioned
 **Cost:** ~2 hours — several live E2E iterations plus a throwaway-DB diagnosis, and a red-herring SSL "fix" on the way
 
-**Symptom.** A client connecting to a PPg database **immediately after it is provisioned** fails on the first connection. Through Prisma Next's control client it surfaces as `CliStructuredError: Database connection failed`; the raw node-postgres error is `message: "Failed to connect to upstream database. Please contact Prisma support…"`, `err.code === undefined`, no `err.cause`. The **direct** endpoint fast-rejects (~0.4–0.6s); the **pooled** endpoint slow-times-out (~10s). Intermittent — the same DSN sometimes connects on attempt 1; it reproduces reliably only when connecting within a moment of provisioning.
+**Symptom.** A client connecting to a PPg database **immediately after it is provisioned** fails on the first connection. Through Prisma ORM's control client it surfaces as `CliStructuredError: Database connection failed`; the raw node-postgres error is `message: "Failed to connect to upstream database. Please contact Prisma support…"`, `err.code === undefined`, no `err.cause`. The **direct** endpoint fast-rejects (~0.4–0.6s); the **pooled** endpoint slow-times-out (~10s). Intermittent — the same DSN sometimes connects on attempt 1; it reproduces reliably only when connecting within a moment of provisioning.
+
+The same cold window has a **second presentation**, and it is the more dangerous one. Instead of rejecting, the proxy **completes** the connection — `pg` resolves `connect()` only after authentication succeeds and the server sends `ReadyForQuery` — and then drops the socket, so the failure lands on the *first query* as `Connection terminated unexpectedly`. Two consequences: a retry wrapped around the connect alone never engages, because the connect succeeded; and `pg` reports the drop by emitting an `'error'` event on the client, which is an uncaught exception in any process not listening for it, so it kills the process rather than returning an error you can catch. Both shapes turned up in the same "Cold-connect canary" job within two days (jobs 92958820634 and 93248605341, 2026-08-07 and 2026-08-09).
 
 **Cause.** The PPg edge accepts the TCP/TLS connection but the **upstream database is cold** (just provisioned / scaled to zero) and not yet ready, so the proxy rejects with the generic "upstream" error. Confirmed **not** TLS, **not** network (no `ECONNREFUSED`/`ETIMEDOUT`), **not** auth: on a **warmed** DB every SSL posture (`require`, `verify-full`, `no-verify`) and both endpoints connect, and PPg's cert is publicly trusted. Same cold/scale-to-zero family as FT-5219, different surface — FT-5219 is an *idle-close* crash of a persistent runtime client; this is the *first connect* being rejected at deploy time. A deploy-time migration hits the cold window ~every time because it connects the instant the DB is provisioned.
 
@@ -335,8 +337,9 @@ await withConnectionRetry(() => client.dbInit(...), { attempts: 12, delayMs: 500
 **References.**
 
 - Upstream: [FT-5226](https://linear.app/prisma-company/issue/FT-5226/first-connection-to-a-freshly-provisioned-postgres-is-rejected-while)
-- Workaround source: [`packages/app-cloud/src/prisma-next-migrate.ts`](packages/app-cloud/src/prisma-next-migrate.ts) (`withConnectionRetry`)
-- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect in a run of at least 14 succeeds — the rejection is intermittent, so a shorter unanimous streak is treated as luck, not a fix (same reasoning as PRO-217's 14-hold requirement below) — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking)
+- Workaround source: [`packages/1-prisma-cloud/1-extensions/target/src/pg-connection.ts`](packages/1-prisma-cloud/1-extensions/target/src/pg-connection.ts) (`withConnectionRetry`), used by [`orm-migrate.ts`](packages/1-prisma-cloud/1-extensions/target/src/orm-migrate.ts) and [`pg-warm-resource.ts`](packages/1-prisma-cloud/1-extensions/target/src/pg-warm-resource.ts). Both wrap connect **and** the operation, which is what makes them proof against the socket-drop presentation — wrapping the connect alone would not be. Wrapping is necessary but not sufficient: every client also needs an `'error'` listener, because an unhandled `'error'` event is raised outside the promise and `withConnectionRetry` cannot catch it.
+- The control client used for deploy-time migrations (`createPostgresControlClient` → `PostgresControlDriver`) has the same trap, and it bites on the dependency rather than on our code. `@prisma-next/driver-postgres@0.16.0` builds it around a long-lived `pg.Client` with no `'error'` listener (`dist/control.mjs:32`), so a socket drop there takes the deploy process down instead of failing the migration. Fixed upstream in [`prisma/orm@0e51f1f4d`](https://github.com/prisma/orm/commit/0e51f1f4d) (2026-07-22), which adds the listener and makes `close()` tolerate a dropped socket. 0.16.0 was published one day earlier and never got it; the fix ships in `@prisma/orm-target-postgres@8.0.0-rc.1` (`client.on("error", () => {})` at `dist/control-6WFTtLAM.mjs:33`, verified in the published tarball), which Composer adopts in the Prisma 8 upgrade. Nothing to do here once that lands — and no dependency patch was ever warranted.
+- Removal guard: the CI canary (`scripts/cold-connect-canary.ts`, "Cold-connect canary" E2E job) fails only when every cold connect in a run of at least 14 succeeds — the rejection is intermittent, so a shorter unanimous streak is treated as luck, not a fix (same reasoning as PRO-217's 14-hold requirement below) — when the platform fixes FT-5226 it goes red, forcing removal of `withConnectionRetry` and itself (an inconclusive run passes with a warning annotation instead of blocking). Exit 1 means that verdict and nothing else, because it is read as an instruction to delete working production code: a canary that cannot provision, a teardown that fails, and a stray async error all exit 0 with the reason logged. The stray-error case is not hypothetical — an unhandled `'error'` event from the canary's own `pg` client (the same defect as the idle-close entry below) made bun exit 1 a second *after* the correct "bug still present" verdict had printed, which reads in the log as a crash during project teardown. The canary also cried wolf once: on 2026-08-09 it returned a bug-gone verdict (14/14, run 31330072181) while runs on main minutes either side still saw the rejection. Cause: it sampled back to back, and a connect that reaches an already-warm upstream tests nothing while still counting as evidence — across 20 runs the successes came back in a median of 122ms against 546ms for rejections. Samples are now spaced 60s apart, matching the cold-start canary. If a bug-gone verdict ever appears again, confirm it against a second run before acting on it
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (idle-close, runtime), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (nested endpoint DSNs)
 
 ---
@@ -368,7 +371,7 @@ pool.on("error", (err) => console.error("pg pool idle client error", err));
 
 **References.**
 
-- Fix in this repo: `resilientPool` in [`packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts`](packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts) (commit `0088520`)
+- Fix in this repo: `resilientPool` in [`packages/1-prisma-cloud/1-extensions/target/src/orm-postgres.ts`](packages/1-prisma-cloud/1-extensions/target/src/orm-postgres.ts) (commit `0088520`)
 - Related: [FT-5219](https://linear.app/prisma-company/issue/FT-5219) (same idle-close, persistent Bun.SQL client → 502 loop), [FT-5226](https://linear.app/prisma-company/issue/FT-5226) (same cold/idle family, deploy-time first connect)
 
 ---
@@ -474,7 +477,7 @@ Retry the same DSN a few seconds later and the real, permanent cause appears:
 Failed to identify your database: Your account has restrictions: planLimitReached
 ```
 
-The Management API is no help: the project and database both read `status: "ready"`. Through Prisma Composer's hosted state store the failure surfaces two layers from its cause — `HostedStateBootstrapError: … finding/creating the prisma-composer-state project — ownership verification failed: … not configured correctly yet` — which points at the state store's own bootstrap rather than at the account.
+The Management API is no help: the project and database both read `status: "ready"`. At the time, Prisma Composer's state store was itself a workspace database (since replaced by the platform state API, ADR-0045), so the failure surfaced two layers from its cause — `HostedStateBootstrapError: … finding/creating the prisma-composer-state project — ownership verification failed: … not configured correctly yet` — pointing at the state store's bootstrap rather than at the account. Any database connection in the workspace hits the same wall.
 
 **Cause.** Two unrelated conditions share one error prefix and the first one wins on a cold database. The generic "not configured correctly yet" text is the same message [FT-5226](https://linear.app/prisma-company/issue/FT-5226) documents for a cold upstream; the plan restriction is only reported once the upstream is warm. The two want **opposite** responses — FT-5226 says retry, `planLimitReached` says stop and reclaim a database — so the message that arrives first tells you to do the wrong thing. Worse, any bounded cold-start retry (the documented FT-5226 workaround, and what deploy-time code does) spends its whole budget re-showing the misleading message and then reports the misleading message.
 
@@ -491,7 +494,7 @@ The Management API is no help: the project and database both read `status: "read
 
 - Upstream: [FT-5227](https://linear.app/prisma-company/issue/FT-5227/planlimitreached-is-masked-by-the-cold-start-not-configured-correctly)
 - Related: [FT-5226](https://linear.app/prisma-company/issue/FT-5226) (the cold-start message this is confused with, and whose retry workaround this defeats), [PRO-212](https://linear.app/prisma-company/issue/PRO-212) (the same API's habit of reporting the wrong field)
-- Surfaced through: [`packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts`](packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts) (`verifyOwnership`)
+- Surfaced through: the state store's former database bootstrap (`verifyOwnership` in `packages/1-prisma-cloud/0-lowering/lowering/src/state/bootstrap.ts`, removed when state moved behind the platform state API — ADR-0045). The platform behavior itself is unchanged.
 
 ---
 
@@ -580,7 +583,7 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 ## prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version
 
 **Filed upstream:** [TML-3098](https://linear.app/prisma-company/issue/TML-3098/prisma-dev-fails-at-startup-freshly-published-prismacli-dev01623) — _"prisma dev fails at startup — freshly published @prisma/cli-dev@0.16.23 errors with 'Dynamic require of "assert" is not supported'"_
-**Product:** Prisma Next (`prisma dev`)
+**Product:** Prisma ORM (`prisma dev`)
 **Version:** `prisma` CLI 7.9.0 (pinned) + `@prisma/cli-dev@0.16.23` (fetched at run time), observed 2026-07-24
 **First hit:** CI's "Warm the prisma dev engine cache" step went deterministically red on a workflow-and-docs-only PR; main had been green 90 minutes earlier
 

@@ -1,4 +1,4 @@
-// use prisma-next
+// use prisma-8
 //
 // orders' data contract: one Order per purchase, snapshotting the product's
 // name and price at placement time.
@@ -9,5 +9,5 @@ model Order {
   productName String
   quantity    Int
   totalCents  Int
-  placedAt    DateTime @default(now())
+  placedAt    TimestamptzString @default(now())
 }

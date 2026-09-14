@@ -337,7 +337,8 @@
     "execute": [
       {
         "description": "create index \"account_userId_idx\"",
-        "sql": "CREATE INDEX \"account_userId_idx\" ON \"auth\".\"account\" (\"userId\")"
+        "sql": "CREATE INDEX \"account_userId_idx\" ON \"auth\".\"account\" (\"userId\")",
+        "params": []
       }
     ],
     "postcheck": [
@@ -375,7 +376,8 @@
     "execute": [
       {
         "description": "create index \"session_userId_idx\"",
-        "sql": "CREATE INDEX \"session_userId_idx\" ON \"auth\".\"session\" (\"userId\")"
+        "sql": "CREATE INDEX \"session_userId_idx\" ON \"auth\".\"session\" (\"userId\")",
+        "params": []
       }
     ],
     "postcheck": [
@@ -413,7 +415,8 @@
     "execute": [
       {
         "description": "create index \"verification_identifier_idx\"",
-        "sql": "CREATE INDEX \"verification_identifier_idx\" ON \"auth\".\"verification\" (\"identifier\")"
+        "sql": "CREATE INDEX \"verification_identifier_idx\" ON \"auth\".\"verification\" (\"identifier\")",
+        "params": []
       }
     ],
     "postcheck": [

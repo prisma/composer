@@ -26,9 +26,9 @@ src/
 ```
 
 Non-overlapping by construction. Uses the repo's own plane vocabulary
-(ADR-0017/0028) rather than prisma-next's `core/` naming.
+(ADR-0017/0028) rather than prisma/orm's `core/` naming.
 
-**Note:** this is stricter than prisma-next, whose own
+**Note:** this is stricter than prisma/orm, whose own
 `adapter-postgres/src/exports/column-types.ts` is 185 lines of implementation.
 Deliberate — the rule is better than the reference.
 
@@ -52,7 +52,7 @@ Already compliant, do not touch: both published packages (all 21 files),
 | cli | `render-deployment.ts` (55) | `src/render-deployment.ts` (root; cli is all-control via `src/**`) |
 | lowering | `index.ts` (20) | `src/providers.ts` (root; lowering is all-control via `src/**`) |
 | target | `control.ts` (130) | `src/control/<name>.ts` |
-| target | `pg-connection.ts` (64), `prisma-next.ts` (101), `testing.ts` (21) | `src/<name>.ts` (root, shared) |
+| target | `pg-connection.ts` (64), `orm-postgres.ts` (101), `testing.ts` (21) | `src/<name>.ts` (root, shared) |
 | cron | `scheduler-service.ts` (1), `scheduler-entrypoint.ts` (4) | `src/execution/<name>.ts` |
 | storage | `storage-service.ts` (12), `storage-entrypoint.ts` (5) | `src/execution/<name>.ts` |
 | streams | `streams-service.ts` (11), `streams-entrypoint.ts` (37) | `src/execution/<name>.ts` |

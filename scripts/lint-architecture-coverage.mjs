@@ -18,7 +18,7 @@
 //
 // Wired into `pnpm lint:deps` (local, lint-staged, and CI).
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import architectureConfig from '../architecture.config.json' with { type: 'json' };
 import cruiserConfig from '../dependency-cruiser.config.mjs';
@@ -32,12 +32,15 @@ import {
 // `--others` so a new, not-yet-staged file is checked too: an unclassified file
 // is only ever a new one, and waiting for `git add` would miss it exactly when
 // the check is most needed. `--exclude-standard` keeps .gitignore respected.
+// The existsSync filter drops files deleted in the worktree but not yet
+// staged — `--cached` still lists those, and reading one would crash the lint.
 const gitLsFiles = (...globs) =>
   execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', ...globs], {
     encoding: 'utf8',
   })
     .split('\n')
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((file) => existsSync(file));
 
 // The cruiser's own exclusions, so the two always agree on what is cruised.
 const excluded = cruiserConfig.options.exclude.path.map((pattern) => new RegExp(pattern));

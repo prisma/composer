@@ -76,6 +76,7 @@ export async function bootstrapService<D extends Deps, P extends Params, E exten
     if (row !== undefined) process.env[row.key] = row.value;
   }
   process.env['PORT'] = String(port);
+  process.env['HOST'] ??= '0.0.0.0';
   await bootEntry();
   return { url: `http://localhost:${port}/`, fetch };
 }

@@ -20,11 +20,11 @@ importable and tested.
 **Outcome:** a pn database can carry an extension-pack requirement:
 wireable, preflighted at deploy, migrated multi-space.
 **Focus:** spec § Target changes items 2–4: `pnPackRequirement` +
-`satisfies` branch (`prisma-next.ts`); preflight with the three pinned
-error messages (`preflight.ts` + hook into `descriptors/prisma-next.ts`);
-`resolvePnProject` (`pn-config.ts`) + `extensionPacks` threading +
+`satisfies` branch (`orm-postgres.ts`); preflight with the three pinned
+error messages (`preflight.ts` + hook into `descriptors/orm-postgres.ts`);
+`resolvePnProject` (`orm-config.ts`) + `extensionPacks` threading +
 noop-suppression + migration-resource key folding pack hashes
-(`prisma-next-migrate.ts`, `pn-migration-resource.ts`). Unit tests for
+(`orm-migrate.ts`, `orm-migration-resource.ts`). Unit tests for
 each; integration test for multi-space migrate against local PG using a
 synthetic pack fixture.
 **Builds on:** —. **Hands to:** target APIs the pack (D3) and module (D4)
@@ -73,7 +73,7 @@ tests.
 
 **Outcome:** `examples/auth` deploys to real Prisma Cloud; smoke passes;
 packaging/lint surfaces clean.
-**Focus:** `examples/auth` per spec (empty-app-space PN project +
+**Focus:** `examples/auth` per spec (empty-app-space Prisma ORM project +
 authPack; api service with proxy + verifier + session dep; ops service
 with admin dep; `scripts/smoke.ts`; local integration tests); public
 package re-exports; README (S1 sections); exports-entrypoints exception

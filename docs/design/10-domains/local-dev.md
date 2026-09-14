@@ -132,7 +132,8 @@ into a deployment at version-create; locally, the `Deployment` provider
 performs the same join from the `EnvironmentVariable` records the lowering
 emitted — against props defined in this repo, once, not an emulation of a
 foreign API. One pinned deviation: the local join is scoped to the
-service's own rows (plus the unprefixed poison rows), because the platform
+service's own rows (plus any row outside the `COMPOSER_` namespace, which is
+a platform-owned name by definition), because the platform
 diffs a deployment only on its own referenced rows while an app-wide local
 snapshot diffs on bytes — which restart-amplified dependents on every
 first-after-cold converge. No sanctioned reader consumes sibling rows, so
@@ -167,7 +168,7 @@ semantics):
 | `Project` | a local identity record; no platform |
 | `Database` | a database on the local Postgres server (ORM `prisma dev`) |
 | `Connection` | the local connection URL |
-| `ComputeService` | registers the service with the Compute emulator, which allocates its stable port; `endpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
+| `App` | registers the service with the Compute emulator, which allocates its stable port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
 | `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the Compute emulator, which (re)starts the child |
 | `EnvironmentVariable` | a key→value row in the dev state store |
 | `Bucket` | a directory under `.prisma-composer/dev/buckets/<bucket>/`, served by the bucket emulator |
@@ -175,7 +176,7 @@ semantics):
 | `ServiceKey` | **unchanged** — mints locally, persists in state |
 | `S3Credentials` | **unchanged** — mints locally, persists in state |
 | `PgWarm` | **unchanged** — real `select 1` against the local URL |
-| `PnMigration` | **unchanged** — real migrations against the local URL |
+| `OrmMigration` | **unchanged** — real migrations against the local URL |
 
 Because module-backed kinds (storage, streams, email) lower to compute services
 plus databases, they run their **real service code** locally against local
@@ -184,13 +185,7 @@ SQLite test server remains a testing utility, not part of the dev loop.
 
 ### Postgres
 
-The emulator is the ORM CLI's local Postgres (`prisma dev`), **one named,
-detached instance per `Database` resource** — instance names are derived from
-the app and database ids, so instances are isolated, discoverable
-(`prisma dev ls`), and survive across dev sessions for warm starts.
-Migrations are not special-cased: `PnMigration` runs exactly as it does in a
-deploy, against the local URL. `PgWarm` is near-instant locally and is kept
-(not stubbed) so the provider set stays uniform.
+The emulator is the ORM CLI's local Postgres (`prisma dev`), **one named, detached instance per `Database` resource** — instance names are derived from the app and database ids, so instances are isolated, discoverable (`prisma dev ls`), and survive across dev sessions for warm starts. Migrations are not special-cased: `OrmMigration` runs exactly as it does in a deploy, against the local URL — replay-only (ADR-0022 as revised), so it applies committed migrations and never synthesizes schema. At reconcile time it reloads the emitted `contract.json` identified by `prisma.config.ts`, attests its `storageHash` against the compact contract identity persisted in deploy state, and only then opens the database. Dev-loop schema iteration therefore happens through the ORM's own `prisma db update`, run directly against the emulator database: `db update` moves the database and its marker to the current contract, and the pipeline's migration step no-ops because the marker matches the target. A dev run against a database that was neither updated nor covered by a planned migration hits the same structured refusal a deploy would, naming both exits (`prisma db update` to iterate, `contract emit` + `migration plan` to author the path). `PgWarm` is near-instant locally and is kept (not stubbed) so the provider set stays uniform.
 
 ### Buckets: a disk-backed S3 emulator
 
@@ -329,8 +324,8 @@ replaces.
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec
-  § 4's `PnMigration` line is for framework-run migrations only). An app that
-  runs its own migrations (e.g. via `prisma-next db init`, like the
+  § 4's `OrmMigration` line is for framework-run migrations only). An app that
+  runs its own migrations (e.g. via `prisma db init`, like the
   open-chat port) needs that as a manual step against the local Postgres URL
   on a fresh dev instance; `dev` does not know to run it automatically.
 

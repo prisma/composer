@@ -1,7 +1,7 @@
 /**
  * `runPackPreflight` — the deploy-time enforcement of `requiredPackHead`:
  * wireability says yes to every required pack head, so THIS
- * is the check that the wired resource's `prisma-next.config.ts` actually
+ * is the check that the wired resource's `prisma.config.ts` actually
  * lists the pack at the required head. Driven against real `Load` graphs
  * (real wiring, real satisfies path) with the packed-contract fixture's
  * on-disk config; no database, no Prisma Cloud.
@@ -18,8 +18,8 @@ import {
   string,
 } from '@internal/core';
 import { compute } from '../compute.ts';
+import { dataContract, postgres, requiredPackHead } from '../orm-postgres.ts';
 import { runPackPreflight } from '../preflight.ts';
-import { pnContract, pnPostgres, requiredPackHead } from '../prisma-next.ts';
 import { GADGET_PACK_HEAD_HASH, GADGET_PACK_ID } from './fixtures/packed-contract/pack.ts';
 import widgetContractJson from './fixtures/widget-contract/emitted/contract.json' with {
   type: 'json',
@@ -30,13 +30,13 @@ const packedConfig = path.join(
   'fixtures',
   'packed-contract',
   'source',
-  'prisma-next.config.ts',
+  'prisma.config.ts',
 );
 
 /** A service dependency claiming its pn database carries the given pack head. */
 const packDep = (packId: string, headHash: string) =>
   dependency({
-    type: 'prisma-next',
+    type: 'postgres',
     connection: { params: { url: string() }, hydrate: (v) => v },
     required: requiredPackHead({ packId, headHash }),
   });
@@ -62,11 +62,19 @@ const graphWith = (packId: string, headHash: string, provider: ResourceNode): Gr
     { id: 'root' },
   );
 
-const pnDb = () =>
-  pnPostgres({
+const spacelessConfig = path.join(
+  import.meta.dir,
+  'fixtures',
+  'packed-contract',
+  'source',
+  'prisma.spaceless.config.ts',
+);
+
+const pnDb = (config: string = packedConfig) =>
+  postgres({
     name: 'db',
-    contract: pnContract(widgetContractJson),
-    config: packedConfig,
+    contract: dataContract(widgetContractJson),
+    config,
   });
 
 describe('runPackPreflight', () => {
@@ -82,7 +90,7 @@ describe('runPackPreflight', () => {
         provision(
           compute({
             name: 'api',
-            deps: { db: pnPostgres(pnContract(widgetContractJson)) },
+            deps: { db: postgres(dataContract(widgetContractJson)) },
             build,
           }),
           { id: 'api', deps: { db } },
@@ -95,36 +103,59 @@ describe('runPackPreflight', () => {
   });
 
   test('fails naming resource, pack, and consumer when the config does not list the pack', async () => {
-    const graph = graphWith('auth', 'sha256:auth-head', pnDb());
+    const graph = graphWith('auth', 'auth-head', pnDb());
     await expect(runPackPreflight(graph)).rejects.toThrow(
-      'prisma-next database "db" does not list extension pack "auth" in its ' +
-        'prisma-next.config.ts extensionPacks — service "api" requires it. ' +
+      'postgres database "db" does not list extension pack "auth" in its ' +
+        'prisma.config.ts extensions — service "api" requires it. ' +
         'Add the pack and run migration plan.',
     );
   });
 
-  test('fails when a pack-requirement edge is wired to a non-pnPostgres provider', async () => {
-    // A resource that PROVIDES a prisma-next contract (so the wiring
-    // satisfies) but is not a pnPostgres resource node — it has no config to
+  test('fails naming the absent contract space when the listed pack declares none', async () => {
+    // A pack with no contractSpace carries no head, so it can never satisfy a
+    // required one — the message says that rather than printing "undefined".
+    const graph = graphWith(GADGET_PACK_ID, 'a-required-head', pnDb(spacelessConfig));
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `postgres database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        '(no contract space), but service "api" requires a-required-head. ' +
+        'Upgrade the pack and run migration plan.',
+    );
+  });
+
+  test('fails naming both heads when the config lists the pack at a different head', async () => {
+    // The pack IS listed, so the missing-pack check above passes it through —
+    // only comparing heads catches a database whose migration step would take
+    // it to a head the service is not typed against.
+    const graph = graphWith(GADGET_PACK_ID, 'a-different-head', pnDb());
+    await expect(runPackPreflight(graph)).rejects.toThrow(
+      `postgres database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
+        `${GADGET_PACK_HEAD_HASH}, but service "api" requires a-different-head. ` +
+        'Upgrade the pack and run migration plan.',
+    );
+  });
+
+  test('fails when a pack-requirement edge is wired to a non-postgres provider', async () => {
+    // A resource that PROVIDES an orm-postgres contract (so the wiring
+    // satisfies) but is not a postgres resource node — it has no config to
     // preflight against.
     const lookalike = resource({
       name: 'imposter',
       extension: '@prisma/composer-prisma-cloud',
-      provides: pnContract(widgetContractJson),
+      provides: dataContract(widgetContractJson),
     });
     const graph = Load(
       module('root', {}, ({ provision }) => {
         const db = provision(lookalike, { id: 'db' });
-        provision(
-          compute({ name: 'api', deps: { db: packDep('auth', 'sha256:auth-head') }, build }),
-          { id: 'api', deps: { db } },
-        );
+        provision(compute({ name: 'api', deps: { db: packDep('auth', 'auth-head') }, build }), {
+          id: 'api',
+          deps: { db },
+        });
         return {};
       }),
       { id: 'root' },
     );
     await expect(runPackPreflight(graph)).rejects.toThrow(
-      'service "api" requires extension pack "auth", which only a pnPostgres resource can carry.',
+      'service "api" requires extension pack "auth", which only a postgres resource can carry.',
     );
   });
 });

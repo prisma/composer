@@ -67,10 +67,17 @@ export interface WatchHandle {
  * nonexistent path is treated as a file target, so it starts reporting the
  * moment something creates it.
  */
-export function startWatch(targets: readonly WatchTarget[], onChange: () => void): WatchHandle {
+export function startWatch(
+  targets: readonly WatchTarget[],
+  onChange: () => void,
+  onError?: (error: unknown) => void,
+): WatchHandle {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  let closing: Promise<void> | undefined;
 
   const trigger = (): void => {
+    if (stopped) return;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
@@ -101,9 +108,10 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
 
   // An 'error' emitted with no listener throws and would take the whole dev
   // session down — a watch error (EMFILE, a vanished directory) is worth a
-  // line, not the process.
+  // report to the caller, not the process. Rendering is the caller's:
+  // this module never touches the console (the dev OPERATION reaches it).
   const reportError = (error: unknown): void => {
-    console.error(`[dev] watch error: ${error instanceof Error ? error.message : String(error)}`);
+    onError?.(error);
   };
 
   const watchers: FSWatcher[] = [];
@@ -130,10 +138,20 @@ export function startWatch(targets: readonly WatchTarget[], onChange: () => void
 
   return {
     ready,
-    stop: async () => {
+    stop: () => {
+      if (closing !== undefined) return closing;
+      stopped = true;
       if (timer !== undefined) clearTimeout(timer);
       markReady();
-      await Promise.all(watchers.map((watcher) => watcher.close()));
+      closing = Promise.allSettled(
+        watchers.map((watcher) => Promise.resolve().then(() => watcher.close())),
+      ).then((results) => {
+        const failures = results.flatMap((result) =>
+          result.status === 'rejected' ? [result.reason] : [],
+        );
+        if (failures.length > 0) throw new AggregateError(failures, 'Failed to close dev watchers');
+      });
+      return closing;
     },
   };
 }

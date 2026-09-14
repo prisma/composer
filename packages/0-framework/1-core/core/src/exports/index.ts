@@ -18,14 +18,17 @@ export type {
 export { configOf, inputManifest, number, param, paramManifest, string } from '../config.ts';
 export type { Contract } from '../contract.ts';
 export type {
+  AuthoredEdge,
+  BoundaryPort,
   Edge,
   Graph,
   GraphNode,
   NodeId,
   ParamBinding,
+  PortEndpoint,
   ServiceInputBinding,
 } from '../graph.ts';
-export { Load, LoadError } from '../graph.ts';
+export { Load, LoadError, RESOURCE_OUT_PORT } from '../graph.ts';
 export { hydrate, hydrateSync } from '../hydrate.ts';
 export type {
   BuildAdapter,
