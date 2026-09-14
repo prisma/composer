@@ -1,107 +1,45 @@
 name: Windows current CLI diagnostic
-
 on:
   workflow_dispatch:
-
 permissions:
   contents: read
-
 env:
   DO_NOT_TRACK: '1'
   CREATE_PRISMA_DISABLE_TELEMETRY: '1'
   PRISMA_TELEMETRY_DISABLED: '1'
-
 jobs:
-  reproduce:
+  isolate:
     runs-on: windows-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        include:
-          - template: elysia
-            manager: bun
-            node: '24.16.0'
-          - template: hono
-            manager: pnpm
-            node: '24.16.0'
-          - template: minimal
-            manager: npm
-            node: '24.21.0'
+    timeout-minutes: 10
     steps:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
-          node-version: ${{ matrix.node }}
-      - name: Install diagnostic package managers
+          node-version: '24.16.0'
+      - name: Reproduce native Bun subprocess resolution
         shell: pwsh
         working-directory: ${{ runner.temp }}
         run: |
-          npm install --global bun@1.4.1 pnpm@11.21.0 npm@11.19.0
+          npm install --global bun@1.4.1 pnpm@11.21.0
           node --version
-          npm --version
           bun --version
-          pnpm --version
+          where.exe bun
+          node -e "const p=require('node:child_process').spawnSync('bun',['--version'],{encoding:'utf8'});console.log({status:p.status,error:p.error?.message,stdout:p.stdout})"
+          $globalRoot = npm root --global
+          $binary = Get-ChildItem (Join-Path $globalRoot 'bun') -Filter bun.exe -Recurse | Select-Object -First 1
+          if (-not $binary) { throw 'Native Bun executable not found in its npm package' }
+          $env:PATH = "$($binary.DirectoryName);$env:PATH"
+          node -e "const p=require('node:child_process').spawnSync('bun',['--version'],{encoding:'utf8'});console.log({status:p.status,error:p.error?.message,stdout:p.stdout})"
+      - name: Inspect failing pnpm dependency tree and config import
+        shell: pwsh
+        working-directory: ${{ runner.temp }}
+        run: |
           git config --global user.name 'Prisma diagnostic'
           git config --global user.email 'diagnostic@prisma.io'
-      - name: Reproduce published scaffold and deployment
-        if: matrix.manager != 'npm'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        env:
-          PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
-          PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
-          TEST_TEMPLATE: ${{ matrix.template }}
-          TEST_MANAGER: ${{ matrix.manager }}
-        run: |
-          $name = "cp0121-$env:TEST_TEMPLATE-${{ github.run_id }}"
-          "TEST_PROJECT=$name" >> $env:GITHUB_ENV
-          if ($env:TEST_MANAGER -eq 'bun') {
-            bunx create-prisma@0.12.1 $name --template $env:TEST_TEMPLATE --provider postgres --authoring psl --package-manager $env:TEST_MANAGER --deploy --yes --verbose
-          } else {
-            pnpm dlx create-prisma@0.12.1 $name --template $env:TEST_TEMPLATE --provider postgres --authoring psl --package-manager $env:TEST_MANAGER --deploy --yes --verbose
-          }
-          exit $LASTEXITCODE
-      - name: Reproduce npm authentication startup
-        if: matrix.manager == 'npm'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        run: |
-          $env:PRISMA_AUTH_FILE = Join-Path $env:RUNNER_TEMP 'isolated-auth.json'
-          $name = "cp0121-npm-${{ github.run_id }}"
-          npx --yes create-prisma@0.12.1 $name --template minimal --provider postgres --authoring psl --package-manager npm --no-deploy --yes --verbose
+          pnpm dlx create-prisma@0.12.1 cp0121-inspect --template hono --provider postgres --authoring psl --package-manager pnpm --no-deploy --yes --verbose
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Set-Location $name
-          npx prisma auth whoami --json
-          $stdoutPath = Join-Path $env:RUNNER_TEMP 'login.stdout'
-          $stderrPath = Join-Path $env:RUNNER_TEMP 'login.stderr'
-          $login = Start-Process -FilePath 'cmd.exe' -ArgumentList '/d /s /c "npx prisma auth login --json"' -NoNewWindow -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-          if (-not $login.WaitForExit(30000)) {
-            Write-Output 'Login still awaiting browser authorization after 30 seconds; stopping the diagnostic, not counting this as a login failure.'
-            taskkill /PID $login.Id /T /F
-          } else {
-            Write-Output "Login exited with code $($login.ExitCode)"
-          }
-          Get-Content $stdoutPath, $stderrPath | ForEach-Object {
-            $_ -replace 'https?://[^\s"<>]+', '<URL omitted>'
-          }
-          exit 0
-      - name: Delete only this run's diagnostic project
-        if: always() && matrix.manager != 'npm'
-        shell: pwsh
-        working-directory: ${{ runner.temp }}
-        env:
-          PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
-          PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
-        run: |
-          if (-not $env:TEST_PROJECT -or -not (Test-Path $env:TEST_PROJECT)) { exit 0 }
-          Set-Location $env:TEST_PROJECT
-          $raw = npx prisma project list --json
-          if ($LASTEXITCODE -ne 0) { throw 'Could not list diagnostic project for cleanup' }
-          $result = $raw | ConvertFrom-Json
-          $matches = @($result.envelope.result.items | Where-Object { $_.name -eq $env:TEST_PROJECT })
-          if ($matches.Count -gt 1) { throw 'Ambiguous diagnostic project match' }
-          foreach ($project in $matches) {
-            npx prisma project delete $project.id --confirm $project.id --json
-            if ($LASTEXITCODE -ne 0) { throw 'Diagnostic project cleanup failed' }
-          }
+          Set-Location cp0121-inspect
+          Get-Content pnpm-workspace.yaml
+          pnpm why @effect/platform-node-shared
+          node -e "const fs=require('node:fs'),path=require('node:path');for(const d of fs.readdirSync('node_modules/.pnpm').filter(x=>x.startsWith('@effect+platform-node')||x.startsWith('effect@'))){console.log(d);const p=path.join('node_modules/.pnpm',d,'node_modules/effect');try{console.log({real:fs.realpathSync(p),version:JSON.parse(fs.readFileSync(path.join(p,'package.json'),'utf8')).version,hasByteSize:fs.existsSync(path.join(p,'dist/ByteSize.js'))})}catch(e){console.log(e.message)}}"
+          node --input-type=module -e "try{await import('./prisma-composer.config.ts');console.log('Native config import succeeded')}catch(e){console.error(e)}"
+          node --input-type=module -e "import{createRequire}from'node:module';import{pathToFileURL}from'node:url';import path from'node:path';const r=createRequire(import.meta.resolve('@prisma/composer/control'));try{const{loadConfig}=await import(pathToFileURL(r.resolve('c12')).href);await loadConfig({name:'prisma-composer',configFile:path.resolve('prisma-composer.config.ts'),cwd:process.cwd(),rcFile:false,globalRc:false,packageJson:false});console.log('Composer config evaluation succeeded')}catch(e){console.error(e)}"
