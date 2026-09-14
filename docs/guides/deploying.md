@@ -34,6 +34,12 @@ for hoisted installations. On Windows it prefers `alchemy.exe`, then
 `alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
 Windows shim must not be reported as a missing Alchemy dependency.
 
+Next.js standalone builds on Windows may contain absolute package symlinks.
+Composer stages their targets only when they are inside Next's declared
+`outputFileTracingRoot`, then rewrites the links to relative paths inside the
+artifact. Nested links must satisfy the same boundary. Dangling or external
+targets still fail assembly; do not flatten or dereference the standalone tree.
+
 `prisma-composer deploy` does not build for you — it assembles what your
 build produced:
 

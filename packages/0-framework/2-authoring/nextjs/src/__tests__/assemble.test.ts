@@ -211,7 +211,7 @@ describe('assemble()', () => {
     expect(fs.lstatSync(bundledLink).isSymbolicLink()).toBe(true);
     expect(bundledTarget.startsWith(`${bundle}${path.sep}`)).toBe(true);
     expect(fs.readFileSync(path.join(bundledTarget, 'index.js'), 'utf8')).toContain('pg');
-    expect(result.watch).toContain(fs.realpathSync(source));
+    expect(result.watch).toContain(await fs.promises.realpath(source));
   }, 20_000);
 
   test('stages a traced sibling referenced by a relative link inside an absolute target', async () => {
@@ -247,8 +247,8 @@ describe('assemble()', () => {
     expect(fs.readFileSync(path.join(nestedTarget, 'marker.txt'), 'utf8')).toContain(
       'traced sibling',
     );
-    expect(result.watch).toContain(fs.realpathSync(source));
-    expect(result.watch).toContain(fs.realpathSync(sibling));
+    expect(result.watch).toContain(await fs.promises.realpath(source));
+    expect(result.watch).toContain(await fs.promises.realpath(sibling));
   }, 20_000);
 
   test('rejects an external nested link even when relocation would make it hit bundle content', async () => {
