@@ -1,4 +1,4 @@
-// use prisma-next
+// use prisma-8
 //
 // PSL-authored fixture: the gadget contract covers Prisma Next's PSL-first
 // authoring mode (the widget fixture covers the TS `defineContract()` mode),

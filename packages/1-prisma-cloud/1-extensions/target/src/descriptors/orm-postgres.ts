@@ -4,7 +4,7 @@ import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
 import * as Effect from 'effect/Effect';
 import { packHeadRefHashes, resolveOrmConfig } from '../orm-config.ts';
-import { resolveTargetRef } from '../orm-migrate.ts';
+import { resolveTargetRef, targetStorageHash } from '../orm-migrate.ts';
 import { OrmMigration } from '../orm-migration-resource.ts';
 import { isPostgresResourceNode } from '../orm-postgres.ts';
 import { PgWarm } from '../pg-warm-resource.ts';
@@ -28,6 +28,7 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
         throw new Error(`postgres lowering received a non-postgres node (${id}).`);
       }
       const contractJson = node.provides.__cmp.contractJson;
+      const currentContractHash = targetStorageHash(contractJson);
       const { migrationsDir, extensionPacks } = yield* Effect.promise(() =>
         resolveOrmConfig(node.config),
       );
@@ -51,8 +52,8 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
       // invariant) still triggers reconcile.
       yield* OrmMigration(`${id}-migrate`, {
         url: warm.url,
-        contractJson,
         migrationsDir,
+        currentContractHash,
         targetHash: ref.hash,
         invariants: [...ref.invariants].sort(),
         packHeadRefHashes: packHeadRefHashes(extensionPacks),

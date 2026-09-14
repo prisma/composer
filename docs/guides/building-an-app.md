@@ -182,7 +182,8 @@ deps: { db: postgres(catalogData) }
 
 An options object is the resource end — the module that owns the database
 provisions it, naming the `prisma.config.ts` path (relative to the
-module file) so the deploy can find `migrations/`:
+module file) so the deploy can reload the emitted `contract.json` and find
+`migrations/`:
 
 ```ts
 const db = provision(
@@ -191,7 +192,11 @@ const db = provision(
 ```
 
 Because both ends share the contract value, the deploy refuses to wire a
-service against a database whose schema doesn't match.
+service against a database whose schema doesn't match. The migration resource
+persists only compact contract identity in deploy state; the full emitted
+contract is reloaded from `prisma.config.ts` at reconcile time. If that
+artifact is missing, unreadable, or no longer matches the declared contract,
+the deploy fails before touching the database.
 [`examples/orm-demo`](../../examples/orm-demo/) is the minimal working
 version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is
@@ -351,6 +356,28 @@ provision(cron({ schedule, runner: promotionsService }), {
   deps: { catalog: catalog.rpc },
 });
 ```
+
+A runner that declares an `input` schema ([below](#service-input)) takes its
+binding on `cron()` itself, with `envSecret(...)` where the schema expects a
+secret. It is required exactly when the runner declares a schema, the same
+rule `provision()` applies:
+
+```ts
+provision(
+  cron({
+    schedule,
+    runner: ingestService,
+    input: { token: envSecret('INGEST_TOKEN') },
+  }),
+  { deps: { catalog: catalog.rpc } },
+);
+```
+
+**The scheduler is the one service in your app that never sleeps.** Compute
+scales an idle service to zero, and the scheduler receives no requests of its
+own, so it holds the platform's keep-awake guard for its whole lifetime. One
+warm instance per app is the cost of the clock; the runner sleeps like any
+other service and wakes when the scheduler calls it.
 
 [`examples/storage`](../../examples/storage/) and
 [`examples/streams`](../../examples/streams/) show the other two, including
