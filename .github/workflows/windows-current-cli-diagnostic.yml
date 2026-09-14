@@ -51,7 +51,7 @@ jobs:
           $url = $result.envelope.result.summary.nodes.entities | Where-Object kind -eq 'compute-service' | Select-Object -ExpandProperty url -First 1
           if (-not $url) { throw 'No public service URL returned' }
           $response = Invoke-WebRequest -Uri $url -TimeoutSec 60
-          if ($response.StatusCode -ne 200 -or $response.Content -notmatch 'alice@prisma.io') { throw 'Deployed page did not return seeded data' }
+          if ($response.StatusCode -ne 200 -or $response.Content -notmatch '<strong>Alice</strong>' -or $response.Content -notmatch '<strong>Bob</strong>' -or $response.Content -notmatch '<strong>Carol</strong>') { throw 'Deployed page did not return seeded data' }
           Write-Output "HTTP $($response.StatusCode): deployed Next.js page contains seeded database data"
       - name: Remove this diagnostic project
         if: always() && steps.deploy.outcome != 'skipped'
@@ -65,4 +65,18 @@ jobs:
           $result = $lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object kind -eq 'result' | Select-Object -Last 1
           $project = $result.envelope.result.project
           if (-not $project.id -or $project.name -ne $env:APP_NAME) { throw 'Refusing to delete an unexpected project' }
+          $lines = npm exec --offline --yes=false -- prisma service list --project $project.id --json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list diagnostic services' }
+          $result = $lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object kind -eq 'result' | Select-Object -Last 1
+          foreach ($service in $result.envelope.result.services) {
+            $lines = npm exec --offline --yes=false -- prisma service version list $service.id --project $project.id --json
+            if ($LASTEXITCODE -ne 0) { throw 'Could not list diagnostic versions' }
+            $versions = $lines | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object kind -eq 'result' | Select-Object -Last 1
+            foreach ($version in $versions.envelope.result.versions) {
+              npm exec --offline --yes=false -- prisma service version stop $version.id --json
+              if ($LASTEXITCODE -ne 0) { throw 'Could not stop diagnostic version' }
+              npm exec --offline --yes=false -- prisma service version delete $version.id --confirm $version.id --json
+              if ($LASTEXITCODE -ne 0) { throw 'Could not delete diagnostic version' }
+            }
+          }
           npm exec --offline --yes=false -- prisma project delete $project.id --confirm $project.id --json
