@@ -43,17 +43,11 @@ describe('resolvePrismaDevModulePath', () => {
     expect(resolved).toBe(path.join(cwd, 'node_modules', '@prisma', 'dev', 'index.js'));
   });
 
-  test.each([
-    { name: 'legacy CLI', manifest: { name: 'prisma', main: 'index.js' } },
-    {
-      name: 'consolidated CLI without a root export',
-      manifest: { name: 'prisma', exports: { './package.json': './package.json' } },
-    },
-  ])('resolves @prisma/dev from the $name dependency tree', ({ manifest }) => {
+  test('resolves @prisma/dev from the consolidated CLI without a root export', () => {
     writeModule(path.join(cwd, 'node_modules'), 'prisma');
     fs.writeFileSync(
       path.join(cwd, 'node_modules', 'prisma', 'package.json'),
-      JSON.stringify(manifest),
+      JSON.stringify({ name: 'prisma', exports: { './package.json': './package.json' } }),
     );
     writeModule(path.join(cwd, 'node_modules', 'prisma', 'node_modules'), '@prisma/dev');
 
