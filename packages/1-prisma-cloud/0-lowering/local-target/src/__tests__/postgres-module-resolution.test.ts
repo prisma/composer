@@ -7,7 +7,7 @@ import { resolvePrismaDevModulePath } from '../postgres.ts';
 /**
  * `resolvePrismaDevModulePath`'s two-step resolution (local-dev spec § 4,
  * REVISED — operator review of #162): resolve `@prisma/dev` directly from
- * the app's own node_modules first; on failure, resolve `prisma` (which
+ * the app's own node_modules first; on failure, resolve `prisma/package.json` (which
  * apps typically depend on, and which carries `@prisma/dev` as its own
  * dependency) and resolve `@prisma/dev` from there; both failing throws the
  * pinned error.
@@ -43,8 +43,18 @@ describe('resolvePrismaDevModulePath', () => {
     expect(resolved).toBe(path.join(cwd, 'node_modules', '@prisma', 'dev', 'index.js'));
   });
 
-  test("falls back to resolving @prisma/dev from prisma's own dependency tree", () => {
+  test.each([
+    { name: 'legacy CLI', manifest: { name: 'prisma', main: 'index.js' } },
+    {
+      name: 'consolidated CLI without a root export',
+      manifest: { name: 'prisma', exports: { './package.json': './package.json' } },
+    },
+  ])('resolves @prisma/dev from the $name dependency tree', ({ manifest }) => {
     writeModule(path.join(cwd, 'node_modules'), 'prisma');
+    fs.writeFileSync(
+      path.join(cwd, 'node_modules', 'prisma', 'package.json'),
+      JSON.stringify(manifest),
+    );
     writeModule(path.join(cwd, 'node_modules', 'prisma', 'node_modules'), '@prisma/dev');
 
     const resolved = resolvePrismaDevModulePath(cwd);

@@ -20,6 +20,14 @@ needed; local dev never talks to the platform.
 
 ## Bring it up
 
+Local Postgres uses the `@prisma/dev` runtime from your project's installation:
+Composer first checks the app's dependencies, then the installed `prisma` CLI's
+dependencies. Keep `prisma` in the app's devDependencies; the CLI release must
+include `@prisma/dev`. Composer reads the CLI's exported `prisma/package.json`,
+so it does not require a JavaScript root export from the consolidated Prisma 8
+CLI. A CLI release that omits the runtime cannot start local Postgres, even
+though cloud deployment still works.
+
 ```sh
 prisma-composer dev module.ts
 ```

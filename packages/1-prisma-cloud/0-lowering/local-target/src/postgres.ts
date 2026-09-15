@@ -39,7 +39,7 @@ function noPrismaDevError(): Error {
 /**
  * Two-step resolution, pinned (local-dev spec § 4): (1) resolve
  * `@prisma/dev` directly from the app's own `node_modules`; (2) on failure,
- * resolve `prisma` (the CLI apps typically depend on, which itself carries
+ * resolve `prisma/package.json` (the CLI apps typically depend on, which itself carries
  * `@prisma/dev`) and resolve `@prisma/dev` from THERE. The daemon imports
  * the returned path dynamically, so the app stays in charge of its own
  * Prisma version. `cwd` is the one place a local provider legitimately
@@ -54,8 +54,8 @@ export function resolvePrismaDevModulePath(cwd: string): string {
     // fall through to the prisma-CLI-relative resolution
   }
   try {
-    const prismaEntry = appRequire.resolve('prisma');
-    return createRequire(prismaEntry).resolve('@prisma/dev');
+    const prismaManifest = appRequire.resolve('prisma/package.json');
+    return createRequire(prismaManifest).resolve('@prisma/dev');
   } catch {
     throw noPrismaDevError();
   }
