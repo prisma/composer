@@ -32,17 +32,17 @@ function databaseIdOfInput(value: unknown): string | undefined {
 
 function noPrismaDevError(): Error {
   return new Error(
-    'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.',
+    'local dev needs @prisma/dev for its local Postgres emulator — add "@prisma/dev" to the devDependencies of the project where you run Composer.',
   );
 }
 
 /**
  * Two-step resolution, pinned (local-dev spec § 4): (1) resolve
  * `@prisma/dev` directly from the app's own `node_modules`; (2) on failure,
- * resolve `prisma/package.json` (the CLI apps typically depend on, which itself carries
- * `@prisma/dev`) and resolve `@prisma/dev` from THERE. The daemon imports
- * the returned path dynamically, so the app stays in charge of its own
- * Prisma version. `cwd` is the one place a local provider legitimately
+ * resolve `prisma/package.json` and check that installation for `@prisma/dev`
+ * (older CLI releases carry it; Prisma 8 does not). The daemon imports the
+ * returned path dynamically, so the app owns its local Postgres runtime.
+ * `cwd` is the one place a local provider legitimately
  * reads `process.cwd()` — finding the app's own installed version is
  * inherently cwd-relative.
  */

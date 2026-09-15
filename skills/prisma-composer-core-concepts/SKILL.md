@@ -369,11 +369,12 @@ that surprise:
    service it calls.
 5. Windows isn't supported yet.
 
-Local Postgres uses the app's `@prisma/dev`, or the copy installed by its
-`prisma` CLI, resolved through the exported `prisma/package.json`. Keep
-`prisma` in devDependencies. A CLI release missing that runtime cannot start
-local Postgres even if cloud deployment works; this is an installation issue,
-not a reason to change the app's database bindings.
+Local Postgres needs `@prisma/dev` in the devDependencies of the project where
+Composer runs (the root package in a monorepo). Prisma 8 does not ship it.
+Composer resolves the app's copy first, then checks relative to the exported
+`prisma/package.json` for installations that supply it there. If neither resolves,
+add `@prisma/dev`, not another copy of `prisma`; leave database bindings unchanged.
+Cloud deployment and local apps without Postgres do not need this runtime.
 
 ## Testing is an environment seam
 

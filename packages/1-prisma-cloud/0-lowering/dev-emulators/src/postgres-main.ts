@@ -46,7 +46,7 @@ const ALREADY_RUNNING_POLLS = 24;
 const ALREADY_RUNNING_POLL_MS = 500;
 
 const NOT_INSTALLED_MESSAGE =
-  'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.';
+  'local dev needs @prisma/dev for its local Postgres emulator — add "@prisma/dev" to the devDependencies of the project where you run Composer.';
 
 // The behavior contract's no-value-logging rule, applied to embedded
 // diagnostics too (spec's diagnostics rule) — masks a connection URL's
