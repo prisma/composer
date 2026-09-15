@@ -195,7 +195,7 @@ describe('a bogus prismaDevModulePath', () => {
       // `request to the local dev emulator failed (${status}): ${body}` —
       // assert the status explicitly, not just that SOME error was thrown.
       expect(message).toContain('(500)');
-      expect(message).toContain('local dev needs @prisma/dev');
+      expect(message).toContain('add "@prisma/dev" to the devDependencies');
       expect(message).toContain(bogusPath);
       // No OTHER filesystem path leaks — e.g. a dynamic `import()`
       // failure's own message routinely names a SECOND path (the

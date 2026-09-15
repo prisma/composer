@@ -369,6 +369,13 @@ that surprise:
    service it calls.
 5. Windows isn't supported yet.
 
+Local Postgres needs `@prisma/dev` in the devDependencies of the project where
+Composer runs (the root package in a monorepo). Prisma 8 does not ship it.
+Composer resolves the app's copy first, then checks relative to the exported
+`prisma/package.json` for installations that supply it there. If neither resolves,
+add `@prisma/dev`, not another copy of `prisma`; leave database bindings unchanged.
+Cloud deployment and local apps without Postgres do not need this runtime.
+
 ## Testing is an environment seam
 
 A test is just another environment: one where you decide what `load()` and
