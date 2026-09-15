@@ -22,6 +22,7 @@ import type {
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
+import * as Watch from '../../dev/watch.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
@@ -909,75 +910,175 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(stops).toBe(1);
   }, 15_000);
 
-  test('a startServices that throws mid-start is rolled back: the partially-started attachment is stopped again', async () => {
-    const app = makeAppDir('hello-dev');
-    let stops = 0;
-    const attachment: LocalTargetAttachment = {
-      // Models a partial start: some services came up before the throw, so
-      // the rollback must stop this attachment even though startServices
-      // never returned.
-      startServices: () => Promise.reject(new Error('service two failed to bind its port')),
-      stopServices: () => {
-        stops += 1;
-        return Promise.resolve();
-      },
-      endpoints: () => Promise.resolve([]),
-      logs: async function* () {},
-    };
-
-    const result = await silently(() =>
-      devWithDeps(
-        {
-          entry: app.entryPath,
-          cwd: app.dir,
+  test.each(['success', 'sync failure', 'async failure'] as const)(
+    'a partial start is rolled back and preserves its failure after cleanup %s',
+    async (cleanup) => {
+      const app = makeAppDir('hello-dev');
+      let stops = 0;
+      const attachment: LocalTargetAttachment = {
+        // Models a partial start: some services came up before the throw, so
+        // the rollback must stop this attachment even though startServices
+        // never returned.
+        startServices: () => Promise.reject(new Error('service two failed to bind its port')),
+        stopServices: () => {
+          stops += 1;
+          if (cleanup === 'sync failure') throw new Error('cleanup failed');
+          if (cleanup === 'async failure') return Promise.reject(new Error('cleanup failed'));
+          return Promise.resolve();
         },
-        {
-          config: devConfigWith(attachment),
-          runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
+
+      const result = await silently(() =>
+        devWithDeps(
+          {
+            entry: app.entryPath,
+            cwd: app.dir,
+          },
+          {
+            config: devConfigWith(attachment),
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        ),
+      );
+
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
+      expect(result.failure.message).toBe('service two failed to bind its port');
+      expect(stops).toBe(1);
+    },
+    15_000,
+  );
+
+  test.each(['synchronous', 'asynchronous'] as const)(
+    'stop() surfaces a %s cleanup failure and still finishes',
+    async (failure) => {
+      const app = makeAppDir('hello-dev');
+      const attachment: LocalTargetAttachment = {
+        startServices: () => Promise.resolve(),
+        stopServices: () => {
+          const error = new Error('service pid 123 will not die');
+          if (failure === 'synchronous') throw error;
+          return Promise.reject(error);
         },
-      ),
-    );
+        endpoints: () => Promise.resolve([]),
+        logs: async function* () {},
+      };
+      const events: string[] = [];
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('DEV.SERVICE_START_FAILED');
-    expect(result.failure.message).toBe('service two failed to bind its port');
-    expect(stops).toBe(1);
-  }, 15_000);
+      const result = await silently(async () => {
+        const start = await devWithDeps(
+          {
+            entry: app.entryPath,
+            cwd: app.dir,
+            onEvent: (event) => void events.push(event.kind),
+          },
+          {
+            config: devConfigWith(attachment),
+            runAssembler: fakeAssembler,
+            alchemy: async () => ({ exitCode: 0, signal: null }),
+          },
+        );
+        if (!start.ok) throw new Error('expected a started session');
+        await start.value.stop();
+        await start.value.closed;
+        return start;
+      });
 
-  test('stop() surfaces a service that refuses to stop as a stop-error event, and still finishes', async () => {
-    const app = makeAppDir('hello-dev');
-    const attachment: LocalTargetAttachment = {
-      startServices: () => Promise.resolve(),
-      stopServices: () => Promise.reject(new Error('service pid 123 will not die')),
-      endpoints: () => Promise.resolve([]),
-      logs: async function* () {},
-    };
-    const events: string[] = [];
+      expect(result.ok).toBe(true);
+      expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
+    },
+    15_000,
+  );
 
-    const result = await silently(async () => {
+  test.each(['assembly', 'converge'] as const)(
+    'stop() waits for an active %s and prevents a late restart',
+    async (phase) => {
+      const app = makeAppDir('shutdown-race');
+      const watched = path.join(app.dir, 'output.txt');
+      let triggerChange = () => {};
+      const watch = spyOn(Watch, 'startWatch').mockImplementation((_targets, onChange) => {
+        triggerChange = onChange;
+        return { ready: Promise.resolve(), stop: async () => {} };
+      });
+      let resume = () => {};
+      const blockedWork = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      let entered = false;
+      let rebuildFailure: string | undefined;
+      let assemblies = 0;
+      let converges = 0;
+      let stops = 0;
+      const events: string[] = [];
+      const attachment: LocalTargetAttachment = {
+        startServices: async () => {},
+        stopServices: async () => {
+          stops += 1;
+        },
+        endpoints: async () => [],
+        logs: async function* () {},
+      };
       const start = await devWithDeps(
         {
           entry: app.entryPath,
           cwd: app.dir,
-          onEvent: (event) => void events.push(event.kind),
+          onEvent: (event) => {
+            events.push(event.kind);
+            if (event.kind === 'rebuild-failed') rebuildFailure = event.message;
+          },
         },
         {
           config: devConfigWith(attachment),
-          runAssembler: fakeAssembler,
-          alchemy: async () => ({ exitCode: 0, signal: null }),
+          runAssembler: async (node) => {
+            assemblies += 1;
+            if (assemblies === 2 && phase === 'assembly') {
+              entered = true;
+              await blockedWork;
+            }
+            return { ...(await fakeAssembler(node)), watch: [watched] };
+          },
+          alchemy: async () => {
+            converges += 1;
+            if (converges === 2 && phase === 'converge') {
+              entered = true;
+              await blockedWork;
+            }
+            return { exitCode: 0, signal: null };
+          },
         },
-      );
+      ).finally(() => watch.mockRestore());
       if (!start.ok) throw new Error('expected a started session');
-      await start.value.stop();
-      await start.value.closed;
-      return start;
-    });
-
-    expect(result.ok).toBe(true);
-    expect(events).toEqual(['ready', 'unwatchable', 'stopping', 'stop-error', 'stopped']);
-  }, 15_000);
+      try {
+        triggerChange();
+        const deadline = Date.now() + 5000;
+        while (!entered && rebuildFailure === undefined && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect(rebuildFailure).toBeUndefined();
+        expect(entered).toBe(true);
+        let stopped = false;
+        const closing = start.value.stop().then(() => {
+          stopped = true;
+        });
+        await Promise.resolve();
+        expect(stopped).toBe(false);
+        expect(stops).toBe(0);
+        resume();
+        await closing;
+        expect(stops).toBe(1);
+        expect(converges).toBe(phase === 'assembly' ? 1 : 2);
+        expect(events).toEqual(['ready', 'stopping', 'stopped']);
+      } finally {
+        resume();
+        await start.value.stop();
+      }
+    },
+    15_000,
+  );
 
   test('the DevSession contract: closed settles only via stop(), stop() is idempotent, and no process signal handler is ever registered', async () => {
     const app = makeAppDir('hello-dev');

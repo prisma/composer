@@ -1,8 +1,7 @@
 /**
- * The dev executor — run-dev.ts's pipeline (local-dev spec § 6) with console
- * and signal handling removed: events out through `onEvent`, lifetime owned by
+ * The dev executor (local-dev spec § 6): events out through `onEvent`, lifetime owned by
  * the returned DevSession. The operation NEVER touches process signal
- * handlers — the host does (see run-dev.ts). Reached only by lazy import
+ * handlers — the host does (see family/commands/dev.ts). Reached only by lazy import
  * from dev.ts — this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
  */
@@ -221,6 +220,8 @@ export async function executeDev(
   const attachments: LocalTargetAttachment[] = [];
   const started: LocalTargetAttachment[] = [];
   let watch: WatchHandle | undefined;
+  let stopping = false;
+  const rebuilds = new Set<Promise<void>>();
   try {
     for (const [id, dev] of resolved) {
       try {
@@ -264,13 +265,15 @@ export async function executeDev(
     watch = startWatch(
       targets,
       () => {
+        if (stopping) return;
         // The whole rebuild is inside one try/catch: this runs fire-and-forget,
         // so anything escaping it would be an unhandled rejection killing the
         // process — the exact opposite of "a converge failure keeps the running
         // app and keeps watching".
-        void (async () => {
+        const rebuild = (async () => {
           try {
             const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+            if (stopping) return;
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,
@@ -287,15 +290,19 @@ export async function executeDev(
                 containerEnv: containerEnv(containers),
               }),
             );
+            if (stopping) return;
             if (outcome.signal !== null || outcome.exitCode !== 0) {
               emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
               return;
             }
-            emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+            const endpoints = await mergedEndpoints(attachments);
+            if (!stopping) emit({ kind: 'ready', endpoints });
           } catch (error) {
             emit({ kind: 'rebuild-failed', message: failureMessage(error) });
           }
         })();
+        rebuilds.add(rebuild);
+        void rebuild.finally(() => rebuilds.delete(rebuild));
       },
       (error) => emit({ kind: 'watch-error', message: failureMessage(error) }),
     );
@@ -304,7 +311,6 @@ export async function executeDev(
     const startedWatch = watch;
     await watch.ready;
 
-    let stopping = false;
     let resolveClosed: () => void = () => undefined;
     const closed = new Promise<void>((resolve) => {
       resolveClosed = resolve;
@@ -314,8 +320,13 @@ export async function executeDev(
       if (!stopping) {
         stopping = true;
         emit({ kind: 'stopping' });
-        startedWatch.stop();
         void (async () => {
+          try {
+            await startedWatch.stop();
+          } catch (error) {
+            emit({ kind: 'stop-error', message: failureMessage(error) });
+          }
+          await Promise.all(rebuilds);
           // A service that refuses to stop is surfaced, not swallowed —
           // teardown continues, `stopped` still fires, `closed` still settles.
           for (const attachment of attachments) {
@@ -337,8 +348,20 @@ export async function executeDev(
   } catch (error) {
     // Cleanup runs whatever the error's shape; only structured failures come
     // back as values — a non-structured escape is a bug and throws (rule 6).
-    watch?.stop();
-    await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
+    stopping = true;
+    try {
+      await watch?.stop();
+    } catch {
+      // Preserve the startup failure while still rolling back started services.
+    }
+    await Promise.all(rebuilds);
+    await Promise.all(
+      started.map((a) =>
+        Promise.resolve()
+          .then(() => a.stopServices())
+          .catch(() => undefined),
+      ),
+    );
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }

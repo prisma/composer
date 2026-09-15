@@ -152,7 +152,7 @@ function reportDevEvent(
         report({
           kind: 'message',
           severity: 'warn',
-          text: `A service refused to stop: ${event.message}`,
+          text: `Dev cleanup failed: ${event.message}`,
         });
         return;
 
