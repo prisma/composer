@@ -63,6 +63,11 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
+Compute deployments capture their environment when they are created. Composer
+waits for its environment-variable updates to finish before creating a
+deployment, including updates to an existing input document. Later variable
+updates do not change an already-created deployment's environment.
+
 After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
 also shown in the Console.
