@@ -56,9 +56,9 @@ export function structuredError(
   });
 }
 
-export const DOCS_ERRORS_VERSION = 'next';
-export const DOCS_BASE = `https://docs.prisma.io/docs/orm/${DOCS_ERRORS_VERSION}/reference/error-reference`;
+/** Same base the rest of the `prisma` CLI links to; the engine appends `/<CODE>` for error envelopes. */
+export const DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
 
 export function docsUrlFor(code: string): string {
-  return `${DOCS_BASE}#${code}`;
+  return `${DOCS_BASE}${code}`;
 }

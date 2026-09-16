@@ -26,12 +26,13 @@ export const createLogCommand = (operations: ComposerOperations) =>
       summary:
         "Tail the merged logs of the locally-running application whose root node is <entry>'s " +
         'default export.',
-      examples: ['{bin} log src/service.ts', '{bin} log src/service.ts catalog.service'],
+      examples: ['{bin} log module.ts', '{bin} log module.ts catalog.service'],
     },
     args: {
       positionals: {
         entry: positional.string({
-          brief: 'The module whose default export is the application root.',
+          brief:
+            'The file whose default export is the application root module, built with module(...).',
           placeholder: 'entry',
         }),
         address: positional.optionalString({

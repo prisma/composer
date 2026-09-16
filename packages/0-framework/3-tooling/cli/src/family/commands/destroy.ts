@@ -22,14 +22,15 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
         'Same derivation as deploy. Requires an explicit target: --stage <name> for a branch ' +
         'environment, or --production for the production environment.',
       examples: [
-        '{bin} destroy src/service.ts --stage feat-auth',
-        '{bin} destroy src/service.ts --production',
+        '{bin} destroy module.ts --stage feat-auth',
+        '{bin} destroy module.ts --production',
       ],
     },
     args: {
       positionals: {
         entry: positional.string({
-          brief: 'The module whose default export is the application root.',
+          brief:
+            'The file whose default export is the application root module, built with module(...).',
           placeholder: 'entry',
         }),
       },

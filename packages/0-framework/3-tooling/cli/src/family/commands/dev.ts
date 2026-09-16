@@ -176,12 +176,13 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging on every edit.',
-      examples: ['{bin} dev src/service.ts', '{bin} dev src/service.ts --fresh'],
+      examples: ['{bin} dev module.ts', '{bin} dev module.ts --fresh'],
     },
     args: {
       positionals: {
         entry: positional.string({
-          brief: 'The module whose default export is the application root.',
+          brief:
+            'The file whose default export is the application root module, built with module(...).',
           placeholder: 'entry',
         }),
       },
