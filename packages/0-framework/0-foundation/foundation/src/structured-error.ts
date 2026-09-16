@@ -1,4 +1,4 @@
-// Duplicated from the prisma/prisma error foundation pending extraction into a shared package — keep byte-close to the donor; recognition is structural, so the copies interoperate.
+// Duplicated from the prisma/prisma error foundation pending extraction into a shared package — keep byte-close to the donor; recognition is structural, so the copies interoperate. Deliberate divergence: `DOCS_BASE`/`docsUrlFor` link to the CLI error reference with the code as a path segment (the donor links to the ORM reference with a `#` anchor); keep that on the next sync.
 import { ifDefined } from './defined.ts';
 
 export interface StructuredError extends Error {
@@ -60,5 +60,5 @@ export function structuredError(
 export const DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
 
 export function docsUrlFor(code: string): string {
-  return `${DOCS_BASE}${code}`;
+  return `${DOCS_BASE}${encodeURIComponent(code)}`;
 }

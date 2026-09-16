@@ -93,4 +93,10 @@ describe('docsUrlFor', () => {
       'https://www.prisma.io/docs/cli/error-reference/CONTRACT.MARKER_MISSING',
     );
   });
+
+  it('keeps the code a single path segment', () => {
+    expect(docsUrlFor('A.B/C?d#e')).toBe(
+      'https://www.prisma.io/docs/cli/error-reference/A.B%2FC%3Fd%23e',
+    );
+  });
 });
