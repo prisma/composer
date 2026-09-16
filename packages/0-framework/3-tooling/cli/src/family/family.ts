@@ -22,7 +22,6 @@
  * — the `prisma` bin — never see them. They remain first-class commands of
  * composer's own bin, mounted on top of the family in engine-cli.ts.
  */
-import { DOCS_BASE } from '@internal/foundation/errors';
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
 import { deployWithDeps } from '../operations/deploy.ts';
 import { destroyWithDeps } from '../operations/destroy.ts';
@@ -59,6 +58,9 @@ export interface CreateComposerFamilyOptions {
   readonly operations?: ComposerOperations | undefined;
 }
 
+/** The `prisma` CLI's error reference; the engine appends `/<CODE>` to it for every error envelope. */
+const CLI_DOCS_BASE = 'https://www.prisma.io/docs/cli/error-reference/';
+
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   const operations = options.operations ?? realOperations;
   return defineCommandFamily({
@@ -67,6 +69,6 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       deploy: createDeployCommand(operations),
       dev: createDevCommand(operations),
     },
-    docsBaseUrl: DOCS_BASE,
+    docsBaseUrl: CLI_DOCS_BASE,
   });
 }

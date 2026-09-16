@@ -90,13 +90,7 @@ describe('structuredError', () => {
 describe('docsUrlFor', () => {
   it('builds the docs URL from the code fragment', () => {
     expect(docsUrlFor('CONTRACT.MARKER_MISSING')).toBe(
-      'https://www.prisma.io/docs/cli/error-reference/CONTRACT.MARKER_MISSING',
-    );
-  });
-
-  it('keeps the code a single path segment', () => {
-    expect(docsUrlFor('A.B/C?d#e')).toBe(
-      'https://www.prisma.io/docs/cli/error-reference/A.B%2FC%3Fd%23e',
+      'https://docs.prisma.io/docs/orm/next/reference/error-reference#CONTRACT.MARKER_MISSING',
     );
   });
 });
