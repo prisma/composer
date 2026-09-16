@@ -15,12 +15,13 @@ export const createDeployCommand = (operations: ComposerOperations) =>
   defineCommand({
     help: {
       summary: "Deploy the application whose root node is <entry>'s default export.",
-      examples: ['{bin} deploy src/service.ts', '{bin} deploy src/service.ts --stage feat-auth'],
+      examples: ['{bin} deploy module.ts', '{bin} deploy module.ts --stage feat-auth'],
     },
     args: {
       positionals: {
         entry: positional.string({
-          brief: 'The module whose default export is the application root.',
+          brief:
+            'The file whose default export is the application root module, built with module(...).',
           placeholder: 'entry',
         }),
       },
