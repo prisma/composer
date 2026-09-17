@@ -6,7 +6,9 @@
  * bearer) → `/api/auth/token` → verification through the REAL
  * `jwtVerifier()` hydrate pointed at the local URL → the session and admin
  * ports over real rpc HTTP (`makeClient`) → `/health` and the 404
- * fallthrough → magic-link capture readback. Same topology as production:
+ * fallthrough → magic-link capture readback → an operator-provisioned
+ * account (`admin.createUser`, no mail) signing in through Better Auth's
+ * REAL `/sign-in/email`. Same topology as production:
  * the same fetch composition, the same handlers, the same options builder.
  * Uses the default in-memory capture (no `email` option) — the outbox-
  * readback path against a REAL email module local server is proved
@@ -246,6 +248,67 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
     const complete = await fetch(captured?.url ?? '', { redirect: 'manual' });
     expect([200, 302]).toContain(complete.status);
     expect(complete.headers.get('set-cookie') ?? '').toContain('better-auth.session_token=');
+  });
+
+  test("admin.createUser provisions an account Better Auth's own sign-in accepts", async () => {
+    const admin = makeClient(authAdminContract, server.url);
+    const emailsBefore = server.capturedEmails.length;
+
+    const { user } = await admin.createUser({
+      email: 'Grace@Example.com',
+      name: 'Grace',
+      password: 'hopper-cobol-1959',
+      emailVerified: true,
+    });
+    expect(user.email).toBe('grace@example.com');
+    expect(user.emailVerified).toBe(true);
+    // No verification (or any other) mail: provisioning is silent.
+    expect(server.capturedEmails).toHaveLength(emailsBefore);
+
+    // The proof that the rows and the hash match what Better Auth expects:
+    // its real sign-in endpoint accepts them. Own forwarded-for ip: the
+    // earlier sign-ins above have used up this file's sign-in bucket.
+    const fromGrace = { 'x-forwarded-for': '10.10.0.2' };
+    const res = await api(
+      '/api/auth/sign-in/email',
+      json({ email: 'grace@example.com', password: 'hopper-cobol-1959' }, fromGrace),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { user: { id: string }; token: string };
+    expect(body.user.id).toBe(user.id);
+
+    const wrong = await api(
+      '/api/auth/sign-in/email',
+      json({ email: 'grace@example.com', password: 'not-the-password' }, fromGrace),
+    );
+    expect(wrong.status).toBe(401);
+  });
+
+  test('admin.createUser refuses a duplicate email as a THROWN rpc error', async () => {
+    const admin = makeClient(authAdminContract, server.url);
+    // Same address, different case — the refusal is case-insensitive, and
+    // a typed client cannot mistake it for success the way a script
+    // ignoring an HTTP status can. The client retries a 500 with backoff
+    // before it throws, hence the timeout.
+    await expect(
+      admin.createUser({ email: 'GRACE@example.com', name: 'Grace again' }),
+    ).rejects.toThrow('RPC call "createUser" failed: 500');
+  }, 20_000);
+
+  test('admin.setEmailVerified flips the flag over rpc; null for an unknown id', async () => {
+    const admin = makeClient(authAdminContract, server.url);
+    const { user } = await admin.createUser({ email: 'linus@example.com', name: 'Linus' });
+    expect(user.emailVerified).toBe(false);
+
+    // Unverified: Better Auth's sign-in refuses even a right password — the
+    // flag is what `requireEmailVerification: true` reads.
+    const verified = await admin.setEmailVerified({ userId: user.id, emailVerified: true });
+    expect(verified.user?.emailVerified).toBe(true);
+    const back = await admin.setEmailVerified({ userId: user.id, emailVerified: false });
+    expect(back.user?.emailVerified).toBe(false);
+    expect(await admin.setEmailVerified({ userId: 'no-such-user', emailVerified: true })).toEqual({
+      user: null,
+    });
   });
 
   test('/health answers without auth; unknown paths fall through to 404', async () => {

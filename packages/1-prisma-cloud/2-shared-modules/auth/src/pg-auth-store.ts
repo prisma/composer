@@ -3,8 +3,9 @@
  * every table reference qualified through the ONE `AUTH_SCHEMA` constant
  * (`"user"` is a reserved word, hence the quoting throughout). No schema
  * work at boot: the deploy migrated and marker-signed the auth space before
- * this process exists. Writes are confined to `session` deletes and the
- * three ban columns.
+ * this process exists. Writes are confined to `session` deletes, the three
+ * ban columns, `emailVerified`, and the `user` + `credential` account rows
+ * `createUser` inserts.
  *
  * Runtime engine code (Bun's `SQL`); NOT re-exported from the authoring
  * barrel.
@@ -16,6 +17,7 @@ import {
   isEffectivelyBanned,
   type ListUsersFilters,
   type ListUsersPage,
+  type NewUser,
   type UserSelector,
 } from './auth-store.ts';
 import type { SessionRecord, UserRecord } from './contract.ts';
@@ -23,6 +25,7 @@ import { AUTH_SCHEMA } from './pack/constants.ts';
 
 const USER_TABLE = `"${AUTH_SCHEMA}"."user"`;
 const SESSION_TABLE = `"${AUTH_SCHEMA}"."session"`;
+const ACCOUNT_TABLE = `"${AUTH_SCHEMA}"."account"`;
 
 /**
  * The effective-ban predicate in SQL — must agree with
@@ -217,6 +220,47 @@ class PgAuthStore implements AuthStore {
        where id = $1
        returning *`,
       [userId],
+    );
+    const row = rows[0];
+    return row === undefined ? null : toUserRecord(row);
+  }
+
+  async createUser(user: NewUser): Promise<UserRecord | null> {
+    return this.sql.begin(async (tx) => {
+      const existing = await tx.unsafe<{ id: string }[]>(
+        `select id from ${USER_TABLE} where lower(email) = lower($1)`,
+        [user.email],
+      );
+      if (existing.length > 0) return null;
+
+      const rows = await tx.unsafe<PgUserRow[]>(
+        `insert into ${USER_TABLE} (id, name, email, "emailVerified", "createdAt", "updatedAt")
+         values ($1, $2, $3, $4, now(), now())
+         returning *`,
+        [user.id, user.name, user.email, user.emailVerified],
+      );
+      const row = rows[0];
+      if (row === undefined) throw new Error('auth store createUser: insert returned no row');
+
+      if (user.credential !== null) {
+        await tx.unsafe(
+          `insert into ${ACCOUNT_TABLE}
+             (id, "accountId", "providerId", "userId", password, "createdAt", "updatedAt")
+           values ($1, $2, 'credential', $2, $3, now(), now())`,
+          [user.credential.id, user.id, user.credential.passwordHash],
+        );
+      }
+      return toUserRecord(row);
+    });
+  }
+
+  async setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null> {
+    const rows = await this.sql.unsafe<PgUserRow[]>(
+      `update ${USER_TABLE}
+       set "emailVerified" = $2, "updatedAt" = now()
+       where id = $1
+       returning *`,
+      [userId, emailVerified],
     );
     const row = rows[0];
     return row === undefined ? null : toUserRecord(row);

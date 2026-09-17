@@ -1,12 +1,15 @@
 /**
  * The handler layer over a fake in-memory store: the null shapes, the
  * exactly-one-of `getUser` validation (pinned message), cursor threading on
- * `listUsers`, and the thrown-when-absent ban ops. SQL semantics live in
+ * `listUsers`, the thrown-when-absent ban ops, and `createUser`'s Better
+ * Auth semantics (lowercased email, generated ids, Better Auth's own
+ * password hash, thrown-on-duplicate). SQL semantics live in
  * pg-auth-store.integration.test.ts — this file proves the layer between
  * the rpc contracts and the store.
  */
 import { describe, expect, test } from 'bun:test';
-import type { AuthStore, ListUsersFilters } from '../auth-store.ts';
+import { verifyPassword } from 'better-auth/crypto';
+import type { AuthStore, ListUsersFilters, NewUser } from '../auth-store.ts';
 import { decodeCursor } from '../auth-store.ts';
 import type { SessionRecord, UserRecord } from '../contract.ts';
 import { createAuthHandlers } from '../handlers.ts';
@@ -55,6 +58,8 @@ function fakeStore(overrides: Partial<AuthStore> = {}): AuthStore & { calls: unk
     revokeUserSessions: record('revokeUserSessions', 0),
     banUser: record('banUser', null),
     unbanUser: record('unbanUser', null),
+    createUser: record('createUser', null),
+    setEmailVerified: record('setEmailVerified', null),
     ...overrides,
   };
 }
@@ -177,5 +182,98 @@ describe('admin revocation pass-throughs', () => {
     );
     expect(await admin.revokeSession({ sessionId: 's1' })).toEqual({ revoked: true });
     expect(await admin.revokeUserSessions({ userId: 'u1' })).toEqual({ revokedCount: 3 });
+  });
+});
+
+describe('admin.createUser — the rows Better Auth sign-up writes, minus the mail', () => {
+  /** A store whose createUser echoes the row it was handed back as a record. */
+  function creatingStore(): AuthStore & { calls: unknown[][]; created: NewUser[] } {
+    const created: NewUser[] = [];
+    const store = fakeStore({
+      createUser: async (input) => {
+        created.push(input);
+        return user(input.id, {
+          email: input.email,
+          name: input.name,
+          emailVerified: input.emailVerified,
+        });
+      },
+    });
+    return Object.assign(store, { created });
+  }
+
+  test("lowercases the email, mints 32-char ids, and hashes with Better Auth's own hasher", async () => {
+    const store = creatingStore();
+    const { admin } = createAuthHandlers(store);
+    const { user: created } = await admin.createUser({
+      email: 'Ada@Example.COM',
+      name: 'Ada',
+      password: 'correct-horse-battery',
+    });
+
+    const row = store.created[0];
+    if (row === undefined || row.credential === null) throw new Error('no credential row');
+    expect(row.email).toBe('ada@example.com');
+    expect(created.email).toBe('ada@example.com');
+    expect(row.id).toMatch(/^[a-zA-Z0-9]{32}$/);
+    expect(row.credential.id).toMatch(/^[a-zA-Z0-9]{32}$/);
+    expect(row.credential.id).not.toBe(row.id);
+    expect(row.emailVerified).toBe(false);
+    // The hash is one Better Auth's own verifier accepts — sign-in will too.
+    expect(
+      await verifyPassword({
+        hash: row.credential.passwordHash,
+        password: 'correct-horse-battery',
+      }),
+    ).toBe(true);
+    expect(await verifyPassword({ hash: row.credential.passwordHash, password: 'wrong' })).toBe(
+      false,
+    );
+  });
+
+  test('no password → no credential row; emailVerified passes through', async () => {
+    const store = creatingStore();
+    const { admin } = createAuthHandlers(store);
+    await admin.createUser({ email: 'b@example.com', name: 'B', emailVerified: true });
+    expect(store.created[0]?.credential).toBeNull();
+    expect(store.created[0]?.emailVerified).toBe(true);
+  });
+
+  test('a duplicate email (store returns null) rejects with the pinned message', async () => {
+    const { admin } = createAuthHandlers(fakeStore());
+    await expect(admin.createUser({ email: 'Dup@example.com', name: 'D' })).rejects.toThrow(
+      'auth admin createUser: a user with email "Dup@example.com" already exists',
+    );
+  });
+
+  test("applies Better Auth's sign-up password bounds before touching the store", async () => {
+    const store = creatingStore();
+    const { admin } = createAuthHandlers(store);
+    await expect(
+      admin.createUser({ email: 'c@example.com', name: 'C', password: 'short' }),
+    ).rejects.toThrow('auth admin createUser: password must be at least 8 characters');
+    await expect(
+      admin.createUser({ email: 'c@example.com', name: 'C', password: 'x'.repeat(129) }),
+    ).rejects.toThrow('auth admin createUser: password must be at most 128 characters');
+    expect(store.created).toEqual([]);
+  });
+});
+
+describe('admin.setEmailVerified', () => {
+  test("passes the flag through and surfaces the store's null for an unknown id", async () => {
+    const store = fakeStore();
+    const { admin } = createAuthHandlers(store);
+    expect(await admin.setEmailVerified({ userId: 'ghost', emailVerified: true })).toEqual({
+      user: null,
+    });
+    expect(store.calls).toEqual([['setEmailVerified', 'ghost', true]]);
+
+    const verified = user('u1', { emailVerified: true });
+    const { admin: admin2 } = createAuthHandlers(
+      fakeStore({ setEmailVerified: async () => verified }),
+    );
+    expect(await admin2.setEmailVerified({ userId: 'u1', emailVerified: true })).toEqual({
+      user: verified,
+    });
   });
 });
