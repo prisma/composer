@@ -421,7 +421,7 @@ provision exactly like your own:
 | `cron` from `/cron` | An always-on scheduler (it holds Compute's keep-awake guard) firing your schedule at your runner service; `input` on `cron()` binds the runner's input schema | nothing |
 | `storage` from `/storage` | An S3-backed blob store (own Postgres + minted credentials) | `store` |
 | `streams` from `/streams` | Durable append-only event streams over a `store` | `streams` |
-| `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database) | `api`, `session`, `admin` |
+| `auth` from `/auth` | Signup, login, sessions, and JWT verification (Better Auth in one service, own database). `auth({ signUp: 'closed' })` makes Better Auth refuse self-service sign-up; operator-created accounts go through `admin.createUser({ email, name, password?, emailVerified? })` from a service wired to `admin` (it throws on a duplicate email and sends no mail) | `api`, `session`, `admin` |
 | `email` from `/email` | Transactional email with a stored outbox (own service and database) | `send`, `outbox` |
 
 `bucket()` (imported alongside `rawPostgres`) is a raw S3-compatible bucket:
@@ -475,6 +475,15 @@ today the blocks above plus your own Modules are the whole set, so verify a
    contract columns compiles and deploys, then fails on the first timestamp
    read. Provide the global at the server entry
    (`import 'temporal-polyfill/global'`) or use string column types.
+10. **The auth module's `/api/auth/*` returns `403 MISSING_OR_NULL_ORIGIN`
+    to a Node script.** It is the browser surface: Better Auth origin-checks
+    any request carrying a cookie, an `Origin`/`Referer`, or a `Sec-Fetch-*`
+    header, and Node's built-in `fetch` sends `Sec-Fetch-Mode` on every
+    request (the same `curl` passes). Send an `Origin` equal to the module's
+    `baseUrl`, or, for provisioning, don't use that surface at all: call
+    `admin.createUser` from a service wired to the `admin` port. A deployed
+    stack's rpc ports are reachable only from inside its graph, so the app
+    exposes its own operator route that makes that call.
 
 ## What Composer doesn't do yet
 

@@ -308,6 +308,17 @@ export const authAdminContract = contract({
     input: type({ userId: 'string' }),
     output: type({ user: userRecord }),
   }),
+  // amended 2026-09-17: the operator provisioning path (prisma/asks needed
+  // to create its first operator account; the browser sign-up surface
+  // refuses Node's fetch by design — see § Better Auth configuration).
+  createUser: rpc({
+    input: type({ email: 'string', name: 'string', 'password?': 'string', 'emailVerified?': 'boolean' }),
+    output: type({ user: userRecord }),   // rejects (thrown → rpc error) on a duplicate email
+  }),
+  setEmailVerified: rpc({
+    input: type({ userId: 'string', emailVerified: 'boolean' }),
+    output: type({ user: userRecord.or('null') }),
+  }),
 });
 ```
 
@@ -327,8 +338,22 @@ Semantics:
 - `banUser`: sets `banned=true, banReason=reason??null, banExpires=expiresAt??null`
   AND deletes all the user's sessions (ban implies revoke). `unbanUser` clears
   the three columns, revokes nothing.
-- Deliberately absent v1: `createUser`, `deleteUser`, impersonation
-  (design-notes § Deferred).
+- `createUser` (amended 2026-09-17): DB-direct like every other handler
+  (D12), writing exactly what Better Auth's sign-up writes in one
+  transaction — the `user` row (email lowercased, `emailVerified` as given,
+  default false) and, when `password` is given, an `account` row with
+  `providerId: 'credential'`, `accountId` = the user id, and `password`
+  hashed by `hashPassword` from `better-auth/crypto` (the hasher sign-up
+  uses; never reimplemented). Ids come from Better Auth's default generator
+  (32 chars of `[a-zA-Z0-9]`, `generateRandomString` from
+  `better-auth/crypto`). A password outside Better Auth's sign-up bounds
+  (8–128) is refused before anything is written. A case-insensitive
+  duplicate email is a handler-thrown error (`auth admin createUser: a user
+  with email "<email>" already exists`). Sends no mail.
+- `setEmailVerified` (amended 2026-09-17): sets the column; `null` when the
+  user is absent.
+- Deliberately absent v1: `deleteUser`, impersonation (design-notes
+  § Deferred). (`createUser` was on this list until 2026-09-17.)
 
 ### Db dependency — `authDb()`
 
@@ -458,7 +483,11 @@ Four additions, no new machinery classes:
 ## Module factory (`src/auth-module.ts`)
 
 ```ts
-export function auth(opts?: { name?: string }): ModuleNode<
+// amended 2026-09-17: `signUp?: 'open' | 'closed'` (default 'open') — a
+// static factory option forwarded into the service input as a literal
+// (email's `deliveryUrl` pattern); the service input schema gains
+// `signUp: "'open' | 'closed'"`.
+export function auth(opts?: { name?: string; signUp?: 'open' | 'closed' }): ModuleNode<
   { db: ReturnType<typeof authDb>; email: ReturnType<typeof emailSender<AuthTemplates>> },
   { api: typeof authApiContract; session: typeof authSessionContract; admin: typeof authAdminContract },
   Record<never, never>,                       // no secret slots in v1 (D8: minted resource)
@@ -527,8 +556,11 @@ Pinned option values:
   pool `error` listener logging — copied semantics from
   `orm-postgres.ts`'s `resilientPool`, reimplemented locally; the module may
   not import target internals).
-- `emailAndPassword: { enabled: true, requireEmailVerification: <S2: true / S1: false>,
-  sendResetPassword: <cb>, revokeSessionsOnPasswordReset: true }`.
+- `emailAndPassword: { enabled: true, disableSignUp: <signUp === 'closed'>,
+  requireEmailVerification: <S2: true / S1: false>,
+  sendResetPassword: <cb>, revokeSessionsOnPasswordReset: true }` (amended
+  2026-09-17: `disableSignUp` follows the new `signUp` input; `'closed'`
+  makes Better Auth itself answer `400 EMAIL_PASSWORD_SIGN_UP_DISABLED`).
 - `emailVerification: { sendVerificationEmail: <cb>, sendOnSignUp: true,
   autoSignInAfterVerification: true }`.
 - `session: { expiresIn: 60*60*24*7, updateAge: 60*60*24 }` (Better Auth
@@ -545,7 +577,18 @@ Pinned option values:
   requires; 1.6.24's default payload carries NO session claim, so a plain
   default would make every token fail `sid` extraction (amended
   2026-07-23, D5)), `bearer()`, `admin()`, `magicLink({ sendMagicLink:
-  <cb>, expiresIn: 300, disableSignUp: false })`.
+  <cb>, expiresIn: 300, disableSignUp: <signUp === 'closed'> })` (amended
+  2026-09-17: at 1.6.24 the plugin still sends the link for an unknown
+  email; completing it redirects with `error=new_user_signup_disabled` and
+  writes no user).
+- Origin/CSRF posture is untouched by all of the above: sign-up and
+  magic-link run `formCsrfMiddleware`, which origin-checks any request
+  carrying a cookie, an `Origin`/`Referer`, or any `Sec-Fetch-*` header and
+  refuses a missing `Origin` (`403 MISSING_OR_NULL_ORIGIN`). Node's `fetch`
+  sends `sec-fetch-mode: cors` on every request, so a Node script calling
+  the browser surface is refused unless it sends an `Origin` in
+  `trustedOrigins`. Operator provisioning therefore goes through
+  `admin.createUser`, never through `/api/auth/sign-up/*` (2026-09-17).
 
 S1 (pre-email): the three send callbacks log
 `auth: email delivery not wired: <purpose> for <email>` (amended
@@ -600,7 +643,7 @@ Storage/email's pattern: build a bare node, `service.load()` →
 2. `const store = createPgAuthStore(db.url)` (own pool, `search_path=auth`).
 3. `const rpcHandler = serve(service, { session: { getSession, getUser },
    admin: { findUser, listUsers, listSessions, revokeSession,
-   revokeUserSessions, banUser, unbanUser } })` (handlers from
+   revokeUserSessions, banUser, unbanUser, createUser, setEmailVerified } })` (handlers from
    `handlers.ts`, closed over `store`). Framework prerequisite (amended
    2026-07-23, D5): `serve()`/`Handlers<S>` skip exposed contracts that are
    not rpc contracts — the `api` port is resource-kind and carries no

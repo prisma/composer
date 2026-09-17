@@ -27,10 +27,20 @@ Three ports, one service behind them — least privilege is a WIRING choice:
   id/email; email match case-insensitive), `listUsers` (query/banned
   filters, keyset cursor), `listSessions`, `revokeSession`,
   `revokeUserSessions` (idempotent deletes), `banUser` (ban implies
-  revoke, atomically), `unbanUser`.
+  revoke, atomically), `unbanUser`, `createUser` (see Provisioning
+  accounts below), `setEmailVerified`.
 
 Wire each port only where it belongs: the app gets `api` + `session`; the
 back office alone gets `admin`.
+
+`/api/auth/*` is the browser surface. Better Auth origin-checks any request
+that looks like it came from a browser — one carrying a cookie, an
+`Origin`/`Referer`, or any `Sec-Fetch-*` header — and refuses a missing
+`Origin` with `403 MISSING_OR_NULL_ORIGIN`. Node's built-in `fetch` sends
+`Sec-Fetch-Mode` on every request, so a Node script calling `/api/auth/*`
+(directly or through `authProxy`) is refused unless it sends an `Origin`
+that is in `trustedOrigins` (the module's `baseUrl`). Server-to-server work
+belongs on the rpc ports instead.
 
 ## Golden-path wiring
 
@@ -76,6 +86,50 @@ platform-minted inside the module; rotation is unsupported in v1 (rotating
 would invalidate every session and the encrypted jwks rows).
 
 A complete, deployable copy of this wiring lives in `examples/auth`.
+
+## Provisioning accounts
+
+An account an operator creates goes through the `admin` port, server to
+server — never through the browser sign-up surface:
+
+```ts
+// in a service wired to `identity.admin`
+const { admin } = service.load();
+const { user } = await admin.createUser({
+  email: 'ops@example.com',
+  name: 'Ops',
+  password: 'a-long-passphrase',   // optional; omit for a magic-link-only account
+  emailVerified: true,             // optional; default false
+});
+```
+
+`createUser` writes exactly what Better Auth's own sign-up writes — the
+`user` row and, with a password, a `credential` account hashed by Better
+Auth's own hasher — and sends no mail. It refuses a duplicate email
+(case-insensitive) by throwing, so a typed rpc client cannot mistake a
+refusal for success. `setEmailVerified({ userId, emailVerified })` flips
+the flag a created account needs before `requireEmailVerification` lets it
+sign in (`user: null` for an unknown id).
+
+A deployed stack's rpc ports are reachable only by consumers in its graph:
+a script on a laptop cannot call `admin.createUser`. The application
+exposes its own operator route (allowlisted however it sees fit) from a
+service wired to `admin`, and that route makes the call.
+
+Invite-only applications close self-service sign-up with a module setting,
+enforced by Better Auth itself, instead of filtering their proxy:
+
+```ts
+provision(auth({ signUp: 'closed' }), { id: 'auth', deps: { db, email: mail.send }, params: { … } });
+```
+
+`signUp: 'closed'` sets `emailAndPassword.disableSignUp` and the magic-link
+plugin's `disableSignUp`: `/api/auth/sign-up/email` answers `400
+EMAIL_PASSWORD_SIGN_UP_DISABLED`, and a magic link requested for an unknown
+email is still sent but completes to an `error=new_user_signup_disabled`
+redirect with no user created. Sign-in for existing accounts is unchanged.
+Default `'open'`. Nothing about origin, CSRF, or `trustedOrigins` changes
+either way.
 
 ## The pack
 
@@ -152,8 +206,9 @@ const identity = provision(auth(), {
 ```
 
 Signup requires verification (`requireEmailVerification: true`; the
-verification send fires on signup, and verifying auto-signs-in). Magic
-links expire after 5 minutes. The three templates ship with the module —
+verification send fires on signup, and verifying auto-signs-in; an
+`admin.createUser` account skips the mail and is verified when created
+with `emailVerified: true`). Magic links expire after 5 minutes. The three templates ship with the module —
 minimal semantic HTML plus a plain-text part; every interpolation is
 HTML-escaped, and a link whose origin differs from `baseUrl` fails the
 send rather than going out.
