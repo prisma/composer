@@ -12,7 +12,7 @@ import node from '@internal/node';
 import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
 import type { PostgresContract } from '@internal/prisma-cloud/orm';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
-import { rpc } from '@internal/service-rpc';
+import { type Client, rpc } from '@internal/service-rpc';
 import { expectTypeOf, test } from 'vitest';
 import { auth } from '../auth-module.ts';
 import {
@@ -109,4 +109,29 @@ test('the module ports wire into their consumer slots; a wrong-kind port is reje
   expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<
     RefPort<typeof authApiContract>
   >();
+});
+
+test('the admin client types createUser and setEmailVerified', () => {
+  type Admin = Client<typeof authAdminContract>;
+  expectTypeOf<Parameters<Admin['createUser']>[0]>().toEqualTypeOf<{
+    email: string;
+    name: string;
+    password?: string;
+    emailVerified?: boolean;
+  }>();
+  expectTypeOf<Awaited<ReturnType<Admin['createUser']>>>().toEqualTypeOf<{ user: UserRecord }>();
+  expectTypeOf<Parameters<Admin['setEmailVerified']>[0]>().toEqualTypeOf<{
+    userId: string;
+    emailVerified: boolean;
+  }>();
+  expectTypeOf<Awaited<ReturnType<Admin['setEmailVerified']>>>().toEqualTypeOf<{
+    user: UserRecord | null;
+  }>();
+});
+
+test("auth() accepts signUp: 'open' | 'closed' and nothing else", () => {
+  auth({ signUp: 'closed' });
+  auth({ signUp: 'open' });
+  // @ts-expect-error — only the two literals are accepted.
+  auth({ signUp: 'invite-only' });
 });

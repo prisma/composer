@@ -22,7 +22,12 @@ import { serve } from '@internal/service-rpc';
 import { composeServiceFetch } from '@internal/service-rpc/compose-fetch';
 import { betterAuth } from 'better-auth';
 import { buildAuthOptions } from '../auth-options.ts';
-import { authAdminContract, authApiContract, authSessionContract } from '../contract.ts';
+import {
+  authAdminContract,
+  authApiContract,
+  authSessionContract,
+  type SignUpMode,
+} from '../contract.ts';
 import { createAuthHandlers } from '../handlers.ts';
 import { createPgAuthStore } from '../pg-auth-store.ts';
 import { type AuthTemplates, authTemplates } from '../templates.ts';
@@ -84,6 +89,8 @@ export async function startLocalAuthServer(opts: {
   baseUrl?: string;
   /** Default: a local sender that renders through `authTemplates` and captures into `capturedEmails`. */
   email?: EmailSender<AuthTemplates>;
+  /** Default `'open'`; `'closed'` is the invite-only posture (`auth({ signUp: 'closed' })`). */
+  signUp?: SignUpMode;
 }): Promise<LocalAuthServer> {
   // The real deploy path in miniature: PN dbInit with the auth pack against
   // the caller's database (no-op off the signed marker on repeat boots).
@@ -129,6 +136,7 @@ export async function startLocalAuthServer(opts: {
       secret: LOCAL_DEV_SECRET,
       baseUrl: opts.baseUrl ?? url,
       email,
+      signUp: opts.signUp ?? 'open',
     }),
   );
   fetchHandler = composeServiceFetch({

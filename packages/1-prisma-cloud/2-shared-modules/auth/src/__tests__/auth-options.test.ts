@@ -106,8 +106,9 @@ describe('buildAuthOptions — pinned values', () => {
     await expect(pool.options.onConnect?.(client)).rejects.toBe(failure);
   });
 
-  test('emailAndPassword: enabled, verification required, reset revokes sessions', () => {
+  test('emailAndPassword: enabled, sign-up open by default, verification required, reset revokes sessions', () => {
     expect(options.emailAndPassword?.enabled).toBe(true);
+    expect(options.emailAndPassword?.disableSignUp).toBe(false);
     expect(options.emailAndPassword?.requireEmailVerification).toBe(true);
     expect(options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
     expect(typeof options.emailAndPassword?.sendResetPassword).toBe('function');
@@ -135,6 +136,20 @@ describe('buildAuthOptions — pinned values', () => {
 
   test('plugins, in order: jwt, bearer, admin, magic-link', () => {
     expect(options.plugins?.map((p) => p.id)).toEqual(['jwt', 'bearer', 'admin', 'magic-link']);
+  });
+
+  test("signUp: 'closed' disables email+password sign-up; 'open' and the default do not", () => {
+    const closed = buildAuthOptions({ ...inputs, email, signUp: 'closed' });
+    expect(closed.emailAndPassword?.disableSignUp).toBe(true);
+    expect(closed.emailAndPassword?.enabled).toBe(true);
+    // Everything else stays pinned — closing sign-up touches no origin/CSRF posture.
+    expect(closed.trustedOrigins).toEqual(['https://app.example']);
+    expect(closed.plugins?.map((p) => p.id)).toEqual(['jwt', 'bearer', 'admin', 'magic-link']);
+
+    const open = buildAuthOptions({ ...inputs, email, signUp: 'open' });
+    expect(open.emailAndPassword?.disableSignUp).toBe(false);
+    // The magic-link plugin's disableSignUp closes over its options and is
+    // not readable here; closed-sign-up.integration.test.ts proves it.
   });
 });
 
