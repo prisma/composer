@@ -12,11 +12,6 @@ import { type AuthStore, decodeCursor, encodeCursor } from './auth-store.ts';
 import type { SessionRecord, UserRecord } from './contract.ts';
 
 const DEFAULT_LIST_LIMIT = 50;
-// Better Auth's own sign-up bounds (`emailAndPassword.minPasswordLength` /
-// `maxPasswordLength` defaults), applied here so an admin-created password
-// is one the browser surface would also have accepted.
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 128;
 
 /** Better Auth's default id generator: 32 chars of `[a-zA-Z0-9]`, the same ids sign-up mints. */
 function generateId(): string {
@@ -139,20 +134,9 @@ export function createAuthHandlers(store: AuthStore): AuthHandlers {
     // The operator's provisioning path: the same rows Better Auth's sign-up
     // writes (lowercased email, a `credential` account carrying Better
     // Auth's own hash), minus the verification mail — `emailVerified` is
-    // whatever the caller says, default false.
+    // whatever the caller says, default false. Email shape and password
+    // bounds are the contract input's job (a 400, not a retried 500).
     async createUser({ email, name, password, emailVerified }) {
-      if (password !== undefined) {
-        if (password.length < MIN_PASSWORD_LENGTH) {
-          throw new Error(
-            `auth admin createUser: password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-          );
-        }
-        if (password.length > MAX_PASSWORD_LENGTH) {
-          throw new Error(
-            `auth admin createUser: password must be at most ${MAX_PASSWORD_LENGTH} characters`,
-          );
-        }
-      }
       const user = await store.createUser({
         id: generateId(),
         email: email.toLowerCase(),

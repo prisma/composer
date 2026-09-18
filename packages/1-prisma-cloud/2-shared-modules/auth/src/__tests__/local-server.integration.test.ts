@@ -295,12 +295,15 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
     ).rejects.toThrow('RPC call "createUser" failed: 500');
   }, 20_000);
 
-  test('admin.createUser refuses a malformed email at the rpc boundary (400, no retries)', async () => {
+  test('admin.createUser refuses a malformed email or a short password at the rpc boundary (400, no retries)', async () => {
     const admin = makeClient(authAdminContract, server.url);
     await expect(admin.createUser({ email: 'ops@example', name: 'Ops' })).rejects.toThrow(
       'RPC call "createUser" failed: 400',
     );
-    expect(await admin.findUser({ email: 'ops@example' })).toEqual({ user: null });
+    await expect(
+      admin.createUser({ email: 'ops@example.com', name: 'Ops', password: 'short' }),
+    ).rejects.toThrow('RPC call "createUser" failed: 400');
+    expect(await admin.findUser({ email: 'ops@example.com' })).toEqual({ user: null });
   });
 
   test('admin.setEmailVerified flips the flag over rpc; null for an unknown id', async () => {

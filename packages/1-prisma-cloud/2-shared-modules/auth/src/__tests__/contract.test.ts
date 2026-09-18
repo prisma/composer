@@ -150,6 +150,14 @@ describe('authAdminContract — the provisioning methods', () => {
     // sign-up validates it — a typo'd email is a 400, not a dead account.
     expect(input({ email: 'ops@example', name: 'Ops' })).toBeInstanceOf(type.errors);
     expect(input({ email: 'not an email', name: 'Ops' })).toBeInstanceOf(type.errors);
+    // So are Better Auth's sign-up password bounds (8–128), for the same reason.
+    expect(input({ email: 'a@b.co', name: 'A', password: 'short' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'a@b.co', name: 'A', password: 'x'.repeat(129) })).toBeInstanceOf(
+      type.errors,
+    );
+    expect(input({ email: 'a@b.co', name: 'A', password: 'x'.repeat(8) })).not.toBeInstanceOf(
+      type.errors,
+    );
     expect(input({ email: 'a@b.co', name: 'A', emailVerified: 'yes' })).toBeInstanceOf(type.errors);
     expect(output({ user: null })).toBeInstanceOf(type.errors);
   });

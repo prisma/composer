@@ -245,18 +245,6 @@ describe('admin.createUser — the rows Better Auth sign-up writes, minus the ma
       'auth admin createUser: a user with email "Dup@example.com" already exists',
     );
   });
-
-  test("applies Better Auth's sign-up password bounds before touching the store", async () => {
-    const store = creatingStore();
-    const { admin } = createAuthHandlers(store);
-    await expect(
-      admin.createUser({ email: 'c@example.com', name: 'C', password: 'short' }),
-    ).rejects.toThrow('auth admin createUser: password must be at least 8 characters');
-    await expect(
-      admin.createUser({ email: 'c@example.com', name: 'C', password: 'x'.repeat(129) }),
-    ).rejects.toThrow('auth admin createUser: password must be at most 128 characters');
-    expect(store.created).toEqual([]);
-  });
 });
 
 describe('admin.setEmailVerified', () => {
