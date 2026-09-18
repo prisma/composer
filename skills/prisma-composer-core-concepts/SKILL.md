@@ -214,6 +214,10 @@ deploy. Rules that bite:
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
    the runtime environment doesn't exist at build time and Next ignores
    runtime env for prerendered routes.
+   On Windows, absolute package links are staged from the declared
+   `outputFileTracingRoot` and rewritten as relative in-artifact links.
+   Targets outside that root, including nested links, and unresolved dangling
+   targets remain errors. Do not dereference the standalone tree.
 4. **Always build before `deploy` or `dev`.** Neither builds for you.
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
