@@ -19,7 +19,7 @@ beforeAll(async () => {
     persistenceMode: 'stateless',
   });
   await ensureLocalAuthSchema(server.database.connectionString);
-});
+}, 60_000); // a cold CI runner boots @prisma/dev well past the 5s default
 
 afterAll(async () => {
   await server?.close();

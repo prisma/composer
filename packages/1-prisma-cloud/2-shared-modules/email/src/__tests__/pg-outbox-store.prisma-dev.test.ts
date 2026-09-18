@@ -17,7 +17,7 @@ beforeAll(async () => {
     name: `email-test-${crypto.randomUUID()}`,
     persistenceMode: 'stateless',
   });
-});
+}, 60_000); // a cold CI runner boots @prisma/dev well past the 5s default
 
 afterAll(async () => {
   await server?.close();
