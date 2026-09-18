@@ -232,7 +232,9 @@ export const authAdminContract = contract({
   }),
   createUser: rpc({
     input: type({
-      email: 'string',
+      // Better Auth's sign-up validates the address shape; an account with
+      // a malformed email could never sign in or receive mail.
+      email: 'string.email',
       name: 'string',
       'password?': 'string',
       'emailVerified?': 'boolean',

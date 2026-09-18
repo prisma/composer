@@ -105,9 +105,10 @@ const { user } = await admin.createUser({
 
 `createUser` writes exactly what Better Auth's own sign-up writes — the
 `user` row and, with a password, a `credential` account hashed by Better
-Auth's own hasher — and sends no mail. It refuses a duplicate email
-(case-insensitive) by throwing, so a typed rpc client cannot mistake a
-refusal for success. `setEmailVerified({ userId, emailVerified })` flips
+Auth's own hasher — and sends no mail. It applies the same checks sign-up
+does (a well-formed email, a password of 8–128 characters) and refuses a
+duplicate email (case-insensitive); every refusal reaches a typed rpc
+client as a thrown error, so a script cannot mistake it for success. `setEmailVerified({ userId, emailVerified })` flips
 the flag a created account needs before `requireEmailVerification` lets it
 sign in (`user: null` for an unknown id).
 

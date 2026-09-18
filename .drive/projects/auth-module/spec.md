@@ -312,7 +312,7 @@ export const authAdminContract = contract({
   // to create its first operator account; the browser sign-up surface
   // refuses Node's fetch by design — see § Better Auth configuration).
   createUser: rpc({
-    input: type({ email: 'string', name: 'string', 'password?': 'string', 'emailVerified?': 'boolean' }),
+    input: type({ email: 'string.email', name: 'string', 'password?': 'string', 'emailVerified?': 'boolean' }),
     output: type({ user: userRecord }),   // rejects (thrown → rpc error) on a duplicate email
   }),
   setEmailVerified: rpc({
@@ -346,8 +346,10 @@ Semantics:
   hashed by `hashPassword` from `better-auth/crypto` (the hasher sign-up
   uses; never reimplemented). Ids come from Better Auth's default generator
   (32 chars of `[a-zA-Z0-9]`, `generateRandomString` from
-  `better-auth/crypto`). A password outside Better Auth's sign-up bounds
-  (8–128) is refused before anything is written. A case-insensitive
+  `better-auth/crypto`). The email shape is validated by the contract input
+  (`string.email`, a 400 at the rpc boundary) and a password outside Better
+  Auth's sign-up bounds (8–128) is refused before anything is written — the
+  two checks Better Auth's own sign-up applies. A case-insensitive
   duplicate email is a handler-thrown error (`auth admin createUser: a user
   with email "<email>" already exists`). Sends no mail.
 - `setEmailVerified` (amended 2026-09-17): sets the column; `null` when the

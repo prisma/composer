@@ -141,12 +141,16 @@ interface RpcMethodSchemas {
 describe('authAdminContract — the provisioning methods', () => {
   test('createUser: email and name required, password and emailVerified optional; returns a user', () => {
     const { input, output } = authAdminContract.__cmp.createUser as unknown as RpcMethodSchemas;
-    expect(input({ email: 'a@b.c', name: 'A' })).toEqual({ email: 'a@b.c', name: 'A' });
+    expect(input({ email: 'a@b.co', name: 'A' })).toEqual({ email: 'a@b.co', name: 'A' });
     expect(
-      input({ email: 'a@b.c', name: 'A', password: 'correct-horse-battery', emailVerified: true }),
+      input({ email: 'a@b.co', name: 'A', password: 'correct-horse-battery', emailVerified: true }),
     ).not.toBeInstanceOf(type.errors);
-    expect(input({ email: 'a@b.c' })).toBeInstanceOf(type.errors);
-    expect(input({ email: 'a@b.c', name: 'A', emailVerified: 'yes' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'a@b.co' })).toBeInstanceOf(type.errors);
+    // The address shape is validated at the rpc boundary, as Better Auth's
+    // sign-up validates it — a typo'd email is a 400, not a dead account.
+    expect(input({ email: 'ops@example', name: 'Ops' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'not an email', name: 'Ops' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'a@b.co', name: 'A', emailVerified: 'yes' })).toBeInstanceOf(type.errors);
     expect(output({ user: null })).toBeInstanceOf(type.errors);
   });
 
