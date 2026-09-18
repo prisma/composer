@@ -451,9 +451,10 @@ today the blocks above plus your own Modules are the whole set, so verify a
    crashes into a 502 restart loop unless the pool is small and
    reconnect-friendly (`new SQL({ url, max: 1, idleTimeout: 10 })` for Bun)
    and the process logs `uncaughtException`/`unhandledRejection` instead of
-   dying. Under `dev` watch-restarts against the local emulator, add
-   `prepare: false` as well: restarted processes collide on
-   prepared-statement names in the emulator's shared session.
+   dying. Under `dev`, add `prepare: false` as well: the local Postgres
+   is one session shared by every connection and it outlives your
+   processes, so a restarted process collides on prepared-statement
+   names (42P05) and crash-loops.
 4. **Cold starts reset service-to-service connections.** A call into a
    scaled-to-zero service can get `ECONNRESET`; retry it.
 5. **Bind `0.0.0.0`, not loopback.** The platform routes external HTTP to
