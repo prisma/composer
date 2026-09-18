@@ -223,7 +223,7 @@ class PgAuthStore implements AuthStore {
   }
 }
 
-/** Own pool over the wired db url (`max: 1`, email's cold-start posture). */
+/** Own pool over the wired db url (`max: 1`, `prepare: false` — email's posture; see createPgOutboxStore). */
 export function createPgAuthStore(url: string): AuthStore {
-  return new PgAuthStore(new SQL({ url, max: 1, idleTimeout: 10 }));
+  return new PgAuthStore(new SQL({ url, max: 1, idleTimeout: 10, prepare: false }));
 }
