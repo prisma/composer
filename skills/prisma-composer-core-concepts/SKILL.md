@@ -369,12 +369,13 @@ that surprise:
    service it calls.
 5. Windows isn't supported yet.
 
-Local Postgres needs `@prisma/dev` in the devDependencies of the project where
-Composer runs (the root package in a monorepo). Prisma 8 does not ship it.
-Composer resolves the app's copy first, then checks relative to the exported
-`prisma/package.json` for installations that supply it there. If neither resolves,
-add `@prisma/dev`, not another copy of `prisma`; leave database bindings unchanged.
-Cloud deployment and local apps without Postgres do not need this runtime.
+Local Postgres runs on `@prisma/dev`, which `@prisma/composer-prisma-cloud`
+declares as its own dependency (`^0.25.2`) and resolves from its own package.
+Nothing needs adding to the app, and an app's own `@prisma/dev` (for example the
+`^0.20.0` alchemy pulls in, which crashes on any Postgres message over 64 KiB) is
+ignored. If the emulator reports that `@prisma/dev` did not resolve, the install
+is broken: reinstall dependencies rather than adding `@prisma/dev` or `prisma`.
+Cloud deployment and local apps without Postgres never load this runtime.
 
 ## Testing is an environment seam
 

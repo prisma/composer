@@ -20,14 +20,12 @@ needed; local dev never talks to the platform.
 
 ## Bring it up
 
-Local Postgres requires `@prisma/dev` in the devDependencies of the project where
-you run Composer (the root package for a monorepo). Prisma 8 does not include this
-runtime; installing `prisma` alone is not enough. No emulator dependency is needed
-for cloud deployment or a local app without Postgres resources.
-
-Composer resolves `@prisma/dev` from the app first. For compatibility with
-installations that supply it through `prisma`, it also checks relative to the
-CLI's exported `prisma/package.json`; no JavaScript root export is required.
+Local Postgres runs on `@prisma/dev`. `@prisma/composer-prisma-cloud` declares
+it as a dependency (`^0.25.2`) and resolves it from its own package, so nothing
+needs adding to your app and your app's own copy, if any, is not used. Releases
+before 0.21.0 crash on any Postgres message over 64 KiB, which is why Composer
+owns the version. Nothing about the emulator is needed for cloud deployment or a
+local app without Postgres resources.
 
 ```sh
 prisma-composer dev module.ts
