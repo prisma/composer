@@ -40,6 +40,8 @@ describe('@prisma/dev is declared by the published @prisma/composer-prisma-cloud
   });
 
   it('never allows a release older than 0.21.0, the first with whole-message socket framing', () => {
-    assert.match(published, /^\^0\.(2[1-9]|[3-9]\d)\.\d+$/);
+    const caret = /^\^0\.(\d+)\.\d+$/.exec(published ?? '');
+    assert.ok(caret, `expected a caret range on a 0.x release, got ${JSON.stringify(published)}`);
+    assert.ok(Number(caret[1]) >= 21, `${published} admits a release older than 0.21.0`);
   });
 });
