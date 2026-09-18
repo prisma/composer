@@ -24,7 +24,8 @@ const EXPECTED_SIGNING_SECRET = 'sk_test_ci_storefront_auth';
 // so it is one pool per process. idleTimeout closes the pooled connection
 // before Compute's scale-to-zero drops it, so the next request reconnects
 // instead of erroring (FT-5219).
-const sql = new SQL({ url: db.url, max: 1, idleTimeout: 10 });
+// prepare: false — local `prisma dev` shares one session across connections (42P05, gotchas.md).
+const sql = new SQL({ url: db.url, max: 1, idleTimeout: 10, prepare: false });
 
 // A Prisma Postgres direct connection is closed when it goes idle (and when
 // the service scales to zero). Bun.SQL surfaces that as an async error with
