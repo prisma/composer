@@ -181,10 +181,13 @@ class PgOutboxStore implements OutboxStore {
 
 /**
  * Connect (`max: 1`, matching storage's cold-start posture), apply the
- * schema idempotently behind the retry, and return the store.
+ * schema idempotently behind the retry, and return the store. `prepare:
+ * false`: local `prisma dev` shares one Postgres session across connections,
+ * so a restarted process re-preparing Bun's per-connection statement names
+ * collides with 42P05 and crash-loops (gotchas.md).
  */
 export async function createPgOutboxStore(url: string): Promise<OutboxStore> {
-  const sql = new SQL({ url, max: 1, idleTimeout: 10 });
+  const sql = new SQL({ url, max: 1, idleTimeout: 10, prepare: false });
   await retryTransientConnect(
     () => sql`
       create table if not exists emails (

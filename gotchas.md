@@ -34,6 +34,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Composer's secret model has no optional/conditional secrets — every "off" stage still needs a junk credential](#composers-secret-model-has-no-optionalconditional-secrets--every-off-stage-still-needs-a-junk-credential)
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
+- [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
 
 ---
 
@@ -607,3 +608,34 @@ Error: Dynamic require of "assert" is not supported
 
 1. On a machine that hasn't run `prisma dev` today: `pnpm exec prisma dev --name x --detach` → the error above.
 2. `pnpm exec prisma dev @0.16.22 --name x --detach` → works (as does the programmatic `startPrismaDevServer`, which never fetches the subcommand).
+
+---
+
+## prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05
+
+**Filed upstream:** not yet
+**Product:** Prisma Postgres local (`prisma dev` / `@prisma/dev` 0.25.2, PGlite)
+**Version:** Bun 1.3.11 (`Bun.SQL`, prepared statements on by default); `@prisma/composer-prisma-cloud` ≤ 0.20.0
+**First hit:** a consumer app wiring `email()` + `auth()` under `prisma dev`; reproduced in `examples/email`
+
+**Symptom.** The first `prisma-composer dev` run is fine. The next one (or any restart of the service against the same database) crash-loops until the emulator holds it:
+
+```
+[email.service] PostgresError: prepared statement "P
+      create table if not exists emails$0" already exists
+    errno: "42P05", routine: "StorePreparedStatement"
+[email.service] [emulator] exited (code 1) — restarting in 1s / 2s / 4s / 8s
+[email.service] [emulator] held after 5 consecutive fast exits
+```
+
+Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RPC.
+
+**Cause.** `@prisma/dev` runs PGlite, a single-session Postgres, behind a socket: every client connection shares **one** backend session (same `pg_backend_pid()`, a `SET` on one connection is visible on the next, and so is `pg_prepared_statements`). Nothing is reset when a connection closes, and the emulator daemon outlives `Ctrl-C`. Bun names prepared statements `P<query text>$<per-connection counter>`, so a restarted process's first query gets the same name as the dead process's first query, and the `PREPARE` collides. A real Postgres gives each connection its own session, so this never happens against Prisma Postgres.
+
+**Workaround.** Turn off named prepared statements for Bun.SQL clients that may run against `prisma dev`: `new SQL({ url, max: 1, idleTimeout: 10, prepare: false })`. Composer's own `email`, `auth` and `storage` stores do this. Their tests `*.prisma-dev.test.ts` boot each store twice against a real `@prisma/dev` server.
+
+**Reproduction.**
+
+1. `startPrismaDevServer({ name, persistenceMode: 'stateless' })`, then take `database.connectionString`.
+2. `new SQL({ url, max: 1 })`, run `create table if not exists t (id int)`, then close it.
+3. Open a second `new SQL({ url, max: 1 })` and run the same statement → 42P05. With `prepare: false` both succeed.
