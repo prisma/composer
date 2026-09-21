@@ -52,6 +52,7 @@ export interface AdminHandlers {
     userId: string;
     emailVerified: boolean;
   }): Promise<{ user: UserRecord | null }>;
+  removeUser(input: { userId: string }): Promise<{ removed: boolean }>;
 }
 
 export interface AuthHandlers {
@@ -155,6 +156,11 @@ export function createAuthHandlers(store: AuthStore): AuthHandlers {
 
     async setEmailVerified({ userId, emailVerified }) {
       return { user: await store.setEmailVerified(userId, emailVerified) };
+    },
+
+    // Idempotent like the revocation ops, so a deletion flow can retry.
+    async removeUser({ userId }) {
+      return { removed: await store.removeUser(userId) };
     },
   };
 

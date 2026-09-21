@@ -8,7 +8,8 @@
  * ports over real rpc HTTP (`makeClient`) → `/health` and the 404
  * fallthrough → magic-link capture readback → an operator-provisioned
  * account (`admin.createUser`, no mail) signing in through Better Auth's
- * REAL `/sign-in/email`. Same topology as production:
+ * REAL `/sign-in/email` → `admin.removeUser` erasing an account so that
+ * sign-in no longer knows it. Same topology as production:
  * the same fetch composition, the same handlers, the same options builder.
  * Uses the default in-memory capture (no `email` option) — the outbox-
  * readback path against a REAL email module local server is proved
@@ -320,6 +321,35 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
     expect(await admin.setEmailVerified({ userId: 'no-such-user', emailVerified: true })).toEqual({
       user: null,
     });
+  });
+
+  test('admin.removeUser erases the account: sessions dead, sign-in refused, email free again', async () => {
+    const admin = makeClient(authAdminContract, server.url);
+    const session = makeClient(authSessionContract, server.url);
+    const email = 'erase-me@example.com';
+    const password = 'right-to-be-forgotten';
+    const { user } = await admin.createUser({
+      email,
+      name: 'Erase',
+      password,
+      emailVerified: true,
+    });
+
+    const fromEraser = { 'x-forwarded-for': '10.10.0.3' };
+    const signIn = () => api('/api/auth/sign-in/email', json({ email, password }, fromEraser));
+    const res = await signIn();
+    expect(res.status).toBe(200);
+    const { token } = (await res.json()) as { token: string };
+
+    expect(await admin.removeUser({ userId: user.id })).toEqual({ removed: true });
+    expect(await session.getSession({ token })).toEqual({ session: null, user: null });
+    expect(await admin.findUser({ email })).toEqual({ user: null });
+    expect((await signIn()).status).toBe(401);
+    // Idempotent: a retried deletion flow is not an error.
+    expect(await admin.removeUser({ userId: user.id })).toEqual({ removed: false });
+    // Nothing of the old account blocks the address being used again.
+    const again = await admin.createUser({ email, name: 'Erase again' });
+    expect(again.user.id).not.toBe(user.id);
   });
 
   test('/health answers without auth; unknown paths fall through to 404', async () => {

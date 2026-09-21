@@ -83,6 +83,12 @@ export interface AuthStore {
   createUser(user: NewUser): Promise<UserRecord | null>;
   /** Sets `emailVerified`; `null` when absent. */
   setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null>;
+  /**
+   * Deletes the user row (sessions and accounts go with it by FK cascade)
+   * and every pending verification row naming the user, in one
+   * transaction. `false` = no such user (idempotent).
+   */
+  removeUser(userId: string): Promise<boolean>;
 }
 
 /**

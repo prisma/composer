@@ -319,6 +319,11 @@ export const authAdminContract = contract({
     input: type({ userId: 'string', emailVerified: 'boolean' }),
     output: type({ user: userRecord.or('null') }),
   }),
+  // amended 2026-09-21: account deletion (GDPR erasure)
+  removeUser: rpc({
+    input: type({ userId: 'string' }),
+    output: type({ removed: 'boolean' }),   // false = no such user (idempotent)
+  }),
 });
 ```
 
@@ -354,8 +359,26 @@ Semantics:
   with email "<email>" already exists`). Sends no mail.
 - `setEmailVerified` (amended 2026-09-17): sets the column; `null` when the
   user is absent.
-- Deliberately absent v1: `deleteUser`, impersonation (design-notes
-  § Deferred). (`createUser` was on this list until 2026-09-17.)
+- `removeUser` (amended 2026-09-21): DB-direct (D12), one transaction:
+  `DELETE` of the `user` row — `session` and `account` rows go with it by
+  the pack's `onDelete: Cascade` FKs — plus the `verification` rows naming
+  the user (at 1.6.24: `value` = the user id for a password reset; a
+  magic link's `value` is `JSON.stringify({ email, name })`, matched
+  case-insensitively on the `"email":"<address>"` fragment). Consumer FKs
+  onto `auth:User` keep their own semantics: `Cascade` takes the app's rows
+  along, `Restrict`/`NoAction` fails the whole delete with Postgres' FK
+  error (thrown → rpc error, nothing removed) — the app deletes its rows
+  first. `false` for an unknown id. Already-minted JWTs keep verifying
+  until expiry (≤ 15 min, D6), exactly like revocation. Sends no mail.
+  Better Auth's own `user.deleteUser` (`/api/auth/delete-user`) stays
+  DISABLED: a public self-service endpoint would delete the sign-in record
+  behind the app's back — no app-row cleanup, no orchestration — on every
+  app that proxies `/api/auth/*`; an app offering "delete my account"
+  authenticates the user itself and calls `removeUser` from a service
+  wired to `admin`.
+- Deliberately absent v1: impersonation (design-notes § Deferred).
+  (`createUser` was on this list until 2026-09-17, `deleteUser` until
+  2026-09-21 — shipped as `removeUser`.)
 
 ### Db dependency — `authDb()`
 
@@ -645,7 +668,8 @@ Storage/email's pattern: build a bare node, `service.load()` →
 2. `const store = createPgAuthStore(db.url)` (own pool, `search_path=auth`).
 3. `const rpcHandler = serve(service, { session: { getSession, getUser },
    admin: { findUser, listUsers, listSessions, revokeSession,
-   revokeUserSessions, banUser, unbanUser, createUser, setEmailVerified } })` (handlers from
+   revokeUserSessions, banUser, unbanUser, createUser, setEmailVerified,
+   removeUser } })` (handlers from
    `handlers.ts`, closed over `store`). Framework prerequisite (amended
    2026-07-23, D5): `serve()`/`Handlers<S>` skip exposed contracts that are
    not rpc contracts — the `api` port is resource-kind and carries no
@@ -787,7 +811,7 @@ upgrade procedure: bump package → `migration plan` → deploy) · Sessions & J
 (`startLocalAuthServer`, prisma dev, reading links from capture/outbox) ·
 Embedded mode (when and trade-offs) · The SPA alternative (bearer, direct
 origin, its costs) · Limits (no social/orgs/2FA in v1, no rotation, no
-deleteUser, 1 MiB rpc body cap).
+self-service deletion (`removeUser` is server-side), 1 MiB rpc body cap).
 
 ## Test plan
 
@@ -815,8 +839,8 @@ depcruise planes clean. Deployed smoke: `examples/auth` (S1),
 ## Non-goals (v1)
 
 Social OAuth (mechanism D7 reserved; no providers ship) · organizations /
-2FA / passkeys / username / phone · secret rotation · `deleteUser` /
-impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · secret rotation · self-service
+`/api/auth/delete-user` (`removeUser` on `admin` instead) · impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
 per-consumer contract slices on shared DBs · exposing the instance secret ·
 `iss`/`aud` validation (D15) · custom JWT claims configuration.
 

@@ -28,7 +28,8 @@ Three ports, one service behind them — least privilege is a WIRING choice:
   filters, keyset cursor), `listSessions`, `revokeSession`,
   `revokeUserSessions` (idempotent deletes), `banUser` (ban implies
   revoke, atomically), `unbanUser`, `createUser` (see Provisioning
-  accounts below), `setEmailVerified`.
+  accounts below), `setEmailVerified`, `removeUser` (see Deleting
+  accounts below).
 
 Wire each port only where it belongs: the app gets `api` + `session`; the
 back office alone gets `admin`.
@@ -132,6 +133,40 @@ email is still sent but completes to an `error=new_user_signup_disabled`
 redirect with no user created. Sign-in for existing accounts is unchanged.
 Default `'open'`. Nothing about origin, CSRF, or `trustedOrigins` changes
 either way.
+
+## Deleting accounts
+
+Account deletion ("delete my account", GDPR erasure) is one `admin` call,
+server to server:
+
+```ts
+// in a service wired to `identity.admin`
+const { removed } = await admin.removeUser({ userId });
+```
+
+It deletes, in one transaction, the `user` row (email, name, timestamps),
+its sessions and accounts (password hash, provider tokens), and any pending
+verification tokens naming the user. `removed: false` means no such user,
+so a retried deletion flow is not an error. No mail is sent.
+
+Your own rows follow your own foreign keys: an `auth:User` relation with
+`onDelete: Cascade` goes with the user; one with `Restrict` (or no
+`onDelete`) makes `removeUser` fail with Postgres' foreign-key error and
+remove nothing — delete those rows first. Without an FK, delete them
+yourself before or after; nothing links them.
+
+A self-service "delete my account" button authenticates the user in your
+app (their session or JWT gives you `userId`), then calls `removeUser` from
+a service wired to `admin`. Better Auth's own `/api/auth/delete-user` is
+deliberately not enabled: it would delete the sign-in record behind your
+app's back, skipping your cleanup. Already-minted JWTs keep verifying until
+they expire (≤ 15 min, see Sessions & JWTs) — a route that must refuse a
+deleted user at once checks `session.getSession(token)`, which is `null`
+immediately.
+
+Wiring `admin` into the service that handles the deletion gives it the
+rest of the `admin` port too (ban, list, create). Keep that service small,
+or put the route in the back office.
 
 ## The pack
 
@@ -242,6 +277,6 @@ at the cost of the first-party-cookie golden path.
 ## Limits (v1)
 
 No social providers (mechanism reserved, none ship) · no organizations /
-2FA / passkeys / username / phone · no secret rotation · no `deleteUser`,
-no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · no secret rotation · no self-service
+`/api/auth/delete-user` (use `admin.removeUser`), no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
 rpc bodies cap at 1 MiB.

@@ -4,8 +4,8 @@
  * (`"user"` is a reserved word, hence the quoting throughout). No schema
  * work at boot: the deploy migrated and marker-signed the auth space before
  * this process exists. Writes are confined to `session` deletes, the three
- * ban columns, `emailVerified`, and the `user` + `credential` account rows
- * `createUser` inserts.
+ * ban columns, `emailVerified`, the `user` + `credential` account rows
+ * `createUser` inserts, and `removeUser`'s deletes.
  *
  * Runtime engine code (Bun's `SQL`); NOT re-exported from the authoring
  * barrel.
@@ -26,6 +26,7 @@ import { AUTH_SCHEMA } from './pack/constants.ts';
 const USER_TABLE = `"${AUTH_SCHEMA}"."user"`;
 const SESSION_TABLE = `"${AUTH_SCHEMA}"."session"`;
 const ACCOUNT_TABLE = `"${AUTH_SCHEMA}"."account"`;
+const VERIFICATION_TABLE = `"${AUTH_SCHEMA}"."verification"`;
 
 /**
  * The effective-ban predicate in SQL — must agree with
@@ -264,6 +265,34 @@ class PgAuthStore implements AuthStore {
     );
     const row = rows[0];
     return row === undefined ? null : toUserRecord(row);
+  }
+
+  /**
+   * Sessions and accounts cascade off the user row (pack FKs). A consumer FK
+   * onto auth:User decides for itself: Cascade takes the app's rows along;
+   * Restrict/NoAction fails the whole transaction with Postgres' own error
+   * naming the constraint.
+   *
+   * Verification rows have no FK. Better Auth 1.6.24 names the user in
+   * `value` two ways: a password reset stores the bare user id; a magic link
+   * stores `JSON.stringify({ email, name })` with the email as typed — hence
+   * the case-folded substring match, closing quote included so `a@b.co`
+   * never matches `a@b.com`.
+   */
+  async removeUser(userId: string): Promise<boolean> {
+    return this.sql.begin(async (tx) => {
+      const rows = await tx.unsafe<{ email: string }[]>(
+        `delete from ${USER_TABLE} where id = $1 returning email`,
+        [userId],
+      );
+      const row = rows[0];
+      if (row === undefined) return false;
+      await tx.unsafe(
+        `delete from ${VERIFICATION_TABLE} where value = $1 or position($2 in lower(value)) > 0`,
+        [userId, `"email":${JSON.stringify(row.email.toLowerCase())}`],
+      );
+      return true;
+    });
   }
 }
 

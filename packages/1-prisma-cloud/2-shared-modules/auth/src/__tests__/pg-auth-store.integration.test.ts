@@ -5,7 +5,8 @@
  * — session expiry and the banned-owner null, case-insensitive email lookup,
  * the effective-ban filter both ways (including a lapsed ban), ILIKE
  * escaping, keyset pagination edges, revocation idempotency,
- * ban-implies-revoke atomicity, and the rows `createUser` writes.
+ * ban-implies-revoke atomicity, the rows `createUser` writes, and what
+ * `removeUser` takes with it.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
@@ -363,6 +364,74 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
       expect((await store.getUser({ id: 'u-verify' }))?.emailVerified).toBe(true);
       expect((await store.setEmailVerified('u-verify', false))?.emailVerified).toBe(false);
       expect(await store.setEmailVerified('u-nobody', true)).toBeNull();
+    });
+  });
+
+  describe('removeUser', () => {
+    const seedVerification = async (id: string, identifier: string, value: string) => {
+      await sql.unsafe(
+        `insert into "auth"."verification" (id, identifier, value, "expiresAt")
+         values ($1, $2, $3, $4)`,
+        [id, identifier, value, FUTURE],
+      );
+    };
+    const verificationIds = async () =>
+      (await sql.unsafe<{ id: string }[]>(`select id from "auth"."verification" order by id`)).map(
+        (r) => r.id,
+      );
+
+    test('deletes the user with sessions, accounts, and the verifications naming them', async () => {
+      await store.createUser({
+        id: 'u-gone',
+        email: 'gone@example.com',
+        name: 'Gone',
+        emailVerified: true,
+        credential: { id: 'acct-gone', passwordHash: 'h' },
+      });
+      await seedSession('s-gone', 'u-gone');
+      await seedVerification('v-reset', 'reset-password:t1', 'u-gone');
+      await seedVerification('v-magic', 'magic-t2', '{"email":"GONE@example.com","name":"Gone"}');
+      // Survivors: another user's reset, and an email that merely starts with the removed one.
+      await seedVerification('v-keep-reset', 'reset-password:t3', 'u-other');
+      await seedVerification('v-keep-magic', 'magic-t4', '{"email":"gone@example.com.au"}');
+
+      expect(await store.removeUser('u-gone')).toBe(true);
+
+      expect(await store.getUser({ id: 'u-gone' })).toBeNull();
+      expect(await store.getSession('token-s-gone')).toBeNull();
+      const leftovers = await sql.unsafe<{ n: number }[]>(
+        `select (select count(*) from "auth"."session" where "userId" = $1)::int
+              + (select count(*) from "auth"."account" where "userId" = $1)::int as n`,
+        ['u-gone'],
+      );
+      expect(leftovers[0]?.n).toBe(0);
+      const remaining = await verificationIds();
+      expect(remaining).not.toContain('v-reset');
+      expect(remaining).not.toContain('v-magic');
+      expect(remaining).toContain('v-keep-reset');
+      expect(remaining).toContain('v-keep-magic');
+    });
+
+    test('an absent user → false (idempotent)', async () => {
+      expect(await store.removeUser('u-nobody')).toBe(false);
+    });
+
+    test('a non-cascading consumer FK refuses the delete; nothing is removed', async () => {
+      await seedUser('u-referenced');
+      await seedSession('s-referenced', 'u-referenced');
+      await sql.unsafe(
+        `create table public.journal (id text primary key,
+           "userId" text not null references "auth"."user"(id) on delete restrict)`,
+      );
+      await sql.unsafe(`insert into public.journal values ('j1', 'u-referenced')`);
+
+      await expect(store.removeUser('u-referenced')).rejects.toThrow('journal_userId_fkey');
+      expect(await store.getUser({ id: 'u-referenced' })).not.toBeNull();
+      expect(await store.getSession('token-s-referenced')).not.toBeNull();
+
+      // Once the app deletes its own rows, the removal goes through.
+      await sql.unsafe('delete from public.journal');
+      expect(await store.removeUser('u-referenced')).toBe(true);
     });
   });
 
