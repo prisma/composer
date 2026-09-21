@@ -20,6 +20,7 @@ import { Client as PgClient } from 'pg';
 import { postgresClient } from '../client.ts';
 import { stopDaemon } from '../daemon.ts';
 import { instanceNameFor } from '../instance-name.ts';
+import { type RegistryScanHost, registryClaimedPorts } from '../prisma-dev-registry.ts';
 import { ensureFreshDaemon, prismaDevModulePath, tempDir } from './helpers.ts';
 
 let registryRoot: string;
@@ -86,6 +87,37 @@ describe('database lifecycle', () => {
 
     await client.deleteApp('pgtest-idempotent');
     // Same daemon-boot cost as the test above, so the same budget.
+  }, 60_000);
+});
+
+describe('Postgres messages larger than one loopback TCP read', () => {
+  // A regression test for @prisma/dev 0.20.0, whose pglite-socket 0.0.20
+  // handed each raw 64 KiB TCP chunk to PGlite as if it were a whole
+  // message: a bind parameter over that size killed the engine and every
+  // later connection was refused. Composer now pins a fixed @prisma/dev;
+  // this test fails against the old one.
+  test('a 100 KiB bind parameter round-trips and the server keeps accepting connections', async () => {
+    await ensureFreshDaemon('postgres', registryRoot);
+    const client = postgresClient({ registryRoot });
+    const { url } = await client.ensureDatabase('pgtest-large', 'appdb', prismaDevModulePath());
+
+    const payload = 'x'.repeat(100 * 1024);
+    const first = new PgClient({ connectionString: url });
+    await first.connect();
+    try {
+      const res = await first.query('select length($1::text) as len', [payload]);
+      expect(res.rows[0].len).toBe(payload.length);
+    } finally {
+      await first.end().catch(() => undefined);
+    }
+
+    const second = new PgClient({ connectionString: url });
+    await second.connect();
+    const res = await second.query('select 1 as one');
+    expect(res.rows[0].one).toBe(1);
+    await second.end();
+
+    await client.deleteApp('pgtest-large');
   }, 60_000);
 });
 
@@ -238,7 +270,7 @@ describe('a bogus prismaDevModulePath', () => {
       // `request to the local dev emulator failed (${status}): ${body}` —
       // assert the status explicitly, not just that SOME error was thrown.
       expect(message).toContain('(500)');
-      expect(message).toContain('add "@prisma/dev" to the devDependencies');
+      expect(message).toContain('local dev needs @prisma/dev');
       expect(message).toContain(bogusPath);
       // No OTHER filesystem path leaks — e.g. a dynamic `import()`
       // failure's own message routinely names a SECOND path (the
@@ -384,16 +416,8 @@ describe("a stale @prisma/dev record claiming a port in the daemon's database ra
     // poison the squatter's own name (the very defect under test) — so the
     // pick consults the records up front, the same way the fixed daemon
     // does.
-    const state = (await import('@prisma/dev/internal/state')) as unknown as {
-      ServerState: { scan(opts: { onlyMetadata: boolean }): Promise<Record<string, unknown>[]> };
-    };
-    const claimed: number[] = [];
-    for (const record of await state.ServerState.scan({ onlyMetadata: true })) {
-      for (const key of ['databasePort', 'port', 'shadowDatabasePort']) {
-        const port = record[key];
-        if (typeof port === 'number' && port > 0) claimed.push(port);
-      }
-    }
+    const state = (await import('@prisma/dev/internal/state')) as unknown as RegistryScanHost;
+    const claimed = [...(await registryClaimedPorts(state, squatterName))];
     const squatterPort = await getPort({ port: portNumbers(51_300, 65_535), exclude: claimed });
     const squatter = await prismaDev.startPrismaDevServer({
       name: squatterName,

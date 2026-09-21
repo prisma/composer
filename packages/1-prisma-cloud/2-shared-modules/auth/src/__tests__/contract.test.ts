@@ -10,6 +10,7 @@ import type { Contract } from '@internal/core';
 import { requiredPackHeadOf } from '@internal/prisma-cloud';
 import { type } from 'arktype';
 import {
+  authAdminContract,
   authApi,
   authApiContract,
   authDb,
@@ -126,5 +127,49 @@ describe('wire record schemas', () => {
     // (contract.test-d.ts) and by the store's mapping
     // (pg-auth-store.integration.test.ts) — arktype ignores undeclared keys,
     // so a runtime rejection assertion here would test the wrong thing.
+  });
+});
+
+// `rpc({ input, output })` returns the pair unchanged at runtime; reaching
+// through `__cmp.<method>` is the established way to test a contract's
+// schemas directly (email's contract.test.ts).
+interface RpcMethodSchemas {
+  readonly input: (value: unknown) => unknown;
+  readonly output: (value: unknown) => unknown;
+}
+
+describe('authAdminContract — the provisioning methods', () => {
+  test('createUser: email and name required, password and emailVerified optional; returns a user', () => {
+    const { input, output } = authAdminContract.__cmp.createUser as unknown as RpcMethodSchemas;
+    expect(input({ email: 'a@b.co', name: 'A' })).toEqual({ email: 'a@b.co', name: 'A' });
+    expect(
+      input({ email: 'a@b.co', name: 'A', password: 'correct-horse-battery', emailVerified: true }),
+    ).not.toBeInstanceOf(type.errors);
+    expect(input({ email: 'a@b.co' })).toBeInstanceOf(type.errors);
+    // The address shape is validated at the rpc boundary, as Better Auth's
+    // sign-up validates it — a typo'd email is a 400, not a dead account.
+    expect(input({ email: 'ops@example', name: 'Ops' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'not an email', name: 'Ops' })).toBeInstanceOf(type.errors);
+    // So are Better Auth's sign-up password bounds (8–128), for the same reason.
+    expect(input({ email: 'a@b.co', name: 'A', password: 'short' })).toBeInstanceOf(type.errors);
+    expect(input({ email: 'a@b.co', name: 'A', password: 'x'.repeat(129) })).toBeInstanceOf(
+      type.errors,
+    );
+    expect(input({ email: 'a@b.co', name: 'A', password: 'x'.repeat(8) })).not.toBeInstanceOf(
+      type.errors,
+    );
+    expect(input({ email: 'a@b.co', name: 'A', emailVerified: 'yes' })).toBeInstanceOf(type.errors);
+    expect(output({ user: null })).toBeInstanceOf(type.errors);
+  });
+
+  test('setEmailVerified: userId + flag in; a nullable user out', () => {
+    const { input, output } = authAdminContract.__cmp
+      .setEmailVerified as unknown as RpcMethodSchemas;
+    expect(input({ userId: 'u1', emailVerified: true })).toEqual({
+      userId: 'u1',
+      emailVerified: true,
+    });
+    expect(input({ userId: 'u1' })).toBeInstanceOf(type.errors);
+    expect(output({ user: null })).toEqual({ user: null });
   });
 });

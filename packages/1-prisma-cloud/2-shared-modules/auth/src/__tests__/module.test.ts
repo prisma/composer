@@ -111,6 +111,22 @@ describe('auth()', () => {
     expect(sourcePayload(binding['baseUrl'])).toBe('AUTH_BASE_URL');
   });
 
+  test("signUp rides the service input as a literal: 'open' by default, 'closed' when asked", () => {
+    expect(serviceBindingOf(Load(rootWithAuth()).inputBindings)['signUp']).toBe('open');
+
+    const closedRoot = module('root', {}, ({ provision }) => {
+      const db = provision(database(), { id: 'database' });
+      const mail = provision(mailProvider(), { id: 'mail' });
+      provision(auth({ signUp: 'closed' }), {
+        id: 'auth',
+        deps: { db, email: mail.send },
+        params: { baseUrl: paramSource('AUTH_BASE_URL') },
+      });
+      return {};
+    });
+    expect(serviceBindingOf(Load(closedRoot).inputBindings)['signUp']).toBe('closed');
+  });
+
   test('the three ports wire to three consumers independently', () => {
     const graph = Load(rootWithAuth());
     expect(graph.edges).toContainEqual({
