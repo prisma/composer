@@ -139,7 +139,15 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
         // Better Auth leaves verification rows behind; erase them like admin.removeUser does.
         afterDelete: async (user) => {
           const cleanup = deleteVerificationsFor(user.id, user.email);
-          await database.query(cleanup.sql, cleanup.params);
+          try {
+            await database.query(cleanup.sql, cleanup.params);
+          } catch (error) {
+            // The user is already deleted: log the leftover rows rather than fail a done deletion.
+            console.error(
+              `auth: verification cleanup after delete-user failed for ${user.id}`,
+              error,
+            );
+          }
         },
       },
     },
