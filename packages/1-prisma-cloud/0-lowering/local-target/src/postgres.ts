@@ -64,7 +64,7 @@ export function LocalDatabaseProvider(
     /**
      * Never noop: the reconcile's PUT is the only thing that (re)starts a
      * database server, and a restarted daemon drops them all — a noop warm
-     * `dev` reported ready over dead ports (FRICTION #15; Compute's twin is
+     * `dev` reported ready over dead ports (Compute's twin is
      * `startServices`, ADR-0041). Attributes are declared stable while the
      * daemon still records the URL Alchemy has (the port is pinned), so
      * consumers keep noop-ing; a moved URL reconverges them via Alchemy's diff.

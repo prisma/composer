@@ -8,8 +8,8 @@ import * as Redacted from 'effect/Redacted';
 import { LocalDatabaseProvider } from '../postgres.ts';
 
 /**
- * FRICTION #15: the Database reconcile's PUT is the only thing that restarts
- * a database server, and a restarted postgres daemon drops them all. With
+ * The Database reconcile's PUT is the only thing that restarts a database
+ * server, and a restarted postgres daemon drops them all. With
  * unchanged props Alchemy's default diff is noop, so a warm `dev` never
  * re-PUT and reported ready over dead database ports. The provider must diff
  * as update even when nothing changed — declaring its attributes stable only

@@ -167,7 +167,6 @@ describe('port stability across a daemon restart', () => {
     await clientAfterRestart.deleteApp('pgtest-restart');
   }, 45_000);
 
-  // FRICTION #16: a restarted daemon that never saw a PUT used to drop the record but keep the data.
   test('DELETE after a daemon restart, with no PUT in between, still deletes the persisted data', async () => {
     await ensureFreshDaemon('postgres', registryRoot);
     const client = postgresClient({ registryRoot });

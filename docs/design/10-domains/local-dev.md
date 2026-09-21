@@ -126,9 +126,9 @@ emulator, which owns the processes:
   (`run-dev.ts`) — so a warm start restarts what a previous session's
   Ctrl-C stopped even when the converge is all-noop.
 
-  **The same gap, for Postgres (FRICTION #15/#16 from an app build):** the
-  Postgres daemon holds its servers in-process, so a daemon restart
-  (version-skew replacement, a crash, a reboot, another app's `dev`) drops
+  **The same gap, for Postgres:** the Postgres daemon holds its servers
+  in-process, so a daemon restart (version-skew replacement, a crash, a
+  reboot, another app's `dev`) drops
   them all, and an all-noop warm converge never re-PUT them — `dev` reported
   ready over dead database ports. The local `Database` provider therefore
   never diffs as noop: every converge re-PUTs (idempotent for a live server,
