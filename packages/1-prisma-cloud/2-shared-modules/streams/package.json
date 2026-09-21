@@ -32,7 +32,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@durable-streams/client": "0.2.6",
+    "@durable-streams/client": "0.2.7",
     "@internal/core": "workspace:0.21.0",
     "@internal/node": "workspace:0.21.0",
     "@internal/prisma-cloud": "workspace:0.21.0",
