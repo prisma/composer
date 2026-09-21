@@ -4,8 +4,8 @@
  * (`"user"` is a reserved word, hence the quoting throughout). No schema
  * work at boot: the deploy migrated and marker-signed the auth space before
  * this process exists. Writes are confined to `session` deletes, the three
- * ban columns, `emailVerified`, and the `user` + `credential` account rows
- * `createUser` inserts.
+ * ban columns, `emailVerified`, the `user` + `credential` account rows
+ * `createUser` inserts, and `removeUser`'s deletes.
  *
  * Runtime engine code (Bun's `SQL`); NOT re-exported from the authoring
  * barrel.
@@ -264,6 +264,14 @@ class PgAuthStore implements AuthStore {
     );
     const row = rows[0];
     return row === undefined ? null : toUserRecord(row);
+  }
+
+  async removeUser(userId: string): Promise<boolean> {
+    const rows = await this.sql.unsafe<{ id: string }[]>(
+      `delete from ${USER_TABLE} where id = $1 returning id`,
+      [userId],
+    );
+    return rows.length > 0;
   }
 }
 

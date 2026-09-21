@@ -60,6 +60,7 @@ function fakeStore(overrides: Partial<AuthStore> = {}): AuthStore & { calls: unk
     unbanUser: record('unbanUser', null),
     createUser: record('createUser', null),
     setEmailVerified: record('setEmailVerified', null),
+    removeUser: record('removeUser', false),
     ...overrides,
   };
 }
@@ -182,6 +183,13 @@ describe('admin revocation pass-throughs', () => {
     );
     expect(await admin.revokeSession({ sessionId: 's1' })).toEqual({ revoked: true });
     expect(await admin.revokeUserSessions({ userId: 'u1' })).toEqual({ revokedCount: 3 });
+  });
+
+  test('removeUser surfaces the store outcome; absent is false, not a throw', async () => {
+    const store = fakeStore();
+    const { admin } = createAuthHandlers(store);
+    expect(await admin.removeUser({ userId: 'u1' })).toEqual({ removed: false });
+    expect(store.calls).toEqual([['removeUser', 'u1']]);
   });
 });
 

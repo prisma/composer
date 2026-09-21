@@ -122,8 +122,12 @@ origin and HTML-escaped before interpolation.
 - Organizations, 2FA, passkeys, username/phone auth (contract must not
   preclude; all post-v1).
 - Secret rotation story.
-- `deleteUser` on the admin port (cascade semantics across consumer FKs
-  unresolved), impersonation (needs the deferred admin-path authz story).
+- ~~`deleteUser` on the admin port~~ — shipped 2026-09-21 as
+  `admin.removeUser`, alongside Better Auth's own self-service
+  `/api/auth/delete-user` (enabled with its default checks). Cascade semantics across consumer FKs resolved by
+  deferring to each FK: the consumer's own `onDelete` decides (Cascade
+  follows, Restrict refuses the delete). Impersonation stays deferred
+  (needs the deferred admin-path authz story).
 - Exposing the instance secret to consumers (add an explicit binding when
   a real need appears).
 - Per-consumer least-privilege contract slices on a shared DB (ADR-0022

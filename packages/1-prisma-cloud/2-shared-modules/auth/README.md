@@ -11,9 +11,11 @@ instance secret is platform-minted.
 Three ports, one service behind them — least privilege is a WIRING choice:
 
 - **`api`** (kind `'auth-api'`) — the public Better Auth surface
-  (`/api/auth/*`): signup, login, logout, JWKS, token minting. Public and
-  unauthenticated by design — it IS the authentication; Better Auth rate
-  limits it. Two consumer factories bind to it:
+  (`/api/auth/*`): signup, login, logout, self-service account deletion,
+  JWKS, token minting. Publicly reachable, with no service key (unlike the
+  rpc ports) — it IS the authentication: Better Auth authenticates each
+  request itself (logout and account deletion need a signed-in session)
+  and rate limits it. Two consumer factories bind to it:
   - `authApi()` → `{ url, fetch }` — what `authProxy()` consumes.
   - `jwtVerifier()` → `verify(token)` — stateless JWT verification over the
     instance's JWKS (jose remote JWKS, 30 s clock tolerance). Resolves
@@ -28,7 +30,8 @@ Three ports, one service behind them — least privilege is a WIRING choice:
   filters, keyset cursor), `listSessions`, `revokeSession`,
   `revokeUserSessions` (idempotent deletes), `banUser` (ban implies
   revoke, atomically), `unbanUser`, `createUser` (see Provisioning
-  accounts below), `setEmailVerified`.
+  accounts below), `setEmailVerified`, `removeUser` (see Deleting
+  accounts below).
 
 Wire each port only where it belongs: the app gets `api` + `session`; the
 back office alone gets `admin`.
@@ -132,6 +135,49 @@ email is still sent but completes to an `error=new_user_signup_disabled`
 redirect with no user created. Sign-in for existing accounts is unchanged.
 Default `'open'`. Nothing about origin, CSRF, or `trustedOrigins` changes
 either way.
+
+## Deleting accounts
+
+A signed-in user deletes their own account through Better Auth's
+`POST /api/auth/delete-user`, reached through `authProxy()` like the rest
+of `/api/auth/*`:
+
+```ts
+// browser, signed in (cookie through the proxy)
+await fetch('/api/auth/delete-user', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ password }), // optional when the session is < 24 h old
+});
+```
+
+It needs a signed-in session (`401` otherwise), deletes only that
+session's user (there is no `userId` parameter), and demands the current
+`password` (`400 INVALID_PASSWORD`) or a session younger than 24 hours
+(`400 SESSION_EXPIRED` — sign in again; magic-link users have no password).
+
+An operator deletes an account through the `admin` port, server to server
+— this module's database-direct rpc, not Better Auth's admin-session API:
+
+```ts
+// in a service wired to `identity.admin`
+const { removed } = await admin.removeUser({ userId });
+```
+
+`removed: false` means no such user, so a retried deletion is not an
+error. No mail is sent.
+
+Both paths delete the `user` row, its sessions, and its accounts. Pending
+verification tokens are left to expire: an unused magic link (the email,
+5 minutes) or reset (the user id, 1 hour); Better Auth deletes expired
+tokens the next time it checks any token. Your own rows follow your foreign
+key onto `auth:User`: `onDelete: Cascade` deletes them with the user,
+`Restrict` refuses the deletion, and without an FK nothing links them.
+Data outside the database (uploaded files, other stores) needs your own
+cleanup first — route that deletion through your service and
+`removeUser`. Already-minted JWTs keep verifying until they expire
+(≤ 15 min, see Sessions & JWTs); `session.getSession(token)` is `null`
+immediately.
 
 ## The pack
 
@@ -242,6 +288,5 @@ at the cost of the first-party-cookie golden path.
 ## Limits (v1)
 
 No social providers (mechanism reserved, none ship) · no organizations /
-2FA / passkeys / username / phone · no secret rotation · no `deleteUser`,
-no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · no secret rotation · no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
 rpc bodies cap at 1 MiB.

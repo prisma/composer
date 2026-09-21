@@ -319,6 +319,11 @@ export const authAdminContract = contract({
     input: type({ userId: 'string', emailVerified: 'boolean' }),
     output: type({ user: userRecord.or('null') }),
   }),
+  // amended 2026-09-21: account deletion (GDPR erasure)
+  removeUser: rpc({
+    input: type({ userId: 'string' }),
+    output: type({ removed: 'boolean' }),   // false = no such user (idempotent)
+  }),
 });
 ```
 
@@ -354,8 +359,23 @@ Semantics:
   with email "<email>" already exists`). Sends no mail.
 - `setEmailVerified` (amended 2026-09-17): sets the column; `null` when the
   user is absent.
-- Deliberately absent v1: `deleteUser`, impersonation (design-notes
-  § Deferred). (`createUser` was on this list until 2026-09-17.)
+- `removeUser` (amended 2026-09-21): DB-direct (D12): `DELETE` of the
+  `user` row — `session` and `account` rows go with it by the pack's
+  `onDelete: Cascade` FKs; the same rows Better Auth's own deletions
+  remove. `verification` rows are left to expire: Better Auth deletes every
+  expired row on each verification lookup (1.6.24 `findVerificationValue`,
+  cleanup on by default), and they cannot resolve to the deleted user
+  (reset → user not found; magic link → an unknown email). Consumer FKs
+  onto `auth:User` keep their own semantics: `Cascade` takes the app's rows
+  along, `Restrict`/`NoAction` fails the whole delete with Postgres' FK
+  error (thrown → rpc error, nothing removed) — the app deletes its rows
+  first. `false` for an unknown id. Already-minted JWTs keep verifying
+  until expiry (≤ 15 min, D6), exactly like revocation. Sends no mail.
+  The operator path; self-service deletion is Better Auth's own
+  `/api/auth/delete-user` (§ Better Auth configuration).
+- Deliberately absent v1: impersonation (design-notes § Deferred).
+  (`createUser` was on this list until 2026-09-17, `deleteUser` until
+  2026-09-21 — shipped as `removeUser`.)
 
 ### Db dependency — `authDb()`
 
@@ -568,6 +588,15 @@ Pinned option values:
 - `session: { expiresIn: 60*60*24*7, updateAge: 60*60*24 }` (Better Auth
   defaults, stated explicitly so they are pinned).
 - `rateLimit: { enabled: true }` (defaults otherwise).
+- `user: { deleteUser: { enabled: true } }` (amended 2026-09-21):
+  self-service `/api/auth/delete-user` with Better Auth's default checks —
+  a signed-in session (401 otherwise), only that session's user (no
+  `userId` parameter), and the current password or a session younger than
+  `freshAge` (default 24 h). No hooks: the app runs in another service,
+  so its rows follow its own FK onto `auth:User` (`Cascade` deletes them;
+  `Restrict` refuses the deletion). No confirmation email
+  (`sendDeleteAccountVerification`) until someone needs it — it would add
+  a template to `authTemplates`.
 - No `advanced.database.generateId` override (amended 2026-07-23, D5:
   `generateId: false` DISABLES generation at 1.6.24 and breaks signup;
   omitting it yields the intent — Better Auth's default generator, 32-char
@@ -645,7 +674,8 @@ Storage/email's pattern: build a bare node, `service.load()` →
 2. `const store = createPgAuthStore(db.url)` (own pool, `search_path=auth`).
 3. `const rpcHandler = serve(service, { session: { getSession, getUser },
    admin: { findUser, listUsers, listSessions, revokeSession,
-   revokeUserSessions, banUser, unbanUser, createUser, setEmailVerified } })` (handlers from
+   revokeUserSessions, banUser, unbanUser, createUser, setEmailVerified,
+   removeUser } })` (handlers from
    `handlers.ts`, closed over `store`). Framework prerequisite (amended
    2026-07-23, D5): `serve()`/`Handlers<S>` skip exposed contracts that are
    not rpc contracts — the `api` port is resource-kind and carries no
@@ -787,7 +817,7 @@ upgrade procedure: bump package → `migration plan` → deploy) · Sessions & J
 (`startLocalAuthServer`, prisma dev, reading links from capture/outbox) ·
 Embedded mode (when and trade-offs) · The SPA alternative (bearer, direct
 origin, its costs) · Limits (no social/orgs/2FA in v1, no rotation, no
-deleteUser, 1 MiB rpc body cap).
+impersonation, 1 MiB rpc body cap).
 
 ## Test plan
 
@@ -815,8 +845,7 @@ depcruise planes clean. Deployed smoke: `examples/auth` (S1),
 ## Non-goals (v1)
 
 Social OAuth (mechanism D7 reserved; no providers ship) · organizations /
-2FA / passkeys / username / phone · secret rotation · `deleteUser` /
-impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · secret rotation · impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
 per-consumer contract slices on shared DBs · exposing the instance secret ·
 `iss`/`aud` validation (D15) · custom JWT claims configuration.
 

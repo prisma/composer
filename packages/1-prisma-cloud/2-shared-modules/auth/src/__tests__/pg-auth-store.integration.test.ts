@@ -5,7 +5,8 @@
  * — session expiry and the banned-owner null, case-insensitive email lookup,
  * the effective-ban filter both ways (including a lapsed ban), ILIKE
  * escaping, keyset pagination edges, revocation idempotency,
- * ban-implies-revoke atomicity, and the rows `createUser` writes.
+ * ban-implies-revoke atomicity, the rows `createUser` writes, and what
+ * `removeUser` takes with it (FK cascade).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
@@ -363,6 +364,52 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
       expect((await store.getUser({ id: 'u-verify' }))?.emailVerified).toBe(true);
       expect((await store.setEmailVerified('u-verify', false))?.emailVerified).toBe(false);
       expect(await store.setEmailVerified('u-nobody', true)).toBeNull();
+    });
+  });
+
+  describe('removeUser', () => {
+    test('deletes the user; sessions and accounts cascade', async () => {
+      await store.createUser({
+        id: 'u-gone',
+        email: 'gone@example.com',
+        name: 'Gone',
+        emailVerified: true,
+        credential: { id: 'acct-gone', passwordHash: 'h' },
+      });
+      await seedSession('s-gone', 'u-gone');
+
+      expect(await store.removeUser('u-gone')).toBe(true);
+
+      expect(await store.getUser({ id: 'u-gone' })).toBeNull();
+      expect(await store.getSession('token-s-gone')).toBeNull();
+      const leftovers = await sql.unsafe<{ n: number }[]>(
+        `select (select count(*) from "auth"."session" where "userId" = $1)::int
+              + (select count(*) from "auth"."account" where "userId" = $1)::int as n`,
+        ['u-gone'],
+      );
+      expect(leftovers[0]?.n).toBe(0);
+    });
+
+    test('an absent user → false (idempotent)', async () => {
+      expect(await store.removeUser('u-nobody')).toBe(false);
+    });
+
+    test('a non-cascading consumer FK refuses the delete; nothing is removed', async () => {
+      await seedUser('u-referenced');
+      await seedSession('s-referenced', 'u-referenced');
+      await sql.unsafe(
+        `create table public.journal (id text primary key,
+           "userId" text not null references "auth"."user"(id) on delete restrict)`,
+      );
+      await sql.unsafe(`insert into public.journal values ('j1', 'u-referenced')`);
+
+      await expect(store.removeUser('u-referenced')).rejects.toThrow('journal_userId_fkey');
+      expect(await store.getUser({ id: 'u-referenced' })).not.toBeNull();
+      expect(await store.getSession('token-s-referenced')).not.toBeNull();
+
+      // Once the app deletes its own rows, the removal goes through.
+      await sql.unsafe('delete from public.journal');
+      expect(await store.removeUser('u-referenced')).toBe(true);
     });
   });
 

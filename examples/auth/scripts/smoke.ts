@@ -8,7 +8,10 @@
  *   → login (bearer) → /api/auth/token → JWT-verified /me →
  *   session.getSession via the api service → admin revokeUserSessions via
  *   the ops service → getSession now null → /me STILL verifies (stateless
- *   JWT: revocation is the per-call opt-in).
+ *   JWT: revocation is the per-call opt-in) → a fresh login deletes its own
+ *   account through the proxied /api/auth/delete-user → the user is gone
+ *   (also cleans up the smoke's own account) → admin removeUser via the ops
+ *   service is idempotent on it.
  *
  * The email module runs `deliveryMode: none` on this stage (a junk
  * delivery credential, no real provider account — the same preview-stage
@@ -211,6 +214,27 @@ await check('getSession is now null — instant logout through the port', async 
 await check('/me STILL verifies — stateless JWTs outlive revocation until expiry', async () => {
   const res = await fetch(`${apiUrl}/me`, { headers: { authorization: `Bearer ${jwt}` } });
   expect(res.status === 200, `/me status ${res.status}`);
+});
+
+await check('a signed-in user deletes their own account through the proxy', async () => {
+  const login = await fetch(`${apiUrl}/api/auth/sign-in/email`, json({ email, password }));
+  expect(login.status === 200, `fresh sign-in status ${login.status}`);
+  const fresh = login.headers.get('set-auth-token') ?? '';
+  const res = await fetch(
+    `${apiUrl}/api/auth/delete-user`,
+    json({}, { authorization: `Bearer ${fresh}` }),
+  );
+  expect(res.status === 200, `delete-user status ${res.status}`);
+  const found = await fetch(`${opsUrl}/admin/find-user`, json({ email }));
+  const after = asJson<{ user?: unknown }>(await found.json());
+  expect(after.user === null, 'the user survived delete-user');
+});
+
+await check('removeUser through the ops service is idempotent on a deleted account', async () => {
+  const res = await fetch(`${opsUrl}/admin/remove-user`, json({ userId }));
+  expect(res.status === 200, `remove-user status ${res.status}`);
+  const body = asJson<{ removed?: boolean }>(await res.json());
+  expect(body.removed === false, `remove-user reported removed: ${body.removed}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
