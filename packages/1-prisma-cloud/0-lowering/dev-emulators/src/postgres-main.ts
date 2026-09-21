@@ -698,10 +698,7 @@ function main(): void {
     }
   }
 
-  async function deleteApp(
-    app: string,
-    prismaDevModulePathHint: string | undefined,
-  ): Promise<void> {
+  async function deleteApp(app: string, prismaDevModulePath: string): Promise<void> {
     const appRec = state[app];
     if (!appRec) return;
     const entries = Object.values(appRec.databases);
@@ -719,14 +716,8 @@ function main(): void {
       }
     }
 
-    // No `@prisma/dev` path means the data can't be deleted — refuse, or the next start reopens it.
     if (entries.length > 0) {
-      if (prismaDevModulePathHint === undefined) {
-        throw new Error(
-          `cannot delete app "${app}"'s persisted databases: no prismaDevModulePath was given and none was seen since this daemon started.`,
-        );
-      }
-      const internalState = await importPrismaDevInternalState(prismaDevModulePathHint);
+      const internalState = await importPrismaDevInternalState(prismaDevModulePath);
       for (const db of entries) {
         // A server this daemon adopted rather than started has no handle to
         // close, so stop it by its record first (`killServer` leaves data).
@@ -787,10 +778,23 @@ function main(): void {
     };
   }
 
-  /** The most recently observed `prismaDevModulePath` for any database of `app` — DELETE's fallback when its body carries none. */
-  const recentPrismaDevModulePath = new Map<string, string>();
-  function lastKnownPrismaDevModulePath(app: string): string | undefined {
-    return recentPrismaDevModulePath.get(app);
+  /** PUT and DELETE both carry `{ "prismaDevModulePath": string }`; answers 400 and returns undefined when the body is not that. */
+  async function readDatabaseBody(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<DatabaseBody | undefined> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse((await readBody(req)).toString('utf8'));
+    } catch {
+      text(res, 400, 'malformed JSON body');
+      return undefined;
+    }
+    if (!isDatabaseBody(parsed)) {
+      text(res, 400, 'malformed database body: expected { "prismaDevModulePath": string }');
+      return undefined;
+    }
+    return parsed;
   }
 
   async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -812,22 +816,9 @@ function main(): void {
       if (method === 'PUT' && segments.length === 4 && segments[2] === 'databases') {
         const id = segments[3];
         if (id === undefined || !isValidSegment(id)) return badSegment(res, id ?? '');
-        const raw = await readBody(req);
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(raw.toString('utf8'));
-        } catch {
-          return text(res, 400, 'malformed JSON body');
-        }
-        if (!isDatabaseBody(parsed)) {
-          return text(
-            res,
-            400,
-            'malformed database body: expected { "prismaDevModulePath": string }',
-          );
-        }
-        recentPrismaDevModulePath.set(app, parsed.prismaDevModulePath);
-        const result = await ensureDatabase(app, id, parsed.prismaDevModulePath);
+        const body = await readDatabaseBody(req, res);
+        if (body === undefined) return;
+        const result = await ensureDatabase(app, id, body.prismaDevModulePath);
         return json(res, 200, result);
       }
 
@@ -838,16 +829,9 @@ function main(): void {
       }
 
       if (method === 'DELETE' && segments.length === 2) {
-        // Optional body: `{ "prismaDevModulePath": string }`.
-        const raw = (await readBody(req)).toString('utf8');
-        let parsed: unknown;
-        try {
-          parsed = raw.length > 0 ? JSON.parse(raw) : undefined;
-        } catch {
-          return text(res, 400, 'malformed JSON body');
-        }
-        const given = isDatabaseBody(parsed) ? parsed.prismaDevModulePath : undefined;
-        await deleteApp(app, given ?? lastKnownPrismaDevModulePath(app));
+        const body = await readDatabaseBody(req, res);
+        if (body === undefined) return;
+        await deleteApp(app, body.prismaDevModulePath);
         res.writeHead(204);
         res.end();
         return;

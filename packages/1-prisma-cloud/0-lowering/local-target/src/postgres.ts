@@ -69,18 +69,14 @@ export function LocalDatabaseProvider(
      * daemon still records the URL Alchemy has (the port is pinned), so
      * consumers keep noop-ing; a moved URL reconverges them via Alchemy's diff.
      */
-    diff: ({ olds, news, output }) =>
+    diff: ({ output }) =>
       Effect.tryPromise({
         try: async () => {
-          const recorded = output?.directConnectionString;
-          // `news` may still hold Outputs at plan time; an unresolved name is never "same".
-          const sameName = Predicate.hasProperty(news, 'name') && news.name === olds.name;
-          if (output === undefined || recorded === undefined || !sameName) {
-            return { action: 'update' as const };
-          }
+          if (output?.directConnectionString === undefined) return { action: 'update' as const };
+          const url = Redacted.value(output.directConnectionString);
           const listed = await postgresClient().listDatabases(appNameOf(input.container));
           const pinned = listed.some(
-            (db) => db.instanceName === output.databaseId && db.url === Redacted.value(recorded),
+            (db) => db.instanceName === output.databaseId && db.url === url,
           );
           return pinned
             ? { action: 'update' as const, stables: Object.keys(output) }

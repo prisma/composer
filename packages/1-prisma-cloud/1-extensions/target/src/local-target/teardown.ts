@@ -18,26 +18,10 @@ import { bucketsClient, computeClient, postgresClient } from '@internal/dev-emul
 import { removeLocalPaths, resolvePrismaDevModulePath } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
-/**
- * The daemon's client, or `undefined` when that daemon is not running — the
- * daemon itself is never stopped by `--fresh` (other apps may be using it),
- * and there is nothing to remove on one that isn't running. (Dev ensures the
- * daemons this app uses before teardown, so this is only the unused ones.)
- * Only that case is tolerated: a running daemon's DELETE failure propagates,
- * rather than `--fresh` reporting success over data it did not wipe.
- */
+/** The daemon's client, or `undefined` when it isn't running — nothing to remove there. A running daemon's DELETE failure propagates. */
 function ifRunning<C>(client: () => C): C | undefined {
   try {
     return client();
-  } catch {
-    return undefined;
-  }
-}
-
-/** Composer's `@prisma/dev`, when it resolves — the postgres daemon needs it to delete persisted data. */
-function prismaDevModulePath(): string | undefined {
-  try {
-    return resolvePrismaDevModulePath();
   } catch {
     return undefined;
   }
@@ -47,7 +31,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
 
-  await ifRunning(postgresClient)?.deleteApp(app, prismaDevModulePath());
+  await ifRunning(postgresClient)?.deleteApp(app, resolvePrismaDevModulePath());
   await ifRunning(computeClient)?.deleteApp(app);
   await ifRunning(bucketsClient)?.deleteApp(app);
 

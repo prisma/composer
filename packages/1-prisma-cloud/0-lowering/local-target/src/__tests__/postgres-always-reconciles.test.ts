@@ -5,7 +5,7 @@ import { ensureDaemon, postgresClient } from '@internal/dev-emulators';
 import { Database } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import { LocalDatabaseProvider } from '../postgres.ts';
+import { LocalDatabaseProvider, resolvePrismaDevModulePath } from '../postgres.ts';
 
 /**
  * The Database reconcile's PUT is the only thing that restarts a database
@@ -34,7 +34,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await postgresClient()
-    .deleteApp(APP)
+    .deleteApp(APP, resolvePrismaDevModulePath())
     .catch(() => undefined);
 });
 
