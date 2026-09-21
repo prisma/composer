@@ -1,9 +1,6 @@
 /**
  * The ops service's request handling — a minimal admin passthrough proving
  * the admin port wires to a SECOND service (least-privilege by wiring).
- * The service has a public URL, so every `/admin/*` route requires
- * `Authorization: Bearer <operatorToken>` (401 otherwise) — without it,
- * anyone could look up a user and delete the account.
  * Routing is Hono, the email example's pattern.
  *
  *   /admin/find-user               → POST { email } → findUser
@@ -18,10 +15,13 @@
  *                                     port), proving the module-depends-on-
  *                                     module wiring against a real deploy.
  *   /health                        → 200
+ *
+ * This surface is deliberately unauthenticated, for the smoke's simplicity
+ * — a real app must protect its operator routes (the auth module leaves that
+ * to the app), since they can look up, log out, and delete any account.
  */
 import { type } from 'arktype';
 import { Hono } from 'hono';
-import { bearerAuth } from 'hono/bearer-auth';
 import type opsService from './service.ts';
 
 const findUserBody = type({ email: 'string' });
@@ -30,10 +30,8 @@ const findSentEmailBody = type({ to: 'string', 'templateId?': 'string' });
 
 export function createOpsApp(
   deps: ReturnType<typeof opsService.load>,
-  operatorToken: string,
 ): (request: Request) => Promise<Response> {
   const app = new Hono();
-  app.use('/admin/*', bearerAuth({ token: operatorToken }));
 
   app.post('/admin/find-user', async (c) => {
     const body = findUserBody(await c.req.json().catch(() => undefined));

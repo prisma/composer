@@ -18,8 +18,7 @@ import opsService from './src/ops/service.ts';
  *     JWT-verifies `/me`, and answers session lookups. Holds the `api` +
  *     `session` ports and the verifier; CANNOT touch admin ops.
  *   - `ops` — the back office: holds the `admin` port (plus the smoke's
- *     read-only outbox dep), behind an operator bearer token
- *     (`AUTH_OPS_TOKEN`) — its URL is public.
+ *     read-only outbox dep).
  *
  * `baseUrl` is the PUBLIC origin browsers would see (the api service).
  * `deliveryMode`/`from` are the email module's own boundary params, bound to
@@ -52,9 +51,5 @@ export default module('auth-example', ({ provision }) => {
     id: 'api',
     deps: { authApi: identity.api, verifier: identity.api, session: identity.session },
   });
-  provision(opsService, {
-    id: 'ops',
-    deps: { admin: identity.admin, outbox: mail.outbox },
-    input: { operatorToken: envSecret('AUTH_OPS_TOKEN') },
-  });
+  provision(opsService, { id: 'ops', deps: { admin: identity.admin, outbox: mail.outbox } });
 });

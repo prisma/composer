@@ -8,8 +8,10 @@
  *   → login (bearer) → /api/auth/token → JWT-verified /me →
  *   session.getSession via the api service → admin revokeUserSessions via
  *   the ops service → getSession now null → /me STILL verifies (stateless
- *   JWT: revocation is the per-call opt-in) → admin removeUser via the ops
- *   service → the user is gone (also cleans up the smoke's own account).
+ *   JWT: revocation is the per-call opt-in) → a fresh login deletes its own
+ *   account through the proxied /api/auth/delete-user → the user is gone
+ *   (also cleans up the smoke's own account) → admin removeUser via the ops
+ *   service is idempotent on it.
  *
  * The email module runs `deliveryMode: none` on this stage (a junk
  * delivery credential, no real provider account — the same preview-stage
@@ -18,7 +20,7 @@
  *
  *   [AUTH_STACK_NAME=…] bun scripts/smoke.ts
  *
- * Requires PRISMA_SERVICE_TOKEN and AUTH_OPS_TOKEN (run via `pnpm smoke:deployed`, which
+ * Requires PRISMA_SERVICE_TOKEN (run via `pnpm smoke:deployed`, which
  * sources the deploy env file).
  */
 import { blindCast } from '@prisma/composer/casts';
@@ -29,10 +31,6 @@ if (token === undefined || token === '') {
   throw new Error('PRISMA_SERVICE_TOKEN is required to resolve the deployed URLs');
 }
 const stack = process.env['AUTH_STACK_NAME'] ?? 'auth-example';
-const operatorToken = process.env['AUTH_OPS_TOKEN'];
-if (operatorToken === undefined || operatorToken === '') {
-  throw new Error('AUTH_OPS_TOKEN is required to call the ops service (the deployed value)');
-}
 
 async function get(path: string): Promise<unknown> {
   const res = await fetch(`${api}${path}`, { headers: { authorization: `Bearer ${token}` } });
@@ -104,7 +102,6 @@ const json = (body: unknown, headers: Record<string, string> = {}) => ({
   headers: { 'content-type': 'application/json', ...headers },
   body: JSON.stringify(body),
 });
-const opsJson = (body: unknown) => json(body, { authorization: `Bearer ${operatorToken}` });
 
 let userId = '';
 let verificationLink = '';
@@ -144,7 +141,7 @@ await check(
   async () => {
     const res = await fetch(
       `${opsUrl}/admin/find-sent-email`,
-      opsJson({ to: email, templateId: 'verification' }),
+      json({ to: email, templateId: 'verification' }),
     );
     expect(res.status === 200, `find-sent-email status ${res.status}`);
     const body = asJson<{ subject?: string; text?: string | null }>(await res.json());
@@ -194,14 +191,14 @@ await check('the session port answers through the api service', async () => {
 });
 
 await check('the ops service finds the user through the admin port', async () => {
-  const res = await fetch(`${opsUrl}/admin/find-user`, opsJson({ email }));
+  const res = await fetch(`${opsUrl}/admin/find-user`, json({ email }));
   expect(res.status === 200, `find-user status ${res.status}`);
   const body = asJson<{ user?: { id?: string } | null }>(await res.json());
   expect(body.user?.id === userId, 'find-user did not return the user');
 });
 
 await check('revokeUserSessions through the ops service revokes the session', async () => {
-  const res = await fetch(`${opsUrl}/admin/revoke-user-sessions`, opsJson({ userId }));
+  const res = await fetch(`${opsUrl}/admin/revoke-user-sessions`, json({ userId }));
   expect(res.status === 200, `revoke status ${res.status}`);
   const body = asJson<{ revokedCount?: number }>(await res.json());
   expect((body.revokedCount ?? 0) >= 1, `revokedCount ${body.revokedCount}`);
@@ -219,19 +216,25 @@ await check('/me STILL verifies — stateless JWTs outlive revocation until expi
   expect(res.status === 200, `/me status ${res.status}`);
 });
 
-await check('the ops service refuses a caller without the operator token', async () => {
-  const res = await fetch(`${opsUrl}/admin/remove-user`, json({ userId }));
-  expect(res.status === 401, `anonymous remove-user status ${res.status}`);
+await check('a signed-in user deletes their own account through the proxy', async () => {
+  const login = await fetch(`${apiUrl}/api/auth/sign-in/email`, json({ email, password }));
+  expect(login.status === 200, `fresh sign-in status ${login.status}`);
+  const fresh = login.headers.get('set-auth-token') ?? '';
+  const res = await fetch(
+    `${apiUrl}/api/auth/delete-user`,
+    json({}, { authorization: `Bearer ${fresh}` }),
+  );
+  expect(res.status === 200, `delete-user status ${res.status}`);
+  const found = await fetch(`${opsUrl}/admin/find-user`, json({ email }));
+  const after = asJson<{ user?: unknown }>(await found.json());
+  expect(after.user === null, 'the user survived delete-user');
 });
 
-await check('removeUser through the ops service deletes the account', async () => {
-  const res = await fetch(`${opsUrl}/admin/remove-user`, opsJson({ userId }));
+await check('removeUser through the ops service is idempotent on a deleted account', async () => {
+  const res = await fetch(`${opsUrl}/admin/remove-user`, json({ userId }));
   expect(res.status === 200, `remove-user status ${res.status}`);
   const body = asJson<{ removed?: boolean }>(await res.json());
-  expect(body.removed === true, 'remove-user did not remove the user');
-  const found = await fetch(`${opsUrl}/admin/find-user`, opsJson({ email }));
-  const after = asJson<{ user?: unknown }>(await found.json());
-  expect(after.user === null, 'the user survived removeUser');
+  expect(body.removed === false, `remove-user reported removed: ${body.removed}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
