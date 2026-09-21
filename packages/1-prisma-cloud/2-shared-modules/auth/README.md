@@ -157,7 +157,8 @@ session's user — there is no `userId` parameter. It also demands either the
 current `password` (`400 INVALID_PASSWORD` when wrong) or a session younger
 than 24 hours (`400 SESSION_EXPIRED` otherwise — sign in again; magic-link
 users have no password, so this is their path). It deletes the user row,
-its sessions, and its accounts, and clears the session cookie.
+its sessions, its accounts, and any pending verification tokens naming the
+user, and clears the session cookie.
 
 **An operator deletes an account** (an erasure request by email, support
 tooling, or when your app must clean up before the sign-in record goes)

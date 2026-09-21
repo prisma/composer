@@ -121,7 +121,9 @@ describe('buildAuthOptions — pinned values', () => {
   });
 
   test('user.deleteUser: self-service deletion on, with Better Auth default checks', () => {
-    expect(options.user?.deleteUser).toEqual({ enabled: true });
+    expect(options.user?.deleteUser?.enabled).toBe(true);
+    expect(typeof options.user?.deleteUser?.afterDelete).toBe('function');
+    expect(options.user?.deleteUser?.sendDeleteAccountVerification).toBeUndefined();
   });
 
   test('session TTLs and rate limiting', () => {

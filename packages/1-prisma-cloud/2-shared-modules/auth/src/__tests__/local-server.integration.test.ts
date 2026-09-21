@@ -418,11 +418,25 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
       code: 'SESSION_EXPIRED',
     });
     await sql.unsafe(`update "auth"."session" set "createdAt" = now() where token = $1`, [token]);
-    await sql.end();
+
+    // Pending reset + magic-link rows must go too (Better Auth alone leaves them).
+    const verificationIds = async () =>
+      (await sql.unsafe<{ id: string }[]>('select id from "auth"."verification"')).map((r) => r.id);
+    const before = new Set(await verificationIds());
+    await api(
+      '/api/auth/request-password-reset',
+      json({ email: me.email, redirectTo: `${server.url}/reset` }, fromSelf),
+    );
+    await api('/api/auth/sign-in/magic-link', json({ email: 'Self-Delete@Example.com' }, fromSelf));
+    const written = (await verificationIds()).filter((id) => !before.has(id));
+    expect(written).toHaveLength(2);
 
     // A userId in the body is not a parameter: only the caller is deleted.
     const done = await deleteUser({ userId: other.id }, asMe);
     expect(done.status).toBe(200);
+    const remaining = await verificationIds();
+    await sql.end();
+    expect(written.filter((id) => remaining.includes(id))).toEqual([]);
     expect(await admin.findUser({ id: me.id })).toEqual({ user: null });
     expect((await admin.findUser({ id: other.id })).user?.id).toBe(other.id);
     expect(await session.getSession({ token })).toEqual({ session: null, user: null });

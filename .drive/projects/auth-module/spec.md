@@ -591,9 +591,12 @@ Pinned option values:
   self-service `/api/auth/delete-user` with Better Auth's default checks —
   a signed-in session (401 otherwise), only that session's user (no
   `userId` parameter), and the current password or a session younger than
-  `freshAge` (default 24 h). No `beforeDelete` hook: the app runs in
-  another service, so its rows follow its own FK onto `auth:User`
-  (`Cascade` deletes them; `Restrict` refuses the deletion). No
+  `freshAge` (default 24 h). `afterDelete` erases the verification rows
+  naming the user — Better Auth leaves them, and they have no FK — with the
+  same statement `removeUser` runs (`deleteVerificationsFor`). No app
+  hook: the app runs in another service, so its rows follow its own FK
+  onto `auth:User` (`Cascade` deletes them; `Restrict` refuses the
+  deletion). No
   confirmation email (`sendDeleteAccountVerification`) until someone needs
   it — it would add a template to `authTemplates`.
 - No `advanced.database.generateId` override (amended 2026-07-23, D5:

@@ -18,6 +18,7 @@ import type { EmailSender } from '@internal/email';
 import type { BetterAuthOptions } from 'better-auth';
 import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
+import { deleteVerificationsFor } from './auth-store.ts';
 import type { SignUpMode } from './contract.ts';
 import { AUTH_SCHEMA } from './pack/constants.ts';
 import type { AuthTemplates } from './templates.ts';
@@ -82,6 +83,7 @@ function hardenedPool(databaseUrl: string): pg.Pool {
 }
 
 export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
+  const database = hardenedPool(inputs.databaseUrl);
   const send = async (
     purpose: keyof AuthTemplates,
     to: string,
@@ -117,7 +119,7 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
     basePath: '/api/auth',
     secret: inputs.secret,
     trustedOrigins: [inputs.baseUrl],
-    database: hardenedPool(inputs.databaseUrl),
+    database,
     emailAndPassword: {
       enabled: true,
       disableSignUp,
@@ -131,7 +133,16 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
       autoSignInAfterVerification: true,
     },
     // Self-service `/delete-user`: own account only; password or a session younger than `freshAge`.
-    user: { deleteUser: { enabled: true } },
+    user: {
+      deleteUser: {
+        enabled: true,
+        // Better Auth leaves verification rows behind; erase them like admin.removeUser does.
+        afterDelete: async (user) => {
+          const cleanup = deleteVerificationsFor(user.id, user.email);
+          await database.query(cleanup.sql, cleanup.params);
+        },
+      },
+    },
     // Better Auth's own defaults, stated explicitly so they are pinned.
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     rateLimit: { enabled: true },
