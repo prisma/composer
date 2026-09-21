@@ -168,8 +168,9 @@ const { removed } = await admin.removeUser({ userId });
 error. No mail is sent.
 
 Both paths delete the `user` row, its sessions, and its accounts. Pending
-verification tokens (an unused magic link or reset) are left to expire —
-Better Auth clears expired ones itself. Your own rows follow your foreign
+verification tokens are left to expire: an unused magic link (the email,
+5 minutes) or reset (the user id, 1 hour); Better Auth deletes expired
+tokens the next time it checks any token. Your own rows follow your foreign
 key onto `auth:User`: `onDelete: Cascade` deletes them with the user,
 `Restrict` refuses the deletion, and without an FK nothing links them.
 Data outside the database (uploaded files, other stores) needs your own
