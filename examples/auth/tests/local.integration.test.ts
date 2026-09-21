@@ -154,6 +154,18 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     // The stateless trade-off: the JWT still verifies until it expires.
     const stillMe = await call(apiApp, '/me', { headers: { authorization: `Bearer ${jwt}` } });
     expect(stillMe.status).toBe(200);
+
+    // Account deletion: the sign-in record is gone and the address unknown.
+    const removed = await call(opsApp, '/admin/remove-user', json({ userId }));
+    expect(await removed.json()).toEqual({ removed: true });
+    const lookup = await call(opsApp, '/admin/find-user', json({ email: EMAIL }));
+    expect(await lookup.json()).toEqual({ user: null });
+    const relogin = await call(
+      apiApp,
+      '/api/auth/sign-in/email',
+      json({ email: EMAIL, password: PASSWORD }),
+    );
+    expect(relogin.status).toBe(401);
   });
 
   test('/me rejects a missing or garbage bearer', async () => {
