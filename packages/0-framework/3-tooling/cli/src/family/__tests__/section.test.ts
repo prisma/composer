@@ -47,7 +47,7 @@ describe('composerSection.validate()', () => {
   });
 
   test('an absolute configPath passes through unchanged', () => {
-    const absolute = path.join(path.sep, 'elsewhere', 'prisma-composer.config.ts');
+    const absolute = path.resolve(path.sep, 'elsewhere', 'prisma-composer.config.ts');
     const result = composerSection.validate({ configPath: absolute }, provenance());
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toEqual({ configPath: absolute });

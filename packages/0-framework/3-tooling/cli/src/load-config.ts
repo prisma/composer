@@ -304,7 +304,9 @@ function configSource(request: ConfigLoadRequest): ConfigSource {
       : { ok: true, path: discovered, explicit: false };
   }
 
-  const configPath = path.resolve(request.configPath);
+  const configPath = path.isAbsolute(request.configPath)
+    ? request.configPath
+    : path.resolve(cwd, request.configPath);
   if (!fs.existsSync(configPath)) {
     return {
       ok: false,
