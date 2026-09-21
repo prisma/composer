@@ -90,7 +90,7 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     pgServer.stop();
   });
 
-  test('the full loop: signup → verify (via outbox) → login → token → /me → session → revoke → null', async () => {
+  test('the full loop: signup → verify (via outbox) → login → token → /me → session → revoke → null → delete', async () => {
     const signup = await call(
       apiApp,
       '/api/auth/sign-up/email',
@@ -154,6 +154,26 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     // The stateless trade-off: the JWT still verifies until it expires.
     const stillMe = await call(apiApp, '/me', { headers: { authorization: `Bearer ${jwt}` } });
     expect(stillMe.status).toBe(200);
+
+    // Self-service account deletion through the proxy, on a fresh sign-in.
+    const fresh = await call(
+      apiApp,
+      '/api/auth/sign-in/email',
+      json({ email: EMAIL, password: PASSWORD }),
+    );
+    const freshBearer = fresh.headers.get('set-auth-token') ?? '';
+    const deleted = await call(
+      apiApp,
+      '/api/auth/delete-user',
+      json({}, { authorization: `Bearer ${freshBearer}` }),
+    );
+    expect(deleted.status).toBe(200);
+    const lookup = await call(opsApp, '/admin/find-user', json({ email: EMAIL }));
+    expect(await lookup.json()).toEqual({ user: null });
+
+    // The operator path is idempotent: the account is already gone.
+    const removed = await call(opsApp, '/admin/remove-user', json({ userId }));
+    expect(await removed.json()).toEqual({ removed: false });
   });
 
   test('/me rejects a missing or garbage bearer', async () => {

@@ -245,6 +245,10 @@ export const authAdminContract = contract({
     input: type({ userId: 'string', emailVerified: 'boolean' }),
     output: type({ user: userRecord.or('null') }),
   }),
+  removeUser: rpc({
+    input: type({ userId: 'string' }),
+    output: type({ removed: 'boolean' }),
+  }),
 });
 
 // ——— Db dependency — the service's claim on a pack-carrying database ———

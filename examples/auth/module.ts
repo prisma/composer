@@ -17,7 +17,8 @@ import opsService from './src/ops/service.ts';
  *   - `api` — the app origin: proxies `/api/auth/*` to the auth service,
  *     JWT-verifies `/me`, and answers session lookups. Holds the `api` +
  *     `session` ports and the verifier; CANNOT touch admin ops.
- *   - `ops` — the back office: holds ONLY the `admin` port.
+ *   - `ops` — the back office: holds the `admin` port (plus the smoke's
+ *     read-only outbox dep).
  *
  * `baseUrl` is the PUBLIC origin browsers would see (the api service).
  * `deliveryMode`/`from` are the email module's own boundary params, bound to

@@ -83,6 +83,8 @@ export interface AuthStore {
   createUser(user: NewUser): Promise<UserRecord | null>;
   /** Sets `emailVerified`; `null` when absent. */
   setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null>;
+  /** DELETE the user row (sessions and accounts cascade); `false` = no such user (idempotent). */
+  removeUser(userId: string): Promise<boolean>;
 }
 
 /**

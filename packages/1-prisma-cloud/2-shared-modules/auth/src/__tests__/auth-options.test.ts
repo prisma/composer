@@ -120,6 +120,10 @@ describe('buildAuthOptions — pinned values', () => {
     expect(typeof options.emailVerification?.sendVerificationEmail).toBe('function');
   });
 
+  test('user.deleteUser: self-service deletion on, with Better Auth default checks', () => {
+    expect(options.user?.deleteUser).toEqual({ enabled: true });
+  });
+
   test('session TTLs and rate limiting', () => {
     expect(options.session?.expiresIn).toBe(604_800);
     expect(options.session?.updateAge).toBe(86_400);
