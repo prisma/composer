@@ -205,7 +205,7 @@ describe('the composer section through the engine', () => {
     }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: path.join(path.sep, 'x', 'prisma-composer.config.ts'),
+      configPath: path.resolve(path.sep, 'x', 'prisma-composer.config.ts'),
     } satisfies ComposerSection);
   });
 
@@ -219,7 +219,7 @@ describe('the composer section through the engine', () => {
    * `/repo/apps/shop/prisma-composer.config.ts`.
    */
   test('a configPath declared at the repo root names the same file from a subdirectory', async () => {
-    const repo = path.join(path.sep, 'repo');
+    const repo = path.resolve(path.sep, 'repo');
     const appDir = path.join(repo, 'apps', 'shop');
     const cli = createTestCli({
       commandFamilies: [

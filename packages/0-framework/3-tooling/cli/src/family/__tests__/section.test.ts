@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import type { SectionProvenance } from '@prisma/cli-engine';
 import { composerSection } from '../section.ts';
 
-const DECLARING_FILE = path.join(path.sep, 'repo', 'prisma.config.ts');
+const DECLARING_FILE = path.resolve(path.sep, 'repo', 'prisma.config.ts');
 
 function provenance(file: string = DECLARING_FILE): SectionProvenance {
   return { files: [file], keys: { configPath: file } };
@@ -42,7 +42,7 @@ describe('composerSection.validate()', () => {
     );
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toEqual({
-      configPath: path.join(path.sep, 'repo', 'app', 'prisma-composer.config.ts'),
+      configPath: path.resolve(path.sep, 'repo', 'app', 'prisma-composer.config.ts'),
     });
   });
 
@@ -82,7 +82,9 @@ describe('composerSection.validate()', () => {
   test('an unrecognized field warns but does not fail — a newer config still runs', () => {
     const result = composerSection.validate({ configPath: 'x.ts', stage: 'prod' }, provenance());
     expect(result.ok).toBe(true);
-    expect(result.ok && result.value).toEqual({ configPath: path.join(path.sep, 'repo', 'x.ts') });
+    expect(result.ok && result.value).toEqual({
+      configPath: path.resolve(path.sep, 'repo', 'x.ts'),
+    });
     expect(result.diagnostics).toHaveLength(1);
     expect(result.diagnostics[0]?.severity).toBe('warn');
     expect(result.diagnostics[0]?.summary).toContain('stage');
