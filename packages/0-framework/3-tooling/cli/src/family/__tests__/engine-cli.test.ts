@@ -260,7 +260,7 @@ describe('the composer section through the engine', () => {
     }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: './x/prisma-composer.config.ts',
+      configPath: path.resolve('/x/prisma-composer.config.ts'),
     } satisfies ComposerSection);
   });
 
