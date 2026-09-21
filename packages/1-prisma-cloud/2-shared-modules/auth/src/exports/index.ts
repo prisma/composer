@@ -6,12 +6,14 @@
  * a consumer graph that imports this module never bundles a `node:`/`bun`
  * token. The pack has its own subpath (`./pack`).
  */
+export type { AuthModuleOptions } from '../auth-module.ts';
 export { auth } from '../auth-module.ts';
 export type {
   AuthApiClient,
   AuthApiConfig,
   JwtVerifier,
   SessionRecord,
+  SignUpMode,
   UserRecord,
   VerifiedSession,
 } from '../contract.ts';

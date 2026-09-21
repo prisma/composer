@@ -43,6 +43,13 @@ export const sessionRecord = type({
 export type UserRecord = typeof userRecord.infer;
 export type SessionRecord = typeof sessionRecord.infer;
 
+/**
+ * Whether the browser surface accepts self-service sign-up. `'closed'` makes
+ * Better Auth refuse `/sign-up/email` and a magic link for an unknown email;
+ * accounts then come only from `admin.createUser`.
+ */
+export type SignUpMode = 'open' | 'closed';
+
 // ——— Port `api` — the public Better Auth surface ———
 
 export interface AuthApiConfig {
@@ -222,6 +229,21 @@ export const authAdminContract = contract({
   unbanUser: rpc({
     input: type({ userId: 'string' }),
     output: type({ user: userRecord }),
+  }),
+  createUser: rpc({
+    input: type({
+      // The two checks Better Auth's own sign-up applies, enforced here so
+      // a caller mistake is a 400 at the rpc boundary, not a retried 500.
+      email: 'string.email',
+      name: 'string',
+      'password?': '8 <= string <= 128',
+      'emailVerified?': 'boolean',
+    }),
+    output: type({ user: userRecord }),
+  }),
+  setEmailVerified: rpc({
+    input: type({ userId: 'string', emailVerified: 'boolean' }),
+    output: type({ user: userRecord.or('null') }),
   }),
 });
 
