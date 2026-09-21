@@ -126,6 +126,23 @@ emulator, which owns the processes:
   (`run-dev.ts`) — so a warm start restarts what a previous session's
   Ctrl-C stopped even when the converge is all-noop.
 
+  **The same gap, for Postgres (FRICTION #15/#16 from an app build):** the
+  Postgres daemon holds its servers in-process, so a daemon restart
+  (version-skew replacement, a crash, a reboot, another app's `dev`) drops
+  them all, and an all-noop warm converge never re-PUT them — `dev` reported
+  ready over dead database ports. The local `Database` provider therefore
+  never diffs as noop: every converge re-PUTs (idempotent for a live server,
+  restarts a dropped one on its pinned port). It declares every attribute
+  stable while the daemon still records the same URL, so consumers keep
+  noop-ing; if the URL did move, the attributes are unknown until reconcile
+  and the Connection and env rows reconverge. The same "no PUT this daemon
+  lifetime" made `--fresh` delete the app's records but keep its PGlite data
+  (the daemon only knew a `prismaDevModulePath` from PUTs) — the next start
+  reopened the old data under a newly generated auth secret. DELETE now takes
+  the path in its body and fails rather than keep data it cannot delete,
+  teardown propagates a running daemon's DELETE failure, and dev ensures the
+  emulators before `--fresh` so a daemon that was down is up to be wiped.
+
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
 into a deployment at version-create; locally, the `Deployment` provider
