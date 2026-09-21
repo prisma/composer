@@ -134,6 +134,52 @@ describe('port stability across a daemon restart', () => {
 
     await clientAfterRestart.deleteApp('pgtest-restart');
   }, 45_000);
+
+  // FRICTION #16: a warm `dev` never re-PUTs an unchanged Database, so a
+  // restarted daemon can reach `--fresh` without ever having seen this app's
+  // `prismaDevModulePath`. DELETE used to drop the record but keep the PGlite
+  // data, and the next start under the same name reopened the old data.
+  test('DELETE after a daemon restart, with no PUT in between, still deletes the persisted data', async () => {
+    await ensureFreshDaemon('postgres', registryRoot);
+    const client = postgresClient({ registryRoot });
+    const first = await client.ensureDatabase('pgtest-freshwipe', 'appdb', prismaDevModulePath());
+    const writer = new PgClient({ connectionString: first.url });
+    await writer.connect();
+    await writer.query('create table wipe_check (id integer primary key)');
+    await writer.end();
+
+    await stopDaemon('postgres', { registryRoot });
+    await ensureFreshDaemonSamePort(registryRoot);
+    const clientAfterRestart = postgresClient({ registryRoot });
+    await clientAfterRestart.deleteApp('pgtest-freshwipe', prismaDevModulePath());
+
+    const second = await clientAfterRestart.ensureDatabase(
+      'pgtest-freshwipe',
+      'appdb',
+      prismaDevModulePath(),
+    );
+    const reader = new PgClient({ connectionString: second.url });
+    await reader.connect();
+    const res = await reader.query("select to_regclass('wipe_check') as reg");
+    expect(res.rows[0].reg).toBeNull();
+    await reader.end();
+
+    await clientAfterRestart.deleteApp('pgtest-freshwipe', prismaDevModulePath());
+  }, 60_000);
+
+  test('DELETE that cannot delete the persisted data fails and keeps the record', async () => {
+    await ensureFreshDaemon('postgres', registryRoot);
+    const client = postgresClient({ registryRoot });
+    await client.ensureDatabase('pgtest-nowipe', 'appdb', prismaDevModulePath());
+
+    await stopDaemon('postgres', { registryRoot });
+    await ensureFreshDaemonSamePort(registryRoot);
+    const clientAfterRestart = postgresClient({ registryRoot });
+    await expect(clientAfterRestart.deleteApp('pgtest-nowipe')).rejects.toThrow('(500)');
+    expect(await clientAfterRestart.listDatabases('pgtest-nowipe')).toHaveLength(1);
+
+    await clientAfterRestart.deleteApp('pgtest-nowipe', prismaDevModulePath());
+  }, 60_000);
 });
 
 /**

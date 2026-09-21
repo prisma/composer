@@ -380,8 +380,8 @@ export interface PostgresClient {
   ensureDatabase(app: string, id: string, prismaDevModulePath: string): Promise<{ url: string }>;
   /** `GET /apps/<app>/databases`. */
   listDatabases(app: string): Promise<DatabaseInfo[]>;
-  /** `DELETE /apps/<app>` — closes the app's servers and deletes their persisted data. */
-  deleteApp(app: string): Promise<void>;
+  /** `DELETE /apps/<app>` — closes the app's servers and deletes their persisted data. Fails rather than keep data it cannot delete; pass the app's `prismaDevModulePath` so a daemon that never saw a PUT for the app can delete it. */
+  deleteApp(app: string, prismaDevModulePath?: string): Promise<void>;
 }
 
 export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
@@ -425,9 +425,19 @@ export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
       return body;
     },
 
-    async deleteApp(app) {
+    async deleteApp(app, prismaDevModulePath) {
       const url = `${baseUrl}/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+      await expectOk(
+        await adminFetch(url, {
+          method: 'DELETE',
+          ...(prismaDevModulePath !== undefined
+            ? {
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ prismaDevModulePath }),
+              }
+            : {}),
+        }),
+      );
     },
   };
 }

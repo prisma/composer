@@ -718,12 +718,18 @@ function main(): void {
       }
     }
 
-    // Deleting the persisted PGlite data needs SOME resolved `@prisma/dev`
-    // module — the app that owns the databases being deleted is the same
-    // app whose `prismaDevModulePath` every PUT for it already carried, so
-    // any one of those already-observed paths works; DELETE itself carries
-    // no body, so there is nothing more specific to prefer.
-    if (entries.length > 0 && prismaDevModulePathHint) {
+    // Deleting the persisted PGlite data needs a resolved `@prisma/dev`
+    // module. The caller's own path (DELETE body) comes first; the path a
+    // PUT in THIS process carried is only a fallback — a restarted daemon
+    // may never have seen one (a warm `dev` does not re-PUT an unchanged
+    // Database). Without either, refuse: dropping the record while its data
+    // stays on disk makes the next start under the same name reopen it.
+    if (entries.length > 0) {
+      if (prismaDevModulePathHint === undefined) {
+        throw new Error(
+          `cannot delete app "${app}"'s persisted databases: no prismaDevModulePath was given and none was seen since this daemon started.`,
+        );
+      }
       const internalState = await importPrismaDevInternalState(prismaDevModulePathHint);
       for (const db of entries) {
         // A server this daemon adopted rather than started has no handle to
@@ -785,7 +791,7 @@ function main(): void {
     };
   }
 
-  /** The most recently observed `prismaDevModulePath` for any database of `app` — DELETE has no body of its own to carry one. */
+  /** The most recently observed `prismaDevModulePath` for any database of `app` — DELETE's fallback when its body carries none. */
   const recentPrismaDevModulePath = new Map<string, string>();
   function lastKnownPrismaDevModulePath(app: string): string | undefined {
     return recentPrismaDevModulePath.get(app);
@@ -836,7 +842,16 @@ function main(): void {
       }
 
       if (method === 'DELETE' && segments.length === 2) {
-        await deleteApp(app, lastKnownPrismaDevModulePath(app));
+        // Optional body: `{ "prismaDevModulePath": string }`.
+        const raw = (await readBody(req)).toString('utf8');
+        let parsed: unknown;
+        try {
+          parsed = raw.length > 0 ? JSON.parse(raw) : undefined;
+        } catch {
+          return text(res, 400, 'malformed JSON body');
+        }
+        const given = isDatabaseBody(parsed) ? parsed.prismaDevModulePath : undefined;
+        await deleteApp(app, given ?? lastKnownPrismaDevModulePath(app));
         res.writeHead(204);
         res.end();
         return;
