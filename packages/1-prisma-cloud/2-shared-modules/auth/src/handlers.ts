@@ -7,10 +7,16 @@
  * without a running service.
  */
 
+import { generateRandomString, hashPassword } from 'better-auth/crypto';
 import { type AuthStore, decodeCursor, encodeCursor } from './auth-store.ts';
 import type { SessionRecord, UserRecord } from './contract.ts';
 
 const DEFAULT_LIST_LIMIT = 50;
+
+/** Better Auth's default id generator: 32 chars of `[a-zA-Z0-9]`, the same ids sign-up mints. */
+function generateId(): string {
+  return generateRandomString(32, 'a-z', 'A-Z', '0-9');
+}
 
 export interface SessionHandlers {
   getSession(input: {
@@ -36,6 +42,16 @@ export interface AdminHandlers {
     expiresAt?: string;
   }): Promise<{ user: UserRecord }>;
   unbanUser(input: { userId: string }): Promise<{ user: UserRecord }>;
+  createUser(input: {
+    email: string;
+    name: string;
+    password?: string;
+    emailVerified?: boolean;
+  }): Promise<{ user: UserRecord }>;
+  setEmailVerified(input: {
+    userId: string;
+    emailVerified: boolean;
+  }): Promise<{ user: UserRecord | null }>;
 }
 
 export interface AuthHandlers {
@@ -113,6 +129,32 @@ export function createAuthHandlers(store: AuthStore): AuthHandlers {
         throw new Error(`auth admin unbanUser: no user with id "${userId}"`);
       }
       return { user };
+    },
+
+    // The operator's provisioning path: the same rows Better Auth's sign-up
+    // writes (lowercased email, a `credential` account carrying Better
+    // Auth's own hash), minus the verification mail — `emailVerified` is
+    // whatever the caller says, default false. Email shape and password
+    // bounds are the contract input's job (a 400, not a retried 500).
+    async createUser({ email, name, password, emailVerified }) {
+      const user = await store.createUser({
+        id: generateId(),
+        email: email.toLowerCase(),
+        name,
+        emailVerified: emailVerified ?? false,
+        credential:
+          password === undefined
+            ? null
+            : { id: generateId(), passwordHash: await hashPassword(password) },
+      });
+      if (user === null) {
+        throw new Error(`auth admin createUser: a user with email "${email}" already exists`);
+      }
+      return { user };
+    },
+
+    async setEmailVerified({ userId, emailVerified }) {
+      return { user: await store.setEmailVerified(userId, emailVerified) };
     },
   };
 

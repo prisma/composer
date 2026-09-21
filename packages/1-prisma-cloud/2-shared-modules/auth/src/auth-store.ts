@@ -33,6 +33,21 @@ export interface ListUsersPage {
   readonly hasMore: boolean;
 }
 
+/**
+ * The rows `createUser` writes: exactly what Better Auth's own sign-up
+ * writes. Ids and the password hash are the handler's job (they are Better
+ * Auth semantics); the store only stores them.
+ */
+export interface NewUser {
+  readonly id: string;
+  /** Already lowercased, as Better Auth's sign-up normalizes it. */
+  readonly email: string;
+  readonly name: string;
+  readonly emailVerified: boolean;
+  /** The `credential` account row, or `null` for a user with no password. */
+  readonly credential: { readonly id: string; readonly passwordHash: string } | null;
+}
+
 export interface AuthStore {
   /**
    * The session lookup behind `session.getSession`: `null` when the token is
@@ -60,6 +75,14 @@ export interface AuthStore {
   ): Promise<UserRecord | null>;
   /** Clears the three ban columns; revokes nothing. `null` when absent. */
   unbanUser(userId: string): Promise<UserRecord | null>;
+  /**
+   * Inserts the user row and, when given, its `credential` account row in
+   * one transaction. `null` when a user with that email (case-insensitive)
+   * already exists — nothing is written then.
+   */
+  createUser(user: NewUser): Promise<UserRecord | null>;
+  /** Sets `emailVerified`; `null` when absent. */
+  setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null>;
 }
 
 /**

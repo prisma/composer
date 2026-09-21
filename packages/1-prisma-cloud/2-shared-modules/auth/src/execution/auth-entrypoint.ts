@@ -17,11 +17,11 @@ import { createPgAuthStore } from '../pg-auth-store.ts';
 const service = authService();
 
 const { db, email } = service.load();
-const { baseUrl, secret } = service.input();
+const { baseUrl, secret, signUp } = service.input();
 const port = service.port();
 
 const auth = betterAuth(
-  buildAuthOptions({ databaseUrl: db.url, secret: secret.expose(), baseUrl, email }),
+  buildAuthOptions({ databaseUrl: db.url, secret: secret.expose(), baseUrl, email, signUp }),
 );
 
 // DB-direct handlers: the ports authorize via wiring, never via

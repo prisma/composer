@@ -18,6 +18,7 @@ import type { EmailSender } from '@internal/email';
 import type { BetterAuthOptions } from 'better-auth';
 import { admin, bearer, jwt, magicLink } from 'better-auth/plugins';
 import pg from 'pg';
+import type { SignUpMode } from './contract.ts';
 import { AUTH_SCHEMA } from './pack/constants.ts';
 import type { AuthTemplates } from './templates.ts';
 import { safeLink } from './templates.ts';
@@ -29,6 +30,12 @@ export interface AuthOptionsInputs {
   readonly baseUrl: string;
   /** The hydrated `emailSender(authTemplates)` boundary dependency — one method per template. */
   readonly email: EmailSender<AuthTemplates>;
+  /**
+   * `'closed'` disables self-service sign-up on the browser surface (email +
+   * password AND magic link for an unknown email); accounts then come only
+   * from `admin.createUser`. Default `'open'`.
+   */
+  readonly signUp?: SignUpMode;
 }
 
 /** sha256 of `input`, lowercase hex — Web Crypto only, no `node:` import, so this file stays reachable from the embedded export's shared plane. */
@@ -102,6 +109,8 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
     }
   };
 
+  const disableSignUp = inputs.signUp === 'closed';
+
   return {
     appName: 'auth',
     baseURL: inputs.baseUrl,
@@ -111,6 +120,7 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
     database: hardenedPool(inputs.databaseUrl),
     emailAndPassword: {
       enabled: true,
+      disableSignUp,
       requireEmailVerification: true,
       sendResetPassword: ({ user, url, token }) => send('passwordReset', user.email, url, token),
       revokeSessionsOnPasswordReset: true,
@@ -146,7 +156,10 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
       magicLink({
         sendMagicLink: ({ email, url, token }) => send('magicLink', email, url, token),
         expiresIn: 300,
-        disableSignUp: false,
+        // At 1.6.24 the plugin still SENDS the link for an unknown email;
+        // the refusal happens when the link is completed
+        // (`error=new_user_signup_disabled`, no user row written).
+        disableSignUp,
       }),
     ],
   };
