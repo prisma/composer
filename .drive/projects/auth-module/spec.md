@@ -359,12 +359,13 @@ Semantics:
   with email "<email>" already exists`). Sends no mail.
 - `setEmailVerified` (amended 2026-09-17): sets the column; `null` when the
   user is absent.
-- `removeUser` (amended 2026-09-21): DB-direct (D12), one transaction:
-  `DELETE` of the `user` row — `session` and `account` rows go with it by
-  the pack's `onDelete: Cascade` FKs — plus the `verification` rows naming
-  the user (at 1.6.24: `value` = the user id for a password reset; a
-  magic link's `value` is `JSON.stringify({ email, name })`, matched
-  case-insensitively on the `"email":"<address>"` fragment). Consumer FKs
+- `removeUser` (amended 2026-09-21): DB-direct (D12): `DELETE` of the
+  `user` row — `session` and `account` rows go with it by the pack's
+  `onDelete: Cascade` FKs; the same rows Better Auth's own deletions
+  remove. `verification` rows are left to expire: Better Auth deletes every
+  expired row on each verification lookup (1.6.24 `findVerificationValue`,
+  cleanup on by default), and they cannot resolve to the deleted user
+  (reset → user not found; magic link → an unknown email). Consumer FKs
   onto `auth:User` keep their own semantics: `Cascade` takes the app's rows
   along, `Restrict`/`NoAction` fails the whole delete with Postgres' FK
   error (thrown → rpc error, nothing removed) — the app deletes its rows
@@ -591,14 +592,11 @@ Pinned option values:
   self-service `/api/auth/delete-user` with Better Auth's default checks —
   a signed-in session (401 otherwise), only that session's user (no
   `userId` parameter), and the current password or a session younger than
-  `freshAge` (default 24 h). `afterDelete` erases the verification rows
-  naming the user — Better Auth leaves them, and they have no FK — with the
-  same statement `removeUser` runs (`deleteVerificationsFor`). No app
-  hook: the app runs in another service, so its rows follow its own FK
-  onto `auth:User` (`Cascade` deletes them; `Restrict` refuses the
-  deletion). No
-  confirmation email (`sendDeleteAccountVerification`) until someone needs
-  it — it would add a template to `authTemplates`.
+  `freshAge` (default 24 h). No hooks: the app runs in another service,
+  so its rows follow its own FK onto `auth:User` (`Cascade` deletes them;
+  `Restrict` refuses the deletion). No confirmation email
+  (`sendDeleteAccountVerification`) until someone needs it — it would add
+  a template to `authTemplates`.
 - No `advanced.database.generateId` override (amended 2026-07-23, D5:
   `generateId: false` DISABLES generation at 1.6.24 and breaks signup;
   omitting it yields the intent — Better Auth's default generator, 32-char

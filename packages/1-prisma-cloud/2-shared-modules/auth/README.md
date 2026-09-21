@@ -160,8 +160,7 @@ session's user — there is no `userId` parameter. It also demands either the
 current `password` (`400 INVALID_PASSWORD` when wrong) or a session younger
 than 24 hours (`400 SESSION_EXPIRED` otherwise — sign in again; magic-link
 users have no password, so this is their path). It deletes the user row,
-its sessions, its accounts, and any pending verification tokens naming the
-user, and clears the session cookie.
+its sessions, and its accounts, and clears the session cookie.
 
 **An operator deletes an account** (an erasure request by email, support
 tooling, or when your app must clean up before the sign-in record goes)
@@ -172,10 +171,15 @@ with one `admin` call, server to server:
 const { removed } = await admin.removeUser({ userId });
 ```
 
-It deletes, in one transaction, the `user` row (email, name, timestamps),
-its sessions and accounts (password hash, provider tokens), and any pending
-verification tokens naming the user. `removed: false` means no such user,
-so a retried deletion flow is not an error. No mail is sent.
+It deletes the `user` row (email, name, timestamps); its sessions and
+accounts (password hash, provider tokens) go with it. `removed: false`
+means no such user, so a retried deletion flow is not an error. No mail is
+sent.
+
+Neither path touches pending verification tokens (an unused magic link or
+password reset). They are short-lived — 5 minutes and 1 hour — and Better
+Auth deletes every expired one whenever it next checks a token; a leftover
+one cannot sign anyone into the deleted account.
 
 **Either way, your own rows follow your own foreign keys** onto
 `auth:User`: `onDelete: Cascade` deletes them with the user — what you want

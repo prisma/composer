@@ -13,7 +13,6 @@
 import { SQL } from 'bun';
 import {
   type AuthStore,
-  deleteVerificationsFor,
   escapeLike,
   isEffectivelyBanned,
   type ListUsersFilters,
@@ -270,21 +269,15 @@ class PgAuthStore implements AuthStore {
   /**
    * Sessions and accounts cascade off the user row (pack FKs). A consumer FK
    * onto auth:User decides for itself: Cascade takes the app's rows along;
-   * Restrict/NoAction fails the whole transaction with Postgres' own error
-   * naming the constraint. Verification rows: see `deleteVerificationsFor`.
+   * Restrict/NoAction fails the delete with Postgres' own error naming the
+   * constraint.
    */
   async removeUser(userId: string): Promise<boolean> {
-    return this.sql.begin(async (tx) => {
-      const rows = await tx.unsafe<{ email: string }[]>(
-        `delete from ${USER_TABLE} where id = $1 returning email`,
-        [userId],
-      );
-      const row = rows[0];
-      if (row === undefined) return false;
-      const cleanup = deleteVerificationsFor(userId, row.email);
-      await tx.unsafe(cleanup.sql, cleanup.params);
-      return true;
-    });
+    const rows = await this.sql.unsafe<{ id: string }[]>(
+      `delete from ${USER_TABLE} where id = $1 returning id`,
+      [userId],
+    );
+    return rows.length > 0;
   }
 }
 

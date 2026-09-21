@@ -7,7 +7,6 @@
  * predicate, the keyset cursor codec, and the ILIKE escaping.
  */
 import type { SessionRecord, UserRecord } from './contract.ts';
-import { AUTH_SCHEMA } from './pack/constants.ts';
 
 /** `getUser`'s exactly-one-of selector (both ports; email match is case-insensitive). */
 export type UserSelector = { readonly id: string } | { readonly email: string };
@@ -85,9 +84,9 @@ export interface AuthStore {
   /** Sets `emailVerified`; `null` when absent. */
   setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null>;
   /**
-   * Deletes the user row (sessions and accounts go with it by FK cascade)
-   * and every pending verification row naming the user, in one
-   * transaction. `false` = no such user (idempotent).
+   * Deletes the user row; sessions and accounts go with it by FK cascade.
+   * Pending verification rows are left to expire — Better Auth's own
+   * deletions do the same. `false` = no such user (idempotent).
    */
   removeUser(userId: string): Promise<boolean>;
 }
@@ -119,25 +118,6 @@ export function decodeCursor(value: string): UserCursor {
   return {
     createdAt: decoded.slice(0, separatorIndex),
     id: decoded.slice(separatorIndex + 1),
-  };
-}
-
-/**
- * The statement deleting the `verification` rows naming a user — they have
- * no FK, so nothing cascades them. Shared by `removeUser` and the
- * self-service `/delete-user` hook so both erase the same rows. Better Auth
- * 1.6.24 names the user in `value` two ways: a password reset stores the bare
- * user id; a magic link stores `JSON.stringify({ email, name })` with the
- * email as typed — hence the case-folded substring match, closing quote
- * included so `a@b.co` never matches `a@b.com`.
- */
-export function deleteVerificationsFor(
-  userId: string,
-  email: string,
-): { readonly sql: string; readonly params: [string, string] } {
-  return {
-    sql: `delete from "${AUTH_SCHEMA}"."verification" where value = $1 or position($2 in lower(value)) > 0`,
-    params: [userId, `"email":${JSON.stringify(email.toLowerCase())}`],
   };
 }
 

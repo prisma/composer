@@ -6,7 +6,7 @@
  * the effective-ban filter both ways (including a lapsed ban), ILIKE
  * escaping, keyset pagination edges, revocation idempotency,
  * ban-implies-revoke atomicity, the rows `createUser` writes, and what
- * `removeUser` takes with it.
+ * `removeUser` takes with it (FK cascade).
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
@@ -368,19 +368,7 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
   });
 
   describe('removeUser', () => {
-    const seedVerification = async (id: string, identifier: string, value: string) => {
-      await sql.unsafe(
-        `insert into "auth"."verification" (id, identifier, value, "expiresAt")
-         values ($1, $2, $3, $4)`,
-        [id, identifier, value, FUTURE],
-      );
-    };
-    const verificationIds = async () =>
-      (await sql.unsafe<{ id: string }[]>(`select id from "auth"."verification" order by id`)).map(
-        (r) => r.id,
-      );
-
-    test('deletes the user with sessions, accounts, and the verifications naming them', async () => {
+    test('deletes the user; sessions and accounts cascade', async () => {
       await store.createUser({
         id: 'u-gone',
         email: 'gone@example.com',
@@ -389,11 +377,6 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
         credential: { id: 'acct-gone', passwordHash: 'h' },
       });
       await seedSession('s-gone', 'u-gone');
-      await seedVerification('v-reset', 'reset-password:t1', 'u-gone');
-      await seedVerification('v-magic', 'magic-t2', '{"email":"GONE@example.com","name":"Gone"}');
-      // Survivors: another user's reset, and an email that merely starts with the removed one.
-      await seedVerification('v-keep-reset', 'reset-password:t3', 'u-other');
-      await seedVerification('v-keep-magic', 'magic-t4', '{"email":"gone@example.com.au"}');
 
       expect(await store.removeUser('u-gone')).toBe(true);
 
@@ -405,11 +388,6 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
         ['u-gone'],
       );
       expect(leftovers[0]?.n).toBe(0);
-      const remaining = await verificationIds();
-      expect(remaining).not.toContain('v-reset');
-      expect(remaining).not.toContain('v-magic');
-      expect(remaining).toContain('v-keep-reset');
-      expect(remaining).toContain('v-keep-magic');
     });
 
     test('an absent user → false (idempotent)', async () => {

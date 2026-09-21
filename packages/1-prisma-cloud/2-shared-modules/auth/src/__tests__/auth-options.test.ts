@@ -8,7 +8,7 @@
  * cross-origin link never reaches `email` at all.
  */
 
-import { describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import type { EmailSender } from '@internal/email';
 import pg from 'pg';
@@ -121,31 +121,7 @@ describe('buildAuthOptions — pinned values', () => {
   });
 
   test('user.deleteUser: self-service deletion on, with Better Auth default checks', () => {
-    expect(options.user?.deleteUser?.enabled).toBe(true);
-    expect(typeof options.user?.deleteUser?.afterDelete).toBe('function');
-    expect(options.user?.deleteUser?.sendDeleteAccountVerification).toBeUndefined();
-  });
-
-  test('afterDelete: a failed verification cleanup is logged, never thrown (the deletion is done)', async () => {
-    const pool = options.database as pg.Pool;
-    const query = spyOn(pool, 'query').mockImplementation(() =>
-      Promise.reject(new Error('pool down')),
-    );
-    const log = spyOn(console, 'error').mockImplementation(() => {});
-    const user = {
-      id: 'u1',
-      email: 'a@b.co',
-      name: 'A',
-      emailVerified: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    await expect(options.user?.deleteUser?.afterDelete?.(user)).resolves.toBeUndefined();
-    expect(log.mock.calls[0]?.[0]).toBe(
-      'auth: verification cleanup after delete-user failed for u1',
-    );
-    query.mockRestore();
-    log.mockRestore();
+    expect(options.user?.deleteUser).toEqual({ enabled: true });
   });
 
   test('session TTLs and rate limiting', () => {
