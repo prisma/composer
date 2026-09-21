@@ -135,10 +135,7 @@ describe('port stability across a daemon restart', () => {
     await clientAfterRestart.deleteApp('pgtest-restart');
   }, 45_000);
 
-  // FRICTION #16: a warm `dev` never re-PUTs an unchanged Database, so a
-  // restarted daemon can reach `--fresh` without ever having seen this app's
-  // `prismaDevModulePath`. DELETE used to drop the record but keep the PGlite
-  // data, and the next start under the same name reopened the old data.
+  // FRICTION #16: a restarted daemon that never saw a PUT used to drop the record but keep the data.
   test('DELETE after a daemon restart, with no PUT in between, still deletes the persisted data', async () => {
     await ensureFreshDaemon('postgres', registryRoot);
     const client = postgresClient({ registryRoot });

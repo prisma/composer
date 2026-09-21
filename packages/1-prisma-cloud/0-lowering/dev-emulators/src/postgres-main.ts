@@ -718,12 +718,7 @@ function main(): void {
       }
     }
 
-    // Deleting the persisted PGlite data needs a resolved `@prisma/dev`
-    // module. The caller's own path (DELETE body) comes first; the path a
-    // PUT in THIS process carried is only a fallback — a restarted daemon
-    // may never have seen one (a warm `dev` does not re-PUT an unchanged
-    // Database). Without either, refuse: dropping the record while its data
-    // stays on disk makes the next start under the same name reopen it.
+    // No `@prisma/dev` path means the data can't be deleted — refuse, or the next start reopens it.
     if (entries.length > 0) {
       if (prismaDevModulePathHint === undefined) {
         throw new Error(

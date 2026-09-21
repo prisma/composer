@@ -70,19 +70,14 @@ export function LocalDatabaseProvider(
 ): Layer.Layer<Provider.Provider<Prisma.Database>> {
   const service: Provider.ProviderService<Prisma.Database> = {
     list: () => Effect.succeed([]),
-    // Always reconcile — the PUT below is the only thing that (re)starts a
-    // database server, and a restarted daemon drops every in-process server
-    // while an unchanged Database's props still diff as noop. Without this a
-    // warm `dev` reports ready over dead database ports (FRICTION #15; the
-    // Compute side's twin is `startServices`, ADR-0041). The PUT is
-    // idempotent for a live server.
-    //
-    // Every attribute is declared stable when the daemon still records this
-    // database at the URL Alchemy has (its port is pinned, so the PUT cannot
-    // move it) — consumers then keep noop-ing instead of every warm start
-    // re-running migrations and re-putting every deployment. Otherwise the
-    // attributes are unknown until reconcile, and a changed URL reconverges
-    // the Connection and env rows through Alchemy's own diff.
+    /**
+     * Never noop: the reconcile's PUT is the only thing that (re)starts a
+     * database server, and a restarted daemon drops them all — a noop warm
+     * `dev` reported ready over dead ports (FRICTION #15; Compute's twin is
+     * `startServices`, ADR-0041). Attributes are declared stable while the
+     * daemon still records the URL Alchemy has (the port is pinned), so
+     * consumers keep noop-ing; a moved URL reconverges them via Alchemy's diff.
+     */
     diff: ({ olds, news, output }) =>
       Effect.tryPromise({
         try: async () => {

@@ -86,9 +86,7 @@ export async function executeDev(
       }
     }
 
-    // Emulators — ensure the daemons this topology's node kinds need. Before
-    // `--fresh`: a teardown can only delete an app's records and data from a
-    // daemon that is running, and it tolerates one that is not.
+    // Emulators — before `--fresh`, which can only wipe an app's data from a running daemon.
     for (const [id, dev] of resolved) {
       if (dev.emulators === undefined) continue;
       try {
