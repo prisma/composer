@@ -87,12 +87,8 @@ function walkEntries(dir: string): BundleEntry[] {
             `bundle symlink at ${rel} escapes the bundle root: ${target} — deploy artifacts may only preserve links whose targets are inside the assembled bundle.`,
           );
         }
-        // An absolute target never ships. One that names a path under the
-        // bundle as given is the same link written absolutely — every Windows
-        // directory link, since a junction can only record an absolute path —
-        // so it archives as the relative target POSIX would have recorded,
-        // link chains included. Any other spelling is re-derived from the
-        // resolved target.
+        // A target under the bundle as given (every Windows junction) keeps its
+        // literal relative form, so link chains archive as they do on POSIX.
         const relativeTarget = !path.isAbsolute(target)
           ? target
           : isWithin(dir, target)

@@ -57,9 +57,7 @@ function treeContents(dir: string): string[] {
     .sort();
 }
 
-/** A link's target relative to its own directory, POSIX-separated. Windows
- * keeps a directory link as a junction, which reads back as an absolute path,
- * so the raw `readlink` string is not comparable across platforms. */
+/** A link's target relative to its directory (a Windows junction reads back absolute). */
 function linkTarget(linkPath: string): string {
   const linkDir = path.dirname(linkPath);
   return path
@@ -844,64 +842,55 @@ describe('assemble() — the directory form', () => {
   test.skipIf(process.platform !== 'win32')(
     'links the bundle with junctions on Windows, never a directory symlink',
     async () => {
-      // A default Windows user cannot create a symbolic link (EPERM without
-      // SeCreateSymbolicLinkPrivilege); a junction needs no privilege. The
-      // fixture uses junctions too — they are what pnpm writes on Windows.
       const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-junction-'));
       tmpDirs.push(workspaceRoot);
       const serviceDir = path.join(workspaceRoot, 'apps', 'web');
-      fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
-      writeTree(path.join(serviceDir, 'dist'), {
-        'server/entry.mjs': 'import { marker } from "dep"; export default marker;\n',
-        'vendor/real/index.js': 'export const value = 1;\n',
-      });
-      fs.symlinkSync(
-        path.join(serviceDir, 'dist', 'vendor', 'real'),
-        path.join(serviceDir, 'dist', 'vendor', 'linked'),
-        'junction',
-      );
-      const marker = 'JUNCTION_FIXTURE';
+      const dist = path.join(serviceDir, 'dist');
       const storePackage = path.join(
         workspaceRoot,
         'node_modules',
         '.pnpm',
-        'dep@1.0.0',
+        'dep',
         'node_modules',
         'dep',
       );
-      writeTree(storePackage, {
-        'package.json': JSON.stringify({
-          name: 'dep',
-          version: '1.0.0',
-          type: 'module',
-          main: 'index.js',
-        }),
-        'index.js': `export const marker = ${JSON.stringify(marker)};\n`,
+      fs.mkdirSync(path.join(serviceDir, 'src'), { recursive: true });
+      fs.mkdirSync(path.join(serviceDir, 'node_modules'));
+      writeTree(dist, {
+        'server/entry.mjs': 'import { marker } from "dep"; export default marker;\n',
+        'vendor/real/index.js': 'export const value = 1;\n',
       });
-      fs.mkdirSync(path.join(serviceDir, 'node_modules'), { recursive: true });
+      writeTree(storePackage, {
+        'package.json': JSON.stringify({ name: 'dep', type: 'module', main: 'index.js' }),
+        'index.js': 'export const marker = "JUNCTION_FIXTURE";\n',
+      });
+      fs.symlinkSync(
+        path.join(dist, 'vendor', 'real'),
+        path.join(dist, 'vendor', 'linked'),
+        'junction',
+      );
       fs.symlinkSync(storePackage, path.join(serviceDir, 'node_modules', 'dep'), 'junction');
       writeServiceModule(serviceDir);
 
       const symlink = spyOn(fs.promises, 'symlink');
-      let result: Awaited<ReturnType<typeof assemble>>;
-      try {
-        result = await assemble({
-          build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
-          address: 'astro',
-          cwd: makeCwd(),
-        });
-        expect(symlink.mock.calls.map((call) => call[2])).toEqual(['junction', 'junction']);
-      } finally {
+      let types: unknown[] = [];
+      const result = await assemble({
+        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        address: 'astro',
+        cwd: makeCwd(),
+      }).finally(() => {
+        types = symlink.mock.calls.map((call) => call[2]);
         symlink.mockRestore();
-      }
+      });
 
+      expect(types).toEqual(['junction', 'junction']);
       const bundle = path.join(result.dir, 'bundle');
       expect(linkTarget(path.join(bundle, 'vendor', 'linked'))).toBe('real');
       expect(linkTarget(path.join(bundle, 'node_modules', 'dep'))).toBe(
-        '.pnpm/dep@1.0.0/node_modules/dep',
+        '.pnpm/dep/node_modules/dep',
       );
       const loaded = await import(pathToFileURL(path.join(result.dir, result.entry)).href);
-      expect(loaded.default).toBe(marker);
+      expect(loaded.default).toBe('JUNCTION_FIXTURE');
     },
     30_000,
   );

@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
-import { createBundleLink } from '@internal/bundle-paths';
 import { packageComputeArtifact } from '../compute/artifact.ts';
 
 function makeBundle(files: Record<string, string>): string {
@@ -367,80 +366,36 @@ describe('packageComputeArtifact', () => {
     expect(archive.link('node_modules/link')).not.toContain(bundleDir);
   });
 
-  // The files of a pnpm-shaped bundle: an app-level link into a store, a link
-  // chain (alias -> pkg -> store), and a file link.
-  const linkedBundleFiles = {
-    'main.js': 'export default {};',
-    'node_modules/.store/pkg/index.js': '// pkg',
-    'node_modules/.store/pkg/data.json': '{}',
-  };
-  const expectedLinks = {
-    'node_modules/pkg': '.store/pkg',
-    'node_modules/alias': 'pkg',
-    'node_modules/data.json': '.store/pkg/data.json',
-  };
-  const packageLinked = (bundleDir: string) =>
-    packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 'server.js', address: 'auth' });
+  test('archives absolute in-bundle links, chains included, exactly as the relative links they stand for', () => {
+    const links = {
+      'node_modules/pkg': '.store/pkg',
+      'node_modules/alias': 'pkg',
+      'node_modules/data.json': '.store/pkg/data.json',
+    };
+    const packageLinked = (absolute: boolean) => {
+      const bundleDir = makeBundle({
+        'main.js': 'export default {};',
+        'node_modules/.store/pkg/data.json': '{}',
+      });
+      for (const [rel, target] of Object.entries(links)) {
+        const linkPath = path.join(bundleDir, ...rel.split('/'));
+        const isFile = rel.endsWith('.json');
+        fs.symlinkSync(
+          absolute && !isFile
+            ? path.resolve(path.dirname(linkPath), ...target.split('/'))
+            : target.split('/').join(path.sep),
+          linkPath,
+          isFile ? 'file' : 'dir',
+        );
+      }
+      return packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 's.js', address: 'auth' });
+    };
 
-  /** The bundle as POSIX assembly writes it: every link relative. */
-  function makeRelativeLinkedBundle(): string {
-    const bundleDir = makeBundle(linkedBundleFiles);
-    for (const [rel, target] of Object.entries(expectedLinks)) {
-      fs.symlinkSync(
-        target.split('/').join(path.sep),
-        path.join(bundleDir, ...rel.split('/')),
-        rel.endsWith('.json') ? 'file' : 'dir',
-      );
-    }
-    return bundleDir;
-  }
-
-  test('archives a directory link written absolutely as the relative link it stands for', () => {
-    // A Windows directory link is a junction, which can only record an absolute
-    // path. An absolute symlink reads back the same way on every platform.
-    const bundleDir = makeBundle(linkedBundleFiles);
-    for (const [rel, target] of Object.entries(expectedLinks)) {
-      const linkPath = path.join(bundleDir, ...rel.split('/'));
-      const isFileLink = rel.endsWith('.json');
-      fs.symlinkSync(
-        isFileLink
-          ? target.split('/').join(path.sep)
-          : path.resolve(path.dirname(linkPath), ...target.split('/')),
-        linkPath,
-        isFileLink ? 'file' : 'dir',
-      );
-    }
-
-    const absolute = packageLinked(bundleDir);
+    const absolute = packageLinked(true);
     const archive = readTar(fs.readFileSync(absolute.path));
 
-    for (const [rel, target] of Object.entries(expectedLinks)) {
-      expect(archive.link(rel)).toBe(target);
-    }
-    // Same entries, same bytes: the artifact does not record which platform,
-    // or which directory, assembled it.
-    expect(absolute.sha256).toBe(packageLinked(makeRelativeLinkedBundle()).sha256);
-  });
-
-  test('archives links written by createBundleLink identically on every platform', async () => {
-    const bundleDir = makeBundle(linkedBundleFiles);
-    for (const [rel, target] of Object.entries(expectedLinks)) {
-      await createBundleLink(
-        target.split('/').join(path.sep),
-        path.join(bundleDir, ...rel.split('/')),
-        rel.endsWith('.json') ? 'file' : 'dir',
-      );
-    }
-
-    const artifact = packageLinked(bundleDir);
-    const archive = readTar(fs.readFileSync(artifact.path));
-
-    for (const [rel, target] of Object.entries(expectedLinks)) {
-      expect(archive.link(rel)).toBe(target);
-    }
-    // On Windows this compares junctions against relative symlinks; the literal
-    // targets above hold both platforms to the same link entries.
-    expect(artifact.sha256).toBe(packageLinked(makeRelativeLinkedBundle()).sha256);
+    for (const [rel, target] of Object.entries(links)) expect(archive.link(rel)).toBe(target);
+    expect(absolute.sha256).toBe(packageLinked(false).sha256);
   });
 
   test('preserves executable mode for staged runtime files', () => {

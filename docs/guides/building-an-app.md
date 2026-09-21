@@ -572,12 +572,7 @@ ships. Three things to know:
   resolves inside the built output ships as-is. A link that points outside it,
   or at something that isn't there, fails the deploy with an error naming the
   link, rather than shipping a broken artifact or packaging files from your
-  machine. On Windows, deploy recreates directory links as junctions, which
-  need no special privilege, so a pnpm-style `node_modules` assembles without
-  Developer Mode or an elevated shell, and the artifact records the same
-  relative links a POSIX deploy produces. A symlink to a *file* is the
-  exception: Windows only lets a privileged user create one, so assembly
-  fails, naming the link, until Developer Mode is on.
+  machine.
 - The entry's runtime imports ship too. Deploy traces the file you named and
   stages the packages it imports beside `dir`, so framework output that keeps
   bare imports (Astro's Node adapter, for example) boots without you copying

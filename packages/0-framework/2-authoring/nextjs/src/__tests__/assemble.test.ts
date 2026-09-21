@@ -20,9 +20,7 @@ function moduleUrl(root: string): string {
   return pathToFileURL(path.join(root, 'src', 'service.ts')).href;
 }
 
-/** A link's target relative to its own directory, POSIX-separated. Windows
- * keeps a directory link as a junction, which reads back as an absolute path,
- * so the raw `readlink` string is not comparable across platforms. */
+/** A link's target relative to its directory (a Windows junction reads back absolute). */
 function linkTarget(linkPath: string): string {
   const linkDir = path.dirname(linkPath);
   return path
@@ -279,10 +277,6 @@ describe('assemble()', () => {
   test.skipIf(process.platform !== 'win32')(
     'links the bundle with junctions on Windows, never a directory symlink',
     async () => {
-      // A default Windows user cannot create a symbolic link (EPERM without
-      // SeCreateSymbolicLinkPrivilege); a junction needs no privilege. The
-      // omitted-target link is a junction too, so it records an absolute path
-      // into the standalone tree, as pnpm's links do on Windows.
       const root = makeAppRoot();
       writeNextBuild(root);
       const standalone = path.join(root, '.next', 'standalone');
@@ -301,17 +295,15 @@ describe('assemble()', () => {
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
       tmpDirs.push(cwd);
       const symlink = spyOn(fs.promises, 'symlink');
-      let types: unknown[];
-      try {
-        await assemble({
-          address: 'storefront.web',
-          cwd,
-          build: nextjs({ module: moduleUrl(root), appDir: '..' }),
-        });
+      let types: unknown[] = [];
+      await assemble({
+        address: 'storefront.web',
+        cwd,
+        build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+      }).finally(() => {
         types = symlink.mock.calls.map((call) => call[2]);
-      } finally {
         symlink.mockRestore();
-      }
+      });
 
       expect(types.length).toBeGreaterThan(0);
       expect(types.filter((type) => type !== 'junction')).toEqual([]);

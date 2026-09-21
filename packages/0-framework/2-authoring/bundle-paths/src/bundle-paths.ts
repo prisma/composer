@@ -4,52 +4,26 @@
  * writer, the local extractor). This predicate is the enforcement point of
  * ADR-0047's boundary — a symlink may be preserved only while its target
  * stays inside the assembled bundle — so it exists exactly once.
- *
- * It also owns how a bundle link is written. What a link is on disk differs by
- * platform (`planBundleLink`); what it means — and what the packager archives —
- * does not. Every seam that creates or copies a link goes through here, so no
- * caller branches on the platform.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** What a bundle link points at. Windows types its links; POSIX ignores this. */
 export type BundleLinkKind = 'dir' | 'file';
 
-/** The exact `fs.symlink(target, linkPath, type)` arguments for one bundle link. */
 export interface BundleLinkPlan {
   readonly target: string;
   readonly type: 'junction' | 'dir' | 'file';
 }
 
-/**
- * The one platform fact every link decision below derives from. Windows only
- * lets a process holding SeCreateSymbolicLinkPrivilege (Developer Mode, or an
- * elevated shell) create a symbolic link; a default user gets EPERM. A
- * junction needs no privilege, so on Windows a directory link is always a
- * junction — for every user, privileged or not, so the same inputs assemble the
- * same bundle on every Windows machine.
- */
+/** Windows refuses symlinks (EPERM) without SeCreateSymbolicLinkPrivilege; a
+ * junction needs none, so every Windows user gets one. */
 function directoryLinksAreJunctions(platform: NodeJS.Platform): boolean {
   return platform === 'win32';
 }
 
-/**
- * Decides how a bundle link is created — the only place that decision is made.
- *
- * - POSIX: the link is written as given (links are untyped there).
- * - Windows, directory: a junction. A junction stores an absolute target, so a
- *   relative `target` is resolved against the link's own directory here rather
- *   than left to the runtime. Absoluteness is only the on-disk representation:
- *   the packager archives an in-bundle absolute target as the same relative
- *   link entry POSIX produces.
- * - Windows, file: a file symbolic link. A junction cannot point at a file, and
- *   a copy or a hard link would archive as a regular file — a dereferenced link,
- *   which ADR-0047 forbids — so a file link stays a real link and needs the
- *   privilege.
- *
- * `platform` is a test seam; production callers leave it at the default.
- */
+/** Windows: directory links are junctions (no privilege needed, absolute
+ * target); file links stay symlinks because a copy would archive as a regular
+ * file (ADR-0047). `platform` is a test seam. */
 export function planBundleLink(
   target: string,
   linkPath: string,
@@ -62,11 +36,8 @@ export function planBundleLink(
   return { target, type: kind };
 }
 
-/** The kind of link `resolvedTarget` needs. A target that is not there cannot
- * be typed; it is treated as a directory because that link can be created
- * without privilege on every platform. A link left dangling is rejected by
- * `assertBundleSymlinksStayInside`, and one whose target is staged afterwards is
- * re-typed by `repairWindowsDirectorySymlinks`. */
+/** An absent target cannot be typed; 'dir' is the kind every user can create,
+ * and `repairWindowsDirectorySymlinks` re-types it once the target is staged. */
 export async function bundleLinkKind(resolvedTarget: string): Promise<BundleLinkKind> {
   try {
     return (await fs.promises.stat(resolvedTarget)).isDirectory() ? 'dir' : 'file';
@@ -75,9 +46,6 @@ export async function bundleLinkKind(resolvedTarget: string): Promise<BundleLink
   }
 }
 
-/** Creates the link at `linkPath` pointing at `target` (relative to the link's
- * directory, or absolute). Every link an assembly seam writes goes through
- * here; see `planBundleLink` for what is written on each platform. */
 export async function createBundleLink(
   target: string,
   linkPath: string,
@@ -110,25 +78,14 @@ async function lstatIfPresent(candidate: string): Promise<fs.Stats | undefined> 
   }
 }
 
-/**
- * The Windows tree copy. `fs.cp` cannot be used there: it re-creates every link
- * with an untyped `fs.symlink`, which Node resolves to a 'dir' or 'file'
- * symbolic link — EPERM without the privilege — and mistypes a link whose
- * target has not been copied yet. This copy is otherwise the same verbatim
- * copy, with links routed through `createBundleLink`.
- *
- * One thing cannot be verbatim: `readlink` reports a junction's target as an
- * absolute path, so copying that string would leave the copy pointing back into
- * the source tree. An absolute target inside the copied tree is therefore
- * re-anchored to the same location in the destination. Absolute targets outside
- * the tree are kept as they are, for the bundle validator to judge.
- */
+/** `fs.cp` recreates links as privileged symlinks, so Windows copies through
+ * `createBundleLink`. Junction targets read back absolute, so in-tree targets
+ * are re-anchored into the destination. */
 async function copyTreeThroughBundleLinks(
   source: string,
   destination: string,
   platform: NodeJS.Platform,
 ): Promise<void> {
-  /** `target` is what `from` records; `written` is what the copy at `to` records. */
   const copyLink = async (
     from: string,
     to: string,
@@ -155,8 +112,7 @@ async function copyTreeThroughBundleLinks(
     return;
   }
 
-  // A junction records whichever spelling of the path its creator used, so an
-  // in-tree target is recognised under the tree's given and real paths alike.
+  // A junction may record the tree's real path rather than the one given.
   const sourceRoots = [...new Set([path.resolve(source), await fs.promises.realpath(source)])];
   const reanchored = (target: string, to: string): string => {
     if (!path.isAbsolute(target)) return target;
@@ -185,14 +141,7 @@ async function copyTreeThroughBundleLinks(
   await copyDirectory(source, destination);
 }
 
-/**
- * Re-creates the links under `root` whose kind could not be known when they
- * were written: a link created while its target was missing is a junction, and
- * staging the target afterwards may reveal a file. Every link whose target now
- * exists is re-created through `createBundleLink` with that target's kind; one
- * that still dangles is left for `assertBundleSymlinksStayInside` to reject.
- * POSIX links are untyped, so there is nothing to repair there.
- */
+/** Re-types links created while their target was absent (see `bundleLinkKind`). */
 export async function repairWindowsDirectorySymlinks(
   root: string,
   platform: NodeJS.Platform = process.platform,
@@ -222,9 +171,6 @@ export async function repairWindowsDirectorySymlinks(
   await visit(root);
 }
 
-/** Copies `source` to `destination` with every link kept a link — never
- * followed. POSIX copies link targets verbatim; see
- * `copyTreeThroughBundleLinks` for what Windows needs instead. */
 export async function copyTreeVerbatim(
   source: string,
   destination: string,

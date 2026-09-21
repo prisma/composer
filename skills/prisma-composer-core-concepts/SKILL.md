@@ -215,11 +215,6 @@ deploy. Rules that bite:
    the runtime environment doesn't exist at build time and Next ignores
    runtime env for prerendered routes.
 4. **Always build before `deploy` or `dev`.** Neither builds for you.
-5. **On Windows, assembly links directories with junctions**, so a
-   pnpm-style `node_modules` deploys without Developer Mode or an elevated
-   shell, and the artifact records the same relative links a POSIX deploy
-   produces. A symlink to a *file* still needs Windows' symbolic-link
-   privilege: assembly fails, naming the link, until Developer Mode is on.
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).
