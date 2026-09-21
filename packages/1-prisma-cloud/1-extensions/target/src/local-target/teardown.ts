@@ -15,7 +15,7 @@
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
 import { bucketsClient, computeClient, postgresClient } from '@internal/dev-emulators';
-import { removeLocalPaths, resolvePrismaDevModulePath } from '@internal/local-target';
+import { removeLocalPaths } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
 /** The daemon's client, or `undefined` when it isn't running — nothing to remove there. A running daemon's DELETE failure propagates. */
@@ -31,7 +31,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
 
-  await ifRunning(postgresClient)?.deleteApp(app, resolvePrismaDevModulePath());
+  await ifRunning(postgresClient)?.deleteApp(app);
   await ifRunning(computeClient)?.deleteApp(app);
   await ifRunning(bucketsClient)?.deleteApp(app);
 

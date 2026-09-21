@@ -69,7 +69,7 @@ describe('database lifecycle', () => {
     expect(res.rows[0].one).toBe(1);
     await pg.end();
 
-    await client.deleteApp('pgtest-lifecycle', prismaDevModulePath());
+    await client.deleteApp('pgtest-lifecycle');
     expect(await client.listDatabases('pgtest-lifecycle')).toHaveLength(0);
     // 60s, not 30s: this boots a real Postgres and every step is awaited, so
     // there is no race to fix here — it is simply slow, and 30s left no room
@@ -85,7 +85,7 @@ describe('database lifecycle', () => {
     const second = await client.ensureDatabase('pgtest-idempotent', 'appdb', prismaDevModulePath());
     expect(second.url).toBe(first.url);
 
-    await client.deleteApp('pgtest-idempotent', prismaDevModulePath());
+    await client.deleteApp('pgtest-idempotent');
     // Same daemon-boot cost as the test above, so the same budget.
   }, 60_000);
 });
@@ -117,7 +117,7 @@ describe('Postgres messages larger than one loopback TCP read', () => {
     expect(res.rows[0].one).toBe(1);
     await second.end();
 
-    await client.deleteApp('pgtest-large', prismaDevModulePath());
+    await client.deleteApp('pgtest-large');
   }, 60_000);
 });
 
@@ -164,7 +164,7 @@ describe('port stability across a daemon restart', () => {
     expect(res.rows).toEqual([{ id: 1 }]);
     await reader.end();
 
-    await clientAfterRestart.deleteApp('pgtest-restart', prismaDevModulePath());
+    await clientAfterRestart.deleteApp('pgtest-restart');
   }, 45_000);
 
   test('DELETE after a daemon restart, with no PUT in between, still deletes the persisted data', async () => {
@@ -179,7 +179,7 @@ describe('port stability across a daemon restart', () => {
     await stopDaemon('postgres', { registryRoot });
     await ensureFreshDaemonSamePort(registryRoot);
     const clientAfterRestart = postgresClient({ registryRoot });
-    await clientAfterRestart.deleteApp('pgtest-freshwipe', prismaDevModulePath());
+    await clientAfterRestart.deleteApp('pgtest-freshwipe');
 
     const second = await clientAfterRestart.ensureDatabase(
       'pgtest-freshwipe',
@@ -192,7 +192,7 @@ describe('port stability across a daemon restart', () => {
     expect(res.rows[0].reg).toBeNull();
     await reader.end();
 
-    await clientAfterRestart.deleteApp('pgtest-freshwipe', prismaDevModulePath());
+    await clientAfterRestart.deleteApp('pgtest-freshwipe');
   }, 60_000);
 });
 
@@ -233,8 +233,8 @@ describe('multi-app isolation', () => {
     expect(res.rows[0].reg).toBeNull();
     await bReader.end();
 
-    await client.deleteApp('pgtest-tenant-a', prismaDevModulePath());
-    await client.deleteApp('pgtest-tenant-b', prismaDevModulePath());
+    await client.deleteApp('pgtest-tenant-a');
+    await client.deleteApp('pgtest-tenant-b');
   }, 45_000);
 });
 
@@ -290,7 +290,7 @@ describe('fresh-allocation port retry (spec § 2 step 5, applied to databasePort
       await closeServer(squatter);
     }
 
-    await client.deleteApp('pgtest-retry', prismaDevModulePath());
+    await client.deleteApp('pgtest-retry');
   }, 30_000);
 });
 
@@ -367,7 +367,7 @@ setInterval(() => {}, 1 << 30);
       // And the daemon stayed up — the failure this guards against killed it.
       expect((await client.health()).version.length).toBeGreaterThan(0);
 
-      await client.deleteApp(app, prismaDevModulePath());
+      await client.deleteApp(app);
     } finally {
       host.kill('SIGKILL');
       await deleteServer(instanceName).catch(() => undefined);
@@ -426,7 +426,7 @@ describe("a stale @prisma/dev record claiming a port in the daemon's database ra
       await pg.query('select 1');
       await pg.end();
 
-      await client.deleteApp('pgtest-stale', prismaDevModulePath());
+      await client.deleteApp('pgtest-stale');
     } finally {
       await deleteServer(squatterName).catch(() => undefined);
     }
@@ -500,7 +500,7 @@ export async function startPrismaDevServer(options) {
     await pg.query('select 1');
     await pg.end();
 
-    await client.deleteApp(app, prismaDevModulePath());
+    await client.deleteApp(app);
   }, 120_000);
 });
 
@@ -528,6 +528,6 @@ describe('concurrent ensures for different databases', () => {
       await pg.end();
     }
 
-    await client.deleteApp('pgtest-concurrent', prismaDevModulePath());
+    await client.deleteApp('pgtest-concurrent');
   }, 90_000);
 });

@@ -16,6 +16,7 @@
  */
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
@@ -698,7 +699,7 @@ function main(): void {
     }
   }
 
-  async function deleteApp(app: string, prismaDevModulePath: string): Promise<void> {
+  async function deleteApp(app: string): Promise<void> {
     const appRec = state[app];
     if (!appRec) return;
     const entries = Object.values(appRec.databases);
@@ -716,8 +717,11 @@ function main(): void {
       }
     }
 
+    // Composer's own `@prisma/dev` (a dependency of the package that ships this daemon) — works after a restart too.
     if (entries.length > 0) {
-      const internalState = await importPrismaDevInternalState(prismaDevModulePath);
+      const internalState = await importPrismaDevInternalState(
+        createRequire(import.meta.url).resolve('@prisma/dev'),
+      );
       for (const db of entries) {
         // A server this daemon adopted rather than started has no handle to
         // close, so stop it by its record first (`killServer` leaves data).
@@ -778,25 +782,6 @@ function main(): void {
     };
   }
 
-  /** PUT and DELETE both carry `{ "prismaDevModulePath": string }`; answers 400 and returns undefined when the body is not that. */
-  async function readDatabaseBody(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<DatabaseBody | undefined> {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse((await readBody(req)).toString('utf8'));
-    } catch {
-      text(res, 400, 'malformed JSON body');
-      return undefined;
-    }
-    if (!isDatabaseBody(parsed)) {
-      text(res, 400, 'malformed database body: expected { "prismaDevModulePath": string }');
-      return undefined;
-    }
-    return parsed;
-  }
-
   async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${String(port)}`);
     const method = req.method ?? 'GET';
@@ -816,9 +801,21 @@ function main(): void {
       if (method === 'PUT' && segments.length === 4 && segments[2] === 'databases') {
         const id = segments[3];
         if (id === undefined || !isValidSegment(id)) return badSegment(res, id ?? '');
-        const body = await readDatabaseBody(req, res);
-        if (body === undefined) return;
-        const result = await ensureDatabase(app, id, body.prismaDevModulePath);
+        const raw = await readBody(req);
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw.toString('utf8'));
+        } catch {
+          return text(res, 400, 'malformed JSON body');
+        }
+        if (!isDatabaseBody(parsed)) {
+          return text(
+            res,
+            400,
+            'malformed database body: expected { "prismaDevModulePath": string }',
+          );
+        }
+        const result = await ensureDatabase(app, id, parsed.prismaDevModulePath);
         return json(res, 200, result);
       }
 
@@ -829,9 +826,7 @@ function main(): void {
       }
 
       if (method === 'DELETE' && segments.length === 2) {
-        const body = await readDatabaseBody(req, res);
-        if (body === undefined) return;
-        await deleteApp(app, body.prismaDevModulePath);
+        await deleteApp(app);
         res.writeHead(204);
         res.end();
         return;

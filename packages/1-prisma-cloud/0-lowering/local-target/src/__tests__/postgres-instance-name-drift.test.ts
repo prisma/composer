@@ -12,11 +12,7 @@ import {
 import { Connection, Database } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import {
-  LocalConnectionProvider,
-  LocalDatabaseProvider,
-  resolvePrismaDevModulePath,
-} from '../postgres.ts';
+import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
 
 /**
  * Delta review finding A (#160): `LocalDatabaseProvider` used to re-derive
@@ -87,7 +83,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await postgresClient()
-    .deleteApp(APP, resolvePrismaDevModulePath())
+    .deleteApp(APP)
     .catch(() => undefined);
 });
 
