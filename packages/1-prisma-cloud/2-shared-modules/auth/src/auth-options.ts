@@ -130,6 +130,8 @@ export function buildAuthOptions(inputs: AuthOptionsInputs): BetterAuthOptions {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
     },
+    // Self-service `/delete-user`: own account only; password or a session younger than `freshAge`.
+    user: { deleteUser: { enabled: true } },
     // Better Auth's own defaults, stated explicitly so they are pinned.
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     rateLimit: { enabled: true },

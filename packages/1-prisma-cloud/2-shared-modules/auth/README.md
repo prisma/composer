@@ -11,7 +11,8 @@ instance secret is platform-minted.
 Three ports, one service behind them — least privilege is a WIRING choice:
 
 - **`api`** (kind `'auth-api'`) — the public Better Auth surface
-  (`/api/auth/*`): signup, login, logout, JWKS, token minting. Public and
+  (`/api/auth/*`): signup, login, logout, self-service account deletion,
+  JWKS, token minting. Public and
   unauthenticated by design — it IS the authentication; Better Auth rate
   limits it. Two consumer factories bind to it:
   - `authApi()` → `{ url, fetch }` — what `authProxy()` consumes.
@@ -136,8 +137,31 @@ either way.
 
 ## Deleting accounts
 
-Account deletion ("delete my account", GDPR erasure) is one `admin` call,
-server to server:
+Two paths, each Better Auth's own mechanism.
+
+**A user deletes their own account** ("delete my account") through
+Better Auth's `POST /api/auth/delete-user` — on by default, reached through
+`authProxy()` like the rest of `/api/auth/*`, no extra wiring:
+
+```ts
+// browser, signed in (cookie through the proxy); or `Authorization: Bearer <session token>`
+await fetch('/api/auth/delete-user', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ password }), // optional when the session is < 24 h old
+});
+```
+
+It needs a signed-in session (`401` otherwise) and deletes only that
+session's user — there is no `userId` parameter. It also demands either the
+current `password` (`400 INVALID_PASSWORD` when wrong) or a session younger
+than 24 hours (`400 SESSION_EXPIRED` otherwise — sign in again; magic-link
+users have no password, so this is their path). It deletes the user row,
+its sessions, and its accounts, and clears the session cookie.
+
+**An operator deletes an account** (an erasure request by email, support
+tooling, or when your app must clean up before the sign-in record goes)
+with one `admin` call, server to server:
 
 ```ts
 // in a service wired to `identity.admin`
@@ -149,24 +173,18 @@ its sessions and accounts (password hash, provider tokens), and any pending
 verification tokens naming the user. `removed: false` means no such user,
 so a retried deletion flow is not an error. No mail is sent.
 
-Your own rows follow your own foreign keys: an `auth:User` relation with
-`onDelete: Cascade` goes with the user; one with `Restrict` (or no
-`onDelete`) makes `removeUser` fail with Postgres' foreign-key error and
-remove nothing — delete those rows first. Without an FK, delete them
-yourself before or after; nothing links them.
+**Either way, your own rows follow your own foreign keys** onto
+`auth:User`: `onDelete: Cascade` deletes them with the user — what you want
+for self-service deletion, since your app runs no code in between; one with
+`Restrict` refuses the deletion and removes nothing; without an FK,
+nothing links them — delete them yourself, in your own flow, before
+calling `removeUser`. Data outside the database
+(uploaded files, other stores) is yours to clean up, so route that
+deletion through your own service and `removeUser`.
 
-A self-service "delete my account" button authenticates the user in your
-app (their session or JWT gives you `userId`), then calls `removeUser` from
-a service wired to `admin`. Better Auth's own `/api/auth/delete-user` is
-deliberately not enabled: it would delete the sign-in record behind your
-app's back, skipping your cleanup. Already-minted JWTs keep verifying until
-they expire (≤ 15 min, see Sessions & JWTs) — a route that must refuse a
-deleted user at once checks `session.getSession(token)`, which is `null`
-immediately.
-
-Wiring `admin` into the service that handles the deletion gives it the
-rest of the `admin` port too (ban, list, create). Keep that service small,
-or put the route in the back office.
+Already-minted JWTs keep verifying until they expire (≤ 15 min, see
+Sessions & JWTs) — a route that must refuse a deleted user at once checks
+`session.getSession(token)`, which is `null` immediately.
 
 ## The pack
 
@@ -277,6 +295,5 @@ at the cost of the first-party-cookie golden path.
 ## Limits (v1)
 
 No social providers (mechanism reserved, none ship) · no organizations /
-2FA / passkeys / username / phone · no secret rotation · no self-service
-`/api/auth/delete-user` (use `admin.removeUser`), no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · no secret rotation · no impersonation · admin web UI is tier 2+ (the `admin` port is tier 1) ·
 rpc bodies cap at 1 MiB.

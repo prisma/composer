@@ -123,7 +123,8 @@ origin and HTML-escaped before interpolation.
   preclude; all post-v1).
 - Secret rotation story.
 - ~~`deleteUser` on the admin port~~ — shipped 2026-09-21 as
-  `admin.removeUser`. Cascade semantics across consumer FKs resolved by
+  `admin.removeUser`, alongside Better Auth's own self-service
+  `/api/auth/delete-user` (enabled with its default checks). Cascade semantics across consumer FKs resolved by
   deferring to each FK: the consumer's own `onDelete` decides (Cascade
   follows, Restrict refuses the delete). Impersonation stays deferred
   (needs the deferred admin-path authz story).

@@ -370,12 +370,8 @@ Semantics:
   error (thrown → rpc error, nothing removed) — the app deletes its rows
   first. `false` for an unknown id. Already-minted JWTs keep verifying
   until expiry (≤ 15 min, D6), exactly like revocation. Sends no mail.
-  Better Auth's own `user.deleteUser` (`/api/auth/delete-user`) stays
-  DISABLED: a public self-service endpoint would delete the sign-in record
-  behind the app's back — no app-row cleanup, no orchestration — on every
-  app that proxies `/api/auth/*`; an app offering "delete my account"
-  authenticates the user itself and calls `removeUser` from a service
-  wired to `admin`.
+  The operator path; self-service deletion is Better Auth's own
+  `/api/auth/delete-user` (§ Better Auth configuration).
 - Deliberately absent v1: impersonation (design-notes § Deferred).
   (`createUser` was on this list until 2026-09-17, `deleteUser` until
   2026-09-21 — shipped as `removeUser`.)
@@ -591,6 +587,15 @@ Pinned option values:
 - `session: { expiresIn: 60*60*24*7, updateAge: 60*60*24 }` (Better Auth
   defaults, stated explicitly so they are pinned).
 - `rateLimit: { enabled: true }` (defaults otherwise).
+- `user: { deleteUser: { enabled: true } }` (amended 2026-09-21):
+  self-service `/api/auth/delete-user` with Better Auth's default checks —
+  a signed-in session (401 otherwise), only that session's user (no
+  `userId` parameter), and the current password or a session younger than
+  `freshAge` (default 24 h). No `beforeDelete` hook: the app runs in
+  another service, so its rows follow its own FK onto `auth:User`
+  (`Cascade` deletes them; `Restrict` refuses the deletion). No
+  confirmation email (`sendDeleteAccountVerification`) until someone needs
+  it — it would add a template to `authTemplates`.
 - No `advanced.database.generateId` override (amended 2026-07-23, D5:
   `generateId: false` DISABLES generation at 1.6.24 and breaks signup;
   omitting it yields the intent — Better Auth's default generator, 32-char
@@ -811,7 +816,7 @@ upgrade procedure: bump package → `migration plan` → deploy) · Sessions & J
 (`startLocalAuthServer`, prisma dev, reading links from capture/outbox) ·
 Embedded mode (when and trade-offs) · The SPA alternative (bearer, direct
 origin, its costs) · Limits (no social/orgs/2FA in v1, no rotation, no
-self-service deletion (`removeUser` is server-side), 1 MiB rpc body cap).
+impersonation, 1 MiB rpc body cap).
 
 ## Test plan
 
@@ -839,8 +844,7 @@ depcruise planes clean. Deployed smoke: `examples/auth` (S1),
 ## Non-goals (v1)
 
 Social OAuth (mechanism D7 reserved; no providers ship) · organizations /
-2FA / passkeys / username / phone · secret rotation · self-service
-`/api/auth/delete-user` (`removeUser` on `admin` instead) · impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
+2FA / passkeys / username / phone · secret rotation · impersonation · admin web UI (tier 2+; the `admin` port is tier 1) ·
 per-consumer contract slices on shared DBs · exposing the instance secret ·
 `iss`/`aud` validation (D15) · custom JWT claims configuration.
 

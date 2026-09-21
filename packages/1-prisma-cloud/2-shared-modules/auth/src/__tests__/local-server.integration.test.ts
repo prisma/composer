@@ -374,6 +374,60 @@ describe.skipIf(pgServer === undefined)('startLocalAuthServer — the full local
     expect(again.user.id).not.toBe(user.id);
   });
 
+  test("self-service /delete-user: signed-in only, the caller's own account, Better Auth's checks", async () => {
+    const admin = makeClient(authAdminContract, server.url);
+    const session = makeClient(authSessionContract, server.url);
+    const password = 'my-account-my-choice';
+    const { user: me } = await admin.createUser({
+      email: 'self-delete@example.com',
+      name: 'Me',
+      password,
+      emailVerified: true,
+    });
+    const { user: other } = await admin.createUser({ email: 'bystander@example.com', name: 'B' });
+
+    const fromSelf = { 'x-forwarded-for': '10.10.0.4' };
+    const signIn = await api(
+      '/api/auth/sign-in/email',
+      json({ email: me.email, password }, fromSelf),
+    );
+    expect(signIn.status).toBe(200);
+    const { token } = (await signIn.json()) as { token: string };
+    const deleteUser = (body: Record<string, unknown>, headers: Record<string, string> = {}) =>
+      api('/api/auth/delete-user', json(body, { ...fromSelf, ...headers }));
+    const asMe = { authorization: `Bearer ${token}` };
+    const refusal = async (res: Response) => ({
+      status: res.status,
+      code: ((await res.json()) as { code?: string }).code,
+    });
+
+    expect((await deleteUser({})).status).toBe(401);
+    expect(await refusal(await deleteUser({ password: 'not-my-password' }, asMe))).toEqual({
+      status: 400,
+      code: 'INVALID_PASSWORD',
+    });
+
+    // Without a password, the session must be younger than freshAge (24 h).
+    const sql = new SQL({ url: db.url, max: 1 });
+    await sql.unsafe(
+      `update "auth"."session" set "createdAt" = now() - interval '2 days' where token = $1`,
+      [token],
+    );
+    expect(await refusal(await deleteUser({}, asMe))).toEqual({
+      status: 400,
+      code: 'SESSION_EXPIRED',
+    });
+    await sql.unsafe(`update "auth"."session" set "createdAt" = now() where token = $1`, [token]);
+    await sql.end();
+
+    // A userId in the body is not a parameter: only the caller is deleted.
+    const done = await deleteUser({ userId: other.id }, asMe);
+    expect(done.status).toBe(200);
+    expect(await admin.findUser({ id: me.id })).toEqual({ user: null });
+    expect((await admin.findUser({ id: other.id })).user?.id).toBe(other.id);
+    expect(await session.getSession({ token })).toEqual({ session: null, user: null });
+  });
+
   test('/health answers without auth; unknown paths fall through to 404', async () => {
     const health = await api('/health');
     expect(health.status).toBe(200);
