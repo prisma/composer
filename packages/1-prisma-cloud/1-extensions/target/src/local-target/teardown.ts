@@ -15,16 +15,31 @@
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
 import { bucketsClient, computeClient, postgresClient } from '@internal/dev-emulators';
-import { removeLocalPaths } from '@internal/local-target';
+import { removeLocalPaths, resolvePrismaDevModulePath } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
-async function tolerateUnreachable(action: () => Promise<void>): Promise<void> {
+/**
+ * The daemon's client, or `undefined` when that daemon is not running — the
+ * daemon itself is never stopped by `--fresh` (other apps may be using it),
+ * and there is nothing to remove on one that isn't running. (Dev ensures the
+ * daemons this app uses before teardown, so this is only the unused ones.)
+ * Only that case is tolerated: a running daemon's DELETE failure propagates,
+ * rather than `--fresh` reporting success over data it did not wipe.
+ */
+function ifRunning<C>(client: () => C): C | undefined {
   try {
-    await action();
+    return client();
   } catch {
-    // Unreachable or absent daemon — the daemon itself is never stopped by
-    // `--fresh` (other apps may be using it), and there is nothing left to
-    // remove on it if it isn't running at all.
+    return undefined;
+  }
+}
+
+/** The app's `@prisma/dev`, when it has one — the postgres daemon needs it to delete persisted data. */
+function prismaDevModulePathOf(cwd: string): string | undefined {
+  try {
+    return resolvePrismaDevModulePath(cwd);
+  } catch {
+    return undefined;
   }
 }
 
@@ -32,9 +47,9 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
 
-  await tolerateUnreachable(() => postgresClient().deleteApp(app));
-  await tolerateUnreachable(() => computeClient().deleteApp(app));
-  await tolerateUnreachable(() => bucketsClient().deleteApp(app));
+  await ifRunning(postgresClient)?.deleteApp(app, prismaDevModulePathOf(cwd));
+  await ifRunning(computeClient)?.deleteApp(app);
+  await ifRunning(bucketsClient)?.deleteApp(app);
 
   removeLocalPaths([`${cwd}/${DEV_DIR}`, `${cwd}/.alchemy/state/${app}/dev`]);
 }

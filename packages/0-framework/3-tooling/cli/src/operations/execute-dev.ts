@@ -86,6 +86,18 @@ export async function executeDev(
       }
     }
 
+    // Emulators — ensure the daemons this topology's node kinds need. Before
+    // `--fresh`: a teardown can only delete an app's records and data from a
+    // daemon that is running, and it tolerates one that is not.
+    for (const [id, dev] of resolved) {
+      if (dev.emulators === undefined) continue;
+      try {
+        await dev.emulators({ graph, container: containers.get(id), devDir });
+      } catch (error) {
+        throw toStructured('DEV.EMULATOR_FAILED', error);
+      }
+    }
+
     // `--fresh`: teardown every participant's dev instance, then continue cold.
     if (input.fresh === true) {
       for (const [id, dev] of resolved) {
@@ -105,16 +117,6 @@ export async function executeDev(
         await dev.preflight({ graph, container: containers.get(id), stage: undefined });
       } catch (error) {
         throw toStructured('DEV.PREFLIGHT_FAILED', error);
-      }
-    }
-
-    // Emulators — ensure the daemons this topology's node kinds need.
-    for (const [id, dev] of resolved) {
-      if (dev.emulators === undefined) continue;
-      try {
-        await dev.emulators({ graph, container: containers.get(id), devDir });
-      } catch (error) {
-        throw toStructured('DEV.EMULATOR_FAILED', error);
       }
     }
   } catch (error) {
