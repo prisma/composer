@@ -34,10 +34,10 @@ function ifRunning<C>(client: () => C): C | undefined {
   }
 }
 
-/** The app's `@prisma/dev`, when it has one — the postgres daemon needs it to delete persisted data. */
-function prismaDevModulePathOf(cwd: string): string | undefined {
+/** Composer's `@prisma/dev`, when it resolves — the postgres daemon needs it to delete persisted data. */
+function prismaDevModulePath(): string | undefined {
   try {
-    return resolvePrismaDevModulePath(cwd);
+    return resolvePrismaDevModulePath();
   } catch {
     return undefined;
   }
@@ -47,7 +47,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
 
-  await ifRunning(postgresClient)?.deleteApp(app, prismaDevModulePathOf(cwd));
+  await ifRunning(postgresClient)?.deleteApp(app, prismaDevModulePath());
   await ifRunning(computeClient)?.deleteApp(app);
   await ifRunning(bucketsClient)?.deleteApp(app);
 
