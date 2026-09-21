@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -18,6 +18,17 @@ function makeAppRoot(): string {
 
 function moduleUrl(root: string): string {
   return pathToFileURL(path.join(root, 'src', 'service.ts')).href;
+}
+
+/** A link's target relative to its own directory, POSIX-separated. Windows
+ * keeps a directory link as a junction, which reads back as an absolute path,
+ * so the raw `readlink` string is not comparable across platforms. */
+function linkTarget(linkPath: string): string {
+  const linkDir = path.dirname(linkPath);
+  return path
+    .relative(linkDir, path.resolve(linkDir, fs.readlinkSync(linkPath)))
+    .split(path.sep)
+    .join('/');
 }
 
 /**
@@ -113,9 +124,7 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(
       true,
     );
-    expect(fs.readlinkSync(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe(
-      'next',
-    );
+    expect(linkTarget(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe('next');
     // The documented copy: static + public placed beside the app's server.js.
     expect(fs.existsSync(path.join(bundleApp, '.next', 'static', 'chunk.js'))).toBe(true);
     expect(fs.existsSync(path.join(bundleApp, 'public', 'favicon.ico'))).toBe(true);
@@ -167,12 +176,9 @@ describe('assemble()', () => {
       'node_modules',
       '.pnpm',
     );
-    expect(
-      fs
-        .readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))
-        .split(path.sep)
-        .join('/'),
-    ).toBe('../semver@6.3.1/node_modules/semver');
+    expect(linkTarget(path.join(bundleStore, 'node_modules', 'semver'))).toBe(
+      '../semver@6.3.1/node_modules/semver',
+    );
     expect(
       fs.readFileSync(
         path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),
@@ -269,4 +275,52 @@ describe('assemble()', () => {
 
     expect(fs.existsSync(path.join(result.dir, result.entry))).toBe(true);
   }, 20_000);
+
+  test.skipIf(process.platform !== 'win32')(
+    'links the bundle with junctions on Windows, never a directory symlink',
+    async () => {
+      // A default Windows user cannot create a symbolic link (EPERM without
+      // SeCreateSymbolicLinkPrivilege); a junction needs no privilege. The
+      // omitted-target link is a junction too, so it records an absolute path
+      // into the standalone tree, as pnpm's links do on Windows.
+      const root = makeAppRoot();
+      writeNextBuild(root);
+      const standalone = path.join(root, '.next', 'standalone');
+      const storeRelative = path.join('node_modules', '.pnpm', 'semver@6.3.1', 'node_modules');
+      const source = path.join(root, storeRelative, 'semver');
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+      const linkDir = path.join(standalone, 'node_modules', '.pnpm', 'node_modules');
+      fs.mkdirSync(linkDir, { recursive: true });
+      fs.symlinkSync(
+        path.join(standalone, storeRelative, 'semver'),
+        path.join(linkDir, 'semver'),
+        'junction',
+      );
+
+      const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+      tmpDirs.push(cwd);
+      const symlink = spyOn(fs.promises, 'symlink');
+      let types: unknown[];
+      try {
+        await assemble({
+          address: 'storefront.web',
+          cwd,
+          build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+        });
+        types = symlink.mock.calls.map((call) => call[2]);
+      } finally {
+        symlink.mockRestore();
+      }
+
+      expect(types.length).toBeGreaterThan(0);
+      expect(types.filter((type) => type !== 'junction')).toEqual([]);
+      const bundle = path.join(cwd, '.prisma-composer', 'artifacts', 'storefront.web', 'bundle');
+      const staged = path.join(bundle, 'node_modules', '.pnpm', 'node_modules', 'semver');
+      expect(linkTarget(path.join(bundle, 'node_modules', 'next-linked'))).toBe('next');
+      expect(linkTarget(staged)).toBe('../semver@6.3.1/node_modules/semver');
+      expect(fs.readFileSync(path.join(staged, 'index.js'), 'utf8')).toContain('6.3.1');
+    },
+    20_000,
+  );
 });

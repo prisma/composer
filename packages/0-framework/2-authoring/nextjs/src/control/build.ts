@@ -144,8 +144,10 @@ async function collectSymlinks(root: string): Promise<string[]> {
 async function missingLinkTargets(bundleDir: string): Promise<string[]> {
   const missing: string[] = [];
   for (const linkPath of await collectSymlinks(bundleDir)) {
+    // A relative target, or an absolute one: Windows keeps a directory link as
+    // a junction, which always records an absolute path. Either way only a
+    // target inside the bundle is a repair this staging may make.
     const rawTarget = await fs.promises.readlink(linkPath);
-    if (path.isAbsolute(rawTarget)) continue;
     const target = path.resolve(path.dirname(linkPath), rawTarget);
     if (!isWithin(bundleDir, target) || (await lstatIfPresent(target)) !== undefined) continue;
     if (await hasSymlinkAncestor(bundleDir, target)) continue;
