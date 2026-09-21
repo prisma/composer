@@ -158,7 +158,6 @@ export function createAuthHandlers(store: AuthStore): AuthHandlers {
       return { user: await store.setEmailVerified(userId, emailVerified) };
     },
 
-    // Idempotent like the revocation ops, so a deletion flow can retry.
     async removeUser({ userId }) {
       return { removed: await store.removeUser(userId) };
     },

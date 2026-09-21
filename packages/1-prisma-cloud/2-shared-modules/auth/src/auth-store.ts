@@ -83,11 +83,7 @@ export interface AuthStore {
   createUser(user: NewUser): Promise<UserRecord | null>;
   /** Sets `emailVerified`; `null` when absent. */
   setEmailVerified(userId: string, emailVerified: boolean): Promise<UserRecord | null>;
-  /**
-   * Deletes the user row; sessions and accounts go with it by FK cascade.
-   * Pending verification rows are left to expire — Better Auth's own
-   * deletions do the same. `false` = no such user (idempotent).
-   */
+  /** DELETE the user row (sessions and accounts cascade); `false` = no such user (idempotent). */
   removeUser(userId: string): Promise<boolean>;
 }
 

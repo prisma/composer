@@ -5,9 +5,7 @@
  *
  *   /admin/find-user               → POST { email } → findUser
  *   /admin/revoke-user-sessions    → POST { userId } → revokeUserSessions
- *   /admin/remove-user             → POST { userId } → removeUser (account
- *                                     deletion: the user row, its sessions,
- *                                     accounts, and pending verifications)
+ *   /admin/remove-user             → POST { userId } → removeUser
  *   /admin/find-sent-email         → POST { to, templateId } → the outbox
  *                                     port's listEmails, most recent first —
  *                                     the smoke script's own route onto the

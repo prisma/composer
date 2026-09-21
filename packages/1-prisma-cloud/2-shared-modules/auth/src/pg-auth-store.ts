@@ -266,12 +266,6 @@ class PgAuthStore implements AuthStore {
     return row === undefined ? null : toUserRecord(row);
   }
 
-  /**
-   * Sessions and accounts cascade off the user row (pack FKs). A consumer FK
-   * onto auth:User decides for itself: Cascade takes the app's rows along;
-   * Restrict/NoAction fails the delete with Postgres' own error naming the
-   * constraint.
-   */
   async removeUser(userId: string): Promise<boolean> {
     const rows = await this.sql.unsafe<{ id: string }[]>(
       `delete from ${USER_TABLE} where id = $1 returning id`,

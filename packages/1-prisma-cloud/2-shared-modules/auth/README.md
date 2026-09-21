@@ -138,16 +138,12 @@ either way.
 
 ## Deleting accounts
 
-Two paths: users delete themselves through Better Auth's own endpoint;
-operators delete through this module's `admin` port (a database-direct
-rpc, not Better Auth's admin-session API).
-
-**A user deletes their own account** ("delete my account") through
-Better Auth's `POST /api/auth/delete-user` — on by default, reached through
-`authProxy()` like the rest of `/api/auth/*`, no extra wiring:
+A signed-in user deletes their own account through Better Auth's
+`POST /api/auth/delete-user`, reached through `authProxy()` like the rest
+of `/api/auth/*`:
 
 ```ts
-// browser, signed in (cookie through the proxy); or `Authorization: Bearer <session token>`
+// browser, signed in (cookie through the proxy)
 await fetch('/api/auth/delete-user', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -155,44 +151,32 @@ await fetch('/api/auth/delete-user', {
 });
 ```
 
-It needs a signed-in session (`401` otherwise) and deletes only that
-session's user — there is no `userId` parameter. It also demands either the
-current `password` (`400 INVALID_PASSWORD` when wrong) or a session younger
-than 24 hours (`400 SESSION_EXPIRED` otherwise — sign in again; magic-link
-users have no password, so this is their path). It deletes the user row,
-its sessions, and its accounts, and clears the session cookie.
+It needs a signed-in session (`401` otherwise), deletes only that
+session's user (there is no `userId` parameter), and demands the current
+`password` (`400 INVALID_PASSWORD`) or a session younger than 24 hours
+(`400 SESSION_EXPIRED` — sign in again; magic-link users have no password).
 
-**An operator deletes an account** (an erasure request by email, support
-tooling, or when your app must clean up before the sign-in record goes)
-with one `admin` call, server to server:
+An operator deletes an account through the `admin` port, server to server
+— this module's database-direct rpc, not Better Auth's admin-session API:
 
 ```ts
 // in a service wired to `identity.admin`
 const { removed } = await admin.removeUser({ userId });
 ```
 
-It deletes the `user` row (email, name, timestamps); its sessions and
-accounts (password hash, provider tokens) go with it. `removed: false`
-means no such user, so a retried deletion flow is not an error. No mail is
-sent.
+`removed: false` means no such user, so a retried deletion is not an
+error. No mail is sent.
 
-Neither path touches pending verification tokens (an unused magic link or
-password reset). They are short-lived — 5 minutes and 1 hour — and Better
-Auth deletes every expired one whenever it next checks a token; a leftover
-one cannot sign anyone into the deleted account.
-
-**Either way, your own rows follow your own foreign keys** onto
-`auth:User`: `onDelete: Cascade` deletes them with the user — what you want
-for self-service deletion, since your app runs no code in between; one with
-`Restrict` refuses the deletion and removes nothing; without an FK,
-nothing links them — delete them yourself, in your own flow, before
-calling `removeUser`. Data outside the database
-(uploaded files, other stores) is yours to clean up, so route that
-deletion through your own service and `removeUser`.
-
-Already-minted JWTs keep verifying until they expire (≤ 15 min, see
-Sessions & JWTs) — a route that must refuse a deleted user at once checks
-`session.getSession(token)`, which is `null` immediately.
+Both paths delete the `user` row, its sessions, and its accounts. Pending
+verification tokens (an unused magic link or reset) are left to expire —
+Better Auth clears expired ones itself. Your own rows follow your foreign
+key onto `auth:User`: `onDelete: Cascade` deletes them with the user,
+`Restrict` refuses the deletion, and without an FK nothing links them.
+Data outside the database (uploaded files, other stores) needs your own
+cleanup first — route that deletion through your service and
+`removeUser`. Already-minted JWTs keep verifying until they expire
+(≤ 15 min, see Sessions & JWTs); `session.getSession(token)` is `null`
+immediately.
 
 ## The pack
 
