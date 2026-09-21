@@ -12,9 +12,10 @@ Three ports, one service behind them — least privilege is a WIRING choice:
 
 - **`api`** (kind `'auth-api'`) — the public Better Auth surface
   (`/api/auth/*`): signup, login, logout, self-service account deletion,
-  JWKS, token minting. Public and
-  unauthenticated by design — it IS the authentication; Better Auth rate
-  limits it. Two consumer factories bind to it:
+  JWKS, token minting. Publicly reachable, with no service key (unlike the
+  rpc ports) — it IS the authentication: Better Auth authenticates each
+  request itself (logout and account deletion need a signed-in session)
+  and rate limits it. Two consumer factories bind to it:
   - `authApi()` → `{ url, fetch }` — what `authProxy()` consumes.
   - `jwtVerifier()` → `verify(token)` — stateless JWT verification over the
     instance's JWKS (jose remote JWKS, 30 s clock tolerance). Resolves
@@ -137,7 +138,9 @@ either way.
 
 ## Deleting accounts
 
-Two paths, each Better Auth's own mechanism.
+Two paths: users delete themselves through Better Auth's own endpoint;
+operators delete through this module's `admin` port (a database-direct
+rpc, not Better Auth's admin-session API).
 
 **A user deletes their own account** ("delete my account") through
 Better Auth's `POST /api/auth/delete-user` — on by default, reached through
