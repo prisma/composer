@@ -3,9 +3,14 @@ import { createOpsApp } from './app.ts';
 import service from './service.ts';
 
 const { admin, outbox } = service.load();
+const { operatorToken } = service.input();
 const port = service.port();
 
 process.on('uncaughtException', (err) => console.error('uncaughtException', err));
 process.on('unhandledRejection', (err) => console.error('unhandledRejection', err));
 
-Bun.serve({ port, hostname: '0.0.0.0', fetch: createOpsApp({ admin, outbox }) });
+Bun.serve({
+  port,
+  hostname: '0.0.0.0',
+  fetch: createOpsApp({ admin, outbox }, operatorToken.expose()),
+});

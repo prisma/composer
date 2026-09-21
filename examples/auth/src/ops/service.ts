@@ -4,16 +4,21 @@
  * holds `send`). The outbox wiring backs a smoke-only endpoint that reads a
  * sent verification/magic-link email back through the app's OWN route,
  * never the module's outbox port directly (least-privilege by wiring,
- * mirroring the email example's mailer app).
+ * mirroring the email example's mailer app). The service is publicly
+ * reachable, so every `/admin/*` route demands `operatorToken` as a bearer.
  */
+
+import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
 import { rpc } from '@prisma/composer/service-rpc';
 import { compute } from '@prisma/composer-prisma-cloud';
 import { authAdminContract } from '@prisma/composer-prisma-cloud/auth';
 import { emailOutboxContract } from '@prisma/composer-prisma-cloud/email';
+import { type } from 'arktype';
 
 export default compute({
   name: 'ops',
   deps: { admin: rpc(authAdminContract), outbox: rpc(emailOutboxContract) },
+  input: type({ operatorToken: secretString() }),
   build: node({ module: import.meta.url, entry: '../../dist/ops/server.mjs' }),
 });

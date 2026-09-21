@@ -15,6 +15,7 @@
  * module-depends-on-module proof this example exists to make.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { envSecret } from '@prisma/composer-prisma-cloud';
 import { authTemplates } from '@prisma/composer-prisma-cloud/auth';
 import type { LocalAuthServer } from '@prisma/composer-prisma-cloud/auth/testing';
 import { startLocalAuthServer } from '@prisma/composer-prisma-cloud/auth/testing';
@@ -43,6 +44,7 @@ if (pgServer === undefined) {
 
 const EMAIL = 'local@example.com';
 const PASSWORD = 'correct-horse-battery';
+const OPERATOR_TOKEN = 'local-operator-token';
 const API_PORT = 4520;
 const OPS_PORT = 4521;
 
@@ -61,9 +63,11 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
+  const opsJson = (body: unknown) => json(body, { authorization: `Bearer ${OPERATOR_TOKEN}` });
 
   beforeAll(async () => {
     db = await createTestDatabase(pgServer.url);
+    process.env['AUTH_OPS_TOKEN'] = OPERATOR_TOKEN;
     mailServer = await startLocalEmailServer();
     const email = await emailSender(authTemplates).connection.hydrate({ url: mailServer.url });
     auth = await startLocalAuthServer({ databaseUrl: db.url, email });
@@ -81,6 +85,7 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     opsApp = await bootstrapService(opsService, {
       service: { port: OPS_PORT },
       inputs: { admin: { url: auth.url }, outbox: { url: mailServer.url } },
+      input: { operatorToken: envSecret('AUTH_OPS_TOKEN') },
     });
   });
   afterAll(async () => {
@@ -112,7 +117,7 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     const sentEmail = await call(
       opsApp,
       '/admin/find-sent-email',
-      json({ to: EMAIL, templateId: 'verification' }),
+      opsJson({ to: EMAIL, templateId: 'verification' }),
     );
     expect(sentEmail.status).toBe(200);
     const link = ((await sentEmail.json()) as { text: string | null }).text;
@@ -142,10 +147,10 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     const session = await call(apiApp, '/session', json({ token: sessionToken }));
     expect(((await session.json()) as { user: { id: string } | null }).user?.id).toBe(userId);
 
-    const found = await call(opsApp, '/admin/find-user', json({ email: EMAIL.toUpperCase() }));
+    const found = await call(opsApp, '/admin/find-user', opsJson({ email: EMAIL.toUpperCase() }));
     expect(((await found.json()) as { user: { id: string } | null }).user?.id).toBe(userId);
 
-    const revoked = await call(opsApp, '/admin/revoke-user-sessions', json({ userId }));
+    const revoked = await call(opsApp, '/admin/revoke-user-sessions', opsJson({ userId }));
     expect(((await revoked.json()) as { revokedCount: number }).revokedCount).toBeGreaterThan(0);
 
     const gone = await call(apiApp, '/session', json({ token: sessionToken }));
@@ -156,9 +161,9 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
     expect(stillMe.status).toBe(200);
 
     // Account deletion: the sign-in record is gone and the address unknown.
-    const removed = await call(opsApp, '/admin/remove-user', json({ userId }));
+    const removed = await call(opsApp, '/admin/remove-user', opsJson({ userId }));
     expect(await removed.json()).toEqual({ removed: true });
-    const lookup = await call(opsApp, '/admin/find-user', json({ email: EMAIL }));
+    const lookup = await call(opsApp, '/admin/find-user', opsJson({ email: EMAIL }));
     expect(await lookup.json()).toEqual({ user: null });
     const relogin = await call(
       apiApp,
@@ -166,6 +171,17 @@ describe.skipIf(pgServer === undefined)('the example wiring against startLocalAu
       json({ email: EMAIL, password: PASSWORD }),
     );
     expect(relogin.status).toBe(401);
+  });
+
+  test('the ops admin routes refuse a caller without the operator token', async () => {
+    const anonymous = await call(opsApp, '/admin/remove-user', json({ userId: 'anyone' }));
+    expect(anonymous.status).toBe(401);
+    const wrong = await call(
+      opsApp,
+      '/admin/find-user',
+      json({ email: EMAIL }, { authorization: 'Bearer not-the-token' }),
+    );
+    expect(wrong.status).toBe(401);
   });
 
   test('/me rejects a missing or garbage bearer', async () => {
