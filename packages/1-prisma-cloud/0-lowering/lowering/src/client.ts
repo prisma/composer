@@ -4,7 +4,7 @@ import * as Context from 'effect/Context';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import { managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
+import { deploySourceHeaders, managementApiBaseUrl, PrismaCredentials } from './credentials.ts';
 
 export type ManagementApiClient = ReturnType<typeof createManagementApiClient>;
 
@@ -31,6 +31,10 @@ export const layer = (options?: {
     Effect.gen(function* () {
       const { token } = yield* PrismaCredentials;
       const baseUrl = options?.apiOrigin ?? (yield* managementApiBaseUrl());
-      return createManagementApiClient({ token: Redacted.value(token), baseUrl });
+      return createManagementApiClient({
+        token: Redacted.value(token),
+        baseUrl,
+        headers: deploySourceHeaders(),
+      });
     }),
   );

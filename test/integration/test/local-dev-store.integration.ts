@@ -603,7 +603,7 @@ async function main(): Promise<void> {
     // ——— Criterion 3 (write half): a row through the real local Postgres URL ———
     const dbUrl = await readCatalogDbUrl();
     await withSql(dbUrl, async (sql) => {
-      // prisma-next's migration DDL folds the table name and single-word
+      // Prisma ORM's migration DDL folds the table name and single-word
       // columns to lowercase (unquoted identifiers); "priceCents" alone
       // stays quoted, mixed-case.
       await sql`insert into product (id, name, description, "priceCents")
@@ -671,7 +671,7 @@ async function main(): Promise<void> {
     // --fresh removes the app's postgres-main-hosted servers and their
     // persisted data (DELETE /apps/<app> on the daemon, runDevTeardown) and
     // recreates them on next provision — migrations reapply as part of THIS
-    // SAME converge (PnMigration runs on every converge), so the "product"
+    // SAME converge (OrmMigration runs on every converge), so the "product"
     // table exists again by the time the front door prints; the proof is
     // that it's freshly migrated and EMPTY — the proving row from before
     // --fresh is gone.

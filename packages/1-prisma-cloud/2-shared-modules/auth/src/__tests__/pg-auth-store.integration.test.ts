@@ -4,12 +4,12 @@
  * per-op SQL semantics
  * — session expiry and the banned-owner null, case-insensitive email lookup,
  * the effective-ban filter both ways (including a lapsed ban), ILIKE
- * escaping, keyset pagination edges, revocation idempotency, and
- * ban-implies-revoke atomicity.
+ * escaping, keyset pagination edges, revocation idempotency,
+ * ban-implies-revoke atomicity, and the rows `createUser` writes.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { SQL } from 'bun';
-import type { AuthStore } from '../auth-store.ts';
+import type { AuthStore, NewUser } from '../auth-store.ts';
 import { ensureLocalAuthSchema } from '../execution/local-schema.ts';
 import { createPgAuthStore } from '../pg-auth-store.ts';
 import {
@@ -292,6 +292,77 @@ describe.skipIf(pgServer === undefined)('PgAuthStore', () => {
       await seedSession('s-ra-2', 'u-revoke-all');
       expect(await store.revokeUserSessions('u-revoke-all')).toBe(2);
       expect(await store.revokeUserSessions('u-revoke-all')).toBe(0);
+    });
+  });
+
+  describe('createUser / setEmailVerified', () => {
+    const newUser = (id: string, over: Partial<NewUser> = {}): NewUser => ({
+      id,
+      email: `${id}@example.com`,
+      name: `Name of ${id}`,
+      emailVerified: false,
+      credential: null,
+      ...over,
+    });
+
+    test('writes the user row and a credential account row carrying the hash, in one go', async () => {
+      const created = await store.createUser(
+        newUser('u-created', {
+          emailVerified: true,
+          credential: { id: 'acct-created', passwordHash: 'hash-value' },
+        }),
+      );
+      expect(created?.id).toBe('u-created');
+      expect(created?.email).toBe('u-created@example.com');
+      expect(created?.emailVerified).toBe(true);
+      expect(created?.banned).toBe(false);
+
+      const accounts = await sql.unsafe<
+        { id: string; accountId: string; providerId: string; userId: string; password: string }[]
+      >(`select * from "auth"."account" where "userId" = $1`, ['u-created']);
+      expect(accounts).toHaveLength(1);
+      expect(accounts[0]).toMatchObject({
+        id: 'acct-created',
+        accountId: 'u-created',
+        providerId: 'credential',
+        userId: 'u-created',
+        password: 'hash-value',
+      });
+    });
+
+    test('no credential → a user row and no account row', async () => {
+      const created = await store.createUser(newUser('u-passwordless'));
+      expect(created?.emailVerified).toBe(false);
+      const accounts = await sql.unsafe<{ id: string }[]>(
+        `select id from "auth"."account" where "userId" = $1`,
+        ['u-passwordless'],
+      );
+      expect(accounts).toEqual([]);
+    });
+
+    test('a case-insensitive duplicate email → null, and nothing is written', async () => {
+      await seedUser('u-taken', { email: 'Taken@Example.com' });
+      const dup = await store.createUser(
+        newUser('u-dup', {
+          email: 'taken@example.com',
+          credential: { id: 'acct-dup', passwordHash: 'h' },
+        }),
+      );
+      expect(dup).toBeNull();
+      expect(await store.getUser({ id: 'u-dup' })).toBeNull();
+      const accounts = await sql.unsafe<{ id: string }[]>(
+        `select id from "auth"."account" where id = $1`,
+        ['acct-dup'],
+      );
+      expect(accounts).toEqual([]);
+    });
+
+    test('setEmailVerified flips the flag both ways; null for an unknown id', async () => {
+      await store.createUser(newUser('u-verify'));
+      expect((await store.setEmailVerified('u-verify', true))?.emailVerified).toBe(true);
+      expect((await store.getUser({ id: 'u-verify' }))?.emailVerified).toBe(true);
+      expect((await store.setEmailVerified('u-verify', false))?.emailVerified).toBe(false);
+      expect(await store.setEmailVerified('u-nobody', true)).toBeNull();
     });
   });
 

@@ -42,7 +42,7 @@ for an append: a 404 is generated INSTEAD OF a write at every layer, so it
 proves nothing was applied.
 
 For dynamic stream names (e.g. per-tenant streams), call `durableStreams()`
-with no contract — the `postgres()` parity, same lifecycle ownership, the
+with no contract — the `rawPostgres()` parity, same lifecycle ownership, the
 name is data rather than a wiring-time declaration:
 
 ```ts

@@ -2,12 +2,12 @@
 // and extension) the way a user service module would, with real value usage so
 // nothing tree-shakes away.
 import { configOf, Load, module } from '@internal/core';
-import { compute, postgres } from '@internal/prisma-cloud';
+import { compute, rawPostgres } from '@internal/prisma-cloud';
 
 const app = compute({
   name: 'test-service',
   deps: {
-    db: postgres(),
+    db: rawPostgres(),
   },
   build: {
     extension: '@prisma/composer/node',
@@ -19,7 +19,7 @@ const app = compute({
 
 export const graph = Load(
   module('probe-module', {}, ({ provision }) => {
-    const db = provision(postgres({ name: 'db' }), { id: 'db' });
+    const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
     provision(app, { id: 'app', deps: { db } });
     return {};
   }),

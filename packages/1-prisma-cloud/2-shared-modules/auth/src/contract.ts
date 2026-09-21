@@ -8,9 +8,9 @@
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
 import { requiredPackHead } from '@internal/prisma-cloud';
-// Type-only, and type-only it must stay: the value surface of ./prisma-next
+// Type-only, and type-only it must stay: the value surface of ./orm
 // carries pg (node: imports), which this authoring barrel must never bundle.
-import type { PnPostgresContract } from '@internal/prisma-cloud/prisma-next';
+import type { PostgresContract } from '@internal/prisma-cloud/orm';
 import { contract, rpc } from '@internal/service-rpc';
 import { type } from 'arktype';
 import { createRemoteJWKSet, errors, jwtVerify } from 'jose';
@@ -42,6 +42,13 @@ export const sessionRecord = type({
 
 export type UserRecord = typeof userRecord.infer;
 export type SessionRecord = typeof sessionRecord.infer;
+
+/**
+ * Whether the browser surface accepts self-service sign-up. `'closed'` makes
+ * Better Auth refuse `/sign-up/email` and a magic link for an unknown email;
+ * accounts then come only from `admin.createUser`.
+ */
+export type SignUpMode = 'open' | 'closed';
 
 // ——— Port `api` — the public Better Auth surface ———
 
@@ -223,6 +230,21 @@ export const authAdminContract = contract({
     input: type({ userId: 'string' }),
     output: type({ user: userRecord }),
   }),
+  createUser: rpc({
+    input: type({
+      // The two checks Better Auth's own sign-up applies, enforced here so
+      // a caller mistake is a 400 at the rpc boundary, not a retried 500.
+      email: 'string.email',
+      name: 'string',
+      'password?': '8 <= string <= 128',
+      'emailVerified?': 'boolean',
+    }),
+    output: type({ user: userRecord }),
+  }),
+  setEmailVerified: rpc({
+    input: type({ userId: 'string', emailVerified: 'boolean' }),
+    output: type({ user: userRecord.or('null') }),
+  }),
 });
 
 // ——— Db dependency — the service's claim on a pack-carrying database ———
@@ -232,9 +254,9 @@ export const authAdminContract = contract({
  * at the installed package's head. Hydrates to the bare `{ url }` — Better
  * Auth builds its own pool; no PN client.
  */
-export function authDb(): DependencyEnd<{ url: string }, PnPostgresContract> {
+export function authDb(): DependencyEnd<{ url: string }, PostgresContract> {
   return dependency({
-    type: 'prisma-next',
+    type: 'postgres',
     connection: {
       params: { url: string() },
       hydrate: ({ url }) => ({ url }),

@@ -61,7 +61,7 @@ its `spec.md` and `plan.md`; tracker issues TML-2998…3005.
 ## Environment footguns
 
 - **Nested checkouts are NOT part of this repo**: `datahub/`, and any of
-  `ignite/`, `pdp-control-plane/`, `prisma-next/` if present. Never edit,
+  `ignite/`, `pdp-control-plane/`, `prisma/orm/` if present. Never edit,
   stage, or scan them (gitignored + biome-excluded, as are `.agents/`,
   `.claude/`).
 - **Deploy credentials**: untracked `.env` at the main checkout root

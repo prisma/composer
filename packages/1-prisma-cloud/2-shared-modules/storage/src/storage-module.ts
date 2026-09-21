@@ -7,7 +7,7 @@
  */
 import type { ModuleNode } from '@internal/core';
 import { module } from '@internal/core';
-import { postgres, s3Credentials } from '@internal/prisma-cloud';
+import { rawPostgres, s3Credentials } from '@internal/prisma-cloud';
 import { s3Contract } from './contract.ts';
 import { storageService } from './storage-service.ts';
 
@@ -16,7 +16,7 @@ export function storage(opts?: {
   bucket?: string;
 }): ModuleNode<Record<never, never>, { store: typeof s3Contract }, Record<never, never>> {
   return module(opts?.name ?? 'storage', { expose: { store: s3Contract } }, ({ provision }) => {
-    const db = provision(postgres({ name: 'db' }), { id: 'db' });
+    const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
     const credentials = provision(s3Credentials({ name: 'credentials' }), { id: 'credentials' });
     const service = provision(storageService(), {
       id: 'service',

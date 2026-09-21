@@ -42,7 +42,9 @@ describe('extractComputeArtifact', () => {
       'nested/asset.txt': 'hello world',
       'nested/run.sh': '#!/bin/sh\nexit 0\n',
     });
-    fs.chmodSync(path.join(bundleDir, 'nested', 'run.sh'), 0o755);
+    const executable = path.join(bundleDir, 'nested', 'run.sh');
+    fs.chmodSync(executable, 0o755);
+    const sourceExecutable = fs.statSync(executable).mode & 0o100;
     fs.symlinkSync('asset.txt', path.join(bundleDir, 'nested', 'asset-link.txt'));
     const artifact = packageComputeArtifact({
       id: 'auth',
@@ -60,7 +62,7 @@ describe('extractComputeArtifact', () => {
     expect(extracted['nested/asset.txt']).toBe('hello world');
     expect(extracted['nested/asset-link.txt']).toBe('hello world');
     expect(fs.readlinkSync(path.join(destDir, 'nested', 'asset-link.txt'))).toBe('asset.txt');
-    expect(fs.statSync(path.join(destDir, 'nested', 'run.sh')).mode & 0o100).toBe(0o100);
+    expect(fs.statSync(path.join(destDir, 'nested', 'run.sh')).mode & 0o100).toBe(sourceExecutable);
     expect(extracted['bootstrap.js']).toContain(
       'await main.run(boot.address, () => import(boot.appEntrypoint));',
     );
@@ -161,7 +163,12 @@ describe('extractComputeArtifact', () => {
 
     extractComputeArtifact(artifact.path, destDir);
 
-    expect(fs.readlinkSync(path.join(destDir, 'node_modules', 'next'))).toBe(longTarget);
+    expect(
+      fs
+        .readlinkSync(path.join(destDir, 'node_modules', 'next'))
+        .split(path.sep)
+        .join('/'),
+    ).toBe(longTarget);
     expect(fs.readFileSync(path.join(destDir, 'node_modules', 'next', 'index.js'), 'utf8')).toBe(
       '// real',
     );

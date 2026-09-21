@@ -5,14 +5,14 @@
  * eat the cold-start reject.
  *
  * The DB `url` is a lazy `Output` at lowering time, so warming must be an
- * apply-time tracked resource (same pattern as `PnMigration`): its `reconcile`
+ * apply-time tracked resource (same pattern as `OrmMigration`): its `reconcile`
  * receives the RESOLVED url and connects with `withConnectionRetry` + `select 1`,
  * riding out the cold-start. Shared by BOTH the bare-`postgres` and the
- * `prisma-next` lowerings; keyed on the connection `url`, so an unchanged
+ * `postgres` lowerings; keyed on the connection `url`, so an unchanged
  * redeploy is a no-op (warming is idempotent anyway).
  *
  * Deploy-time only: imports `pg` directly + `alchemy`. Imported by `control.ts`
- * and tests, never by `index.ts` / the `./prisma-next` authoring entry — the
+ * and tests, never by `index.ts` / the `./orm` authoring entry — the
  * isolation invariants hold.
  */
 import { Resource } from 'alchemy';

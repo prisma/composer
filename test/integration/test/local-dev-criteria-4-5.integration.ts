@@ -354,7 +354,7 @@ async function main(): Promise<void> {
     }
     // Full app-scoped teardown through the CLI's own --fresh, exactly as
     // local-dev-store.integration.ts does — removes the postgres-main-hosted
-    // server this fixture's `postgres({ name: 'appdb' })` created, the
+    // server this fixture's `rawPostgres({ name: 'appdb' })` created, the
     // emulators' app-scoped records, and the local state dir, never the
     // machine-global daemons. `--fresh` teardown runs BEFORE that session's
     // own (mandatory) converge, so a direct `dev.teardown` afterwards removes

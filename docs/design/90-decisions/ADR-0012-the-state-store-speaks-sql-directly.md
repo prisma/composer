@@ -1,11 +1,11 @@
-# ADR-0012: The state store speaks SQL directly; Prisma Next adoption is deferred
+# ADR-0012: The state store speaks SQL directly; Prisma ORM adoption is deferred
 
-> Closed as obsolete by [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md), via this record's own pick-up trigger: the platform-side state API landed, the SQL store is gone, and composer speaks the API through Alchemy's stock HTTP client — there is no store data layer left to adopt Prisma Next for.
+> Closed as obsolete by [ADR-0045](ADR-0045-deploy-state-lives-behind-the-platform-state-api.md), via this record's own pick-up trigger: the platform-side state API landed, the SQL store is gone, and composer speaks the API through Alchemy's stock HTTP client — there is no store data layer left to adopt Prisma ORM for.
 
 ## Decision
 
 The hosted state store's data access is hand-written SQL over a plain Postgres
-driver (postgres.js) — not Prisma Next. Adopting Prisma Next for the store is
+driver (postgres.js) — not Prisma ORM. Adopting Prisma ORM for the store is
 deferred, with the pick-up triggers recorded below, not rejected.
 
 ## Reasoning
@@ -26,7 +26,7 @@ already typed at the boundary, because the store implements the engine's
 `StateService` interface; no caller ever sees a row shape. That is the context
 in which an ORM's value proposition has to argue.
 
-Feasibility is not the question — Prisma Next fits this shape today. Its
+Feasibility is not the question — Prisma ORM fits this shape today. Its
 control API applies a contract's schema programmatically (`dbUpdate` with
 apply mode reconciles the database and writes its own marker, refusing
 destructive plans by default), which matches the store's bootstrap-at-runtime
@@ -56,7 +56,7 @@ decision flips when the balance does.
 **Pick-up triggers.** Revisit adoption when any of these holds:
 
 - the store's schema or queries grow past trivial key-value shapes;
-- exercising Prisma Next from inside a library (framework dogfooding) becomes
+- exercising Prisma ORM from inside a library (framework dogfooding) becomes
   worth the re-proof cost on its own;
 - the platform-side state API lands — in which case this store shrinks to a
   client or disappears, and this record closes as obsolete rather than
@@ -67,14 +67,14 @@ decision flips when the balance does.
 - The store's data layer stays a few hundred lines of reviewable SQL with no
   framework dependency; its test suite runs against a real Postgres.
 - The lock's proven driver-specific behavior remains undisturbed.
-- The store does not dogfood Prisma Next — a deliberate, recorded trade, not
+- The store does not dogfood Prisma ORM — a deliberate, recorded trade, not
   an oversight.
 - The schema-creation code carries a pointer to this record so the deferral
   stays discoverable at the site it governs.
 
 ## Alternatives considered
 
-- **Adopt Prisma Next now** — feasible (control API, explicit-DSN runtime,
+- **Adopt Prisma ORM now** — feasible (control API, explicit-DSN runtime,
   committable artifacts) and attractive as dogfooding, but the cost lands in
   the lock port and the re-proof of live-proven code, against thin gain on
   trivial CRUD. Deferred on that balance.

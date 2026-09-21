@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Domain-vocabulary guardrail (ported from prisma-next's
+ * Domain-vocabulary guardrail (ported from prisma/orm's
  * lint-framework-target-imports.mjs). Fails if a forbidden vocabulary word
  * appears anywhere in a domain's shipped source — including comments and
  * naming, not just import specifiers.

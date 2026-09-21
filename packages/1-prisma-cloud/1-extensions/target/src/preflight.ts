@@ -34,9 +34,9 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
-import { resolvePrismaNextConfig } from './pn-config.ts';
+import { resolveOrmConfig } from './orm-config.ts';
+import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
-import { isPnPostgresResourceNode, requiredPackHeadOf } from './prisma-next.ts';
 
 type EnvClass = 'production' | 'preview';
 
@@ -207,20 +207,34 @@ const fillFailedError = (key: string, error: unknown): Error =>
 
 function missingError(
   missing: readonly MissingBinding[],
+  projectId: string,
   branchId: string | undefined,
   stage: string | undefined,
 ): Error {
-  const scope =
+  const lines = missing.map((m) => `  - ${m.name}  (used by service "${m.serviceAddress}")`);
+  const countPhrase =
+    missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
+  const scopeFlag =
+    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  // `project env add` takes a single KEY=VALUE per call; the placeholder is
+  // quoted so a pasted command is not read as a shell redirection.
+  const commands = missing.map(
+    (m) => `prisma project env add ${m.name}="<value>" --project ${projectId} ${scopeFlag}`,
+  );
+  const runStep =
+    commands.length === 1
+      ? `Run: ${commands[0]}`
+      : `Run, once per setting:\n${commands.map((cmd) => `      ${cmd}`).join('\n')}`;
+  const consoleStep =
     branchId === undefined
-      ? 'the production class (project-level template)'
-      : `the preview class of stage "${stage ?? branchId}" (branch override or template)`;
-  const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
+      ? 'add each one under Production. Those values apply when the default branch deploys to production.'
+      : `add each one under Preview. Preview values apply to every branch deploy, including "${stage ?? branchId}".`;
   return new Error(
-    `Deploy preflight failed — ${missing.length} env var(s) (secret or env-sourced param) are not ` +
-      `provisioned on Prisma Cloud for ${scope}, and are absent from the deploy shell:\n` +
+    `Deploy failed. ${countPhrase} no value:\n` +
       `${lines.join('\n')}\n\n` +
-      'Set each in the deploy shell environment (the CLI will provision it on deploy), or create ' +
-      `it on the platform (Prisma Console or the Management API) in ${scope}.`,
+      'Set the value in one of these two places, then deploy again:\n' +
+      `  - ${runStep}\n` +
+      `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
 
@@ -280,20 +294,20 @@ export async function runPreflight(
     }
     missing.push(meta);
   }
-  if (missing.length > 0) throw missingError(missing, branchId, input.stage);
+  if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
   return updatedAt;
 }
 
 /**
  * The extension-pack half of the deploy preflight: every dependency edge
  * whose required contract carries a `requiredPackHead` must be wired to a
- * `pnPostgres` resource whose `prisma-next.config.ts` lists that pack at the
+ * `postgres` resource whose `prisma.config.ts` lists that pack at the
  * required head hash. Enforced HERE — at deploy time, before the migration
- * step constructs — because wireability (`pnContract().satisfies`)
+ * step constructs — because wireability (`dataContract().satisfies`)
  * deliberately says yes to every required pack head (the authoring-side
  * contract value cannot see the resource's config), and boot time would be
  * too late: the service would be down after a green deploy. Invoked from the
- * `prisma-next` descriptor's lowering, beside the migration-step
+ * `postgres` descriptor's lowering, beside the migration-step
  * construction.
  */
 export async function runPackPreflight(graph: Graph): Promise<void> {
@@ -310,22 +324,22 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     const provider =
       node !== undefined &&
       (node.kind === 'resource' || node.kind === 'service') &&
-      isPnPostgresResourceNode(node)
+      isPostgresResourceNode(node)
         ? node
         : undefined;
     if (provider === undefined) {
       throw new Error(
         `service "${edge.to}" requires extension pack "${requirement.packId}", which only a ` +
-          'pnPostgres resource can carry.',
+          'postgres resource can carry.',
       );
     }
 
-    const { extensionPacks } = await resolvePrismaNextConfig(provider.config);
+    const { extensionPacks } = await resolveOrmConfig(provider.config);
     const pack = extensionPacks.find((p) => p.id === requirement.packId);
     if (pack === undefined) {
       throw new Error(
-        `prisma-next database "${provider.name}" does not list extension pack ` +
-          `"${requirement.packId}" in its prisma-next.config.ts extensions — service ` +
+        `postgres database "${provider.name}" does not list extension pack ` +
+          `"${requirement.packId}" in its prisma.config.ts extensions — service ` +
           `"${edge.to}" requires it. Add the pack and run migration plan.`,
       );
     }
@@ -335,7 +349,7 @@ export async function runPackPreflight(graph: Graph): Promise<void> {
     const head = pack.contractSpace?.headRef.hash;
     if (head !== requirement.headHash) {
       throw new Error(
-        `prisma-next database "${provider.name}" lists extension pack ` +
+        `postgres database "${provider.name}" lists extension pack ` +
           `"${requirement.packId}" at head ${head ?? '(no contract space)'}, but service ` +
           `"${edge.to}" requires ${requirement.headHash}. Upgrade the pack and run ` +
           'migration plan.',

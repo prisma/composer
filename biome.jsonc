@@ -12,7 +12,7 @@
       "!**/dist-*",
       "!**/coverage",
       "!**/node_modules",
-      "!prisma-next",
+      "!orm",
       "!datahub",
       "!docs",
       "!.agents",
@@ -23,11 +23,11 @@
       "!**/fixtures/**/emitted",
       "!**/examples/**/migrations",
       // The auth pack's emitted/authored artifacts: byte-owned by
-      // `prisma-next contract emit` / `migration plan` — reformatting them
+      // `prisma contract emit` / `migration plan` — reformatting them
       // would dirty the tree on every regeneration.
       "!packages/1-prisma-cloud/2-shared-modules/auth/src/pack/contract.json",
       "!packages/1-prisma-cloud/2-shared-modules/auth/src/pack/migrations",
-      "!examples/pn-widgets/contract.json",
+      "!examples/orm-demo/contract.json",
       "!**/pnpm-lock.yaml"
     ]
   },

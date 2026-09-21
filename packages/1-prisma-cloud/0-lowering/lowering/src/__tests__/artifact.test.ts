@@ -134,9 +134,9 @@ describe('packageComputeArtifact', () => {
 
   test('keeps caller-provided entry and address strings out of executable JavaScript', () => {
     const marker = 'globalThis.COMPROMISED = true';
-    const bundleEntry = `main"; ${marker}; ".js`;
-    const appEntry = `server"; ${marker}; ".js`;
-    const address = `auth"); ${marker}; ("`;
+    const bundleEntry = `main\`; ${marker}; \`.js`;
+    const appEntry = `server\`; ${marker}; \`.js`;
+    const address = `auth\`); ${marker}; (\``;
     const bundleDir = makeBundle({
       [bundleEntry]: 'export default {};',
       [appEntry]: 'export default {};',
@@ -371,7 +371,9 @@ describe('packageComputeArtifact', () => {
       'main.js': 'export default {};',
       'node_modules/tool/bin/run': '#!/bin/sh\nexit 0\n',
     });
-    fs.chmodSync(path.join(bundleDir, 'node_modules', 'tool', 'bin', 'run'), 0o755);
+    const executable = path.join(bundleDir, 'node_modules', 'tool', 'bin', 'run');
+    fs.chmodSync(executable, 0o755);
+    const sourceMode = (fs.statSync(executable).mode & 0o100) !== 0 ? 0o755 : 0o644;
 
     const artifact = packageComputeArtifact({
       id: 'auth',
@@ -381,7 +383,7 @@ describe('packageComputeArtifact', () => {
     });
     const archive = readTar(fs.readFileSync(artifact.path));
 
-    expect(archive.mode('node_modules/tool/bin/run')).toBe(0o755);
+    expect(archive.mode('node_modules/tool/bin/run')).toBe(sourceMode);
     expect(archive.mode('main.js')).toBe(0o644);
   });
 

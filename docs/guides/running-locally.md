@@ -20,6 +20,13 @@ needed; local dev never talks to the platform.
 
 ## Bring it up
 
+Local Postgres runs on `@prisma/dev`. `@prisma/composer-prisma-cloud` declares
+it as a dependency (`^0.25.2`) and resolves it from its own package, so nothing
+needs adding to your app and your app's own copy, if any, is not used. Releases
+before 0.21.0 crash on any Postgres message over 64 KiB, which is why Composer
+owns the version. Nothing about the emulator is needed for cloud deployment or a
+local app without Postgres resources.
+
 ```sh
 prisma-composer dev module.ts
 ```
@@ -90,7 +97,7 @@ attention to one).
 Everything above the cloud boundary is real: your actual service code, real
 databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
-token, workspace, or network is involved. Two consequences worth knowing:
+token, workspace, or network is involved. Three consequences worth knowing:
 
 - **Unset secrets don't stop the app.** A secret you haven't set in your shell
   gets a local placeholder and a one-line warning; the app boots and serves,
@@ -100,6 +107,13 @@ token, workspace, or network is involved. Two consequences worth knowing:
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.
+- **The local Postgres is one shared session.** Every connection to a local
+  database lands in the same Postgres session, which outlives your service
+  processes. If you use Bun's `SQL`, pass `prepare: false`
+  (`new SQL({ url: db.url, max: 1, idleTimeout: 10, prepare: false })`).
+  Without it, a restarted service tries to re-create prepared statements its
+  previous run left behind, fails with `prepared statement "…" already exists`
+  (42P05), and crash-loops.
 
 Windows isn't supported yet.
 

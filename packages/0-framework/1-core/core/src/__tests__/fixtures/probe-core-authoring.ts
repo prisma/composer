@@ -12,7 +12,7 @@ import {
   service,
 } from '../../exports/index.ts';
 
-// A pack-shaped provider contract: kind-satisfies, like postgresContract.
+// A pack-shaped provider contract: kind-satisfies, like rawPostgresContract.
 const dbContract: Contract<'probe/db', { url: string }> = Object.freeze({
   kind: 'probe/db',
   __cmp: { url: '' },

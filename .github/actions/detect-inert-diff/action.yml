@@ -49,7 +49,6 @@ runs:
             .agents/*) ;;     # agent rules/skills (linted, not tested)
             .claude/*) ;;
             .cursor/*) ;;
-            agent-os/*) ;;
             LICENSE) ;;
             *) inert=false; break ;;
           esac

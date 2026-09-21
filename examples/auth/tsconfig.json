@@ -6,7 +6,7 @@
   "include": [
     "module.ts",
     "prisma-composer.config.ts",
-    "prisma-next.config.ts",
+    "prisma.config.ts",
     "src",
     "tests",
     "scripts"

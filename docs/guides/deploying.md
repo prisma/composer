@@ -29,6 +29,11 @@ token is the only authentication.
 
 ## Build first
 
+Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
+for hoisted installations. On Windows it prefers `alchemy.exe`, then
+`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
+Windows shim must not be reported as a missing Alchemy dependency.
+
 `prisma-composer deploy` does not build for you — it assembles what your
 build produced:
 
@@ -57,6 +62,11 @@ prisma-composer deploy module.ts --stage pr-42    # one environment per PR
 Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
+
+Compute deployments capture their environment when they are created. Composer
+waits for its environment-variable updates to finish before creating a
+deployment, including updates to an existing input document. Later variable
+updates do not change an already-created deployment's environment.
 
 After a deploy, each service is a Compute service in the Project; its public
 URL is its service endpoint domain — printed when the deploy finishes, and
@@ -182,27 +192,22 @@ second effect that alchemy picks up; deploying with it would crash inside
 alchemy.
 ```
 
-This happens when another dependency in your app floats to a newer `effect`
-and your package manager hoists that copy where alchemy resolves it — npm
-allows this with only a warning, and without the check the deploy would crash
-mid-run with a `TypeError` from inside alchemy. Today the floating dependency
-is alchemy itself: its own `effect`-family dependency and peer ranges
-(`@effect/sql-d1`, `@effect/sql-pg`, `@effect/vitest`, `@effect/platform-*`)
-float past the versions its shipped code supports — an upstream alchemy bug
-(the `TaggedErrorClass` drift, reported upstream), so every consumer app needs
-the constellation pinned until alchemy fixes its ranges. The fix is to pin the
-whole `effect` constellation to `@prisma/composer`'s exact pin, in your app's
-`package.json`:
+This happens when your app, or another dependency of it, pins a different
+`effect` than `@prisma/composer` does and your package manager hoists that copy
+where alchemy resolves it. npm allows this with only a warning, and without
+the check the deploy would crash mid-run with a `TypeError` from inside
+alchemy. A plain Composer app never hits it: `@prisma/composer` and
+`@prisma/composer-prisma-cloud` pin every `effect`-family package alchemy
+would otherwise float, so a fresh install resolves a single `effect`.
+
+The fix is to use the same `effect` as Composer. Match your own `effect`
+dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
+or, when a dependency you cannot change pins another version, force
+Composer's in your app's `package.json`:
 
 ```json
 "overrides": {
-  "effect": "<required>",
-  "@effect/sql-d1": "<required>",
-  "@effect/sql-pg": "<required>",
-  "@effect/vitest": "<required>",
-  "@effect/platform-bun": "<required>",
-  "@effect/platform-node": "<required>",
-  "@effect/platform-node-shared": "<required>"
+  "effect": "<required>"
 }
 ```
 
@@ -210,7 +215,6 @@ yarn spells the block `resolutions`, and pnpm nests it under
 `"pnpm": { "overrides": ... }`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
-The repo's `examples/*` manifests carry this exact block.
 
 ## Production behavior
 
@@ -238,6 +242,10 @@ What deployed apps actually run into, and what to do about it:
   them — editing one by hand doesn't survive.
 - **Calls into a sleeping service can get `ECONNRESET`** while it cold-starts.
   Retry them.
+- **The `cron` scheduler stays awake on purpose.** It holds Compute's
+  keep-awake guard for its whole lifetime, so it never scales to zero: one warm
+  instance per app is the cost of the clock. Every other service, the runner
+  included, sleeps as usual.
 - **Streaming responses don't stream.** The platform's HTTP front door (the
   ingress) buffers a response until it completes, so an open SSE tail
   delivers nothing and times out at 60s. Don't build on streamed HTTP
@@ -293,7 +301,7 @@ Local dev state is not migrated: if `prisma-composer dev` fails at plan time wit
 
 ## Updating a database whose schema an older version synthesized
 
-Older framework versions created a fresh `pnPostgres` database's schema at first deploy by synthesizing it from the contract, with no migration authored. Deploys are now replay-only — they apply only committed migrations — so the first contract change against such a database refuses with `MIGRATION_PATH_NOT_FOUND`: the migration graph has no edge reaching the database's current schema, because none was ever authored.
+Older framework versions created a fresh `postgres` database's schema at first deploy by synthesizing it from the contract, with no migration authored. Deploys are now replay-only — they apply only committed migrations — so the first contract change against such a database refuses with `MIGRATION_PATH_NOT_FOUND`: the migration graph has no edge reaching the database's current schema, because none was ever authored.
 
 The marker those deploys signed is an accurate signature of the schema, so the fix is to make the authored graph reach it. The refusal names the database's current hash. Set a ref to that hash — write `migrations/app/refs/db.json` (the ref `migration plan` reads its origin from) with `{ "hash": "<the marker's hash>", "invariants": [] }` — then emit and plan as usual:
 

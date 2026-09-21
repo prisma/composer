@@ -10,7 +10,7 @@
  */
 import type { ModuleNode, ParamNeed, SecretNeed } from '@internal/core';
 import { module, paramNeed, secret } from '@internal/core';
-import { postgres } from '@internal/prisma-cloud';
+import { rawPostgres } from '@internal/prisma-cloud';
 import { emailOutboxContract, emailSendContract } from './contract.ts';
 import { emailService } from './email-service.ts';
 
@@ -31,7 +31,7 @@ export function email(opts?: {
       expose: { send: emailSendContract, outbox: emailOutboxContract },
     },
     ({ params, secrets, provision }) => {
-      const db = provision(postgres({ name: 'db' }), { id: 'db' });
+      const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
       const service = provision(emailService(), {
         id: 'service',
         deps: { db },

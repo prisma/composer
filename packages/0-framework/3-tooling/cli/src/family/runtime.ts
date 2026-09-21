@@ -12,7 +12,6 @@
  * story: this CLI has no login flow and mounts no auth commands, so there is
  * nothing to store — the two variables ARE the credential.
  */
-import { spawn } from 'node:child_process';
 import {
   EnvironmentCredentialManager,
   type HostProcess,
@@ -20,6 +19,7 @@ import {
   type Runtime,
   type SpawnChild,
 } from '@prisma/cli-engine';
+import spawn from 'cross-spawn';
 
 /** Where the management API lives. Matches the lowering client's default origin; the env var is the escape hatch for staging. */
 const DEFAULT_MANAGEMENT_API_BASE_URL = 'https://api.prisma.io';

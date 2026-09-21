@@ -133,10 +133,13 @@ class PgObjectStore implements ObjectStore {
 
 /**
  * Connect (FT-5219 posture: `max: 1`, short `idleTimeout`), apply the schema
- * idempotently behind the cold-start retry, and return the store.
+ * idempotently behind the cold-start retry, and return the store. `prepare:
+ * false`: local `prisma dev` shares one Postgres session across connections,
+ * so a restarted process re-preparing Bun's per-connection statement names
+ * collides with 42P05 and crash-loops (gotchas.md).
  */
 export async function createPgStore(url: string): Promise<ObjectStore> {
-  const sql = new SQL({ url, max: 1, idleTimeout: 10 });
+  const sql = new SQL({ url, max: 1, idleTimeout: 10, prepare: false });
   await retryTransientConnect(
     () => sql`
       create table if not exists objects (

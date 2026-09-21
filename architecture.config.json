@@ -157,7 +157,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/prisma-next.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/orm-postgres.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -229,13 +229,13 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/prisma-next-migrate.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/orm-migrate.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pn-migration-resource.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/orm-migration-resource.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "control"
@@ -265,7 +265,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/postgres.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/raw-postgres.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -277,13 +277,13 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/prisma-next.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/exports/orm.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
     },
     {
-      "glob": "packages/1-prisma-cloud/1-extensions/target/src/pn-config.ts",
+      "glob": "packages/1-prisma-cloud/1-extensions/target/src/orm-config.ts",
       "domain": "prisma-cloud",
       "layer": "extensions",
       "plane": "shared"
@@ -799,7 +799,7 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer-prisma-cloud/src/exports/prisma-next.ts",
+      "glob": "packages/9-public/composer-prisma-cloud/src/exports/orm.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"

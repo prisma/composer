@@ -80,23 +80,24 @@ describe('toRunReport', () => {
 });
 
 describe('resolveRunReportPath', () => {
+  const cwd = path.resolve(path.sep, 'work');
+
   test('the flag wins over the environment variable', () => {
-    expect(resolveRunReportPath('flag.json', 'env.json', '/work')).toBe('/work/flag.json');
+    expect(resolveRunReportPath('flag.json', 'env.json', cwd)).toBe(path.join(cwd, 'flag.json'));
   });
 
   test('the environment variable applies when no flag was passed', () => {
-    expect(resolveRunReportPath(undefined, 'env.json', '/work')).toBe('/work/env.json');
+    expect(resolveRunReportPath(undefined, 'env.json', cwd)).toBe(path.join(cwd, 'env.json'));
   });
 
   test('an absolute path is left alone', () => {
-    expect(resolveRunReportPath('/elsewhere/out.json', undefined, '/work')).toBe(
-      '/elsewhere/out.json',
-    );
+    const absolute = path.resolve(path.sep, 'elsewhere', 'out.json');
+    expect(resolveRunReportPath(absolute, undefined, cwd)).toBe(absolute);
   });
 
   test('neither asked for means no report is written', () => {
-    expect(resolveRunReportPath(undefined, undefined, '/work')).toBeUndefined();
-    expect(resolveRunReportPath('', '', '/work')).toBeUndefined();
+    expect(resolveRunReportPath(undefined, undefined, cwd)).toBeUndefined();
+    expect(resolveRunReportPath('', '', cwd)).toBeUndefined();
   });
 });
 

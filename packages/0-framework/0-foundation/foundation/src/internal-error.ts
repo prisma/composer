@@ -1,7 +1,7 @@
 // Duplicated from the prisma/prisma error foundation pending extraction into a shared package — keep byte-close to the donor; recognition is structural, so the copies interoperate.
 
 /**
- * A bug in Prisma Next, not a user error. Never catch this except at the
+ * A bug in Prisma ORM, not a user error. Never catch this except at the
  * outermost boundary for crash reporting — an InternalError means an invariant
  * broke and the process cannot reliably continue. User-facing failures use
  * `structuredError` with a dotted code instead.

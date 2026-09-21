@@ -19,8 +19,8 @@ export default defineConfig({
 ```
 
 Deploy tooling loads the config (found by walking up from the deploy entry,
-loaded with c12 — the same mechanism Prisma Next uses for
-`prisma-next.config.ts`), then looks up each node's control-plane behavior in
+loaded with c12 — the same mechanism Prisma ORM uses for
+`prisma.config.ts`), then looks up each node's control-plane behavior in
 the registries the descriptors provide, keyed by **(extension ID, node ID)**:
 a node's `extension` field (`"@prisma/composer-prisma-cloud"`) and its `type`
 (`"compute"`). Nodes are pure data; the framework never constructs a module

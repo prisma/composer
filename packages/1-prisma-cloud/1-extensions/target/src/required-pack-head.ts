@@ -3,13 +3,13 @@
  * database carries an extension pack at a given contract-space head. In its
  * own module so a module's authoring surface (e.g. `@internal/auth`'s
  * `authDb()`) can import it from the MAIN barrel without dragging
- * `./prisma-next`'s runtime dependencies (`@prisma/orm-postgres/runtime`,
+ * `./orm`'s runtime dependencies (`@prisma/orm-postgres/runtime`,
  * `pg` — both carrying `node:` imports) into a runtime bundle. Deliberately
- * self-contained — invariant 7 keeps every `prisma-next`/`@prisma/orm-`
+ * self-contained — invariant 7 keeps every `postgres`/`@prisma/orm-`
  * import specifier (type-only included) out of the main barrel's reachable
  * graph, so the cmp shape is declared here rather than imported; it is
- * assignable to `PnPostgresContract`'s `PnCmp` by construction, and
- * `prisma-next.ts` re-exports everything here so the `./prisma-next` surface
+ * assignable to `PostgresContract`'s `OrmCmp` by construction, and
+ * `orm-postgres.ts` re-exports everything here so the `./orm` surface
  * carries the full vocabulary in one place.
  */
 import type { Contract } from '@internal/core';
@@ -22,10 +22,10 @@ export interface RequiredPackHead {
 
 /**
  * The `__cmp` shape a required-pack-head contract is typed with —
- * structurally `PnCmp` (prisma-next.ts) minus its `_contract` anchor, and
- * with the SAME optionality: typed wiring assigns a provider's `PnCmp` TO
+ * structurally `OrmCmp` (orm-postgres.ts) minus its `_contract` anchor, and
+ * with the SAME optionality: typed wiring assigns a provider's `OrmCmp` TO
  * this shape, so a required `requiredPackHead` here would reject every real
- * `pnContract()` provider. The runtime value always carries the claim.
+ * `dataContract()` provider. The runtime value always carries the claim.
  */
 export interface RequiredPackHeadCmp {
   readonly contractJson: unknown;
@@ -33,16 +33,14 @@ export interface RequiredPackHeadCmp {
 }
 
 /**
- * A `prisma-next`-kind required contract carrying a pack-head claim instead
- * of a contract value. Wireable to any `pnContract()` provider (wireability
+ * A `postgres`-kind required contract carrying a pack-head claim instead
+ * of a contract value. Wireable to any `dataContract()` provider (wireability
  * only); the deploy preflight enforces that the wired resource's PN config
  * lists the pack at the required head.
  */
-export function requiredPackHead(
-  req: RequiredPackHead,
-): Contract<'prisma-next', RequiredPackHeadCmp> {
-  const value: Contract<'prisma-next', RequiredPackHeadCmp> = {
-    kind: 'prisma-next',
+export function requiredPackHead(req: RequiredPackHead): Contract<'postgres', RequiredPackHeadCmp> {
+  const value: Contract<'postgres', RequiredPackHeadCmp> = {
+    kind: 'postgres',
     __cmp: { contractJson: undefined, requiredPackHead: req },
     // A requirement never provides; core only calls `satisfies` on the
     // provider side of a wiring. Answer honestly anyway: another requirement

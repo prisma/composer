@@ -6,7 +6,7 @@ live in [exports-entrypoint-plan.md](./exports-entrypoint-plan.md).
 
 ## At a glance
 
-Adopt prisma-next's exports/entrypoint pattern across the Composer workspace:
+Adopt prisma/orm's exports/entrypoint pattern across the Composer workspace:
 every package's public subpaths become files under `src/exports/`, the shared
 tsdown base generates each `package.json#exports` map from those entries, and
 `architecture.config.json` keys plane assignments to entrypoint files instead
@@ -18,12 +18,12 @@ of listing every source file. Published subpath keys do not change.
   subpath. Internal implementation stays where it is at the `src/` root — the
   presence of `src/exports/` is the separation; no `src/core/` shuffle.
 - **`tsdown.config.ts` entries list only `src/exports/*.ts`.**
-- **`@internal/tsdown-config` generates the exports map.** Port prisma-next's
+- **`@internal/tsdown-config` generates the exports map.** Port prisma/orm's
   `customExports` hook (strip the `exports/` prefix, `./` → `.`, single-entry
   collapse fix) and switch `exports: true` to
   `{ enabled: 'local-only', customExports, exclude: [/bin\./] }`. Dist stays
   flat (`dist/control.mjs`); generated maps are committed. Workspace tsdown is
-  0.22.4 — the same version prisma-next runs this hook on.
+  0.22.4 — the same version prisma/orm runs this hook on.
 - **Plane globs key off entrypoints.** `architecture.config.json` maps each
   `src/exports/<name>.ts` to its plane plus one `src/**` fallback per package;
   the current 61 mostly-per-file globs collapse. Existing plane assignments
@@ -65,7 +65,7 @@ checking the invariant (subpath key sets unchanged) rather than every hunk.
 **Deliberately out:**
 
 - Any change to published subpath keys or their runtime behavior.
-- Restructuring internals into `src/core/` (prisma-next does this for
+- Restructuring internals into `src/core/` (prisma/orm does this for
   multi-plane packages; not needed here).
 - Website, examples, and test/** packages (no published surface).
 - Renaming the `@internal/*` packages or moving directories.
@@ -76,7 +76,7 @@ checking the invariant (subpath key sets unchanged) rather than every hunk.
 | --- | --- |
 | Public packages' conditional exports | `@prisma/composer` and `@prisma/composer-prisma-cloud` hand-maintain `{types, default}` maps "for dts bundling", and composer's bin must stay non-importable. Try generation first; keep a manual map only where consumer type resolution demonstrably breaks, and record the exception in the rule. |
 | `customExports` on pre-move packages | The hook strips an `exports/` prefix that pre-move entries don't have — a no-op — so the tooling change can land first without breaking anything. |
-| Single-entry packages (`rpc`, `assemble`) | tsdown collapses one entry to `.`; prisma-next's hook derives the subpath from the output filename. `index.ts` must still map to `.` — covered by the ported hook, verify in D1. |
+| Single-entry packages (`rpc`, `assemble`) | tsdown collapses one entry to `.`; prisma/orm's hook derives the subpath from the output filename. `index.ts` must still map to `.` — covered by the ported hook, verify in D1. |
 | Nested subpaths (`./cron/scheduler-entrypoint`) | Entry keys with slashes (or nested dirs under `exports/`) produce nested subpath keys; composer-prisma-cloud needs this. |
 | Stale comment in tsdown-config | The base config's comment claims tsdown 0.15.x; actual is 0.22.4. Fix in D1 so nobody "fixes" the config back. |
 | Glob precedence in depcruise | Specific `src/exports/*.ts` globs must win over the `src/**` fallback; verify a known-bad import still fails `pnpm lint:deps`. |
@@ -97,11 +97,11 @@ evidence, not up front.
 
 ## References
 
-- prisma-next: `.agents/rules/multi-plane-packages.mdc`,
+- prisma/orm: `.agents/rules/multi-plane-packages.mdc`,
   `no-barrel-files.mdc`, `cli-package-exports.mdc`,
   `packages/0-config/tsdown/base.ts` (the `customExports` hook to port),
   `docs/architecture docs/Package-Layering.md` § Package Exports Pattern.
-  Clone at `<scratchpad>/prisma-next`.
+  Clone at `<scratchpad>/prisma/orm`.
 - Composer investigation: [exports-entrypoint-plan.md](./exports-entrypoint-plan.md).
 - ADR-0028 (numbered domains/layers, depcruise), `.agents/rules/no-bundling.mdc`,
   `test-import-patterns.mdc`.
@@ -139,7 +139,7 @@ green.
   pre-move).
 - **Builds on:** origin/main.
 - **Hands to:** a base config every later dispatch's rebuild flows through.
-- **Focus:** copy prisma-next's hook faithfully (including the single-entry
+- **Focus:** copy prisma/orm's hook faithfully (including the single-entry
   collapse fix); don't redesign it.
 - **Completed when:** hook in place; `pnpm build` green; `git status` shows no
   manifest churn; packages still using `exports: false` untouched.
@@ -205,7 +205,7 @@ would clobber the others' export map), so those keep their hand-maintained map.
   `dist/` flattens (`dist/compute/index.mjs` → `dist/compute.mjs`, a value
   change only). architecture.config.json: `lowering/src/**` glob covers it — no
   change.
-- **`target`**: move the 5 entrypoints (`index`, `control`, `prisma-next`,
+- **`target`**: move the 5 entrypoints (`index`, `control`, `prisma/orm`,
   `testing`, `pg-connection`) into `src/exports/`; internals (`descriptors/`,
   `pn-*`, `pg-warm-resource`, `serializer`, `service-keys`, `compute`,
   `postgres`, `http`, `s3-*`, `secret`, `param`, `preflight`) stay at root.
@@ -216,7 +216,7 @@ would clobber the others' export map), so those keep their hand-maintained map.
   resolution breaks, **revert target to the hand-maintained `{types,default}`
   map and document why** (exception, per the rule). Repoint target's 5
   entrypoint globs in architecture.config.json 1:1 (control → control; index,
-  prisma-next, testing, pg-connection → shared).
+  prisma/orm, testing, pg-connection → shared).
 - **Completed when:** both build, key sets identical, tests green,
   lint:deps green, and the target generated-vs-manual finding is recorded.
 
@@ -263,13 +263,13 @@ byte-identical.
   the `bin` FIELD (`{"prisma-composer": "./dist/bin.mjs"}`) untouched. Repoint
   the 11 per-file arch-config globs 1:1.
 - **composer-prisma-cloud** (`packages/9-public/composer-prisma-cloud`): move
-  the 9 thin re-export entrypoints (`index`, `control`, `prisma-next`, `testing`,
+  the 9 thin re-export entrypoints (`index`, `control`, `prisma/orm`, `testing`,
   `cron`, `storage`, `storage-testing`, `streams`, `streams-testing`) into
   `src/exports/`. Update ONLY the passes whose entries are `src/…` paths
   (passes 1,2,4,6,7,9); the re-emit passes (3,5,8) read `@internal/*/dist/*.mjs`
   — unchanged. Keep the resolve plugin, nested `outDir`s, `exports:false`, and
   the hand-maintained map (with nested keys) intact. Repoint the 5 existing
-  per-file arch-config globs 1:1 (`control`→control; `index`, `prisma-next`,
+  per-file arch-config globs 1:1 (`control`→control; `index`, `prisma/orm`,
   `testing`, `cron`→shared); the `storage`/`streams`/`*-testing` entries are
   unmapped today (leave them — a D6/follow-up concern like storage/streams).
 - **Builds on:** D4b (all `@internal` packages converted).

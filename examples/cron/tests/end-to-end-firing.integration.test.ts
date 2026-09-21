@@ -44,9 +44,10 @@ describe('cron pipeline: schedule -> runScheduler -> trigger over HTTP -> serveS
       },
     });
 
-    expect(timers).toHaveLength(2);
+    expect(timers).toHaveLength(3);
     expect(timers[0]?.ms).toBe(2_000); // "2s"
     expect(timers[1]?.ms).toBe(5_000); // "5s"
+    expect(timers[2]?.ms).toBe(300_000); // "5m"
 
     timers[0]?.fn();
     expect(await pending).toEqual({ ok: true });

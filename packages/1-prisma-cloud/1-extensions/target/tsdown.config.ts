@@ -10,7 +10,7 @@ export default defineConfig({
     index: 'src/exports/index.ts',
     control: 'src/exports/control.ts',
     'local-target': 'src/exports/local-target.ts',
-    'prisma-next': 'src/exports/prisma-next.ts',
+    orm: 'src/exports/orm.ts',
     testing: 'src/exports/testing.ts',
     connection: 'src/exports/pg-connection.ts',
   },

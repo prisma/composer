@@ -7,7 +7,7 @@
 import type { ModuleNode, RefPort } from '@internal/core';
 import { module } from '@internal/core';
 import node from '@internal/node';
-import { compute, type postgresContract } from '@internal/prisma-cloud';
+import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
 import { expectTypeOf, test } from 'vitest';
 import { s3, type s3Contract } from '../contract.ts';
 import { storage } from '../storage-module.ts';
@@ -35,5 +35,5 @@ test('the s3 slot accepts an s3 port but rejects a wrong-kind (postgres) one', (
   // The consumer's s3() slot requires `typeof s3Contract` (kind "s3"). The
   // module's store port is a RefPort of that contract; a postgres port is not.
   expectTypeOf<RefPort<typeof s3Contract>>().toExtend<typeof s3Contract>();
-  expectTypeOf<RefPort<typeof postgresContract>>().not.toExtend<typeof s3Contract>();
+  expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<typeof s3Contract>();
 });

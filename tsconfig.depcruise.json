@@ -90,8 +90,8 @@
       "@internal/prisma-cloud/local-target": [
         "./packages/1-prisma-cloud/1-extensions/target/src/exports/local-target.ts"
       ],
-      "@internal/prisma-cloud/prisma-next": [
-        "./packages/1-prisma-cloud/1-extensions/target/src/exports/prisma-next.ts"
+      "@internal/prisma-cloud/orm": [
+        "./packages/1-prisma-cloud/1-extensions/target/src/exports/orm.ts"
       ],
       "@internal/prisma-cloud/testing": [
         "./packages/1-prisma-cloud/1-extensions/target/src/exports/testing.ts"
@@ -154,8 +154,8 @@
       "@prisma/composer-prisma-cloud/local-target": [
         "./packages/9-public/composer-prisma-cloud/src/exports/local-target.ts"
       ],
-      "@prisma/composer-prisma-cloud/prisma-next": [
-        "./packages/9-public/composer-prisma-cloud/src/exports/prisma-next.ts"
+      "@prisma/composer-prisma-cloud/orm": [
+        "./packages/9-public/composer-prisma-cloud/src/exports/orm.ts"
       ],
       "@prisma/composer-prisma-cloud/testing": [
         "./packages/9-public/composer-prisma-cloud/src/exports/testing.ts"

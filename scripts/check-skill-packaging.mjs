@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The `prisma-composer` skill must arrive in the `@prisma/composer` tarball,
+// The `prisma-composer-core-concepts` skill must arrive in the `@prisma/composer` tarball,
 // carrying the version of the tarball it arrived in.
 //
 // That claim is only worth as much as the artifact that proves it. The

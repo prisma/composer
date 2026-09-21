@@ -3,7 +3,7 @@
 Signup, login, sessions, and JWT verification as a composed module wrapping
 [Better Auth](https://better-auth.com) (in-process TypeScript library — not a
 remote IdP), published as `@prisma/composer-prisma-cloud/auth`. One dedicated
-Compute service; the schema ships as a Prisma Next extension pack; the
+Compute service; the schema ships as a Prisma ORM extension pack; the
 instance secret is platform-minted.
 
 ## Contract scope
@@ -27,10 +27,20 @@ Three ports, one service behind them — least privilege is a WIRING choice:
   id/email; email match case-insensitive), `listUsers` (query/banned
   filters, keyset cursor), `listSessions`, `revokeSession`,
   `revokeUserSessions` (idempotent deletes), `banUser` (ban implies
-  revoke, atomically), `unbanUser`.
+  revoke, atomically), `unbanUser`, `createUser` (see Provisioning
+  accounts below), `setEmailVerified`.
 
 Wire each port only where it belongs: the app gets `api` + `session`; the
 back office alone gets `admin`.
+
+`/api/auth/*` is the browser surface. Better Auth origin-checks any request
+that looks like it came from a browser — one carrying a cookie, an
+`Origin`/`Referer`, or any `Sec-Fetch-*` header — and refuses a missing
+`Origin` with `403 MISSING_OR_NULL_ORIGIN`. Node's built-in `fetch` sends
+`Sec-Fetch-Mode` on every request, so a Node script calling `/api/auth/*`
+(directly or through `authProxy`) is refused unless it sends an `Origin`
+that is in `trustedOrigins` (the module's `baseUrl`). Server-to-server work
+belongs on the rpc ports instead.
 
 ## Golden-path wiring
 
@@ -39,13 +49,13 @@ back office alone gets `admin`.
 import { module } from '@prisma/composer';
 import { envParam } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
-import { pnPostgres } from '@prisma/composer-prisma-cloud/prisma-next';
+import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { appContract } from './src/contract.ts';
 import apiService from './src/api/service.ts';
 
 export default module('app', ({ provision }) => {
   const db = provision(
-    pnPostgres({ name: 'database', contract: appContract, config: './prisma-next.config.ts' }),
+    postgres({ name: 'database', contract: appContract, config: './prisma.config.ts' }),
     { id: 'database' },
   );
   const identity = provision(auth(), {
@@ -77,19 +87,65 @@ would invalidate every session and the encrypted jwks rows).
 
 A complete, deployable copy of this wiring lives in `examples/auth`.
 
+## Provisioning accounts
+
+An account an operator creates goes through the `admin` port, server to
+server — never through the browser sign-up surface:
+
+```ts
+// in a service wired to `identity.admin`
+const { admin } = service.load();
+const { user } = await admin.createUser({
+  email: 'ops@example.com',
+  name: 'Ops',
+  password: 'a-long-passphrase',   // optional; omit for a magic-link-only account
+  emailVerified: true,             // optional; default false
+});
+```
+
+`createUser` writes exactly what Better Auth's own sign-up writes — the
+`user` row and, with a password, a `credential` account hashed by Better
+Auth's own hasher — and sends no mail. The contract input applies the same
+checks sign-up does (a well-formed email, a password of 8–128 characters),
+so a caller mistake is a 400 at the rpc boundary; a duplicate email
+(case-insensitive) is refused by the handler. Every refusal reaches a typed
+rpc client as a thrown error, so a script cannot mistake it for success. `setEmailVerified({ userId, emailVerified })` flips
+the flag a created account needs before `requireEmailVerification` lets it
+sign in (`user: null` for an unknown id).
+
+A deployed stack's rpc ports are reachable only by consumers in its graph:
+a script on a laptop cannot call `admin.createUser`. The application
+exposes its own operator route (allowlisted however it sees fit) from a
+service wired to `admin`, and that route makes the call.
+
+Invite-only applications close self-service sign-up with a module setting,
+enforced by Better Auth itself, instead of filtering their proxy:
+
+```ts
+provision(auth({ signUp: 'closed' }), { id: 'auth', deps: { db, email: mail.send }, params: { … } });
+```
+
+`signUp: 'closed'` sets `emailAndPassword.disableSignUp` and the magic-link
+plugin's `disableSignUp`: `/api/auth/sign-up/email` answers `400
+EMAIL_PASSWORD_SIGN_UP_DISABLED`, and a magic link requested for an unknown
+email is still sent but completes to an `error=new_user_signup_disabled`
+redirect with no user created. Sign-in for existing accounts is unchanged.
+Default `'open'`. Nothing about origin, CSRF, or `trustedOrigins` changes
+either way.
+
 ## The pack
 
 Better Auth's tables (`user`, `session`, `account`, `verification`, `jwks` —
-Postgres schema `auth`) ship as a Prisma Next extension pack with authored
+Postgres schema `auth`) ship as a Prisma ORM extension pack with authored
 migrations — Better Auth's own migrator never runs anywhere. Consumers:
 
 ```ts
-// prisma-next.config.ts
+// prisma.config.ts
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 export default defineConfig({ ..., extensions: [authPack] });
 ```
 
-Run `prisma-next migration plan` once — it materialises the pack's shipped
+Run `prisma migration plan` once — it materialises the pack's shipped
 migrations into `migrations/auth/` — and deploy: the ONE migration step
 creates and evolves the auth tables beside your own, marker-signed per
 space. On a shared database your own contract can FK `auth:User`
@@ -104,7 +160,7 @@ model Profile {
 }
 ```
 
-Upgrade procedure: bump this package → `prisma-next migration plan` (the new
+Upgrade procedure: bump this package → `prisma migration plan` (the new
 shipped migrations materialise) → deploy. The deploy preflight fails loudly
 when a wired database's config is missing the pack or is at a stale head.
 
@@ -152,8 +208,9 @@ const identity = provision(auth(), {
 ```
 
 Signup requires verification (`requireEmailVerification: true`; the
-verification send fires on signup, and verifying auto-signs-in). Magic
-links expire after 5 minutes. The three templates ship with the module —
+verification send fires on signup, and verifying auto-signs-in; an
+`admin.createUser` account skips the mail and is verified when created
+with `emailVerified: true`). Magic links expire after 5 minutes. The three templates ship with the module —
 minimal semantic HTML plus a plain-text part; every interpolation is
 HTML-escaped, and a link whose origin differs from `baseUrl` fails the
 send rather than going out.

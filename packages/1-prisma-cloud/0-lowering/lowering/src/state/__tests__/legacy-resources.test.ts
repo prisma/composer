@@ -28,14 +28,13 @@ import {
   type StateService,
 } from 'alchemy/State';
 import { PlatformServices } from 'alchemy/Util/PlatformServices';
+import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
 import { stateLayerAgainst } from '../layer.ts';
 import { migrateLegacyResourceState } from '../legacy-resources.ts';
 import { FakeStateApi } from './fake-state-api.ts';
-
-process.env['PRISMA_SERVICE_TOKEN'] ??= 'test-service-token';
 
 const DIRECT_URL = 'postgres://user:pass@db.prisma.io:5432/postgres';
 
@@ -174,6 +173,22 @@ describe('migrateLegacyResourceState (pure mapping)', () => {
     expect(migrated.old.resourceType).toBe('Prisma.Database');
     expect(migrated.old.attr).toMatchObject({ databaseId: 'db-1', databaseName: 'data' });
     expect(migrated.old.props).toEqual({ project: 'proj-1', name: 'data', region: 'us-east-1' });
+  });
+
+  test('renames PrismaNext.Migration rows to PrismaOrm.Migration with props untouched, idempotently', () => {
+    const props = { url: DIRECT_URL, targetHash: 'abc', invariants: [], packHeadRefHashes: [] };
+    const row = {
+      ...legacyDatabaseRow(),
+      resourceType: 'PrismaNext.Migration',
+      props,
+      old: { ...legacyDatabaseRow(), resourceType: 'PrismaNext.Migration', props },
+    };
+    const migrated = migrateLegacyResourceState(row) as MigratedRow & { old: MigratedRow };
+    expect(migrated.resourceType).toBe('PrismaOrm.Migration');
+    expect(migrated.props).toEqual(props);
+    expect(migrated.old.resourceType).toBe('PrismaOrm.Migration');
+    expect(migrated.old.props).toEqual(props);
+    expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
   });
 
   test('maps the unreleased PrismaComposer.* type-ids too, and passes foreign rows through', () => {
@@ -1018,7 +1033,14 @@ describe('state round-trip of legacy rows through the hosted state layer', () =>
       Effect.gen(function* () {
         const service = yield* yield* State;
         return yield* use(service).pipe(Effect.orDie);
-      }).pipe(Effect.provide(layer)) as Effect.Effect<A>,
+      }).pipe(
+        Effect.provide(layer),
+        // Do not depend on when another test first snapshots the process environment.
+        Effect.provideService(
+          ConfigProvider.ConfigProvider,
+          ConfigProvider.fromEnvRecord({ PRISMA_SERVICE_TOKEN: 'test-service-token' }),
+        ),
+      ) as Effect.Effect<A>,
     );
   };
 

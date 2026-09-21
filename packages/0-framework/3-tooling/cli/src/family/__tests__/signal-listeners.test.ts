@@ -28,6 +28,7 @@ import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 
 const FIXTURE = path.join(import.meta.dir, 'fixtures', 'signal-listeners.mjs');
+const SUBPROCESS_TEST_TIMEOUT_MS = 30_000;
 
 interface Counts {
   readonly SIGINT: number;
@@ -40,7 +41,10 @@ function listenerCounts(what: 'alchemy' | 'local-target'): {
   afterConfigEvaluation: Counts;
   afterLocalTargets: Counts;
 } {
-  const result = spawnSync(process.execPath, [FIXTURE, what], { encoding: 'utf-8' });
+  const result = spawnSync(process.execPath, [FIXTURE, what], {
+    encoding: 'utf-8',
+    timeout: SUBPROCESS_TEST_TIMEOUT_MS,
+  });
   if (result.status !== 0) {
     throw new Error(`the listener fixture failed (${String(result.status)}): ${result.stderr}`);
   }
@@ -48,33 +52,30 @@ function listenerCounts(what: 'alchemy' | 'local-target'): {
 }
 
 describe('the engine is the sole signal listener', () => {
-  test('config evaluation registers no SIGINT or SIGTERM listener', () => {
-    const { before, afterConfigEvaluation } = listenerCounts('alchemy');
+  test(
+    'config evaluation registers no SIGINT, SIGTERM, or exit listener',
+    () => {
+      const { before, afterConfigEvaluation } = listenerCounts('alchemy');
 
-    expect(before.SIGINT).toBe(0);
-    expect(before.SIGTERM).toBe(0);
+      expect(before.SIGINT).toBe(0);
+      expect(before.SIGTERM).toBe(0);
 
-    // The whole point: importing the provider tree must leave the signal
-    // surface exactly as it found it, so the engine's handler is the only one.
-    expect(afterConfigEvaluation.SIGINT).toBe(0);
-    expect(afterConfigEvaluation.SIGTERM).toBe(0);
-  });
+      expect(afterConfigEvaluation.SIGINT).toBe(0);
+      expect(afterConfigEvaluation.SIGTERM).toBe(0);
+      expect(afterConfigEvaluation.exit).toBe(0);
+    },
+    SUBPROCESS_TEST_TIMEOUT_MS,
+  );
 
-  test("dev and log's local-target resolution registers none either", () => {
-    const { afterLocalTargets } = listenerCounts('local-target');
+  test(
+    "dev and log's local-target resolution registers none either",
+    () => {
+      const { afterLocalTargets } = listenerCounts('local-target');
 
-    expect(afterLocalTargets.SIGINT).toBe(0);
-    expect(afterLocalTargets.SIGTERM).toBe(0);
-    // The exit hook too: it is the single registration that installed all
-    // three upstream, so a local-target import that armed only it would slip
-    // past a check that looked at the two signals alone.
-    expect(afterLocalTargets.exit).toBe(0);
-  });
-
-  test('no exit hook is armed either, which is what the upstream fix changed', () => {
-    // Not a signal, but the same registration: the module-scope exitHook that
-    // installed all three. Asserting it separately says WHICH upstream
-    // behavior regressed if this suite ever goes red.
-    expect(listenerCounts('alchemy').afterConfigEvaluation.exit).toBe(0);
-  });
+      expect(afterLocalTargets.SIGINT).toBe(0);
+      expect(afterLocalTargets.SIGTERM).toBe(0);
+      expect(afterLocalTargets.exit).toBe(0);
+    },
+    SUBPROCESS_TEST_TIMEOUT_MS,
+  );
 });

@@ -29,7 +29,7 @@ based on #45's branch).
   `PORT`, `TICK_INTERVAL_MS`. (* = secret.)
 - **`apps/web`** — Next.js 16 dashboard, reads postgres through
   `@workspace/db` in `lib/queries.ts`.
-- **`packages/db`** — prisma-next client (`@prisma-next/postgres` + contract
+- **`packages/db`** — prisma/orm client (`@prisma-next/postgres` + contract
   files) over a hand-built `pg` Pool (custom idle-error listener for Compute
   sleep/resume), **module-global**, reads `process.env.DATABASE_URL` at import.
 - Current deploy: `prisma.compute.ts` (`@prisma/compute-sdk`), env from
@@ -50,7 +50,7 @@ based on #45's branch).
    ```ts
    // system.ts (datahub root)
    export default system('datahub', {}, ({ provision }) => {
-     const db = provision('database', postgres({ name: 'database' }));
+     const db = provision('database', rawPostgres({ name: 'database' }));
      provision('cron', cron('cron', { schedule, router: ingestService }), { db });
      provision('web', webService, { db });
      return {};
@@ -78,7 +78,7 @@ based on #45's branch).
    **before** any module that imports `@workspace/db` loads (ingest: entry
    sets it, then dynamic-imports the app; web: `instrumentation.ts` or
    equivalent — implementer grounds which runs first in Next 16 standalone).
-   Converting `@workspace/db` to `pnPostgres` (ADR-0022) is the deep port —
+   Converting `@workspace/db` to `postgres` (ADR-0022) is the deep port —
    record it as follow-up evidence, do not do it in this slice.
 6. **Framework packages via pkg.pr.new previews of
    [#45](https://github.com/prisma/composer/pull/45)** (the owner/repo-scoped
@@ -91,7 +91,7 @@ based on #45's branch).
 - Root: `system.ts`, the app config (prismaCloud + nodeBuild + nextjsBuild +
   state, mirroring storefront-auth's), root `package.json` deploy/destroy
   scripts, framework deps.
-- `apps/ingest`: `service.ts` (compute: deps `{ db: postgres() }`, params per
+- `apps/ingest`: `service.ts` (compute: deps `{ db: rawPostgres() }`, params per
   env.ts with zod schemas + secret facets, expose `{ trigger }`, node build
   adapter); entry refactor (config from `service.config()`, DATABASE_URL
   bridge, serveSchedule mounted, in-process `setInterval` scheduler and
@@ -119,13 +119,13 @@ based on #45's branch).
       `build` green; no `@prisma/compute-sdk` deploy config remains.
 - [x] The in-process tick scheduler is gone; the only clock is
       `cron.scheduler`.
-- [x] Follow-up evidence recorded in the project plan (pnPostgres conversion,
+- [x] Follow-up evidence recorded in the project plan (postgres conversion,
       module-global-client pattern, deploy-values mechanism).
 
 ## Non-goals
 
 - **Live deploy / cutover (S4)** — needs team secrets + workspace creds.
-- **pnPostgres conversion of `@workspace/db`** — recorded follow-up.
+- **postgres conversion of `@workspace/db`** — recorded follow-up.
 - **ClickHouse/PostHog/Stripe as framework resources** — they are external
   SaaS; params suffice.
 - **open-chat / M2.**

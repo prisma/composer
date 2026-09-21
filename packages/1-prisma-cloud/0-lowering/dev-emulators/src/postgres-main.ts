@@ -6,9 +6,10 @@
  * `node:http` JSON admin API; state under its `--state-dir`.
  *
  * `@prisma/dev` is imported dynamically from a CALLER-RESOLVED path (each
- * admin request that needs it carries `prismaDevModulePath`) so the app
- * owns its own Prisma version — this daemon has no `@prisma/dev` dependency
- * of its own.
+ * admin request that needs it carries `prismaDevModulePath`): the local
+ * target resolves it from Composer's own `@prisma/composer-prisma-cloud`
+ * installation, which declares the version — this daemon has no
+ * `@prisma/dev` dependency of its own.
  *
  * Runs as its own OS process, started by `daemon.ts`'s `ensureDaemon` via
  * `process.execPath <this file> --port <n> --state-dir <dir>`.
@@ -46,7 +47,7 @@ const ALREADY_RUNNING_POLLS = 24;
 const ALREADY_RUNNING_POLL_MS = 500;
 
 const NOT_INSTALLED_MESSAGE =
-  'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.';
+  'local dev needs @prisma/dev for its local Postgres emulator — @prisma/composer-prisma-cloud declares it as a dependency, but the given module path did not load; reinstall your dependencies.';
 
 // The behavior contract's no-value-logging rule, applied to embedded
 // diagnostics too (spec's diagnostics rule) — masks a connection URL's

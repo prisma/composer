@@ -216,8 +216,8 @@ tree-hash verification; the orchestrator pushes, the implementer never does).
     serialize yields the resource + env row per generated leaf.
 11. **Carried S1/S2 items that must survive the re-application** (verify
     each against the map, none regress): `composeServiceFetch` subpath +
-    prefix guard (`33e813cd`, `24207103`); PN vocabulary renames
-    (`d4302327`); PN dbInit bootstrap (`51983e40`); transient-ID sweep
+    prefix guard (`33e813cd`, `24207103`); Prisma ORM vocabulary renames
+    (`d4302327`); Prisma ORM dbInit bootstrap (`51983e40`); transient-ID sweep
     (`5f1b1c3b`); Hono examples (`07fe5104`); S2 email flows + bundling
     fixes (`b03b6e97..9f2fedb2` as re-stacked). The inert head-comparison
     branch of `runPackPreflight` is DELETED in this migration (keep the
@@ -266,7 +266,7 @@ tree-hash verification; the orchestrator pushes, the implementer never does).
 - Any change to `envParam`/`envSecret` behavior.
 - ADR-0030 service keys migrating onto `generatedParam()` plumbing (they
   stay on their own channel; unification is a possible later slice).
-- The upstream PN contract-signed-extension-hashes change (separate brief,
+- The upstream Prisma ORM contract-signed-extension-hashes change (separate brief,
   separate repo).
 
 ## 9. Validation (the implementer runs; all must pass)
@@ -274,7 +274,7 @@ tree-hash verification; the orchestrator pushes, the implementer never does).
 Root `pnpm typecheck`; target package tests; service-rpc tests; auth package
 full suite; email package suite (untouched-green); `examples/auth` tests;
 `pnpm lint`, `pnpm lint:deps`, `pnpm lint:casts`; fresh auth build — deployed
-entrypoint bundle contains no PN control client, testing bundle
+entrypoint bundle contains no Prisma ORM control client, testing bundle
 self-contained; built public surface still does not export
 `composeServiceFetch`; repo-wide grep proves zero occurrences of
 `mintedSecret|MintedSecret|minted-secret|isMintedSecret|_MINTED` outside

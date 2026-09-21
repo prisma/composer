@@ -12,7 +12,7 @@ import { isParamSource, isSecretSource, Load, module, paramSource } from '@inter
 import { emailSendContract } from '@internal/email';
 import node from '@internal/node';
 import { compute, isGeneratedParamSource } from '@internal/prisma-cloud';
-import { pnContract, pnPostgres } from '@internal/prisma-cloud/prisma-next';
+import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { rpc } from '@internal/service-rpc';
 import { auth } from '../auth-module.ts';
 import { authAdminContract, authApi, authSessionContract, jwtVerifier } from '../contract.ts';
@@ -40,10 +40,10 @@ function serviceBindingOf(
 
 /** A pack-carrying database node — what a root wires into the module's db slot. */
 const database = () =>
-  pnPostgres({
+  postgres({
     name: 'database',
-    contract: pnContract(packContractJson),
-    config: './prisma-next.config.ts',
+    contract: dataContract(packContractJson),
+    config: './prisma.config.ts',
   });
 
 /** A minimal provider of the `email` boundary dep — exposes only `send`, satisfying `emailSender(authTemplates)`'s required contract. */
@@ -85,7 +85,7 @@ describe('auth()', () => {
     expect(typeOf('auth.service')).toBe('compute');
     // The database and the mail provider are the ROOT's nodes — the module
     // provisions no db or email service of its own.
-    expect(typeOf('database')).toBe('prisma-next');
+    expect(typeOf('database')).toBe('postgres');
     expect(typeOf('mail')).toBe('compute');
     expect(graph.edges).toContainEqual({
       from: 'database',
@@ -109,6 +109,22 @@ describe('auth()', () => {
     const graph = Load(rootWithAuth());
     const binding = serviceBindingOf(graph.inputBindings);
     expect(sourcePayload(binding['baseUrl'])).toBe('AUTH_BASE_URL');
+  });
+
+  test("signUp rides the service input as a literal: 'open' by default, 'closed' when asked", () => {
+    expect(serviceBindingOf(Load(rootWithAuth()).inputBindings)['signUp']).toBe('open');
+
+    const closedRoot = module('root', {}, ({ provision }) => {
+      const db = provision(database(), { id: 'database' });
+      const mail = provision(mailProvider(), { id: 'mail' });
+      provision(auth({ signUp: 'closed' }), {
+        id: 'auth',
+        deps: { db, email: mail.send },
+        params: { baseUrl: paramSource('AUTH_BASE_URL') },
+      });
+      return {};
+    });
+    expect(serviceBindingOf(Load(closedRoot).inputBindings)['signUp']).toBe('closed');
   });
 
   test('the three ports wire to three consumers independently', () => {

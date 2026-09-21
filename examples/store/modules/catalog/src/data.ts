@@ -1,12 +1,12 @@
 /**
- * catalog's Prisma Next data contract wrapped into the framework's
- * `prisma-next` kind — the ONE value both ends reference: the resource end
- * (`pnPostgres({ name, contract, config })` in module.ts) and the dependency
- * end (`pnPostgres(catalogData)` in service.ts). Emitted from contract.prisma
- * by `prisma-next contract emit`.
+ * catalog's Prisma ORM data contract wrapped into the framework's
+ * `postgres` kind — the ONE value both ends reference: the resource end
+ * (`postgres({ name, contract, config })` in module.ts) and the dependency
+ * end (`postgres(catalogData)` in service.ts). Emitted from contract.prisma
+ * by `prisma contract emit`.
  */
-import { pnContract } from '@prisma/composer-prisma-cloud/prisma-next';
+import { dataContract } from '@prisma/composer-prisma-cloud/orm';
 import type { Contract } from '../contract.d.ts';
 import contractJson from '../contract.json' with { type: 'json' };
 
-export const catalogData = pnContract<Contract>(contractJson);
+export const catalogData = dataContract<Contract>(contractJson);

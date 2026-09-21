@@ -1,6 +1,6 @@
 name: DCO
 
-# No probot DCO app here (unlike prisma-next) — this workflow enforces
+# No probot DCO app here (unlike prisma/orm) — this workflow enforces
 # sign-off itself by checking every commit in the range for a
 # "Signed-off-by:" trailer.
 

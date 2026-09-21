@@ -43,19 +43,19 @@ Import rewrites (grep to confirm exact lines — do not trust this list as exhau
 Current public entrypoints (hand-maintained `{types,default}` map, `exports:false`):
 - `.` ← `src/index.ts`
 - `./control` ← `src/control.ts`
-- `./prisma-next` ← `src/prisma-next.ts`
+- `./orm` ← `src/orm-postgres.ts`
 - `./testing` ← `src/testing.ts`
 - `./connection` ← `src/pg-connection.ts`
 
-Move all five into `src/exports/` (keep filenames — including `pg-connection.ts`). Internals stay at root: `descriptors/`, `compute.ts`, `http.ts`, `param.ts`, `pg-warm-resource.ts`, `pn-config.ts`, `pn-migration-resource.ts`, `postgres.ts`, `preflight.ts`, `prisma-next-migrate.ts`, `s3-*.ts`, `secret.ts`, `serializer.ts`, `service-keys.ts`.
+Move all five into `src/exports/` (keep filenames — including `pg-connection.ts`). Internals stay at root: `descriptors/`, `compute.ts`, `http.ts`, `param.ts`, `pg-warm-resource.ts`, `orm-config.ts`, `orm-migration-resource.ts`, `postgres.ts`, `preflight.ts`, `orm-migrate.ts`, `s3-*.ts`, `secret.ts`, `serializer.ts`, `service-keys.ts`.
 
 - Fix the 5 entrypoints' relative imports of internal modules `./X.ts` → `../X.ts` (grep authoritative — these entrypoints import many internals). Sibling entrypoint refs (if any among the 5) stay `./`.
 - Grep the package + `test/`/`examples/`/siblings for references to the 5 moved files (imports AND hardcoded paths) and repoint.
 - tsdown entry (object, keep the `./connection` subpath via object key `connection` mapping the `pg-connection.ts` file):
-  `{ index: 'src/exports/index.ts', control: 'src/exports/control.ts', 'prisma-next': 'src/exports/prisma-next.ts', testing: 'src/exports/testing.ts', connection: 'src/exports/pg-connection.ts' }`
+  `{ index: 'src/exports/index.ts', control: 'src/exports/control.ts', 'postgres': 'src/exports/orm.ts', testing: 'src/exports/testing.ts', connection: 'src/exports/pg-connection.ts' }`
 - **GENERATION PROBE:** DROP `exports: false` and let the map generate. Then build the WHOLE workspace (`pnpm build`) — this builds `@prisma/composer-prisma-cloud`, which bundles target's dts. If the generated string-form exports break the public package's dts resolution / build, **revert target to its hand-maintained `{types,default}` map** (keep `exports:false`, repoint the dist values if any changed — they shouldn't, object keys preserve output names) and record WHY in the commit message + report. Do not force generation if it breaks dts.
-- architecture.config.json: repoint target's 5 entrypoint globs 1:1 to `src/exports/…` — `control.ts` → control; `index.ts`, `prisma-next.ts`, `testing.ts`, `pg-connection.ts` → shared. Leave the internal-file globs (`descriptors/**`, `pn-migration-resource`, `pg-warm-resource`, `prisma-next-migrate`, `serializer`, `service-keys`, `compute`, `postgres`, `pn-config`, `http`) untouched.
-- **Key parity:** keys `.`, `./control`, `./prisma-next`, `./testing`, `./connection`, `./package.json` unchanged. If generated: value form may change (string vs `{types,default}`) — acceptable if the workspace + dts build stays green. If reverted to manual: byte-identical to today.
+- architecture.config.json: repoint target's 5 entrypoint globs 1:1 to `src/exports/…` — `control.ts` → control; `index.ts`, `orm-postgres.ts`, `testing.ts`, `pg-connection.ts` → shared. Leave the internal-file globs (`descriptors/**`, `orm-migration-resource`, `pg-warm-resource`, `orm-migrate`, `serializer`, `service-keys`, `compute`, `postgres`, `orm-config`, `http`) untouched.
+- **Key parity:** keys `.`, `./control`, `./orm`, `./testing`, `./connection`, `./package.json` unchanged. If generated: value form may change (string vs `{types,default}`) — acceptable if the workspace + dts build stays green. If reverted to manual: byte-identical to today.
 
 ## Scope
 IN: lowering, target. OUT: cron/storage/streams (D4b), public packages (D5), D6 collapse, any file rename beyond the barrel-index flattening (which is a move, `index.ts`→`<name>.ts`).

@@ -11,7 +11,7 @@ export interface BucketConfig {
 /**
  * The contract a provisioned Bucket provides — deliberately kind-equal to the
  * storage module's `s3Contract` (`kind: 's3'`). `satisfies` compares KIND,
- * not identity (mirrors `postgresContract`): a real bucket and the emulator
+ * not identity (mirrors `rawPostgresContract`): a real bucket and the emulator
  * are interchangeable at every `s3()` dependency slot. Cross-layer import of
  * the storage module's contract is not allowed (layering: 2-shared-modules
  * depends on 1-extensions, not the reverse), which is exactly the design

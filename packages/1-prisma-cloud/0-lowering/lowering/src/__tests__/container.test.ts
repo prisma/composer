@@ -6,6 +6,7 @@ import {
   ContainerNotFoundError,
   deleteBranch,
   deleteProject,
+  type ProjectRegion,
   resolveContainer,
 } from '../container.ts';
 import { PrismaApiError } from '../http.ts';
@@ -213,7 +214,13 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
 
 const run = (
   state: FakeState,
-  opts: { workspaceId: string; appName: string; stage?: string; ensure?: boolean },
+  opts: {
+    workspaceId: string;
+    appName: string;
+    stage?: string;
+    ensure?: boolean;
+    region?: ProjectRegion;
+  },
 ) =>
   Effect.runPromise(
     resolveContainer(opts).pipe(Effect.provideService(ManagementClient, fakeClient(state))),
@@ -227,7 +234,11 @@ describe('resolveContainer — Project resolution', () => {
   });
 
   test('no matching project creates one, resolving its default Branch id', async () => {
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(result.defaultBranchId).toBe('br-default-proj-1');
@@ -236,9 +247,44 @@ describe('resolveContainer — Project resolution', () => {
   });
 
   test('project creation opts out of the platform default database', async () => {
-    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'us-east-1' });
 
     expect(state.projectCreateBodies[0]?.['createDatabase']).toBe(false);
+  });
+
+  test('project creation sends the configured region to the platform', async () => {
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'ap-southeast-1' });
+
+    expect(state.projectCreateBodies[0]?.['region']).toBe('ap-southeast-1');
+  });
+
+  test('no region when a new project is needed fails with an actionable error', async () => {
+    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PrismaApiError);
+    expect((error as PrismaApiError).status).toBe(0);
+    expect((error as PrismaApiError).message).toContain('"storefront"');
+    expect((error as PrismaApiError).message).toContain('prismaCloud({ region:');
+    expect((error as PrismaApiError).message).toContain('PRISMA_REGION');
+  });
+
+  test('an existing project resolves without a region — region is not required for find', async () => {
+    state.projects.push({
+      id: 'proj-existing',
+      name: 'storefront',
+      createdAt: new Date(1).toISOString(),
+      workspace: { id: 'ws-1' },
+    });
+    state.branches['proj-existing'] = [
+      { id: 'br-default', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+    ];
+
+    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+
+    expect(result.projectId).toBe('proj-existing');
+    expect(state.projectCreateCalls).toBe(0);
   });
 
   test('adopt-oldest: several projects share the name — the oldest is adopted, none created', async () => {
@@ -280,7 +326,11 @@ describe('resolveContainer — Project resolution', () => {
       workspace: { id: 'ws-2' },
     });
 
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(state.projectCreateCalls).toBe(1);
@@ -294,7 +344,11 @@ describe('resolveContainer — Project resolution', () => {
       workspace: { id: 'ws-1' },
     });
 
-    const result = await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    const result = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    });
 
     expect(result.projectId).toBe('proj-1');
     expect(state.projectCreateCalls).toBe(1);
@@ -439,7 +493,7 @@ describe('resolveContainer — Project resolution', () => {
   });
 
   test('project creation sends the module name as the logical id', async () => {
-    await run(state, { workspaceId: 'ws-1', appName: 'storefront' });
+    await run(state, { workspaceId: 'ws-1', appName: 'storefront', region: 'us-east-1' });
 
     expect(state.projectCreateBodies[0]?.['logicalId']).toBe('storefront');
   });
@@ -447,9 +501,11 @@ describe('resolveContainer — Project resolution', () => {
   test('a 409 on project create surfaces a clear name-conflict error', async () => {
     state.projectCreateConflict = true;
 
-    const error: unknown = await run(state, { workspaceId: 'ws-1', appName: 'storefront' }).catch(
-      (e: unknown) => e,
-    );
+    const error: unknown = await run(state, {
+      workspaceId: 'ws-1',
+      appName: 'storefront',
+      region: 'us-east-1',
+    }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(PrismaApiError);
     expect((error as PrismaApiError).status).toBe(409);

@@ -1,70 +1,46 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { resolvePrismaDevModulePath } from '../postgres.ts';
 
-/**
- * `resolvePrismaDevModulePath`'s two-step resolution (local-dev spec § 4,
- * REVISED — operator review of #162): resolve `@prisma/dev` directly from
- * the app's own node_modules first; on failure, resolve `prisma` (which
- * apps typically depend on, and which carries `@prisma/dev` as its own
- * dependency) and resolve `@prisma/dev` from there; both failing throws the
- * pinned error.
- */
-describe('resolvePrismaDevModulePath', () => {
-  let cwd: string;
+const localTargetDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-  beforeEach(() => {
-    // realpath'd — node's own module resolution resolves symlinks (macOS's
-    // `/tmp` → `/private/tmp`), and the assertions below compare against it.
-    cwd = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'dev-postgres-module-resolution-test-')),
-    );
-    fs.writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'app' }));
-  });
-
-  afterEach(() => {
-    fs.rmSync(cwd, { recursive: true, force: true });
-  });
-
-  function writeModule(dir: string, name: string): void {
-    const modDir = path.join(dir, ...name.split('/'));
-    fs.mkdirSync(modDir, { recursive: true });
-    fs.writeFileSync(path.join(modDir, 'package.json'), JSON.stringify({ name, main: 'index.js' }));
-    fs.writeFileSync(path.join(modDir, 'index.js'), 'module.exports = {};\n');
+function packageJsonAbove(file: string): { name: string; version: string } {
+  let dir = path.dirname(file);
+  for (;;) {
+    const candidate = path.join(dir, 'package.json');
+    if (fs.existsSync(candidate)) return JSON.parse(fs.readFileSync(candidate, 'utf-8'));
+    const parent = path.dirname(dir);
+    if (parent === dir) throw new Error(`no package.json above ${file}`);
+    dir = parent;
   }
+}
 
-  test('resolves @prisma/dev directly when the app depends on it', () => {
-    writeModule(path.join(cwd, 'node_modules'), '@prisma/dev');
+describe('resolvePrismaDevModulePath', () => {
+  test("resolves the @prisma/dev that Composer's own package declares, not the app's", () => {
+    const resolved = resolvePrismaDevModulePath();
+    const manifest = packageJsonAbove(resolved);
+    const declared = JSON.parse(fs.readFileSync(path.join(localTargetDir, 'package.json'), 'utf-8'))
+      .dependencies['@prisma/dev'];
 
-    const resolved = resolvePrismaDevModulePath(cwd);
-
-    expect(resolved).toBe(path.join(cwd, 'node_modules', '@prisma', 'dev', 'index.js'));
+    expect(manifest.name).toBe('@prisma/dev');
+    expect(declared).toBe('^0.25.2');
+    expect(Bun.semver.satisfies(manifest.version, declared)).toBe(true);
   });
 
-  test("falls back to resolving @prisma/dev from prisma's own dependency tree", () => {
-    writeModule(path.join(cwd, 'node_modules'), 'prisma');
-    writeModule(path.join(cwd, 'node_modules', 'prisma', 'node_modules'), '@prisma/dev');
-
-    const resolved = resolvePrismaDevModulePath(cwd);
-
-    expect(resolved).toBe(
-      path.join(cwd, 'node_modules', 'prisma', 'node_modules', '@prisma', 'dev', 'index.js'),
-    );
-  });
-
-  test('neither @prisma/dev nor prisma installed throws the pinned error', () => {
-    expect(() => resolvePrismaDevModulePath(cwd)).toThrow(
-      'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.',
-    );
-  });
-
-  test('prisma installed but without @prisma/dev throws the pinned error', () => {
-    writeModule(path.join(cwd, 'node_modules'), 'prisma');
-
-    expect(() => resolvePrismaDevModulePath(cwd)).toThrow(
-      'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.',
-    );
+  test('does not depend on the working directory', () => {
+    const fromRepo = resolvePrismaDevModulePath();
+    const before = process.cwd();
+    const emptyApp = fs.mkdtempSync(path.join(os.tmpdir(), 'no-app-'));
+    fs.writeFileSync(path.join(emptyApp, 'package.json'), JSON.stringify({ name: 'app' }));
+    process.chdir(emptyApp);
+    try {
+      expect(resolvePrismaDevModulePath()).toBe(fromRepo);
+    } finally {
+      process.chdir(before);
+      fs.rmSync(emptyApp, { recursive: true, force: true });
+    }
   });
 });

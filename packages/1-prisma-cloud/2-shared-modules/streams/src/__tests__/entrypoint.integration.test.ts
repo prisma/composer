@@ -11,13 +11,14 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createPgStore, startStorageServer } from '@internal/storage/testing';
 import { createTestDatabase, startTestPostgres, type TestDatabase } from './pg-harness.ts';
 
 const postgres = startTestPostgres();
 
 const API_KEY = 'streams-integration-key';
-const PACKAGE_ROOT = new URL('../..', import.meta.url).pathname;
+const PACKAGE_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 let db: TestDatabase;
 let storageServer: { url: string; stop: () => void };
@@ -58,7 +59,7 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 function startServer(): ChildProcess {
-  const proc = spawn('bun', ['src/exports/streams-entrypoint.ts'], {
+  const proc = spawn(process.execPath, ['src/exports/streams-entrypoint.ts'], {
     cwd: PACKAGE_ROOT,
     env: childEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],

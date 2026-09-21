@@ -128,7 +128,7 @@ published API contract), not on a dts limitation.
   Packages whose root is genuinely mixed-plane (`target`, `storage`) keep one
   glob per root file instead.
 
-- **This is stricter than the pattern it adapts.** Prisma Next's own
+- **This is stricter than the pattern it adapts.** Prisma ORM's own
   `adapter-postgres/src/exports/column-types.ts` carries about 185 lines of
   implementation. We took the stricter rule deliberately: an exports file that
   can hold implementation eventually does, and then internal modules import it,
@@ -175,7 +175,7 @@ published API contract), not on a dts limitation.
   fallback overlaps every specific glob and breaks plane enforcement. Rejected —
   globs must be non-overlapping.
 
-- **Collect internals under `src/core/**`, as Prisma Next does.** We separate
+- **Collect internals under `src/core/**`, as Prisma ORM does.** We separate
   implementation from surface the same way, but name the directories after the
   planes the cruiser already enforces (`src/control/**`, `src/execution/**`,
   root for shared) rather than adding a `core/` level. That keeps one vocabulary
@@ -194,6 +194,6 @@ published API contract), not on a dts limitation.
   `src/exports/runtime.ts`.
 - [`.agents/rules/exports-entrypoints.mdc`](../../../.agents/rules/exports-entrypoints.mdc)
   — the day-to-day rule for adding a subpath.
-- Prisma Next: `docs/architecture docs/Package-Layering.md` § Package Exports
+- Prisma ORM: `docs/architecture docs/Package-Layering.md` § Package Exports
   Pattern — the pattern this adapts (its `customExports` hook and multi-plane
   layout).

@@ -66,7 +66,7 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
 | `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types `prisma-composer.config.ts` is checked against (ADR-0017) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
-| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `postgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `postgresContract`, `http()` | `@prisma/composer` only |
+| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract`, `http()` | `@prisma/composer` only |
 | `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
@@ -276,7 +276,7 @@ interface BuildAdapter {
 // ——— Nodes ———
 
 // A Resource's identity: the ONE place a piece of infrastructure exists. A module
-// provisions it (`h.provision("db", postgres({ name: "db" }))`) and wires the
+// provisions it (`h.provision("db", rawPostgres({ name: "db" }))`) and wires the
 // returned ref into each consumer's dependency slot — a resource is never
 // created because a service mentioned it. `provides` is the Contract it offers
 // (its single port); the routing `type` is DERIVED as `provides.kind`, so a
@@ -869,31 +869,31 @@ import { resource, dependency, service, configOf, hydrate, string, number,
   type Contract, type Deps, type DependencyEnd, type Loaded, type ResourceNode,
   type RunnableServiceNode } from "@prisma/composer"
 
-export interface PostgresConfig { readonly url: string }
+export interface RawPostgresConfig { readonly url: string }
 
 // The contract a Postgres provides AND its consumers require. satisfies()
 // compares KIND, not identity — a pack module can be duplicated across a
 // workspace (same rationale as the Symbol.for node brand), and every
 // duplicate's contract must still satisfy.
-export const postgresContract: Contract<"postgres", PostgresConfig> = Object.freeze({
+export const rawPostgresContract: Contract<"postgres", RawPostgresConfig> = Object.freeze({
   kind: "postgres", __cmp: { url: "" },
   satisfies: (required) => required.kind === "postgres",
 })
 
 // ONE postgres factory, two shapes. { name }: the identity a module provisions —
-// the ONE place the database exists, providing postgresContract. postgres()
+// the ONE place the database exists, providing rawPostgresContract. rawPostgres()
 // (no args): the consumer's dependency requiring it. No client factory — the
-// dependency's BINDING is the typed config PostgresConfig itself (hydrate is
+// dependency's BINDING is the typed config RawPostgresConfig itself (hydrate is
 // the identity on its values); the app builds its own client from { url } in
 // app code (ADR-0015).
-export function postgres(opts: { name: string }): ResourceNode<typeof postgresContract>
-export function postgres(): DependencyEnd<PostgresConfig, typeof postgresContract>
+export function postgres(opts: { name: string }): ResourceNode<typeof rawPostgresContract>
+export function rawPostgres(): DependencyEnd<RawPostgresConfig, typeof rawPostgresContract>
 export function postgres(opts?: { name: string }): unknown {
-  if (opts?.name !== undefined) return resource({ name: opts.name, extension: "@prisma/composer-prisma-cloud", provides: postgresContract })
+  if (opts?.name !== undefined) return resource({ name: opts.name, extension: "@prisma/composer-prisma-cloud", provides: rawPostgresContract })
   return dependency({
     type: "postgres",
     connection: { params: { url: string() }, hydrate: (v) => v },
-    required: postgresContract,
+    required: rawPostgresContract,
   })
 }
 
@@ -1165,14 +1165,14 @@ only; the app writes and bundles its own entry:
 
 ```ts
 // src/service.ts — the authored service: name + deps + build + where it lives.
-// No handler, no driver. `db` is a DEPENDENCY (a slot): `postgres()` requires
-// postgresContract and never provisions anything — the composing module owns the
-// database and wires its ref in. Its binding is `PostgresConfig` ({ url }); the
+// No handler, no driver. `db` is a DEPENDENCY (a slot): `rawPostgres()` requires
+// rawPostgresContract and never provisions anything — the composing module owns the
+// database and wires its ref in. Its binding is `RawPostgresConfig` ({ url }); the
 // app builds its own client in server.ts (ADR-0015).
 import { compute, postgres } from "@prisma/composer-prisma-cloud"
 import node from "@prisma/composer/node"
 
-const db = postgres()
+const db = rawPostgres()
 
 export default compute({
   name: "hello",                                // ADR-0006: every node named
@@ -1183,14 +1183,14 @@ export default compute({
 })
 
 // src/module.ts — the app root: the module OWNS the database. It provisions the
-// identity `postgres({ name })` and wires its ref into the service's slot (the
+// identity `rawPostgres({ name })` and wires its ref into the service's slot (the
 // contract matches); its name names the app (ADR-0006).
 import { module } from "@prisma/composer"
 import { postgres } from "@prisma/composer-prisma-cloud"
 import service from "./service.ts"
 
 export default module("hello", (h) => {
-  const db = h.provision("db", postgres({ name: "db" }))
+  const db = h.provision("db", rawPostgres({ name: "db" }))
   h.provision("hello", service, { db })
 })
 
@@ -1200,7 +1200,7 @@ export default module("hello", (h) => {
 import { SQL } from "bun"                        // the APP's choice of client
 import service from "./service"
 
-const { db, port } = service.load()             // db: PostgresConfig ({ url }); port: number
+const { db, port } = service.load()             // db: RawPostgresConfig ({ url }); port: number
 const sql = new SQL({ url: db.url })             // module-scoped: one pool per process
 Bun.serve({ port, hostname: "0.0.0.0",
   fetch: async () => Response.json(await sql`select 1 as ok`) })
@@ -1215,8 +1215,8 @@ Bun.serve({ port, hostname: "0.0.0.0",
 // Alchemy — no bundle map, no hand-written stack file.
 ```
 
-`service.load()` is typed end to end by the chain `postgres()` →
-`PostgresConfig` → `compute({ deps: { db } })` captures `{ db: PostgresConfig }` →
+`service.load()` is typed end to end by the chain `rawPostgres()` →
+`RawPostgresConfig` → `compute({ deps: { db } })` captures `{ db: RawPostgresConfig }` →
 `load()` returns it, and the app types its own `sql` from `db.url`. The app never
 annotates a dependency type. Note where Bun appears: only in `server.ts` (the
 `new SQL` client and `Bun.serve`, the app's own entry) — the app's choice, since
@@ -1232,7 +1232,7 @@ model promises. The config round-trip is proven separately at the pack level
 ### Two services, connected — the module (a framework-hosted consumer)
 
 The storefront-auth shape: `auth` is a self-served Hono service shaped like the
-one above — its `db` is a `postgres()` dependency whose binding is the config
+one above — its `db` is a `rawPostgres()` dependency whose binding is the config
 its own server builds a client from, while the composing module below owns and
 provisions the database; `storefront` is a **framework-hosted**
 Next.js service whose page pulls the `auth`
@@ -1269,7 +1269,7 @@ import { postgres } from "@prisma/composer-prisma-cloud"
 import authService from "./modules/auth/src/service"
 import storefrontService from "./modules/storefront/src/service"
 export default module("storefront-auth", (h) => {
-  const db = h.provision("db", postgres({ name: "db" }))
+  const db = h.provision("db", rawPostgres({ name: "db" }))
   const authRef = h.provision("auth", authService, { db })         // db→auth dependency edge
   h.provision("storefront", storefrontService, { auth: authRef })  // auth→storefront dependency edge
 })

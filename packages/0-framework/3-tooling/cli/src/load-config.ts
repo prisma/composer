@@ -1,7 +1,7 @@
 /**
  * Pipeline step: find and load `prisma-composer.config.ts` (ADR-0017) — the ONE
  * file that imports control-plane code. Discovery is the standard walk-up
- * from the deploy entry's directory (mirrors prisma-next's config-loader);
+ * from the deploy entry's directory (mirrors prisma/orm's config-loader);
  * loading is c12 with that explicit path (rc/global/package.json lookups
  * disabled), so the config file's own static imports resolve from the app
  * root by whatever package manager runs — no specifier construction, no

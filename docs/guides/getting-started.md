@@ -41,7 +41,7 @@ build, a deploy. At the end there's a section on
 
 The app is deliberately tiny — a `quotes` API and a public `gateway` that
 calls it, no database — so you can see the whole shape at once. Adding a
-Postgres (including a Prisma Next-typed one) is the first thing to do after,
+Postgres (including a Prisma-ORM-typed one) is the first thing to do after,
 and [Building an app](building-an-app.md#databases) covers it.
 
 You'll need:
@@ -84,31 +84,6 @@ binary (a production install with no dev dependencies) from failing:
 
 Those copies are derived from your lockfile, like `node_modules` — gitignore
 them rather than committing them.
-
-Then pin the `effect` constellation in your `package.json` — a workaround for
-an upstream bug in alchemy (Composer's deploy engine), whose own
-`effect`-family version ranges float past the versions its code supports, so
-a fresh install without the pins ends up with two conflicting copies of
-`effect` (Composer's CLI detects that and refuses to run). Match the exact
-version to the one `@prisma/composer` pins (see its `dependencies.effect`;
-the repo's examples carry the same block). npm reads `overrides`, yarn calls
-it `resolutions`, pnpm nests it under `"pnpm"`:
-
-```jsonc
-// package.json
-"overrides": {
-  "effect": "4.0.0-rc.111",
-  "@effect/sql-d1": "4.0.0-rc.111",
-  "@effect/sql-pg": "4.0.0-rc.111",
-  "@effect/vitest": "4.0.0-rc.111",
-  "@effect/platform-bun": "4.0.0-rc.111",
-  "@effect/platform-node": "4.0.0-rc.111",
-  "@effect/platform-node-shared": "4.0.0-rc.111"
-}
-```
-
-Reinstall after adding it. This block disappears once alchemy's ranges match
-its code.
 
 ```jsonc
 // tsconfig.json
@@ -433,7 +408,7 @@ your built server file, then make three changes to the server itself:
    `envSecret`. [Building an app § Service
    input](building-an-app.md#service-input) has the how-to-choose table and
    both shapes.
-3. If it talks to Postgres: declare `deps: { db: postgres() }` and build your
+3. If it talks to Postgres: declare `deps: { db: rawPostgres() }` and build your
    existing client (`pg`, Bun's `SQL`, whatever you use today) from the
    injected `db.url` instead of a connection-string env var.
 
@@ -477,6 +452,6 @@ the wiring for free.
 - [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with
-  [pn-widgets](../../examples/pn-widgets/) (one service + one Prisma
+  [orm-demo](../../examples/orm-demo/) (one service + one Prisma
   Next-typed database) or [store](../../examples/store/) (four modules, cron,
   a Next.js storefront).

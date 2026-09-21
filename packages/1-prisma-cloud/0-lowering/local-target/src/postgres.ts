@@ -2,7 +2,7 @@
  * Local postgres-cluster providers: upstream alchemy's `Prisma.Database` and
  * `Prisma.Connection` become clients of the `postgres-main` emulator daemon
  * (one named, persistent `@prisma/dev` server per `Database` resource).
- * `PgWarm`/`PnMigration` are not here — the hosted ones run against whatever
+ * `PgWarm`/`OrmMigration` are not here — the hosted ones run against whatever
  * URL they are handed. Attributes match upstream's shapes; the daemon's
  * DIRECT connection string maps to `directConnectionString` and
  * `databaseUrl`, everything else is left absent. Instance names come from
@@ -10,7 +10,6 @@
  * slug drifted from the daemon's and broke `Connection`'s lookup.
  */
 import { createRequire } from 'node:module';
-import * as path from 'node:path';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { instanceNameFor, postgresClient, slug } from '@internal/dev-emulators';
 import * as Prisma from 'alchemy/Prisma';
@@ -30,34 +29,26 @@ function databaseIdOfInput(value: unknown): string | undefined {
   return undefined;
 }
 
-function noPrismaDevError(): Error {
+function noPrismaDevError(cause: unknown): Error {
   return new Error(
-    'local dev needs @prisma/dev for its local Postgres emulator — add "prisma" to your app\'s devDependencies.',
+    `local dev needs @prisma/dev for its local Postgres emulator — @prisma/composer-prisma-cloud declares it as a dependency, but it did not resolve from Composer's own installation; reinstall your dependencies. (${cause instanceof Error ? cause.message : String(cause)})`,
   );
 }
 
 /**
- * Two-step resolution, pinned (local-dev spec § 4): (1) resolve
- * `@prisma/dev` directly from the app's own `node_modules`; (2) on failure,
- * resolve `prisma` (the CLI apps typically depend on, which itself carries
- * `@prisma/dev`) and resolve `@prisma/dev` from THERE. The daemon imports
- * the returned path dynamically, so the app stays in charge of its own
- * Prisma version. `cwd` is the one place a local provider legitimately
- * reads `process.cwd()` — finding the app's own installed version is
- * inherently cwd-relative.
+ * Composer owns the local Postgres emulator's version: `@prisma/dev` is a
+ * dependency of `@prisma/composer-prisma-cloud` and is resolved from
+ * Composer's own package, never from the app. The app's copy (if any) is
+ * ignored on purpose — an old `@prisma/dev` pulled in transitively (alchemy
+ * pins `^0.20.0`, whose pglite-socket crashes on any message over 64 KiB)
+ * would otherwise silently replace the version Composer tested against.
+ * The daemon imports the returned path dynamically.
  */
-export function resolvePrismaDevModulePath(cwd: string): string {
-  const appRequire = createRequire(path.join(cwd, 'package.json'));
+export function resolvePrismaDevModulePath(): string {
   try {
-    return appRequire.resolve('@prisma/dev');
-  } catch {
-    // fall through to the prisma-CLI-relative resolution
-  }
-  try {
-    const prismaEntry = appRequire.resolve('prisma');
-    return createRequire(prismaEntry).resolve('@prisma/dev');
-  } catch {
-    throw noPrismaDevError();
+    return createRequire(import.meta.url).resolve('@prisma/dev');
+  } catch (cause) {
+    throw noPrismaDevError(cause);
   }
 }
 
@@ -79,7 +70,7 @@ export function LocalDatabaseProvider(
           // `news.name` is normally present — the resource's logical id is
           // only a defensive fallback.
           const name = news.name ?? id;
-          const prismaDevModulePath = resolvePrismaDevModulePath(process.cwd());
+          const prismaDevModulePath = resolvePrismaDevModulePath();
           // The daemon's `<id>` path segment must match
           // /^[a-z0-9][a-z0-9-]*$/ (spec § 2's API hygiene rule) — but a
           // Database resource's name is hierarchical and dot-separated for
