@@ -361,6 +361,9 @@ that surprise:
 2. Ctrl-C stops the app's processes but leaves local databases, buckets, and
    their data up: the next `dev` is a warm start. Starting clean, wiping
    this app's local instances and data first, is an explicit opt-in flag.
+   Shutdown waits for watcher cleanup and in-flight rebuilds before stopping
+   services; it never starts a new deploy after shutdown begins. Cleanup errors
+   are reported without abandoning the remaining shutdown work.
 3. `dev` does not print service logs; `log` is a separate, read-only command
    that follows the already-running app's merged logs. It never builds,
    provisions, starts, or stops anything.
