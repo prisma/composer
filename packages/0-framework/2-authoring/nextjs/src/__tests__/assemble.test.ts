@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isWithin } from '@internal/bundle-paths';
 import { assemble, standaloneServerPath } from '../exports/control.ts';
 import nextjs from '../exports/index.ts';
 
@@ -421,7 +422,7 @@ describe('assemble()', () => {
     'links the bundle with junctions on Windows, never a directory symlink',
     async () => {
       const root = makeAppRoot();
-      writeNextBuild(root);
+      const { appRel } = writeNextBuild(root);
       const standalone = path.join(root, '.next', 'standalone');
       const storeRelative = path.join('node_modules', '.pnpm', 'semver@6.3.1', 'node_modules');
       const source = path.join(root, storeRelative, 'semver');
@@ -434,6 +435,12 @@ describe('assemble()', () => {
         path.join(linkDir, 'semver'),
         'junction',
       );
+      const absoluteSource = path.join(root, 'node_modules', 'pg');
+      fs.mkdirSync(absoluteSource, { recursive: true });
+      fs.writeFileSync(path.join(absoluteSource, 'index.js'), 'module.exports = "pg";\n');
+      const absoluteLinkDir = path.join(standalone, appRel, '.next', 'node_modules');
+      fs.mkdirSync(absoluteLinkDir, { recursive: true });
+      fs.symlinkSync(absoluteSource, path.join(absoluteLinkDir, 'pg-traced'), 'junction');
 
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
       tmpDirs.push(cwd);
@@ -455,6 +462,10 @@ describe('assemble()', () => {
       expect(linkTarget(path.join(bundle, 'node_modules', 'next-linked'))).toBe('next');
       expect(linkTarget(staged)).toBe('../semver@6.3.1/node_modules/semver');
       expect(fs.readFileSync(path.join(staged, 'index.js'), 'utf8')).toContain('6.3.1');
+      const absoluteLink = path.join(bundle, appRel, '.next', 'node_modules', 'pg-traced');
+      const stagedAbsoluteTarget = fs.realpathSync(absoluteLink);
+      expect(isWithin(fs.realpathSync(bundle), stagedAbsoluteTarget)).toBe(true);
+      expect(fs.readFileSync(path.join(absoluteLink, 'index.js'), 'utf8')).toContain('pg');
     },
     20_000,
   );

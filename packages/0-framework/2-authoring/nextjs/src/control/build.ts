@@ -25,13 +25,13 @@
  * Paths are file-relative (ADR-0004): `appDir` resolves against
  * `dirname(build.module)`.
  */
-
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   assertBundleSymlinksStayInside,
   copyTreeVerbatim,
+  createBundleLink,
   isWithin,
   repairWindowsDirectorySymlinks,
 } from '@internal/bundle-paths';
@@ -188,7 +188,7 @@ async function stageAbsoluteStandaloneLinkTargets(
     stagedTargets.set(sourceReal, target);
 
     const sourceStat = await fs.promises.stat(sourceReal);
-    await fs.promises.cp(sourceReal, target, { recursive: true, verbatimSymlinks: true });
+    await copyTreeVerbatim(sourceReal, target);
     stagedSources.add(sourceReal);
 
     if (!sourceStat.isDirectory()) return target;
@@ -198,7 +198,7 @@ async function stageAbsoluteStandaloneLinkTargets(
       const sourceTarget = path.isAbsolute(rawTarget)
         ? rawTarget
         : path.resolve(path.dirname(sourceLink), rawTarget);
-      if (!path.isAbsolute(rawTarget) && isWithin(sourceReal, sourceTarget)) continue;
+      if (isWithin(sourceReal, sourceTarget)) continue;
 
       let nestedSourceReal: string;
       try {
@@ -216,8 +216,8 @@ async function stageAbsoluteStandaloneLinkTargets(
 
       const nestedTarget = await stageSource(nestedSourceReal);
       const nestedStat = await fs.promises.stat(nestedSourceReal);
-      await fs.promises.rm(stagedLink, { recursive: true, force: true });
-      await fs.promises.symlink(
+      await fs.promises.unlink(stagedLink);
+      await createBundleLink(
         path.relative(path.dirname(stagedLink), nestedTarget),
         stagedLink,
         nestedStat.isDirectory() ? 'dir' : 'file',
@@ -236,12 +236,13 @@ async function stageAbsoluteStandaloneLinkTargets(
     } catch {
       continue;
     }
+    if (isWithin(bundleDir, sourceReal)) continue;
     if (!isWithin(tracedRootReal, sourceReal)) continue;
 
     const target = await stageSource(sourceReal);
     const sourceStat = await fs.promises.stat(sourceReal);
-    await fs.promises.rm(linkPath, { recursive: true, force: true });
-    await fs.promises.symlink(
+    await fs.promises.unlink(linkPath);
+    await createBundleLink(
       path.relative(path.dirname(linkPath), target),
       linkPath,
       sourceStat.isDirectory() ? 'dir' : 'file',
