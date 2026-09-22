@@ -267,7 +267,7 @@ describe('buildReporter', () => {
     });
   });
 
-  test('a run that deployed one service records the app and where it can be reached', async () => {
+  test('a run that deployed one service records where it can be reached', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
@@ -284,12 +284,11 @@ describe('buildReporter', () => {
 
     expect(recorded.updates.at(-1)?.body).toEqual({
       state: 'succeeded',
-      appId: 'app_1',
       deployedUrl: 'https://storefront.example',
     });
   });
 
-  test('a run that deployed several services records neither — there is no one answer to record', async () => {
+  test('a run that deployed several services records no address — there is no one answer to record', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
@@ -307,7 +306,7 @@ describe('buildReporter', () => {
     expect(recorded.updates.at(-1)?.body).toEqual({ state: 'succeeded' });
   });
 
-  test('a service with no public address still records the app it deployed', async () => {
+  test('a service with no public address records nothing beyond the outcome', async () => {
     const { api, recorded } = fakeApi('bld_new');
 
     const session = await begin(api);
@@ -319,7 +318,7 @@ describe('buildReporter', () => {
       entities: [{ kind: 'compute-service', id: 'app_1' }],
     });
 
-    expect(recorded.updates.at(-1)?.body).toEqual({ state: 'succeeded', appId: 'app_1' });
+    expect(recorded.updates.at(-1)?.body).toEqual({ state: 'succeeded' });
   });
 
   test('finishing twice reports once — the signal path and the normal path cannot both land', async () => {
