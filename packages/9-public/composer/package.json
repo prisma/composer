@@ -43,7 +43,7 @@
     "cross-spawn": "^7.0.6",
     "effect": "4.0.0-rc.112",
     "esbuild": "^0.28.1",
-    "@prisma/management-api-sdk": "^1.60.0"
+    "@prisma/management-api-sdk": "^1.76.0"
   },
   "devDependencies": {
     "@internal/assemble": "workspace:0.21.0",
