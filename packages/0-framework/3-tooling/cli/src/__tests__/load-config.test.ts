@@ -178,6 +178,28 @@ describe('resolveConfigFile() — which file a load will use', () => {
     expect(error.message).toContain(path.join(dir, 'not-here.config.ts'));
   });
 
+  test('a relative configPath is CONFIG.PATH_NOT_ABSOLUTE — the validator was skipped, never a cwd resolve', () => {
+    const dir = makeTree();
+    fs.writeFileSync(path.join(dir, CONFIG_FILENAME), VALID_CONFIG_SOURCE);
+
+    const error: unknown = (() => {
+      try {
+        resolveConfigFile({
+          entryPath: path.join(dir, 'module.ts'),
+          configPath: './prisma-composer.config.ts',
+          cwd: dir,
+        });
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('CONFIG.PATH_NOT_ABSOLUTE');
+    expect(error.message).toContain('./prisma-composer.config.ts');
+  });
+
   test('with no configPath it is the entry-anchored walk, and the walk is not explicit', () => {
     const dir = makeTree();
     const configPath = path.join(dir, CONFIG_FILENAME);

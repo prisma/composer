@@ -305,6 +305,24 @@ function configSource(request: ConfigLoadRequest): ConfigSource {
   }
 
   const configPath = request.configPath;
+  if (!path.isAbsolute(configPath)) {
+    // The section validator resolves the path against its declaring file,
+    // so a relative value here is a caller skipping that contract. Failing
+    // loudly beats fs and c12 quietly resolving it against the process cwd.
+    return {
+      ok: false,
+      path: configPath,
+      diagnostic: new CliStructuredError(
+        'CONFIG.PATH_NOT_ABSOLUTE',
+        `The \`composer\` config section's configPath must arrive absolute, and "${configPath}" is relative.`,
+        {
+          why: 'The section validator resolves a relative configPath against the config file that declared it; a relative value here means that resolution was skipped.',
+          fix: 'Run the configPath through the composer section validator, or resolve it against its declaring file before constructing the load request.',
+          where: { path: configPath },
+        },
+      ),
+    };
+  }
   if (!fs.existsSync(configPath)) {
     return {
       ok: false,
