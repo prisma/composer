@@ -200,28 +200,25 @@ async function beginSession(
 }
 
 /**
- * The app this run deployed and where it can be reached — but only when the
- * run deployed exactly one compute service.
+ * Where the deployed app can be reached — but only when the run deployed
+ * exactly one compute service with a public address.
  *
- * `Build.appId` and `Build.deployedUrl` are each one value, and an app with
- * several services has no single answer. Picking the first would put an
- * arbitrary service's address in the Console and quietly imply it was the
- * app's. Single-service apps are the common case and get a working link;
- * multi-service apps get neither, and their services are all reported through
- * the resources endpoint regardless.
+ * `Build.deployedUrl` is one value, and an app with several services has no
+ * single answer. Picking the first would put an arbitrary service's address
+ * in the Console and quietly imply it was the app's. Single-service apps are
+ * the common case and get a working link; multi-service apps get none. Which
+ * apps the run deployed is reported through the resources endpoint either
+ * way, so nothing is lost here.
  *
- * Both fields are fill-only, so this is safe to send on a build whose creator
- * already set them to the same values, and a genuine disagreement is a 409
- * the caller logs.
+ * The field can be set once and never changed, so this is safe to send on a
+ * build whose creator already set it to the same value, and a genuine
+ * disagreement is a 409 the caller logs.
  */
-function deployedApp(entities: readonly DeployedEntity[]): UpdateBuildBody {
+function deployedUrl(entities: readonly DeployedEntity[]): UpdateBuildBody {
   const services = entities.filter((entity) => entity.kind === 'compute-service');
   const only = services.length === 1 ? services[0] : undefined;
-  if (only === undefined) return {};
-  return {
-    appId: only.id,
-    ...(only.url !== undefined ? { deployedUrl: only.url } : {}),
-  };
+  if (only?.url === undefined) return {};
+  return { deployedUrl: only.url };
 }
 
 /**
@@ -321,7 +318,7 @@ function session(
           ...(outcome.errorMessage !== undefined && !outcome.cancelled
             ? { errorMessage: outcome.errorMessage }
             : {}),
-          ...deployedApp(outcome.entities),
+          ...deployedUrl(outcome.entities),
         });
       } catch (error) {
         // Same contract as begin: finish never rejects, whatever the api does.
