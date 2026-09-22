@@ -166,6 +166,34 @@ describe('port stability across a daemon restart', () => {
 
     await clientAfterRestart.deleteApp('pgtest-restart');
   }, 45_000);
+
+  test('DELETE after a daemon restart, with no PUT in between, still deletes the persisted data', async () => {
+    await ensureFreshDaemon('postgres', registryRoot);
+    const client = postgresClient({ registryRoot });
+    const first = await client.ensureDatabase('pgtest-freshwipe', 'appdb', prismaDevModulePath());
+    const writer = new PgClient({ connectionString: first.url });
+    await writer.connect();
+    await writer.query('create table wipe_check (id integer primary key)');
+    await writer.end();
+
+    await stopDaemon('postgres', { registryRoot });
+    await ensureFreshDaemonSamePort(registryRoot);
+    const clientAfterRestart = postgresClient({ registryRoot });
+    await clientAfterRestart.deleteApp('pgtest-freshwipe');
+
+    const second = await clientAfterRestart.ensureDatabase(
+      'pgtest-freshwipe',
+      'appdb',
+      prismaDevModulePath(),
+    );
+    const reader = new PgClient({ connectionString: second.url });
+    await reader.connect();
+    const res = await reader.query("select to_regclass('wipe_check') as reg");
+    expect(res.rows[0].reg).toBeNull();
+    await reader.end();
+
+    await clientAfterRestart.deleteApp('pgtest-freshwipe');
+  }, 60_000);
 });
 
 /**

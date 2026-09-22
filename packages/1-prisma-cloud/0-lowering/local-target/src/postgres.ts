@@ -61,6 +61,29 @@ export function LocalDatabaseProvider(
 ): Layer.Layer<Provider.Provider<Prisma.Database>> {
   const service: Provider.ProviderService<Prisma.Database> = {
     list: () => Effect.succeed([]),
+    /**
+     * Never noop: the reconcile's PUT is the only thing that (re)starts a
+     * database server, and a restarted daemon drops them all — a noop warm
+     * `dev` reported ready over dead ports (Compute's twin is
+     * `startServices`, ADR-0041). Attributes are declared stable while the
+     * daemon still records the URL Alchemy has (the port is pinned), so
+     * consumers keep noop-ing; a moved URL reconverges them via Alchemy's diff.
+     */
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output?.directConnectionString === undefined) return { action: 'update' as const };
+          const url = Redacted.value(output.directConnectionString);
+          const listed = await postgresClient().listDatabases(appNameOf(input.container));
+          const pinned = listed.some(
+            (db) => db.instanceName === output.databaseId && db.url === url,
+          );
+          return pinned
+            ? { action: 'update' as const, stables: Object.keys(output) }
+            : { action: 'update' as const };
+        },
+        catch: (cause) => cause,
+      }),
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {

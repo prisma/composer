@@ -126,6 +126,12 @@ emulator, which owns the processes:
   (`run-dev.ts`) — so a warm start restarts what a previous session's
   Ctrl-C stopped even when the converge is all-noop.
 
+  **The same gap, for Postgres:** the Postgres daemon holds its servers
+  in-process, so a daemon restart drops them, and an all-noop warm converge
+  never re-PUT them. The local `Database` provider therefore never diffs as
+  noop; it declares its attributes stable while the daemon still records the
+  same URL, so consumers keep noop-ing.
+
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
 into a deployment at version-create; locally, the `Deployment` provider

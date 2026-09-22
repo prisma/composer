@@ -16,6 +16,7 @@
  */
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
@@ -698,10 +699,7 @@ function main(): void {
     }
   }
 
-  async function deleteApp(
-    app: string,
-    prismaDevModulePathHint: string | undefined,
-  ): Promise<void> {
+  async function deleteApp(app: string): Promise<void> {
     const appRec = state[app];
     if (!appRec) return;
     const entries = Object.values(appRec.databases);
@@ -719,13 +717,11 @@ function main(): void {
       }
     }
 
-    // Deleting the persisted PGlite data needs SOME resolved `@prisma/dev`
-    // module — the app that owns the databases being deleted is the same
-    // app whose `prismaDevModulePath` every PUT for it already carried, so
-    // any one of those already-observed paths works; DELETE itself carries
-    // no body, so there is nothing more specific to prefer.
-    if (entries.length > 0 && prismaDevModulePathHint) {
-      const internalState = await importPrismaDevInternalState(prismaDevModulePathHint);
+    // Composer's own `@prisma/dev` (a dependency of the package that ships this daemon) — works after a restart too.
+    if (entries.length > 0) {
+      const internalState = await importPrismaDevInternalState(
+        createRequire(import.meta.url).resolve('@prisma/dev'),
+      );
       for (const db of entries) {
         // A server this daemon adopted rather than started has no handle to
         // close, so stop it by its record first (`killServer` leaves data).
@@ -786,12 +782,6 @@ function main(): void {
     };
   }
 
-  /** The most recently observed `prismaDevModulePath` for any database of `app` — DELETE has no body of its own to carry one. */
-  const recentPrismaDevModulePath = new Map<string, string>();
-  function lastKnownPrismaDevModulePath(app: string): string | undefined {
-    return recentPrismaDevModulePath.get(app);
-  }
-
   async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${String(port)}`);
     const method = req.method ?? 'GET';
@@ -825,7 +815,6 @@ function main(): void {
             'malformed database body: expected { "prismaDevModulePath": string }',
           );
         }
-        recentPrismaDevModulePath.set(app, parsed.prismaDevModulePath);
         const result = await ensureDatabase(app, id, parsed.prismaDevModulePath);
         return json(res, 200, result);
       }
@@ -837,7 +826,7 @@ function main(): void {
       }
 
       if (method === 'DELETE' && segments.length === 2) {
-        await deleteApp(app, lastKnownPrismaDevModulePath(app));
+        await deleteApp(app);
         res.writeHead(204);
         res.end();
         return;

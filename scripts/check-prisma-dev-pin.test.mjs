@@ -20,7 +20,7 @@ const DEV_EMULATORS = 'packages/1-prisma-cloud/0-lowering/dev-emulators';
 describe('@prisma/dev is declared by the published @prisma/composer-prisma-cloud', () => {
   const published = manifest(PUBLIC).dependencies?.['@prisma/dev'];
   const internal = manifest(LOCAL_TARGET).dependencies?.['@prisma/dev'];
-  const emulatorTests = manifest(DEV_EMULATORS).devDependencies?.['@prisma/dev'];
+  const emulator = manifest(DEV_EMULATORS).dependencies?.['@prisma/dev'];
 
   it('is a runtime dependency of the public package', () => {
     assert.equal(typeof published, 'string', `${PUBLIC} must list @prisma/dev in dependencies`);
@@ -34,9 +34,9 @@ describe('@prisma/dev is declared by the published @prisma/composer-prisma-cloud
     );
   });
 
-  it('is one range everywhere the emulator is declared or tested', () => {
+  it('is one range everywhere the emulator is declared', () => {
     assert.equal(published, internal);
-    assert.equal(emulatorTests, internal);
+    assert.equal(emulator, internal, `${DEV_EMULATORS} must list @prisma/dev in dependencies`);
   });
 
   it('never allows a release older than 0.21.0, the first with whole-message socket framing', () => {

@@ -18,13 +18,12 @@ import { bucketsClient, computeClient, postgresClient } from '@internal/dev-emul
 import { removeLocalPaths } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
-async function tolerateUnreachable(action: () => Promise<void>): Promise<void> {
+/** The daemon's client, or `undefined` when it isn't running — nothing to remove there. A running daemon's DELETE failure propagates. */
+function ifRunning<C>(client: () => C): C | undefined {
   try {
-    await action();
+    return client();
   } catch {
-    // Unreachable or absent daemon — the daemon itself is never stopped by
-    // `--fresh` (other apps may be using it), and there is nothing left to
-    // remove on it if it isn't running at all.
+    return undefined;
   }
 }
 
@@ -32,9 +31,9 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
 
-  await tolerateUnreachable(() => postgresClient().deleteApp(app));
-  await tolerateUnreachable(() => computeClient().deleteApp(app));
-  await tolerateUnreachable(() => bucketsClient().deleteApp(app));
+  await ifRunning(postgresClient)?.deleteApp(app);
+  await ifRunning(computeClient)?.deleteApp(app);
+  await ifRunning(bucketsClient)?.deleteApp(app);
 
   removeLocalPaths([`${cwd}/${DEV_DIR}`, `${cwd}/.alchemy/state/${app}/dev`]);
 }
