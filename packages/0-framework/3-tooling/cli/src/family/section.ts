@@ -15,15 +15,19 @@
 import {
   type ConfigSection,
   defineConfigSection,
+  resolveSectionPath,
+  type SectionProvenance,
   type SectionValidation,
 } from '@prisma/cli-engine';
 import type { Diagnostic } from '@prisma/cli-engine/protocol';
 
 export interface ComposerSection {
   /**
-   * Path to `prisma-composer.config.ts`, absolute or relative to the process
-   * cwd. Absent — the common case — means composer searches upward from the
-   * command's entry argument, as it always has.
+   * Absolute path to `prisma-composer.config.ts`. In the config file it may
+   * be written relative; the validator resolves it against the file that
+   * declared it, so a root-declared path means the same file from every
+   * subdirectory. Absent — the common case — means composer searches upward
+   * from the command's entry argument, as it always has.
    */
   readonly configPath?: string | undefined;
 }
@@ -46,7 +50,7 @@ function diagnostic(spec: {
   };
 }
 
-function validate(raw: unknown): SectionValidation<ComposerSection> {
+function validate(raw: unknown, provenance: SectionProvenance): SectionValidation<ComposerSection> {
   // Absence is normal and is the validator's to own: with no section,
   // composer walks up from the entry exactly as it does today.
   if (raw === undefined) return { ok: true, value: {}, diagnostics: [] };
@@ -103,6 +107,32 @@ function validate(raw: unknown): SectionValidation<ComposerSection> {
     };
   }
 
+  // A relative configPath means "relative to the file that declared it": a
+  // section written once at the repo root must name the same file from every
+  // subdirectory a command runs in. resolveSectionPath throws only when the
+  // key is missing from the provenance, which cannot happen for a key just
+  // read out of the section — but this validator must never throw, so even
+  // the impossible case becomes a diagnostic rather than an internal error.
+  let resolvedConfigPath: string | undefined;
+  if (configPath !== undefined) {
+    try {
+      resolvedConfigPath = resolveSectionPath(provenance, 'configPath', configPath);
+    } catch {
+      return {
+        ok: false,
+        diagnostics: [
+          diagnostic({
+            code: 'CONFIG.FIELD_INVALID',
+            severity: 'error',
+            summary:
+              '`composer.configPath` could not be resolved against the file that declared it.',
+            fix: 'Write `configPath` as an absolute path, or check the `composer` section of prisma.config.ts.',
+          }),
+        ],
+      };
+    }
+  }
+
   // An unrecognized field is a warning, not a failure: the section's fields
   // grow by contract amendment, so a config written for a newer composer must
   // still run on this one. A warning on an ok validation reaches stderr and
@@ -111,7 +141,7 @@ function validate(raw: unknown): SectionValidation<ComposerSection> {
 
   return {
     ok: true,
-    value: configPath === undefined ? {} : { configPath },
+    value: resolvedConfigPath === undefined ? {} : { configPath: resolvedConfigPath },
     diagnostics: unknown.map((key) =>
       diagnostic({
         code: 'CONFIG.FIELD_UNKNOWN',

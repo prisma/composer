@@ -129,7 +129,7 @@ describe('findConfigPathForEntry() — the walk-up', () => {
 });
 
 describe('resolveConfigFile() — which file a load will use', () => {
-  test('a relative configPath resolves against the cwd the command runs in', () => {
+  test('the section-supplied absolute configPath is used as given, whatever the cwd', () => {
     const dir = makeTree();
     const appDir = path.join(dir, 'apps', 'shop');
     fs.mkdirSync(appDir, { recursive: true });
@@ -138,8 +138,8 @@ describe('resolveConfigFile() — which file a load will use', () => {
 
     const resolved = resolveConfigFile({
       entryPath: path.join(dir, 'module.ts'),
-      configPath: `./apps/shop/${CONFIG_FILENAME}`,
-      cwd: dir,
+      configPath,
+      cwd: appDir,
     });
 
     expect(resolved.path).toBe(configPath);
@@ -164,7 +164,7 @@ describe('resolveConfigFile() — which file a load will use', () => {
       try {
         resolveConfigFile({
           entryPath: path.join(dir, 'module.ts'),
-          configPath: './not-here.config.ts',
+          configPath: path.join(dir, 'not-here.config.ts'),
           cwd: dir,
         });
       } catch (thrown: unknown) {
@@ -176,6 +176,28 @@ describe('resolveConfigFile() — which file a load will use', () => {
     if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
     expect(error.code).toBe('CONFIG.FILE_MISSING');
     expect(error.message).toContain(path.join(dir, 'not-here.config.ts'));
+  });
+
+  test('a relative configPath is CONFIG.PATH_NOT_ABSOLUTE — the validator was skipped, never a cwd resolve', () => {
+    const dir = makeTree();
+    fs.writeFileSync(path.join(dir, CONFIG_FILENAME), VALID_CONFIG_SOURCE);
+
+    const error: unknown = (() => {
+      try {
+        resolveConfigFile({
+          entryPath: path.join(dir, 'module.ts'),
+          configPath: './prisma-composer.config.ts',
+          cwd: dir,
+        });
+      } catch (thrown: unknown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+
+    if (!CliStructuredError.is(error)) throw new Error('expected a structured error');
+    expect(error.code).toBe('CONFIG.PATH_NOT_ABSOLUTE');
+    expect(error.message).toContain('./prisma-composer.config.ts');
   });
 
   test('with no configPath it is the entry-anchored walk, and the walk is not explicit', () => {
