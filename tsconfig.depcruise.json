@@ -138,10 +138,10 @@
       "@prisma/composer/service-rpc": ["./packages/9-public/composer/src/exports/service-rpc.ts"],
       "@prisma/composer/node/control": ["./packages/9-public/composer/src/exports/node-control.ts"],
       "@prisma/composer/node": ["./packages/9-public/composer/src/exports/node.ts"],
-      "@prisma/composer/nextjs/control": [
-        "./packages/9-public/composer/src/exports/nextjs-control.ts"
+      "@prisma/composer/frameworks/control": [
+        "./packages/9-public/composer/src/exports/frameworks-control.ts"
       ],
-      "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
+      "@prisma/composer/frameworks": ["./packages/9-public/composer/src/exports/frameworks.ts"],
       "@prisma/composer-cli/family": ["./packages/9-public/composer-cli/src/exports/family.ts"],
       "@prisma/composer-cli/testing": ["./packages/9-public/composer-cli/src/exports/testing.ts"],
       "@prisma/composer-prisma-cloud/control": [
