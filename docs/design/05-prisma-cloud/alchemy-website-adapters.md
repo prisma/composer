@@ -13,13 +13,28 @@ service path has already moved to `Prisma.Website.*`.
 
 ## Source checked
 
-Alchemy `v2.0.0-beta.79` adds `Prisma.Website.{Nextjs,Astro,Nuxt,SvelteKit,
-TanStackStart,Vite,StaticSite}`. A framework composite calls `Website.Server`
-to build with `@alchemy.run/frontend-frameworks`, packages its output through
-`Prisma.WebsiteArtifact`, then calls `Prisma.Compute`. `StaticSite` uses
-`Command.Build` and the same artifact/deployment path. The frontend-frameworks
-package and `@vercel/nft` are optional Alchemy peers, not automatically supplied
-by an application that installs Composer.
+Alchemy main (`b261867f`, 2026-09-23) and the published
+`@alchemy.run/frontend-frameworks@2.0.0-beta.79` already separate framework
+building from deployment. The package exports Node targets for Next.js, Astro,
+Nuxt, SvelteKit, TanStack Start, and Vite. Its public framework contract has
+independent `build()` and `dev()` operations. `build()` returns a `BuildOutput`
+with `distDirectory`, `clientDirectory`, and entry-first `serverModules` (or an
+assets-only output). No Alchemy provider or Compute service is needed to call
+that build operation.
+
+Alchemy's higher-level `Prisma.Website.*` resources use this separate package
+through `Website.Server`, then package its output through
+`Prisma.WebsiteArtifact` and deploy with `Prisma.Compute`. `StaticSite` uses
+`Command.Build` and the same artifact/deployment path. These composites are
+convenient for standalone sites, but are not the only way to use the framework
+adapters. The frontend-frameworks package and `@vercel/nft` are optional
+Alchemy peers, not automatically supplied by an application that installs
+Composer.
+
+Source: [package exports](https://github.com/alchemy-run/alchemy/blob/b261867f14ff80bcb2cb928d07189953891bb2ad/packages/frontend-frameworks/package.json),
+[framework contract](https://github.com/alchemy-run/alchemy/blob/b261867f14ff80bcb2cb928d07189953891bb2ad/packages/frontend-frameworks/src/core/Framework.ts),
+[build output](https://github.com/alchemy-run/alchemy/blob/b261867f14ff80bcb2cb928d07189953891bb2ad/packages/frontend-frameworks/src/core/BuildOutput.ts),
+and [Prisma website composite](https://github.com/alchemy-run/alchemy/blob/b261867f14ff80bcb2cb928d07189953891bb2ad/packages/alchemy/src/Prisma/Website/FrameworkSite.ts).
 
 Composer currently assembles every service *before* Alchemy runs. Its
 `BuildAdapter` identifies already-built output, while the Prisma Cloud target
@@ -38,42 +53,47 @@ App forms an Alchemy dependency cycle. It would also bypass Composer's typed
 input document, secret pointers, environment-change triggers, and boot wrapper.
 The reasons for the low-level resource sequence in ADR-0048 still apply.
 
-Instead, split the framework adapter's **build/artifact** work from the
-Composer service's **runtime/deployment** work:
+Use the already separate framework package for **build/dev**, and keep
+Composer's **runtime/deployment** work:
 
-1. Add an opt-in framework build descriptor. It selects one upstream
-   `@alchemy.run/frontend-frameworks/<framework>/node` target and a project
-   root. The target builds the user's framework and yields its authoritative
-   output directory and server entry. The build runs once, not once in a
-   template script and again inside Composer.
-2. Package that output using Alchemy's website artifact implementation, with
-   Composer's boot wrapper as the actual deployment entry. Preserve the
-   upstream target's runtime files, static assets, and safe symlink behavior.
-   The artifact producer must expose a supported reusable API; importing an
-   internal Alchemy source file or copying its tracing code is not acceptable.
+1. Add an opt-in Composer build descriptor. During Composer's existing
+   assembly phase, it calls the public `make(...).build()` operation with the
+   upstream Node target and project root. This deliberately changes ADR-0005's
+   build boundary for this descriptor only; current descriptors remain
+   build-output consumers. Do not also run the user's build from a template
+   script.
+2. Convert the returned `BuildOutput` into a Composer bundle. Its
+   `serverModules[0]` is the server entry; `clientDirectory` includes static
+   and prerendered output. Preserve the target's runtime files and Composer's
+   boot wrapper without blindly copying the project root (the Next.js Node
+   target reports the project root as its distribution directory). Start with
+   Composer's existing safe assembly/packaging primitives and prove the
+   resulting artifact boots. If they cannot safely stage a target, address
+   that packaging gap explicitly rather than making a build API a prerequisite.
 3. Keep Composer's existing App → environment rows → Deployment sequence,
    including environment triggers and the self-origin row. Only the artifact
    input changes. Existing `node()` and `nextjs()` applications retain their
    current behavior until an explicit adapter migration is verified.
-4. Give the new build descriptor a local-dev counterpart. It should invoke the
-   upstream framework's native dev server while Composer supplies the same
-   typed bindings and Postgres emulator. A production-only adapter would
-   regress `prisma composer dev`.
-5. Add a static-site descriptor using the upstream static server/artifact path.
+4. Give the new build descriptor a local-dev counterpart using the package's
+   independent `dev()` operation while Composer supplies the same typed
+   bindings and Postgres emulator. A production-only adapter would regress
+   `prisma composer dev`.
+5. Add a static-site descriptor using the package's exported Node static-server
+   helper and Composer's artifact path.
    Static sites need no Composer boot wrapper, but must still share the same
    project, branch, deploy report, and destroy lifecycle. Allow an application
    containing only a static site; `assembleServices` currently rejects graphs
    with zero services.
 
-## Upstream seam needed
+## API boundary
 
-`Prisma.WebsiteArtifact` and its staging function are currently internal to
-Alchemy, and `Website.Server` is driven by the full website composite. We need
-a supported way to call the framework build and artifact stages separately,
-then hand their artifact to Composer's low-level `Prisma.Deployment`. This can
-be an exported builder/artifact API or a composite accepting an existing App,
-environment resources, and a deployment entry wrapper. Choose the smallest
-surface with Alchemy maintainers before replacing a Composer adapter.
+No Alchemy PR is required to expose framework `build()` or `dev()`; those are
+already published by `@alchemy.run/frontend-frameworks`. The remaining
+integration is Composer-owned: map `BuildOutput` to a safe Composer artifact,
+then keep its low-level deployment topology. Alchemy's website artifact
+staging is internal today, so using that specific staging implementation would
+need a separate supported API, but it is not a prerequisite for trying the
+public framework adapters with Composer's existing packager.
 
 ## Validation before switching a template
 
@@ -86,11 +106,15 @@ them. A typecheck or successful upload alone does not prove the site boots.
 
 ## Migration order
 
-1. Agree the upstream reusable build/artifact API and pin a compatible
-   Alchemy + Effect pair. An exploratory bump from Composer's current
-   `alchemy@2.0.0-beta.74` to `beta.79` compiles but fails 13 existing
-   lowering tests; those provider and Effect changes must be resolved before
-   the bump is mergeable.
+1. Pin a compatible frontend-frameworks, Alchemy, and Effect set. The
+   frontend-frameworks `beta.79` package requires Effect `rc.115` or newer;
+   Composer currently uses `rc.112`. An exploratory combined bump to Alchemy
+   `beta.79` and Effect `rc.117` compiles but fails 13 lowering tests; those
+   changes must be resolved before that combined bump is mergeable. Keeping
+   Alchemy `beta.74` while raising Effect to `rc.117` is not a shortcut either:
+   its profile module still calls the removed `Config.string()` API. The
+   framework build API exists independently, but the compatible dependency
+   set still needs an upgrade and verification.
 2. Land one framework end to end behind an explicit descriptor, including
    local dev and a deployed runtime check.
 3. Add the remaining framework targets and static sites using the same seam.
