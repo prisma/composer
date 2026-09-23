@@ -118,7 +118,7 @@ export const providers = () =>
       Prisma.BucketAccessKey,
     ]),
   ).pipe(
-    Layer.provide(upstreamPrismaProviders()),
+    Layer.provideMerge(upstreamPrismaProviders()),
     Layer.provideMerge(prismaManagementHttpLayer),
     Layer.provideMerge(client.layer()),
     Layer.provideMerge(fromEnv()),
