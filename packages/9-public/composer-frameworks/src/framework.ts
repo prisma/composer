@@ -1,12 +1,8 @@
+import type alchemyPackage from '@alchemy.run/frontend-frameworks/package.json';
 import type { BuildAdapter } from '@prisma/composer';
 
-export const frameworkNames = ['astro', 'nextjs', 'nuxt', 'tanstack-start', 'vite'] as const;
-
-export type Framework = (typeof frameworkNames)[number];
-
-export function isFramework(value: unknown): value is Framework {
-  return frameworkNames.some((framework) => framework === value);
-}
+type NodeExport = Extract<keyof typeof alchemyPackage.exports, `./${string}/node`>;
+export type Framework = NodeExport extends `./${infer Name}/node` ? Name : never;
 
 export interface FrameworkBuildAdapter extends BuildAdapter {
   readonly type: 'framework';

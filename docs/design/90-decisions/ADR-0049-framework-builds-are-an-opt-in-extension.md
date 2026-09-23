@@ -7,6 +7,9 @@ Alchemy's published `@alchemy.run/frontend-frameworks` Node target during
 Composer assembly. Existing `node()` and `nextjs()` descriptors still consume
 outputs built by the user.
 
+The available framework names are derived from the installed Alchemy package's
+Node-target exports rather than maintained as a second Composer list.
+
 ```ts
 compute({
   name: 'web',

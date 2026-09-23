@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import alchemyPackage from '@alchemy.run/frontend-frameworks/package.json' with { type: 'json' };
 import type { BuildAdapter } from '@prisma/composer';
 import type { ExtensionDescriptor } from '@prisma/composer/config';
 import type { AssembleInput, Bundle } from '@prisma/composer/deploy';
@@ -8,8 +9,12 @@ import type { NextjsBuildAdapter } from '@prisma/composer/nextjs';
 import * as NextjsControl from '@prisma/composer/nextjs/control';
 import type { NodeBuildAdapter } from '@prisma/composer/node';
 import * as NodeControl from '@prisma/composer/node/control';
-import { type FrameworkBuildAdapter, isFramework } from '../framework.ts';
+import type { FrameworkBuildAdapter } from '../framework.ts';
 import { buildFramework } from './build.ts';
+
+function isFramework(value: unknown): value is FrameworkBuildAdapter['framework'] {
+  return typeof value === 'string' && `./${value}/node` in alchemyPackage.exports;
+}
 
 function isFrameworkBuild(build: BuildAdapter): build is FrameworkBuildAdapter {
   return (

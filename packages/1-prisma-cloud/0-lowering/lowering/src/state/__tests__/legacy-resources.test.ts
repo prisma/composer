@@ -32,6 +32,7 @@ import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
 import { stateLayerAgainst } from '../layer.ts';
 import { migrateLegacyResourceState } from '../legacy-resources.ts';
 import { FakeStateApi } from './fake-state-api.ts';
@@ -68,10 +69,17 @@ const legacyConnectionRow = (): CreatedResourceState => ({
 
 const apiDatabase = {
   id: 'db-1',
+  type: 'database',
+  url: 'https://api.prisma.test/v1/databases/db-1',
   name: 'data',
-  project: { id: 'proj-1' },
+  project: {
+    id: 'proj-1',
+    name: 'app',
+    type: 'project',
+    url: 'https://api.prisma.test/v1/projects/proj-1',
+  },
   status: 'ready',
-  region: { id: 'us-east-1' },
+  region: { id: 'us-east-1', name: 'us-east-1' },
   isDefault: false,
   branchId: null,
   defaultConnectionId: 'conn-default',
@@ -82,44 +90,47 @@ const apiDatabase = {
 
 const apiConnection = {
   id: 'conn-1',
+  type: 'connection',
+  url: 'https://api.prisma.test/v1/connections/conn-1',
   name: 'data',
-  database: { id: 'db-1' },
+  database: {
+    id: 'db-1',
+    name: 'data',
+    type: 'database',
+    url: 'https://api.prisma.test/v1/databases/db-1',
+  },
   kind: 'postgres',
   createdAt: '2025-01-01T00:00:00.000Z',
+  endpoints: { direct: { host: 'db.prisma.test', port: 5432, connectionString: DIRECT_URL } },
 };
 
-/** Only the endpoints the adoption paths under test actually hit; anything else throws loudly. */
-const stubClient = {
-  getDatabase: (id: string) =>
-    id === 'db-1' ? Effect.succeed(apiDatabase) : Effect.die(`unexpected getDatabase ${id}`),
-  getConnection: (id: string) =>
-    id === 'conn-1' ? Effect.succeed(apiConnection) : Effect.die(`unexpected getConnection ${id}`),
-  rotateConnection: (id: string) =>
-    Effect.die(`rotateConnection(${id}) must not be called for an adopted legacy row`),
-} as unknown as Prisma.PrismaManagementClient;
+const databaseApi = fakeManagementApi(({ method, path }) =>
+  Effect.succeed(
+    method === 'GET' && path === '/v1/databases/db-1'
+      ? data(apiDatabase)
+      : method === 'GET' && path === '/v1/connections/conn-1'
+        ? data(apiConnection)
+        : Response.json(
+            { error: { code: 'unhandled', message: `${method} ${path}` } },
+            { status: 400 },
+          ),
+  ),
+);
 
-// The provider layers' inferred environment leaks an `any` through
-// Provider.effect's typing; the stubbed PrismaClient is the only real
-// requirement and it IS provided, so the runtime environment is complete.
+// Dual providers expose read on their live mode, not on the delegating service.
 const databaseService = () =>
   Effect.runPromise(
     Prisma.Database.Provider.pipe(
-      Effect.provide(
-        Prisma.DatabaseProvider().pipe(
-          Layer.provide(Layer.succeed(Prisma.PrismaClient, stubClient)),
-        ),
-      ),
+      Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+      Effect.provide(Prisma.DatabaseProvider().pipe(Layer.provide(databaseApi))),
     ) as Effect.Effect<Provider.ProviderService<Prisma.Database>, never, never>,
   );
 
 const connectionService = () =>
   Effect.runPromise(
     Prisma.Connection.Provider.pipe(
-      Effect.provide(
-        Prisma.ConnectionProvider().pipe(
-          Layer.provide(Layer.succeed(Prisma.PrismaClient, stubClient)),
-        ),
-      ),
+      Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+      Effect.provide(Prisma.ConnectionProvider().pipe(Layer.provide(databaseApi))),
     ) as Effect.Effect<Provider.ProviderService<Prisma.Connection>, never, never>,
   );
 
@@ -201,7 +212,7 @@ describe('migrateLegacyResourceState (pure mapping)', () => {
   });
 });
 
-describe('upstream provider acceptance of migrated rows (stubbed management client)', () => {
+describe('upstream provider acceptance of migrated rows (fake Management API)', () => {
   const migratedDb = migrateLegacyResourceState(legacyDatabaseRow()) as MigratedRow;
   const migratedConn = migrateLegacyResourceState(legacyConnectionRow()) as MigratedRow;
 
@@ -211,29 +222,33 @@ describe('upstream provider acceptance of migrated rows (stubbed management clie
       throw new Error('upstream provider must expose diff and read');
     }
     const diff = await Effect.runPromise(
-      service.diff({
-        id: 'data-db',
-        fqn: 'data-db',
-        instanceId: 'inst-db',
-        olds: migratedDb.props,
-        news: { project: 'proj-1', name: 'data', region: 'us-east-1' },
-        output: migratedDb.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .diff({
+          id: 'data-db',
+          fqn: 'data-db',
+          instanceId: 'inst-db',
+          olds: migratedDb.props,
+          news: { project: 'proj-1', name: 'data', region: 'us-east-1' },
+          output: migratedDb.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(databaseApi)),
     );
     expect(diff).toBeUndefined();
 
     const read = await Effect.runPromise(
-      service.read({
-        id: 'data-db',
-        fqn: 'data-db',
-        instanceId: 'inst-db',
-        olds: migratedDb.props,
-        output: migratedDb.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .read({
+          id: 'data-db',
+          fqn: 'data-db',
+          instanceId: 'inst-db',
+          olds: migratedDb.props,
+          output: migratedDb.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(databaseApi)),
     );
     expect(read).toMatchObject({ databaseId: 'db-1', databaseName: 'data', projectId: 'proj-1' });
   });
@@ -244,45 +259,50 @@ describe('upstream provider acceptance of migrated rows (stubbed management clie
       throw new Error('upstream provider must expose diff and read');
     }
     const diff = await Effect.runPromise(
-      service.diff({
-        id: 'data-conn',
-        fqn: 'data-conn',
-        instanceId: 'inst-conn',
-        olds: migratedConn.props,
-        news: { database: 'db-1', name: 'data' },
-        output: migratedConn.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .diff({
+          id: 'data-conn',
+          fqn: 'data-conn',
+          instanceId: 'inst-conn',
+          olds: migratedConn.props,
+          news: { database: 'db-1', name: 'data' },
+          output: migratedConn.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(databaseApi)),
     );
     expect(diff).toBeUndefined();
 
     const read = await Effect.runPromise(
-      service.read({
-        id: 'data-conn',
-        fqn: 'data-conn',
-        instanceId: 'inst-conn',
-        olds: migratedConn.props,
-        output: migratedConn.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .read({
+          id: 'data-conn',
+          fqn: 'data-conn',
+          instanceId: 'inst-conn',
+          olds: migratedConn.props,
+          output: migratedConn.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(databaseApi)),
     );
     expect(read).toMatchObject({ connectionId: 'conn-1', databaseId: 'db-1' });
 
-    // The stub's rotateConnection dies, so this passing proves reconcile
-    // never touched the live credentials.
+    // The fake API rejects unexpected routes, including credential rotation.
     const reconciled = (await Effect.runPromise(
-      service.reconcile({
-        id: 'data-conn',
-        fqn: 'data-conn',
-        instanceId: 'inst-conn',
-        olds: migratedConn.props,
-        news: { database: 'db-1', name: 'data' },
-        output: migratedConn.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .reconcile({
+          id: 'data-conn',
+          fqn: 'data-conn',
+          instanceId: 'inst-conn',
+          olds: migratedConn.props,
+          news: { database: 'db-1', name: 'data' },
+          output: migratedConn.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(databaseApi)),
     )) as Record<string, unknown>;
     const direct = reconciled['directConnectionString'];
     expect(Redacted.isRedacted(direct)).toBe(true);
@@ -391,6 +411,8 @@ describe('legacy compute-family rows against upstream providers', () => {
 
   const apiApp = {
     id: 'app-1',
+    type: 'service',
+    url: 'https://api.prisma.test/v1/services/app-1',
     name: 'auth',
     projectId: 'proj-1',
     region: { id: 'us-east-1' },
@@ -406,12 +428,15 @@ describe('legacy compute-family rows against upstream providers', () => {
     url: 'https://api.prisma.io/v1/deployments/dep-1',
     foundryVersionId: 'fv-1',
     status: 'running',
+    serviceId: 'app-1',
     previewDomain: 'dep-1.preview.prisma.app',
     createdAt: '2025-01-01T00:00:00.000Z',
   };
 
   const apiVariable = {
     id: 'var-1',
+    type: 'environment-variable',
+    url: 'https://api.prisma.test/v1/environment-variables/var-1',
     projectId: 'proj-1',
     branchId: null,
     class: 'production',
@@ -422,56 +447,62 @@ describe('legacy compute-family rows against upstream providers', () => {
     updatedAt: '2025-01-01T00:00:00.000Z',
   };
 
-  /** Only the endpoints these adoption paths hit; anything else throws loudly. */
-  const computeClient = {
-    getApp: (id: string) =>
-      id === 'app-1' ? Effect.succeed(apiApp) : Effect.die(`unexpected getApp ${id}`),
-    listBranches: () => Effect.succeed([{ id: 'branch_1', isDefault: true }]),
-    getDeployment: (id: string) =>
-      id === 'dep-1' ? Effect.succeed(apiDeployment) : Effect.die(`unexpected getDeployment ${id}`),
-    listAppDeployments: () => Effect.succeed([apiDeployment]),
-    getEnvironmentVariable: (id: string) =>
-      id === 'var-1'
-        ? Effect.succeed(apiVariable)
-        : Effect.die(`unexpected getEnvironmentVariable ${id}`),
-    deleteEnvironmentVariable: (id: string) =>
-      Effect.die(`deleteEnvironmentVariable(${id}) must not be called for a platform-owned key`),
-    createAppDeployment: () => Effect.die('createAppDeployment must not be called by a diff'),
-  } as unknown as Prisma.PrismaManagementClient;
+  const computeApi = fakeManagementApi(({ method, path }) =>
+    Effect.succeed(
+      method === 'GET' && path === '/v1/services/app-1'
+        ? data(apiApp)
+        : method === 'GET' && path.startsWith('/v1/projects/proj-1/branches?')
+          ? page([
+              {
+                id: 'branch_1',
+                type: 'branch',
+                url: 'https://api.prisma.test/v1/branches/branch_1',
+                gitName: 'main',
+                isDefault: true,
+                role: 'production',
+                createdAt: '2025-01-01T00:00:00.000Z',
+                updatedAt: '2025-01-01T00:00:00.000Z',
+                project: {
+                  id: 'proj-1',
+                  url: 'https://api.prisma.test/v1/projects/proj-1',
+                  name: 'app',
+                },
+              },
+            ])
+          : method === 'GET' && path.startsWith('/v1/services/app-1/deployments')
+            ? page([apiDeployment])
+            : method === 'GET' && path === '/v1/deployments/dep-1'
+              ? data(apiDeployment)
+              : method === 'GET' && path === '/v1/environment-variables/var-1'
+                ? data(apiVariable)
+                : Response.json(
+                    { error: { code: 'unhandled', message: `${method} ${path}` } },
+                    { status: 400 },
+                  ),
+    ),
+  );
 
-  // Same `any` leak through Provider.effect's typing as the postgres services
-  // above: the stubbed PrismaClient is the only real requirement and it IS
-  // provided, so the runtime environment is complete.
   const appService = () =>
     Effect.runPromise(
       Prisma.App.Provider.pipe(
-        Effect.provide(
-          Prisma.AppProvider().pipe(
-            Layer.provide(Layer.succeed(Prisma.PrismaClient, computeClient)),
-          ),
-        ),
+        Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+        Effect.provide(Prisma.AppProvider().pipe(Layer.provide(computeApi))),
       ) as Effect.Effect<Provider.ProviderService<Prisma.App>, never, never>,
     );
 
   const deploymentService = () =>
     Effect.runPromise(
       Prisma.Deployment.Provider.pipe(
-        Effect.provide(
-          Prisma.DeploymentProvider().pipe(
-            Layer.provide(Layer.succeed(Prisma.PrismaClient, computeClient)),
-          ),
-        ),
+        Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+        Effect.provide(Prisma.DeploymentProvider().pipe(Layer.provide(computeApi))),
       ) as Effect.Effect<Provider.ProviderService<Prisma.Deployment>, never, never>,
     );
 
   const environmentVariableService = () =>
     Effect.runPromise(
       Prisma.EnvironmentVariable.Provider.pipe(
-        Effect.provide(
-          Prisma.EnvironmentVariableProvider().pipe(
-            Layer.provide(Layer.succeed(Prisma.PrismaClient, computeClient)),
-          ),
-        ),
+        Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+        Effect.provide(Prisma.EnvironmentVariableProvider().pipe(Layer.provide(computeApi))),
       ) as Effect.Effect<Provider.ProviderService<Prisma.EnvironmentVariable>, never, never>,
     );
 
@@ -516,15 +547,17 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(diff).toBeUndefined();
 
     const read = await Effect.runPromise(
-      service.read({
-        id: 'auth-svc',
-        fqn: 'auth-svc',
-        instanceId: 'inst-app',
-        olds: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .read({
+          id: 'auth-svc',
+          fqn: 'auth-svc',
+          instanceId: 'inst-app',
+          olds: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(computeApi)),
     );
     expect(read).toMatchObject({ appId: 'app-1', projectId: 'proj-1' });
   });
@@ -537,16 +570,18 @@ describe('legacy compute-family rows against upstream providers', () => {
     const service = await appService();
     if (service.diff === undefined) throw new Error('upstream provider must expose diff');
     const diff = await Effect.runPromise(
-      service.diff({
-        id: 'auth-svc',
-        fqn: 'auth-svc',
-        instanceId: 'inst-app',
-        olds: migrated.props,
-        news: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .diff({
+          id: 'auth-svc',
+          fqn: 'auth-svc',
+          instanceId: 'inst-app',
+          olds: migrated.props,
+          news: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(computeApi)),
     );
     expect(diff).toEqual({ action: 'update' });
   });
@@ -596,7 +631,11 @@ describe('legacy compute-family rows against upstream providers', () => {
             session: undefined,
             bindings: [],
           } as never)
-          .pipe(Effect.provide(PlatformServices)) as Effect.Effect<unknown, never, never>,
+          .pipe(Effect.provide(PlatformServices), Effect.provide(computeApi)) as Effect.Effect<
+          unknown,
+          never,
+          never
+        >,
       );
       // Read adopts the live deployment — no create planned for it.
       expect(read).toMatchObject({ deploymentId: 'dep-1', appId: 'app-1', status: 'running' });
@@ -613,7 +652,11 @@ describe('legacy compute-family rows against upstream providers', () => {
             session: undefined,
             bindings: [],
           } as never)
-          .pipe(Effect.provide(PlatformServices)) as Effect.Effect<unknown, never, never>,
+          .pipe(Effect.provide(PlatformServices), Effect.provide(computeApi)) as Effect.Effect<
+          unknown,
+          never,
+          never
+        >,
       );
       // Pinned, not tolerated silently: upstream's fingerprint hashes the
       // artifact digest with the content type, which a legacy row cannot
@@ -651,15 +694,17 @@ describe('legacy compute-family rows against upstream providers', () => {
       throw new Error('upstream provider must expose diff and read');
     }
     const read = await Effect.runPromise(
-      service.read({
-        id: 'COMPOSER_AUTH_PORT-var',
-        fqn: 'COMPOSER_AUTH_PORT-var',
-        instanceId: 'inst-var',
-        olds: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .read({
+          id: 'COMPOSER_AUTH_PORT-var',
+          fqn: 'COMPOSER_AUTH_PORT-var',
+          instanceId: 'inst-var',
+          olds: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(computeApi)),
     );
     expect(read).toMatchObject({ environmentVariableId: 'var-1', key: 'COMPOSER_AUTH_PORT' });
 
@@ -849,52 +894,45 @@ describe('legacy bucket-family rows against upstream providers', () => {
     providerName: 'user-bkt-1',
     status: 'ready',
     createdAt: '2025-01-01T00:00:00.000Z',
-    project: { id: 'proj-1' },
+    project: { id: 'proj-1', name: 'app', url: 'https://api.prisma.test/v1/projects/proj-1' },
     branchId: null,
   };
 
-  /** Only the endpoints these adoption paths hit; anything else throws loudly. */
-  const bucketClient = {
-    getBucket: (id: string) =>
-      id === 'bkt-1' ? Effect.succeed(apiBucket) : Effect.die(`unexpected getBucket ${id}`),
-    listBucketKeys: (bucketId: string) =>
-      bucketId === 'bkt-1'
-        ? Effect.succeed([
-            {
-              id: 'key-1',
-              type: 'bucketKey',
-              name: 'files',
-              valueHint: 'AKIA…GACY',
-              role: 'read_write',
-              createdAt: '2025-01-01T00:00:00.000Z',
-            },
-          ])
-        : Effect.die(`unexpected listBucketKeys ${bucketId}`),
-    createBucket: () => Effect.die('createBucket must not be called for an adopted legacy row'),
-    createBucketKey: () =>
-      Effect.die('createBucketKey must not be called while the persisted key still exists'),
-  } as unknown as Prisma.PrismaManagementClient;
+  const bucketApi = fakeManagementApi(({ method, path }) =>
+    Effect.succeed(
+      method === 'GET' && path === '/v1/buckets/bkt-1'
+        ? data(apiBucket)
+        : method === 'GET' && path.startsWith('/v1/buckets/bkt-1/keys')
+          ? page([
+              {
+                id: 'key-1',
+                type: 'bucketKey',
+                name: 'files',
+                valueHint: 'AKIA…GACY',
+                role: 'read_write',
+                createdAt: '2025-01-01T00:00:00.000Z',
+              },
+            ])
+          : Response.json(
+              { error: { code: 'unhandled', message: `${method} ${path}` } },
+              { status: 400 },
+            ),
+    ),
+  );
 
-  // Same `any` leak through Provider.effect's typing as the services above.
   const bucketService = () =>
     Effect.runPromise(
       Prisma.Bucket.Provider.pipe(
-        Effect.provide(
-          Prisma.BucketProvider().pipe(
-            Layer.provide(Layer.succeed(Prisma.PrismaClient, bucketClient)),
-          ),
-        ),
+        Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+        Effect.provide(Prisma.BucketProvider().pipe(Layer.provide(bucketApi))),
       ) as Effect.Effect<Provider.ProviderService<Prisma.Bucket>, never, never>,
     );
 
   const bucketAccessKeyService = () =>
     Effect.runPromise(
       Prisma.BucketAccessKey.Provider.pipe(
-        Effect.provide(
-          Prisma.BucketAccessKeyProvider().pipe(
-            Layer.provide(Layer.succeed(Prisma.PrismaClient, bucketClient)),
-          ),
-        ),
+        Effect.flatMap((provider) => provider.modes?.live ?? Effect.die('Missing live provider')),
+        Effect.provide(Prisma.BucketAccessKeyProvider().pipe(Layer.provide(bucketApi))),
       ) as Effect.Effect<Provider.ProviderService<Prisma.BucketAccessKey>, never, never>,
     );
 
@@ -949,15 +987,17 @@ describe('legacy bucket-family rows against upstream providers', () => {
     expect(diff).toBeUndefined();
 
     const read = await Effect.runPromise(
-      service.read({
-        id: 'files-bucket',
-        fqn: 'files-bucket',
-        instanceId: 'inst-bucket',
-        olds: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .read({
+          id: 'files-bucket',
+          fqn: 'files-bucket',
+          instanceId: 'inst-bucket',
+          olds: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(bucketApi)),
     );
     expect(read).toMatchObject({ bucketId: 'bkt-1', projectId: 'proj-1' });
   });
@@ -967,30 +1007,34 @@ describe('legacy bucket-family rows against upstream providers', () => {
     const service = await bucketAccessKeyService();
     if (service.diff === undefined) throw new Error('upstream provider must expose diff');
     const diff = await Effect.runPromise(
-      service.diff({
-        id: 'files-key',
-        fqn: 'files-key',
-        instanceId: 'inst-key',
-        olds: migrated.props,
-        news: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .diff({
+          id: 'files-key',
+          fqn: 'files-key',
+          instanceId: 'inst-key',
+          olds: migrated.props,
+          news: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(bucketApi)),
     );
     expect(diff).toBeUndefined();
 
     const reconciled = (await Effect.runPromise(
-      service.reconcile({
-        id: 'files-key',
-        fqn: 'files-key',
-        instanceId: 'inst-key',
-        olds: migrated.props,
-        news: migrated.props,
-        output: migrated.attr,
-        session: undefined,
-        bindings: [],
-      } as never),
+      service
+        .reconcile({
+          id: 'files-key',
+          fqn: 'files-key',
+          instanceId: 'inst-key',
+          olds: migrated.props,
+          news: migrated.props,
+          output: migrated.attr,
+          session: undefined,
+          bindings: [],
+        } as never)
+        .pipe(Effect.provide(bucketApi)),
     )) as Record<string, unknown>;
     expect(reconciled).toMatchObject({ bucketAccessKeyId: 'key-1', accessKeyId: 'AKIA-LEGACY' });
     expect(Redacted.value(reconciled['secretAccessKey'] as Redacted.Redacted<string>)).toBe(

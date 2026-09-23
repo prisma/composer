@@ -10,7 +10,19 @@ import * as Exit from 'effect/Exit';
 import * as Fiber from 'effect/Fiber';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import { data, fakeManagementApi, page } from '../../__tests__/fake-management-api.ts';
 import { appAfterEnvironment } from '../deployment-edge.ts';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function field(body: unknown, name: string): string {
+  if (!isRecord(body) || typeof body[name] !== 'string') {
+    throw new Error(`Expected request field ${name}`);
+  }
+  return body[name];
+}
 
 const scenarios: {
   name: string;
@@ -118,6 +130,57 @@ test.each(scenarios)(
       | 'deleteDeployment'
     >;
 
+    const api = fakeManagementApi(({ method, path, body }) =>
+      Effect.gen(function* () {
+        const url = new URL(path, 'https://api.prisma.test');
+        if (method === 'GET' && url.pathname === '/v1/environment-variables') {
+          const key = url.searchParams.get('key');
+          return page(yield* client.listEnvironmentVariables(key === null ? {} : { key }));
+        }
+        if (method === 'POST' && url.pathname === '/v1/environment-variables') {
+          const variableClass = field(body, 'class');
+          if (variableClass !== 'production' && variableClass !== 'preview') {
+            throw new Error(`Unexpected variable class: ${variableClass}`);
+          }
+          return data(
+            yield* client.createEnvironmentVariable({
+              projectId: field(body, 'projectId'),
+              ...(isRecord(body) && 'branchId' in body
+                ? { branchId: field(body, 'branchId') }
+                : {}),
+              class: variableClass,
+              key: field(body, 'key'),
+              value: field(body, 'value'),
+            }),
+          );
+        }
+        const variable = url.pathname.match(/^\/v1\/environment-variables\/(.+)$/)?.[1];
+        if (variable && method === 'GET')
+          return data(yield* client.getEnvironmentVariable(variable));
+        if (variable && method === 'PATCH') {
+          return data(
+            yield* client.updateEnvironmentVariable(variable, { value: field(body, 'value') }),
+          );
+        }
+        if (method === 'GET' && url.pathname === '/v1/services/app-1/deployments') {
+          return page(yield* client.listAppDeployments());
+        }
+        if (method === 'POST' && url.pathname === '/v1/services/app-1/deployments') {
+          return data(yield* client.createAppDeployment());
+        }
+        const deployment = url.pathname.match(/^\/v1\/deployments\/(.+)$/)?.[1];
+        if (deployment && method === 'GET') return data(yield* client.getDeployment(deployment));
+        if (deployment && method === 'DELETE') {
+          yield* client.deleteDeployment(deployment);
+          return new Response(null, { status: 204 });
+        }
+        return Response.json(
+          { error: { code: 'unhandled', message: `${method} ${path}` } },
+          { status: 400 },
+        );
+      }),
+    );
+
     const providers = Layer.effect(
       Prisma.Providers,
       Provider.collection([Prisma.EnvironmentVariable, Prisma.Deployment]),
@@ -125,9 +188,7 @@ test.each(scenarios)(
       Layer.provideMerge(
         Layer.mergeAll(Prisma.EnvironmentVariableProvider(), Prisma.DeploymentProvider()),
       ),
-      Layer.provide(
-        Layer.succeed(Prisma.PrismaClient, client as unknown as Prisma.PrismaManagementClient),
-      ),
+      Layer.provideMerge(api),
     );
     const options = { providers, state: inMemoryState(), dev: false };
     const stack = Core.scratchStack(options, 'deployment-input-order');

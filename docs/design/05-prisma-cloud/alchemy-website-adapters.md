@@ -2,9 +2,9 @@
 
 ## Boundary
 
-`@alchemy.run/frontend-frameworks` is a separate public package. Its Node
-targets build Astro, Next.js, Nuxt, TanStack Start, and Vite output. Composer's
-optional `@prisma/composer-frameworks` package calls those builders, then
+`@alchemy.run/frontend-frameworks` is a separate public package. Composer's
+optional `@prisma/composer-frameworks` package accepts the published package's
+Node-target exports, calls the corresponding builder, then
 hands the output to its existing safe Node or Next.js standalone assembler.
 The base `@prisma/composer` package does not import a framework runtime from
 its authoring entrypoint.
@@ -43,8 +43,9 @@ build: framework({ module: import.meta.url, framework: 'vite', root: '..' })
 
 The descriptor is data. During assembly, the extension invokes the published
 framework builder directly and reads its `BuildOutput` path and
-server entry. Astro, Nuxt, TanStack Start, and Vite produce dedicated Node
-output, passed to Composer's Node assembler. Vite's Node target serves static
+server entry. The framework type and runtime validation come from Alchemy's
+package exports; Composer has no separate framework-name list. Dedicated Node
+output goes through Composer's Node assembler. Vite's Node target serves static
 files through Compute. Next.js reports the project root, so the extension uses
 Composer's documented standalone assembler rather than copying that root.
 Every output remains subject to Composer's path and symlink checks.
@@ -71,10 +72,14 @@ The checked-in Vite example also passed the real `composer dev` CLI,
 including one source-change rebuild without a watch loop. These are local
 checks, not cloud-deploy or Windows validation.
 
-SvelteKit is deliberately not exposed yet. Its published Alchemy Node adapter
-calls `generateManifest`, which SvelteKit 3 removed. Alchemy main has moved
-to `generateServerInstance`, but that change is not in beta.79. Enable the
-target only after a published release and an assembled-runtime test.
+The published package also exports Node targets for Octane, React Router,
+SolidStart, SvelteKit, Waku, and Vocs. Those targets are accepted by the
+extension but have not yet passed Composer runtime and cloud checks. Do not
+move their create-prisma templates to this descriptor until they do. In
+particular, beta.79's SvelteKit target still calls `generateManifest`, which
+SvelteKit 3 removed. Alchemy main uses `generateServerInstance`, but that
+fix is not published. Vinext's Node target is likewise only in Alchemy main,
+not the beta.79 package exports.
 
 Before changing a create-prisma template: pass cloud deploy and runtime checks
 for its exact framework version, dynamic and static routes, typed inputs and
