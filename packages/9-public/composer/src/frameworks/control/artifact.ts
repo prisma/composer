@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { copyTreeVerbatim } from '@internal/bundle-paths';
+import { assertBundleSymlinksStayInside, copyTreeVerbatim } from '@internal/bundle-paths';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
 import { stageWebsiteArtifact } from 'alchemy/Prisma/Website/Artifact';
 import * as Effect from 'effect/Effect';
@@ -34,6 +34,7 @@ export async function assembleFrameworkArtifact(
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
+  await assertBundleSymlinksStayInside(bundleDir);
 
   await build({
     entryPoints: { main: fileURLToPath(input.build.module) },
