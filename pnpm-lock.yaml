@@ -208,6 +208,9 @@ importers:
       '@prisma/composer-prisma-cloud':
         specifier: workspace:0.21.0
         version: link:../../packages/9-public/composer-prisma-cloud
+      '@prisma/management-api-sdk':
+        specifier: ^1.76.0
+        version: 1.76.0
       vite:
         specifier: 8.3.0
         version: 8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)
