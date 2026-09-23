@@ -59,7 +59,7 @@
     }
   },
   "devDependencies": {
-    "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
+    "@alchemy.run/frontend-frameworks": "https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913",
     "@effect/platform-node": "4.0.0-rc.117",
     "@internal/assemble": "workspace:0.21.0",
     "@internal/bundle-paths": "workspace:0.21.0",

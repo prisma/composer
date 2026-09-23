@@ -4,3 +4,6 @@ packages:
   - examples/*/modules/*
   - test/**
   - website
+overrides:
+  '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
+autoInstallPeers: false
