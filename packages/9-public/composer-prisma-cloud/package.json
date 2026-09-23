@@ -67,7 +67,6 @@
     "@internal/foundation": "workspace:0.21.0",
     "@internal/local-target": "workspace:0.21.0",
     "@internal/lowering": "workspace:0.21.0",
-    "@internal/nextjs": "workspace:0.21.0",
     "@internal/node": "workspace:0.21.0",
     "@internal/prisma-cloud": "workspace:0.21.0",
     "@internal/s3-protocol": "workspace:0.21.0",

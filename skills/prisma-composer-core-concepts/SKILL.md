@@ -414,9 +414,9 @@ config you choose; drive it over real HTTP. Gotchas:
 2. There is no `close()`; run each integration-test file in its own process
    (bun test does).
 3. For framework-built Next.js, test through `composer dev` and HTTP so the
-   framework build and Composer assembly are exercised together. A prebuilt
-   standalone app can use `nextjsStandaloneServerPath` from
-   `@prisma/composer/testing` with `bootstrapService`.
+   Alchemy build, artifact staging, and Composer bindings are exercised together.
+   A `bootstrapService` test can import the entry returned by the framework
+   assembler.
 4. A service with an input schema takes `input` in the config, a binding
    exactly like `provision()`'s, run through the real serialize/read path.
 

@@ -40,10 +40,6 @@
       ],
       "@internal/node/control": ["./packages/0-framework/2-authoring/node/src/exports/control.ts"],
       "@internal/node": ["./packages/0-framework/2-authoring/node/src/exports/index.ts"],
-      "@internal/nextjs/control": [
-        "./packages/0-framework/2-authoring/nextjs/src/exports/control.ts"
-      ],
-      "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/exports/index.ts"],
       "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/exports/index.ts"],
       "@internal/cli/bin": ["./packages/0-framework/3-tooling/cli/src/bin.ts"],
       "@internal/cli/report": [

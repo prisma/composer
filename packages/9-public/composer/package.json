@@ -2,7 +2,7 @@
   "name": "@prisma/composer",
   "version": "0.21.0",
   "type": "module",
-  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/nextjs authoring surfaces. The `prisma-composer` CLI lives in @prisma/composer-cli.",
+  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/framework authoring surfaces. The `prisma-composer` CLI lives in @prisma/composer-cli.",
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
@@ -43,6 +43,7 @@
     "cross-spawn": "^7.0.6",
     "effect": "4.0.0-rc.117",
     "esbuild": "^0.28.1",
+    "@vercel/nft": "^1.10.2",
     "@prisma/management-api-sdk": "^1.76.0"
   },
   "peerDependencies": {
@@ -61,11 +62,11 @@
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
     "@effect/platform-node": "4.0.0-rc.117",
     "@internal/assemble": "workspace:0.21.0",
+    "@internal/bundle-paths": "workspace:0.21.0",
     "@internal/cli": "workspace:0.21.0",
     "@internal/core": "workspace:0.21.0",
     "@internal/foundation": "workspace:0.21.0",
     "@internal/lowering": "workspace:0.21.0",
-    "@internal/nextjs": "workspace:0.21.0",
     "@internal/node": "workspace:0.21.0",
     "@internal/service-rpc": "workspace:0.21.0",
     "@internal/tsdown-config": "workspace:0.21.0",

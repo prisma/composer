@@ -90,20 +90,10 @@ Five things to know:
   in `inputs`.
 
 **Framework-built Next.js services** can be tested end-to-end through
-`composer dev` and HTTP. If you already ran `next build`, you can also boot
-the standalone server in a `bootstrapService` test:
-
-```ts
-import { pathToFileURL } from 'node:url';
-import { nextjsStandaloneServerPath } from '@prisma/composer/testing';
-
-await bootstrapService(storefront, config, async () => {
-  await import(pathToFileURL(nextjsStandaloneServerPath(storefront.build)).href);
-});
-```
-
-This latter test does not run the Alchemy build. The complete working version
-is [`examples/storefront-auth/modules/storefront/app/page.integration.test.ts`](../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts).
+`composer dev` and HTTP. For a `bootstrapService` test, assemble the framework
+build first, then import the returned bundle entry. This exercises Alchemy's
+build and artifact staging; see the
+[working integration test](../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts).
 
 ## Writing good fakes
 

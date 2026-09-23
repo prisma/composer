@@ -6,7 +6,7 @@ An app may choose `@prisma/composer/frameworks` to build a service with
 Alchemy's published `@alchemy.run/frontend-frameworks` Node target during
 Composer assembly. The low-level `node()` descriptor still consumes output
 built by the user. The public `nextjs()` subpath is replaced by the framework
-adapter; Composer retains its standalone assembler internally.
+adapter; Composer no longer maintains a Next.js standalone assembler.
 
 The available framework names are derived from the installed Alchemy package's
 Node-target exports rather than maintained as a second Composer list.
@@ -25,11 +25,11 @@ contract or the Prisma Cloud deployment topology.
 ## Reasoning
 
 Alchemy maintains framework build targets separately from its cloud resources.
-The extension calls their public `build()` operation directly, then
-hands the resulting dedicated Node output to Composer's existing safe
-assembler. Next.js is the exception: its upstream target reports the project
-root as its output, so Composer uses its existing standalone assembler after
-the upstream build. The project root is never copied as a deploy artifact.
+The extension calls their public `build()` operation directly, then uses
+Alchemy's Prisma website artifact staging to select the build, assets, and
+traced runtime dependencies. Next.js reports the project root as its output;
+Alchemy's staging selects only its deployable files. Composer adds its boot
+wrapper and packages the staged output for its own lifecycle.
 
 Composer still adds its boot wrapper and controls the App, environment rows,
 Deployment, state, and local emulators. Using Alchemy's higher-level Website
@@ -50,9 +50,11 @@ outputs and deploy state are excluded from the source watcher.
   Composer runtime and bindings locally and in production.
 - Vite's Node target serves static output through a Compute service. A
   separate static-only resource lifecycle is not introduced here.
-- The framework output must have a dedicated Node entry inside the project;
-  an upstream target that does not produce one is rejected rather than
-  staging the whole project.
+- Framework builds use Alchemy's Prisma website staging, not a second Composer
+  framework packager. Next.js does not require `output: 'standalone'`. The old
+  internal standalone assembler and its testing helper are removed.
+- The framework output must have a Node entry inside the project. Except for
+  Next.js, its reported output must be a dedicated directory inside the project.
 - Compatibility is pinned to an Alchemy, Effect, and frontend-frameworks
   release set and must be verified with the actual framework versions before
   a template changes its descriptor.
@@ -64,6 +66,9 @@ outputs and deploy state are excluded from the source watcher.
   typed input, secret, and self-origin sequence.
 - **Copy the project root returned by a framework target.** Rejected: it
   could include source, credentials, build caches, and unbounded dependencies.
+- **Keep Composer's Next.js standalone assembler.** Rejected: Alchemy already
+  packages Next.js for Prisma Compute, so maintaining another framework-specific
+  packager duplicates its work.
 - **Use each framework's native dev server.** Deferred until it can receive
   Composer's local bindings without a second lifecycle.
 

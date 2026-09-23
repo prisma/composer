@@ -6,12 +6,11 @@ alwaysApply: true
 # Do not guess or launder the app's code
 
 Existing descriptors consume output from the user's build (`next build`,
-`tsdown`, …). The optional `@prisma/composer-frameworks` descriptor instead
+`tsdown`, …). The optional `@prisma/composer/frameworks` descriptor instead
 delegates building to Alchemy's published framework target (ADR-0049).
-Downstream, Composer assembles the deploy artifact only by **documented, deterministic**
-steps: validate the built output, add the boot wrapper, and perform that
-app-type's documented deploy step (e.g. `nextjs()` does Next's documented
-`.next/static`+`public/` copy; `node()` ships the entry). Guiding principle:
+Downstream, Composer validates the built output and adds its boot wrapper;
+framework-specific staging can use Alchemy's Prisma website provider. The
+generic `node()` descriptor ships the author-declared entry. Guiding principle:
 `docs/design/01-principles/architectural-principles.md`; settled by
 `docs/design/90-decisions/ADR-0005-users-build-the-framework-assembles.md`,
 amended by ADR-0047 and ADR-0049.
@@ -19,9 +18,7 @@ amended by ADR-0047 and ADR-0049.
 The real rule is **no guessing, no laundering** — do not "helpfully" violate it:
 
 - Never guess or discover a bundle filename — dictate names we own (`main.mjs`).
-- Never infer monorepo layout, workspace roots, or a fixed depth. When the app's
-  location in a standalone tree is needed, **find** it (locate `server.js`); do
-  not compute it.
+- Never infer monorepo layout, workspace roots, or a fixed depth.
 - Never derive identity from file paths, and never write an absolute
   deploy-machine path into an artifact. Uniqueness comes from the graph address.
 - Preserve a symlink only when its resolved target remains inside the bundle;
@@ -30,6 +27,6 @@ The real rule is **no guessing, no laundering** — do not "helpfully" violate i
   staging is deploy-owned, keyed by graph address; the user's tree goes under
   `bundle/`.
 
-Doing an app-type's *documented* deploy step (the Next asset copy) is fine — it's
-deterministic. Guessing or laundering is not. If a change needs guessing/
+Using Alchemy's framework-specific artifact staging is fine. Guessing or
+laundering is not. If a change needs guessing/
 inference/dereferencing, the design is being misread — re-read ADR-0005.

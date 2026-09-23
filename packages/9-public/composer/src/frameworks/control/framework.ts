@@ -5,11 +5,8 @@ import alchemyPackage from '@alchemy.run/frontend-frameworks/package.json' with 
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
-import * as NextjsControl from '@internal/nextjs/control';
-import type { NodeBuildAdapter } from '@internal/node';
-import * as NodeControl from '@internal/node/control';
 import type { FrameworkBuildAdapter } from '../framework.ts';
-import { nextjsBuildDescriptor } from '../nextjs.ts';
+import { assembleFrameworkArtifact } from './artifact.ts';
 import { buildFramework } from './build.ts';
 
 function isFramework(value: unknown): value is FrameworkBuildAdapter['framework'] {
@@ -54,7 +51,7 @@ function generatedState(root: string): string[] {
   ].map((name) => path.join(root, name));
 }
 
-/** Keep Composer's proven boot-wrapper and runtime tracing; never stage the project root. */
+/** Alchemy owns framework staging; Composer adds its boot wrapper and lifecycle. */
 export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (!isFrameworkBuild(input.build)) {
     throw new Error('Expected a @prisma/composer/frameworks build descriptor.');
@@ -64,26 +61,14 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   const root = await fs.promises.realpath(path.resolve(moduleDir, descriptor.root));
   const output = await buildFramework(descriptor.framework, root);
 
-  if (descriptor.framework === 'nextjs') {
-    // Next's upstream Node build reports the project root as distDirectory.
-    // Composer's standalone assembler is the safe, existing packaging path.
-    const build = nextjsBuildDescriptor(descriptor);
-    const bundle = await NextjsControl.assemble({
-      ...input,
-      build,
-    });
-    return {
-      ...bundle,
-      watch: [root],
-      watchIgnore: [...generatedState(root), path.join(root, '.next')],
-    };
-  }
-
   const dist = output.distDirectory === undefined ? undefined : path.resolve(output.distDirectory);
-  if (dist === undefined || !inside(root, dist) || output.entry === undefined) {
-    throw new Error(
-      `${descriptor.framework} produced no dedicated Node server output inside ${root}.`,
-    );
+  const nextjs = descriptor.framework === 'nextjs';
+  if (
+    dist === undefined ||
+    (nextjs ? dist !== root : !inside(root, dist)) ||
+    output.entry === undefined
+  ) {
+    throw new Error(`${descriptor.framework} produced no Node server output inside ${root}.`);
   }
   const entry = path.resolve(dist, output.entry);
   if (!inside(dist, entry) || !fs.existsSync(entry) || !fs.statSync(entry).isFile()) {
@@ -91,21 +76,17 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       `${descriptor.framework} did not write its server entry inside ${dist}: ${output.entry}`,
     );
   }
-  const build: NodeBuildAdapter = {
-    extension: '@prisma/composer/node',
-    type: 'node',
-    module: descriptor.module,
-    dir: path.relative(moduleDir, dist),
-    entry: path.relative(dist, entry),
-  };
-  const bundle = await NodeControl.assemble({
-    ...input,
-    build,
-  });
+  const bundle = await assembleFrameworkArtifact(
+    input,
+    root,
+    dist,
+    entry,
+    nextjs ? 'next' : 'output',
+  );
   return {
     ...bundle,
     watch: [root],
-    watchIgnore: [...generatedState(root), dist],
+    watchIgnore: [...generatedState(root), nextjs ? path.join(root, '.next') : dist],
   };
 }
 

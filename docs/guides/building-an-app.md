@@ -592,8 +592,8 @@ ships. Three things to know:
 
 Without `dir` you get the single-file form above, unchanged.
 
-**Next.js.** The framework adapter builds the app through Alchemy, then
-Composer packages its standalone output:
+**Next.js.** The framework adapter builds through Alchemy, then uses Alchemy's
+Prisma website artifact staging. You do not need `output: 'standalone'`:
 
 ```ts
 build: framework({ module: import.meta.url, framework: 'nextjs', root: '..' })

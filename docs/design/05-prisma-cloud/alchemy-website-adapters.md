@@ -4,8 +4,8 @@
 
 `@alchemy.run/frontend-frameworks` is a separate public package. Composer's
 optional `@prisma/composer/frameworks` entry accepts the published package's
-Node-target exports, calls the corresponding builder, then
-hands the output to its existing safe Node or Next.js standalone assembler.
+Node-target exports, calls the corresponding builder, and uses Alchemy's Prisma
+website artifact staging for every framework.
 The base `@prisma/composer` authoring entrypoint does not import a framework runtime.
 
 Composer still owns the App, environment rows, Deployment, state, boot wrapper,
@@ -44,10 +44,10 @@ The descriptor is data. During assembly, the extension invokes the published
 framework builder directly and reads its `BuildOutput` path and
 server entry. The framework type and runtime validation come from Alchemy's
 package exports; Composer has no separate framework-name list. Dedicated Node
-output goes through Composer's Node assembler. Vite's Node target serves static
-files through Compute. Next.js reports the project root, so the extension uses
-Composer's documented standalone assembler rather than copying that root.
-Every output remains subject to Composer's path and symlink checks.
+output goes through Alchemy's Prisma website staging. Vite's Node target serves
+static files through Compute. Next.js reports the project root; Alchemy's
+staging selects its runtime files and assets without copying that root.
+Composer adds its boot wrapper and validates the staged bundle before upload.
 
 `composer dev` uses the same build and assembly, watches the source root,
 and excludes generated output and deploy state. It does not use Alchemy's
@@ -61,10 +61,10 @@ and current framework packages:
 
 | Framework | Builder + Composer artifact | Assembled runtime |
 | --- | --- | --- |
-| Astro 7 | passed | page and health passed |
-| Next.js 16 | passed with standalone packaging | page passed |
-| Nuxt 4 | passed | page and health passed |
-| TanStack Start | passed | page and health passed |
+| Astro 7 | pending with Alchemy staging | pending |
+| Next.js 16 | passed with Alchemy Prisma website staging | page passed |
+| Nuxt 4 | pending with Alchemy staging | pending |
+| TanStack Start | pending with Alchemy staging | pending |
 | Vite 8 | passed | page and health passed |
 
 The checked-in Vite example also passed the real `composer dev` CLI,
