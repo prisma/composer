@@ -12,7 +12,7 @@ import pkg from '../package.json' with { type: 'json' };
 export class PrismaCredentials extends Context.Service<
   PrismaCredentials,
   { readonly token: Redacted.Redacted<string> }
->()('PrismaCredentials') {}
+>()('PrismaComposerCredentials') {}
 
 /** Resolve the token from the `PRISMA_SERVICE_TOKEN` environment variable. */
 export const fromEnv = (): Layer.Layer<PrismaCredentials, Config.ConfigError> =>
