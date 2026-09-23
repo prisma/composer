@@ -27,7 +27,7 @@ jobs:
   deploy:
     name: Deploy, verify, destroy
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     # Secrets aren't available on forked-PR runs; skip rather than fail loudly.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:

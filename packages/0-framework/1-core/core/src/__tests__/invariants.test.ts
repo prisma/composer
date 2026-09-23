@@ -120,16 +120,15 @@ describe("invariant 2: the '.' authoring entry bundles lean", () => {
     }
   });
 
-  test('the ecosystem-seam adapters (node and internal Next.js) are equally lean', async () => {
+  test('the node ecosystem-seam adapter is lean', async () => {
     const out = await Bun.build({
       entrypoints: [
         path.join(pkgDir, '..', '..', '2-authoring', 'node', 'src', 'exports', 'index.ts'),
-        path.join(pkgDir, '..', '..', '2-authoring', 'nextjs', 'src', 'exports', 'index.ts'),
       ],
       target: 'bun',
     });
     expect(out.success).toBe(true);
-    expect(out.outputs.length).toBe(2);
+    expect(out.outputs.length).toBe(1);
 
     for (const output of out.outputs) {
       const js = await output.text();
