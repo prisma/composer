@@ -117,8 +117,17 @@ export function startWatch(
 
   const watchers: FSWatcher[] = [];
   for (const { root, ignored } of directoryRoots) {
-    const isIgnored = (candidate: string): boolean =>
-      ignored.some((item) => candidate === item || candidate.startsWith(`${item}${path.sep}`));
+    const comparePath = (value: string): string => {
+      const normalized = path.resolve(value);
+      return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+    };
+    const ignoredPaths = ignored.map(comparePath);
+    const isIgnored = (candidate: string): boolean => {
+      const resolved = comparePath(candidate);
+      return ignoredPaths.some(
+        (item) => resolved === item || resolved.startsWith(`${item}${path.sep}`),
+      );
+    };
     const directoryWatcher = chokidar.watch(root, { ignoreInitial: true, ignored: isIgnored });
     directoryWatcher.on('all', () => trigger());
     directoryWatcher.on('error', reportError);

@@ -1,3 +1,4 @@
+import { expectTypeOf, test } from 'vitest';
 import { string } from '../config.ts';
 /**
  * Type-level tests for the module boundary (ADR-0016): the body's `ModuleOutputs`
@@ -109,8 +110,9 @@ const untypedEnd = () =>
   });
 
 type UntypedInput = InputRef<ReturnType<typeof untypedEnd>>;
-const untypedInputIsNever: [UntypedInput] extends [never] ? true : false = true;
-void untypedInputIsNever;
+test('an untyped dependency has no contract-carrying input ref', () => {
+  expectTypeOf<UntypedInput>().toEqualTypeOf<never>();
+});
 
 // MUST compile: an untyped input forwards into ANY slot — typed or untyped —
 // with no compile-time rejection possible.
