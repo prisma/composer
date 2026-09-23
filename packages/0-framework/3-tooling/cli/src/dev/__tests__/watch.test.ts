@@ -26,9 +26,50 @@ describe('watchTargetsFrom()', () => {
     expect(targets).toEqual([]);
     expect(unwatchable).toEqual(['web']);
   });
+
+  test('carries assembly output exclusions with a watched source root', () => {
+    expect(
+      watchTargetsFrom({
+        web: {
+          dir: '/app/artifact',
+          entry: 'server.js',
+          watch: ['/app'],
+          watchIgnore: ['/app/dist'],
+        },
+      }).targets,
+    ).toEqual([{ address: 'web', paths: ['/app'], ignored: ['/app/dist'] }]);
+  });
 });
 
 describe('startWatch()', () => {
+  test('ignores framework output but rebuilds when source changes', async () => {
+    const dir = tempDir();
+    const dist = path.join(dir, 'dist');
+    const state = path.join(dir, '.alchemy');
+    fs.mkdirSync(dist);
+    fs.mkdirSync(state);
+    const source = path.join(dir, 'app.ts');
+    fs.writeFileSync(source, 'v1');
+    let calls = 0;
+    const watch = startWatch([{ address: 'web', paths: [dir], ignored: [dist, state] }], () => {
+      calls += 1;
+    });
+    await watch.ready;
+
+    try {
+      fs.writeFileSync(path.join(dist, 'server.mjs'), 'build');
+      fs.writeFileSync(path.join(state, 'deploy.log'), 'updated');
+      await sleep(500);
+      expect(calls).toBe(0);
+      fs.writeFileSync(source, 'v2');
+      await until(() => calls === 1, 3000);
+      expect(calls).toBe(1);
+    } finally {
+      watch.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
   test('debounces a burst of changes across several files into one callback, 300ms after the last change', async () => {
     const dir = tempDir();
     const fileA = path.join(dir, 'a.txt');

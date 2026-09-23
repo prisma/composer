@@ -33,9 +33,10 @@ Two principles govern everything and are binding
 1. **Your code never reads its environment.** Dependencies, configuration,
    credentials, and the port all arrive through the service node, typed.
    `process.env` is never the answer.
-2. **Composer never bundles or transforms your code.** You build with your own
-   bundler; the framework assembles the built output by deterministic steps
-   and hands it to the configured deploy target.
+2. **The core Composer build adapters do not bundle your code.** You build
+   with your own bundler; Composer assembles that output and hands it to the
+   configured deploy target. The optional `@prisma/composer-frameworks`
+   extension explicitly opts a service into Alchemy's framework builder.
 
 ## Declarations are data
 
@@ -193,7 +194,7 @@ be reimplemented:
    provisioned, so `serve()` passes every call through: never supply a key
    in test inputs.
 
-## Builds are yours
+## Builds
 
 You build, the framework assembles. For a plain server process, `entry` must
 point at a single self-contained ESM file: everything inlined except runtime
@@ -214,7 +215,17 @@ deploy. Rules that bite:
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
    the runtime environment doesn't exist at build time and Next ignores
    runtime env for prerendered routes.
-4. **Always build before `deploy` or `dev`.** Neither builds for you.
+4. **Build before `deploy` or `dev` for core adapters.** The optional
+   `@prisma/composer-frameworks` descriptor instead builds its framework
+   output during assembly.
+
+For that opt-in path, register `frameworkBuild()` from
+`@prisma/composer-frameworks/control` in the deploy config and put
+`frameworkBuild({ module: import.meta.url, framework: 'vite', root: '..' })`
+from `@prisma/composer-frameworks` on the service. The published Alchemy
+Node-target builder runs during assembly; Composer still owns deployment and
+local service bindings. The checked-in `examples/framework-vite` shows the
+complete setup. SvelteKit is not supported by this extension yet.
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).

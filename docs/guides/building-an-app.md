@@ -535,8 +535,15 @@ the deploy report can print it verbatim.
 
 ## Builds
 
-The framework never bundles your code — it assembles what your build
-produced, byte for byte. Two build adapters ship:
+The core framework does not bundle your code — it assembles what your build
+produced. Two core build adapters ship:
+
+An app can opt into `@prisma/composer-frameworks` instead. Register
+`frameworkBuild()` in the deploy config and declare a service with
+`frameworkBuild({ module: import.meta.url, framework: 'vite', root: '..' })`.
+That extension calls Alchemy's published Node-target builder during assembly,
+then hands its output to Composer's existing assembler. See
+[`examples/framework-vite`](../../examples/framework-vite) for a complete app.
 
 **`node` — any plain server process.** Point `entry` at a self-contained ESM
 file: everything inlined except runtime built-ins (`bun`, `bun:*`, `node:*`),

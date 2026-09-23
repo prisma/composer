@@ -19,7 +19,7 @@ export const fromEnv = (): Layer.Layer<PrismaCredentials, Config.ConfigError> =>
   Layer.effect(
     PrismaCredentials,
     Effect.gen(function* () {
-      const token = yield* Config.redacted('PRISMA_SERVICE_TOKEN');
+      const token = yield* Config.Redacted('PRISMA_SERVICE_TOKEN');
       return { token };
     }),
   );
@@ -93,8 +93,8 @@ export const managementApiBaseUrl = (
       normalizeBaseUrl(
         env['PRISMA_API_URL'] || env['PRISMA_MANAGEMENT_API_URL'] || DEFAULT_BASE_URL,
       )
-    : Config.string('PRISMA_API_URL').pipe(
-        Config.orElse(() => Config.string('PRISMA_MANAGEMENT_API_URL')),
+    : Config.String('PRISMA_API_URL').pipe(
+        Config.orElse(() => Config.String('PRISMA_MANAGEMENT_API_URL')),
         Config.withDefault(DEFAULT_BASE_URL),
         Effect.flatMap(normalizeBaseUrl),
       );

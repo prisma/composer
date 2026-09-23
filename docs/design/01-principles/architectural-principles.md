@@ -37,9 +37,11 @@ of the framework.
 
 ## We don't bundle the app's code — and we don't guess
 
-The framework **never** bundles or transforms your application's code — your
-build (`next build`, `tsdown`, …) produces the runnable. Downstream, the
-framework assembles the deploy artifact, but only by **documented, deterministic**
+The core and existing build descriptors never bundle or transform your
+application's code — your build (`next build`, `tsdown`, …) produces the
+runnable. An explicit framework-build extension may instead delegate the
+build to Alchemy's maintained framework target (ADR-0049). Downstream, Composer
+assembles the deploy artifact, but only by **documented, deterministic**
 steps: it validates the built output, adds its boot wrapper, and performs the
 app-type's documented deploy step (a Next app gets its `.next/static`+`public/`
 copied in exactly as the Next docs prescribe). What it must **never** do is
@@ -52,7 +54,8 @@ the bundle; a link that escapes the bundle or dangles is a hard error naming the
 link. Runtime files enter the bundle only by tracing the entry the author
 declared — never by discovering one. See
 [ADR-0005](../90-decisions/ADR-0005-users-build-the-framework-assembles.md) and
-[ADR-0047](../90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md);
+[ADR-0047](../90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)
+and [ADR-0049](../90-decisions/ADR-0049-framework-builds-are-an-opt-in-extension.md);
 every guessing/laundering violation has produced a real deploy failure. Do not
 relitigate.
 

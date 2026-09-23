@@ -34,12 +34,17 @@ for hoisted installations. On Windows it prefers `alchemy.exe`, then
 `alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
 Windows shim must not be reported as a missing Alchemy dependency.
 
-`prisma-composer deploy` does not build for you — it assembles what your
-build produced:
+By default, `prisma-composer deploy` does not build for you — it assembles
+what your build produced:
 
 ```sh
 turbo run build && prisma-composer deploy module.ts
 ```
+
+Services explicitly using the optional `@prisma/composer-frameworks` build
+extension are different: Composer calls Alchemy's framework builder during
+assembly. For those services, deploy runs the framework build; do not run a
+separate framework build first.
 
 Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `prismaState()` line in `prisma-composer.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
 

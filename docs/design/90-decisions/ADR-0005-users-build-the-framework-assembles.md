@@ -1,6 +1,6 @@
 # ADR-0005: Users build their app; the framework assembles deploy artifacts from built output
 
-Superseded in part by [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md): assembly may trace the declared entry's runtime files and preserve symlinks whose targets remain inside the final bundle; it still never dereferences a link or guesses an entry.
+Superseded in part by [ADR-0047](ADR-0047-compute-assembly-preserves-safe-runtime-topology.md): assembly may trace the declared entry's runtime files and preserve symlinks whose targets remain inside the final bundle; it still never dereferences a link or guesses an entry. [ADR-0049](ADR-0049-framework-builds-are-an-opt-in-extension.md) adds an opt-in extension that invokes Alchemy's framework build before assembly; the existing descriptors retain this decision's user-build boundary.
 
 ## Decision
 

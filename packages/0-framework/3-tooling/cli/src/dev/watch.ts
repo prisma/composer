@@ -26,6 +26,7 @@ const DEBOUNCE_MS = 300;
 export interface WatchTarget {
   readonly address: string;
   readonly paths: readonly string[];
+  readonly ignored?: readonly string[];
 }
 
 /** Bundles → watch targets, plus the addresses with nothing watchable (the pinned one-line startup note). */
@@ -41,7 +42,11 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
       unwatchable.push(address);
       continue;
     }
-    targets.push({ address, paths });
+    targets.push({
+      address,
+      paths,
+      ...(bundle.watchIgnore === undefined ? {} : { ignored: bundle.watchIgnore }),
+    });
   }
   return { targets, unwatchable };
 }
@@ -82,7 +87,7 @@ export function startWatch(
   };
 
   const fileTargets = new Set<string>();
-  const directoryRoots = new Set<string>();
+  const directoryRoots: Array<{ root: string; ignored: readonly string[] }> = [];
   const parentRoots = new Set<string>();
   for (const target of targets) {
     for (const p of target.paths) {
@@ -94,7 +99,7 @@ export function startWatch(
         // nonexistent → file target via its parent
       }
       if (isDirectory) {
-        directoryRoots.add(abs);
+        directoryRoots.push({ root: abs, ignored: target.ignored ?? [] });
       } else {
         fileTargets.add(abs);
         parentRoots.add(path.dirname(abs));
@@ -111,8 +116,10 @@ export function startWatch(
   };
 
   const watchers: FSWatcher[] = [];
-  if (directoryRoots.size > 0) {
-    const directoryWatcher = chokidar.watch([...directoryRoots], { ignoreInitial: true });
+  for (const { root, ignored } of directoryRoots) {
+    const isIgnored = (candidate: string): boolean =>
+      ignored.some((item) => candidate === item || candidate.startsWith(`${item}${path.sep}`));
+    const directoryWatcher = chokidar.watch(root, { ignoreInitial: true, ignored: isIgnored });
     directoryWatcher.on('all', () => trigger());
     directoryWatcher.on('error', reportError);
     watchers.push(directoryWatcher);
