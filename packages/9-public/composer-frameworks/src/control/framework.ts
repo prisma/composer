@@ -5,9 +5,9 @@ import type { BuildAdapter } from '@prisma/composer';
 import type { ExtensionDescriptor } from '@prisma/composer/config';
 import type { AssembleInput, Bundle } from '@prisma/composer/deploy';
 import type { NextjsBuildAdapter } from '@prisma/composer/nextjs';
-import { assemble as assembleNextjs } from '@prisma/composer/nextjs/control';
+import * as NextjsControl from '@prisma/composer/nextjs/control';
 import type { NodeBuildAdapter } from '@prisma/composer/node';
-import { assemble as assembleNode } from '@prisma/composer/node/control';
+import * as NodeControl from '@prisma/composer/node/control';
 import { type FrameworkBuildAdapter, isFramework } from '../framework.ts';
 import { buildFramework } from './build.ts';
 
@@ -67,7 +67,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
       appDir: descriptor.root,
       entry: 'server.js',
     };
-    const bundle = await assembleNextjs({
+    const bundle = await NextjsControl.assemble({
       ...input,
       build,
     });
@@ -97,7 +97,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     dir: path.relative(moduleDir, dist),
     entry: path.relative(dist, entry),
   };
-  const bundle = await assembleNode({
+  const bundle = await NodeControl.assemble({
     ...input,
     build,
   });
