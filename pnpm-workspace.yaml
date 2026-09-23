@@ -6,4 +6,5 @@ packages:
   - website
 overrides:
   '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
+  '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/pr:1805:6533913
 autoInstallPeers: false
