@@ -46,15 +46,4 @@ while [ "$SECONDS" -lt "$deadline" ]; do
 done
 echo "Round trip never rendered both 'Auth /verify says: true' and 'Secret /check says: true' within the deadline. Last body:"
 printf '%s' "$body" | head -c 3000
-echo
-service_id="$(curl -fsS -H "$auth_header" "$api/apps?projectId=$project_id&limit=100" \
-  | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{const s=(JSON.parse(d).data??[]).find((x)=>x.name==='storefront');console.log(s?.id??'')})" || true)"
-if [ -n "$service_id" ]; then
-  deployment_id="$(curl -fsS -H "$auth_header" "$api/services/$service_id/deployments?limit=1" \
-    | node -e "let d='';process.stdin.on('data',(c)=>{d+=c}).on('end',()=>{console.log(JSON.parse(d).data?.[0]?.id??'')})" || true)"
-  if [ -n "$deployment_id" ]; then
-    echo "Storefront deployment logs:"
-    curl -fsS -H "$auth_header" "$api/deployments/$deployment_id/logs?from_start=true" | tail -c 12000 || true
-  fi
-fi
 exit 1
