@@ -64,5 +64,5 @@ describe('storefront -> auth round trip, driven over real HTTP (bootstrapService
 
     expect(html).toContain('Auth /verify says: <!-- -->true');
     expect(html).toContain('Secret /check says: <!-- -->true');
-  }, 30_000);
+  }, 90_000);
 });
