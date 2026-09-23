@@ -72,8 +72,8 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
 | `@prisma/composer-prisma-cloud/storage` | S3-compatible object storage as a module (S3 wire protocol on Compute + Postgres `bytea`; see [`README`](../../../packages/1-prisma-cloud/2-shared-modules/storage/README.md)) — `storage()`, `s3()` + `s3Contract`/`S3Config`, `storageService`; `/storage/testing` adds the `createPgStore` + `startStorageServer` local stand-in | `@prisma/composer` + `app-node` + `@prisma/composer-prisma-cloud` |
 | `@prisma/composer-prisma-cloud/control` | `prismaCloud()` — the extension descriptor the config lists | `@internal/lowering`, `alchemy`, `effect` |
-| `@prisma/composer/node` · `@prisma/composer/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `extension` | `@prisma/composer` only |
-| `@prisma/composer/node/control` · `@prisma/composer/nextjs/control` | `nodeBuild()` · `nextjsBuild()` — an `ExtensionDescriptor` whose `nodes` registry holds the deploy-side assembler under `{ kind: "build" }` | `node:fs`/framework tooling — deploy machine only |
+| `@prisma/composer/node` · `@prisma/composer/frameworks` (build adapters) | `node()` · `framework()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `extension` | the framework descriptor has an optional Alchemy type peer |
+| `@prisma/composer/node/control` · `@prisma/composer/frameworks/control` | `nodeBuild()` · `frameworkBuild()` — an `ExtensionDescriptor` whose `nodes` registry holds the deploy-side assembler under `{ kind: "build" }` | `node:fs`/framework tooling — deploy machine only |
 | `@internal/assemble` | `assembleServices()` — looks each service's `build` descriptor up in the configured extensions' registries, the wrapper-inlining policy, `AssembleError` | `node:fs`/`node:module` — deploy machine only; consumed by `@internal/cli` and the future programmatic deploy API |
 
 A build adapter splits exactly like any other extension: a **lean authoring
@@ -97,7 +97,7 @@ driver, the server API) appears only in **app files**.
 Who imports what, end to end:
 
 - the **user's service module** (`service.ts`) imports `@prisma/composer-prisma-cloud`, a
-  build-adapter descriptor (`@prisma/composer/node` / `@prisma/composer/nextjs`), and the app's
+  build-adapter descriptor (`@prisma/composer/node` / `@prisma/composer/frameworks`), and the app's
   own driver of choice (a DB client factory lives inline here). It exports the
   service node and **nothing runs on import**;
 - the **user's entrypoint** (`server.ts`, or a Next page) imports the service
@@ -1132,11 +1132,9 @@ framework wrapper, and reports the runtime entry path.
 export default (opts: { module: string; entry: string }): BuildAdapter =>
   ({ extension: "@prisma/composer/node", type: "node", module: opts.module, entry: opts.entry })
 
-// @prisma/composer/nextjs — carries an extra `appDir` (the Next app's root, the
-// standalone layout root), also resolved relative to dirname(module). `entry`
-// is a bare filename inside the standalone output dir.
-export default (opts: { module: string; appDir: string; entry: string }): NextjsBuildAdapter =>
-  ({ extension: "@prisma/composer/nextjs", type: "nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
+// @prisma/composer/frameworks — delegates the framework build to Alchemy.
+export default (opts: { module: string; framework: Framework; root: string }): FrameworkBuildAdapter =>
+  ({ extension: "@prisma/composer/frameworks", type: "framework", module: opts.module, framework: opts.framework, root: opts.root, entry: "server.js" })
 
 // @internal/assemble — looks each service's `build` descriptor up in the
 // configured extensions' registries by its (extension, type) pair and runs the
@@ -1243,11 +1241,11 @@ disappear into core's sequencing.
 ```ts
 // storefront/src/service.ts — declares the dependency; never learns how the URL arrives
 import { compute, http } from "@prisma/composer-prisma-cloud"
-import nextjs from "@prisma/composer/nextjs"
+import framework from "@prisma/composer/frameworks"
 const auth = http({ name: "auth" })
 export default compute({ name: "storefront",
   deps: { auth },
-  build: nextjs({ module: import.meta.url, appDir: "..", entry: "server.js" }) })
+  build: framework({ module: import.meta.url, framework: "nextjs", root: ".." }) })
 
 // storefront/app/page.tsx — the app's own Next code; `next build` bundles it.
 // It pulls the typed auth client via load() — the SAME mechanism the Hono entry

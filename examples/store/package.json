@@ -11,6 +11,8 @@
     "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
   },
   "dependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
+    "@effect/platform-node": "4.0.0-rc.117",
     "@effect/platform-bun": "4.0.0-rc.117",
     "@prisma/composer": "workspace:0.21.0",
     "@prisma/composer-cli": "workspace:0.21.0",

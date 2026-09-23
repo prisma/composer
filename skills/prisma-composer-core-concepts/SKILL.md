@@ -35,7 +35,7 @@ Two principles govern everything and are binding
    `process.env` is never the answer.
 2. **The core Composer build adapters do not bundle your code.** You build
    with your own bundler; Composer assembles that output and hands it to the
-   configured deploy target. The optional `@prisma/composer-frameworks`
+   configured deploy target. The optional `@prisma/composer/frameworks`
    extension explicitly opts a service into Alchemy's framework builder.
 
 ## Declarations are data
@@ -210,26 +210,27 @@ deploy. Rules that bite:
    copied verbatim, so the server must resolve siblings against
    `import.meta.url`, not the working directory. The tree must contain no
    symlinks: the packager rejects them, names the link, and assembly fails.
-3. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
-   `nextjs({ module, appDir })` names the app root. Any page or action that
+3. **Next.js**: use `framework({ module, framework: 'nextjs', root })` to build
+   and package the app. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
    the runtime environment doesn't exist at build time and Next ignores
    runtime env for prerendered routes.
 4. **Build before `deploy` or `dev` for core adapters.** The optional
-   `@prisma/composer-frameworks` descriptor instead builds its framework
+   `@prisma/composer/frameworks` descriptor instead builds its framework
    output during assembly.
 
 For that opt-in path, register `frameworkBuild()` from
-`@prisma/composer-frameworks/control` in the deploy config and put
-`frameworkBuild({ module: import.meta.url, framework: 'vite', root: '..' })`
-from `@prisma/composer-frameworks` on the service. The published Alchemy
+`@prisma/composer/frameworks/control` in the deploy config and put
+`framework({ module: import.meta.url, framework: 'vite', root: '..' })`
+from `@prisma/composer/frameworks` on the service. Install
+`@alchemy.run/frontend-frameworks` and `@effect/platform-node`. The Alchemy
 Node-target builder runs during assembly; Composer still owns deployment and
 local service bindings. The checked-in `examples/framework-vite` shows the
 complete setup. SvelteKit is not supported by this extension yet.
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).
-It registers extensions (`prismaCloud()`, `nodeBuild()`, `nextjsBuild()` when
+It registers extensions (`prismaCloud()`, `nodeBuild()`, `frameworkBuild()` when
 the app has a Next.js service) and the deploy-state backend
 (`prismaState()`). It is read by the CLI's operations (deploy, destroy, and
 dev; a `dev` run without one refuses, naming the missing file) and never
@@ -412,8 +413,10 @@ config you choose; drive it over real HTTP. Gotchas:
    OS-assigned port is reported back.
 2. There is no `close()`; run each integration-test file in its own process
    (bun test does).
-3. Next.js services take a third argument, a boot thunk, resolved with
-   `standaloneServerPath` from `@prisma/composer/nextjs/control`.
+3. For framework-built Next.js, test through `composer dev` and HTTP so the
+   framework build and Composer assembly are exercised together. A prebuilt
+   standalone app can use `nextjsStandaloneServerPath` from
+   `@prisma/composer/testing` with `bootstrapService`.
 4. A service with an input schema takes `input` in the config, a binding
    exactly like `provision()`'s, run through the real serialize/read path.
 

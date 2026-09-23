@@ -1,4 +1,4 @@
-import frameworkBuild from '@prisma/composer-frameworks';
+import frameworkBuild from '@prisma/composer/frameworks';
 import { compute } from '@prisma/composer-prisma-cloud';
 
 export default compute({

@@ -2,14 +2,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import alchemyPackage from '@alchemy.run/frontend-frameworks/package.json' with { type: 'json' };
-import type { BuildAdapter } from '@prisma/composer';
-import type { ExtensionDescriptor } from '@prisma/composer/config';
-import type { AssembleInput, Bundle } from '@prisma/composer/deploy';
-import type { NextjsBuildAdapter } from '@prisma/composer/nextjs';
-import * as NextjsControl from '@prisma/composer/nextjs/control';
-import type { NodeBuildAdapter } from '@prisma/composer/node';
-import * as NodeControl from '@prisma/composer/node/control';
+import type { BuildAdapter } from '@internal/core';
+import type { ExtensionDescriptor } from '@internal/core/config';
+import type { AssembleInput, Bundle } from '@internal/core/deploy';
+import * as NextjsControl from '@internal/nextjs/control';
+import type { NodeBuildAdapter } from '@internal/node';
+import * as NodeControl from '@internal/node/control';
 import type { FrameworkBuildAdapter } from '../framework.ts';
+import { nextjsBuildDescriptor } from '../nextjs.ts';
 import { buildFramework } from './build.ts';
 
 function isFramework(value: unknown): value is FrameworkBuildAdapter['framework'] {
@@ -18,7 +18,7 @@ function isFramework(value: unknown): value is FrameworkBuildAdapter['framework'
 
 function isFrameworkBuild(build: BuildAdapter): build is FrameworkBuildAdapter {
   return (
-    build.extension === '@prisma/composer-frameworks' &&
+    build.extension === '@prisma/composer/frameworks' &&
     build.type === 'framework' &&
     'framework' in build &&
     isFramework(build.framework) &&
@@ -48,14 +48,16 @@ function generatedState(root: string): string[] {
     '.tanstack',
     '.turbo',
     '.vite',
+    'next-env.d.ts',
     'node_modules',
+    'serve-node.mjs',
   ].map((name) => path.join(root, name));
 }
 
 /** Keep Composer's proven boot-wrapper and runtime tracing; never stage the project root. */
 export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (!isFrameworkBuild(input.build)) {
-    throw new Error('Expected a @prisma/composer-frameworks build descriptor.');
+    throw new Error('Expected a @prisma/composer/frameworks build descriptor.');
   }
   const descriptor = input.build;
   const moduleDir = path.dirname(fileURLToPath(descriptor.module));
@@ -65,13 +67,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (descriptor.framework === 'nextjs') {
     // Next's upstream Node build reports the project root as distDirectory.
     // Composer's standalone assembler is the safe, existing packaging path.
-    const build: NextjsBuildAdapter = {
-      extension: '@prisma/composer/nextjs',
-      type: 'nextjs',
-      module: descriptor.module,
-      appDir: descriptor.root,
-      entry: 'server.js',
-    };
+    const build = nextjsBuildDescriptor(descriptor);
     const bundle = await NextjsControl.assemble({
       ...input,
       build,
@@ -114,7 +110,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 }
 
 export const frameworkBuild = (): ExtensionDescriptor => ({
-  id: '@prisma/composer-frameworks',
+  id: '@prisma/composer/frameworks',
   nodes: {
     framework: { kind: 'build', assemble },
   },

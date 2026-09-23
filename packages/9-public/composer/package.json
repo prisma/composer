@@ -17,8 +17,8 @@
     "./service-rpc": "./dist/service-rpc.mjs",
     "./node": "./dist/node.mjs",
     "./node/control": "./dist/node-control.mjs",
-    "./nextjs": "./dist/nextjs.mjs",
-    "./nextjs/control": "./dist/nextjs-control.mjs",
+    "./frameworks": "./dist/frameworks.mjs",
+    "./frameworks/control": "./dist/frameworks-control.mjs",
     "./package.json": "./package.json"
   },
   "files": [
@@ -45,7 +45,21 @@
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.76.0"
   },
+  "peerDependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
+    "@effect/platform-node": "4.0.0-rc.117"
+  },
+  "peerDependenciesMeta": {
+    "@alchemy.run/frontend-frameworks": {
+      "optional": true
+    },
+    "@effect/platform-node": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
+    "@effect/platform-node": "4.0.0-rc.117",
     "@internal/assemble": "workspace:0.21.0",
     "@internal/cli": "workspace:0.21.0",
     "@internal/core": "workspace:0.21.0",

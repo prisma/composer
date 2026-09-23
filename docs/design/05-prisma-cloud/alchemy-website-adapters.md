@@ -3,11 +3,10 @@
 ## Boundary
 
 `@alchemy.run/frontend-frameworks` is a separate public package. Composer's
-optional `@prisma/composer-frameworks` package accepts the published package's
+optional `@prisma/composer/frameworks` entry accepts the published package's
 Node-target exports, calls the corresponding builder, then
 hands the output to its existing safe Node or Next.js standalone assembler.
-The base `@prisma/composer` package does not import a framework runtime from
-its authoring entrypoint.
+The base `@prisma/composer` authoring entrypoint does not import a framework runtime.
 
 Composer still owns the App, environment rows, Deployment, state, boot wrapper,
 and local emulators. Replacing those with `Prisma.Website.*` would bypass
@@ -24,7 +23,7 @@ An author opts in explicitly:
 
 ```ts
 // prisma-composer.config.ts
-import { frameworkBuild } from '@prisma/composer-frameworks/control';
+import { frameworkBuild } from '@prisma/composer/frameworks/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 import { defineConfig } from '@prisma/composer/config';
 
@@ -36,7 +35,7 @@ export default defineConfig({
 
 ```ts
 // src/service.ts
-import framework from '@prisma/composer-frameworks';
+import framework from '@prisma/composer/frameworks';
 
 build: framework({ module: import.meta.url, framework: 'vite', root: '..' })
 ```

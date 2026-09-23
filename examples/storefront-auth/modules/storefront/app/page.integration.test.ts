@@ -8,9 +8,8 @@
  * the loopback fake, and the H3 teardown decision (no `close()`) rests on
  * bun-test's per-file process isolation.
  *
- * storefront's build is `nextjs({ appDir })`: the deploy assembler locates the
- * built `server.js` inside the standalone tree, so this test boots it via the
- * same seam (`standaloneServerPath`) rather than re-deriving the path. The
+ * The framework builder uses Composer's standalone assembler for Next.js.
+ * This test boots the prebuilt `server.js` via the same path helper. The
  * deploy chain is bootstrap.js -> main.mjs -> server.js; here
  * `bootstrapService`'s `stash` stands in for the wrapper's env write. Requires
  * `next build` to have produced `.next/standalone` (turbo's `test` task depends
@@ -18,22 +17,21 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { pathToFileURL } from 'node:url';
-import type { BuildAdapter } from '@prisma/composer';
-import type { NextjsBuildAdapter } from '@prisma/composer/nextjs';
-import { standaloneServerPath } from '@prisma/composer/nextjs/control';
+import type { FrameworkBuildAdapter } from '@prisma/composer/frameworks';
+import { nextjsStandaloneServerPath } from '@prisma/composer/testing';
 import { bootstrapService } from '@prisma/composer-prisma-cloud/testing';
 import fakeAuthHandler from '@storefront-auth/auth/fake';
 import storefrontService from '../src/service.ts';
 
 const PORT = 4310;
 
-function isNextjsBuild(build: BuildAdapter): build is NextjsBuildAdapter {
-  return build.type === 'nextjs' && 'appDir' in build && typeof build.appDir === 'string';
+function isNextjsBuild(build: typeof storefrontService.build): build is FrameworkBuildAdapter {
+  return build.type === 'framework' && 'framework' in build && build.framework === 'nextjs';
 }
 
 /** Boots the built standalone Next entry — its own `server.js`, unmodified — via the same seam `assemble()` uses to locate it. The deploy chain is bootstrap.js -> main.mjs -> server.js; here `bootstrapService`'s env writes (Config stash + PORT) stand in for the wrapper's, and Next's standalone server binds `process.env.PORT` directly. */
-function bootStandaloneNext(build: NextjsBuildAdapter): () => Promise<void> {
-  const entryPath = standaloneServerPath(build);
+function bootStandaloneNext(build: FrameworkBuildAdapter): () => Promise<void> {
+  const entryPath = nextjsStandaloneServerPath(build);
   return async () => {
     await import(pathToFileURL(entryPath).href);
   };

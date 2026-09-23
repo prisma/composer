@@ -2,10 +2,11 @@
 
 ## Decision
 
-An app may choose `@prisma/composer-frameworks` to build a service with
+An app may choose `@prisma/composer/frameworks` to build a service with
 Alchemy's published `@alchemy.run/frontend-frameworks` Node target during
-Composer assembly. Existing `node()` and `nextjs()` descriptors still consume
-outputs built by the user.
+Composer assembly. The low-level `node()` descriptor still consumes output
+built by the user. The public `nextjs()` subpath is replaced by the framework
+adapter; Composer retains its standalone assembler internally.
 
 The available framework names are derived from the installed Alchemy package's
 Node-target exports rather than maintained as a second Composer list.
@@ -13,12 +14,12 @@ Node-target exports rather than maintained as a second Composer list.
 ```ts
 compute({
   name: 'web',
-  build: frameworkBuild({ module: import.meta.url, framework: 'vite', root: '..' }),
+  build: framework({ module: import.meta.url, framework: 'vite', root: '..' }),
 });
 ```
 
 This is an explicit exception to ADR-0005's user-build boundary and to
-ADR-0027's two-public-package inventory. It does not change the core's build
+ADR-0027's original core authoring surface. It does not change the core's build
 contract or the Prisma Cloud deployment topology.
 
 ## Reasoning
@@ -42,7 +43,7 @@ outputs and deploy state are excluded from the source watcher.
 
 ## Consequences
 
-- The extension and the framework package are opt-in dependencies. Apps using
+- The framework subpath and its optional peers are opt-in. Apps using
   existing descriptors do not change their build workflow.
 - An opted-in service builds on each deploy and on source changes in local
   dev. It trades native framework hot-module replacement for the same

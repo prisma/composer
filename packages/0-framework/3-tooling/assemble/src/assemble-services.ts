@@ -13,6 +13,11 @@ export interface AssembledServices {
 /** Assembles one service node — the seam tests substitute to avoid a real build. */
 export type RunAssembler = (node: ServiceNode, address: string, cwd: string) => Promise<Bundle>;
 
+export interface AssembleReuse {
+  readonly previous: AssembledServices;
+  readonly changed: ReadonlySet<string>;
+}
+
 /**
  * The registry route for one service's build: extension by
  * `build.extension`, node descriptor by `build.type`, kind must be "build".
@@ -61,6 +66,7 @@ export async function assembleServices(
   config: PrismaAppConfig,
   cwd: string,
   run?: RunAssembler,
+  reuse?: AssembleReuse,
 ): Promise<AssembledServices> {
   const runAssembler: RunAssembler =
     run ?? ((node, address, nodeCwd) => buildDescriptorAssemble(config, node, address, nodeCwd));
@@ -76,6 +82,11 @@ export async function assembleServices(
 
   const bundles: Record<string, Bundle> = {};
   for (const { id, node } of serviceNodes) {
+    const previous = reuse?.previous.bundles[id];
+    if (previous !== undefined && !reuse?.changed.has(id)) {
+      bundles[id] = previous;
+      continue;
+    }
     try {
       bundles[id] = await runAssembler(node, id, cwd);
     } catch (error) {

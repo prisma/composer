@@ -73,21 +73,25 @@ export interface WatchHandle {
  */
 export function startWatch(
   targets: readonly WatchTarget[],
-  onChange: () => void,
+  onChange: (addresses: readonly string[]) => void,
   onError?: (error: unknown) => void,
 ): WatchHandle {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const changed = new Set<string>();
 
-  const trigger = (): void => {
+  const trigger = (address: string): void => {
+    changed.add(address);
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
-      onChange();
+      const addresses = [...changed];
+      changed.clear();
+      onChange(addresses);
     }, DEBOUNCE_MS);
   };
 
-  const fileTargets = new Set<string>();
-  const directoryRoots: Array<{ root: string; ignored: readonly string[] }> = [];
+  const fileTargets = new Map<string, Set<string>>();
+  const directoryRoots: Array<{ root: string; ignored: readonly string[]; address: string }> = [];
   const parentRoots = new Set<string>();
   for (const target of targets) {
     for (const p of target.paths) {
@@ -99,9 +103,11 @@ export function startWatch(
         // nonexistent → file target via its parent
       }
       if (isDirectory) {
-        directoryRoots.push({ root: abs, ignored: target.ignored ?? [] });
+        directoryRoots.push({ root: abs, ignored: target.ignored ?? [], address: target.address });
       } else {
-        fileTargets.add(abs);
+        const addresses = fileTargets.get(abs) ?? new Set<string>();
+        addresses.add(target.address);
+        fileTargets.set(abs, addresses);
         parentRoots.add(path.dirname(abs));
       }
     }
@@ -116,7 +122,7 @@ export function startWatch(
   };
 
   const watchers: FSWatcher[] = [];
-  for (const { root, ignored } of directoryRoots) {
+  for (const { root, ignored, address } of directoryRoots) {
     const comparePath = (value: string): string => {
       const normalized = path.resolve(value);
       return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -129,14 +135,14 @@ export function startWatch(
       );
     };
     const directoryWatcher = chokidar.watch(root, { ignoreInitial: true, ignored: isIgnored });
-    directoryWatcher.on('all', () => trigger());
+    directoryWatcher.on('all', () => trigger(address));
     directoryWatcher.on('error', reportError);
     watchers.push(directoryWatcher);
   }
   if (parentRoots.size > 0) {
     const parentWatcher = chokidar.watch([...parentRoots], { ignoreInitial: true, depth: 0 });
     parentWatcher.on('all', (_event, eventPath) => {
-      if (fileTargets.has(path.resolve(eventPath))) trigger();
+      for (const address of fileTargets.get(path.resolve(eventPath)) ?? []) trigger(address);
     });
     parentWatcher.on('error', reportError);
     watchers.push(parentWatcher);

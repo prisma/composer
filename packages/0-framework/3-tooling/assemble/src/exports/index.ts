@@ -2,5 +2,5 @@
 
 export type { AssembleCode } from '../assemble-error.ts';
 export { AssembleError } from '../assemble-error.ts';
-export type { AssembledServices, RunAssembler } from '../assemble-services.ts';
+export type { AssembledServices, AssembleReuse, RunAssembler } from '../assemble-services.ts';
 export { assembleServices } from '../assemble-services.ts';

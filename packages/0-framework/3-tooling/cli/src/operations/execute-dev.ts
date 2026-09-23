@@ -261,16 +261,21 @@ export async function executeDev(
       config: deps.config,
       configPath: deps.configPath,
     };
+    let assembled = pipeline.assembled;
+    let rebuilds: Promise<void> = Promise.resolve();
     watch = startWatch(
       targets,
-      () => {
+      (addresses) => {
         // The whole rebuild is inside one try/catch: this runs fire-and-forget,
         // so anything escaping it would be an unhandled rejection killing the
         // process — the exact opposite of "a converge failure keeps the running
         // app and keeps watching".
-        void (async () => {
+        rebuilds = rebuilds.then(async () => {
           try {
-            const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+            const rePipeline = await runPipeline(input.entry, input.name, cwd, {
+              ...watchDeps,
+              reuse: { previous: assembled, changed: new Set(addresses) },
+            });
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,
@@ -291,11 +296,12 @@ export async function executeDev(
               emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
               return;
             }
+            assembled = rePipeline.assembled;
             emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
           } catch (error) {
             emit({ kind: 'rebuild-failed', message: failureMessage(error) });
           }
-        })();
+        });
       },
       (error) => emit({ kind: 'watch-error', message: failureMessage(error) }),
     );

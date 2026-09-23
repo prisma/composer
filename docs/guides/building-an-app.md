@@ -535,12 +535,14 @@ the deploy report can print it verbatim.
 
 ## Builds
 
-The core framework does not bundle your code — it assembles what your build
-produced. Two core build adapters ship:
+Composer offers a low-level adapter for already-built Node output and an
+opt-in framework adapter that builds before assembly.
 
-An app can opt into `@prisma/composer-frameworks` instead. Register
+An app can opt into `@prisma/composer/frameworks` instead. Install
+`@alchemy.run/frontend-frameworks` and `@effect/platform-node`, then register
 `frameworkBuild()` in the deploy config and declare a service with
-`frameworkBuild({ module: import.meta.url, framework: 'vite', root: '..' })`.
+`framework({ module: import.meta.url, framework: 'vite', root: '..' })` from
+`@prisma/composer/frameworks`.
 That extension calls Alchemy's published Node-target builder during assembly,
 then hands its output to Composer's existing assembler. See
 [`examples/framework-vite`](../../examples/framework-vite) for a complete app.
@@ -590,14 +592,14 @@ ships. Three things to know:
 
 Without `dir` you get the single-file form above, unchanged.
 
-**`nextjs` — a Next.js app.** `next build` with `output: 'standalone'` is the
-whole build; the adapter just needs to know where the app lives:
+**Next.js.** The framework adapter builds the app through Alchemy, then
+Composer packages its standalone output:
 
 ```ts
-build: nextjs({ module: import.meta.url, appDir: '..' })
+build: framework({ module: import.meta.url, framework: 'nextjs', root: '..' })
 ```
 
-Add `nextjsBuild()` from `@prisma/composer/nextjs/control` to the deploy
+Add `frameworkBuild()` from `@prisma/composer/frameworks/control` to the deploy
 config's `extensions`. And remember: any page or action that calls
 `service.load()` needs `export const dynamic = 'force-dynamic'`.
 

@@ -42,7 +42,7 @@ export interface BootstrapConfig extends Config {
  * exactly how the printed deploy bootstrap imports it (see `@internal/lowering`'s
  * artifact.ts) — which fits a build adapter whose `entry` is a plain
  * module-relative path (`@prisma/composer/node`'s). A build adapter whose bootable
- * path isn't module-relative (`@prisma/composer/nextjs`'s standalone output)
+ * path isn't module-relative (Next.js's standalone output)
  * supplies its own `boot` thunk; the target owns that resolution.
  *
  * `config.service.port` must be concrete — the entry self-listens and never

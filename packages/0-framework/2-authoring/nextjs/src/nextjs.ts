@@ -20,7 +20,7 @@ export interface NextjsBuildAdapter extends BuildAdapter {
 }
 
 const nextjsBuild = (opts: { module: string; appDir: string }): NextjsBuildAdapter => ({
-  extension: '@prisma/composer/nextjs',
+  extension: '@internal/nextjs',
   type: 'nextjs',
   module: opts.module,
   appDir: opts.appDir,

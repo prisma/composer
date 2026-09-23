@@ -207,7 +207,7 @@ export function standaloneServerPath(build: NextjsBuildAdapter): string {
 export async function assemble(input: AssembleInput): Promise<Bundle> {
   if (!isNextjsBuild(input.build)) {
     throw new Error(
-      `@prisma/composer/nextjs/control: expected a "nextjs" build adapter (with appDir), got "${input.build.type}".`,
+      `@internal/nextjs/control: expected a "nextjs" build adapter (with appDir), got "${input.build.type}".`,
     );
   }
   const buildDescriptor = input.build;
@@ -283,7 +283,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
 /** The nextjs build extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
 export const nextjsBuild = (): ExtensionDescriptor => ({
-  id: '@prisma/composer/nextjs',
+  id: '@internal/nextjs',
   nodes: {
     nextjs: { kind: 'build', assemble },
   },

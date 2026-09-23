@@ -2,8 +2,7 @@
 // Publishable-location gate (ADR-0028): the ONLY publishable packages live in
 // packages/9-public/. Every other workspace package must carry
 // `"private": true`, and everything in 9-public must be publishable. Makes
-// ADR-0027's two-package constraint mechanical: `ls packages/9-public` and
-// "what can npm publish" can never disagree.
+// The source tree and publishable workspace inventory must agree.
 //
 // Wired into `pnpm lint:deps` (local, lint-staged, and CI).
 import { execFileSync } from 'node:child_process';

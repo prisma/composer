@@ -415,19 +415,20 @@ your built server file, then make three changes to the server itself:
 Your build must produce a self-contained entry file — keep your own build if
 it already does.
 
-**A Next.js app.** Use the `nextjs` build adapter instead of `node`; `next
-build` with `output: 'standalone'` is the whole build:
+**A Next.js app.** Use the framework adapter instead of `node`; Composer
+invokes Alchemy's Next.js builder during assembly:
 
 ```ts
 export default compute({
   name: 'web',
   deps: { api: rpc(apiContract) },
-  build: nextjs({ module: import.meta.url, appDir: '..' }),
+  build: framework({ module: import.meta.url, framework: 'nextjs', root: '..' }),
 });
 ```
 
-Add `nextjsBuild()` from `@prisma/composer/nextjs/control` to the deploy
-config's `extensions`. Any page or server action that calls `service.load()`
+Add `frameworkBuild()` from `@prisma/composer/frameworks/control` to the deploy
+config's `extensions`, and install the optional Alchemy framework peers. Any
+page or server action that calls `service.load()`
 needs `export const dynamic = 'force-dynamic'`, because the runtime
 environment doesn't exist at build time.
 [`examples/storefront-auth`](../../examples/storefront-auth/) is a complete

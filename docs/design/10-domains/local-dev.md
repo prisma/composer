@@ -318,9 +318,10 @@ replaces.
 - **Warm-restart-after-Ctrl-C could leave services stopped** (fixed in
   #164) — see the Compute-emulator section above ("Known gap").
 - **`Bundle.watch` was not populated everywhere during the proving pass** — resolved:
-  both build adapters now populate it (node watches the entry file or the
-  whole `dir`; Next.js watches the standalone root), so the file-watch
-  loop picks rebuilds up on its own. A build descriptor that still returns
+  both public build adapters now populate it (node watches the entry file or
+  the whole `dir`; framework builds watch their source root), so the file-watch
+  loop reassembles only affected services before converging the graph. A build
+  descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.
 - **App-owned migrations are not run by `dev`** (by design — ADR-0022, spec

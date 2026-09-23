@@ -4,3 +4,4 @@
  * lives in `@prisma/composer-cli/testing`.
  */
 export * from '@internal/core/testing';
+export { nextjsStandaloneServerPath } from '../frameworks/testing.ts';

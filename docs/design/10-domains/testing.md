@@ -135,10 +135,10 @@ Three practical notes:
   imports it:
 
   ```ts
-  import { standaloneServerPath } from '@prisma/composer/nextjs/control';
+  import { nextjsStandaloneServerPath } from '@prisma/composer/testing';
 
   await bootstrapService(storefront, config, async () => {
-    await import(standaloneServerPath(storefront.build));
+    await import(nextjsStandaloneServerPath(storefront.build));
   });
   ```
 

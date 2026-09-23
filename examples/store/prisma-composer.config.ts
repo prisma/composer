@@ -3,11 +3,11 @@
  * deploy`/`destroy`, never imported by app code.
  */
 import { defineConfig } from '@prisma/composer/config';
-import { nextjsBuild } from '@prisma/composer/nextjs/control';
+import { frameworkBuild } from '@prisma/composer/frameworks/control';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 
 export default defineConfig({
-  extensions: [prismaCloud(), nodeBuild(), nextjsBuild()],
+  extensions: [prismaCloud(), nodeBuild(), frameworkBuild()],
   state: prismaState(),
 });

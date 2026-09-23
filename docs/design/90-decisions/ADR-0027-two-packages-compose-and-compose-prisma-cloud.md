@@ -1,6 +1,6 @@
 # ADR-0027: Ship two packages — `@prisma/compose` and `@prisma/compose-prisma-cloud`
 
-Superseded in part by [ADR-0049](ADR-0049-framework-builds-are-an-opt-in-extension.md): framework builds are an optional third public package rather than part of the core or target package.
+Extended by [ADR-0049](ADR-0049-framework-builds-are-an-opt-in-extension.md): framework builds use an opt-in subpath of the core package with optional Alchemy peers.
 
 ## Decision
 

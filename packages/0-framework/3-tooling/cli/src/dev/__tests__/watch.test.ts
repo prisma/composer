@@ -55,6 +55,8 @@ describe('startWatch()', () => {
       calls += 1;
     });
     await watch.ready;
+    await sleep(500);
+    calls = 0;
 
     try {
       fs.writeFileSync(path.join(dist, 'server.mjs'), 'build');
@@ -78,13 +80,15 @@ describe('startWatch()', () => {
     fs.writeFileSync(fileB, 'b');
 
     let calls = 0;
+    let changed: readonly string[] = [];
     const watch = startWatch(
       [
         { address: 'a', paths: [fileA] },
         { address: 'b', paths: [fileB] },
       ],
-      () => {
+      (addresses) => {
         calls += 1;
+        changed = addresses;
       },
     );
     await watch.ready;
@@ -104,6 +108,7 @@ describe('startWatch()', () => {
       // Past the 300ms debounce from the last write.
       await until(() => calls === 1, 2000);
       expect(calls).toBe(1);
+      expect([...changed].sort()).toEqual(['a', 'b']);
     } finally {
       watch.stop();
       fs.rmSync(dir, { recursive: true, force: true });

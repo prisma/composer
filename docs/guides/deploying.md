@@ -41,7 +41,7 @@ what your build produced:
 turbo run build && prisma-composer deploy module.ts
 ```
 
-Services explicitly using the optional `@prisma/composer-frameworks` build
+Services explicitly using the optional `@prisma/composer/frameworks` build
 extension are different: Composer calls Alchemy's framework builder during
 assembly. For those services, deploy runs the framework build; do not run a
 separate framework build first.
