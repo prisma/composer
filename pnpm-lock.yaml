@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
+  '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
   '@distilled.cloud/core': https://pkg.alchemy.run/@distilled.cloud/core/pr:1805:6533913
 
 importers:
@@ -198,8 +198,8 @@ importers:
   examples/framework-vite:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/platform-node':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -291,8 +291,8 @@ importers:
   examples/store:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/platform-bun':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -421,8 +421,8 @@ importers:
   examples/store/modules/storefront:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/platform-node':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -473,8 +473,8 @@ importers:
   examples/storefront-auth:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/platform-bun':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -535,8 +535,8 @@ importers:
   examples/storefront-auth/modules/storefront:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/platform-node':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -1263,8 +1263,8 @@ importers:
   packages/9-public/composer:
     dependencies:
       '@alchemy.run/frontend-frameworks':
-        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913
-        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+        specifier: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881
+        version: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@effect/sql-d1':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
@@ -1604,8 +1604,8 @@ packages:
     peerDependencies:
       effect: '>=4.0.0-rc.115 || >=4.0.0'
 
-  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913':
-    resolution: {tarball: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/-/cf1dd8c75c9d1f97ed8c42803cba8fe02329973437d97fbe85723f8cdceb79ab.tgz}
+  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881':
+    resolution: {integrity: sha512-2zAQsfP6lchfa/tmfiSM7HPwJ2lJSMLAvDaYr99CaZacMjmy6RbqlMxKLWBt/xt5K8f/aMKlHWqrXfUXfWtcYA==, tarball: https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/-/65797ace2f68d397c191cd051cb0160f417fc64c93ec40c0c7a693c17a04663e.tgz}
     version: 2.0.0-beta.79
     peerDependencies:
       '@effect/platform-bun': '>=4.0.0-rc.117 || >=4.0.0'
@@ -2072,7 +2072,7 @@ packages:
       effect: '>=4.0.0-rc.117 || >=4.0.0'
 
   '@distilled.cloud/core@https://pkg.alchemy.run/@distilled.cloud/core/pr:1805:6533913':
-    resolution: {integrity: sha512-DSKBW1xzKaXtRQMv8QHQhGoCPD91iRjoA3sao4YZOQeZD9M51PqbhHD9uHG3b0I4D4bZX5UHg3VDaIKWwiYAaA==, tarball: https://pkg.alchemy.run/@distilled.cloud/core/-/c570b68424afcb418989adeda1905f4e1f2d440f2f4fdca4fbe8db8a107049a3.tgz}
+    resolution: {tarball: https://pkg.alchemy.run/@distilled.cloud/core/-/c570b68424afcb418989adeda1905f4e1f2d440f2f4fdca4fbe8db8a107049a3.tgz}
     version: 1.0.0-rc.12
     peerDependencies:
       effect: '>=4.0.0-rc.117 || >=4.0.0'
@@ -6064,7 +6064,7 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.117
 
-  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))':
+  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))':
     dependencies:
       '@alchemy.run/cloudflare-runtime': https://pkg.alchemy.run/@alchemy.run/cloudflare-runtime/-/c694197c49de8eff6299672b7d582f2550502e275e2403f2f4ad31ab195fd59e.tgz(@distilled.cloud/cloudflare@https://pkg.alchemy.run/@distilled.cloud/cloudflare/-/42fb62eed70601318f1bc354ec13687f5d332cf0abd1d663c333aedb08ab8620.tgz(effect@4.0.0-rc.117))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/b9dc46c31b72e7d18f9b40fc6999ad03468492f88409a2de5ba9def6a021754f.tgz(effect@4.0.0-rc.117)
@@ -6084,7 +6084,7 @@ snapshots:
       - proxy-agent
       - typescript
 
-  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))':
+  '@alchemy.run/frontend-frameworks@https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))':
     dependencies:
       '@alchemy.run/cloudflare-runtime': https://pkg.alchemy.run/@alchemy.run/cloudflare-runtime/-/c694197c49de8eff6299672b7d582f2550502e275e2403f2f4ad31ab195fd59e.tgz(@distilled.cloud/cloudflare@https://pkg.alchemy.run/@distilled.cloud/cloudflare/-/42fb62eed70601318f1bc354ec13687f5d332cf0abd1d663c333aedb08ab8620.tgz(effect@4.0.0-rc.117))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@distilled.cloud/aws': https://pkg.alchemy.run/@distilled.cloud/aws/-/b9dc46c31b72e7d18f9b40fc6999ad03468492f88409a2de5ba9def6a021754f.tgz(effect@4.0.0-rc.117)
@@ -8550,7 +8550,7 @@ snapshots:
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.79(@distilled.cloud/cloudflare@1.0.0-rc.12(effect@4.0.0-rc.117))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@alchemy.run/floci': 2.0.0-beta.79(effect@4.0.0-rc.117)
-      '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+      '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.1)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@alchemy.run/node-utils': 2.0.0-beta.79
       '@alchemy.run/sigil': 0.0.0-alpha.11(@types/react@19.2.17)
       '@aws-sdk/credential-providers': 3.1138.0
@@ -8614,7 +8614,7 @@ snapshots:
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.79(@distilled.cloud/cloudflare@1.0.0-rc.12(effect@4.0.0-rc.117))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@alchemy.run/floci': 2.0.0-beta.79(effect@4.0.0-rc.117)
-      '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:6533913(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
+      '@alchemy.run/frontend-frameworks': https://pkg.alchemy.run/@alchemy.run/frontend-frameworks/pr:1805:22ca881(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))
       '@alchemy.run/node-utils': 2.0.0-beta.79
       '@alchemy.run/sigil': 0.0.0-alpha.11(@types/react@19.2.17)
       '@aws-sdk/credential-providers': 3.1138.0
