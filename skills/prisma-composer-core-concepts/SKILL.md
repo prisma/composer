@@ -207,8 +207,10 @@ deploy. Rules that bite:
 2. **A directory build uses `dir` + `entry`** (`dir` relative to the service
    module, `entry` a file inside `dir`; `../` is an error). The tree is
    copied verbatim, so the server must resolve siblings against
-   `import.meta.url`, not the working directory. The tree must contain no
-   symlinks: the packager rejects them, names the link, and assembly fails.
+   `import.meta.url`, not the working directory. Links remain links and must
+   resolve inside the assembled bundle; external or dangling links fail.
+   On Windows, directory links use junctions without special privilege, but
+   file links need the symlink privilege (Developer Mode or an elevated shell).
 3. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because

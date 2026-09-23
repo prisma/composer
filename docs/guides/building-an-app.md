@@ -572,7 +572,9 @@ ships. Three things to know:
   resolves inside the built output ships as-is. A link that points outside it,
   or at something that isn't there, fails the deploy with an error naming the
   link, rather than shipping a broken artifact or packaging files from your
-  machine.
+  machine. On Windows, directory links use junctions and need no symlink
+  privilege. File links still need that privilege (Developer Mode or an
+  elevated shell); Composer reports the missing privilege if one fails.
 - The entry's runtime imports ship too. Deploy traces the file you named and
   stages the packages it imports beside `dir`, so framework output that keeps
   bare imports (Astro's Node adapter, for example) boots without you copying

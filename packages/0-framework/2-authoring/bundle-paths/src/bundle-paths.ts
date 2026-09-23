@@ -103,6 +103,7 @@ async function copyTreeThroughBundleLinks(
     await fs.promises.mkdir(path.dirname(destination), { recursive: true });
     if (sourceStat.isSymbolicLink()) {
       const target = await fs.promises.readlink(source);
+      // A top-level link has no copied tree root to re-anchor against.
       await copyLink(source, destination, target, target);
     } else if (sourceStat.isFile()) {
       await fs.promises.copyFile(source, destination);
