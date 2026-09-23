@@ -78,8 +78,7 @@ extension but have not yet passed Composer runtime and cloud checks. Do not
 move their create-prisma templates to this descriptor until they do. In
 particular, beta.79's SvelteKit target still calls `generateManifest`, which
 SvelteKit 3 removed. Alchemy main uses `generateServerInstance`, but that
-fix is not published. Vinext's Node target is likewise only in Alchemy main,
-not the beta.79 package exports.
+fix is not published.
 
 Before changing a create-prisma template: pass cloud deploy and runtime checks
 for its exact framework version, dynamic and static routes, typed inputs and

@@ -86,7 +86,7 @@ importers:
         version: link:../../packages/9-public/composer-prisma-cloud
       alchemy:
         specifier: 2.0.0-beta.79
-        version: 2.0.0-beta.79(@alchemy.run/frontend-frameworks@2.0.0-beta.79(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.11.4)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.0-rc.117)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1138.0))(pg@8.22.0)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1(@types/node@26.1.2)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(ws@8.21.3)
+        version: 2.0.0-beta.79(@alchemy.run/frontend-frameworks@2.0.0-beta.79(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.0-rc.117)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1138.0))(pg@8.22.0)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1(@types/node@26.1.2)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(ws@8.21.3)
       effect:
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117
@@ -997,7 +997,7 @@ importers:
         version: 1.1.0
       alchemy:
         specifier: 2.0.0-beta.79
-        version: 2.0.0-beta.79(@alchemy.run/frontend-frameworks@2.0.0-beta.79(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.12.31)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.0-rc.117)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1138.0))(pg@8.22.0)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1(@types/node@26.1.2)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(ws@8.21.3)
+        version: 2.0.0-beta.79(@alchemy.run/frontend-frameworks@2.0.0-beta.79(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(effect@4.0.0-rc.117)(hono@4.11.4)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(@effect/platform-bun@4.0.0-rc.117(effect@4.0.0-rc.117))(@effect/platform-node@4.0.0-rc.117(effect@4.0.0-rc.117)(redis@6.2.1))(@types/node@26.1.2)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.0-rc.117)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1138.0))(pg@8.22.0)(typescript@6.0.3)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1))(vitest@5.0.1(@types/node@26.1.2)(vite@8.3.0(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.1)))(ws@8.21.3)
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
@@ -1011,6 +1011,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@distilled.cloud/prisma':
+        specifier: 1.0.0-rc.12
+        version: 1.0.0-rc.12(effect@4.0.0-rc.117)
       '@internal/tsdown-config':
         specifier: workspace:0.21.0
         version: link:../../../0-framework/0-foundation/tsdown-config
