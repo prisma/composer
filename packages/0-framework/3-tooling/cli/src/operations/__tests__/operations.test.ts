@@ -148,7 +148,7 @@ const coreIndex = path.resolve(
 
 function makeAppDir(
   name = 'fixture-app',
-  opts: { config?: boolean } = {},
+  opts: { config?: boolean; serviceNames?: readonly string[] } = {},
 ): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
@@ -166,17 +166,19 @@ function makeAppDir(
       `import { module, service } from ${JSON.stringify(coreIndex)};`,
       '',
       `export default module(${JSON.stringify(name)}, {}, ({ provision }) => {`,
-      '  provision(',
-      '    service({',
-      "      name: 'app',",
-      "      extension: 'fixture-extension',",
-      "      type: 'fixture/compute',",
-      '      inputs: {},',
-      '      params: {},',
-      "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
-      '    }),',
-      "    { id: 'app' },",
-      '  );',
+      ...(opts.serviceNames ?? ['app']).flatMap((serviceName) => [
+        '  provision(',
+        '    service({',
+        `      name: ${JSON.stringify(serviceName)},`,
+        "      extension: 'fixture-extension',",
+        "      type: 'fixture/compute',",
+        '      inputs: {},',
+        '      params: {},',
+        "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+        '    }),',
+        `    { id: ${JSON.stringify(serviceName)} },`,
+        '  );',
+      ]),
       '  return {};',
       '});',
       '',
@@ -1078,6 +1080,65 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(deploys).toBe(2);
     expect(stops).toBe(1);
     expect(events).toEqual(['ready', 'stopping', 'stopped']);
+  }, 15_000);
+
+  test('a failed converge retains changed services for the next rebuild', async () => {
+    const app = makeAppDir('hello-dev', { serviceNames: ['app', 'other'] });
+    const appSource = path.join(app.dir, 'app.txt');
+    const otherSource = path.join(app.dir, 'other.txt');
+    fs.writeFileSync(appSource, 'app');
+    fs.writeFileSync(otherSource, 'other');
+    const failed = Promise.withResolvers<void>();
+    const recovered = Promise.withResolvers<void>();
+    const assemblies: string[] = [];
+    let deploys = 0;
+    let readyCount = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => {
+            if (event.kind === 'converge-failed') failed.resolve();
+            if (event.kind === 'ready' && ++readyCount === 2) recovered.resolve();
+          },
+        },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: async (node, address) => {
+            assemblies.push(address);
+            return {
+              ...(await fakeAssembler(node)),
+              watch: [path.join(app.dir, `${address}.txt`)],
+            };
+          },
+          alchemy: async () => {
+            deploys += 1;
+            return { exitCode: deploys === 2 ? 1 : 0, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      try {
+        fs.appendFileSync(appSource, ' changed');
+        await failed.promise;
+        fs.appendFileSync(otherSource, ' changed');
+        await recovered.promise;
+      } finally {
+        await start.value.stop();
+      }
+    });
+
+    expect(deploys).toBe(3);
+    expect(assemblies.filter((address) => address === 'app')).toHaveLength(3);
+    expect(assemblies.filter((address) => address === 'other')).toHaveLength(2);
   }, 15_000);
 
   test('a host onEvent that throws cannot prevent closed from settling', async () => {

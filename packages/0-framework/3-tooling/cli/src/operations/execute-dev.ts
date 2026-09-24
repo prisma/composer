@@ -263,6 +263,7 @@ export async function executeDev(
     };
     let assembled = pipeline.assembled;
     let rebuilds: Promise<void> = Promise.resolve();
+    const pendingChanges = new Set<string>();
     let stopping = false;
     watch = startWatch(
       targets,
@@ -275,9 +276,10 @@ export async function executeDev(
         rebuilds = rebuilds.then(async () => {
           try {
             if (stopping) return;
+            for (const address of addresses) pendingChanges.add(address);
             const rePipeline = await runPipeline(input.entry, input.name, cwd, {
               ...watchDeps,
-              reuse: { previous: assembled, changed: new Set(addresses) },
+              reuse: { previous: assembled, changed: new Set(pendingChanges) },
             });
             if (stopping) return;
             const stackPath = writeDevStackFile({
@@ -302,6 +304,7 @@ export async function executeDev(
               return;
             }
             assembled = rePipeline.assembled;
+            pendingChanges.clear();
             const endpoints = await mergedEndpoints(attachments);
             if (!stopping) emit({ kind: 'ready', endpoints });
           } catch (error) {
