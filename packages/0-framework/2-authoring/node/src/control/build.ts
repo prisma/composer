@@ -30,7 +30,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
+import {
+  assertBundleSymlinksStayInside,
+  bundledSourcePaths,
+  copyTreeVerbatim,
+  isWithin,
+} from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -375,7 +380,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.rm(workDir, { recursive: true, force: true });
   await fs.promises.mkdir(workDir, { recursive: true });
 
-  await build({
+  const wrapper = await build({
     entryPoints: { main: serviceModule },
     outdir: workDir,
     bundle: true,
@@ -383,6 +388,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     platform: 'node',
     external: ['bun', 'bun:*'],
     outExtension: { '.js': '.mjs' },
+    metafile: true,
   });
   if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
     throw new Error(`esbuild produced no main.mjs in ${workDir}`);
@@ -405,8 +411,9 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     entry: path.posix.join('bundle', runnable.entry),
     // Single-file form: watch the entry file (== source). Directory form:
     // watch the whole dir (== source too) — a rebuild may touch only a
-    // sibling of entry (ADR-0041).
-    watch: [runnable.source],
+    // sibling of entry (ADR-0041). Plus what the wrapper bundled: the
+    // service module and the contracts it imports from other modules.
+    watch: [runnable.source, ...bundledSourcePaths(wrapper.metafile.inputs, process.cwd())],
   };
 }
 

@@ -320,7 +320,11 @@ replaces.
 - **`Bundle.watch` was not populated everywhere during the proving pass** — resolved:
   both public build adapters now populate it (node watches the entry file or
   the whole `dir`; framework builds watch their source root), so the file-watch
-  loop reassembles only affected services before converging the graph. A build
+  loop reassembles only affected services before converging the graph. Both
+  also watch every source file their wrapper build bundled (esbuild's metafile
+  inputs, minus `node_modules`) — the service module and the contracts it
+  imports from other modules — so a contract edit reassembles every service
+  that bundles it. A build
   descriptor that still returns
   no `watch` entries reports `[dev] <address> has no watchable inputs` at
   startup and needs its rebuilds triggered manually.

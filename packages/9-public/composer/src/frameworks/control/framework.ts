@@ -85,7 +85,9 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   );
   return {
     ...bundle,
-    watch: [root],
+    // The source root, plus what the wrapper bundled from outside it — the
+    // contracts the service module imports from other modules.
+    watch: [root, ...(bundle.watch ?? []).filter((file) => !inside(root, file))],
     watchIgnore: [...generatedState(root), nextjs ? path.join(root, '.next') : dist],
   };
 }

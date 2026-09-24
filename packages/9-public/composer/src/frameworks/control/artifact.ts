@@ -2,7 +2,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { assertBundleSymlinksStayInside, copyTreeVerbatim } from '@internal/bundle-paths';
+import {
+  assertBundleSymlinksStayInside,
+  bundledSourcePaths,
+  copyTreeVerbatim,
+} from '@internal/bundle-paths';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
 import { stageWebsiteArtifact } from 'alchemy/Prisma/Website/Artifact';
 import * as Effect from 'effect/Effect';
@@ -36,7 +40,7 @@ export async function assembleFrameworkArtifact(
   );
   await assertBundleSymlinksStayInside(bundleDir);
 
-  await build({
+  const wrapper = await build({
     entryPoints: { main: fileURLToPath(input.build.module) },
     outdir: workDir,
     bundle: true,
@@ -44,10 +48,12 @@ export async function assembleFrameworkArtifact(
     platform: 'node',
     external: ['bun', 'bun:*'],
     outExtension: { '.js': '.mjs' },
+    metafile: true,
   });
 
   return {
     dir: workDir,
     entry: path.posix.join('bundle', entry.replaceAll(path.sep, '/')),
+    watch: bundledSourcePaths(wrapper.metafile.inputs, process.cwd()),
   };
 }

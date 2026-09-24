@@ -172,8 +172,45 @@ describe('assemble()', () => {
     // Deploy-owned working dir — never the user's build output, never node_modules.
     expect(result.dir.startsWith(serviceDir)).toBe(false);
     expect(result.dir.includes('node_modules')).toBe(false);
-    // Bundle.watch names the resolved entry file (ADR-0041).
-    expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server.js')]);
+    // Bundle.watch names the resolved entry file (ADR-0041), plus the
+    // service module the wrapper bundled.
+    expect(result.watch).toEqual([
+      path.join(serviceDir, 'dist', 'server.js'),
+      fs.realpathSync(path.join(serviceDir, 'src', 'service.ts')),
+    ]);
+  }, 20_000);
+
+  test("watches the wrapper's bundled sources — a contract from another module, not node_modules", async () => {
+    const serviceDir = makeServiceDir();
+    const contractDir = makeServiceDir();
+    installFixturePackage(serviceDir, 'fixture-dep');
+    fs.writeFileSync(path.join(contractDir, 'src', 'contract.ts'), 'export const contract = 1;\n');
+    fs.mkdirSync(path.join(serviceDir, 'dist'), { recursive: true });
+    fs.writeFileSync(path.join(serviceDir, 'dist', 'server.js'), 'export {};\n');
+    fs.writeFileSync(
+      path.join(serviceDir, 'src', 'service.ts'),
+      [
+        `import { contract } from ${JSON.stringify(path.join(contractDir, 'src', 'contract.ts'))};`,
+        "import { marker } from 'fixture-dep';",
+        'export default { contract, marker };',
+        '',
+      ].join('\n'),
+    );
+
+    const result = await assemble({
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.js',
+      },
+      address: 'shop.storefront',
+      cwd: makeCwd(),
+    });
+
+    expect(result.watch).toContain(fs.realpathSync(path.join(contractDir, 'src', 'contract.ts')));
+    expect(result.watch).toContain(fs.realpathSync(path.join(serviceDir, 'src', 'service.ts')));
+    expect(result.watch?.some((file) => file.includes('node_modules'))).toBe(false);
   }, 20_000);
 
   test('copies exactly the named file — the siblings sitting beside it in the build dir are not swept in', async () => {
@@ -370,7 +407,10 @@ describe('assemble() — the directory form', () => {
     expect(fs.existsSync(path.join(result.dir, 'bundle', 'main.mjs'))).toBe(false);
     // Bundle.watch names the whole dir, not just the entry file — a rebuild
     // may touch only a sibling entry doesn't import (ADR-0041).
-    expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server')]);
+    expect(result.watch).toEqual([
+      path.join(serviceDir, 'dist', 'server'),
+      fs.realpathSync(path.join(serviceDir, 'src', 'service.ts')),
+    ]);
   }, 20_000);
 
   test('boots an entry nested inside the tree, reported relative to bundle/', async () => {
