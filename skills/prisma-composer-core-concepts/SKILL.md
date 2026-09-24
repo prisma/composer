@@ -230,8 +230,8 @@ local service bindings. The checked-in `examples/framework-vite` shows the
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).
-It registers extensions (`prismaCloud()`, `nodeBuild()`, `frameworkBuild()` when
-the app has a Next.js service) and the deploy-state backend
+It registers extensions (`prismaCloud()`, `nodeBuild()` for node-built services,
+`frameworkBuild()` for framework-built services) and the deploy-state backend
 (`prismaState()`). It is read by the CLI's operations (deploy, destroy, and
 dev; a `dev` run without one refuses, naming the missing file) and never
 imported by app code.
@@ -413,7 +413,7 @@ config you choose; drive it over real HTTP. Gotchas:
    OS-assigned port is reported back.
 2. There is no `close()`; run each integration-test file in its own process
    (bun test does).
-3. For framework-built Next.js, test through `composer dev` and HTTP so the
+3. For framework-built Next.js, test through `prisma-composer dev` and HTTP so the
    Alchemy build, artifact staging, and Composer bindings are exercised together.
    A `bootstrapService` test can import the entry returned by the framework
    assembler.

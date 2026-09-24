@@ -1,6 +1,6 @@
 /**
  * The path-containment predicate and bundle-link validation shared by every
- * assembly and packaging seam (node/nextjs adapters, the compute artifact
+ * assembly and packaging seam (node/framework adapters, the compute artifact
  * writer, the local extractor). This predicate is the enforcement point of
  * ADR-0047's boundary — a symlink may be preserved only while its target
  * stays inside the assembled bundle — so it exists exactly once.

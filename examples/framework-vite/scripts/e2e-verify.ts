@@ -46,6 +46,6 @@ while (Date.now() < deadline) {
   } catch (cause) {
     lastError = cause instanceof Error ? cause.message : String(cause);
   }
-  await Bun.sleep(5_000);
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
 }
 throw new Error(`Framework Vite did not become healthy: ${lastError}`);

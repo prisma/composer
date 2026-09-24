@@ -36,7 +36,7 @@ Deployment, state, and local emulators. Using Alchemy's higher-level Website
 resource instead would create a second resource lifecycle and bypass the
 typed configuration and self-origin wiring in ADR-0048.
 
-Local `composer dev` runs the same framework build and assembly on a source
+Local `prisma-composer dev` runs the same framework build and assembly on a source
 change. It does not start Alchemy's separate `dev()` server: that server does
 not receive Composer's local service bindings and Postgres emulator. Generated
 outputs and deploy state are excluded from the source watcher.

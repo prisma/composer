@@ -90,7 +90,7 @@ Five things to know:
   in `inputs`.
 
 **Framework-built Next.js services** can be tested end-to-end through
-`composer dev` and HTTP. For a `bootstrapService` test, assemble the framework
+`prisma-composer dev` and HTTP. For a `bootstrapService` test, assemble the framework
 build first, then import the returned bundle entry. This exercises Alchemy's
 build and artifact staging; see the
 [working integration test](../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts).
