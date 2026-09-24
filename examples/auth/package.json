@@ -15,7 +15,7 @@
     "@prisma/composer": "workspace:0.22.0",
     "@prisma/composer-cli": "workspace:0.22.0",
     "@prisma/composer-prisma-cloud": "workspace:0.22.0",
-    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "@prisma/orm-postgres": "8.0.0-rc.12",
     "arktype": "^2.2.3",
     "hono": "^4.12.31"
   },

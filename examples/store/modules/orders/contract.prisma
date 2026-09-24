@@ -10,4 +10,5 @@ model Order {
   quantity    Int
   totalCents  Int
   placedAt    TimestamptzString @default(now())
+  @@map("order")
 }
