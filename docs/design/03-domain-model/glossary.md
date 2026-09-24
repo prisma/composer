@@ -356,11 +356,7 @@ substituted at any Input) and a real deployment.
 
 ## Provisioning plane — the compile target (Alchemy / Effect)
 
-The exact substrate the authoring nouns lower **down to**, grounded in what our
-providers already use (`packages/alchemy`, `alchemy@2.0.0-beta.74`,
-`effect@4-beta`). Building the next layer of abstraction means defining each
-authoring noun as *the compile-target terms it emits*. Two families: Alchemy's
-IaC definition language, and the Effect primitives Alchemy is itself built on.
+The exact substrate the authoring nouns lower **down to**, grounded in what our providers already use (`packages/alchemy`, `alchemy@2.0.0-beta.79`, `effect@4.0.0-rc.117`). Building the next layer of abstraction means defining each authoring noun as *the compile-target terms it emits*. Two families: Alchemy's IaC definition language, and the Effect primitives Alchemy is itself built on.
 
 For each term: what it is, and — where it applies — `→` the the framework authoring
 noun that lowers onto it. The reverse table (authoring → provisioning → hosting)
