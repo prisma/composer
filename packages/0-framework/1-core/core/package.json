@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.74",
-    "effect": "4.0.0-rc.112",
+    "alchemy": "2.0.0-beta.78",
+    "effect": "4.0.0-rc.115",
     "@internal/foundation": "workspace:0.21.0"
   },
   "devDependencies": {

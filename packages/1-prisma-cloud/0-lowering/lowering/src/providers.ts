@@ -1,3 +1,4 @@
+import { Credentials } from '@distilled.cloud/prisma';
 import * as NodeHttpClient from '@effect/platform-node/NodeHttpClient';
 import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -39,11 +40,18 @@ const prismaEnvironment = () =>
     }),
   );
 
-/**
- * A node:http transport that adds deploy-source headers to every request.
- * Used privately by upstreamPrismaProviders — not exposed as the ambient
- * HttpClient, so the artifact-upload path is unaffected.
- */
+/** The generated Management API operations' credentials: the same token and origin. */
+const operationCredentials = () =>
+  Layer.effect(
+    Credentials,
+    Effect.gen(function* () {
+      const { token } = yield* PrismaCredentials;
+      const apiBaseUrl = yield* managementApiBaseUrl();
+      return Effect.succeed({ apiToken: token, apiBaseUrl });
+    }),
+  );
+
+/** A node:http transport that adds deploy-source headers to every request. */
 const prismaManagementHttpLayer = Layer.effect(
   HttpClient.HttpClient,
   Effect.gen(function* () {
@@ -56,8 +64,9 @@ const prismaManagementHttpLayer = Layer.effect(
  * Upstream alchemy's live providers for the postgres family (Project,
  * Database, Connection), the compute family (App, Deployment,
  * EnvironmentVariable), and the bucket family (Bucket, BucketAccessKey),
- * over upstream's management client, authenticated by
- * {@link prismaEnvironment}.
+ * over upstream's management clients, authenticated by
+ * {@link prismaEnvironment}. The generated Management API operations read
+ * their token and origin from the same environment.
  *
  * Composed from the per-resource provider layers rather than upstream's own
  * `providers()` bundle: that bundle pulls in the profile store
@@ -76,11 +85,8 @@ const upstreamPrismaProviders = () =>
     Prisma.BucketAccessKeyProvider(),
   ).pipe(
     Layer.provideMerge(Prisma.PrismaClientLive),
-    // Provide (NOT provideMerge) the transport privately — mirrors
-    // upstream's Providers.ts: it must serve only the Prisma management
-    // client, never override the ambient HttpClient of other providers.
-    Layer.provide(prismaManagementHttpLayer),
     Layer.provideMerge(prismaEnvironment()),
+    Layer.provideMerge(operationCredentials()),
   );
 
 /**
@@ -88,13 +94,13 @@ const upstreamPrismaProviders = () =>
  * client, and env-based credentials. Plug into a stack with
  * `{ providers: Prisma.providers() }`.
  *
- * The node transport is also the bundle's ambient `HttpClient`: upstream's
+ * The deploy-source transport is the bundle's ambient `HttpClient`: upstream's
+ * generated Management API operations resolve it when they run, and its
  * `Deployment` artifact upload needs node's explicit Content-Length (fetch
- * streams chunked), and upstream documents the ambient client as the
- * supported way to provide it. Invariant: no Composer provider may resolve
- * the ambient `HttpClient` — each carries its own client — or it would
- * silently get this override. Filed upstream: export the scoped upload
- * client, after which this becomes a private layer.
+ * streams chunked). Upstream's providers run their operations against this
+ * bundle's output, so their credentials are merged into it. Invariant: no
+ * Composer provider may resolve the ambient `HttpClient` — each carries its
+ * own client — or it would silently get this override.
  */
 export const providers = () =>
   Layer.effect(
@@ -110,8 +116,8 @@ export const providers = () =>
       Prisma.BucketAccessKey,
     ]),
   ).pipe(
-    Layer.provide(upstreamPrismaProviders()),
-    Layer.provideMerge(NodeHttpClient.layerNodeHttp),
+    Layer.provideMerge(upstreamPrismaProviders()),
+    Layer.provideMerge(prismaManagementHttpLayer),
     Layer.provideMerge(client.layer()),
     Layer.provideMerge(fromEnv()),
     Layer.orDie,
