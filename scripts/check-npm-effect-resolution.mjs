@@ -120,6 +120,14 @@ function collectEffectVersions(node, found = new Map()) {
   return found;
 }
 
+/**
+ * The npm on PATH, and npm 10 — the npm Node 22, our minimum release line,
+ * bundles. npm 10 crashes on some trees npm 11 installs (`vitest@4.1.x`'s peers
+ * fail with "Cannot read properties of null (reading 'edgesOut')").
+ */
+const CURRENT_NPM = ['npm'];
+const NPM_10 = ['npx', '--yes', 'npm@10'];
+
 /** The stable marker of the CLI's own start-up check (check-effect-resolution.ts). */
 const CLI_CHECK_MARKER = 'alchemy resolves effect@';
 
@@ -130,6 +138,7 @@ function installApp(
   extraDependencies = {},
   overrides = undefined,
   timeoutMs = undefined,
+  npm = CURRENT_NPM,
 ) {
   const appDir = join(work, label);
   mkdirSync(appDir, { recursive: true });
@@ -142,13 +151,18 @@ function installApp(
       ...(overrides === undefined ? {} : { overrides }),
     }),
   );
-  process.stderr.write(`\n[${label}] npm install ${tarballs.length} tarball(s)...\n`);
-  const result = spawnSync('npm', ['install', '--no-audit', '--no-fund', ...tarballs], {
-    cwd: appDir,
-    encoding: 'utf-8',
-    timeout: timeoutMs,
-    killSignal: 'SIGKILL',
-  });
+  process.stderr.write(`\n[${label}] ${npm.join(' ')} install ${tarballs.length} tarball(s)...\n`);
+  const [command, ...npmArgs] = npm;
+  const result = spawnSync(
+    command,
+    [...npmArgs, 'install', '--no-audit', '--no-fund', ...tarballs],
+    {
+      cwd: appDir,
+      encoding: 'utf-8',
+      timeout: timeoutMs,
+      killSignal: 'SIGKILL',
+    },
+  );
   const timedOut = result.error?.code === 'ETIMEDOUT';
   if (result.error && !timedOut) fail(`[${label}] failed to spawn npm: ${result.error}`);
   process.stderr.write(result.stderr ?? '');
@@ -228,13 +242,13 @@ function assertCliStarts(label, appDir) {
   }
 }
 
-async function checkShape(label, tarballs) {
+async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   const {
     appDir,
     status: installStatus,
     timedOut,
     output: installOutput,
-  } = installApp(label, tarballs, {}, undefined, INSTALL_TIMEOUT_MS);
+  } = installApp(label, tarballs, {}, undefined, INSTALL_TIMEOUT_MS, npm);
   if (timedOut) {
     fail(
       `[${label}] npm install did not finish within ${INSTALL_TIMEOUT_MS / 1000}s. npm is ` +
@@ -248,8 +262,12 @@ async function checkShape(label, tarballs) {
     fail(`[${label}] npm install failed (exit ${installStatus}):\n${installOutput}`);
   }
 
+  const [command, ...npmArgs] = npm;
   const tree = JSON.parse(
-    execFileSync('npm', ['ls', 'effect', '--all', '--json'], { cwd: appDir, encoding: 'utf-8' }),
+    execFileSync(command, [...npmArgs, 'ls', 'effect', '--all', '--json'], {
+      cwd: appDir,
+      encoding: 'utf-8',
+    }),
   );
   const versions = collectEffectVersions(tree);
   process.stderr.write(`[${label}] effect versions in tree: ${[...versions.keys()].join(', ')}\n`);
@@ -381,6 +399,7 @@ try {
   const prismaCloudTgz = packInto(prismaCloudDir, tarballDir);
 
   await checkShape('composer-and-cli', [composerTgz, composerCliTgz]);
+  await checkShape('composer-and-cli-npm10', [composerTgz, composerCliTgz], NPM_10);
   await checkShape('composer-cli-and-prisma-cloud', [composerTgz, composerCliTgz, prismaCloudTgz]);
   await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
 
