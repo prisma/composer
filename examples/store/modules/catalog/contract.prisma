@@ -8,9 +8,11 @@ model Product {
   name        String
   description String
   priceCents  Int
+  @@map("product")
 }
 
 model Special {
   id        Int    @id
   productId String
+  @@map("special")
 }
