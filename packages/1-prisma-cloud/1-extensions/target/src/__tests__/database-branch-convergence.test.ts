@@ -1,13 +1,17 @@
 /** Pins the upstream `Prisma.Database` semantics the database descriptors depend on — real provider, fake Management client. */
 import { describe, expect, test } from 'bun:test';
+import { Credentials, Retry } from '@distilled.cloud/prisma';
 import { InstanceId } from 'alchemy/InstanceId';
-import { PrismaClient, type PrismaManagementClient } from 'alchemy/Prisma/Client';
+import type { PrismaManagementClient } from 'alchemy/Prisma/Client';
 import { Database, DatabaseProvider } from 'alchemy/Prisma/Database';
 import type { Database as ApiDatabase } from 'alchemy/Prisma/Types';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
+import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
 
 const PROJECT_ID = 'proj_1';
 const DEFAULT_BRANCH_ID = 'br_default';
@@ -77,7 +81,10 @@ interface FakeClientCalls {
 }
 
 /** A stateful fake Management client: one database, PATCHable, never deletable. */
-function fakeClient(): { client: PrismaManagementClient; calls: FakeClientCalls } {
+function fakeClient(): {
+  api: Layer.Layer<HttpClient.HttpClient | Credentials | Retry.Retry>;
+  calls: FakeClientCalls;
+} {
   let current = unassignedDb();
   const calls: FakeClientCalls = { update: [], rotate: [], create: 0, delete: 0 };
   const client = {
@@ -123,7 +130,57 @@ function fakeClient(): { client: PrismaManagementClient; calls: FakeClientCalls 
       return Effect.die(new Error('deleteDatabase must not be called — that is the data loss'));
     },
   } as unknown as PrismaManagementClient;
-  return { client, calls };
+  const http = HttpClient.make((request) =>
+    Effect.gen(function* () {
+      const url = new URL(request.url);
+      const body = request.body;
+      const text = body._tag === 'Uint8Array' ? new TextDecoder().decode(body.body) : '';
+      const patch: unknown = text ? JSON.parse(text) : undefined;
+      const name =
+        typeof patch === 'object' && patch !== null && 'name' in patch ? patch.name : undefined;
+      const branchId =
+        typeof patch === 'object' && patch !== null && 'branchId' in patch
+          ? patch.branchId
+          : undefined;
+      const response = yield* Effect.gen(function* () {
+        if (request.method === 'GET' && url.pathname === '/v1/databases/db_1') {
+          return Response.json({ data: yield* client.getDatabase('db_1').pipe(Effect.orDie) });
+        }
+        if (request.method === 'PATCH' && url.pathname === '/v1/databases/db_1') {
+          return Response.json({
+            data: yield* client
+              .updateDatabase('db_1', {
+                ...(typeof name === 'string' ? { name } : {}),
+                ...(typeof branchId === 'string' ? { branchId } : {}),
+              })
+              .pipe(Effect.orDie),
+          });
+        }
+        if (request.method === 'POST' && url.pathname === '/v1/connections/conn_1/rotate') {
+          return Response.json({
+            data: yield* client.rotateConnection('conn_1').pipe(Effect.orDie),
+          });
+        }
+        return Response.json(
+          { error: { code: 'unhandled', message: `${request.method} ${url.pathname}` } },
+          { status: 400 },
+        );
+      });
+      return HttpClientResponse.fromWeb(request, response);
+    }),
+  );
+  const api = Layer.mergeAll(
+    Layer.succeed(HttpClient.HttpClient, http),
+    Layer.succeed(
+      Credentials,
+      Effect.succeed({
+        apiToken: Redacted.make('fake-token'),
+        apiBaseUrl: 'https://api.prisma.test',
+      }),
+    ),
+    Layer.succeed(Retry.Retry, Retry.makeDefault),
+  );
+  return { api, calls };
 }
 
 // Loosely typed: the real request types carry engine-session fields the handlers never read.
@@ -132,28 +189,32 @@ interface ProviderHandlers {
   reconcile: (req: unknown) => Effect.Effect<Database['Attributes'], unknown, unknown>;
 }
 
-function handlersFor(client: PrismaManagementClient): ProviderHandlers {
+function handlersFor(
+  api: Layer.Layer<HttpClient.HttpClient | Credentials | Retry.Retry>,
+): ProviderHandlers {
   const resolved = Effect.gen(function* () {
-    return yield* Database.Provider;
-  }).pipe(
-    Effect.provide(DatabaseProvider()),
-    Effect.provideService(PrismaClient, client),
-  ) as Effect.Effect<unknown>;
+    const provider = yield* Database.Provider;
+    return yield* provider.modes?.live ?? Effect.die('Missing live provider');
+  }).pipe(Effect.provide(DatabaseProvider().pipe(Layer.provide(api)))) as Effect.Effect<unknown>;
   return Effect.runSync(resolved) as ProviderHandlers;
 }
 
 // Fixed values keep `createPhysicalName`'s generated name deterministic.
-const provideLifecycle = <A>(eff: Effect.Effect<A, unknown, unknown>): Effect.Effect<A> =>
+const provideLifecycle = <A>(
+  eff: Effect.Effect<A, unknown, unknown>,
+  api: Layer.Layer<HttpClient.HttpClient | Credentials | Retry.Retry>,
+): Effect.Effect<A> =>
   eff.pipe(
     Effect.provideService(Stack, { name: 'shop' } as unknown as Stack['Service']),
     Effect.provideService(Stage, DEFAULT_BRANCH_ID),
     Effect.provideService(InstanceId, '00112233445566778899aabbccddeeff'),
+    Effect.provide(api),
   ) as unknown as Effect.Effect<A>;
 
 describe('upstream Prisma.Database — converging an unassigned, explicitly named database', () => {
   test('diff plans an in-place UPDATE, never a replace', async () => {
-    const { client } = fakeClient();
-    const handlers = handlersFor(client);
+    const { api } = fakeClient();
+    const handlers = handlersFor(api);
 
     const decision = await Effect.runPromise(
       provideLifecycle(
@@ -163,6 +224,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: persistedOutput(unassignedDb()),
         }),
+        api,
       ),
     );
 
@@ -170,8 +232,8 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
   });
 
   test('reconcile PATCHes the existing database onto the default Branch — no create, no delete', async () => {
-    const { client, calls } = fakeClient();
-    const handlers = handlersFor(client);
+    const { api, calls } = fakeClient();
+    const handlers = handlersFor(api);
 
     const attrs = await Effect.runPromise(
       provideLifecycle(
@@ -181,6 +243,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: persistedOutput(unassignedDb()),
         }),
+        api,
       ),
     );
 
@@ -197,8 +260,8 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
   });
 
   test('a legacy-migrated state row (no stored secrets) attaches in place and rotates the DEFAULT connection', async () => {
-    const { client, calls } = fakeClient();
-    const handlers = handlersFor(client);
+    const { api, calls } = fakeClient();
+    const handlers = handlersFor(api);
 
     const decision = await Effect.runPromise(
       provideLifecycle(
@@ -208,6 +271,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: legacyMigratedOutput(unassignedDb()),
         }),
+        api,
       ),
     );
     expect(decision).toEqual({ action: 'update' });
@@ -220,6 +284,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: legacyMigratedOutput(unassignedDb()),
         }),
+        api,
       ),
     );
 
@@ -234,8 +299,8 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
   });
 
   test('the converged state is stable — a second reconcile issues no PATCH', async () => {
-    const { client, calls } = fakeClient();
-    const handlers = handlersFor(client);
+    const { api, calls } = fakeClient();
+    const handlers = handlersFor(api);
 
     const first = await Effect.runPromise(
       provideLifecycle(
@@ -245,6 +310,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: persistedOutput(unassignedDb()),
         }),
+        api,
       ),
     );
     expect(calls.update).toHaveLength(1);
@@ -257,6 +323,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
           news: newProps,
           output: first,
         }),
+        api,
       ),
     );
 
