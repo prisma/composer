@@ -141,7 +141,7 @@ describe('assembleServices()', () => {
               kind: 'build',
               assemble: async (input) => {
                 seen.push({ type: input.build.type, address: input.address, cwd: input.cwd });
-                return { dir: '/bundles/cron', entry: input.build.entry };
+                return { dir: '/bundles/cron', entry: 'x' };
               },
             },
           },

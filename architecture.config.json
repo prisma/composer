@@ -667,12 +667,6 @@
       "plane": "shared"
     },
     {
-      "glob": "packages/9-public/composer/src/frameworks/testing.ts",
-      "domain": "public",
-      "layer": "public",
-      "plane": "control"
-    },
-    {
       "glob": "packages/9-public/composer/src/exports/frameworks.ts",
       "domain": "public",
       "layer": "public",

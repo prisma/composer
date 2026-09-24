@@ -22,6 +22,5 @@ export default function frameworkBuild(options: {
     module: options.module,
     framework: options.framework,
     root: options.root,
-    entry: 'server.js',
   };
 }

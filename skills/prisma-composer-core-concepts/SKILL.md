@@ -196,7 +196,7 @@ be reimplemented:
 
 ## Builds
 
-You build, the framework assembles. For a plain server process, `entry` must
+For core adapters, you build and Composer assembles. For a plain server process, `entry` must
 point at a single self-contained ESM file: everything inlined except runtime
 built-ins (`bun`, `bun:*`, `node:*`). Deploy copies that one file and never
 ships `node_modules`, so anything left un-inlined fails at boot, not at
@@ -208,8 +208,8 @@ deploy. Rules that bite:
 2. **A directory build uses `dir` + `entry`** (`dir` relative to the service
    module, `entry` a file inside `dir`; `../` is an error). The tree is
    copied verbatim, so the server must resolve siblings against
-   `import.meta.url`, not the working directory. The tree must contain no
-   symlinks: the packager rejects them, names the link, and assembly fails.
+   `import.meta.url`, not the working directory. Symlinks must resolve within
+   the bundle; dangling or escaping links fail assembly.
 3. **Next.js**: use `framework({ module, framework: 'nextjs', root })` to build
    and package the app. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
@@ -226,7 +226,7 @@ from `@prisma/composer/frameworks` on the service. Install
 `@alchemy.run/frontend-frameworks` and `@effect/platform-node`. The Alchemy
 Node-target builder runs during assembly; Composer still owns deployment and
 local service bindings. The checked-in `examples/framework-vite` shows the
-complete setup. SvelteKit is not supported by this extension yet.
+   complete setup. The current Alchemy SvelteKit adapter is not deployable yet.
 
 Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
 `.js`; nearest ancestor of the entry wins, `.ts` first within a directory).

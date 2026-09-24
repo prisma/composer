@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "vite build",
     "dev": "prisma-composer dev module.ts",
     "deploy": "prisma-composer deploy module.ts",
     "typecheck": "tsc --noEmit"

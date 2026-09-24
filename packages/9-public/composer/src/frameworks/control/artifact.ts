@@ -49,6 +49,5 @@ export async function assembleFrameworkArtifact(
   return {
     dir: workDir,
     entry: path.posix.join('bundle', entry.replaceAll(path.sep, '/')),
-    watch: [root],
   };
 }

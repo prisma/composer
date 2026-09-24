@@ -23,6 +23,7 @@ import type { BuildAdapter } from '@internal/core';
 /** The node build adapter's descriptor. `dir` is the directory form's own extra path input (the built tree to copy verbatim), beyond the shared `{ extension, type, module, entry }`; absent, `entry` is the whole built runnable. */
 export interface NodeBuildAdapter extends BuildAdapter {
   readonly type: 'node';
+  readonly entry: string;
   readonly dir?: string;
 }
 

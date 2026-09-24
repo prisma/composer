@@ -543,8 +543,8 @@ An app can opt into `@prisma/composer/frameworks` instead. Install
 `frameworkBuild()` in the deploy config and declare a service with
 `framework({ module: import.meta.url, framework: 'vite', root: '..' })` from
 `@prisma/composer/frameworks`.
-That extension calls Alchemy's published Node-target builder during assembly,
-then hands its output to Composer's existing assembler. See
+That extension calls Alchemy's published Node-target builder and artifact staging
+during assembly. Composer adds its boot wrapper. See
 [`examples/framework-vite`](../../examples/framework-vite) for a complete app.
 
 **`node` — any plain server process.** Point `entry` at a self-contained ESM
