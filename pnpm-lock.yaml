@@ -1380,6 +1380,9 @@ importers:
 
   packages/9-public/composer-prisma-cloud:
     dependencies:
+      '@distilled.cloud/prisma':
+        specifier: 1.0.0-rc.12
+        version: 1.0.0-rc.12(effect@4.0.0-rc.117)
       '@effect/platform-bun':
         specifier: 4.0.0-rc.117
         version: 4.0.0-rc.117(effect@4.0.0-rc.117)
