@@ -1090,9 +1090,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(otherSource, 'other');
     const failed = Promise.withResolvers<void>();
     const recovered = Promise.withResolvers<void>();
-    const assemblies: string[] = [];
-    let deploys = 0;
-    let readyCount = 0;
+    // Only the rebuilds after the failure matter: a late FSEvents report of
+    // the fixture writes above (macOS) may fire one extra rebuild at startup.
+    const afterFailure: string[] = [];
+    let failNext = false;
+    let hasFailed = false;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
       stopServices: () => Promise.resolve(),
@@ -1106,27 +1108,33 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: (event) => {
-            if (event.kind === 'converge-failed') failed.resolve();
-            if (event.kind === 'ready' && ++readyCount === 2) recovered.resolve();
+            if (event.kind === 'converge-failed') {
+              hasFailed = true;
+              failed.resolve();
+            }
+            if (event.kind === 'ready' && hasFailed) recovered.resolve();
           },
         },
         {
           config: devConfigWith(attachment),
           runAssembler: async (node, address) => {
-            assemblies.push(address);
+            if (hasFailed) afterFailure.push(address);
             return {
               ...(await fakeAssembler(node)),
               watch: [path.join(app.dir, `${address}.txt`)],
             };
           },
           alchemy: async () => {
-            deploys += 1;
-            return { exitCode: deploys === 2 ? 1 : 0, signal: null };
+            if (!failNext) return { exitCode: 0, signal: null };
+            failNext = false;
+            return { exitCode: 1, signal: null };
           },
         },
       );
       if (!start.ok) throw new Error('expected a started session');
       try {
+        await Bun.sleep(500);
+        failNext = true;
         fs.appendFileSync(appSource, ' changed');
         await failed.promise;
         fs.appendFileSync(otherSource, ' changed');
@@ -1136,9 +1144,10 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       }
     });
 
-    expect(deploys).toBe(3);
-    expect(assemblies.filter((address) => address === 'app')).toHaveLength(3);
-    expect(assemblies.filter((address) => address === 'other')).toHaveLength(2);
+    // `app` changed before the failed converge, so the recovery rebuild —
+    // fired by `other` alone — must still reassemble it.
+    expect(afterFailure).toContain('app');
+    expect(afterFailure).toContain('other');
   }, 15_000);
 
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
