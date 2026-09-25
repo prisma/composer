@@ -87,13 +87,14 @@ function walkEntries(dir: string): BundleEntry[] {
             `bundle symlink at ${rel} escapes the bundle root: ${target} — deploy artifacts may only preserve links whose targets are inside the assembled bundle.`,
           );
         }
-        const linkname = (
-          path.isAbsolute(target)
-            ? path.relative(fs.realpathSync(path.dirname(symlinkPath)), realTarget)
-            : target
-        )
-          .split(path.sep)
-          .join('/');
+        // A target under the bundle as given (every Windows junction) keeps its
+        // literal relative form, so link chains archive as they do on POSIX.
+        const relativeTarget = !path.isAbsolute(target)
+          ? target
+          : isWithin(dir, target)
+            ? path.relative(path.dirname(symlinkPath), target)
+            : path.relative(fs.realpathSync(path.dirname(symlinkPath)), realTarget);
+        const linkname = (relativeTarget === '' ? '.' : relativeTarget).split(path.sep).join('/');
         // The realpath check above proves where the link points on THIS machine;
         // the archived link is the literal string, which every extractor
         // re-checks lexically against the unpack root. A target that leaves the

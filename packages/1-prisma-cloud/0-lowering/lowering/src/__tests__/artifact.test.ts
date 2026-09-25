@@ -366,6 +366,38 @@ describe('packageComputeArtifact', () => {
     expect(archive.link('node_modules/link')).not.toContain(bundleDir);
   });
 
+  test('archives absolute in-bundle links, chains included, exactly as the relative links they stand for', () => {
+    const links = {
+      'node_modules/pkg': '.store/pkg',
+      'node_modules/alias': 'pkg',
+      'node_modules/data.json': '.store/pkg/data.json',
+    };
+    const packageLinked = (absolute: boolean) => {
+      const bundleDir = makeBundle({
+        'main.js': 'export default {};',
+        'node_modules/.store/pkg/data.json': '{}',
+      });
+      for (const [rel, target] of Object.entries(links)) {
+        const linkPath = path.join(bundleDir, ...rel.split('/'));
+        const isFile = rel.endsWith('.json');
+        fs.symlinkSync(
+          absolute && !isFile
+            ? path.resolve(path.dirname(linkPath), ...target.split('/'))
+            : target.split('/').join(path.sep),
+          linkPath,
+          isFile ? 'file' : 'dir',
+        );
+      }
+      return packageComputeArtifact({ id: 'auth', bundleDir, appEntry: 's.js', address: 'auth' });
+    };
+
+    const absolute = packageLinked(true);
+    const archive = readTar(fs.readFileSync(absolute.path));
+
+    for (const [rel, target] of Object.entries(links)) expect(archive.link(rel)).toBe(target);
+    expect(absolute.sha256).toBe(packageLinked(false).sha256);
+  });
+
   test('preserves executable mode for staged runtime files', () => {
     const bundleDir = makeBundle({
       'main.js': 'export default {};',
