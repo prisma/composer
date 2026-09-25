@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import alchemyPackage from '@alchemy.run/frontend-frameworks/package.json' with { type: 'json' };
+import { isWithin } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -24,14 +25,9 @@ function isFrameworkBuild(build: BuildAdapter): build is FrameworkBuildAdapter {
   );
 }
 
+/** Strictly inside `root`: the shared containment predicate, minus `root` itself. */
 function inside(root: string, candidate: string): boolean {
-  const relative = path.relative(root, candidate);
-  return (
-    relative !== '' &&
-    relative !== '..' &&
-    !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative)
-  );
+  return path.relative(root, candidate) !== '' && isWithin(root, candidate);
 }
 
 function generatedState(root: string): string[] {
