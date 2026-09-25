@@ -444,17 +444,9 @@ const REAL_WATCH_TIMEOUT_MS = 30_000;
  * assemble or alchemy itself: the running process's own debounce (300ms),
  * re-assemble, and re-converge are what's being proved.
  *
- * Waits for the watch loop's OWN completion signal — run-dev.ts reprints the
- * front door (`dev: ready` + one line per service) after a successful
- * reconverge — rather than just for catalog.service's pid to move: the spec
- * re-runs assemble for EVERY service on a fire (not just the touched one),
- * so waiting on catalog's pid alone can return while the running process is
- * still mid-converge for other services, racing this script's own later use
- * of the same on-disk artifact directories (confirmed live: a direct
- * fallback reconverge started right after the pid-only wait hit "no
- * main.js/main.mjs found in bundle dir .../artifacts/storefront" — the real
- * process's own converge was still writing it). Bounded by
- * `REAL_WATCH_TIMEOUT_MS`.
+ * Waits for the watch loop's ready signal, not just catalog's new pid. Only
+ * catalog is reassembled, but the Alchemy converge may still be updating
+ * the graph when the new process starts. Bounded by `REAL_WATCH_TIMEOUT_MS`.
  */
 async function touchCatalogAndAwaitRealWatchLoop(
   session: DevSession,

@@ -72,13 +72,13 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
 | `@prisma/composer-prisma-cloud/storage` | S3-compatible object storage as a module (S3 wire protocol on Compute + Postgres `bytea`; see [`README`](../../../packages/1-prisma-cloud/2-shared-modules/storage/README.md)) — `storage()`, `s3()` + `s3Contract`/`S3Config`, `storageService`; `/storage/testing` adds the `createPgStore` + `startStorageServer` local stand-in | `@prisma/composer` + `app-node` + `@prisma/composer-prisma-cloud` |
 | `@prisma/composer-prisma-cloud/control` | `prismaCloud()` — the extension descriptor the config lists | `@internal/lowering`, `alchemy`, `effect` |
-| `@prisma/composer/node` · `@prisma/composer/nextjs` (build adapters) | `node()` · `nextjs()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `extension` | `@prisma/composer` only |
-| `@prisma/composer/node/control` · `@prisma/composer/nextjs/control` | `nodeBuild()` · `nextjsBuild()` — an `ExtensionDescriptor` whose `nodes` registry holds the deploy-side assembler under `{ kind: "build" }` | `node:fs`/framework tooling — deploy machine only |
+| `@prisma/composer/node` · `@prisma/composer/frameworks` (build adapters) | `node()` · `framework()` — the authoring **descriptor** (lean, rides in `service.ts`), stamped with the adapter's own `extension` | the framework descriptor has an optional Alchemy type peer |
+| `@prisma/composer/node/control` · `@prisma/composer/frameworks/control` | `nodeBuild()` · `frameworkBuild()` — an `ExtensionDescriptor` whose `nodes` registry holds the deploy-side assembler under `{ kind: "build" }` | `node:fs`/framework tooling — deploy machine only |
 | `@internal/assemble` | `assembleServices()` — looks each service's `build` descriptor up in the configured extensions' registries, the wrapper-inlining policy, `AssembleError` | `node:fs`/`node:module` — deploy machine only; consumed by `@internal/cli` and the future programmatic deploy API |
 
 A build adapter splits exactly like any other extension: a **lean authoring
 descriptor** that the service module carries (pure data — `{ extension, type,
-module, entry }`, `extension` being the adapter's own package name, baked in by
+module }` and adapter-specific fields, `extension` being the adapter's own package name, baked in by
 its factory), and a **heavy deploy-side assembler** invoked once at deploy on the
 build machine. The two are joined by the same mechanism every other node uses:
 the assembler is a `{ kind: "build" }` entry in the adapter's own `/control`
@@ -97,12 +97,13 @@ driver, the server API) appears only in **app files**.
 Who imports what, end to end:
 
 - the **user's service module** (`service.ts`) imports `@prisma/composer-prisma-cloud`, a
-  build-adapter descriptor (`@prisma/composer/node` / `@prisma/composer/nextjs`), and the app's
+  build-adapter descriptor (`@prisma/composer/node` / `@prisma/composer/frameworks`), and the app's
   own driver of choice (a DB client factory lives inline here). It exports the
   service node and **nothing runs on import**;
 - the **user's entrypoint** (`server.ts`, or a Next page) imports the service
-  module and calls `service.load()` for typed deps. The app author writes AND
-  bundles this file (their bundler, or `next build`) — the framework never touches it;
+  module and calls `service.load()` for typed deps. For `node()` services, the
+  author builds this file before deploying; for framework services, Alchemy
+  builds it during assembly;
 - the **deploy entry is the app module itself**: everything about the
   *application* is still derived from the root node (ADR-0003).
   `prisma-composer deploy <entry>` imports it and calls
@@ -256,9 +257,9 @@ interface Config {
 //
 // How a service's app becomes a runnable artifact. The DESCRIPTOR is pure data
 // the service node carries (rides in service.ts, into every bundle); it names the
-// adapter, the authoring module, and the built-entry location. `entry` (and any
-// other kind-specific path, e.g. nextjs's `appDir`) resolves relative to
-// `dirname(module)` — exactly like an import specifier (ADR-0004) — never an
+// adapter and the authoring module. A node adapter also names its built entry;
+// framework adapters derive theirs from the build output. Relative paths resolve
+// against `dirname(module)` — exactly like an import specifier (ADR-0004) — never an
 // absolute or machine path. `module` is the one sanctioned exception: deploy-time
 // metadata only, and bundlers preserve it as an expression, so it re-evaluates
 // inside the deploy artifact instead of baking in a dev-machine path. The heavy
@@ -267,10 +268,10 @@ interface Config {
 // pair below — never a computed `${extension}/assemble` import — and never ships
 // in a bundle (§ Lowering, § Extension).
 interface BuildAdapter {
-  readonly extension: string                   // the adapter's package name, e.g. "@prisma/composer/node" — baked in by node()/nextjs(); the registry key at deploy
-  readonly type: string                        // "node" · "nextjs" — the build descriptor's id within that extension's `nodes`
+  readonly extension: string                   // the adapter's package name, e.g. "@prisma/composer/node" — baked in by its factory; the registry key at deploy
+  readonly type: string                        // "node" · "framework" — the build descriptor's id within that extension's `nodes`
   readonly module: string                      // the authoring module's import.meta.url — the anchor every other path resolves against
-  readonly entry: string                       // built runnable, resolved relative to dirname(module) (e.g. "../dist/server.js")
+  readonly entry?: string                      // node's built runnable, relative to dirname(module) (e.g. "../dist/server.js")
 }
 
 // ——— Nodes ———
@@ -1132,11 +1133,9 @@ framework wrapper, and reports the runtime entry path.
 export default (opts: { module: string; entry: string }): BuildAdapter =>
   ({ extension: "@prisma/composer/node", type: "node", module: opts.module, entry: opts.entry })
 
-// @prisma/composer/nextjs — carries an extra `appDir` (the Next app's root, the
-// standalone layout root), also resolved relative to dirname(module). `entry`
-// is a bare filename inside the standalone output dir.
-export default (opts: { module: string; appDir: string; entry: string }): NextjsBuildAdapter =>
-  ({ extension: "@prisma/composer/nextjs", type: "nextjs", module: opts.module, appDir: opts.appDir, entry: opts.entry })
+// @prisma/composer/frameworks — delegates the framework build to Alchemy.
+export default (opts: { module: string; framework: Framework; root: string }): FrameworkBuildAdapter =>
+  ({ extension: "@prisma/composer/frameworks", type: "framework", module: opts.module, framework: opts.framework, root: opts.root })
 
 // @internal/assemble — looks each service's `build` descriptor up in the
 // configured extensions' registries by its (extension, type) pair and runs the
@@ -1148,15 +1147,14 @@ type Assembler =
 // No serviceDir/serviceModule input: the descriptor's own `module` is the anchor.
 ```
 
-`node`'s assembler is trivial: place the app's built entry and the framework's wrapper
+`node`'s assembler is trivial: place the app's built entry and Composer's wrapper
 (`service.ts` bundled to `main.mjs`, core inlined, entry left to a runtime dynamic
-import) in one dir; report the entry. `nextjs`'s assembler does the Next-standalone
-fixups — copy the hoisted `node_modules`, `.next/static`, `public`, and a
-`bunfig.toml` that disables bun's runtime auto-install (PRO-213) — then the same
-wrapper placement. Both share the identical runtime shape:
-`run(address, () => import(entry))`; only the assembly differs. New frameworks or
-access patterns (cron, static, queue consumer) are new adapters here, and nothing
-on the service node or in core changes.
+import) in one dir; report the entry. The framework assembler invokes Alchemy's
+builder and Prisma website staging for the server, assets, and runtime dependencies,
+then places Composer's wrapper alongside them. Both share the identical runtime shape:
+`run(address, () => import(entry))`; only the assembly differs. Additional
+frameworks use Alchemy's Node targets; other access patterns can add adapters
+without changing the service node or core.
 
 ## The app, end to end
 
@@ -1243,13 +1241,13 @@ disappear into core's sequencing.
 ```ts
 // storefront/src/service.ts — declares the dependency; never learns how the URL arrives
 import { compute, http } from "@prisma/composer-prisma-cloud"
-import nextjs from "@prisma/composer/nextjs"
+import framework from "@prisma/composer/frameworks"
 const auth = http({ name: "auth" })
 export default compute({ name: "storefront",
   deps: { auth },
-  build: nextjs({ module: import.meta.url, appDir: "..", entry: "server.js" }) })
+  build: framework({ module: import.meta.url, framework: "nextjs", root: ".." }) })
 
-// storefront/app/page.tsx — the app's own Next code; `next build` bundles it.
+// storefront/app/page.tsx — the app's own Next code; Alchemy builds it during assembly.
 // It pulls the typed auth client via load() — the SAME mechanism the Hono entry
 // uses. force-dynamic keeps it out of build-time prerender (no run() then).
 import service from "../src/service"
@@ -1274,7 +1272,7 @@ export default module("storefront-auth", (h) => {
   h.provision("storefront", storefrontService, { auth: authRef })  // auth→storefront dependency edge
 })
 
-// No deploy config file (ADR-0003): build both apps, then
+// Register the build extensions in prisma-composer.config.ts, build the node app, then
 //   prisma-composer deploy app.ts
 ```
 
@@ -1282,7 +1280,7 @@ At deploy, core sequences: the db resource (lowered once) → auth provision →
 auth deploy (URL now real) → storefront
 provision → build the storefront's `Config` (auth's deploy URL fills the
 `auth.url` leaf) → `serialize` (the pack encodes it under its address-prefixed
-keys) → `nextjs` assembler → package → storefront deploy — the first VM boots with
+keys) → Alchemy framework build and staging → package → storefront deploy — the first VM boots with
 its config present. At boot, `bootstrap.js` calls `main.run(address, () =>
 import("./server.js"))`: `run` deserializes the storefront's env, re-emits it under
 address-free stash keys, then boots the Next server; the page's `service.load()`
@@ -1320,9 +1318,9 @@ producer from a resource — one mechanism.
 
 ## Extension points (designed for, not yet built)
 
-- **Build-adapter ecosystem** — `node` and `nextjs` are the first two; the
-  descriptor/assembler split is the seam for community adapters (Nuxt, TanStack
-  Start, a cron access-pattern, a static site). Each is a package the app lists in
+- **Build-adapter ecosystem** — `node` and `framework` are the first two; Alchemy
+  Node targets share the framework adapter, while the descriptor/assembler split
+  remains the seam for other access patterns. Each adapter is a package the app lists in
   its `prisma-composer.config.ts`; nothing in core, the prisma-cloud extension,
   `@internal/assemble`, or the CLI changes to add one — the assembler is a
   `{ kind: "build" }` entry in the adapter's own `/control` registry, found by the

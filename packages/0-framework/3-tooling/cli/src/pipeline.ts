@@ -9,7 +9,12 @@
  * cannot drift.
  */
 import * as path from 'node:path';
-import { type AssembledServices, assembleServices, type RunAssembler } from '@internal/assemble';
+import {
+  type AssembledServices,
+  type AssembleReuse,
+  assembleServices,
+  type RunAssembler,
+} from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
@@ -21,6 +26,7 @@ import { validateRegistryCoverage } from './validate-coverage.ts';
 /** Injectable seams so tests can drive the pipeline without a real wrapper build or config evaluation. */
 export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
+  readonly reuse?: AssembleReuse | undefined;
   /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs). */
   readonly config?: PrismaAppConfig | undefined;
   /**
@@ -137,7 +143,7 @@ export async function runPipeline(
   // 6. Assemble each service through the config's registries.
   let assembled: AssembledServices;
   try {
-    assembled = await assembleServices(graph, config, cwd, deps.runAssembler);
+    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.reuse);
   } catch (error) {
     if (onAssembleError !== undefined && error instanceof Error) {
       throw onAssembleError(error);

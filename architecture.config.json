@@ -85,30 +85,6 @@
       "plane": "control"
     },
     {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/*.ts",
-      "domain": "framework",
-      "layer": "authoring",
-      "plane": "shared"
-    },
-    {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/control/**",
-      "domain": "framework",
-      "layer": "authoring",
-      "plane": "control"
-    },
-    {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/exports/index.ts",
-      "domain": "framework",
-      "layer": "authoring",
-      "plane": "shared"
-    },
-    {
-      "glob": "packages/0-framework/2-authoring/nextjs/src/exports/control.ts",
-      "domain": "framework",
-      "layer": "authoring",
-      "plane": "control"
-    },
-    {
       "glob": "packages/0-framework/3-tooling/assemble/src/**",
       "domain": "framework",
       "layer": "tooling",
@@ -685,6 +661,30 @@
       "plane": "control"
     },
     {
+      "glob": "packages/9-public/composer/src/frameworks/framework.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/9-public/composer/src/exports/frameworks.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/9-public/composer/src/exports/frameworks-control.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
+      "glob": "packages/9-public/composer/src/frameworks/control/*.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "control"
+    },
+    {
       "glob": "packages/9-public/composer/src/exports/local-target.ts",
       "domain": "public",
       "layer": "public",
@@ -727,12 +727,6 @@
       "plane": "control"
     },
     {
-      "glob": "packages/9-public/composer/src/exports/nextjs-control.ts",
-      "domain": "public",
-      "layer": "public",
-      "plane": "control"
-    },
-    {
       "glob": "packages/9-public/composer/src/exports/index.ts",
       "domain": "public",
       "layer": "public",
@@ -770,12 +764,6 @@
     },
     {
       "glob": "packages/9-public/composer/src/exports/node.ts",
-      "domain": "public",
-      "layer": "public",
-      "plane": "shared"
-    },
-    {
-      "glob": "packages/9-public/composer/src/exports/nextjs.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"

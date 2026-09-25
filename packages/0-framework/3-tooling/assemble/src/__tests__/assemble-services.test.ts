@@ -55,6 +55,38 @@ describe('assembleServices()', () => {
     });
   });
 
+  test('reuses unchanged service bundles during a local rebuild', async () => {
+    const root = module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('catalog'), { id: 'catalog' });
+      provision(makeService('storefront'), { id: 'storefront' });
+      return {};
+    });
+    const graph = Load(root);
+    const built: string[] = [];
+    const assembled = await assembleServices(
+      graph,
+      emptyConfig,
+      CWD,
+      async (node) => {
+        built.push(node.name);
+        return { dir: `/rebuilt/${node.name}`, entry: 'server.js' };
+      },
+      {
+        previous: {
+          bundles: {
+            catalog: { dir: '/previous/catalog', entry: 'server.js' },
+            storefront: { dir: '/previous/storefront', entry: 'server.js' },
+          },
+        },
+        changed: new Set(['catalog']),
+      },
+    );
+
+    expect(built).toEqual(['catalog']);
+    expect(assembled.bundles['catalog']?.dir).toBe('/rebuilt/catalog');
+    expect(assembled.bundles['storefront']?.dir).toBe('/previous/storefront');
+  });
+
   test('a service provisioned by a NESTED module keys its bundle by the dotted address (H1)', async () => {
     const inner = module('auth', {}, ({ provision }) => {
       provision(makeService('auth-api'), { id: 'api' });
@@ -109,7 +141,7 @@ describe('assembleServices()', () => {
               kind: 'build',
               assemble: async (input) => {
                 seen.push({ type: input.build.type, address: input.address, cwd: input.cwd });
-                return { dir: '/bundles/cron', entry: input.build.entry };
+                return { dir: '/bundles/cron', entry: 'x' };
               },
             },
           },

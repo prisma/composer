@@ -36,8 +36,7 @@ runs:
       run: pnpm install --frozen-lockfile
 
     - name: Build
-      # The package's own `build` script is a no-op; turbo's ^build (from
-      # its workspace deps) is what actually builds the modules.
+      # Build workspace dependencies. Framework services build during deploy.
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: pnpm turbo run build --filter '${{ inputs.build-filter }}'

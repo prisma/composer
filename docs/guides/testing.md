@@ -89,23 +89,11 @@ Five things to know:
   nothing checks, every call reaches your handler, and there's nothing to put
   in `inputs`.
 
-**Next.js services need a third argument** — a boot function — because the
-built entry lives inside Next's standalone output. Resolve it with
-`standaloneServerPath`; `bootstrapService` exports the resolved port as
-`process.env.PORT` before booting, which is exactly what Next's standalone
-server binds:
-
-```ts
-import { pathToFileURL } from 'node:url';
-import { standaloneServerPath } from '@prisma/composer/nextjs/control';
-
-await bootstrapService(storefront, config, async () => {
-  await import(pathToFileURL(standaloneServerPath(storefront.build)).href);
-});
-```
-
-The complete working version is
-[`examples/storefront-auth/modules/storefront/app/page.integration.test.ts`](../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts).
+**Framework-built Next.js services** can be tested end-to-end through
+`prisma-composer dev` and HTTP. For a `bootstrapService` test, assemble the framework
+build first, then import the returned bundle entry. This exercises Alchemy's
+build and artifact staging; see the
+[working integration test](../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts).
 
 ## Writing good fakes
 

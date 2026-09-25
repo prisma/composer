@@ -23,7 +23,7 @@ import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/cor
 import * as Layer from 'effect/Layer';
 import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import type { AlchemyInvocation } from '../../run-alchemy.ts';
+import type { AlchemyInvocation, AlchemyOutcome } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { devWithDeps } from '../dev.ts';
@@ -148,7 +148,7 @@ const coreIndex = path.resolve(
 
 function makeAppDir(
   name = 'fixture-app',
-  opts: { config?: boolean } = {},
+  opts: { config?: boolean; serviceNames?: readonly string[] } = {},
 ): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
@@ -166,17 +166,19 @@ function makeAppDir(
       `import { module, service } from ${JSON.stringify(coreIndex)};`,
       '',
       `export default module(${JSON.stringify(name)}, {}, ({ provision }) => {`,
-      '  provision(',
-      '    service({',
-      "      name: 'app',",
-      "      extension: 'fixture-extension',",
-      "      type: 'fixture/compute',",
-      '      inputs: {},',
-      '      params: {},',
-      "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
-      '    }),',
-      "    { id: 'app' },",
-      '  );',
+      ...(opts.serviceNames ?? ['app']).flatMap((serviceName) => [
+        '  provision(',
+        '    service({',
+        `      name: ${JSON.stringify(serviceName)},`,
+        "      extension: 'fixture-extension',",
+        "      type: 'fixture/compute',",
+        '      inputs: {},',
+        '      params: {},',
+        "      build: { extension: 'fixture-build', type: 'node', module: import.meta.url, entry: 'dist/server.js' },",
+        '    }),',
+        `    { id: ${JSON.stringify(serviceName)} },`,
+        '  );',
+      ]),
       '  return {};',
       '});',
       '',
@@ -1026,6 +1028,126 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(events.filter((kind) => kind === 'stopped')).toHaveLength(1);
     expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
     expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
+  }, 15_000);
+
+  test('stop() waits for an in-flight rebuild before stopping services', async () => {
+    const app = makeAppDir('hello-dev');
+    const rebuildStarted = Promise.withResolvers<void>();
+    const finishRebuild = Promise.withResolvers<AlchemyOutcome>();
+    const events: string[] = [];
+    let deploys = 0;
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: async () => {
+        stops += 1;
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        { entry: app.entryPath, cwd: app.dir, onEvent: (event) => void events.push(event.kind) },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: async (node) => ({
+            ...(await fakeAssembler(node)),
+            watch: [app.entryPath],
+          }),
+          alchemy: async () => {
+            deploys += 1;
+            if (deploys === 1) return { exitCode: 0, signal: null };
+            rebuildStarted.resolve();
+            return finishRebuild.promise;
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      fs.appendFileSync(app.entryPath, '\n// trigger rebuild\n');
+      await rebuildStarted.promise;
+
+      const stopped = start.value.stop();
+      try {
+        await Bun.sleep(20);
+        expect(stops).toBe(0);
+      } finally {
+        finishRebuild.resolve({ exitCode: 0, signal: null });
+        await stopped;
+      }
+    });
+
+    expect(deploys).toBe(2);
+    expect(stops).toBe(1);
+    expect(events).toEqual(['ready', 'stopping', 'stopped']);
+  }, 15_000);
+
+  test('a failed converge retains changed services for the next rebuild', async () => {
+    const app = makeAppDir('hello-dev', { serviceNames: ['app', 'other'] });
+    const appSource = path.join(app.dir, 'app.txt');
+    const otherSource = path.join(app.dir, 'other.txt');
+    fs.writeFileSync(appSource, 'app');
+    fs.writeFileSync(otherSource, 'other');
+    const failed = Promise.withResolvers<void>();
+    const recovered = Promise.withResolvers<void>();
+    // Only the rebuilds after the failure matter: a late FSEvents report of
+    // the fixture writes above (macOS) may fire one extra rebuild at startup.
+    const afterFailure: string[] = [];
+    let failNext = false;
+    let hasFailed = false;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => {
+            if (event.kind === 'converge-failed') {
+              hasFailed = true;
+              failed.resolve();
+            }
+            if (event.kind === 'ready' && hasFailed) recovered.resolve();
+          },
+        },
+        {
+          config: devConfigWith(attachment),
+          runAssembler: async (node, address) => {
+            if (hasFailed) afterFailure.push(address);
+            return {
+              ...(await fakeAssembler(node)),
+              watch: [path.join(app.dir, `${address}.txt`)],
+            };
+          },
+          alchemy: async () => {
+            if (!failNext) return { exitCode: 0, signal: null };
+            failNext = false;
+            return { exitCode: 1, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      try {
+        await Bun.sleep(500);
+        failNext = true;
+        fs.appendFileSync(appSource, ' changed');
+        await failed.promise;
+        fs.appendFileSync(otherSource, ' changed');
+        await recovered.promise;
+      } finally {
+        await start.value.stop();
+      }
+    });
+
+    // `app` changed before the failed converge, so the recovery rebuild —
+    // fired by `other` alone — must still reassemble it.
+    expect(afterFailure).toContain('app');
+    expect(afterFailure).toContain('other');
   }, 15_000);
 
   test('a host onEvent that throws cannot prevent closed from settling', async () => {

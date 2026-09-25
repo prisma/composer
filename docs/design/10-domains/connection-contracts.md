@@ -82,7 +82,7 @@ export default serve(service, {
 // storefront/service.ts — the consumer REQUIRES the contract: rpc(contract), not http().
 export default compute({
   deps: { auth: rpc(authContract) },
-  build: nextjs({ entry: "server.js" }),
+  build: framework({ module: import.meta.url, framework: "nextjs", root: ".." }),
 })
 
 // storefront/page.tsx — the consumer USES the derived typed client.

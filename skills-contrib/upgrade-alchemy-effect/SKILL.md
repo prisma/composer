@@ -52,7 +52,7 @@ companion in the tree is unsatisfiable, and npm resolves that by installing a
 simple way to stay above every floor at once. Treat them as one constellation,
 never as individual bumps.
 
-alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0` at beta.78). That range is what lets a stray dependency drag a different `effect` in, and it is why the CLI preflight exists.
+alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0` at beta.79). That range is what lets a stray dependency drag a different `effect` in, and it is why the CLI preflight exists.
 
 ## Two audiences, two failure modes
 

@@ -1,6 +1,6 @@
 name: E2E deploy
 
-# Deploys examples/storefront-auth and examples/orm-demo to real Prisma
+# Deploys example apps to real Prisma
 # Cloud, verifies each round trip, then destroys them. Requires repo secret
 # PRISMA_SERVICE_TOKEN and repo variable PRISMA_WORKSPACE_ID.
 
@@ -27,7 +27,7 @@ jobs:
   deploy:
     name: Deploy, verify, destroy
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     # Secrets aren't available on forked-PR runs; skip rather than fail loudly.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
@@ -99,13 +99,35 @@ jobs:
           destroy-label: 'bucket '
           sweep-prefixes: storefront-auth orm-demo hello canary bucket
 
+  deploy-framework-vite:
+    name: Deploy, verify, destroy (framework-vite)
+    runs-on: ubuntu-latest
+    needs: deploy-bucket
+    timeout-minutes: 5
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      PRISMA_SERVICE_TOKEN: ${{ secrets.PRISMA_SERVICE_TOKEN }}
+      PRISMA_WORKSPACE_ID: ${{ vars.PRISMA_WORKSPACE_ID }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/deploy-verify-destroy
+        with:
+          working-directory: examples/framework-vite
+          build-filter: '@prisma/example-framework-vite...'
+          stack-name: framework-vite-ci-${{ github.run_id }}
+          verify-command: bun scripts/e2e-verify.ts
+          destroy-label: 'framework-vite '
+          sweep-prefixes: storefront-auth orm-demo hello canary bucket framework-vite
+
   cold-connect-canary:
     name: Cold-connect canary (FT-5226)
     runs-on: ubuntu-latest
     # Runs after both deploys so it never holds a database concurrently with
     # them (workspace DB-quota headroom). Fails when PPg no longer rejects a
     # database's first connection — the signal to remove withConnectionRetry.
-    needs: deploy-bucket
+    needs: deploy-framework-vite
     # Samples are spaced 60s apart so each one meets a genuinely cold database
     # (see SAMPLE_INTERVAL_MS in the script for why back-to-back sampling
     # produced a false bug-gone verdict). Most runs still finish in a couple of

@@ -25,8 +25,8 @@ export default defineConfig({
     'service-rpc': 'src/exports/service-rpc.ts',
     node: 'src/exports/node.ts',
     'node-control': 'src/exports/node-control.ts',
-    nextjs: 'src/exports/nextjs.ts',
-    'nextjs-control': 'src/exports/nextjs-control.ts',
+    frameworks: 'src/exports/frameworks.ts',
+    'frameworks-control': 'src/exports/frameworks-control.ts',
   },
   exports: false,
   clean: true,
@@ -45,6 +45,11 @@ export default defineConfig({
   // loudly. A pattern, not the string: a string external matches only the
   // exact specifier, and a subpath import like `@prisma/cli-engine/protocol`
   // would still be inlined (verified).
-  external: ['esbuild', /^@prisma\/cli-engine(\/|$)/],
+  external: [
+    'esbuild',
+    /^@prisma\/cli-engine(\/|$)/,
+    /^@alchemy\.run\/frontend-frameworks(\/|$)/,
+    /^@effect\/platform-node(\/|$)/,
+  ],
   noExternal: [/^@internal\//],
 });

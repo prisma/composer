@@ -28,7 +28,7 @@ We are still establishing public response-time and patch-time SLOs; the 5-busine
 In scope — we accept reports against any of the following published packages:
 
 - The `prisma-composer` CLI launcher.
-- The framework packages published to npm: `@prisma/composer`, `@prisma/composer/nextjs`, `@prisma/composer/node`, `@prisma/composer-prisma-cloud`, `@prisma/composer/service-rpc`, `@internal/assemble`, `@internal/cli`, and `@internal/lowering`. The canonical list is whichever of these packages appear on npm at any given time.
+- The Composer packages published to npm, including `@prisma/composer` and `@prisma/composer-prisma-cloud`. Composer subpaths such as `/node`, `/frameworks`, and `/service-rpc` are part of their containing package.
 
 Out of scope (please do not file vulnerability reports for these):
 

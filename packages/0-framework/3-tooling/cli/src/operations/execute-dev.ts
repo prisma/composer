@@ -261,16 +261,27 @@ export async function executeDev(
       config: deps.config,
       configPath: deps.configPath,
     };
+    let assembled = pipeline.assembled;
+    let rebuilds: Promise<void> = Promise.resolve();
+    const pendingChanges = new Set<string>();
+    let stopping = false;
     watch = startWatch(
       targets,
-      () => {
+      (addresses) => {
+        if (stopping) return;
         // The whole rebuild is inside one try/catch: this runs fire-and-forget,
         // so anything escaping it would be an unhandled rejection killing the
         // process — the exact opposite of "a converge failure keeps the running
         // app and keeps watching".
-        void (async () => {
+        rebuilds = rebuilds.then(async () => {
           try {
-            const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+            if (stopping) return;
+            for (const address of addresses) pendingChanges.add(address);
+            const rePipeline = await runPipeline(input.entry, input.name, cwd, {
+              ...watchDeps,
+              reuse: { previous: assembled, changed: new Set(pendingChanges) },
+            });
+            if (stopping) return;
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,
@@ -287,15 +298,19 @@ export async function executeDev(
                 containerEnv: containerEnv(containers),
               }),
             );
+            if (stopping) return;
             if (outcome.signal !== null || outcome.exitCode !== 0) {
               emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
               return;
             }
-            emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+            assembled = rePipeline.assembled;
+            pendingChanges.clear();
+            const endpoints = await mergedEndpoints(attachments);
+            if (!stopping) emit({ kind: 'ready', endpoints });
           } catch (error) {
-            emit({ kind: 'rebuild-failed', message: failureMessage(error) });
+            if (!stopping) emit({ kind: 'rebuild-failed', message: failureMessage(error) });
           }
-        })();
+        });
       },
       (error) => emit({ kind: 'watch-error', message: failureMessage(error) }),
     );
@@ -304,7 +319,6 @@ export async function executeDev(
     const startedWatch = watch;
     await watch.ready;
 
-    let stopping = false;
     let resolveClosed: () => void = () => undefined;
     const closed = new Promise<void>((resolve) => {
       resolveClosed = resolve;
@@ -316,6 +330,7 @@ export async function executeDev(
         emit({ kind: 'stopping' });
         startedWatch.stop();
         void (async () => {
+          await rebuilds;
           // A service that refuses to stop is surfaced, not swallowed —
           // teardown continues, `stopped` still fires, `closed` still settles.
           for (const attachment of attachments) {

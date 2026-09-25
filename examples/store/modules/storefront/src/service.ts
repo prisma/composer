@@ -1,4 +1,4 @@
-import nextjs from '@prisma/composer/nextjs';
+import framework from '@prisma/composer/frameworks';
 import { rpc } from '@prisma/composer/service-rpc';
 import { compute } from '@prisma/composer-prisma-cloud';
 import { catalogContract } from '@store/catalog/contract';
@@ -13,5 +13,5 @@ export default compute({
     catalog: rpc(catalogContract),
     orders: rpc(ordersContract),
   },
-  build: nextjs({ module: import.meta.url, appDir: '..' }),
+  build: framework({ module: import.meta.url, framework: 'nextjs', root: '..' }),
 });

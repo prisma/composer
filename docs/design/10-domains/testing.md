@@ -129,18 +129,10 @@ Three practical notes:
   OS-assigned one back, so pass a concrete number.
 - **There is no `close()`.** Run each integration-test file in its own process
   (bun test does), and the server it started is cleaned up when the file ends.
-- **A Next.js service needs one extra argument.** `bootstrapService` finds most
-  services' entry points automatically, but a Next.js app's built entry lives
-  inside Next's standalone output directory, so you pass a small function that
-  imports it:
-
-  ```ts
-  import { standaloneServerPath } from '@prisma/composer/nextjs/control';
-
-  await bootstrapService(storefront, config, async () => {
-    await import(standaloneServerPath(storefront.build));
-  });
-  ```
+- **A Next.js service needs one extra argument.** Assemble its framework build,
+  then pass `bootstrapService` a function that imports the returned bundle entry.
+  The [storefront integration test](../../../examples/storefront-auth/modules/storefront/app/page.integration.test.ts)
+  exercises that path with a real HTTP request.
 
 ## The stand-in: same contract, checked by the compiler
 

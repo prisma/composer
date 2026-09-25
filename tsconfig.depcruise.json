@@ -40,10 +40,6 @@
       ],
       "@internal/node/control": ["./packages/0-framework/2-authoring/node/src/exports/control.ts"],
       "@internal/node": ["./packages/0-framework/2-authoring/node/src/exports/index.ts"],
-      "@internal/nextjs/control": [
-        "./packages/0-framework/2-authoring/nextjs/src/exports/control.ts"
-      ],
-      "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/exports/index.ts"],
       "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/exports/index.ts"],
       "@internal/cli/bin": ["./packages/0-framework/3-tooling/cli/src/bin.ts"],
       "@internal/cli/report": [
@@ -142,10 +138,10 @@
       "@prisma/composer/service-rpc": ["./packages/9-public/composer/src/exports/service-rpc.ts"],
       "@prisma/composer/node/control": ["./packages/9-public/composer/src/exports/node-control.ts"],
       "@prisma/composer/node": ["./packages/9-public/composer/src/exports/node.ts"],
-      "@prisma/composer/nextjs/control": [
-        "./packages/9-public/composer/src/exports/nextjs-control.ts"
+      "@prisma/composer/frameworks/control": [
+        "./packages/9-public/composer/src/exports/frameworks-control.ts"
       ],
-      "@prisma/composer/nextjs": ["./packages/9-public/composer/src/exports/nextjs.ts"],
+      "@prisma/composer/frameworks": ["./packages/9-public/composer/src/exports/frameworks.ts"],
       "@prisma/composer-cli/family": ["./packages/9-public/composer-cli/src/exports/family.ts"],
       "@prisma/composer-cli/testing": ["./packages/9-public/composer-cli/src/exports/testing.ts"],
       "@prisma/composer-prisma-cloud/control": [

@@ -66,6 +66,7 @@ skills-lock.json
 # Next.js build output (any location — a stray copy under an unexpected path once got committed)
 .next/
 next-env.d.ts
+serve-node.mjs
 
 # Deploy working dir — assembled artifacts staged per graph address (ADR-0005)
 .prisma-composer/

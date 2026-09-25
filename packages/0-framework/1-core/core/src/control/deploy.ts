@@ -224,6 +224,8 @@ export interface Bundle {
    * field still compiles; a bundle without it is simply not watched.
    */
   readonly watch?: readonly string[];
+  /** Paths beneath a watched source root that assembly itself rewrites. */
+  readonly watchIgnore?: readonly string[];
 }
 
 /** Shared input shape for every extension's build descriptor. */

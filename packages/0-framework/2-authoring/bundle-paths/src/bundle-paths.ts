@@ -1,9 +1,10 @@
 /**
  * The path-containment predicate and bundle-link validation shared by every
- * assembly and packaging seam (node/nextjs adapters, the compute artifact
+ * assembly and packaging seam (node/framework adapters, the compute artifact
  * writer, the local extractor). This predicate is the enforcement point of
  * ADR-0047's boundary — a symlink may be preserved only while its target
- * stays inside the assembled bundle — so it exists exactly once.
+ * stays inside the assembled bundle — so it exists exactly once. It also
+ * holds the one reading of a wrapper build's inputs both adapters watch.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,4 +77,21 @@ export async function assertBundleSymlinksStayInside(bundleDir: string): Promise
     }
   };
   await walk(bundleDir);
+}
+
+/**
+ * The source files a wrapper build bundled — esbuild's metafile `inputs`,
+ * recorded relative to its working directory — as absolute `Bundle.watch`
+ * paths. The wrapper bundles the service module and everything it imports,
+ * including contracts from other modules (workspace packages resolve to their
+ * real paths), so an edit there must reassemble this service. Installed
+ * packages under `node_modules` are left out: they change only on install.
+ */
+export function bundledSourcePaths(
+  inputs: Readonly<Record<string, unknown>>,
+  workingDir: string,
+): string[] {
+  return Object.keys(inputs)
+    .map((input) => path.resolve(workingDir, input))
+    .filter((file) => !file.split(path.sep).includes('node_modules') && fs.existsSync(file));
 }

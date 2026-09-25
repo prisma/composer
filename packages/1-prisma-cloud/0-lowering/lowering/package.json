@@ -17,13 +17,13 @@
   },
   "dependencies": {
     "@distilled.cloud/prisma": "1.0.0-rc.12",
-    "@effect/platform-node": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.117",
     "@internal/bundle-paths": "workspace:0.23.0",
     "@internal/core": "workspace:0.23.0",
     "@internal/foundation": "workspace:0.23.0",
     "@prisma/management-api-sdk": "^1.76.0",
-    "alchemy": "2.0.0-beta.78",
-    "effect": "4.0.0-rc.115"
+    "alchemy": "2.0.0-beta.79",
+    "effect": "4.0.0-rc.117"
   },
   "devDependencies": {
     "@internal/tsdown-config": "workspace:0.23.0",
