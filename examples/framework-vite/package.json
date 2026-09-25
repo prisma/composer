@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-framework-vite",
-  "version": "0.21.0",
+  "version": "0.23.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@alchemy.run/frontend-frameworks": "2.0.0-beta.79",
-    "@prisma/composer": "workspace:0.21.0",
-    "@prisma/composer-cli": "workspace:0.21.0",
+    "@prisma/composer": "workspace:0.23.0",
+    "@prisma/composer-cli": "workspace:0.23.0",
     "@effect/platform-node": "4.0.0-rc.117",
-    "@prisma/composer-prisma-cloud": "workspace:0.21.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.23.0",
     "@prisma/management-api-sdk": "^1.76.0",
     "vite": "8.3.0"
   },
