@@ -87,6 +87,28 @@ describe('copyTreeVerbatim', () => {
     }
     await assertBundleSymlinksStayInside(destination);
   });
+
+  test('remaps an absolute in-source directory link into the destination tree', async () => {
+    // pnpm on Windows creates junctions with absolute targets. Copying those
+    // verbatim leaves them pointing at the source — the escape assert's failure.
+    const source = path.join(scratch(), 'source');
+    const destination = path.join(scratch(), 'destination');
+    const realDir = path.join(source, 'node_modules', '.pnpm', 'pkg@1', 'node_modules', 'pkg');
+    fs.mkdirSync(realDir, { recursive: true });
+    fs.writeFileSync(path.join(realDir, 'index.js'), 'export {}\n');
+    fs.mkdirSync(path.join(source, 'node_modules'), { recursive: true });
+    fs.symlinkSync(realDir, path.join(source, 'node_modules', 'pkg'), 'dir');
+
+    await copyTreeVerbatim(source, destination);
+
+    const linkPath = path.join(destination, 'node_modules', 'pkg');
+    expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(path.resolve(path.dirname(linkPath), fs.readlinkSync(linkPath))).toBe(
+      path.resolve(destination, 'node_modules', '.pnpm', 'pkg@1', 'node_modules', 'pkg'),
+    );
+    expect(fs.readFileSync(path.join(linkPath, 'index.js'), 'utf8')).toContain('export');
+    await assertBundleSymlinksStayInside(destination);
+  });
 });
 
 describe('createBundleLink', () => {

@@ -64,6 +64,33 @@ export async function createBundleLink(
   }
 }
 
+/**
+ * Map a link's stored target from the source tree into the destination tree.
+ * pnpm on Windows often materializes directory links as junctions with absolute
+ * targets; copying those verbatim leaves them pointing at the source, which
+ * `assertBundleSymlinksStayInside` correctly rejects as an escape.
+ */
+function mapLinkIntoDestination(
+  sourceRoot: string,
+  destinationRoot: string,
+  sourcePath: string,
+  destinationPath: string,
+  rawTarget: string,
+): { target: string; resolvedTarget: string } {
+  const resolvedSource = path.resolve(path.dirname(sourcePath), rawTarget);
+  if (isWithin(sourceRoot, resolvedSource)) {
+    const resolvedTarget = path.resolve(destinationRoot, path.relative(sourceRoot, resolvedSource));
+    return {
+      target: path.relative(path.dirname(destinationPath), resolvedTarget),
+      resolvedTarget,
+    };
+  }
+  return {
+    target: rawTarget,
+    resolvedTarget: path.resolve(path.dirname(destinationPath), rawTarget),
+  };
+}
+
 /** Restores directory-link metadata lost by `fs.cp` on Windows. */
 export async function repairWindowsDirectorySymlinks(root: string): Promise<void> {
   if (process.platform !== 'win32') return;
@@ -73,7 +100,12 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
       const full = path.join(directory, entry.name);
       if (entry.isSymbolicLink()) {
         const target = await fs.promises.readlink(full);
+        // Absolute targets that already escape `root` cannot be repaired without
+        // the copy source — leave them for validation. Relative dir links become
+        // junctions at their in-tree resolve.
+        if (path.isAbsolute(target)) continue;
         const resolvedTarget = path.resolve(path.dirname(full), target);
+        if (!isWithin(root, resolvedTarget)) continue;
         try {
           if (!(await fs.promises.stat(resolvedTarget)).isDirectory()) continue;
         } catch {
@@ -92,6 +124,8 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
 
 /** Copy without `fs.cp`'s symlink privilege requirement: real files first, then links. */
 async function copyTreeVerbatimWalk(source: string, destination: string): Promise<void> {
+  const sourceRoot = path.resolve(source);
+  const destinationRoot = path.resolve(destination);
   const links: Array<{ sourcePath: string; destinationPath: string }> = [];
 
   const copyNonLinks = async (sourceDir: string, destinationDir: string): Promise<void> => {
@@ -112,31 +146,34 @@ async function copyTreeVerbatimWalk(source: string, destination: string): Promis
   await copyNonLinks(source, destination);
 
   for (const { sourcePath, destinationPath } of links) {
-    const target = await fs.promises.readlink(sourcePath);
-    const resolvedSource = path.resolve(path.dirname(sourcePath), target);
+    const rawTarget = await fs.promises.readlink(sourcePath);
+    const resolvedSource = path.resolve(path.dirname(sourcePath), rawTarget);
     let type: 'dir' | 'file' = 'file';
     try {
       type = (await fs.promises.stat(resolvedSource)).isDirectory() ? 'dir' : 'file';
     } catch {
       // Dangling in the source — still emit the link; validation rejects escapes later.
     }
+    const mapped = mapLinkIntoDestination(
+      sourceRoot,
+      destinationRoot,
+      sourcePath,
+      destinationPath,
+      rawTarget,
+    );
     await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
-    await createBundleLink(destinationPath, target, type, {
-      resolvedTarget: path.resolve(path.dirname(destinationPath), target),
+    await createBundleLink(destinationPath, mapped.target, type, {
+      resolvedTarget: mapped.resolvedTarget,
     });
   }
 }
 
 export async function copyTreeVerbatim(source: string, destination: string): Promise<void> {
-  try {
-    await fs.promises.cp(source, destination, { recursive: true, verbatimSymlinks: true });
-  } catch (error) {
-    // win32 without Developer Mode: recreating symlinks during cp throws EPERM.
-    if (!(process.platform === 'win32' && isNotPermitted(error))) throw error;
-    await fs.promises.rm(destination, { recursive: true, force: true });
-    await copyTreeVerbatimWalk(source, destination);
-  }
-  await repairWindowsDirectorySymlinks(destination);
+  // Walk+remap rather than `fs.cp`: absolute junctions/symlinks (pnpm on
+  // Windows; rare absolute links elsewhere) must be rewritten into the
+  // destination tree or validation rejects them as escapes. Also avoids
+  // win32 EPERM when recreating privileged symlinks during `fs.cp`.
+  await copyTreeVerbatimWalk(source, destination);
 }
 
 /** Lexical containment: `candidate` is `root` itself or below it. Both paths
