@@ -122,6 +122,7 @@ describe('createBundleLink', () => {
     const linkPath = path.join(root, 'pg');
     await createBundleLink(linkPath, 'pg-abc123', 'dir', {
       resolvedTarget: path.join(root, 'pg-abc123'),
+      copyWithinRoot: root,
       platform: 'linux',
     });
 
@@ -140,6 +141,7 @@ describe('createBundleLink', () => {
 
     await createBundleLink(linkPath, 'pg-abc123', 'dir', {
       resolvedTarget: targetDir,
+      copyWithinRoot: root,
     });
 
     expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
@@ -157,13 +159,23 @@ describe('createBundleLink', () => {
       throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
     }) as typeof fs.promises.symlink;
     try {
-      await expect(
-        createBundleLink(linkPath, outside, 'file', {
+      let caught: unknown;
+      try {
+        await createBundleLink(linkPath, outside, 'file', {
           resolvedTarget: outside,
           copyWithinRoot: root,
           platform: 'win32',
-        }),
-      ).rejects.toMatchObject({ code: 'EPERM' });
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).message).toMatch(
+        /refusing to materialize a file link whose target escapes the bundle/,
+      );
+      expect((caught as Error & { cause?: { code?: string } }).cause).toMatchObject({
+        code: 'EPERM',
+      });
       expect(fs.existsSync(linkPath)).toBe(false);
     } finally {
       fs.promises.symlink = originalSymlink;

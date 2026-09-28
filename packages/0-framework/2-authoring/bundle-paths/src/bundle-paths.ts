@@ -43,8 +43,8 @@ export async function createBundleLink(
     resolvedTarget: string;
     /** Absolute path to copy from when the file fallback runs (usually the source tree). */
     copySource?: string;
-    /** Refuse the file-copy fallback when `resolvedTarget` escapes this root. */
-    copyWithinRoot?: string;
+    /** Bundle root the file-copy fallback must stay inside (ADR-0047). */
+    copyWithinRoot: string;
     platform?: NodeJS.Platform;
   },
 ): Promise<void> {
@@ -67,12 +67,11 @@ export async function createBundleLink(
     await fs.promises.symlink(target, linkPath, 'file');
   } catch (error) {
     if (!isNotPermitted(error)) throw error;
-    if (
-      options.copyWithinRoot !== undefined &&
-      !isWithin(path.resolve(options.copyWithinRoot), path.resolve(options.resolvedTarget))
-    ) {
-      // Keep the privileged-symlink failure — do not materialize escape targets.
-      throw error;
+    if (!isWithin(path.resolve(options.copyWithinRoot), path.resolve(options.resolvedTarget))) {
+      throw new Error(
+        `refusing to materialize a file link whose target escapes the bundle: ${linkPath} -> ${options.resolvedTarget}`,
+        { cause: error },
+      );
     }
     const copyFrom = options.copySource ?? options.resolvedTarget;
     try {
@@ -132,7 +131,10 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
           continue;
         }
         await fs.promises.unlink(full);
-        await createBundleLink(full, target, 'dir', { resolvedTarget });
+        await createBundleLink(full, target, 'dir', {
+          resolvedTarget,
+          copyWithinRoot: root,
+        });
       } else if (entry.isDirectory()) {
         await visit(full);
       }
