@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertBundleSymlinksStayInside, isWithin } from './bundle-paths.ts';
+import {
+  assertBundleSymlinksStayInside,
+  bundleLinkStrategy,
+  copyTreeVerbatim,
+  createBundleLink,
+  isWithin,
+} from './bundle-paths.ts';
 
 describe('isWithin', () => {
   test('the root itself and descendants are within; siblings and parents are not', () => {
@@ -12,6 +18,18 @@ describe('isWithin', () => {
     expect(isWithin('/a/b', '/a/c')).toBe(false);
     expect(isWithin('/a/b', '/a/b-evil')).toBe(false);
     expect(isWithin('/a/b', '/a/b/../c')).toBe(false);
+  });
+});
+
+describe('bundleLinkStrategy', () => {
+  test('unix keeps ordinary symlinks for files and directories', () => {
+    expect(bundleLinkStrategy('darwin', 'dir')).toBe('symlink');
+    expect(bundleLinkStrategy('linux', 'file')).toBe('symlink');
+  });
+
+  test('windows uses junctions for directories and a copy fallback for files', () => {
+    expect(bundleLinkStrategy('win32', 'dir')).toBe('junction');
+    expect(bundleLinkStrategy('win32', 'file')).toBe('symlink-with-copy-fallback');
   });
 });
 
@@ -42,5 +60,60 @@ describe('assertBundleSymlinksStayInside', () => {
     fs.symlinkSync('../outside', path.join(bundle, 'link'));
 
     await expect(assertBundleSymlinksStayInside(bundle)).rejects.toThrow('escapes the bundle');
+  });
+});
+
+describe('copyTreeVerbatim', () => {
+  const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-paths-cp-'));
+
+  test('preserves an in-tree directory symlink so the assembled bundle still validates', async () => {
+    const source = path.join(scratch(), 'source');
+    const destination = path.join(scratch(), 'destination');
+    fs.mkdirSync(path.join(source, 'pg-abc123'), { recursive: true });
+    fs.writeFileSync(path.join(source, 'pg-abc123', 'index.js'), 'export {}\n');
+    fs.symlinkSync('pg-abc123', path.join(source, 'pg'));
+
+    await copyTreeVerbatim(source, destination);
+
+    expect(fs.lstatSync(path.join(destination, 'pg')).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(path.join(destination, 'pg'))).toBe('pg-abc123');
+    await assertBundleSymlinksStayInside(destination);
+  });
+});
+
+describe('createBundleLink', () => {
+  const scratch = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-paths-link-'));
+
+  test('creates a relative directory symlink on non-windows platforms', async () => {
+    if (process.platform === 'win32') return;
+
+    const root = scratch();
+    fs.mkdirSync(path.join(root, 'pg-abc123'), { recursive: true });
+    const linkPath = path.join(root, 'pg');
+    await createBundleLink(linkPath, 'pg-abc123', 'dir', {
+      resolvedTarget: path.join(root, 'pg-abc123'),
+      platform: 'linux',
+    });
+
+    expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(fs.readlinkSync(linkPath)).toBe('pg-abc123');
+  });
+
+  test('on windows, a directory link is a junction that resolves inside the bundle', async () => {
+    if (process.platform !== 'win32') return;
+
+    const root = scratch();
+    const targetDir = path.join(root, 'pg-abc123');
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.writeFileSync(path.join(targetDir, 'index.js'), 'export {}\n');
+    const linkPath = path.join(root, 'pg');
+
+    await createBundleLink(linkPath, 'pg-abc123', 'dir', {
+      resolvedTarget: targetDir,
+    });
+
+    expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(linkPath, 'index.js'))).toBe(true);
+    await assertBundleSymlinksStayInside(root);
   });
 });

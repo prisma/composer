@@ -4,9 +4,65 @@
  * writer, the local extractor). This predicate is the enforcement point of
  * ADR-0047's boundary — a symlink may be preserved only while its target
  * stays inside the assembled bundle — so it exists exactly once.
+ *
+ * Windows cannot create `dir`/`file` symlinks without Developer Mode or an
+ * elevated token (`EPERM`). Directory junctions need no such privilege, so
+ * assemble uses them on win32; file links fall back to a copy of the target.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+
+export type BundleLinkStrategy = 'symlink' | 'junction' | 'symlink-with-copy-fallback';
+
+/** How a platform materializes a bundle link without needing symlink privilege. */
+export function bundleLinkStrategy(
+  platform: NodeJS.Platform,
+  type: 'dir' | 'file',
+): BundleLinkStrategy {
+  if (platform !== 'win32') return 'symlink';
+  return type === 'dir' ? 'junction' : 'symlink-with-copy-fallback';
+}
+
+function isNotPermitted(error: unknown): boolean {
+  return error instanceof Error && Reflect.get(error, 'code') === 'EPERM';
+}
+
+/**
+ * Creates a link at `linkPath` whose stored target is `target`.
+ * `resolvedTarget` is the absolute path of that target in the destination
+ * tree — junctions require it, and the file-copy fallback reads from it.
+ */
+export async function createBundleLink(
+  linkPath: string,
+  target: string,
+  type: 'dir' | 'file',
+  options: {
+    resolvedTarget: string;
+    platform?: NodeJS.Platform;
+  },
+): Promise<void> {
+  const platform = options.platform ?? process.platform;
+  const strategy = bundleLinkStrategy(platform, type);
+
+  if (strategy === 'junction') {
+    // Junctions ignore a relative target and resolve it against cwd; always
+    // pass the absolute path of the in-bundle target.
+    await fs.promises.symlink(options.resolvedTarget, linkPath, 'junction');
+    return;
+  }
+
+  if (strategy === 'symlink') {
+    await fs.promises.symlink(target, linkPath, type);
+    return;
+  }
+
+  try {
+    await fs.promises.symlink(target, linkPath, 'file');
+  } catch (error) {
+    if (!isNotPermitted(error)) throw error;
+    await fs.promises.copyFile(options.resolvedTarget, linkPath);
+  }
+}
 
 /** Restores directory-link metadata lost by `fs.cp` on Windows. */
 export async function repairWindowsDirectorySymlinks(root: string): Promise<void> {
@@ -24,7 +80,7 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
           continue;
         }
         await fs.promises.unlink(full);
-        await fs.promises.symlink(target, full, 'dir');
+        await createBundleLink(full, target, 'dir', { resolvedTarget });
       } else if (entry.isDirectory()) {
         await visit(full);
       }
@@ -34,8 +90,52 @@ export async function repairWindowsDirectorySymlinks(root: string): Promise<void
   await visit(root);
 }
 
+/** Copy without `fs.cp`'s symlink privilege requirement: real files first, then links. */
+async function copyTreeVerbatimWalk(source: string, destination: string): Promise<void> {
+  const links: Array<{ sourcePath: string; destinationPath: string }> = [];
+
+  const copyNonLinks = async (sourceDir: string, destinationDir: string): Promise<void> => {
+    await fs.promises.mkdir(destinationDir, { recursive: true });
+    for (const entry of await fs.promises.readdir(sourceDir, { withFileTypes: true })) {
+      const sourcePath = path.join(sourceDir, entry.name);
+      const destinationPath = path.join(destinationDir, entry.name);
+      if (entry.isSymbolicLink()) {
+        links.push({ sourcePath, destinationPath });
+      } else if (entry.isDirectory()) {
+        await copyNonLinks(sourcePath, destinationPath);
+      } else if (entry.isFile()) {
+        await fs.promises.copyFile(sourcePath, destinationPath);
+      }
+    }
+  };
+
+  await copyNonLinks(source, destination);
+
+  for (const { sourcePath, destinationPath } of links) {
+    const target = await fs.promises.readlink(sourcePath);
+    const resolvedSource = path.resolve(path.dirname(sourcePath), target);
+    let type: 'dir' | 'file' = 'file';
+    try {
+      type = (await fs.promises.stat(resolvedSource)).isDirectory() ? 'dir' : 'file';
+    } catch {
+      // Dangling in the source — still emit the link; validation rejects escapes later.
+    }
+    await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
+    await createBundleLink(destinationPath, target, type, {
+      resolvedTarget: path.resolve(path.dirname(destinationPath), target),
+    });
+  }
+}
+
 export async function copyTreeVerbatim(source: string, destination: string): Promise<void> {
-  await fs.promises.cp(source, destination, { recursive: true, verbatimSymlinks: true });
+  try {
+    await fs.promises.cp(source, destination, { recursive: true, verbatimSymlinks: true });
+  } catch (error) {
+    // win32 without Developer Mode: recreating symlinks during cp throws EPERM.
+    if (!(process.platform === 'win32' && isNotPermitted(error))) throw error;
+    await fs.promises.rm(destination, { recursive: true, force: true });
+    await copyTreeVerbatimWalk(source, destination);
+  }
   await repairWindowsDirectorySymlinks(destination);
 }
 
