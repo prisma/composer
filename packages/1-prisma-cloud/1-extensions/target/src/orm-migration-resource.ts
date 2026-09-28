@@ -18,10 +18,12 @@
  * `alchemy`. Imported by `control.ts` and tests, never by `index.ts` / the
  * `./orm` authoring entry — index isolation holds.
  */
+
+import { readJsonFile } from '@internal/lowering';
 import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
-import { loadContractJson, resolveOrmConfig } from './orm-config.ts';
+import { resolveOrmConfig } from './orm-config.ts';
 import { applyOrmMigration, OrmMigrationError, targetStorageHash } from './orm-migrate.ts';
 
 export interface OrmMigrationProps {
@@ -98,7 +100,7 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
         const { contractArtifactPath, extensionPacks } = await resolveOrmConfig(news.configPath);
         let contractJson: unknown;
         try {
-          contractJson = await loadContractJson(contractArtifactPath);
+          contractJson = await readJsonFile(contractArtifactPath);
         } catch (error) {
           const summary = error instanceof Error ? error.message : String(error);
           throw new OrmMigrationError(
