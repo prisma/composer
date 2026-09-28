@@ -159,27 +159,33 @@ describe('createBundleLink', () => {
       throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
     }) as typeof fs.promises.symlink;
     try {
-      let caught: unknown;
-      try {
-        await createBundleLink(linkPath, outside, 'file', {
+      await expect(
+        createBundleLink(linkPath, outside, 'file', {
           resolvedTarget: outside,
           copyWithinRoot: root,
           platform: 'win32',
-        });
-      } catch (error) {
-        caught = error;
-      }
-      expect(caught).toBeInstanceOf(Error);
-      expect((caught as Error).message).toMatch(
-        /refusing to materialize a file link whose target escapes the bundle/,
-      );
-      expect((caught as Error & { cause?: { code?: string } }).cause).toMatchObject({
-        code: 'EPERM',
-      });
+        }),
+      ).rejects.toThrow(/refusing to materialize a link whose target escapes the bundle/);
       expect(fs.existsSync(linkPath)).toBe(false);
     } finally {
       fs.promises.symlink = originalSymlink;
     }
+  });
+
+  test('refuses escaping resolvedTarget for every link strategy', async () => {
+    const root = scratch();
+    const outside = path.join(scratch(), 'outside-dir');
+    fs.mkdirSync(outside, { recursive: true });
+    const linkPath = path.join(root, 'escaped');
+
+    await expect(
+      createBundleLink(linkPath, outside, 'dir', {
+        resolvedTarget: outside,
+        copyWithinRoot: root,
+        platform: 'linux',
+      }),
+    ).rejects.toThrow(/refusing to materialize a link whose target escapes the bundle/);
+    expect(fs.existsSync(linkPath)).toBe(false);
   });
 
   test('win32 file-copy fallback names a dangling target instead of ENOENT', async () => {

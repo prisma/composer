@@ -43,13 +43,21 @@ export async function createBundleLink(
     resolvedTarget: string;
     /** Absolute path to copy from when the file fallback runs (usually the source tree). */
     copySource?: string;
-    /** Bundle root the file-copy fallback must stay inside (ADR-0047). */
+    /** Bundle root every materialized link target must stay inside (ADR-0047). */
     copyWithinRoot: string;
     platform?: NodeJS.Platform;
   },
 ): Promise<void> {
   const platform = options.platform ?? process.platform;
   const strategy = bundleLinkStrategy(platform, type);
+  const withinRoot = path.resolve(options.copyWithinRoot);
+  const resolvedTarget = path.resolve(options.resolvedTarget);
+
+  if (!isWithin(withinRoot, resolvedTarget)) {
+    throw new Error(
+      `refusing to materialize a link whose target escapes the bundle: ${linkPath} -> ${options.resolvedTarget}`,
+    );
+  }
 
   if (strategy === 'junction') {
     // Junctions ignore a relative target and resolve it against cwd; always
@@ -67,12 +75,6 @@ export async function createBundleLink(
     await fs.promises.symlink(target, linkPath, 'file');
   } catch (error) {
     if (!isNotPermitted(error)) throw error;
-    if (!isWithin(path.resolve(options.copyWithinRoot), path.resolve(options.resolvedTarget))) {
-      throw new Error(
-        `refusing to materialize a file link whose target escapes the bundle: ${linkPath} -> ${options.resolvedTarget}`,
-        { cause: error },
-      );
-    }
     const copyFrom = options.copySource ?? options.resolvedTarget;
     try {
       await fs.promises.stat(copyFrom);
