@@ -189,6 +189,53 @@ describe('assemble()', () => {
     expect(result.watch).toContain(source);
   }, 20_000);
 
+  test('stages and remaps an absolute link that points into the tracing root outside standalone', async () => {
+    // pnpm on Windows: junctions under .next/standalone often store an absolute
+    // target into the app's node_modules/.pnpm store (outside standalone). The
+    // first remap pass cannot rewrite those; assemble must stage + repoint.
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+    const linkDir = path.join(standalone, 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(source, path.join(linkDir, 'semver'), 'dir');
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const semverLink = path.join(result.dir, 'bundle', 'node_modules', 'semver');
+    const semverTarget = path.join(
+      result.dir,
+      'bundle',
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    expect(fs.lstatSync(semverLink).isSymbolicLink()).toBe(true);
+    expect(path.resolve(path.dirname(semverLink), fs.readlinkSync(semverLink))).toBe(
+      path.resolve(semverTarget),
+    );
+    expect(fs.readFileSync(path.join(semverLink, 'index.js'), 'utf8')).toContain('6.3.1');
+    expect((result.watch ?? []).map((p) => fs.realpathSync(p))).toContain(fs.realpathSync(source));
+  }, 20_000);
+
   test('refuses a manifest whose app location escapes its tracing root', async () => {
     const root = makeAppRoot();
     writeNextBuild(root);
