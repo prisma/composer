@@ -11,7 +11,14 @@ export { ComputeService, compute } from '../compute.ts';
 export type { HttpClient } from '../http.ts';
 export { http } from '../http.ts';
 export type { GeneratedParamOptions } from '../param.ts';
-export { envParam, generatedParam, isGeneratedParamSource, paramName } from '../param.ts';
+export {
+  envParam,
+  generatedParam,
+  isGeneratedParamSource,
+  isOriginParamSource,
+  paramName,
+  serviceOrigin,
+} from '../param.ts';
 export type { ProvisionedEdge } from '../provisioned-edges.ts';
 export { provisionedEdges } from '../provisioned-edges.ts';
 export type { RawPostgresConfig } from '../raw-postgres.ts';

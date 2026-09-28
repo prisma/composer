@@ -107,6 +107,7 @@ type Call =
       readonly id: string;
       readonly address: string;
       readonly config: Config;
+      readonly services: ReadonlyMap<string, unknown>;
     }
   | {
       readonly phase: 'package';
@@ -170,7 +171,13 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
           });
         },
         serialize: (ctx, _provisioned, config) => {
-          calls.push({ phase: 'serialize', id: ctx.id, address: ctx.address, config });
+          calls.push({
+            phase: 'serialize',
+            id: ctx.id,
+            address: ctx.address,
+            config,
+            services: new Map(ctx.services),
+          });
           // One "record" per Config leaf — mirrors the real extension's one
           // EnvironmentVariable per leaf, keyed by input+name.
           const records = Object.entries(config.inputs).flatMap(([input, values]) =>
@@ -545,8 +552,8 @@ describe('lowering a module root — a single service', () => {
 
     expect(calls.map((c) => c.phase)).toEqual([
       'application',
-      'resource',
       'provision',
+      'resource',
       'serialize',
       'package',
       'deploy',
@@ -712,16 +719,39 @@ describe('lowering a module root — a provisioned resource and two connected se
     const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
     expect(order).toEqual([
       'application',
-      'resource:db',
       'provision:auth',
+      'provision:storefront',
+      'resource:db',
       'serialize:auth',
       'package:auth',
       'deploy:auth',
-      'provision:storefront',
       'serialize:storefront',
       'package:storefront',
       'deploy:storefront',
     ]);
+  });
+
+  test('serialize sees every service provision() product by address, including later services', () => {
+    const { config, calls } = fakeExtension();
+
+    run(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: {
+          auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+          storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+        },
+      }),
+    );
+
+    const auth = calls.find((c) => c.phase === 'serialize' && c.id === 'auth');
+    expect(auth?.phase === 'serialize' ? [...auth.services.keys()] : []).toEqual([
+      'auth',
+      'storefront',
+    ]);
+    expect(auth?.phase === 'serialize' ? auth.services.get('storefront') : undefined).toMatchObject(
+      { serviceId: 'storefront#svc' },
+    );
   });
 
   test("each module-provisioned service's address is its own provision id", () => {

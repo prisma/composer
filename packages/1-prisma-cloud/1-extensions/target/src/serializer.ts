@@ -27,7 +27,7 @@ import { blindCast } from '@internal/foundation/casts';
 import { SecretBox, type SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
-import { isEnvParamSource, isGeneratedParamSource } from './param.ts';
+import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
 import { secretName } from './secret.ts';
 
 // The ambient environment of whatever runtime hosts the bundle. Declared
@@ -304,7 +304,12 @@ export interface GeneratedLeaf {
   readonly bytes: number;
   readonly redacted: boolean;
   readonly path: string;
+  /** A `serviceOrigin()` leaf's target address; its origin replaces the random value. */
+  readonly origin?: string;
 }
+
+/** Stands in for a `serviceOrigin()` leaf in deploy-time validation; boot validates the real one. */
+const ORIGIN_SENTINEL = 'https://origin.invalid';
 
 /** One pointer var name and the input path that produced it — the collision guard's unit. */
 export interface PointerName {
@@ -377,6 +382,12 @@ export function resolveInputBinding(
     // later swaps the sentinel for a `{ "$generated": VAR, "redacted": <bool> }`
     // pointer by path — the facet rides the pointer so schema-blind boot knows
     // whether to box; the walk itself provisions nothing.
+    if (isOriginParamSource(value)) {
+      const varName = generatedParamVarName(address, path);
+      generated.push({ varName, bytes: 0, redacted: false, path, origin: value.payload.address });
+      pointers.push({ path, varName });
+      return ORIGIN_SENTINEL;
+    }
     if (isGeneratedParamSource(value)) {
       const { bytes, redacted } = value.payload;
       const varName = generatedParamVarName(address, path);

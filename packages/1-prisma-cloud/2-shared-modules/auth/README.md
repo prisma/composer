@@ -50,7 +50,7 @@ belongs on the rpc ports instead.
 ```ts
 // module.ts (the root)
 import { module } from '@prisma/composer';
-import { envParam } from '@prisma/composer-prisma-cloud';
+import { serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
 import { postgres } from '@prisma/composer-prisma-cloud/orm';
 import { appContract } from './src/contract.ts';
@@ -64,7 +64,7 @@ export default module('app', ({ provision }) => {
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db },
-    params: { baseUrl: envParam('AUTH_BASE_URL') }, // the PUBLIC app origin
+    params: { baseUrl: serviceOrigin('api') }, // the PUBLIC app origin
   });
   provision(apiService, {
     id: 'api',
@@ -84,9 +84,10 @@ const proxy = authProxy(authApi);
 
 The database is a BOUNDARY dependency: the root decides dedicated vs shared.
 `baseUrl` is the public origin browsers see (scheme+host, no trailing slash,
-no path) — bind it with `envParam('AUTH_BASE_URL')`. The instance secret is
-platform-minted inside the module; rotation is unsupported in v1 (rotating
-would invalidate every session and the encrypted jwks rows).
+no path) — bind it with `serviceOrigin('<service address>')` so each stage
+trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
+instance secret is platform-minted inside the module; rotation is unsupported
+in v1 (rotating would invalidate every session and the encrypted jwks rows).
 
 A complete, deployable copy of this wiring lives in `examples/auth`.
 

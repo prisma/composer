@@ -89,6 +89,38 @@ const envValue = (
 ): Redacted.Redacted<string> | Output.Output<Redacted.Redacted<string>> =>
   Output.isOutput(value) ? Output.map(value, Redacted.make) : Redacted.make(value);
 
+/** The value of a `serviceOrigin(target)` leaf: the target service's endpoint domain. */
+function originOf(
+  services: ReadonlyMap<string, unknown> | undefined,
+  target: string,
+  consumer: string,
+): Output.Output<string> {
+  const provisioned = services?.get(target);
+  if (provisioned === undefined || !isComputeProvisioned(provisioned)) {
+    const known =
+      [...(services ?? [])]
+        .filter(([, value]) => isComputeProvisioned(value))
+        .map(([id]) => id)
+        .join(', ') || '(none)';
+    throw new Error(
+      `service "${consumer}" binds serviceOrigin("${target}"), but no compute service has that ` +
+        `address — known services: ${known}.`,
+    );
+  }
+  return Output.map(provisioned.endpointDomain, (v) => {
+    if (v === undefined) {
+      throw new Error(
+        `the App for "${target}" reported no endpoint domain — cannot resolve serviceOrigin("${target}") for "${consumer}".`,
+      );
+    }
+    return v;
+  });
+}
+
+function isComputeProvisioned(value: unknown): value is ComputeProvisioned {
+  return typeof value === 'object' && value !== null && 'endpointDomain' in value;
+}
+
 /** One environment row and its trigger member: the resource AND the value it writes, so a row cannot exist without joining the deployment's replacement triggers. */
 interface EnvRow {
   readonly record: Prisma.EnvironmentVariable;
@@ -208,13 +240,17 @@ export function computeDescriptor(
           // The resource id is stable per service+leaf so reconcile finds the
           // existing value instead of regenerating.
           for (const leaf of inputRow.generated) {
-            const resource = yield* GeneratedParam(`${inputRow.key}:${leaf.path}-generated`, {
-              bytes: leaf.bytes,
-            });
+            // References the target's App, not its Deployment, so its consumers form no cycle.
+            const value =
+              leaf.origin !== undefined
+                ? originOf(ctx.services, leaf.origin, address)
+                : (yield* GeneratedParam(`${inputRow.key}:${leaf.path}-generated`, {
+                    bytes: leaf.bytes,
+                  })).value;
             // The generated value is mint-once-stable (the resource returns
             // its persisted output), so this trigger member holds still across
             // redeploys and moves exactly when the value is re-generated.
-            const generatedValue = envValue(resource.value);
+            const generatedValue = envValue(value);
             rows.push({
               record: yield* Prisma.EnvironmentVariable(`${leaf.varName}-var`, {
                 project: projectId,

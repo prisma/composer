@@ -242,6 +242,7 @@ const {
   rawPostgres,
   rawPostgresContract,
   s3StoreService,
+  serviceOrigin,
 } = await import('../exports/index.ts');
 const { dependency, module, provisionNeed, string } = await import('@internal/core');
 const { lowering } = await import('@internal/core/deploy');
@@ -1197,6 +1198,122 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         'generated-for-COMPOSER_INGEST_INPUT:secret-generated',
       );
       expect(result.pointers).toEqual([]);
+    });
+  });
+
+  test("serialize writes a serviceOrigin() leaf as the target's endpoint domain", async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({
+        name: 'login',
+        deps: {},
+        input: type({ baseUrl: 'string' }),
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: 'file:///test/service.ts',
+          entry: 'server.js',
+        },
+      });
+      const graph = {
+        inputBindings: [{ serviceAddress: 'login', binding: { baseUrl: serviceOrigin('web') } }],
+        edges: [],
+      };
+      const ctx = {
+        address: 'login',
+        node,
+        graph,
+        application: {
+          projectId: 'shop-project#cloud-id',
+          branchId: 'br_preview',
+          defaultBranchId: 'br_main',
+          branchless: false,
+        },
+        services: new Map([
+          [
+            'login',
+            { projectId: 'shop-project#cloud-id', endpointDomain: 'https://login.example' },
+          ],
+          [
+            'web',
+            { projectId: 'shop-project#cloud-id', endpointDomain: 'https://web-preview.example' },
+          ],
+        ]),
+      } as unknown as LowerContext;
+      const provisioned = {
+        projectId: 'shop-project#cloud-id',
+        endpointDomain: 'https://login.example',
+      };
+      const beforeGen = recorded.generated.length;
+      const beforeEnv = recorded.envVar.length;
+
+      const result = run<MockedSerialized>(
+        serviceDescriptorOf(target, 'compute').serialize(ctx, provisioned, {
+          service: { port: 3000 },
+          inputs: {},
+        }),
+      );
+
+      expect(recorded.generated.slice(beforeGen)).toEqual([]);
+      expect(recorded.envVar.slice(beforeEnv).map(([, props]) => props)).toContainEqual({
+        project: 'shop-project#cloud-id',
+        key: 'COMPOSER_LOGIN_BASEURL_GENERATED',
+        value: 'https://web-preview.example',
+        class: 'preview',
+        branchId: 'br_preview',
+      });
+      expect(result.input?.value).toBe(
+        '{"baseUrl":{"$generated":"COMPOSER_LOGIN_BASEURL_GENERATED","redacted":false}}',
+      );
+      expect(unwrapTriggers(result.triggers)['COMPOSER_LOGIN_BASEURL_GENERATED']).toBe(
+        'https://web-preview.example',
+      );
+    });
+  });
+
+  test('serialize fails loudly for serviceOrigin() naming no compute service', async () => {
+    await withEnv({}, () => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const node = compute({
+        name: 'login',
+        deps: {},
+        input: type({ baseUrl: 'string' }),
+        build: {
+          extension: '@prisma/composer/node',
+          type: 'node',
+          module: 'file:///test/service.ts',
+          entry: 'server.js',
+        },
+      });
+      const ctx = {
+        address: 'login',
+        node,
+        graph: {
+          inputBindings: [{ serviceAddress: 'login', binding: { baseUrl: serviceOrigin('wbe') } }],
+          edges: [],
+        },
+        application: {
+          projectId: 'p#cloud-id',
+          branchId: undefined,
+          defaultBranchId: undefined,
+          branchless: false,
+        },
+        services: new Map<string, unknown>([
+          ['web', { projectId: 'p#cloud-id', endpointDomain: 'https://w' }],
+          ['wbe', { notCompute: true }],
+        ]),
+      } as unknown as LowerContext;
+      expect(() =>
+        run(
+          serviceDescriptorOf(target, 'compute').serialize(
+            ctx,
+            { projectId: 'p#cloud-id', endpointDomain: 'https://l' },
+            { service: { port: 3000 }, inputs: {} },
+          ),
+        ),
+      ).toThrow(
+        'binds serviceOrigin("wbe"), but no compute service has that address — known services: web.',
+      );
     });
   });
 
