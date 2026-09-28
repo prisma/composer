@@ -81,13 +81,34 @@ export async function resolveMigrationsDir(configPath: string): Promise<string> 
   return (await resolveOrmConfig(configPath)).migrationsDir;
 }
 
+/**
+ * `file://` href for an absolute filesystem path, without `node:url`
+ * (invariant 5). Bare Windows paths (`C:\…`) cannot be passed to `import()` —
+ * the loader treats `C:` as the URL protocol.
+ */
+export function fileUrlHrefFromAbsolutePath(absolutePath: string): string {
+  const normalized = absolutePath.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(normalized)) {
+    return new URL(`file:///${normalized}`).href;
+  }
+  if (normalized.startsWith('//')) {
+    // UNC \\server\share\path → file://server/share/path
+    return new URL(`file:${normalized}`).href;
+  }
+  return new URL(`file://${normalized}`).href;
+}
+
 /** Loads the emitted `contract.json` at the resolved artifact path. */
 export async function loadContractJson(contractArtifactPath: string): Promise<unknown> {
   // Freshen the specifier so repeated dev-loop reconciles re-read the file
-  // after `prisma contract emit` updates it in place.
-  const loaded = await import(`${contractArtifactPath}?t=${Date.now()}`, {
-    with: { type: 'json' },
-  });
+  // after `prisma contract emit` updates it in place. Always use a file://
+  // URL — required on Windows, harmless elsewhere.
+  const loaded = await import(
+    `${fileUrlHrefFromAbsolutePath(contractArtifactPath)}?t=${Date.now()}`,
+    {
+      with: { type: 'json' },
+    }
+  );
   return loaded.default;
 }
 
