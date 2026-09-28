@@ -87,6 +87,21 @@ describe('resolveOrmConfig', () => {
     expect(fileUrlHrefFromAbsolutePath('/tmp/contract.json')).toBe('file:///tmp/contract.json');
   });
 
+  test('fileUrlHrefFromAbsolutePath percent-encodes # and ? in path segments', () => {
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\a#b\contract.json`)).toBe(
+      'file:///C:/Users/a%23b/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\a?b\contract.json`)).toBe(
+      'file:///C:/Users/a%3Fb/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath('/tmp/a#b/contract.json')).toBe(
+      'file:///tmp/a%23b/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath('/tmp/a?b/contract.json')).toBe(
+      'file:///tmp/a%3Fb/contract.json',
+    );
+  });
+
   test('surfaces declared extension packs with their contract-space heads', async () => {
     const project = await resolveOrmConfig(packedConfig);
     expect(project.extensionPacks.map((p) => p.id)).toEqual([GADGET_PACK_ID]);

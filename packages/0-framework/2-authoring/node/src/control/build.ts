@@ -221,6 +221,8 @@ async function copyTracedEntry(
     const linkType = (await fs.promises.stat(realTarget)).isDirectory() ? 'dir' : 'file';
     await createBundleLink(destination, linkTarget, linkType, {
       resolvedTarget: stagedTarget,
+      copySource: realTarget,
+      copyWithinRoot: bundleDir,
     });
     return;
   }

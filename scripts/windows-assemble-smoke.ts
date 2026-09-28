@@ -39,16 +39,24 @@ function probeDirSymlinkPrivilege(scratch: string): boolean {
   }
 }
 
-function writeNextStandaloneFixture(root: string): void {
+function writeNextStandaloneFixture(root: string, options: { useJunction: boolean }): void {
   const standalone = path.join(root, '.next', 'standalone');
   const appOut = path.join(standalone, 'apps', 'web');
   fs.mkdirSync(appOut, { recursive: true });
   fs.writeFileSync(path.join(appOut, 'server.js'), '// standalone server\n');
 
   // Real package dir + in-tree directory link (pnpm/Next standalone shape).
-  fs.mkdirSync(path.join(standalone, 'node_modules', 'next'), { recursive: true });
-  fs.writeFileSync(path.join(standalone, 'node_modules', 'next', 'marker.txt'), 'next-ok\n');
-  fs.symlinkSync('next', path.join(standalone, 'node_modules', 'next-linked'), 'dir');
+  const nextDir = path.join(standalone, 'node_modules', 'next');
+  const nextLinked = path.join(standalone, 'node_modules', 'next-linked');
+  fs.mkdirSync(nextDir, { recursive: true });
+  fs.writeFileSync(path.join(nextDir, 'marker.txt'), 'next-ok\n');
+  // Stock Windows without Developer Mode cannot create dir symlinks — use a
+  // junction (absolute target), which is also what pnpm emits on win32.
+  if (options.useJunction) {
+    fs.symlinkSync(nextDir, nextLinked, 'junction');
+  } else {
+    fs.symlinkSync('next', nextLinked, 'dir');
+  }
 
   // Client assets Next omits from standalone.
   fs.mkdirSync(path.join(root, '.next', 'static'), { recursive: true });
@@ -83,8 +91,12 @@ async function main(): Promise<void> {
 
   const appRoot = path.join(scratch, 'app');
   fs.mkdirSync(appRoot, { recursive: true });
-  writeNextStandaloneFixture(appRoot);
-  log('wrote Next standalone fixture', appRoot);
+  const useJunction = process.platform === 'win32' && !canDirSymlink;
+  writeNextStandaloneFixture(appRoot, { useJunction });
+  log(
+    'wrote Next standalone fixture',
+    `${appRoot} (link=${useJunction ? 'junction' : 'dir-symlink'})`,
+  );
 
   const cwd = path.join(scratch, 'cwd');
   fs.mkdirSync(cwd, { recursive: true });

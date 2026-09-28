@@ -30,7 +30,10 @@ function isNotPermitted(error: unknown): boolean {
 /**
  * Creates a link at `linkPath` whose stored target is `target`.
  * `resolvedTarget` is the absolute path of that target in the destination
- * tree — junctions require it, and the file-copy fallback reads from it.
+ * tree — junctions require it. The win32 file-copy fallback reads
+ * `copySource` (source-tree path) when set, otherwise `resolvedTarget`, and
+ * only when the target exists and stays inside `copyWithinRoot` (ADR-0047:
+ * never dereference an escaping link into the artifact).
  */
 export async function createBundleLink(
   linkPath: string,
@@ -38,6 +41,10 @@ export async function createBundleLink(
   type: 'dir' | 'file',
   options: {
     resolvedTarget: string;
+    /** Absolute path to copy from when the file fallback runs (usually the source tree). */
+    copySource?: string;
+    /** Refuse the file-copy fallback when `resolvedTarget` escapes this root. */
+    copyWithinRoot?: string;
     platform?: NodeJS.Platform;
   },
 ): Promise<void> {
@@ -60,7 +67,20 @@ export async function createBundleLink(
     await fs.promises.symlink(target, linkPath, 'file');
   } catch (error) {
     if (!isNotPermitted(error)) throw error;
-    await fs.promises.copyFile(options.resolvedTarget, linkPath);
+    if (
+      options.copyWithinRoot !== undefined &&
+      !isWithin(path.resolve(options.copyWithinRoot), path.resolve(options.resolvedTarget))
+    ) {
+      // Keep the privileged-symlink failure — do not materialize escape targets.
+      throw error;
+    }
+    const copyFrom = options.copySource ?? options.resolvedTarget;
+    try {
+      await fs.promises.stat(copyFrom);
+    } catch {
+      throw new Error(`the assembled bundle contains a dangling symlink: ${linkPath}`);
+    }
+    await fs.promises.copyFile(copyFrom, linkPath);
   }
 }
 
@@ -164,6 +184,8 @@ async function copyTreeVerbatimWalk(source: string, destination: string): Promis
     await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
     await createBundleLink(destinationPath, mapped.target, type, {
       resolvedTarget: mapped.resolvedTarget,
+      copySource: resolvedSource,
+      copyWithinRoot: destinationRoot,
     });
   }
 }

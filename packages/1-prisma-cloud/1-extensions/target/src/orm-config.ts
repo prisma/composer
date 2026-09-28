@@ -81,21 +81,33 @@ export async function resolveMigrationsDir(configPath: string): Promise<string> 
   return (await resolveOrmConfig(configPath)).migrationsDir;
 }
 
+/** Percent-encode each path segment so `#` / `?` stay path data, not URL delimiters. */
+function encodeFileUrlPathname(pathname: string): string {
+  return pathname
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
 /**
  * `file://` href for an absolute filesystem path, without `node:url`
  * (invariant 5). Bare Windows paths (`C:\…`) cannot be passed to `import()` —
- * the loader treats `C:` as the URL protocol.
+ * the loader treats `C:` as the URL protocol. Path segments are encoded so a
+ * directory name containing `#` or `?` is not parsed as a fragment/query.
  */
 export function fileUrlHrefFromAbsolutePath(absolutePath: string): string {
   const normalized = absolutePath.replace(/\\/g, '/');
   if (/^[a-zA-Z]:\//.test(normalized)) {
-    return new URL(`file:///${normalized}`).href;
+    // Drive letter stays literal (`C:`); only segments after it are encoded.
+    const drive = normalized.slice(0, 2);
+    const tail = encodeFileUrlPathname(normalized.slice(2));
+    return `file:///${drive}${tail}`;
   }
   if (normalized.startsWith('//')) {
     // UNC \\server\share\path → file://server/share/path
-    return new URL(`file:${normalized}`).href;
+    return `file:${encodeFileUrlPathname(normalized)}`;
   }
-  return new URL(`file://${normalized}`).href;
+  return `file://${encodeFileUrlPathname(normalized)}`;
 }
 
 /** Loads the emitted `contract.json` at the resolved artifact path. */

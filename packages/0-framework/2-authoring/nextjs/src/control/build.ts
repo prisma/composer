@@ -199,6 +199,8 @@ async function stageEscapingTracingRootLinks(
     await fs.promises.unlink(linkPath);
     await createBundleLink(linkPath, path.relative(path.dirname(linkPath), stagedAt), type, {
       resolvedTarget: stagedAt,
+      copySource: stagedAt,
+      copyWithinRoot: bundleDir,
     });
   }
   return [...stagedSources];

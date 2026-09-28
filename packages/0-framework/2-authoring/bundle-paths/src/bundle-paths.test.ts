@@ -146,4 +146,73 @@ describe('createBundleLink', () => {
     expect(fs.existsSync(path.join(linkPath, 'index.js'))).toBe(true);
     await assertBundleSymlinksStayInside(root);
   });
+
+  test('win32 file-copy fallback refuses targets outside copyWithinRoot', async () => {
+    const root = scratch();
+    const outside = path.join(scratch(), 'secret.txt');
+    fs.writeFileSync(outside, 'secret\n');
+    const linkPath = path.join(root, 'leaked');
+    const originalSymlink = fs.promises.symlink;
+    fs.promises.symlink = (async () => {
+      throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
+    }) as typeof fs.promises.symlink;
+    try {
+      await expect(
+        createBundleLink(linkPath, outside, 'file', {
+          resolvedTarget: outside,
+          copyWithinRoot: root,
+          platform: 'win32',
+        }),
+      ).rejects.toMatchObject({ code: 'EPERM' });
+      expect(fs.existsSync(linkPath)).toBe(false);
+    } finally {
+      fs.promises.symlink = originalSymlink;
+    }
+  });
+
+  test('win32 file-copy fallback names a dangling target instead of ENOENT', async () => {
+    const root = scratch();
+    const missing = path.join(root, 'gone.txt');
+    const linkPath = path.join(root, 'dangling');
+    const originalSymlink = fs.promises.symlink;
+    fs.promises.symlink = (async () => {
+      throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
+    }) as typeof fs.promises.symlink;
+    try {
+      await expect(
+        createBundleLink(linkPath, 'gone.txt', 'file', {
+          resolvedTarget: missing,
+          copyWithinRoot: root,
+          platform: 'win32',
+        }),
+      ).rejects.toThrow(/dangling symlink/);
+      expect(fs.existsSync(linkPath)).toBe(false);
+    } finally {
+      fs.promises.symlink = originalSymlink;
+    }
+  });
+
+  test('win32 file-copy fallback reads copySource when the destination target is not there yet', async () => {
+    const root = scratch();
+    const sourceFile = path.join(root, 'source.txt');
+    fs.writeFileSync(sourceFile, 'from-source\n');
+    const destTarget = path.join(root, 'not-copied-yet.txt');
+    const linkPath = path.join(root, 'link.txt');
+    const originalSymlink = fs.promises.symlink;
+    fs.promises.symlink = (async () => {
+      throw Object.assign(new Error('not permitted'), { code: 'EPERM' });
+    }) as typeof fs.promises.symlink;
+    try {
+      await createBundleLink(linkPath, 'not-copied-yet.txt', 'file', {
+        resolvedTarget: destTarget,
+        copySource: sourceFile,
+        copyWithinRoot: root,
+        platform: 'win32',
+      });
+      expect(fs.readFileSync(linkPath, 'utf8')).toBe('from-source\n');
+      expect(fs.existsSync(destTarget)).toBe(false);
+    } finally {
+      fs.promises.symlink = originalSymlink;
+    }
+  });
 });
