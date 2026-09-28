@@ -21,6 +21,29 @@ function moduleUrl(root: string): string {
 }
 
 /**
+ * Same file/dir even when Windows reports the path as 8.3 (`RUNNER~1`) on one
+ * side and the long form (`runneradmin`) on the other — common when comparing
+ * `os.tmpdir()` paths to junction/`realpath` results.
+ */
+function isSamePath(a: string, b: string): boolean {
+  if (path.resolve(a) === path.resolve(b)) return true;
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    if (sa.ino !== 0 && sb.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino) {
+      return true;
+    }
+  } catch {
+    // fall through to native realpath
+  }
+  try {
+    return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Writes a `next build` standalone tree with the app nested at `apps/web` (the
  * monorepo shape — `outputFileTracingRoot` above the app), plus the client assets
  * Next omits (`.next/static`, `public/` at the app root, NOT in standalone) and
@@ -186,7 +209,7 @@ describe('assemble()', () => {
       );
     }
     expect(fs.readFileSync(path.join(semverTarget, 'index.js'), 'utf8')).toContain('6.3.1');
-    expect(result.watch).toContain(source);
+    expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
   }, 20_000);
 
   test('stages and remaps an absolute link that points into the tracing root outside standalone', async () => {
@@ -233,7 +256,7 @@ describe('assemble()', () => {
       path.resolve(semverTarget),
     );
     expect(fs.readFileSync(path.join(semverLink, 'index.js'), 'utf8')).toContain('6.3.1');
-    expect((result.watch ?? []).map((p) => fs.realpathSync(p))).toContain(fs.realpathSync(source));
+    expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
   }, 20_000);
 
   test('refuses a manifest whose app location escapes its tracing root', async () => {
