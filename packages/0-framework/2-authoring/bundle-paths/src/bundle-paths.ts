@@ -34,6 +34,13 @@ function isNotPermitted(error: unknown): boolean {
  * `copySource` (source-tree path) when set, otherwise `resolvedTarget`, and
  * only when the target exists and stays inside `copyWithinRoot` (ADR-0047:
  * never dereference an escaping link into the artifact).
+ *
+ * Junction/symlink strategies may temporarily store an escaping
+ * `resolvedTarget` (pnpm absolute junctions into the tracing-root store);
+ * later staging rewrites them, and `assertBundleSymlinksStayInside` is the
+ * final gate. Only the file-copy fallback must refuse escapes — copying would
+ * materialize deploy-machine content as a regular file with no link left to
+ * validate.
  */
 export async function createBundleLink(
   linkPath: string,
@@ -43,21 +50,13 @@ export async function createBundleLink(
     resolvedTarget: string;
     /** Absolute path to copy from when the file fallback runs (usually the source tree). */
     copySource?: string;
-    /** Bundle root every materialized link target must stay inside (ADR-0047). */
+    /** Bundle root the file-copy fallback must stay inside (ADR-0047). */
     copyWithinRoot: string;
     platform?: NodeJS.Platform;
   },
 ): Promise<void> {
   const platform = options.platform ?? process.platform;
   const strategy = bundleLinkStrategy(platform, type);
-  const withinRoot = path.resolve(options.copyWithinRoot);
-  const resolvedTarget = path.resolve(options.resolvedTarget);
-
-  if (!isWithin(withinRoot, resolvedTarget)) {
-    throw new Error(
-      `refusing to materialize a link whose target escapes the bundle: ${linkPath} -> ${options.resolvedTarget}`,
-    );
-  }
 
   if (strategy === 'junction') {
     // Junctions ignore a relative target and resolve it against cwd; always
@@ -75,6 +74,12 @@ export async function createBundleLink(
     await fs.promises.symlink(target, linkPath, 'file');
   } catch (error) {
     if (!isNotPermitted(error)) throw error;
+    if (!isWithin(path.resolve(options.copyWithinRoot), path.resolve(options.resolvedTarget))) {
+      throw new Error(
+        `refusing to materialize a file link whose target escapes the bundle: ${linkPath} -> ${options.resolvedTarget}`,
+        { cause: error },
+      );
+    }
     const copyFrom = options.copySource ?? options.resolvedTarget;
     try {
       await fs.promises.stat(copyFrom);
