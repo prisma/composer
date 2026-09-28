@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import {
+  fileUrlHrefFromAbsolutePath,
   loadContractJson,
   type PnExtensionPack,
   packHeadRefHashes,
@@ -74,6 +75,31 @@ describe('resolveOrmConfig', () => {
   test('loadContractJson reads the emitted contract the config identifies', async () => {
     const project = await resolveOrmConfig(widgetConfig);
     expect(await loadContractJson(project.contractArtifactPath)).toEqual(widgetContractJson);
+  });
+
+  test('fileUrlHrefFromAbsolutePath turns Windows drive paths into file:// URLs', () => {
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\x\contract.json`)).toBe(
+      'file:///C:/Users/x/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\My Name\contract.json`)).toBe(
+      'file:///C:/Users/My%20Name/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath('/tmp/contract.json')).toBe('file:///tmp/contract.json');
+  });
+
+  test('fileUrlHrefFromAbsolutePath percent-encodes # and ? in path segments', () => {
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\a#b\contract.json`)).toBe(
+      'file:///C:/Users/a%23b/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath(String.raw`C:\Users\a?b\contract.json`)).toBe(
+      'file:///C:/Users/a%3Fb/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath('/tmp/a#b/contract.json')).toBe(
+      'file:///tmp/a%23b/contract.json',
+    );
+    expect(fileUrlHrefFromAbsolutePath('/tmp/a?b/contract.json')).toBe(
+      'file:///tmp/a%3Fb/contract.json',
+    );
   });
 
   test('surfaces declared extension packs with their contract-space heads', async () => {
