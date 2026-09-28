@@ -75,8 +75,16 @@ describe('copyTreeVerbatim', () => {
 
     await copyTreeVerbatim(source, destination);
 
-    expect(fs.lstatSync(path.join(destination, 'pg')).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(path.join(destination, 'pg'))).toBe('pg-abc123');
+    const linkPath = path.join(destination, 'pg');
+    expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    const rawTarget = fs.readlinkSync(linkPath);
+    expect(path.resolve(path.dirname(linkPath), rawTarget)).toBe(
+      path.resolve(destination, 'pg-abc123'),
+    );
+    if (process.platform !== 'win32') {
+      expect(rawTarget).toBe('pg-abc123');
+    }
     await assertBundleSymlinksStayInside(destination);
   });
 });

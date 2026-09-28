@@ -113,9 +113,15 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(
       true,
     );
-    expect(fs.readlinkSync(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe(
-      'next',
+    const nextLinked = path.join(workDir, 'bundle', 'node_modules', 'next-linked');
+    expect(fs.lstatSync(nextLinked).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(nextLinked), fs.readlinkSync(nextLinked))).toBe(
+      path.resolve(workDir, 'bundle', 'node_modules', 'next'),
     );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(nextLinked)).toBe('next');
+    }
     // The documented copy: static + public placed beside the app's server.js.
     expect(fs.existsSync(path.join(bundleApp, '.next', 'static', 'chunk.js'))).toBe(true);
     expect(fs.existsSync(path.join(bundleApp, 'public', 'favicon.ico'))).toBe(true);
@@ -167,18 +173,19 @@ describe('assemble()', () => {
       'node_modules',
       '.pnpm',
     );
-    expect(
-      fs
-        .readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))
-        .split(path.sep)
-        .join('/'),
-    ).toBe('../semver@6.3.1/node_modules/semver');
-    expect(
-      fs.readFileSync(
-        path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),
-        'utf8',
-      ),
-    ).toContain('6.3.1');
+    const semverLink = path.join(bundleStore, 'node_modules', 'semver');
+    const semverTarget = path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver');
+    expect(fs.lstatSync(semverLink).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(semverLink), fs.readlinkSync(semverLink))).toBe(
+      path.resolve(semverTarget),
+    );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(semverLink).split(path.sep).join('/')).toBe(
+        '../semver@6.3.1/node_modules/semver',
+      );
+    }
+    expect(fs.readFileSync(path.join(semverTarget, 'index.js'), 'utf8')).toContain('6.3.1');
     expect(result.watch).toContain(source);
   }, 20_000);
 
