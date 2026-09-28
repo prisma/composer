@@ -1,0 +1,51 @@
+name: Windows assemble smoke
+
+# One-off / on-demand check that Next assemble on windows-latest keeps
+# in-tree directory links working via junctions (no Developer Mode needed
+# for the assembled artifact). Not part of the required CI gate.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/0-framework/2-authoring/bundle-paths/**'
+      - 'packages/0-framework/2-authoring/nextjs/**'
+      - 'packages/0-framework/2-authoring/node/**'
+      - 'scripts/windows-assemble-smoke.ts'
+      - '.github/workflows/windows-assemble-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Assemble Next fixture (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build packages
+        run: pnpm build
+      - name: Link built workspace binaries on Windows
+        run: pnpm install --frozen-lockfile --offline --ignore-scripts
+      - name: Probe symlink privilege
+        shell: pwsh
+        run: |
+          whoami /priv | Select-String "SeCreateSymbolicLinkPrivilege"
+          $probe = Join-Path $env:TEMP ("symlink-probe-" + [guid]::NewGuid().ToString("N").Substring(0,8))
+          New-Item -ItemType Directory -Path $probe | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $probe "target") | Out-Null
+          try {
+            New-Item -ItemType SymbolicLink -Path (Join-Path $probe "link") -Target (Join-Path $probe "target") | Out-Null
+            Write-Host "dir symlink create: OK (runner has privilege — still assert junctions in smoke)"
+          } catch {
+            Write-Host "dir symlink create: FAIL ($($_.Exception.Message)) — matches stock Windows users"
+          } finally {
+            Remove-Item -Recurse -Force $probe -ErrorAction SilentlyContinue
+          }
+      - name: Windows assemble smoke
+        run: bun scripts/windows-assemble-smoke.ts
