@@ -21,6 +21,29 @@ function moduleUrl(root: string): string {
 }
 
 /**
+ * Same file/dir even when Windows reports the path as 8.3 (`RUNNER~1`) on one
+ * side and the long form (`runneradmin`) on the other — common when comparing
+ * `os.tmpdir()` paths to junction/`realpath` results.
+ */
+function isSamePath(a: string, b: string): boolean {
+  if (path.resolve(a) === path.resolve(b)) return true;
+  try {
+    const sa = fs.statSync(a);
+    const sb = fs.statSync(b);
+    if (sa.ino !== 0 && sb.ino !== 0 && sa.dev === sb.dev && sa.ino === sb.ino) {
+      return true;
+    }
+  } catch {
+    // fall through to native realpath
+  }
+  try {
+    return fs.realpathSync.native(a) === fs.realpathSync.native(b);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Writes a `next build` standalone tree with the app nested at `apps/web` (the
  * monorepo shape — `outputFileTracingRoot` above the app), plus the client assets
  * Next omits (`.next/static`, `public/` at the app root, NOT in standalone) and
@@ -113,9 +136,15 @@ describe('assemble()', () => {
     expect(fs.existsSync(path.join(workDir, 'bundle', 'node_modules', 'next', 'marker.txt'))).toBe(
       true,
     );
-    expect(fs.readlinkSync(path.join(workDir, 'bundle', 'node_modules', 'next-linked'))).toBe(
-      'next',
+    const nextLinked = path.join(workDir, 'bundle', 'node_modules', 'next-linked');
+    expect(fs.lstatSync(nextLinked).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(nextLinked), fs.readlinkSync(nextLinked))).toBe(
+      path.resolve(workDir, 'bundle', 'node_modules', 'next'),
     );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(nextLinked)).toBe('next');
+    }
     // The documented copy: static + public placed beside the app's server.js.
     expect(fs.existsSync(path.join(bundleApp, '.next', 'static', 'chunk.js'))).toBe(true);
     expect(fs.existsSync(path.join(bundleApp, 'public', 'favicon.ico'))).toBe(true);
@@ -167,19 +196,67 @@ describe('assemble()', () => {
       'node_modules',
       '.pnpm',
     );
-    expect(
-      fs
-        .readlinkSync(path.join(bundleStore, 'node_modules', 'semver'))
-        .split(path.sep)
-        .join('/'),
-    ).toBe('../semver@6.3.1/node_modules/semver');
-    expect(
-      fs.readFileSync(
-        path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver', 'index.js'),
-        'utf8',
-      ),
-    ).toContain('6.3.1');
-    expect(result.watch).toContain(source);
+    const semverLink = path.join(bundleStore, 'node_modules', 'semver');
+    const semverTarget = path.join(bundleStore, 'semver@6.3.1', 'node_modules', 'semver');
+    expect(fs.lstatSync(semverLink).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(semverLink), fs.readlinkSync(semverLink))).toBe(
+      path.resolve(semverTarget),
+    );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(semverLink).split(path.sep).join('/')).toBe(
+        '../semver@6.3.1/node_modules/semver',
+      );
+    }
+    expect(fs.readFileSync(path.join(semverTarget, 'index.js'), 'utf8')).toContain('6.3.1');
+    expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
+  }, 20_000);
+
+  test('stages and remaps an absolute link that points into the tracing root outside standalone', async () => {
+    // pnpm on Windows: junctions under .next/standalone often store an absolute
+    // target into the app's node_modules/.pnpm store (outside standalone). The
+    // first remap pass cannot rewrite those; assemble must stage + repoint.
+    const root = makeAppRoot();
+    writeNextBuild(root);
+    const standalone = path.join(root, '.next', 'standalone');
+    const source = path.join(
+      root,
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "6.3.1";\n');
+    const linkDir = path.join(standalone, 'node_modules');
+    fs.mkdirSync(linkDir, { recursive: true });
+    fs.symlinkSync(source, path.join(linkDir, 'semver'), 'dir');
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'storefront.web',
+      cwd,
+      build: nextjs({ module: moduleUrl(root), appDir: '..' }),
+    });
+
+    const semverLink = path.join(result.dir, 'bundle', 'node_modules', 'semver');
+    const semverTarget = path.join(
+      result.dir,
+      'bundle',
+      'node_modules',
+      '.pnpm',
+      'semver@6.3.1',
+      'node_modules',
+      'semver',
+    );
+    expect(fs.lstatSync(semverLink).isSymbolicLink()).toBe(true);
+    expect(path.resolve(path.dirname(semverLink), fs.readlinkSync(semverLink))).toBe(
+      path.resolve(semverTarget),
+    );
+    expect(fs.readFileSync(path.join(semverLink, 'index.js'), 'utf8')).toContain('6.3.1');
+    expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
   }, 20_000);
 
   test('refuses a manifest whose app location escapes its tracing root', async () => {

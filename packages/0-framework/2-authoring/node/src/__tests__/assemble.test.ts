@@ -579,7 +579,13 @@ describe('assemble() — the directory form', () => {
 
     const copied = path.join(result.dir, 'bundle', 'node_modules', 'linked');
     expect(fs.lstatSync(copied).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(copied)).toBe('real');
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(copied), fs.readlinkSync(copied))).toBe(
+      path.resolve(result.dir, 'bundle', 'node_modules', 'real'),
+    );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(copied)).toBe('real');
+    }
   });
 
   test('rejects a dir that is itself a symlink to a directory — hard-errors instead of dereferencing it and copying the target', async () => {
@@ -816,10 +822,25 @@ describe('assemble() — the directory form', () => {
     // The app-level link survives as a link into the staged store, so Node's
     // own resolution finds the dependency the same way it did before assembly.
     const linked = path.join(first.dir, 'bundle', 'node_modules', 'dep');
-    expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(linked).split(path.sep).join('/')).toBe(
-      '.pnpm/dep@1.0.0/node_modules/dep',
+    const depTarget = path.join(
+      first.dir,
+      'bundle',
+      'node_modules',
+      '.pnpm',
+      'dep@1.0.0',
+      'node_modules',
+      'dep',
     );
+    expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
+    // Windows junctions store an absolute target; unix keeps the relative one.
+    expect(path.resolve(path.dirname(linked), fs.readlinkSync(linked))).toBe(
+      path.resolve(depTarget),
+    );
+    if (process.platform !== 'win32') {
+      expect(fs.readlinkSync(linked).split(path.sep).join('/')).toBe(
+        '.pnpm/dep@1.0.0/node_modules/dep',
+      );
+    }
     const loaded = await import(pathToFileURL(path.join(first.dir, first.entry)).href);
     expect(loaded.default).toBe(marker);
 
@@ -827,8 +848,17 @@ describe('assemble() — the directory form', () => {
     expect(treeContents(path.join(second.dir, 'bundle'))).toEqual(
       treeContents(path.join(first.dir, 'bundle')),
     );
-    expect(fs.readlinkSync(path.join(second.dir, 'bundle', 'node_modules', 'dep'))).toBe(
-      fs.readlinkSync(linked),
+    const secondLinked = path.join(second.dir, 'bundle', 'node_modules', 'dep');
+    expect(path.resolve(path.dirname(secondLinked), fs.readlinkSync(secondLinked))).toBe(
+      path.resolve(
+        second.dir,
+        'bundle',
+        'node_modules',
+        '.pnpm',
+        'dep@1.0.0',
+        'node_modules',
+        'dep',
+      ),
     );
   }, 30_000);
 

@@ -30,7 +30,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertBundleSymlinksStayInside, copyTreeVerbatim, isWithin } from '@internal/bundle-paths';
+import {
+  assertBundleSymlinksStayInside,
+  copyTreeVerbatim,
+  createBundleLink,
+  isWithin,
+} from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
 import type { AssembleInput, Bundle } from '@internal/core/deploy';
@@ -214,7 +219,11 @@ async function copyTracedEntry(
       : stagedRuntimePath(realTarget, stagingRoot, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
     const linkType = (await fs.promises.stat(realTarget)).isDirectory() ? 'dir' : 'file';
-    await fs.promises.symlink(linkTarget, destination, linkType);
+    await createBundleLink(destination, linkTarget, linkType, {
+      resolvedTarget: stagedTarget,
+      copySource: realTarget,
+      copyWithinRoot: bundleDir,
+    });
     return;
   }
   if (stat.isDirectory()) {

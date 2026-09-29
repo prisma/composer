@@ -13,7 +13,12 @@
 
 import type { Graph } from '@internal/core';
 import { inputManifest, isSecretSource, paramManifest } from '@internal/core';
-import { isEnvParamSource, isGeneratedParamSource, paramName } from './param.ts';
+import {
+  isEnvParamSource,
+  isGeneratedParamSource,
+  isOriginParamSource,
+  paramName,
+} from './param.ts';
 import { secretName } from './secret.ts';
 
 export interface PreflightName {
@@ -42,7 +47,7 @@ function collectSecretLeafNames(binding: unknown, serviceAddress: string, out: s
   // operator to seed, nothing to check here. Skip it before the object descent
   // (it is a ParamSource object, so an unskipped walk would recurse pointlessly
   // into its payload).
-  if (isGeneratedParamSource(binding)) return;
+  if (isGeneratedParamSource(binding) || isOriginParamSource(binding)) return;
   if (isSecretSource(binding)) {
     out.push(secretName(binding, `an input-binding secret leaf of service "${serviceAddress}"`));
     return;

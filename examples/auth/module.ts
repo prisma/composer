@@ -1,5 +1,5 @@
 import { module } from '@prisma/composer';
-import { envParam, envSecret } from '@prisma/composer-prisma-cloud';
+import { envParam, envSecret, serviceOrigin } from '@prisma/composer-prisma-cloud';
 import { auth } from '@prisma/composer-prisma-cloud/auth';
 import { email } from '@prisma/composer-prisma-cloud/email';
 import { postgres } from '@prisma/composer-prisma-cloud/orm';
@@ -20,7 +20,7 @@ import opsService from './src/ops/service.ts';
  *   - `ops` — the back office: holds the `admin` port (plus the smoke's
  *     read-only outbox dep).
  *
- * `baseUrl` is the PUBLIC origin browsers would see (the api service).
+ * `baseUrl` is the PUBLIC origin browsers would see (the api service's, per stage).
  * `deliveryMode`/`from` are the email module's own boundary params, bound to
  * env vars like the email example, so a stage changes delivery without
  * changing the topology;
@@ -45,7 +45,7 @@ export default module('auth-example', ({ provision }) => {
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db, email: mail.send },
-    params: { baseUrl: envParam('AUTH_BASE_URL') },
+    params: { baseUrl: serviceOrigin('api') },
   });
   provision(apiService, {
     id: 'api',

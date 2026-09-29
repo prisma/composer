@@ -150,6 +150,39 @@ export function isGeneratedParamSource(
   return isParamSource(value) && isGeneratedParamPayload(value.payload);
 }
 
+const PRISMA_CLOUD_ORIGIN_PARAM_SOURCE: unique symbol = Symbol.for(
+  'prisma:prisma-cloud-origin-param-source',
+);
+
+export interface OriginParamPayload {
+  readonly [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true;
+  readonly address: string;
+}
+
+/**
+ * Binds an input leaf to another service's public origin on the stage being deployed,
+ * e.g. `auth()`'s `baseUrl: serviceOrigin('web')`. `address` is the target's provision id.
+ */
+export function serviceOrigin(address: string): ParamSource<OriginParamPayload> {
+  if (typeof address !== 'string' || address.length === 0) {
+    throw new Error(
+      "serviceOrigin() requires the target service's deployment address, e.g. serviceOrigin('web').",
+    );
+  }
+  return paramSource<OriginParamPayload>({ [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address });
+}
+
+/** True iff `value` was built by `serviceOrigin`. */
+export function isOriginParamSource(value: unknown): value is ParamSource<OriginParamPayload> {
+  return (
+    isParamSource(value) &&
+    typeof value.payload === 'object' &&
+    value.payload !== null &&
+    PRISMA_CLOUD_ORIGIN_PARAM_SOURCE in value.payload &&
+    value.payload[PRISMA_CLOUD_ORIGIN_PARAM_SOURCE] === true
+  );
+}
+
 /**
  * Reads the Prisma Cloud env-var name back out of a param binding's opaque
  * source. A source not built by `envParam` (a raw `paramSource(...)` or

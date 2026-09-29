@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import {
   assertBundleSymlinksStayInside,
   copyTreeVerbatim,
+  createBundleLink,
   isWithin,
   repairWindowsDirectorySymlinks,
 } from '@internal/bundle-paths';
@@ -145,13 +146,64 @@ async function missingLinkTargets(bundleDir: string): Promise<string[]> {
   const missing: string[] = [];
   for (const linkPath of await collectSymlinks(bundleDir)) {
     const rawTarget = await fs.promises.readlink(linkPath);
-    if (path.isAbsolute(rawTarget)) continue;
+    // Windows junctions store absolute targets; still stage when that absolute
+    // path resolves inside the bundle and the target is absent.
     const target = path.resolve(path.dirname(linkPath), rawTarget);
     if (!isWithin(bundleDir, target) || (await lstatIfPresent(target)) !== undefined) continue;
     if (await hasSymlinkAncestor(bundleDir, target)) continue;
     missing.push(target);
   }
   return missing;
+}
+
+/**
+ * Absolute junctions (pnpm on Windows) often point from `.next/standalone`
+ * straight into the app's `node_modules/.pnpm/...` under the tracing root —
+ * outside the standalone copy root. After `copyTreeVerbatim` those links still
+ * escape the assembled bundle; stage the real target under the bundle at the
+ * same tracing-root-relative path and repoint the link.
+ */
+async function stageEscapingTracingRootLinks(
+  bundleDir: string,
+  tracedRootReal: string,
+): Promise<string[]> {
+  // Only absolute links into the app's node_modules tree (pnpm virtual store).
+  // Arbitrary escaping links under the tracing root stay rejected by assert.
+  const nodeModulesRoot = path.join(tracedRootReal, 'node_modules');
+  const stagedSources = new Set<string>();
+  for (const linkPath of await collectSymlinks(bundleDir)) {
+    const rawTarget = await fs.promises.readlink(linkPath);
+    let resolved = path.resolve(path.dirname(linkPath), rawTarget);
+    if ((await lstatIfPresent(resolved)) === undefined) continue;
+    try {
+      resolved = await fs.promises.realpath(resolved);
+    } catch {
+      continue;
+    }
+    if (isWithin(bundleDir, resolved)) continue;
+    if (!isWithin(nodeModulesRoot, resolved) && resolved !== nodeModulesRoot) continue;
+
+    const stagedAt = path.join(bundleDir, path.relative(tracedRootReal, resolved));
+    if ((await lstatIfPresent(stagedAt)) === undefined) {
+      await fs.promises.mkdir(path.dirname(stagedAt), { recursive: true });
+      const resolvedStat = await fs.promises.stat(resolved);
+      if (resolvedStat.isDirectory()) {
+        await copyTreeVerbatim(resolved, stagedAt);
+      } else {
+        await fs.promises.copyFile(resolved, stagedAt);
+      }
+      stagedSources.add(resolved);
+    }
+
+    const type = (await fs.promises.stat(stagedAt)).isDirectory() ? 'dir' : 'file';
+    await fs.promises.unlink(linkPath);
+    await createBundleLink(linkPath, path.relative(path.dirname(linkPath), stagedAt), type, {
+      resolvedTarget: stagedAt,
+      copySource: stagedAt,
+      copyWithinRoot: bundleDir,
+    });
+  }
+  return [...stagedSources];
 }
 
 /**
@@ -193,6 +245,9 @@ async function stageMissingStandaloneLinkTargets(
       stagedSources.add(source);
       staged = true;
     }
+  }
+  for (const source of await stageEscapingTracingRootLinks(bundleDir, tracedRootReal)) {
+    stagedSources.add(source);
   }
   return [...stagedSources];
 }

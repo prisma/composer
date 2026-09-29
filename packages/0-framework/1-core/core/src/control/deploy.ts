@@ -69,7 +69,10 @@ export interface ProvisionerDescriptor {
  * that assignment.
  */
 export interface ServiceLowering<P = unknown, S = unknown> {
-  /** Makes the platform-specific thing that will host the service — identity-bearing infrastructure only, no code runs. */
+  /**
+   * Makes the platform-specific thing that will host the service — identity-bearing infrastructure only, no code runs.
+   * Runs before any node lowers, so it must not read `ctx.lowered` or `ctx.services`.
+   */
   provision(ctx: LowerContext): Effect.Effect<P, unknown, unknown>;
   /**
    * Encodes the typed Config into the service's runtime environment. Boot-side
@@ -131,6 +134,8 @@ export interface LowerContext {
   readonly lowered: ReadonlyMap<NodeId, Outputs>;
   /** Every provisioned param value minted this lowering, keyed by edge id (ADR-0031). */
   readonly provisioned: ReadonlyMap<string, unknown>;
+  /** Every service's `provision()` product by address, made before any node serializes. */
+  readonly services?: ReadonlyMap<string, unknown>;
 }
 
 /**
@@ -662,25 +667,35 @@ export function lowering(
       provisioned.set(edgeId, ref);
     }
 
+    const services = new Map<string, unknown>();
+    const ctxFor = (id: NodeId, node: ServiceNode | ResourceNode): LowerContext => ({
+      id,
+      address: id,
+      node,
+      graph,
+      opts,
+      application: applications.get(node.extension),
+      container: containers.get(node.extension),
+      lowered,
+      provisioned,
+      services,
+    });
+
+    // provision() is identity-only; hoisting it lets serialize reference a later service.
+    for (const { id, node } of graph.nodes) {
+      if (node.kind !== 'service') continue;
+      const descriptor = yield* descriptorFor(extensions, node, id);
+      if (descriptor.kind !== 'service') continue;
+      services.set(id, yield* descriptor.provision(ctxFor(id, node)));
+    }
+
     for (const { id, node } of graph.nodes) {
       if (node.kind === 'module') continue; // the transparent root itself — nothing to lower
       // Dependency slots are edges only, never lowered — only module-provisioned
       // resources and services are.
       if (node.kind === 'dependency') continue;
 
-      // A node's graph id IS its deployment address — the same id the bundle
-      // correlation key and the config-key namespace both ride.
-      const ctx: LowerContext = {
-        id,
-        address: id,
-        node: node as ServiceNode | ResourceNode,
-        graph,
-        opts,
-        application: applications.get(node.extension),
-        container: containers.get(node.extension),
-        lowered,
-        provisioned,
-      };
+      const ctx = ctxFor(id, node as ServiceNode | ResourceNode);
 
       const descriptor = yield* descriptorFor(extensions, node, id);
 
@@ -702,7 +717,7 @@ export function lowering(
       // Named distinctly from the outer `provisioned` map (ADR-0031's minted
       // param values, keyed by edge id) — this is the per-node provision()
       // result (e.g. the ComputeService a node is placed into).
-      const provisionedNode = yield* descriptor.provision(ctx);
+      const provisionedNode = services.get(id);
       const typedConfig = buildConfig(service, id, graph, lowered, provisioned);
       const serialized = yield* descriptor.serialize(ctx, provisionedNode, typedConfig);
       const bundle = opts.bundles[id];
