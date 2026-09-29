@@ -454,9 +454,9 @@ type ContractBase = Omit<
       readonly defaults: readonly [
         {
           readonly ref: {
+            readonly entry: 'order';
+            readonly field: 'id';
             readonly namespace: 'public';
-            readonly table: 'order';
-            readonly column: 'id';
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv4' };
         },

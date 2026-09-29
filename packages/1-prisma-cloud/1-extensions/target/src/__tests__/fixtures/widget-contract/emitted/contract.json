@@ -90,7 +90,7 @@
     "storageHash": "6d63ff5784d780f7f8858becf843959dccf1e3272eab21ce3396dca9d255bd16"
   },
   "execution": {
-    "executionHash": "eeaf1f4046a71ed6f02d863393397a283adf15b8666139245223083206542e82",
+    "executionHash": "135e2930e315fc22e070649b3dfc0bbbea85c31b9956875c3ec4fba757dd1d88",
     "mutations": {
       "defaults": [
         {
@@ -99,9 +99,9 @@
             "kind": "generator"
           },
           "ref": {
-            "column": "id",
-            "namespace": "public",
-            "table": "Widget"
+            "entry": "Widget",
+            "field": "id",
+            "namespace": "public"
           }
         }
       ]
