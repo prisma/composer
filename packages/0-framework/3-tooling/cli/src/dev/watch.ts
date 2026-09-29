@@ -49,7 +49,8 @@ export function watchTargetsFrom(bundles: Readonly<Record<string, Bundle>>): {
 export interface WatchHandle {
   /** Resolves once chokidar's OS-level watches are attached — a change made before this can be missed entirely. Also resolves on `stop()` so an awaiting caller can never hang. */
   readonly ready: Promise<void>;
-  stop(): void;
+  /** Awaits every watcher close; rejects with an AggregateError if any close fails. */
+  stop(): Promise<void>;
 }
 
 /**
@@ -72,8 +73,11 @@ export function startWatch(
   onError?: (error: unknown) => void,
 ): WatchHandle {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  let closing: Promise<void> | undefined;
 
   const trigger = (): void => {
+    if (stopped) return;
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = undefined;
@@ -135,9 +139,19 @@ export function startWatch(
   return {
     ready,
     stop: () => {
+      if (closing !== undefined) return closing;
+      stopped = true;
       if (timer !== undefined) clearTimeout(timer);
       markReady();
-      for (const watcher of watchers) void watcher.close();
+      closing = Promise.allSettled(
+        watchers.map((watcher) => Promise.resolve().then(() => watcher.close())),
+      ).then((results) => {
+        const failures = results.flatMap((result) =>
+          result.status === 'rejected' ? [result.reason] : [],
+        );
+        if (failures.length > 0) throw new AggregateError(failures, 'Failed to close dev watchers');
+      });
+      return closing;
     },
   };
 }

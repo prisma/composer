@@ -2,7 +2,7 @@
  * The programmatic `dev` operation (`@prisma/composer/control`): typed input,
  * events out through `onEvent`, lifetime owned by the returned DevSession —
  * no argv, no console, no process.exit, and NEVER any process signal
- * handling (the host owns signals; the CLI adapter dev/run-dev.ts shows the
+ * handling (the host owns signals; the CLI adapter family/commands/dev.ts shows the
  * pattern). The executor loads lazily, so importing this module executes
  * nothing; an executor that fails to load comes back as a structured
  * failure, never a throw out of the host.
@@ -26,7 +26,7 @@ export type DevEvent =
       readonly cwd: string;
     }
   | { readonly kind: 'stopping' }
-  /** One service refused to stop during stop(); teardown continues and `stopped` still follows. */
+  /** Watcher or service cleanup failed during stop(); teardown continues and `stopped` still follows. */
   | { readonly kind: 'stop-error'; readonly message: string }
   | { readonly kind: 'stopped' };
 
@@ -38,9 +38,7 @@ export interface DevInput {
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
 }
 
-/** A running dev session. The operation NEVER touches process signal handlers —
- * the host owns signals (and must evict alchemy's import-time SIGINT/SIGTERM
- * listeners before installing its own; see run-dev.ts). */
+/** A running dev session. The host owns process signals and calls stop() to shut down. */
 export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
