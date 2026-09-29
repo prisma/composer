@@ -166,10 +166,15 @@ async function missingLinkTargets(bundleDir: string): Promise<string[]> {
 async function stageEscapingTracingRootLinks(
   bundleDir: string,
   tracedRootReal: string,
+  appDirReal: string,
 ): Promise<string[]> {
   // Only absolute links into the app's node_modules tree (pnpm virtual store).
   // Arbitrary escaping links under the tracing root stay rejected by assert.
-  const nodeModulesRoot = path.join(tracedRootReal, 'node_modules');
+  // The app's differs from the tracing root's when Next roots tracing above it.
+  const nodeModulesRoots = [
+    path.join(tracedRootReal, 'node_modules'),
+    ...(isWithin(tracedRootReal, appDirReal) ? [path.join(appDirReal, 'node_modules')] : []),
+  ];
   const stagedSources = new Set<string>();
   for (const linkPath of await collectSymlinks(bundleDir)) {
     const rawTarget = await fs.promises.readlink(linkPath);
@@ -181,7 +186,7 @@ async function stageEscapingTracingRootLinks(
       continue;
     }
     if (isWithin(bundleDir, resolved)) continue;
-    if (!isWithin(nodeModulesRoot, resolved) && resolved !== nodeModulesRoot) continue;
+    if (!nodeModulesRoots.some((root) => isWithin(root, resolved))) continue;
 
     const stagedAt = path.join(bundleDir, path.relative(tracedRootReal, resolved));
     if ((await lstatIfPresent(stagedAt)) === undefined) {
@@ -215,6 +220,7 @@ async function stageEscapingTracingRootLinks(
 async function stageMissingStandaloneLinkTargets(
   bundleDir: string,
   manifest: ServerFilesManifest,
+  appDir: string,
 ): Promise<string[]> {
   const tracingRoot = manifest.tracingRoot;
   if (tracingRoot === undefined) {
@@ -246,7 +252,8 @@ async function stageMissingStandaloneLinkTargets(
       staged = true;
     }
   }
-  for (const source of await stageEscapingTracingRootLinks(bundleDir, tracedRootReal)) {
+  const appDirReal = await fs.promises.realpath(appDir);
+  for (const source of await stageEscapingTracingRootLinks(bundleDir, tracedRootReal, appDirReal)) {
     stagedSources.add(source);
   }
   return [...stagedSources];
@@ -291,7 +298,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   // links stay links; the packager validates that every target remains inside
   // the assembled bundle before emitting it into the archive.
   await copyTreeVerbatim(standaloneRoot, bundleDir);
-  const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest);
+  const stagedLinkTargets = await stageMissingStandaloneLinkTargets(bundleDir, manifest, appDir);
   // Staging can make previously dangling directory links repairable.
   await repairWindowsDirectorySymlinks(bundleDir);
 

@@ -259,6 +259,44 @@ describe('assemble()', () => {
     expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
   }, 20_000);
 
+  test("stages an absolute link into the app's own node_modules when tracing is rooted above the app", async () => {
+    // Next roots tracing at a parent holding another lockfile; the pnpm store is the app's.
+    const tracingRoot = makeAppRoot();
+    const appDir = path.join(tracingRoot, 'app');
+    fs.mkdirSync(path.join(appDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(appDir, 'src', 'service.ts'), 'export default {};\n');
+    const standaloneApp = path.join(appDir, '.next', 'standalone', 'app');
+    fs.mkdirSync(path.join(standaloneApp, '.next', 'node_modules'), { recursive: true });
+    fs.writeFileSync(path.join(standaloneApp, 'server.js'), '// standalone server\n');
+    fs.writeFileSync(
+      path.join(appDir, '.next', 'required-server-files.json'),
+      JSON.stringify({ relativeAppDir: 'app', config: { outputFileTracingRoot: tracingRoot } }),
+    );
+    const source = path.join(appDir, 'node_modules', '.pnpm', 'pg@8.22.0', 'node_modules', 'pg');
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'index.js'), 'module.exports = "pg";\n');
+    fs.symlinkSync(source, path.join(standaloneApp, '.next', 'node_modules', 'pg-5a607d71'), 'dir');
+
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-nextjs-cwd-'));
+    tmpDirs.push(cwd);
+    const result = await assemble({
+      address: 'app',
+      cwd,
+      build: nextjs({
+        module: pathToFileURL(path.join(appDir, 'src', 'service.ts')).href,
+        appDir: '..',
+      }),
+    });
+
+    const bundleApp = path.join(result.dir, 'bundle', 'app');
+    const link = path.join(bundleApp, '.next', 'node_modules', 'pg-5a607d71');
+    const staged = path.join(bundleApp, 'node_modules', '.pnpm', 'pg@8.22.0', 'node_modules', 'pg');
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(path.resolve(path.dirname(link), fs.readlinkSync(link))).toBe(path.resolve(staged));
+    expect(fs.readFileSync(path.join(link, 'index.js'), 'utf8')).toContain('pg');
+    expect((result.watch ?? []).some((p) => isSamePath(p, source))).toBe(true);
+  }, 20_000);
+
   test('refuses a manifest whose app location escapes its tracing root', async () => {
     const root = makeAppRoot();
     writeNextBuild(root);
