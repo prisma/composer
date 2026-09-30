@@ -58,20 +58,24 @@ describe('the generated stack files, evaluated', () => {
     });
   });
 
+  const noSectionFile = path.join(fixtureDir, '..', 'stack-import-no-section', 'prisma.config.ts');
+
   /**
    * A file that inherits its section from a parent prisma.config.ts, or a
    * programmatic caller naming the wrong file, would otherwise fail inside
    * lower() with a TypeError.
    */
-  test('both stacks refuse a prisma.config.ts that declares no composer section, naming it', () => {
-    const configFile = path.join(fixtureDir, '..', 'stack-import-no-section', 'prisma.config.ts');
-    for (const write of [writeStackFile, writeDevStackFile]) {
-      const child = spawnStack(write({ ...stackInput, configFile }));
+  for (const [stack, write] of [
+    ['deploy', writeStackFile],
+    ['dev', writeDevStackFile],
+  ] as const) {
+    test(`the ${stack} stack refuses a prisma.config.ts that declares no composer section, naming it`, () => {
+      const child = spawnStack(write({ ...stackInput, configFile: noSectionFile }));
       expect(child.status).not.toBe(0);
       expect(child.stdout).toBe('');
       expect(child.stderr).toContain(
-        `${configFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`,
+        `${noSectionFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`,
       );
-    }
-  });
+    });
+  }
 });
