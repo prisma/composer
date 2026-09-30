@@ -95,19 +95,40 @@ describe('findRetiredNameMentions', () => {
     );
   });
 
-  it('scans package source but not package tests, fixtures, node_modules or the rendered site', () => {
+  it('scans package source, including folders named test or fixtures, but not __tests__, test files, node_modules or the rendered site', () => {
     write('packages/core/src/message.ts', `export const hint = 'run ${OLD} dev';\n`);
-    write('packages/core/src/__tests__/message.test.ts', `'${OLD} dev'\n`);
+    write('packages/core/src/test/message.ts', `'${OLD} dev'\n`);
+    write('packages/core/src/fixtures/message.ts', `'${OLD} dev'\n`);
+    write('packages/core/src/__tests__/message.ts', `'${OLD} dev'\n`);
+    write('packages/core/src/__tests__/fixtures/app.ts', `'${OLD} dev'\n`);
     write('packages/core/src/message.test.ts', `'${OLD} dev'\n`);
-    write('packages/core/test/fixtures/app.ts', `'${OLD} dev'\n`);
     write('examples/app/node_modules/pkg/README.md', `${OLD} deploy\n`);
     write('website/src/generated/content.ts', `${OLD} deploy\n`);
     write('docs/design/adr.md', `${OLD} deploy\n`);
 
     assert.deepEqual(
       findRetiredNameMentions(base, {}).map(({ file }) => file),
-      ['packages/core/src/message.ts'],
+      [
+        'packages/core/src/fixtures/message.ts',
+        'packages/core/src/message.ts',
+        'packages/core/src/test/message.ts',
+      ],
     );
+  });
+
+  it('finds a relative invocation and the Windows and JavaScript entry names', () => {
+    write(
+      'docs/guides/deploying.md',
+      [`./${OLD} deploy`, `node_modules\\.bin\\${OLD}.cmd deploy`, `node ${OLD}.js deploy`].join(
+        '\n',
+      ),
+    );
+
+    assert.deepEqual(kindsIn('docs/guides/deploying.md'), [
+      { line: 1, kind: 'binary name' },
+      { line: 2, kind: 'binary name' },
+      { line: 3, kind: 'binary name' },
+    ]);
   });
 
   it('accepts exactly the allowlisted count of findings', () => {
