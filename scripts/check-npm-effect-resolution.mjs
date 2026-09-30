@@ -200,29 +200,15 @@ const ALCHEMY_PROBE = [
 
 /**
  * The same import, for the adversarial shape: on failure it reports whether
- * `effect` is what broke. A wrong `effect` shows up either as a missing
- * export of an `effect` module (the message or stack names
- * `node_modules/effect/`, `@effect/` or an `effect` module specifier), or as
- * `X.Y is not a function` where the installed `effect` has no `X.Y`. Paths
- * are matched on `node_modules/`, because the scratch directory's own name
- * contains "effect".
+ * the installed `effect` is what broke, decided by ./effect-blame.mjs.
  */
 const ALCHEMY_BLAME_PROBE = `
+import { blamesEffect } from ${JSON.stringify(new URL('./effect-blame.mjs', import.meta.url).href)};
 try {
   ${ALCHEMY_PROBE}
 } catch (error) {
-  const message = String(error?.message ?? error);
-  const text = message + '\\n' + String(error?.stack ?? '');
-  const namesEffect =
-    /node_modules\\/(?:effect|@effect\\/[^/]+)\\//.test(text) ||
-    /module ['"](?:effect|@effect\\/[^'"]+)(?:\\/[^'"]*)?['"]/.test(text);
-  const missing = /(\\w+)\\.(\\w+) is not a function/.exec(message);
-  let effectLacksIt = false;
-  if (missing !== null) {
-    const effect = await import('effect');
-    effectLacksIt = typeof effect[missing[1]]?.[missing[2]] !== 'function';
-  }
-  console.log(JSON.stringify({ message, blamesEffect: namesEffect || effectLacksIt }));
+  const effect = await import('effect');
+  console.log(JSON.stringify({ message: String(error?.message ?? error), blamesEffect: blamesEffect(error, effect) }));
   process.exit(1);
 }
 `;
