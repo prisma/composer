@@ -8,7 +8,7 @@ alwaysApply: false
 
 Some packages call tsdown's programmatic `build()` at **runtime** (not as their
 own build step) — e.g. `@prisma/composer-node` and `@prisma/composer-nextjs` bundle the
-user's server inside `assemble()` during `prisma-composer deploy`.
+user's server inside `assemble()` during `prisma deploy`.
 
 tsdown's `build()` **auto-discovers a `tsdown.config.ts`** from the working
 directory. Every publishable package now has one (it enables tsdown's `exports`

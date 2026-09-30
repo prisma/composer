@@ -109,7 +109,7 @@ A few conventions that will save review round-trips:
 
 Use the [bug report issue template](./.github/ISSUE_TEMPLATE/bug_report.yml). Please include:
 
-- The published package and version (e.g. `@prisma/composer@0.1.0`, or the `prisma-composer` CLI version).
+- The published package and version (e.g. `@prisma/composer@0.1.0`, or `@prisma/composer-cli`, which runs `prisma deploy` and `prisma dev`).
 - A minimal reproduction (the smaller the better — we cannot triage "my whole app is broken" reports without isolation).
 - Expected vs actual behaviour.
 - Whether you are on the latest minor; if not, please upgrade and re-verify before filing.

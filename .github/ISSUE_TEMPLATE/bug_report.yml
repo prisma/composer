@@ -16,7 +16,7 @@ body:
     id: package-and-version
     attributes:
       label: Package and version
-      description: Which package (or the `prisma-composer` CLI) and version are you using?
+      description: Which package (for `prisma deploy` or `prisma dev`, `@prisma/composer-cli`) and version are you using?
       placeholder: "e.g. @prisma/composer@0.1.0"
     validations:
       required: true
