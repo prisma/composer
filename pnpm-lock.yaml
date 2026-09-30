@@ -741,9 +741,6 @@ importers:
       '@prisma/cli-engine':
         specifier: 0.6.2
         version: 0.6.2(@prisma/management-api-sdk@1.80.0)
-      c12:
-        specifier: ^3.3.4
-        version: 3.3.4
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
@@ -1252,9 +1249,6 @@ importers:
       arktype:
         specifier: ^2.2.3
         version: 2.2.3
-      c12:
-        specifier: ^3.3.4
-        version: 3.3.4
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
@@ -1310,9 +1304,6 @@ importers:
       alchemy:
         specifier: 2.0.0-beta.78
         version: 2.0.0-beta.78(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1))(@types/node@26.1.1)(@types/react@19.2.17)(@vercel/nft@1.10.2)(effect@4.0.0-rc.115)(mongodb@6.21.0(@aws-sdk/credential-providers@3.1077.0))(pg@8.22.0)(typescript@6.0.3)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.0))(vitest@4.1.10(@types/node@26.1.1)(vite@8.1.2(@types/node@26.1.1)(esbuild@0.28.2)(jiti@2.6.1)(yaml@2.9.0)))(ws@8.21.3)
-      c12:
-        specifier: ^3.3.4
-        version: 3.3.4
       cross-spawn:
         specifier: ^7.0.6
         version: 7.0.6
