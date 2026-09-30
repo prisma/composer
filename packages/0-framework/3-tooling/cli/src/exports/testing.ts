@@ -1,6 +1,6 @@
 /**
  * Public surface (the `./testing` subpath, republished through
- * `@prisma/composer/testing`): the fixture-backed operations double, and
+ * `@prisma/composer-cli/testing`): the fixture-backed operations double, and
  * the dev stack-file renderer for integration tests that drive Alchemy
  * directly. Implementation lives in ../testing/operations-double.ts and
  * ../dev/generate-dev-stack.ts.
