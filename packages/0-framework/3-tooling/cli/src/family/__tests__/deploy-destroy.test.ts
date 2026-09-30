@@ -24,6 +24,7 @@ import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { type ControlDouble, createControlDouble } from '../../testing/control-double.ts';
 import { createDestroyCommand } from '../commands/destroy.ts';
 import { createComposerFamily } from '../family.ts';
+import { validComposerSection } from './fixtures/composer-section.ts';
 
 type Fixtures = Parameters<typeof createControlDouble>[0];
 
@@ -76,7 +77,7 @@ function composerCli(
   const cli = createTestCli({
     commandFamilies: [family],
     commands: { ...family.commands, destroy: createDestroyCommand(double.operations) },
-    config: {},
+    config: { composer: validComposerSection() },
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
   });

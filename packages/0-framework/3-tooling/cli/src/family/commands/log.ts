@@ -77,7 +77,7 @@ export const createLogCommand = (operations: ComposerOperations) =>
           signal: ctx.signal,
           onEvent: reportLogEvent,
         },
-        { configPath: ctx.config.configPath },
+        { config: ctx.config },
       );
 
       if (!result.ok) return notOk(toEngineError(result.failure));

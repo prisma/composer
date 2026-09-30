@@ -70,13 +70,13 @@ export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
  *  own client and workspace id rather than anything read from the env. */
 export function operationDeps(spec: {
   readonly alchemy: RunAlchemy;
-  readonly configPath: string | undefined;
+  readonly config: OperationDeps['config'];
   readonly workspaceId: string | undefined;
   readonly client: ManagementApiClient;
 }): OperationDeps {
   return {
     alchemy: spec.alchemy,
-    configPath: spec.configPath,
+    config: spec.config,
     credentials: { workspaceId: spec.workspaceId, client: spec.client },
   };
 }

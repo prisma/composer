@@ -208,7 +208,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
           cwd: ctx.cwd,
           onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
-        { alchemy: coalescedConverge(alchemy), configPath: ctx.config.configPath },
+        { alchemy: coalescedConverge(alchemy), config: ctx.config },
       );
 
       // Nothing is live yet, so the ending is the converge's — settled by the

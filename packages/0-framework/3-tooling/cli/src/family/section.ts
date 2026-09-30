@@ -1,158 +1,254 @@
 /**
- * Composer's projection into `prisma.config.ts` — the `composer` section.
- *
- * The section is deliberately tiny. Composer's real configuration lives in
- * `prisma-composer.config.ts`, which holds executable values (Effect layers,
- * provider factories, container lifecycles) and can only be understood by
- * evaluating it inside a running command. A config-section validator loads
- * with the command tree at start-up and must be dependency-light and total,
- * so it is the wrong place to evaluate any of that. What the section carries
- * is therefore only the one fact the engine can usefully know before a
- * command runs: WHERE that file is, when the user wants to say so.
- *
- * Its fields grow only by amending the slice contract.
+ * The `composer` section of `prisma.config.ts` is Composer's whole configuration.
+ * The validator checks only the fields that identify each descriptor and hands the descriptors to the command as the config file's own objects.
  */
-import {
-  type ConfigSection,
-  defineConfigSection,
-  resolveSectionPath,
-  type SectionProvenance,
-  type SectionValidation,
-} from '@prisma/cli-engine';
+
+import type { ExtensionDescriptor, PrismaAppConfig, StateDescriptor } from '@internal/core/config';
+import type { ConfigSection, SectionProvenance, SectionValidation } from '@prisma/cli-engine';
+import { defineConfigSection } from '@prisma/cli-engine';
 import type { Diagnostic } from '@prisma/cli-engine/protocol';
 
-export interface ComposerSection {
-  /**
-   * Absolute path to `prisma-composer.config.ts`. In the config file it may
-   * be written relative; the validator resolves it against the file that
-   * declared it, so a root-declared path means the same file from every
-   * subdirectory. Absent — the common case — means composer searches upward
-   * from the command's entry argument, as it always has.
-   */
-  readonly configPath?: string | undefined;
-}
+const KNOWN_FIELDS: readonly string[] = ['extensions', 'state'];
 
-const KNOWN_FIELDS: readonly string[] = ['configPath'];
+const SECTION_FIX =
+  "Write `composer: composer({ extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
+
+const DESCRIPTOR_FIX =
+  'Use the descriptor the extension factory returns, unchanged, instead of building one by hand.';
+
+const CONFIGURATION_HOME =
+  'Composer reads its configuration only from the `composer` section of prisma.config.ts.';
 
 function diagnostic(spec: {
-  code: `${string}.${string}`;
-  severity: Diagnostic['severity'];
+  code: `CONFIG.${string}`;
   summary: string;
   why?: string;
-  fix?: string;
+  fix: string;
+  file: string | undefined;
+  field?: string;
 }): Diagnostic {
   return {
     code: spec.code,
-    severity: spec.severity,
+    severity: 'error',
     summary: spec.summary,
     ...(spec.why === undefined ? {} : { why: spec.why }),
-    nextActions: spec.fix === undefined ? [] : [{ kind: 'edit-file' as const, label: spec.fix }],
+    nextActions: [{ kind: 'edit-file', label: spec.fix }],
+    ...(spec.file === undefined ? {} : { where: { path: spec.file } }),
+    ...(spec.field === undefined ? {} : { meta: { field: spec.field } }),
   };
 }
 
-function validate(raw: unknown, provenance: SectionProvenance): SectionValidation<ComposerSection> {
-  // Absence is normal and is the validator's to own: with no section,
-  // composer walks up from the entry exactly as it does today.
-  if (raw === undefined) return { ok: true, value: {}, diagnostics: [] };
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return {
-      ok: false,
-      diagnostics: [
-        diagnostic({
-          code: 'CONFIG.FIELD_INVALID',
-          severity: 'error',
-          summary: 'The `composer` section of prisma.config.ts must be an object.',
-          fix: 'Write `composer: { configPath: "./prisma-composer.config.ts" }`, or remove the section entirely.',
-        }),
-      ],
-    };
-  }
+function isExtensionDescriptor(value: unknown): value is ExtensionDescriptor {
+  return (
+    isObject(value) &&
+    typeof value['id'] === 'string' &&
+    value['id'].length > 0 &&
+    isObject(value['nodes'])
+  );
+}
 
-  // Reading the fields can itself fail — a Proxy whose `get` or `ownKeys`
-  // trap throws answers neither question — and the engine turns a throwing
-  // validator into an internal error, reporting a bad config as a bug in
-  // composer. A section we cannot read is a section we cannot accept.
-  let record: Record<string, unknown>;
-  try {
-    record = { ...raw };
-  } catch {
-    return {
-      ok: false,
-      diagnostics: [
-        diagnostic({
-          code: 'CONFIG.FIELD_INVALID',
-          severity: 'error',
-          summary: 'The `composer` section of prisma.config.ts could not be read.',
-          why: 'Reading its fields threw, so nothing in it can be trusted.',
-          fix: 'Write it as a plain object literal, e.g. `composer: { configPath: "./prisma-composer.config.ts" }`.',
-        }),
-      ],
-    };
-  }
+function isStateDescriptor(value: unknown): value is StateDescriptor {
+  return (
+    isObject(value) &&
+    typeof value['extension'] === 'string' &&
+    typeof value['create'] === 'function'
+  );
+}
 
-  const configPath = record['configPath'];
-  if (configPath !== undefined && (typeof configPath !== 'string' || configPath.length === 0)) {
-    return {
-      ok: false,
-      diagnostics: [
-        diagnostic({
-          code: 'CONFIG.FIELD_INVALID',
-          severity: 'error',
-          summary: '`composer.configPath` must be a non-empty string.',
-          why: 'It names the prisma-composer.config.ts file to load.',
-          fix: 'Set it to a path, or remove it to search upward from the entry.',
-        }),
-      ],
-    };
-  }
-
-  // A relative configPath means "relative to the file that declared it": a
-  // section written once at the repo root must name the same file from every
-  // subdirectory a command runs in. resolveSectionPath throws only when the
-  // key is missing from the provenance, which cannot happen for a key just
-  // read out of the section — but this validator must never throw, so even
-  // the impossible case becomes a diagnostic rather than an internal error.
-  let resolvedConfigPath: string | undefined;
-  if (configPath !== undefined) {
-    try {
-      resolvedConfigPath = resolveSectionPath(provenance, 'configPath', configPath);
-    } catch {
-      return {
-        ok: false,
-        diagnostics: [
-          diagnostic({
-            code: 'CONFIG.FIELD_INVALID',
-            severity: 'error',
-            summary:
-              '`composer.configPath` could not be resolved against the file that declared it.',
-            fix: 'Write `configPath` as an absolute path, or check the `composer` section of prisma.config.ts.',
-          }),
-        ],
-      };
-    }
-  }
-
-  // An unrecognized field is a warning, not a failure: the section's fields
-  // grow by contract amendment, so a config written for a newer composer must
-  // still run on this one. A warning on an ok validation reaches stderr and
-  // nothing else, which is the right weight for "you may have typed this".
-  const unknown = Object.keys(record).filter((key) => !KNOWN_FIELDS.includes(key));
-
+function missingSection(): SectionValidation<PrismaAppConfig> {
   return {
-    ok: true,
-    value: resolvedConfigPath === undefined ? {} : { configPath: resolvedConfigPath },
-    diagnostics: unknown.map((key) =>
+    ok: false,
+    diagnostics: [
+      diagnostic({
+        code: 'CONFIG.SECTION_MISSING',
+        summary: 'prisma.config.ts has no `composer` section.',
+        why: `${CONFIGURATION_HOME} A prisma-composer.config.ts file is no longer read.`,
+        fix: `${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`,
+        file: undefined,
+      }),
+    ],
+  };
+}
+
+function legacyConfigPath(file: string | undefined): Diagnostic {
+  return diagnostic({
+    code: 'CONFIG.LEGACY_FIELD',
+    summary:
+      '`composer.configPath` is no longer supported: prisma-composer.config.ts is no longer read.',
+    why: CONFIGURATION_HOME,
+    fix: `Replace \`configPath\` with the contents of prisma-composer.config.ts. ${SECTION_FIX} Then delete prisma-composer.config.ts.`,
+    file,
+    field: 'configPath',
+  });
+}
+
+function validateExtensions(
+  value: unknown,
+  file: string | undefined,
+): { diagnostics: Diagnostic[]; extensions: ExtensionDescriptor[] } {
+  if (!Array.isArray(value)) {
+    return {
+      extensions: [],
+      diagnostics: [
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: '`composer.extensions` must be an array of extension descriptors.',
+          fix: 'Set `extensions` to the descriptors your extensions provide, e.g. `extensions: [nodeBuild()]`.',
+          file,
+          field: 'extensions',
+        }),
+      ],
+    };
+  }
+
+  const diagnostics: Diagnostic[] = [];
+  const extensions: ExtensionDescriptor[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of value.entries()) {
+    const field = `extensions[${index}]`;
+    if (!isObject(entry)) {
+      diagnostics.push(
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: `\`composer.${field}\` must be an extension descriptor object.`,
+          fix: 'Put the descriptor an extension factory returns here, e.g. `nodeBuild()`, not the factory itself.',
+          file,
+          field,
+        }),
+      );
+      continue;
+    }
+    const id = entry['id'];
+    if (typeof id !== 'string' || id.length === 0) {
+      diagnostics.push(
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: `\`composer.${field}.id\` must be a non-empty string (the extension package name).`,
+          fix: DESCRIPTOR_FIX,
+          file,
+          field: `${field}.id`,
+        }),
+      );
+    } else if (seen.has(id)) {
+      diagnostics.push(
+        diagnostic({
+          code: 'CONFIG.EXTENSION_DUPLICATE',
+          summary: `Extension "${id}" is listed more than once in \`composer.extensions\`.`,
+          fix: `Remove the repeated "${id}" entry from \`extensions\`.`,
+          file,
+          field: `${field}.id`,
+        }),
+      );
+    } else {
+      seen.add(id);
+    }
+    if (!isObject(entry['nodes'])) {
+      diagnostics.push(
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: `\`composer.${field}.nodes\` must be an object (the node-ID → control registry).`,
+          fix: DESCRIPTOR_FIX,
+          file,
+          field: `${field}.nodes`,
+        }),
+      );
+    }
+    if (isExtensionDescriptor(entry)) extensions.push(entry);
+  }
+  return { diagnostics, extensions };
+}
+
+function validateSection(
+  section: Record<string, unknown>,
+  file: string | undefined,
+): SectionValidation<PrismaAppConfig> {
+  if (Object.hasOwn(section, 'configPath')) {
+    return { ok: false, diagnostics: [legacyConfigPath(file)] };
+  }
+
+  const diagnostics: Diagnostic[] = Object.keys(section)
+    .filter((key) => !KNOWN_FIELDS.includes(key))
+    .map((key) =>
       diagnostic({
         code: 'CONFIG.FIELD_UNKNOWN',
-        severity: 'warn',
-        summary: `The \`composer\` section has no field \`${key}\`; it is ignored.`,
-        fix: `Remove \`${key}\`, or check it against the version of @prisma/composer you have installed.`,
+        summary: `The \`composer\` section has no field \`${key}\`.`,
+        fix: `Remove \`${key}\`. The section takes only \`extensions\` and \`state\`.`,
+        file,
+        field: key,
       }),
-    ),
-  };
+    );
+
+  const { diagnostics: extensionDiagnostics, extensions } = validateExtensions(
+    section['extensions'],
+    file,
+  );
+  diagnostics.push(...extensionDiagnostics);
+
+  const state = section['state'];
+  const validState = isStateDescriptor(state);
+  if (!validState) {
+    diagnostics.push(
+      diagnostic({
+        code: 'CONFIG.FIELD_INVALID',
+        summary:
+          '`composer.state` must be a state descriptor with a string `extension` and a `create` function.',
+        fix: 'Set `state` to the state descriptor an extension provides, e.g. `state: prismaState()`.',
+        file,
+        field: 'state',
+      }),
+    );
+  }
+
+  if (!validState || diagnostics.length > 0) return { ok: false, diagnostics };
+  return { ok: true, value: { extensions, state }, diagnostics: [] };
 }
 
-export const composerSection: ConfigSection<ComposerSection> = defineConfigSection<ComposerSection>(
-  { name: 'composer', validate },
+function validate(raw: unknown, provenance: SectionProvenance): SectionValidation<PrismaAppConfig> {
+  if (raw === undefined) return missingSection();
+
+  const file = provenance.files[0];
+  if (!isObject(raw)) {
+    return {
+      ok: false,
+      diagnostics: [
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: 'The `composer` section of prisma.config.ts must be an object.',
+          fix: SECTION_FIX,
+          file,
+        }),
+      ],
+    };
+  }
+
+  // The section's values are user code: a Proxy trap or a getter can throw,
+  // and the engine reports a throwing validator as a bug in composer.
+  try {
+    return validateSection({ ...raw }, file);
+  } catch (cause) {
+    return {
+      ok: false,
+      diagnostics: [
+        diagnostic({
+          code: 'CONFIG.FIELD_INVALID',
+          summary: 'The `composer` section of prisma.config.ts could not be read.',
+          why: `Reading it threw: ${cause instanceof Error ? cause.message : String(cause)}`,
+          fix: SECTION_FIX,
+          file,
+        }),
+      ],
+    };
+  }
+}
+
+export const composerSection: ConfigSection<PrismaAppConfig> = defineConfigSection<PrismaAppConfig>(
+  {
+    name: 'composer',
+    validate,
+    merge: (_parent, child) => child,
+  },
 );

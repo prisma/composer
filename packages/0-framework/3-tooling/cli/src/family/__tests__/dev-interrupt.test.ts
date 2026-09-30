@@ -14,6 +14,7 @@ import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import { createControlDouble } from '../../testing/control-double.ts';
 import { createComposerFamily } from '../family.ts';
+import { validComposerSection } from './fixtures/composer-section.ts';
 
 const AS_TTY = { isTty: { stdout: true, stderr: true } } as const;
 
@@ -26,7 +27,7 @@ describe('dev, interrupted', () => {
     const cli = createTestCli({
       commandFamilies: [family],
       commands: { ...family.commands },
-      config: {},
+      config: { composer: validComposerSection() },
     });
 
     // The interrupt lands once the session is up, which is the moment a user

@@ -74,7 +74,7 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
         },
         operationDeps({
           alchemy,
-          configPath: ctx.config.configPath,
+          config: ctx.config,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),
