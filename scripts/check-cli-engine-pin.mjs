@@ -49,15 +49,25 @@
 //   specifier and fails here, instead of being inlined into a silent private
 //   copy the scan cannot detect.
 //
+//   The workspace's host. The examples and CI run the published `prisma`
+//   host (pinned once, in the pnpm catalog), and a root pnpm override points
+//   its `@prisma/composer-cli` at the workspace package. This script checks
+//   that the installed host really resolves the workspace family and that
+//   the host and the family resolve the same engine copy, because a drifted
+//   override or a host bump that moves the engine leaves CI green while it
+//   tests the registry's family or loads two engines. See gotchas.md.
+//
 // Requires both public packages to be built (`pnpm turbo run build
-// --filter=@prisma/composer --filter=@prisma/composer-cli`).
+// --filter=@prisma/composer --filter=@prisma/composer-cli`) and the
+// workspace to be installed.
 //
 // Usage: node scripts/check-cli-engine-pin.mjs
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ENGINE = '@prisma/cli-engine';
@@ -110,6 +120,97 @@ for (const [label, pin] of [
     pin === undefined || EXACT_VERSION.test(pin),
     `${label} declares ${ENGINE} as "${pin}" — it must be an exact version, with no range operator.`,
   );
+}
+
+/** The `prisma` version pinned in the pnpm catalog of pnpm-workspace.yaml. */
+function catalogHostVersion() {
+  const workspace = readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8');
+  return /^catalog:\n(?:[ \t]+.*\n)*?[ \t]+prisma:[ \t]*['"]?([^'"\s]+)/m.exec(workspace)?.[1];
+}
+
+/** Every tracked workspace manifest that declares `prisma`, with the specifier it uses. */
+function hostDeclarations() {
+  const manifests = execFileSync('git', ['ls-files', '*package.json', ':!docs/design/**'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  })
+    .split('\n')
+    .filter((file) => file.length > 0);
+  return manifests.flatMap((file) => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, file), 'utf-8'));
+    const spec = pkg.dependencies?.prisma ?? pkg.devDependencies?.prisma;
+    return spec === undefined ? [] : [{ file, spec }];
+  });
+}
+
+/** Where a module the given file would import actually lives on disk. */
+function realResolve(fromFile, specifier) {
+  return realpathSync(createRequire(fromFile).resolve(specifier));
+}
+
+const hostVersion = catalogHostVersion();
+require_(
+  hostVersion !== undefined && EXACT_VERSION.test(hostVersion),
+  `pnpm-workspace.yaml's catalog must pin prisma to an exact version; found "${hostVersion}".`,
+);
+for (const { file, spec } of hostDeclarations()) {
+  require_(
+    spec === 'catalog:',
+    `${file} declares prisma as "${spec}"; use "catalog:" so every package runs the same host.`,
+  );
+}
+
+const hostProbe = join(repoRoot, 'examples/orm-demo/package.json');
+let hostManifestPath;
+try {
+  hostManifestPath = realResolve(hostProbe, 'prisma/package.json');
+} catch (error) {
+  require_(
+    false,
+    `the prisma host is not installed for examples/orm-demo (${error.message}); run pnpm install.`,
+  );
+}
+if (hostManifestPath !== undefined) {
+  const host = JSON.parse(readFileSync(hostManifestPath, 'utf-8'));
+  require_(
+    host.version === hostVersion,
+    `the installed prisma is ${host.version}, but the catalog pins ${hostVersion}; run pnpm install.`,
+  );
+  require_(
+    host.dependencies?.[ENGINE] === cliPeerPin,
+    `prisma@${host.version} depends on ${ENGINE}@${host.dependencies?.[ENGINE]}, but the workspace pins ${cliPeerPin}. ` +
+      'The host and the family must share one engine: bump the engine pin with the host, or keep the host.',
+  );
+
+  const workspaceCli = realpathSync(cliDir) + sep;
+  let family;
+  try {
+    family = realResolve(hostManifestPath, '@prisma/composer-cli/family');
+  } catch (error) {
+    require_(
+      false,
+      `the installed prisma cannot resolve @prisma/composer-cli/family (${error.message}). ` +
+        "Check the root package.json's pnpm override and its @prisma/composer-cli devDependency (gotchas.md).",
+    );
+  }
+  if (family !== undefined) {
+    require_(
+      family.startsWith(workspaceCli),
+      `the installed prisma resolves @prisma/composer-cli to ${family}, not to the workspace package. ` +
+        "Check the root package.json's pnpm override and its @prisma/composer-cli devDependency (gotchas.md).",
+    );
+    const hostEngine = realResolve(hostManifestPath, `${ENGINE}/package.json`);
+    const familyEngine = realResolve(family, `${ENGINE}/package.json`);
+    require_(
+      hostEngine === familyEngine,
+      `the host and the family load different copies of ${ENGINE}: ${hostEngine} and ${familyEngine}.`,
+    );
+    if (failures.length === 0) {
+      process.stderr.write(
+        `prisma@${host.version} resolves the workspace family and shares ${ENGINE} with it\n`,
+      );
+    }
+  }
 }
 
 /** Packs one package and returns the extracted tarball's `package/` root. */

@@ -77,6 +77,11 @@ updates:
       # composer → prisma-cli release, never on Dependabot's schedule.
       # Enforced by scripts/check-cli-engine-pin.mjs.
       - dependency-name: "@prisma/cli-engine"
+      # The published host the examples and CI run (pnpm-workspace.yaml's
+      # catalog). It pins its own @prisma/cli-engine and @prisma/composer-cli,
+      # so it moves by hand with the engine, never on Dependabot's schedule.
+      # Enforced by scripts/check-cli-engine-pin.mjs.
+      - dependency-name: "prisma"
 
   - package-ecosystem: github-actions
     directory: /
