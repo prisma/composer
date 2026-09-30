@@ -205,10 +205,12 @@ deploy. Rules that bite:
    A single multi-entry build splits shared code into a chunk neither output
    contains.
 2. **A directory build uses `dir` + `entry`** (`dir` relative to the service
-   module, `entry` a file inside `dir`; `../` is an error). The tree is
-   copied verbatim, so the server must resolve siblings against
-   `import.meta.url`, not the working directory. The tree must contain no
-   symlinks: the packager rejects them, names the link, and assembly fails.
+   module, `entry` a file inside `dir`; `../` is an error). The tree is copied
+   verbatim, safe in-tree symlinks remain links, and dangling or escaping links
+   fail. Composer traces the entry and stages npm, pnpm, workspace, and
+   Bun-conditional package files that it imports. It never stages host paths
+   under `/etc`, `/proc`, `/sys`, `/dev`, or the operating system temporary
+   directory; the deployed runtime must provide any host file the server reads.
 3. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
