@@ -22,7 +22,7 @@ const result = await deploy(options);
 if (!result.ok) {
   switch (result.failure.code) {
     case 'ASSEMBLE.DESCRIPTOR_MISSING': /* actionable: fix the extension */
-    case 'DEPS.EFFECT_VERSION_CONFLICT': /* actionable: fix the install */
+    case 'DEPS.EXECUTOR_UNLOADABLE': /* actionable: fix the install */
     default: /* render the envelope; exit 2 */
   }
 }
@@ -68,13 +68,13 @@ vocabulary, not import edges.
 
 | Namespace | Concern | Owning module (delegates) |
 | --- | --- | --- |
-| `CONFIG` | discovery/loading/evaluation/shape/coverage of prisma-composer.config.ts | load-config.ts (validate-coverage.ts) |
+| `CONFIG` | shape and coverage of the `composer` section of prisma.config.ts, and the refused old config file | family/section.ts, family/composer-config.ts (validate-coverage.ts) |
 | `COMPOSE` | topology loading: entry, root node, graph shape, naming | pipeline.ts (load-entry.ts, core's graph modules) |
 | `ASSEMBLE` | assembling each service's deploy artifact | `@internal/assemble`'s assemble-services.ts |
 | `DEPLOY` | target selection, stage, containers, preflight, engine, teardown, stack write | operations/execute-deploy-destroy.ts (main.ts, validate-stage.ts, run-alchemy.ts) |
 | `DEV` | local dev pipeline and session | operations/execute-dev.ts (core/control/local-target.ts) |
 | `LOG` | log attach and tail | operations/execute-log.ts |
-| `DEPS` | the consumer's installed dependency tree | check-effect-resolution.ts (operations/shared.ts) |
+| `DEPS` | the consumer's installed dependency tree | operations/shared.ts |
 
 Closed subcode registry:
 
@@ -93,7 +93,7 @@ Closed subcode registry:
   TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED,
   CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
-- `DEPS` — EFFECT_VERSION_CONFLICT, EXECUTOR_UNLOADABLE
+- `DEPS` — EXECUTOR_UNLOADABLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
 
 Adding a subcode is an edit to this list; adding a namespace is an amendment to
 this ADR.

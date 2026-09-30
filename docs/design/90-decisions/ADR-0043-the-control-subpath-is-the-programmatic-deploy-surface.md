@@ -43,11 +43,13 @@ useful for printing a hint but deliberately outside the durable contract.
 
 Because the CLI's commands are renderers over the same operations, there is exactly one implementation of deploy orchestration. A fix or feature in the operation is a fix or feature in both surfaces; neither can gain behavior the other lacks.
 
+Each operation takes a required `config: { value, path }` input: the `composer` section of `prisma.config.ts` and the path of that file. *(Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the operations no longer discover a config file themselves.)*
+
 ## Importing the subpath executes nothing
 
 The `./control` entry's static import graph is import-light: types, the result definitions, and two small helpers. Each operation lazily `import()`s the executor that reaches the pipeline and alchemy, so importing the subpath executes nothing — consistent with the repo's no-import-side-effects stance — and a host pays for the deploy stack only when it calls an operation. The property is pinned structurally: a test imports the entry in a fresh process with every heavy module poisoned and fails if the static graph ever reaches one.
 
-A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured failure whose code names the problem (`DEPS.EFFECT_VERSION_CONFLICT` when the operation's diagnosis — the same check the CLI's `bin.ts` runs at start-up — recognizes the tree, `DEPS.EXECUTOR_UNLOADABLE` otherwise). The host stays alive and gets a result it can branch on, never an import-time crash.
+A dependency tree that cannot load that stack — for example, a mismatched `effect` version that makes alchemy's modules throw at import time — surfaces when an operation runs, as a structured `DEPS.EXECUTOR_UNLOADABLE` failure carrying the import error. The host stays alive and gets a result it can branch on, never an import-time crash. *(Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the `DEPS.EFFECT_VERSION_CONFLICT` diagnosis is retired; a broken tree now usually fails earlier, when the host or the CLI evaluates `prisma.config.ts`.)*
 
 ## The deploy result crosses a process boundary
 
@@ -67,7 +69,7 @@ The summary is **best-effort by contract**: an absent or unparseable file yields
 
 The operations live in `@internal/cli` (`src/operations/`), re-exported through `src/exports/control.ts` shims on both `@internal/cli` and `@prisma/composer` (the ADR-0035 entrypoint pattern). There is no new workspace package: the operations orchestrate the same pipeline modules the CLI uses, and only `packages/9-public/` publishes (ADR-0027/ADR-0028), so a separate internal package would add a boundary with nothing on the other side.
 
-The subpath is named `control` because that is the architecture plane these sources occupy in `architecture.config.json`, matching the existing control-plane subpaths (`@prisma/composer/node/control`, `/nextjs/control`, `@prisma/composer-prisma-cloud/control`). Note the distinct consumer classes: an *extension's* `/control` entry is a control-plane descriptor importable only from `prisma-composer.config.ts` (ADR-0017), while `@prisma/composer/control` is for external hosts. The shim's doc comment records the distinction.
+The subpath is named `control` because that is the architecture plane these sources occupy in `architecture.config.json`, matching the existing control-plane subpaths (`@prisma/composer/node/control`, `/nextjs/control`, `@prisma/composer-prisma-cloud/control`). Note the distinct consumer classes: an *extension's* `/control` entry is a control-plane descriptor importable only from the `composer` section of `prisma.config.ts` (ADR-0017, ADR-0049), while `@prisma/composer/control` is for external hosts. The shim's doc comment records the distinction.
 
 ## Consequences
 
