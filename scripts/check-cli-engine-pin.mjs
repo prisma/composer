@@ -54,8 +54,9 @@
 //   its `@prisma/composer-cli` at the workspace package. This script checks
 //   that the installed host really resolves the workspace family and that
 //   the host and the family resolve the same engine copy, because a drifted
-//   override or a host bump that moves the engine leaves CI green while it
-//   tests the registry's family or loads two engines. See gotchas.md.
+//   override leaves CI green while it tests the registry's family, and two
+//   engine copies break every cross-package instanceof. It compares resolved
+//   copies, not declared versions: see check-cli-engine-pin-host.mjs.
 //
 // Requires both public packages to be built (`pnpm turbo run build
 // --filter=@prisma/composer --filter=@prisma/composer-cli`) and the
@@ -67,8 +68,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkHost } from './check-cli-engine-pin-host.mjs';
 
 const ENGINE = '@prisma/cli-engine';
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -176,40 +178,12 @@ if (hostManifestPath !== undefined) {
     host.version === hostVersion,
     `the installed prisma is ${host.version}, but the catalog pins ${hostVersion}; run pnpm install.`,
   );
-  require_(
-    host.dependencies?.[ENGINE] === cliPeerPin,
-    `prisma@${host.version} depends on ${ENGINE}@${host.dependencies?.[ENGINE]}, but the workspace pins ${cliPeerPin}. ` +
-      'The host and the family must share one engine: bump the engine pin with the host, or keep the host.',
-  );
-
-  const workspaceCli = realpathSync(cliDir) + sep;
-  let family;
-  try {
-    family = realResolve(hostManifestPath, '@prisma/composer-cli/family');
-  } catch (error) {
-    require_(
-      false,
-      `the installed prisma cannot resolve @prisma/composer-cli/family (${error.message.split('\n')[0]}). ` +
-        "Check the root package.json's pnpm override and its @prisma/composer-cli devDependency (gotchas.md).",
+  const hostFailures = checkHost({ hostManifestPath, cliDir });
+  for (const failure of hostFailures) require_(false, failure);
+  if (hostFailures.length === 0) {
+    process.stderr.write(
+      `prisma@${host.version} resolves the workspace family and shares ${ENGINE} with it\n`,
     );
-  }
-  if (family !== undefined) {
-    require_(
-      family.startsWith(workspaceCli),
-      `the installed prisma resolves @prisma/composer-cli to ${family}, not to the workspace package. ` +
-        "Check the root package.json's pnpm override and its @prisma/composer-cli devDependency (gotchas.md).",
-    );
-    const hostEngine = realResolve(hostManifestPath, `${ENGINE}/package.json`);
-    const familyEngine = realResolve(family, `${ENGINE}/package.json`);
-    require_(
-      hostEngine === familyEngine,
-      `the host and the family load different copies of ${ENGINE}: ${hostEngine} and ${familyEngine}.`,
-    );
-    if (failures.length === 0) {
-      process.stderr.write(
-        `prisma@${host.version} resolves the workspace family and shares ${ENGINE} with it\n`,
-      );
-    }
   }
 }
 
