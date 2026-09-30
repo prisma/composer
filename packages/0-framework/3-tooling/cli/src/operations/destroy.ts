@@ -8,6 +8,7 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
+import type { ComposerConfig } from '../pipeline.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
 /** Destroy must name its target explicitly — no silent default to production. Encoded, not re-derived from flags. */
@@ -20,6 +21,10 @@ export type DestroyEvent =
   { readonly kind: 'no-local-deploy-state'; readonly cwd: string };
 
 export interface DestroyInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and the path of that file. The operation does not look for a config file.
+   */
+  readonly config: ComposerConfig;
   readonly entry: string;
   readonly name?: string | undefined;
   readonly target: DestroyTarget;

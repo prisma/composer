@@ -19,6 +19,7 @@ import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
+import { composerConfigOf } from '../composer-config.ts';
 import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -199,16 +200,20 @@ export const createDevCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const config = composerConfigOf(ctx);
+      if (!config.ok) return config;
+
       const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {
           entry: args.positionals.entry,
+          config: config.value,
           name: args.flags.name,
           fresh: args.flags.fresh,
           cwd: ctx.cwd,
           onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
-        { alchemy: coalescedConverge(alchemy), config: ctx.config },
+        { alchemy: coalescedConverge(alchemy) },
       );
 
       // Nothing is live yet, so the ending is the converge's — settled by the

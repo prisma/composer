@@ -175,7 +175,19 @@ describe('argument validation', () => {
 
     expect(result.exitCode).toBe(0);
     expect(double.calls.deploy).toEqual([
-      { entry: 'src/service.ts', name: 'shop', stage: 'feat-auth', cwd: CWD },
+      {
+        entry: 'src/service.ts',
+        config: {
+          value: {
+            extensions: [{ id: 'ext-a', nodes: {} }],
+            state: { extension: 'ext-a', create: expect.any(Function) },
+          },
+          path: path.join(CWD, 'prisma.config.ts'),
+        },
+        name: 'shop',
+        stage: 'feat-auth',
+        cwd: CWD,
+      },
     ]);
   });
 

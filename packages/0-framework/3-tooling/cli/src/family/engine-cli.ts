@@ -99,6 +99,6 @@ export function runComposerCli(
   spec: ComposerCliSpec,
   hooks?: CliRunHooks,
 ): Promise<number> {
-  const runtime = createRuntime(host, (configPath) => loadConfig(host.cwd(), configPath));
+  const runtime = createRuntime(host, (requestedFile) => loadConfig(host.cwd(), requestedFile));
   return createComposerCli(spec).run(argv, runtime, hooks);
 }

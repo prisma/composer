@@ -6,6 +6,7 @@
  * deploy targets production by default when no `--stage` is given.
  */
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
+import { composerConfigOf } from '../composer-config.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -55,10 +56,14 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const config = composerConfigOf(ctx);
+      if (!config.ok) return config;
+
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
           entry: args.positionals.entry,
+          config: config.value,
           name: args.flags.name,
           stage: args.flags.stage,
           cwd: ctx.cwd,
@@ -67,7 +72,6 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         },
         operationDeps({
           alchemy,
-          config: ctx.config,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),

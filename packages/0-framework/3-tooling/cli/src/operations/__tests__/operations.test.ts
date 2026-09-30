@@ -27,7 +27,7 @@ import {
   type DeploymentSummary,
   engineFailureFilePath,
 } from '../../deployment-summary.ts';
-import type { AppIdentity } from '../../pipeline.ts';
+import type { AppIdentity, ComposerConfig } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
@@ -137,6 +137,11 @@ function fakeConfig(
   };
 }
 
+/** The config input an operation takes; the path is only rendered into the stack file, which these tests never run. */
+function composerConfig(value: PrismaAppConfig): ComposerConfig {
+  return { value, path: 'prisma.config.ts' };
+}
+
 const coreIndex = path.resolve(
   import.meta.dir,
   '..',
@@ -151,19 +156,10 @@ const coreIndex = path.resolve(
   'index.ts',
 );
 
-function makeAppDir(
-  name = 'fixture-app',
-  opts: { config?: boolean } = {},
-): { dir: string; entryPath: string } {
+function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
-  if (opts.config !== false) {
-    fs.writeFileSync(
-      path.join(dir, 'prisma-composer.config.ts'),
-      '// fixture config — discovery target only; tests inject deps.config instead of evaluating this\nexport default {};\n',
-    );
-  }
   const entryPath = path.join(dir, 'service.ts');
   fs.writeFileSync(
     entryPath,
@@ -208,12 +204,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             calls.push(input);
@@ -242,12 +238,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -265,12 +261,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
@@ -295,7 +291,6 @@ describe('deploy()', () => {
     );
     const resultFiles: (string | undefined)[] = [];
     const deps = {
-      config: fakeConfig(),
       runAssembler: fakeAssembler,
       alchemy: async (input: AlchemyInvocation) => {
         resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
@@ -304,10 +299,16 @@ describe('deploy()', () => {
     };
 
     const first = await silently(() =>
-      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        deps,
+      ),
     );
     const second = await silently(() =>
-      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        deps,
+      ),
     );
 
     expect(first.ok).toBe(true);
@@ -322,9 +323,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
@@ -358,9 +358,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const child = spawnSync(process.execPath, [childPath], {
@@ -387,12 +386,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig({}, { calls: containerCalls })),
           entry: app.entryPath,
           stage: 'bad..ref',
           cwd: app.dir,
         },
         {
-          config: fakeConfig({}, { calls: containerCalls }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -406,25 +405,6 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
-  test('a missing config file is a pipeline failure naming the accepted spellings', async () => {
-    const app = makeAppDir('no-config', { config: false });
-
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          cwd: app.dir,
-        },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
-      ),
-    );
-
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('CONFIG.FILE_MISSING');
-    expect(result.failure.message).toContain('prisma-composer.config.{ts,mts,mjs,js}');
-  });
-
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
     const app = makeAppDir('hello-preflight-fail');
     let alchemyRan = false;
@@ -432,16 +412,18 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async () => {
+                throw new Error('SECRET_X is not provisioned');
+              },
+            }),
+          ),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig({
-            preflight: async () => {
-              throw new Error('SECRET_X is not provisioned');
-            },
-          }),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -465,12 +447,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 42, signal: null }),
         },
@@ -495,9 +477,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -527,9 +508,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 1, signal: null }),
         },
@@ -547,9 +527,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -576,12 +555,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -708,12 +687,12 @@ describe('destroy()', () => {
       const result = await silently(() =>
         destroyWithDeps(
           {
+            config: composerConfig(fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' })),
             entry: app.entryPath,
             target,
             cwd: app.dir,
           },
           {
-            config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' }),
             runAssembler: fakeAssembler,
             alchemy: async () => ({ exitCode: 0, signal: null }),
           },
@@ -736,12 +715,12 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig({}, { notFound: true })),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
         },
         {
-          config: fakeConfig({}, { notFound: true }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -762,9 +741,13 @@ describe('destroy()', () => {
 
     const result = await silently(() =>
       destroyWithDeps(
-        { entry: app.entryPath, target: { kind: 'stage', stage: 'staging' }, cwd: app.dir },
         {
-          config: fakeConfig({}, { alchemyStage: 'br_x' }),
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({}, { alchemyStage: 'br_x' })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -793,15 +776,17 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(
+            fakeConfig(
+              { teardown: async () => void order.push('teardown') },
+              { onRemove: () => void order.push('remove') },
+            ),
+          ),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
         },
         {
-          config: fakeConfig(
-            { teardown: async () => void order.push('teardown') },
-            { onRemove: () => void order.push('remove') },
-          ),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             order.push('alchemy');
@@ -822,13 +807,13 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
           onEvent: (event) => void order.push(event.kind),
         },
         {
-          config: fakeConfig(),
           runAssembler: async (node) => {
             order.push('assemble');
             return fakeAssembler(node);
@@ -851,13 +836,13 @@ describe('destroy()', () => {
     await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -930,7 +915,7 @@ function configWith(attachments: readonly LocalTargetAttachment[]): PrismaAppCon
 }
 
 function identityFor(attachments: readonly LocalTargetAttachment[]): AppIdentity {
-  return { configPath: 'c', config: configWith(attachments), name: 'app' };
+  return { config: configWith(attachments), name: 'app' };
 }
 
 async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
@@ -974,8 +959,12 @@ function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
 
 describe.skipIf(process.platform !== 'win32')('local operations on Windows', () => {
   test('dev and log return their platform refusal before touching the pipeline', async () => {
-    const devResult = await silently(() => devWithDeps({ entry: 'service.ts' }, {}));
-    const logResult = await silently(() => logWithDeps({ entry: 'service.ts' }, {}));
+    const devResult = await silently(() =>
+      devWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
+    );
+    const logResult = await silently(() =>
+      logWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
+    );
 
     expect(devResult.ok).toBe(false);
     if (devResult.ok) throw new Error('unreachable');
@@ -1004,11 +993,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1041,11 +1030,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1072,12 +1061,12 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1107,12 +1096,12 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1153,6 +1142,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: () => {
@@ -1160,7 +1150,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           },
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1188,11 +1177,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -1217,7 +1206,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     ];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1247,7 +1239,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     ];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts', address: 'a' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', address: 'a', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1258,7 +1253,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const attachments = [linesAttachment([{ address: 'a', url: 'http://a' }], [])];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts', address: 'nope' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', address: 'nope', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(false);
@@ -1271,7 +1269,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const attachments = [linesAttachment([], [])];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1293,6 +1294,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           signal: controller.signal,
         },
@@ -1323,7 +1325,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     };
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([flaky]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([flaky]) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1339,7 +1344,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     });
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([stubborn]) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1358,7 +1366,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     });
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([stubborn]) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1377,6 +1388,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => {
             if (event.kind === 'lines-dropped') droppedCounts.push(event.count);
@@ -1413,6 +1425,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => void events.push(event.kind),
         },
@@ -1444,6 +1457,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: () => {
             throw new Error('host renderer blew up');
@@ -1473,6 +1487,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => {
             if (event.kind === 'stream-failed') events.push(event.message);
@@ -1553,9 +1568,13 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-1', cwd: app.dir },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-1',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async (invocation) => {
             invocations.push(invocation);
@@ -1580,9 +1599,14 @@ describe('deploy-run reporting', () => {
 
     await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-2', cwd: app.dir, reportId: 'bld_from_ci' },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-2',
+          cwd: app.dir,
+          reportId: 'bld_from_ci',
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
           credentials: { workspaceId: 'ws-1', client: {} },
@@ -1615,9 +1639,8 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir, config: composerConfig(refusing) },
         {
-          config: refusing,
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1637,9 +1660,13 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-4', cwd: app.dir },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-4',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: null, signal: 'SIGINT' }),
         },
@@ -1667,9 +1694,8 @@ describe('deploy-run reporting', () => {
 
     await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
-          config,
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -1695,9 +1721,13 @@ describe('deploy-run reporting', () => {
 
       const result = await quietly(() =>
         deployWithDeps(
-          { entry: app.entryPath, stage: 'ci-5', cwd: app.dir },
           {
-            config: fakeConfig({ reporter: log.reporter }),
+            entry: app.entryPath,
+            stage: 'ci-5',
+            cwd: app.dir,
+            config: composerConfig(fakeConfig({ reporter: log.reporter })),
+          },
+          {
             runAssembler: fakeAssembler,
             alchemy: async () => ({ exitCode: 0, signal: null }),
           },
@@ -1715,13 +1745,13 @@ describe('deploy-run reporting', () => {
     await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           onEvent: undefined,
           cwd: app.dir,
         },
         {
-          config: fakeConfig({ reporter: log.reporter }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1737,9 +1767,14 @@ describe('deploy-run reporting', () => {
 
     const ok = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, reportPath: target },
         {
-          config: fakeConfig(),
+          entry: app.entryPath,
+          stage: 'ci-6',
+          cwd: app.dir,
+          reportPath: target,
+          config: composerConfig(fakeConfig()),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1756,11 +1791,18 @@ describe('deploy-run reporting', () => {
     const failedTarget = path.join(app.dir, 'failed.json');
     const failed = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, reportPath: failedTarget },
         {
-          config: fakeConfig({
-            preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
-          }),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          reportPath: failedTarget,
+          config: composerConfig(
+            fakeConfig({
+              preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+            }),
+          ),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },

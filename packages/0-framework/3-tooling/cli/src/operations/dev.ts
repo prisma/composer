@@ -9,6 +9,7 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
+import type { ComposerConfig } from '../pipeline.ts';
 import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
 
 export type DevEvent =
@@ -31,6 +32,10 @@ export type DevEvent =
   | { readonly kind: 'stopped' };
 
 export interface DevInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and the path of that file. The operation does not look for a config file.
+   */
+  readonly config: ComposerConfig;
   readonly entry: string;
   readonly name?: string | undefined;
   readonly fresh?: boolean | undefined;

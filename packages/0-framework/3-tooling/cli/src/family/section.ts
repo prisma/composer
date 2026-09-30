@@ -13,11 +13,14 @@ const KNOWN_FIELDS: readonly string[] = ['extensions', 'state'];
 const SECTION_FIX =
   "Write `composer: composer({ extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
 
+/** How to replace a prisma-composer.config.ts with the `composer` section. */
+export const MOVE_TO_SECTION_FIX = `${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`;
+
+export const CONFIGURATION_HOME =
+  'Composer reads its configuration only from the `composer` section of prisma.config.ts.';
+
 const DESCRIPTOR_FIX =
   'Use the descriptor the extension factory returns, unchanged, instead of building one by hand.';
-
-const CONFIGURATION_HOME =
-  'Composer reads its configuration only from the `composer` section of prisma.config.ts.';
 
 function diagnostic(spec: {
   code: `CONFIG.${string}`;
@@ -67,7 +70,7 @@ function missingSection(): SectionValidation<PrismaAppConfig> {
         code: 'CONFIG.SECTION_MISSING',
         summary: 'prisma.config.ts has no `composer` section.',
         why: `${CONFIGURATION_HOME} A prisma-composer.config.ts file is no longer read.`,
-        fix: `${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`,
+        fix: MOVE_TO_SECTION_FIX,
         file: undefined,
       }),
     ],

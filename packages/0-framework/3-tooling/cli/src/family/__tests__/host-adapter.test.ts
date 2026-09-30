@@ -150,12 +150,46 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
 
     expect(exitCode).toBe(2);
     expect(double.calls.dev).toHaveLength(1);
-    // The section travels in the operation's SECOND argument, so a handler
-    // that read the section but forgot to pass it on would still satisfy the
-    // call count.
-    expect(double.calls.deps.dev[0]?.config).toEqual({
-      extensions: [{ id: 'ext-a', nodes: {} }],
-      state: { extension: 'ext-a', create: expect.any(Function) },
+    // The section and the file that declared it, which the loader realpaths.
+    expect(double.calls.dev[0]?.config).toEqual({
+      value: {
+        extensions: [{ id: 'ext-a', nodes: {} }],
+        state: { extension: 'ext-a', create: expect.any(Function) },
+      },
+      path: path.join(fs.realpathSync(dir), 'custom.config.ts'),
     });
+  });
+
+  test('an old prisma-composer.config.ts beside the declaring file stops the handler before the operation', async () => {
+    const double = refusingOperations();
+    const dir = emptyDir();
+    fs.writeFileSync(
+      path.join(dir, 'prisma.config.ts'),
+      [
+        'export default {',
+        '  $prismaConfig: 1,',
+        "  composer: { extensions: [{ id: 'ext-a', nodes: {} }], state: { extension: 'ext-a', create: () => undefined } },",
+        '};',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(path.join(dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+    const host = fakeHost(dir);
+    const exitCode = await runComposerCli(['dev', 'src/service.ts'], host, {
+      version: VERSION,
+      operations: double.operations,
+    });
+
+    expect(exitCode).toBe(2);
+    expect(JSON.parse(host.out.join(''))).toMatchObject({
+      envelope: {
+        error: {
+          code: 'CONFIG.LEGACY_FILE',
+          summary: `${path.join(fs.realpathSync(dir), 'prisma-composer.config.ts')} is no longer read.`,
+        },
+      },
+    });
+    expect(double.calls.dev).toEqual([]);
   });
 });

@@ -60,14 +60,10 @@ export async function executeDev(
   const containers = new Map<ExtensionId, ContainerInstance>();
 
   try {
-    // The shared prefix (pipeline.ts): config discovery/load, entry load,
-    // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
-    };
-    pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
+    // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
+    // name resolution, assemble.
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    pipeline = await runPipeline(input.entry, input.name, cwd, input.config, pipelineDeps);
     const { config, graph, name } = pipeline;
 
     // Dev-capability check — resolve every non-build-only extension's lazy
@@ -132,7 +128,7 @@ export async function executeDev(
       stackPath = writeDevStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configPath: pipeline.configPath,
+        configFile: pipeline.configFile,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });
@@ -256,11 +252,7 @@ export async function executeDev(
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
-    };
+    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler };
     watch = startWatch(
       targets,
       () => {
@@ -270,11 +262,17 @@ export async function executeDev(
         // app and keeps watching".
         void (async () => {
           try {
-            const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
+            const rePipeline = await runPipeline(
+              input.entry,
+              input.name,
+              cwd,
+              input.config,
+              watchDeps,
+            );
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,
-              configPath: rePipeline.configPath,
+              configFile: rePipeline.configFile,
               name: rePipeline.name,
               assembled: rePipeline.assembled,
             });

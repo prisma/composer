@@ -26,7 +26,12 @@ import {
   readEngineFailureCause,
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
-import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
+import {
+  type ComposerConfig,
+  type PipelineDeps,
+  type PipelineResult,
+  runPipeline,
+} from '../pipeline.ts';
 import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
 import {
   RUN_REPORT_FILE_ENV,
@@ -49,6 +54,7 @@ function hasNoLocalDeployState(cwd: string): boolean {
 
 interface StackPipelineOptions {
   readonly entry: string;
+  readonly config: ComposerConfig;
   readonly name: string | undefined;
   readonly stage: string | undefined;
   readonly cwd: string;
@@ -65,6 +71,7 @@ export async function executeDeploy(
 ): Promise<Result<DeploySuccess, CliStructuredError>> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
+    config: input.config,
     name: input.name,
     stage: input.stage,
     cwd,
@@ -98,6 +105,7 @@ export async function executeDestroy(
 ): Promise<Result<void, CliStructuredError>> {
   const outcome = await runStackPipeline('destroy', {
     entry: input.entry,
+    config: input.config,
     name: input.name,
     stage: input.target.kind === 'stage' ? input.target.stage : undefined,
     cwd,
@@ -275,7 +283,7 @@ async function runStackPipelineInner(
   opts: StackPipelineOptions,
   reporters: ExtensionReporter[],
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { entry, name, stage, cwd, onEvent, deps } = opts;
+  const { entry, config: composerConfig, name, stage, cwd, onEvent, deps } = opts;
 
   if (stage !== undefined) {
     try {
@@ -306,13 +314,9 @@ async function runStackPipelineInner(
   let preflightTransportEnv: Record<string, string> = {};
 
   try {
-    // The shared prefix (pipeline.ts): config discovery/load, entry load,
-    // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
-    };
+    // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
+    // name resolution, assemble.
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
@@ -324,7 +328,7 @@ async function runStackPipelineInner(
               cause: error,
             })
         : undefined;
-    pipeline = await runPipeline(entry, name, cwd, pipelineDeps, onAssembleError);
+    pipeline = await runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError);
     const { config, graph, name: resolvedName } = pipeline;
 
     // Open reporting BEFORE containers are resolved: creating them is the
@@ -467,7 +471,7 @@ async function runStackPipelineInner(
       stackPath = writeStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configPath: pipeline.configPath,
+        configFile: pipeline.configFile,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });

@@ -9,9 +9,14 @@
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { DeploymentSummary } from '../deployment-summary.ts';
+import type { ComposerConfig } from '../pipeline.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
 export interface DeployInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and the path of that file. The operation does not look for a config file.
+   */
+  readonly config: ComposerConfig;
   /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
   readonly entry: string;
   /** Override the root node's name (the `--name` flag's slot). */

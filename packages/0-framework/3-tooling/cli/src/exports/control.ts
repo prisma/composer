@@ -4,8 +4,9 @@
  * Importing it executes nothing — the heavy pipeline loads lazily inside
  * each operation. Distinct from an EXTENSION's `/control`
  * entry (ADR-0017's control-plane descriptors, importable only from
- * `prisma-composer.config.ts`): this subpath is for hosts driving the deploy
- * pipeline in-process.
+ * `prisma.config.ts`): this subpath is for hosts driving the deploy
+ * pipeline in-process. Each operation takes the `composer` section of
+ * `prisma.config.ts` and that file's path as its `config` input.
  *
  * Failures are `CliStructuredError`s on the shared `Result` shape. The
  * class itself is deliberately not value-exported: hosts recognize failures
@@ -30,5 +31,6 @@ export type { LogAttached, LogEvent, LogInput, LogLine } from '../operations/log
 export { log } from '../operations/log.ts';
 export type { ExecutionDiagnostics, ServiceEndpoint } from '../operations/shared.ts';
 export { executionDiagnostics } from '../operations/shared.ts';
+export type { ComposerConfig } from '../pipeline.ts';
 export type { RunReport, RunReportFailure } from '../run-report.ts';
 export { RUN_REPORT_FILE_ENV, RUN_REPORT_VERSION } from '../run-report.ts';

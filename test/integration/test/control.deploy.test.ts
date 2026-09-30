@@ -1,7 +1,7 @@
 /**
  * The slice's done-condition (TML-3174): a consumer OUTSIDE the CLI drives
- * deploy end to end through `@prisma/composer/control` — real config
- * discovery, real `/control` extension resolution, real assemble — without
+ * deploy end to end through `@prisma/composer/control` — a config the caller
+ * evaluated, real `/control` extension resolution, real assemble — without
  * touching argv, console capture, or exit codes. The fixture app has no built
  * output, so the pipeline fails structurally at the same terminal point the
  * binary test (cli.extension-config.test.ts) pins on stderr.
@@ -9,6 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import { deploy } from '@prisma/composer/control';
+import composerConfig from '../prisma-composer.config.ts';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join(
@@ -21,7 +22,11 @@ const fixtureEntry = path.join(
 
 describe('@prisma/composer/control — programmatic deploy over the real extension config', () => {
   test('resolves both /control entries for real and fails structurally at the missing built entry, not at resolution', async () => {
-    const result = await deploy({ entry: fixtureEntry, cwd: integrationDir });
+    const result = await deploy({
+      entry: fixtureEntry,
+      cwd: integrationDir,
+      config: { value: composerConfig, path: path.join(integrationDir, 'prisma.config.ts') },
+    });
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');

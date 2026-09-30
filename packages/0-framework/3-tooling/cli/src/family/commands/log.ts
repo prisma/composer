@@ -13,6 +13,7 @@
 import { defineSessionCommand, flag, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
 import type { LogEvent } from '../../operations/log.ts';
+import { composerConfigOf } from '../composer-config.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
@@ -56,6 +57,9 @@ export const createLogCommand = (operations: ComposerOperations) =>
     },
     needs: { config: composerSection },
     handler: async (args, ctx) => {
+      const config = composerConfigOf(ctx);
+      if (!config.ok) return config;
+
       const reportLogEvent = (event: LogEvent): void => {
         ctx.report({
           kind: 'message',
@@ -70,6 +74,7 @@ export const createLogCommand = (operations: ComposerOperations) =>
       const result = await operations.log(
         {
           entry: args.positionals.entry,
+          config: config.value,
           name: args.flags.name,
           address: args.positionals.address,
           tail: args.flags.tail ?? DEFAULT_TAIL,
@@ -77,7 +82,7 @@ export const createLogCommand = (operations: ComposerOperations) =>
           signal: ctx.signal,
           onEvent: reportLogEvent,
         },
-        { config: ctx.config },
+        {},
       );
 
       if (!result.ok) return notOk(toEngineError(result.failure));

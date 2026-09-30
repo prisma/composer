@@ -5,7 +5,7 @@
  * because this is all they pull in statically.
  */
 import type { RunAssembler } from '@internal/assemble';
-import type { ContainerCredentials, PrismaAppConfig } from '@internal/core/config';
+import type { ContainerCredentials } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { checkEffectResolution } from '../check-effect-resolution.ts';
@@ -23,7 +23,7 @@ export interface ServiceEndpoint {
 
 /**
  * The operations' in-package injection seam — lets the CLI's own tests drive
- * them without a real wrapper build, config evaluation, or alchemy process.
+ * them without a real wrapper build or alchemy process.
  * Threaded through the *WithDeps variants, never part of the published
  * surface: the fields mirror internal types.
  */
@@ -35,9 +35,6 @@ export interface OperationDeps {
    * owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
-  readonly config?: PrismaAppConfig | undefined;
-  /** Names the config file explicitly instead of walking up from the entry. */
-  readonly configPath?: string | undefined;
   /**
    * How the in-process leg authenticates: the caller's already-authenticated
    * API client and the workspace it acts in. Supplied by the CLI from the

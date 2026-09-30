@@ -6,7 +6,7 @@ describe('renderDevStackFile()', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
-      configPath: '/repo/app/prisma-composer.config.ts',
+      configFile: '/repo/app/prisma.config.ts',
       name: 'app',
       assembled: {
         bundles: {
@@ -21,7 +21,8 @@ describe('renderDevStackFile()', () => {
       "import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     );
     expect(content).toContain("import { localState } from 'alchemy/State/LocalState';");
-    expect(content).toContain('import config from "../../prisma-composer.config.ts";');
+    expect(content).toContain('import prismaConfig from "../../prisma.config.ts";');
+    expect(content).toContain('const config = prismaConfig.composer;');
     expect(content).toContain('import app from "../../module.ts";');
     // The one orchestration point (spec § 3 REVISED): containers
     // deserialized, `localTarget` thunks resolved by top-level await,
@@ -49,7 +50,7 @@ describe('renderDevStackFile()', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
-      configPath: '/repo/app/prisma-composer.config.ts',
+      configFile: '/repo/app/prisma.config.ts',
       name: 'app',
       assembled: { bundles: {} },
     });
