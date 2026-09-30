@@ -1,5 +1,5 @@
-import { definePrismaConfig } from '@prisma/cli-engine';
 import { defineConfig } from '@prisma/orm-postgres/config';
+import { definePrismaConfig } from 'prisma/config';
 
 // Anchors the contract source and migrations/ on disk. The deploy lowering
 // loads it (by path, from the postgres resource's `config`) to find the

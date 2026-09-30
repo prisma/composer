@@ -33,6 +33,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@clack/prompts": "^1.7.0",
+    "@prisma/composer-cli": "workspace:0.25.0",
     "dependency-cruiser": "^17.4.3",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
@@ -43,6 +44,9 @@
     "typescript": "^6.0.3"
   },
   "pnpm": {
+    "overrides": {
+      "@prisma/composer-cli": "workspace:*"
+    },
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"

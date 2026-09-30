@@ -5,10 +5,11 @@
  * extensions' /control entries (provisioning, bundlers, alchemy) enter the
  * deploy; they resolve from this app's own dependencies.
  */
-import { definePrismaConfig } from '@prisma/cli-engine';
+
 import { defineConfig as composer } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
