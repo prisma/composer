@@ -1,7 +1,7 @@
 /**
  * `deploy` driven end to end through the engine — real grammar, real
  * argument validation, the real credential check, the real settlement rules —
- * with the published control double standing in for alchemy.
+ * with the published operations double standing in for alchemy.
  */
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -11,11 +11,11 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok } from '@internal/foundation/result';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
-import { type ControlDouble, createControlDouble } from '../../testing/control-double.ts';
+import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
 
-type Fixtures = Parameters<typeof createControlDouble>[0];
+type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
 /**
  * A real directory with an `alchemy` binary installed, because the handler's
@@ -46,7 +46,7 @@ function activeCredential() {
 
 interface Harness {
   readonly cli: TestCli;
-  readonly double: ControlDouble;
+  readonly double: OperationsDouble;
 }
 
 /** Composer's family mounted at the top level of a test CLI, as the `prisma` host mounts it. */
@@ -57,7 +57,7 @@ function composerCli(
     readonly spawnScript?: ScriptedChildProgram;
   } = {},
 ): Harness {
-  const double = createControlDouble(spec.fixtures ?? {});
+  const double = createOperationsDouble(spec.fixtures ?? {});
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
