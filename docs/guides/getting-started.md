@@ -352,6 +352,11 @@ pnpm prisma deploy module.ts
 In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the
 [Prisma Console](https://console.prisma.io) instead.
 
+`pnpm prisma` runs under Node, which suits this app: the modules `prisma`
+loads declare services and never call Bun APIs themselves. An app whose
+modules do needs the bin run under Bun; see
+[Deploying and operating § Runtime](deploying.md#runtime).
+
 The CLI creates a Project named `my-app` in your workspace, provisions both
 services on Prisma Compute, points the gateway's `quotes` dependency at the
 deployed quotes service, and starts everything.
@@ -395,7 +400,10 @@ pnpm prisma deploy module.ts --stage demo
 
 Tear it down when you're done with the `destroy` operation from
 `@prisma/composer/control`; [Deploying and operating](deploying.md#destroying)
-has the script.
+has the script. The script runs outside the `prisma` CLI, so it does not use
+your `prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
+`PRISMA_WORKSPACE_ID` in the environment, and
+[Credentials](deploying.md#credentials) says where to find both.
 
 ## Porting an existing app
 

@@ -99,7 +99,8 @@ for await (const { service, line } of result.value.lines) {
 }
 ```
 
-It follows live, like `tail -f`, until the signal aborts. It only *reads* the
+The `log` operation reads no credentials. It follows live, like `tail -f`,
+until the signal aborts. It only *reads* the
 running app — it never builds, provisions, starts, or stops anything, so you
 can start and stop it freely alongside a running `dev`.
 

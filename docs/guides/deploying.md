@@ -17,22 +17,34 @@ in your code.
 
 ## Credentials
 
-`prisma deploy` signs in the way every `prisma` command does, and it needs a
-signed-in identity to run:
+The `prisma` commands and the operations you call from a script sign in
+differently:
 
-- On your machine, run `prisma auth login` once. It opens a browser and stores
-  a session for one workspace.
-- In CI, set `PRISMA_SERVICE_TOKEN` to a service token for your workspace,
-  created in the [Prisma Console](https://console.prisma.io). It overrides any
-  stored session.
-
-The `destroy` operation runs in your own script, outside the `prisma` CLI, so
-it reads its credentials from the environment: `PRISMA_SERVICE_TOKEN`, and
-`PRISMA_WORKSPACE_ID` from the workspace's settings.
+- **`prisma deploy`** signs in the way every `prisma` command does. On your
+  machine, run `prisma auth login` once; it opens a browser and stores a
+  session for one workspace. In CI, set `PRISMA_SERVICE_TOKEN` instead; it
+  overrides any stored session. `prisma dev` needs no sign-in.
+- **The operations of `@prisma/composer/control`**, and so a destroy script,
+  never use a `prisma auth login` session. `deploy` and `destroy` read two
+  environment variables, and each is required once the operation reaches
+  Prisma Cloud: `PRISMA_SERVICE_TOKEN`, a service token you create in the
+  workspace's settings in the [Prisma Console](https://console.prisma.io), and
+  `PRISMA_WORKSPACE_ID`, the workspace's id, shown in the same settings. `dev`
+  and `log` read neither, because they never reach the platform.
 
 A fresh checkout with credentials in place deploys successfully — the CLI
 finds or creates everything else. Keep token values out of the repo (an `.env`
 you source at deploy time, or CI secrets).
+
+## Runtime
+
+The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
+`module.ts` and every module it imports, so run the bin under the runtime
+those modules need. Node is the default. If they use Bun APIs (they import
+`bun`, or call `Bun.serve` when imported), run the bin under Bun instead:
+`bun node_modules/.bin/prisma deploy module.ts`. The examples in the
+prisma/composer repository run it under Bun, which is why their scripts
+start with `bun`.
 
 ## Configuration
 
@@ -191,6 +203,10 @@ if (!result.ok) {
   process.exitCode = 1;
 }
 ```
+
+Run it with the two variables under [Credentials](#credentials) set, for
+example `bun destroy-staging.ts`, or `node destroy-staging.ts` on Node 22.18
+or newer. A `prisma auth login` session is not used.
 
 The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
@@ -390,7 +406,14 @@ With the graph empty, planning auto-baselines from the ref: it authors empty →
 operations that return structured results instead of printing and exiting.
 `prisma deploy` and `prisma dev` are thin renderers over the `deploy` and
 `dev` operations, so the two surfaces can't drift. `destroy` and `log` have
-no command; these operations are how you run them.
+no command; these operations are how you run them. They read their
+credentials from the environment (see [Credentials](#credentials)).
+
+A script imports only `@prisma/composer/control`. The extensions' own
+`/control` entries, such as `@prisma/composer/node/control` and
+`@prisma/composer-prisma-cloud/control`, are different: only
+`prisma.config.ts` imports them (ADR-0017), and the script reaches them
+through that file's `composer` section.
 
 ```ts
 import { fileURLToPath } from 'node:url';

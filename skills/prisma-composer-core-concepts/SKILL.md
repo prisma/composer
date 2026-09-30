@@ -293,9 +293,12 @@ Deploy compares the declared topology against recorded deploy state and
 applies only the difference. Re-deploying with nothing changed is a no-op;
 removing a node removes its deployed resource. `prisma deploy` needs a signed-in
 identity: `prisma auth login` stores a session on a developer machine, and
-`PRISMA_SERVICE_TOKEN` overrides it in CI. The `destroy` operation runs
-outside the CLI and reads `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
-from the environment.
+`PRISMA_SERVICE_TOKEN` overrides it in CI. The `/control` operations, and so
+a destroy script, never use that session: `deploy` and `destroy` read
+`PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from the environment (both
+in the workspace's Console settings); `dev` and `log` read neither. The
+`prisma` bin starts under Node; when the modules `module.ts` imports use Bun
+APIs, run it under Bun (`bun node_modules/.bin/prisma deploy module.ts`).
 
 **Stages.** A stage is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
@@ -369,7 +372,9 @@ and crash the consumer at boot). Fix whichever end is wrong; don't mark the
 param `optional` unless absent really is legal. Only reachable if you
 authored the connection or an extension on one side.
 
-**Driving deploys from code.** `@prisma/composer/control` exposes typed
+**Driving deploys from code.** A script imports only
+`@prisma/composer/control`; the extensions' `/control` entries are imported
+only by `prisma.config.ts` (ADR-0017). `@prisma/composer/control` exposes typed
 `deploy`, `destroy`, `dev`, and `log` returning structured results;
 `prisma deploy` and `prisma dev` render `deploy` and `dev`. Each takes
 a required `config: { value, file }` (`ComposerConfigSource`): the `composer`
@@ -537,7 +542,9 @@ today the blocks above plus your own Modules are the whole set, so verify a
 Name the gap instead of inventing an API:
 
 1. **No `prisma` command for teardown or logs.** Use the `destroy` and `log`
-   operations of `@prisma/composer/control` from a script.
+   operations of `@prisma/composer/control` from a script. A destroy script
+   cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
+   and `PRISMA_WORKSPACE_ID` in the environment.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a
    co-located handler without HTTP; use `bootstrapService` with a loopback
    fake.
