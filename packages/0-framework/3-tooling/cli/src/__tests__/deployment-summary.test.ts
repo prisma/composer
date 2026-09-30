@@ -96,11 +96,11 @@ describe('redactSecrets', () => {
     const env = {
       PRISMA_SERVICE_TOKEN: 'svc-token-0123456789',
       PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD: '{"STRIPE":"2024-01-01"}',
-      STRIPE_SECRET_KEY: 'sk_live_51Habcdef',
+      STRIPE_SECRET_KEY: 'stripe-secret-value',
       PRISMA_API_URL: 'https://api.prisma.io',
     };
     const text =
-      'token svc-token-0123456789 payload {"STRIPE":"2024-01-01"} key sk_live_51Habcdef at https://api.prisma.io';
+      'token svc-token-0123456789 payload {"STRIPE":"2024-01-01"} key stripe-secret-value at https://api.prisma.io';
 
     expect(redactSecrets(text, env)).toBe(
       'token [redacted] payload [redacted] key [redacted] at https://api.prisma.io',

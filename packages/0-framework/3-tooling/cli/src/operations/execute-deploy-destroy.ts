@@ -512,12 +512,6 @@ async function runStackPipelineInner(
       );
     }
 
-    // The cause the child recorded on its way out, appended after the status
-    // sentence so searches for that sentence still match.
-    const engineCause = readEngineFailureCause(resultFilePath);
-    const withCause = (sentence: string) =>
-      engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
-
     // A signal-killed converge is the user interrupting, not a deploy that
     // went wrong: it is still reported as a failure VALUE (the operation
     // promised a Result), but it carries the signal instead of an exit code
@@ -528,11 +522,10 @@ async function runStackPipelineInner(
       return notOk(
         new CliStructuredError(
           'DEPLOY.ENGINE_FAILED',
-          withCause(`alchemy ${action} was interrupted by ${outcome.signal}.`),
+          `alchemy ${action} was interrupted by ${outcome.signal}.`,
           {
             meta: {
               signal: outcome.signal,
-              ...(engineCause !== undefined ? { engineCause } : {}),
               diagnostics: {
                 exitCode: undefined,
                 signal: outcome.signal,
@@ -550,6 +543,12 @@ async function runStackPipelineInner(
     // is never treated as success.
     const status = outcome.exitCode ?? 1;
     if (status !== 0) {
+      // The cause the child recorded on its way out, appended after the status
+      // sentence so searches for that sentence still match. A signal-killed
+      // child never runs its exit hook, so only this branch can have one.
+      const engineCause = readEngineFailureCause(resultFilePath);
+      const withCause = (sentence: string) =>
+        engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
       return notOk(
         new CliStructuredError(
           'DEPLOY.ENGINE_FAILED',

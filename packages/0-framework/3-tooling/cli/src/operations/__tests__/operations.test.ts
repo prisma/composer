@@ -542,7 +542,7 @@ describe('deploy()', () => {
     expect(result.failure.meta).not.toHaveProperty('engineCause');
   });
 
-  test('an interrupted converge carries a recorded cause too, keeping its signal', async () => {
+  test('an interrupted converge reports only its signal, since a killed child records no cause', async () => {
     const app = makeAppDir();
 
     const result = await silently(() =>
@@ -563,11 +563,9 @@ describe('deploy()', () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable');
-    expect(result.failure.message).toBe(
-      'alchemy deploy was interrupted by SIGTERM.\nlease held by another deploy',
-    );
+    expect(result.failure.message).toBe('alchemy deploy was interrupted by SIGTERM.');
     expect(result.failure.meta?.['signal']).toBe('SIGTERM');
-    expect(result.failure.meta?.['engineCause']).toBe('lease held by another deploy');
+    expect(result.failure.meta?.['engineCause']).toBeUndefined();
   });
 
   test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {

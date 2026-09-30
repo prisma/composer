@@ -45,12 +45,10 @@ describe('renderStackFile() — a module root', () => {
       assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
     });
 
-    expect(content).toContain(
-      "import { captureEngineFailure, deploymentReport } from '@prisma/composer/report';",
-    );
+    expect(content).toContain("import * as report from '@prisma/composer/report';");
     // The callback, not a call: the app name rides inside the DeploymentResult
     // core assembles, so the template threads nothing to the report.
-    expect(content).toContain('report: deploymentReport,');
+    expect(content).toContain('report: report.deploymentReport,');
     expect(content).not.toContain('deploymentReport(');
     expect(content).toContain('name: "storefront-auth"');
   });
@@ -64,8 +62,9 @@ describe('renderStackFile() — a module root', () => {
       assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
     });
 
-    expect(content.indexOf('captureEngineFailure();')).toBeGreaterThan(-1);
-    expect(content.indexOf('captureEngineFailure();')).toBeLessThan(
+    // Optional call: an app pinned to an older @prisma/composer lacks the export.
+    expect(content.indexOf('report.captureEngineFailure?.();')).toBeGreaterThan(-1);
+    expect(content.indexOf('report.captureEngineFailure?.();')).toBeLessThan(
       content.indexOf('export default lower('),
     );
   });

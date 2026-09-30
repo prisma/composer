@@ -50,7 +50,7 @@ function renderOptions(input: StackFileInput): string {
   // what lets core stay presentation-free while the renderer still sees
   // resolved values (ADR-0033). The callback takes the DeploymentResult
   // directly — the app name rides inside it, so nothing else is threaded here.
-  lines.push('  report: deploymentReport,');
+  lines.push('  report: report.deploymentReport,');
 
   return lines.join('\n');
 }
@@ -70,11 +70,12 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 import { lower } from '@prisma/composer/deploy';
-import { captureEngineFailure, deploymentReport } from '@prisma/composer/report';
+import * as report from '@prisma/composer/report';
 import config from ${quote(configImport)};
 import app from ${quote(appImport)};
 
-captureEngineFailure();
+// The app's own @prisma/composer may predate the failure recorder.
+report.captureEngineFailure?.();
 
 export default lower(app, config, {
 ${renderOptions(input)}

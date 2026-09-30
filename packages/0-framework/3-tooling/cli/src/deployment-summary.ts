@@ -128,7 +128,8 @@ export function captureEngineFailure(): void {
   for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     const original = console[method];
     console[method] = (...args: unknown[]) => {
-      tail = `${tail}${format(...args)}\n`.slice(-OUTPUT_TAIL_LIMIT);
+      // Redacted per record, so the tail cut can never leave half a secret behind.
+      tail = `${tail}${redactSecrets(format(...args), process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
       original.apply(console, args);
     };
   }
