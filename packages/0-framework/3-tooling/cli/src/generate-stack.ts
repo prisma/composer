@@ -70,9 +70,11 @@ export function renderStackFile(input: StackFileInput): string {
 //
 // bisects a CLI bug from an Alchemy bug (deploy-cli.md § Implementation decisions).
 import { lower } from '@prisma/composer/deploy';
-import { deploymentReport } from '@prisma/composer/report';
+import { captureEngineFailure, deploymentReport } from '@prisma/composer/report';
 import config from ${quote(configImport)};
 import app from ${quote(appImport)};
+
+captureEngineFailure();
 
 export default lower(app, config, {
 ${renderOptions(input)}
