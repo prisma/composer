@@ -1204,6 +1204,78 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(converges).toBe(1);
   }, 20_000);
 
+  /**
+   * A rebuild re-assembles every service's artifact directory, and the
+   * converge child reads those directories. A second rebuild starting while
+   * the first child is still running rewrites them underneath it.
+   */
+  test('a build change during a rebuild waits for it, and later changes coalesce into one rebuild', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    let buildChange: () => void = () => undefined;
+    let converges = 0;
+    let running = 0;
+    let mostRunning = 0;
+    const releases: (() => void)[] = [];
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 10) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    };
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [path.join(app.dir, 'built.txt')],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            running += 1;
+            mostRunning = Math.max(mostRunning, running);
+            if (converges > 1) await new Promise<void>((resolve) => releases.push(resolve));
+            running -= 1;
+            return { exitCode: 0, signal: null };
+          },
+          watch: (targets, onChange) => {
+            if (!targets.some((t) => t.paths.includes(path.join(app.dir, 'prisma.config.ts')))) {
+              buildChange = onChange;
+            }
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+
+      buildChange();
+      await until(() => converges === 2);
+      buildChange();
+      buildChange();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(converges).toBe(2);
+
+      releases.shift()?.();
+      await until(() => converges === 3);
+      releases.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(converges).toBe(3);
+      expect(mostRunning).toBe(1);
+      await start.value.stop();
+    });
+  }, 15_000);
+
   describe('the prisma.config.ts watch', () => {
     const quietAttachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),

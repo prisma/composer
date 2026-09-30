@@ -285,48 +285,60 @@ export async function executeDev(
       () => void pausedForConfig(),
       onWatchError,
     );
+    // The whole rebuild is inside one try/catch: it runs fire-and-forget, so
+    // anything escaping it would be an unhandled rejection killing the
+    // process — the exact opposite of "a converge failure keeps the running
+    // app and keeps watching".
+    const rebuild = async (): Promise<void> => {
+      try {
+        const rePipeline = await runPipeline(input.entry, input.name, cwd, input.config, watchDeps);
+        const stackPath = writeDevStackFile({
+          entryPath: rePipeline.entryModule.path,
+          cwd,
+          configFile: rePipeline.configSource.file,
+          name: rePipeline.name,
+          assembled: rePipeline.assembled,
+        });
+        const outcome = await (deps.alchemy ?? spawnAlchemy)(
+          alchemyInvocation({
+            command: 'deploy',
+            stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+            cwd,
+            stage: 'dev',
+            containerEnv: containerEnv(containers),
+          }),
+        );
+        if (outcome.signal !== null || outcome.exitCode !== 0) {
+          emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
+          return;
+        }
+        emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+      } catch (error) {
+        emit({ kind: 'rebuild-failed', message: failureMessage(error) });
+      }
+    };
+    // One rebuild at a time: a rebuild rewrites every service's artifact
+    // directory, which the previous rebuild's converge child may still be
+    // reading. Changes during a rebuild coalesce into one more after it.
+    let rebuilding = false;
+    let changedDuringRebuild = false;
+    const rebuildUntilSettled = async (): Promise<void> => {
+      rebuilding = true;
+      do {
+        changedDuringRebuild = false;
+        await rebuild();
+      } while (changedDuringRebuild && !pausedForConfig());
+      rebuilding = false;
+    };
     watch = watchFiles(
       targets,
       () => {
         if (pausedForConfig()) return;
-        // The whole rebuild is inside one try/catch: this runs fire-and-forget,
-        // so anything escaping it would be an unhandled rejection killing the
-        // process — the exact opposite of "a converge failure keeps the running
-        // app and keeps watching".
-        void (async () => {
-          try {
-            const rePipeline = await runPipeline(
-              input.entry,
-              input.name,
-              cwd,
-              input.config,
-              watchDeps,
-            );
-            const stackPath = writeDevStackFile({
-              entryPath: rePipeline.entryModule.path,
-              cwd,
-              configFile: rePipeline.configSource.file,
-              name: rePipeline.name,
-              assembled: rePipeline.assembled,
-            });
-            const outcome = await (deps.alchemy ?? spawnAlchemy)(
-              alchemyInvocation({
-                command: 'deploy',
-                stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-                cwd,
-                stage: 'dev',
-                containerEnv: containerEnv(containers),
-              }),
-            );
-            if (outcome.signal !== null || outcome.exitCode !== 0) {
-              emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
-              return;
-            }
-            emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
-          } catch (error) {
-            emit({ kind: 'rebuild-failed', message: failureMessage(error) });
-          }
-        })();
+        if (rebuilding) {
+          changedDuringRebuild = true;
+          return;
+        }
+        void rebuildUntilSettled();
       },
       onWatchError,
     );
