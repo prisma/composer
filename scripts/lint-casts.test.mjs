@@ -169,3 +169,32 @@ describe('lint-casts — worktree cleanup', () => {
     assert.equal(worktreeCount, 1, `expected 1 worktree; got:\n${worktreeList}`);
   });
 });
+
+describe('lint-casts — renaming is not casting', () => {
+  it('does not count an aliased import or export specifier, or `as const`', () => {
+    writeRepoFile('src/app.ts', FILE_WITHOUT_CAST);
+    commitAll('base: no casts');
+    setOriginMain(git('rev-parse', 'HEAD'));
+
+    writeRepoFile('src/lib.ts', 'export const defineConfig = 1;\n');
+    writeRepoFile(
+      'src/app.ts',
+      [
+        "import { defineConfig as composer } from './lib';",
+        "import * as lib from './lib';",
+        'export const settings = [composer, lib] as const;',
+        'export { composer as renamed };',
+        '',
+      ].join('\n'),
+    );
+    commitAll('feature: rename imports');
+
+    const result = runScript();
+    assert.equal(
+      result.status,
+      0,
+      `expected exit 0; stdout=${result.stdout} stderr=${result.stderr}`,
+    );
+    assert.match(result.stdout, /delta=0/);
+  });
+});
