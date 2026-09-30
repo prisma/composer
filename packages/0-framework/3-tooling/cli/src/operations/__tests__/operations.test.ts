@@ -1204,6 +1204,120 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(converges).toBe(1);
   }, 20_000);
 
+  describe('the prisma.config.ts watch', () => {
+    const quietAttachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 25) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    };
+
+    /** A dev session whose watchers are handed to the test instead of chokidar. */
+    async function devWithFakeWatchers(app: { dir: string; entryPath: string }) {
+      const events: DevEvent[] = [];
+      const watchers: {
+        paths: readonly string[];
+        onChange: () => void;
+        onError: ((error: unknown) => void) | undefined;
+      }[] = [];
+      let converges = 0;
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(quietAttachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [path.join(app.dir, 'built.txt')],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+          watch: (targets, onChange, onError) => {
+            watchers.push({ paths: targets.flatMap((t) => t.paths), onChange, onError });
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      const configFile = path.join(app.dir, 'prisma.config.ts');
+      const configWatcher = watchers.find((w) => w.paths.includes(configFile));
+      const buildWatcher = watchers.find((w) => !w.paths.includes(configFile));
+      if (configWatcher === undefined || buildWatcher === undefined) {
+        throw new Error('expected a config watcher and a build watcher');
+      }
+      return {
+        session: start.value,
+        events,
+        configWatcher,
+        buildWatcher,
+        converges: () => converges,
+        configFile,
+      };
+    }
+
+    test('a save that leaves prisma.config.ts unchanged is ignored', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        fs.writeFileSync(dev.configFile, fs.readFileSync(dev.configFile));
+        dev.configWatcher.onChange();
+        dev.buildWatcher.onChange();
+        await until(() => dev.converges() >= 2);
+
+        expect(dev.events.filter((e) => e.kind === 'config-changed')).toEqual([]);
+        expect(dev.converges()).toBe(2);
+        await dev.session.stop();
+      });
+    }, 15_000);
+
+    test('a failing config watcher is reported as a watch-error and dev keeps running', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        dev.configWatcher.onError?.(new Error('EMFILE: too many open files'));
+        dev.buildWatcher.onChange();
+        await until(() => dev.converges() >= 2);
+
+        expect(dev.events).toContainEqual({
+          kind: 'watch-error',
+          message: 'EMFILE: too many open files',
+        });
+        expect(dev.converges()).toBe(2);
+        await dev.session.stop();
+      });
+    }, 15_000);
+
+    /**
+     * A build watch on a directory that contains prisma.config.ts can fire
+     * before the config watcher does. The rebuild must still see the edit.
+     */
+    test('a rebuild that fires before the config watcher still sees the edit and pauses', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        fs.writeFileSync(dev.configFile, 'export default { composer: 2 };\n');
+        dev.buildWatcher.onChange();
+
+        expect(dev.events.filter((e) => e.kind === 'config-changed')).toEqual([
+          { kind: 'config-changed', file: dev.configFile },
+        ]);
+        expect(dev.converges()).toBe(1);
+        await dev.session.stop();
+      });
+    }, 15_000);
+  });
+
   test('stop() surfaces a service that refuses to stop as a stop-error event, and still finishes', async () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {

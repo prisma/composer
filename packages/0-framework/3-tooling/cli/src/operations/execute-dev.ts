@@ -6,6 +6,8 @@
  * from dev.ts — this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
  */
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
@@ -38,6 +40,15 @@ async function mergedEndpoints(
 }
 
 /** Runs the full dev pipeline; resolves to a running session or a structured failure. */
+/** The file's content hash; undefined when it cannot be read, which counts as a change. */
+function contentHash(file: string): string | undefined {
+  try {
+    return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  } catch {
+    return undefined;
+  }
+}
+
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -255,20 +266,29 @@ export async function executeDev(
     }
 
     const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const watchFiles = deps.watch ?? startWatch;
+    const onWatchError = (error: unknown): void =>
+      emit({ kind: 'watch-error', message: failureMessage(error) });
     const configFile = pipeline.configSource.file;
+    const startedConfig = contentHash(configFile);
     let configChanged = false;
-    const reportConfigChange = (): void => {
+    // Read on every event, not only from the config watcher: a build watch
+    // on a directory that contains the file can fire first.
+    const pausedForConfig = (): boolean => {
+      if (!configChanged && contentHash(configFile) === startedConfig) return false;
       configChanged = true;
       emit({ kind: 'config-changed', file: configFile });
+      return true;
     };
-    configWatch = startWatch([{ address: configFile, paths: [configFile] }], reportConfigChange);
-    watch = startWatch(
+    configWatch = watchFiles(
+      [{ address: configFile, paths: [configFile] }],
+      () => void pausedForConfig(),
+      onWatchError,
+    );
+    watch = watchFiles(
       targets,
       () => {
-        if (configChanged) {
-          reportConfigChange();
-          return;
-        }
+        if (pausedForConfig()) return;
         // The whole rebuild is inside one try/catch: this runs fire-and-forget,
         // so anything escaping it would be an unhandled rejection killing the
         // process — the exact opposite of "a converge failure keeps the running
@@ -308,7 +328,7 @@ export async function executeDev(
           }
         })();
       },
-      (error) => emit({ kind: 'watch-error', message: failureMessage(error) }),
+      onWatchError,
     );
     // A rebuild finishing before the OS-level watches attach would otherwise
     // be missed entirely — wait until watching is real before handing over.

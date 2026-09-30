@@ -8,6 +8,7 @@ import type { RunAssembler } from '@internal/assemble';
 import type { ContainerCredentials } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { startWatch } from '../dev/watch.ts';
 import type { RunAlchemy } from '../run-alchemy.ts';
 
 /** The `id` of an ExtensionDescriptor — what keys the executors' per-extension maps. */
@@ -34,6 +35,8 @@ export interface OperationDeps {
    * owns signal policy; hosts get the default `spawnAlchemy`.
    */
   readonly alchemy?: RunAlchemy | undefined;
+  /** Starts a file watch for `dev`; defaults to chokidar-backed `startWatch`. Tests substitute it to drive changes directly. */
+  readonly watch?: typeof startWatch | undefined;
   /**
    * How the in-process leg authenticates: the caller's already-authenticated
    * API client and the workspace it acts in. Supplied by the CLI from the
