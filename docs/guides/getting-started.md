@@ -111,7 +111,7 @@ This is what you're about to create:
 ```
 my-app/
 ├── module.ts                  # the root module — the app itself
-├── prisma-composer.config.ts  # deploy config (read only by the CLI)
+├── prisma.config.ts           # config: the `composer` section (read only by the CLI)
 └── src/
     ├── quotes/
     │   ├── contract.ts        # the quotes service's public API, as types
@@ -255,20 +255,29 @@ export default module('my-app', ({ provision }) => {
 });
 ```
 
-Next to it goes the deploy config. Only `prisma-composer deploy`/`destroy`
-read this file — your app code never imports it:
+Next to it goes `prisma.config.ts`, the one config file the Prisma CLI reads.
+Composer's configuration is its `composer` section: the extensions that deploy
+your app and the store that keeps deploy state. Only the `prisma-composer`
+commands read it — your app code never imports it:
 
 ```ts
-// prisma-composer.config.ts
-import { defineConfig } from '@prisma/composer/config';
+// prisma.config.ts
+import { defineConfig as composer } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
 
-export default defineConfig({
-  extensions: [prismaCloud(), nodeBuild()],
-  state: prismaState(),
+export default definePrismaConfig({
+  composer: composer({
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+  }),
 });
 ```
+
+The commands find `prisma.config.ts` from the directory you run them in, so
+run them from the app's root. When you add a database, its `orm` section goes
+in this same file.
 
 ## 5. Run it locally
 

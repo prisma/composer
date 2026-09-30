@@ -48,6 +48,10 @@ service logs — with several services running, streaming them all inline would
 bury the front door and the restart notices. Logs are their own command
 (below).
 
+`dev` reads the `composer` section of `prisma.config.ts` once, when it starts.
+A change to `prisma.config.ts` takes effect only after you stop `dev` and start
+it again.
+
 `Ctrl-C` stops your app's service processes and exits. The local databases,
 buckets, and their data stay up, so the next `prisma-composer dev` is a warm
 start — same ports, same data. `--fresh` is what wipes this app's local

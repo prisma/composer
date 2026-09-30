@@ -216,13 +216,36 @@ deploy. Rules that bite:
    runtime env for prerendered routes.
 4. **Always build before `deploy` or `dev`.** Neither builds for you.
 
-Deploy configuration lives in `prisma-composer.config.ts` (or `.mts`, `.mjs`,
-`.js`; nearest ancestor of the entry wins, `.ts` first within a directory).
-It registers extensions (`prismaCloud()`, `nodeBuild()`, `nextjsBuild()` when
-the app has a Next.js service) and the deploy-state backend
-(`prismaState()`). It is read by the CLI's operations (deploy, destroy, and
-dev; a `dev` run without one refuses, naming the missing file) and never
-imported by app code.
+Deploy configuration is the `composer` section of `prisma.config.ts`, and
+nothing else. It registers extensions (`prismaCloud()`, `nodeBuild()`,
+`nextjsBuild()` when the app has a Next.js service) and the deploy-state
+backend (`prismaState()`):
+
+```ts
+// prisma.config.ts
+import { defineConfig as composer } from '@prisma/composer/config';
+import { nodeBuild } from '@prisma/composer/node/control';
+import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
+
+export default definePrismaConfig({
+  composer: composer({ extensions: [prismaCloud(), nodeBuild()], state: prismaState() }),
+});
+```
+
+The commands find `prisma.config.ts` from the directory they run in, walking up
+to the repository root; the nearest file that declares `composer` wins, and its
+section is used whole, never merged key by key. Only `extensions` and `state`
+are allowed; any other key is an error. App code never imports the file.
+
+A separate `prisma-composer.config.ts` is no longer read, and the old setup is
+refused, never silently ignored: `CONFIG.SECTION_MISSING` when no loaded file
+has a `composer` section, `CONFIG.LEGACY_FIELD` when the section still has
+`configPath`, `CONFIG.LEGACY_FILE` when a `prisma-composer.config.*` sits next
+to the declaring `prisma.config.ts`. The fix for all three is to move the old
+file's `extensions` and `state` into the section and delete the old file.
+`@prisma/composer-cli/family` no longer exports `ComposerSection`; the
+section's type is `PrismaAppConfig` from `@prisma/composer/config`.
 
 ## Databases and migrations
 
@@ -338,10 +361,14 @@ param `optional` unless absent really is legal. Only reachable if you
 authored the connection or an extension on one side.
 
 **Driving deploys from code.** `@prisma/composer/control` exposes typed
-`deploy`, `destroy`, `dev`, and `log` returning structured results. Failures
-come back as `{ ok: false, failure }` with a dotted `failure.code` from a
-closed registry (e.g. `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED`,
-`DEPS.EFFECT_VERSION_CONFLICT`); branch on the code, not the message. A
+`deploy`, `destroy`, `dev`, and `log` returning structured results. Each takes
+a required `config: { value, path }`: the `composer` export of your
+`prisma.config.ts` and that file's path (relative to `cwd` or absolute). The
+operations never look for a config file; the deploy re-imports the file at
+`path`, so `value` must be its `composer` export. Failures come back as
+`{ ok: false, failure }` with a dotted `failure.code` from a closed registry
+(e.g. `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED`,
+`DEPS.EXECUTOR_UNLOADABLE`); branch on the code, not the message. A
 non-structured rejection out of an operation is a bug in composer, not an
 expected failure.
 
@@ -360,10 +387,12 @@ that surprise:
 3. `dev` does not print service logs; `log` is a separate, read-only command
    that follows the already-running app's merged logs. It never builds,
    provisions, starts, or stops anything.
-4. An unset secret doesn't block a local run: it becomes a placeholder plus a
+4. `dev` reads `prisma.config.ts` once, at start; restart `dev` after
+   changing it.
+5. An unset secret doesn't block a local run: it becomes a placeholder plus a
    warning, and only the code path that spends it fails, at the external
    service it calls.
-5. Windows isn't supported yet.
+6. Windows isn't supported yet.
 
 Local Postgres runs on `@prisma/dev`, which `@prisma/composer-prisma-cloud`
 declares as its own dependency (`^0.25.2`) and resolves from its own package.
@@ -433,10 +462,12 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 ## Failure modes quick reference
 
-1. **Every `prisma-composer` command halts at start-up on an `effect`
-   version conflict** (`Dependency conflict: alchemy resolves effect@...`).
-   The app, or one of its dependencies, pins a different `effect` and the
-   package manager hoisted it over Composer's pin. Match the app's own
+1. **Every `prisma-composer` command stops with `CLI.CONFIG_UNREADABLE` on an
+   `effect` version conflict** (`prisma.config.ts could not be evaluated:`
+   followed by a module error from inside alchemy, such as
+   `Schema.TaggedError is not a function`). The extensions in the `composer`
+   section import alchemy, and the app, or one of its dependencies, pins a
+   different `effect` that the package manager hoisted over Composer's pin. Match the app's own
    `effect` to `@prisma/composer`'s exact pin, or force it with
    `"overrides": { "effect": "<pin>" }` in the app's `package.json` (yarn:
    `resolutions`; pnpm: `pnpm.overrides`), then reinstall. A plain Composer

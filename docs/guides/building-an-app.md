@@ -389,8 +389,8 @@ An **extension** is a package that brings its own Modules, resources, or
 deploy target — the same mechanism `@prisma/composer-prisma-cloud` itself
 uses. The convention is an npm package named `prisma-composer-*`, which is
 how you and your agent find one; an extension is installed like any
-dependency and enters the deploy through the `extensions` array in
-`prisma-composer.config.ts`.
+dependency and enters the deploy through the `extensions` array in the
+`composer` section of `prisma.config.ts`.
 
 The ecosystem is new. Today the three Modules above plus the ones you write
 are the whole set, so treat `prisma-composer-*` as the place to look rather
