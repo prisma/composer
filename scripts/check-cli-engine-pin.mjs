@@ -12,7 +12,7 @@
 // Why each part matters:
 //
 //   Exact + identical. Composer's command family runs inside whichever
-//   process mounts it — composer's own CLI or the `prisma` bin — and both
+//   process mounts it (the `prisma` bin), and both
 //   sides must agree on the engine's types and its runtime classes. The
 //   engine and composer are released in tandem (engine → composer →
 //   prisma-cli), so the version is a hand-coordinated fact, not a range to be
@@ -26,7 +26,7 @@
 //   was built against. Dependabot is told to leave it alone
 //   (.github/dependabot.yml), which is what makes this check the only guard.
 //
-//   External. Both of composer-cli's tsdown configs bundle node_modules
+//   External. composer-cli's tsdown config bundles node_modules
 //   (`skipNodeModulesBundle: false`) so the @internal scope is inlined, and
 //   what survives as a real import is then the bundler's decision — one it
 //   can change without anyone editing a manifest. A private copy of the
@@ -36,9 +36,7 @@
 //   module-level registry would silently disagree. Grepping the emitted
 //   chunks for a surviving bare specifier is what proves externalization
 //   actually happened, which the manifest alone cannot say (see the
-//   inventory's hazard H7). The executable is checked BY NAME as well as in
-//   the whole-dist sweep, because it is built by a second config with its own
-//   externals and would otherwise ride on the library entries' specifier.
+//   inventory's hazard H7).
 //
 //   Engine-free library. @prisma/composer is the application-facing library;
 //   it declares no engine relationship, so nothing in its packed dist may
@@ -63,8 +61,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ENGINE = '@prisma/cli-engine';
-/** The published executable, built by its own tsdown config — see the bin-specific check below. */
-const BIN = 'bin.mjs';
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -179,18 +175,6 @@ try {
     require_(
       importing.length > 0,
       `no chunk in the packed dist/ imports ${ENGINE} by specifier — it has been inlined into the tarball instead of left external. Add it to tsdown.config.ts's \`external\` array.`,
-    );
-    // The executable specifically. The whole-dist check above passes as soon
-    // as ONE chunk keeps the specifier, so the library entries alone would
-    // satisfy it while the bin — built by a second tsdown config, with its own
-    // externals — carried a private copy of the engine.
-    require_(
-      !chunks.includes(BIN) || importsEngine(distDir, BIN),
-      `the packed ${BIN} does not import ${ENGINE} by specifier — the executable's tsdown config has inlined its own copy of the engine. Add it to that config's \`external\` array.`,
-    );
-    require_(
-      chunks.includes(BIN),
-      `the packed dist/ has no ${BIN} — the executable @prisma/composer-cli publishes as its bin is missing from the tarball.`,
     );
     if (importing.length > 0) {
       process.stderr.write(`${ENGINE} stays external in: ${importing.join(', ')}\n`);
