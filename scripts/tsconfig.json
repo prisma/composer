@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node", "bun"]
+  },
+  "include": ["*.ts"],
+  // These, and the tests that import them, predate this check and do not yet pass the base config's strict options.
+  "exclude": [
+    "bump-minor.ts",
+    "determine-version-utils.test.ts",
+    "determine-version-utils.ts",
+    "determine-version.ts",
+    "set-version.ts",
+    "setup-env.ts",
+    "skill-frontmatter.test.ts",
+    "skill-frontmatter.ts"
+  ]
+}

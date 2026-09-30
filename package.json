@@ -26,7 +26,8 @@
     "test": "turbo run test",
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
     "test:conformance:local": "pnpm --filter @internal/streams test:conformance:local",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && pnpm typecheck:scripts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "clean": "turbo run clean",
     "prepare": "husky && skills add prisma/skills --skill \"*\" --agent universal claude-code -y && skills add ./skills-contrib --skill \"*\" --agent universal claude-code -y && node scripts/sync-agent-rules.mjs",
     "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test website && node scripts/lint-architecture-coverage.mjs && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs && node scripts/lint-orm-pins.mjs && node scripts/lint-contract-snapshots.mjs"
