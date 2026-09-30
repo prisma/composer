@@ -18,9 +18,8 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import {
   type ComposerConfigSource,
   type ConfigFinding,
-  checkComposerSection,
+  checkComposerConfig,
   configFileMissing,
-  retiredFileFinding,
 } from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
@@ -44,26 +43,31 @@ export interface AppIdentity {
   readonly name: string;
 }
 
-function configError(finding: ConfigFinding, file: string): CliStructuredError {
-  return new CliStructuredError(finding.code, finding.summary, {
-    ...(finding.why === undefined ? {} : { why: finding.why }),
-    fix: finding.fix,
-    where: { path: finding.where ?? file },
-    ...(finding.field === undefined ? {} : { meta: { field: finding.field } }),
+function configError(
+  findings: readonly [ConfigFinding, ...ConfigFinding[]],
+  file: string,
+): CliStructuredError {
+  const [first] = findings;
+  return new CliStructuredError(first.code, first.summary, {
+    ...(first.why === undefined ? {} : { why: first.why }),
+    fix: first.fix,
+    where: { path: first.where ?? file },
+    meta: {
+      ...(first.field === undefined ? {} : { field: first.field }),
+      findings,
+    },
   });
 }
 
 /**
- * Refuses a caller's config the way the CLI's section validator refuses a section, before any work starts.
- * Returns it with `file` resolved against `cwd`.
+ * Refuses a caller's config with the same findings, in the same order, as the CLI's section validator.
+ * The error is the first finding and carries all of them in `meta.findings`. Returns the config with `file` resolved against `cwd`.
  */
 export function checkConfigSource(source: ComposerConfigSource, cwd: string): ComposerConfigSource {
   const file = path.resolve(cwd, source.file);
-  if (!fs.existsSync(file)) throw configError(configFileMissing(file), file);
-  const retired = retiredFileFinding(file);
-  if (retired !== undefined) throw configError(retired, file);
-  const checked = checkComposerSection(source.value);
-  if (!checked.ok) throw configError(checked.findings[0], file);
+  if (!fs.existsSync(file)) throw configError([configFileMissing(file)], file);
+  const checked = checkComposerConfig(source.value, file);
+  if (!checked.ok) throw configError(checked.findings, file);
   return { value: checked.value, file };
 }
 

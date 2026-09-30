@@ -466,6 +466,40 @@ describe('deploy()', () => {
       expect(alchemyRan).toBe(false);
     });
 
+    test('every finding, in the order the CLI reports them', async () => {
+      const app = makeAppDir();
+      fs.writeFileSync(path.join(app.dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+      const { failure } = await deployWith(app, {
+        value: { extensions: [] } as unknown as PrismaAppConfig,
+        file: 'prisma.config.ts',
+      });
+
+      expect(failure.code).toBe('CONFIG.FILE_RETIRED');
+      expect(failure.meta).toMatchObject({
+        findings: [{ code: 'CONFIG.FILE_RETIRED' }, { code: 'CONFIG.FIELD_INVALID' }],
+      });
+    });
+
+    test('a symlinked config.file is checked beside the file it links to', async () => {
+      const app = makeAppDir();
+      const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-real-config-')));
+      tmpDirs.push(real);
+      fs.writeFileSync(path.join(real, 'prisma.config.ts'), 'export default {};\n');
+      fs.writeFileSync(path.join(real, 'prisma-composer.config.ts'), 'export default {};\n');
+      fs.symlinkSync(path.join(real, 'prisma.config.ts'), path.join(app.dir, 'linked.config.ts'));
+
+      const { failure } = await deployWith(app, {
+        value: fakeConfig(),
+        file: 'linked.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_RETIRED',
+        where: { path: path.join(real, 'prisma-composer.config.ts') },
+      });
+    });
+
     test('a config.file that does not exist', async () => {
       const app = makeAppDir();
       const containerCalls: ContainerCall[] = [];

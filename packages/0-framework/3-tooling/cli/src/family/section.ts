@@ -8,8 +8,7 @@ import type { Diagnostic } from '@prisma/cli-engine/protocol';
 import {
   type ComposerConfigSource,
   type ConfigFinding,
-  checkComposerSection,
-  retiredFileFinding,
+  checkComposerConfig,
   sectionMissing,
 } from '../composer-config.ts';
 
@@ -40,12 +39,8 @@ function validate(
   const file = provenance.files[0];
   if (raw === undefined || file === undefined) return refuse([sectionMissing], undefined);
 
-  const checked = checkComposerSection(raw);
+  const checked = checkComposerConfig(raw, file);
   if (!checked.ok) return refuse(checked.findings, file);
-
-  const retired = retiredFileFinding(file);
-  if (retired !== undefined) return refuse([retired], file);
-
   return { ok: true, value: { value: checked.value, file }, diagnostics: [] };
 }
 

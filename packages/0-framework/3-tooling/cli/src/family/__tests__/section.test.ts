@@ -498,4 +498,36 @@ describe('composerSection.validate() on a retired config file', () => {
     const result = validate(validSection(), provenance(path.join(root, 'prisma.config.ts')));
     expect(result.ok).toBe(true);
   });
+
+  test('the old file is reported first, together with every field finding', () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+    const result = validate(
+      { extensions: [], state: undefined },
+      provenance(path.join(dir, 'prisma.config.ts')),
+    );
+
+    expect(result.diagnostics.map((d) => d.code)).toEqual([
+      'CONFIG.FILE_RETIRED',
+      'CONFIG.FIELD_INVALID',
+    ]);
+  });
+
+  test('a symlinked config file is checked beside the file it links to', () => {
+    const real = tempDir();
+    const linked = tempDir();
+    fs.writeFileSync(path.join(real, 'prisma.config.ts'), 'export default {};\n');
+    fs.writeFileSync(path.join(real, 'prisma-composer.config.ts'), 'export default {};\n');
+    fs.symlinkSync(path.join(real, 'prisma.config.ts'), path.join(linked, 'prisma.config.ts'));
+
+    const result = validate(validSection(), provenance(path.join(linked, 'prisma.config.ts')));
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'CONFIG.FILE_RETIRED',
+        where: { path: path.join(real, 'prisma-composer.config.ts') },
+      }),
+    ]);
+  });
 });

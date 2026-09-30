@@ -57,8 +57,17 @@ export function configFileMissing(file: string): ConfigFinding {
 }
 
 /** A prisma-composer.config.* beside the declaring file would otherwise be silently ignored. */
-export function retiredFileFinding(configFile: string): ConfigFinding | undefined {
-  const directory = path.dirname(configFile);
+/** The path with symlinks resolved; the path itself when it cannot be resolved, so the check never throws. */
+function realPath(file: string): string {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    return file;
+  }
+}
+
+function retiredFileFinding(configFile: string): ConfigFinding | undefined {
+  const directory = path.dirname(realPath(configFile));
   const found = RETIRED_FILE_NAMES.map((name) => path.join(directory, name)).find((file) =>
     fs.existsSync(file),
   );
@@ -221,7 +230,7 @@ export type CheckedSection =
  * Checks the fields that identify each descriptor and returns the descriptors as the config file's own objects.
  * Never throws: a section's values are user code, and a throwing getter or Proxy trap becomes a finding.
  */
-export function checkComposerSection(raw: unknown): CheckedSection {
+function checkComposerSection(raw: unknown): CheckedSection {
   if (!isObject(raw)) {
     return {
       ok: false,
@@ -249,4 +258,14 @@ export function checkComposerSection(raw: unknown): CheckedSection {
       ],
     };
   }
+}
+
+/**
+ * The whole check, shared by the section validator and the programmatic operations so both report the same findings in the same order: the retired file beside the declaring `configFile` (resolved through symlinks), then every field finding.
+ */
+export function checkComposerConfig(raw: unknown, configFile: string): CheckedSection {
+  const retired = retiredFileFinding(configFile);
+  const checked = checkComposerSection(raw);
+  if (retired === undefined) return checked;
+  return { ok: false, findings: checked.ok ? [retired] : [retired, ...checked.findings] };
 }
