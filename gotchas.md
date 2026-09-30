@@ -290,7 +290,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with) — _"Management API: project-scoped compute-service create collides with production on `main`; branchId-on-create differs from databases"_
 **Product:** Prisma Compute (Management API)
 **Version:** `@prisma/management-api-sdk` 1.47.0
-**First hit:** a `deploy --stage staging` of `examples/storefront-auth` — the stage-as-branch live proof
+**First hit:** `prisma-composer deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
 **Cost:** ~1 hour — one failed live deploy, diagnosis, and a provider rework.
 
 **Symptom.** Deploying a same-named compute service into a preview Branch fails outright: `compute_service:already_exists: An app named "auth" already exists on branch "main"`.
@@ -557,7 +557,7 @@ The Management API is no help: the project and database both read `status: "read
 ## The deploy CLI's module-graph loader can't parse a `.tsx` file with real JSX — even though the runtime bundler handles it fine
 
 **Filed upstream:** not filed — worth tracking as a product gap, since react-email (a common email-templating library) is JSX by construction.
-**Product:** Prisma Compute (`prisma deploy`, via Alchemy)
+**Product:** Prisma Compute (`prisma-composer deploy`, via Alchemy)
 **Version:** Prisma Composer framework, observed 2026-07-22
 **First hit:** the email module example (`examples/email`) — its `welcome` template was rewritten as a react-email component (`src/mailer/emails/welcome.tsx`), imported (through `templates.tsx` and `service.ts`) from `module.ts`
 **Cost:** roughly half a day diagnosing and working around
