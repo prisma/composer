@@ -66,7 +66,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # Renders docs/guides/*.md into the bundle, then builds the entry.
-      # `prisma-composer deploy` never builds for you (ADR-0005).
+      # `prisma deploy` never builds for you (ADR-0005).
       - name: Build
         run: pnpm turbo run build --filter composer-docs-website
       - name: Reset the production project (destroy-then-redeploy cutover)
@@ -77,7 +77,7 @@ jobs:
       # that does not exist on a runner (the credentials are already in env).
       - name: Deploy to production
         working-directory: website
-        run: bun node_modules/.bin/prisma-composer deploy module.ts
+        run: bun ../node_modules/.bin/prisma deploy module.ts
       # A green deploy is not a serving site (PRO-200), and the URL is a
       # generated service id — so resolve it, print it, and prove it answers.
       - name: Print the URL and smoke-check the site

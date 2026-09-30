@@ -7,8 +7,8 @@
     "build": "echo 'nothing to build for this package itself — the modules build via turbo ^build, from the workspace deps below'",
     "dev": "bun run scripts/dev.ts",
     "typecheck": "tsc --noEmit",
-    "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
-    "destroy": "( set -a; . ../../.env; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
+    "deploy": "pnpm turbo run build --filter @prisma/example-store... && ( set -a; . ../../.env; set +a; bun ../../node_modules/.bin/prisma deploy module.ts ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )",
+    "destroy": "( set -a; . ../../.env; set +a; bun ../../scripts/composer-destroy.ts module.ts --production ${STORE_STACK_NAME:+--name \"$STORE_STACK_NAME\"} )"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-rc.115",

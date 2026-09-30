@@ -7,8 +7,8 @@
     "build": "rm -rf dist/blobs && bun build src/blobs/server.ts --target=bun --outfile dist/blobs/server.mjs",
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",
-    "deploy": "pnpm turbo run build --filter @prisma/example-storage... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${STORAGE_STACK_NAME:+--name \"$STORAGE_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${STORAGE_STACK_NAME:+--name \"$STORAGE_STACK_NAME\"} )"
+    "deploy": "pnpm turbo run build --filter @prisma/example-storage... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy module.ts ${STORAGE_STACK_NAME:+--name \"$STORAGE_STACK_NAME\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts module.ts --production ${STORAGE_STACK_NAME:+--name \"$STORAGE_STACK_NAME\"} )"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

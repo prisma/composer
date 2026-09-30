@@ -8,8 +8,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test tests",
     "smoke:deployed": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun scripts/smoke.ts )",
-    "deploy": "pnpm turbo run build --filter @prisma/example-email... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )"
+    "deploy": "pnpm turbo run build --filter @prisma/example-email... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy module.ts ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts module.ts --production ${EMAIL_STACK_NAME:+--name \"$EMAIL_STACK_NAME\"} )"
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.25.0",

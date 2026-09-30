@@ -6,8 +6,8 @@
   "scripts": {
     "build": "echo 'nothing to build for this package itself — @storefront-auth/auth and @storefront-auth/storefront build via turbo ^build, from the workspace deps below'",
     "typecheck": "tsc --noEmit",
-    "deploy": "pnpm turbo run build --filter @prisma/example-storefront-auth... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
+    "deploy": "pnpm turbo run build --filter @prisma/example-storefront-auth... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy module.ts ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts module.ts --production ${STOREFRONT_STACK_NAME:+--name \"$STOREFRONT_STACK_NAME\"} )",
     "test": "bun test module.test.ts"
   },
   "dependencies": {
