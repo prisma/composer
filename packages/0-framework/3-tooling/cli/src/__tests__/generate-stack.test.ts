@@ -45,12 +45,28 @@ describe('renderStackFile() — a module root', () => {
       assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
     });
 
-    expect(content).toContain("import { deploymentReport } from '@prisma/composer/report';");
+    expect(content).toContain("import * as report from '@prisma/composer/report';");
     // The callback, not a call: the app name rides inside the DeploymentResult
     // core assembles, so the template threads nothing to the report.
-    expect(content).toContain('report: deploymentReport,');
+    expect(content).toContain('report: report.deploymentReport,');
     expect(content).not.toContain('deploymentReport(');
     expect(content).toContain('name: "storefront-auth"');
+  });
+
+  test('starts the failure-cause capture before the stack is lowered, so a failed apply leaves its cause for the parent', () => {
+    const content = renderStackFile({
+      entryPath: '/repo/app/module.ts',
+      cwd: '/repo/app',
+      configPath: '/repo/app/prisma-composer.config.ts',
+      name: 'storefront-auth',
+      assembled: { bundles: { app: { dir: '/repo/app/dist', entry: 'server.js' } } },
+    });
+
+    // Optional call: an app pinned to an older @prisma/composer lacks the export.
+    expect(content.indexOf('report.captureEngineFailure?.();')).toBeGreaterThan(-1);
+    expect(content.indexOf('report.captureEngineFailure?.();')).toBeLessThan(
+      content.indexOf('export default lower('),
+    );
   });
 
   test('a config discovered ABOVE the app dir renders with the deeper relative path', () => {

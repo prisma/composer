@@ -21,7 +21,9 @@ import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
+  engineFailureFilePath,
   readDeploymentSummary,
+  readEngineFailureCause,
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
@@ -541,13 +543,20 @@ async function runStackPipelineInner(
     // is never treated as success.
     const status = outcome.exitCode ?? 1;
     if (status !== 0) {
+      // The cause the child recorded on its way out, appended after the status
+      // sentence so searches for that sentence still match. A signal-killed
+      // child never runs its exit hook, so only this branch can have one.
+      const engineCause = readEngineFailureCause(resultFilePath);
+      const withCause = (sentence: string) =>
+        engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
       return notOk(
         new CliStructuredError(
           'DEPLOY.ENGINE_FAILED',
-          `alchemy ${action} exited with status ${status}.`,
+          withCause(`alchemy ${action} exited with status ${status}.`),
           {
             meta: {
               exitCode: status,
+              ...(engineCause !== undefined ? { engineCause } : {}),
               diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
             },
           },
@@ -598,6 +607,7 @@ async function runStackPipelineInner(
   } finally {
     try {
       fs.rmSync(resultFilePath, { force: true });
+      fs.rmSync(engineFailureFilePath(resultFilePath), { force: true });
     } catch {
       // Best-effort cleanup — never masks the result it wraps.
     }
