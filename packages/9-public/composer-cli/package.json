@@ -2,10 +2,7 @@
   "name": "@prisma/composer-cli",
   "version": "0.25.0",
   "type": "module",
-  "description": "Prisma Composer's command family and the `prisma-composer` CLI.",
-  "bin": {
-    "prisma-composer": "./dist/bin.mjs"
-  },
+  "description": "Prisma Composer's command family, which the `prisma` CLI mounts as `deploy` and `dev`.",
   "exports": {
     "./family": "./dist/family.mjs",
     "./testing": "./dist/testing.mjs",

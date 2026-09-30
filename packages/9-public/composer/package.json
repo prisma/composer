@@ -2,7 +2,7 @@
   "name": "@prisma/composer",
   "version": "0.25.0",
   "type": "module",
-  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/nextjs authoring surfaces. The `prisma-composer` CLI lives in @prisma/composer-cli.",
+  "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/nextjs authoring surfaces. The command family the `prisma` CLI mounts lives in @prisma/composer-cli.",
   "exports": {
     ".": "./dist/index.mjs",
     "./config": "./dist/config.mjs",
