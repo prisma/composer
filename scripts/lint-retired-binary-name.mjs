@@ -16,8 +16,8 @@
  * Scanned: the root Markdown files, docs/guides, docs/oss, skills,
  * skills-contrib, examples, website, .github, and the packages' shipped
  * source, whose error messages and generated-file headers users read at run
- * time. Package tests and fixtures are skipped: they assert on the legacy
- * diagnostics and use the state directory.
+ * time. Package `__tests__` folders and `*.test.*` files are skipped: they
+ * assert on the legacy diagnostics and use the state directory.
  *
  * Files that name the old binary or config file on purpose are allowlisted
  * with their exact number of findings, so an added mention still fails and a
@@ -76,15 +76,23 @@ const EXCLUDED_PATHS = new Set([
   'packages/9-public/composer/skills',
 ]);
 
-/** Package tests and fixtures, which assert on the legacy diagnostics. */
-const EXCLUDED_PACKAGE_DIRECTORIES = new Set(['__tests__', 'fixtures', 'test']);
+/** Package test folders, which assert on the legacy diagnostics; their fixtures live inside them. */
+const EXCLUDED_PACKAGE_DIRECTORIES = new Set(['__tests__']);
 
 const OLD_NAME = 'prisma-composer';
 
 const PATTERNS = [
-  // A `.` ends the token only at the end of a sentence; `.config` and `.map` continue a name.
-  { kind: 'binary name', pattern: new RegExp(`(?<![\\w/.])${OLD_NAME}(?![\\w-]|\\.\\w)`, 'g') },
-  { kind: 'binary path', pattern: new RegExp(`bin/${OLD_NAME}(?![\\w-]|\\.\\w)`, 'g') },
+  // A preceding `/` makes it a path segment unless it is `./`, a relative invocation.
+  // A following `.config` or `.map` makes it another file's name; `.cmd`, `.js` and a
+  // sentence-ending period do not.
+  {
+    kind: 'binary name',
+    pattern: new RegExp(`(?<![\\w.])(?<![^.]/)${OLD_NAME}(?![\\w-]|\\.(?:config|map)\\b)`, 'g'),
+  },
+  {
+    kind: 'binary path',
+    pattern: new RegExp(`bin/${OLD_NAME}(?![\\w-]|\\.(?:config|map)\\b)`, 'g'),
+  },
   { kind: 'config file', pattern: new RegExp(`${OLD_NAME}\\.config`, 'g') },
 ];
 
