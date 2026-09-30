@@ -225,12 +225,12 @@ function importAlchemy(label, appDir, probe = ALCHEMY_PROBE) {
 
 /**
  * Imports the command family from the scratch app, as the `prisma` bin does,
- * and lists the commands it mounts; returns { status, output }.
+ * and prints whether it mounts `deploy`; returns { status, output }.
  */
 function importFamily(label, appDir) {
   const probe =
     "const { createComposerFamily } = await import('@prisma/composer-cli/family');" +
-    'console.log(JSON.stringify(Object.keys(createComposerFamily().commands).sort()));';
+    "console.log(`mounts deploy: ${Object.hasOwn(createComposerFamily().commands, 'deploy')}`);";
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], {
     cwd: appDir,
     encoding: 'utf-8',
@@ -240,15 +240,16 @@ function importFamily(label, appDir) {
 }
 
 /**
- * Asserts the family imports from the installed tarballs and mounts `deploy`
- * and `dev`. Listing the commands is what says the family was built, rather
- * than that some module loaded.
+ * Asserts the family imports from the installed tarballs and mounts `deploy`,
+ * the command whose dependency graph `effect` affects. Finding the command is
+ * what says the family was built, rather than that some module loaded; which
+ * commands the family has is the family test's business.
  */
 function assertFamilyImports(label, appDir, situation) {
   const family = importFamily(label, appDir);
-  if (family.status !== 0 || !family.output.includes('["deploy","dev"]')) {
+  if (family.status !== 0 || !family.output.includes('mounts deploy: true')) {
     fail(
-      `[${label}] @prisma/composer-cli/family did not import and mount deploy and dev in ${situation} ` +
+      `[${label}] @prisma/composer-cli/family did not import and mount deploy in ${situation} ` +
         `(exit ${family.status}); the family's static graph must not reach alchemy:\n${family.output}`,
     );
   }
