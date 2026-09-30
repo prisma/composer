@@ -3,7 +3,7 @@
  * `/control` entries — not fixtures. This cannot live in packages/app-cli's
  * own suite: the CLI itself must not depend on any specific extension (see
  * test/README.md), but this package genuinely does, so `prisma-composer deploy`
- * here evaluates this package's own `prisma-composer.config.ts`, whose static
+ * here evaluates this package's own `prisma.config.ts`, whose `composer` section's static
  * imports of `@prisma/composer-prisma-cloud/control` and `@prisma/composer/node/control`
  * resolve from THIS app's own dependency tree — ambient resolution, no
  * anchor file, no framework-constructed specifier.

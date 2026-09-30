@@ -216,9 +216,9 @@ export default {
     exclude: {
       // Tests inside packages are excluded (they legitimately cross plane
       // boundaries); build tooling configs are excluded by NAME, deliberately
-      // not by a generic `.config.` pattern — the examples'
-      // `prisma-composer.config.ts` files are user-facing imports and MUST be
-      // cruised (they are how /control extensions enter the deploy, ADR-0017).
+      // not by a generic `.config.` pattern. `prisma.config.ts` is excluded
+      // here too, although its `composer` section is how /control extensions
+      // enter the deploy (ADR-0017): those imports are not cruised.
       path: [
         'node_modules',
         '^packages/.*\\.test\\.',

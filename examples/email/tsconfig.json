@@ -4,5 +4,5 @@
     "types": ["bun"],
     "jsx": "react-jsx"
   },
-  "include": ["module.ts", "prisma-composer.config.ts", "src", "tests", "scripts"]
+  "include": ["module.ts", "prisma.config.ts", "src", "tests", "scripts"]
 }

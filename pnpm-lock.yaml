@@ -75,6 +75,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1085.0
         version: 3.1087.0
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -103,6 +106,9 @@ importers:
       '@effect/platform-bun':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -131,6 +137,9 @@ importers:
 
   examples/email:
     dependencies:
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -174,6 +183,9 @@ importers:
 
   examples/env-param:
     dependencies:
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -230,6 +242,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1085.0
         version: 3.1087.0
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -258,6 +273,9 @@ importers:
       '@effect/platform-bun':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -428,6 +446,9 @@ importers:
       '@effect/platform-bun':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -524,6 +545,9 @@ importers:
 
   examples/streams:
     dependencies:
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -1447,6 +1471,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1085.0
         version: 3.1087.0
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../../packages/9-public/composer
@@ -1483,6 +1510,9 @@ importers:
 
   website:
     dependencies:
+      '@prisma/cli-engine':
+        specifier: 0.6.2
+        version: 0.6.2(@prisma/management-api-sdk@1.80.0)
       '@prisma/composer':
         specifier: workspace:0.25.0
         version: link:../packages/9-public/composer

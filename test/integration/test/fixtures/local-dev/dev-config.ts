@@ -1,6 +1,6 @@
 /**
- * The dev STACK's own config. Matches the shared
- * `test/integration/prisma-composer.config.ts` shape, including `nodeBuild()`
+ * The dev STACK's own config. Matches the `composer` section of the shared
+ * `test/integration/prisma.config.ts`, including `nodeBuild()`
  * — the same build-only extension `deploy`'s assemble step routes through
  * (`config.extensions[build.extension].nodes[build.type]`) and dev needs to
  * accept without throwing (`mergedDevProviders`'s build-only exemption,

@@ -9,7 +9,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
 import { deploy } from '@prisma/composer/control';
-import composerConfig from '../prisma-composer.config.ts';
+import prismaConfig from '../prisma.config.ts';
 
 const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join(
@@ -25,7 +25,7 @@ describe('@prisma/composer/control — programmatic deploy over the real extensi
     const result = await deploy({
       entry: fixtureEntry,
       cwd: integrationDir,
-      config: { value: composerConfig, path: path.join(integrationDir, 'prisma.config.ts') },
+      config: { value: prismaConfig.composer, path: path.join(integrationDir, 'prisma.config.ts') },
     });
 
     expect(result.ok).toBe(false);

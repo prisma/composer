@@ -1,9 +1,8 @@
 /**
  * The local-dev integration fixture's root (S4 proof, local-dev spec § 4/§ 5,
  * plan.md's S4 outcome): compute + postgres + bucket, so a `dev: true`
- * lowering exercises every one of the eight local providers. Discovered by
- * walking up from this file (a real `prisma-composer.config.ts` sits at the
- * repo root of this package).
+ * lowering exercises every one of the eight local providers. The package's
+ * `prisma.config.ts` carries the `composer` section a real `dev` would read.
  *
  * `bgService`'s secret/env-param binding (S5 proof, spec's acceptance
  * criterion 5), on ADR-0042's input model: `apiKey` is an `envSecret` leaf of
