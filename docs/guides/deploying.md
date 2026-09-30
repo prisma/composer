@@ -344,7 +344,10 @@ What to know before embedding it:
   (anything between loading the deploy stack and the deploy engine — including
   the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
   reported with the same fix-naming message the CLI prints), or `execution`
-  (the engine ran and failed). An `execution` failure's optional
+  (the engine ran and failed). An `execution` failure's message ends with
+  the engine's own error lines — the failed resource and the error it
+  printed, with credentials redacted and capped at 1000 characters — which a
+  deploy reporting to Prisma Cloud also records on the build. Its optional
   `diagnostics` object carries the exit code and an exact reproduce command —
   details of the current execution mechanism, handy for printing a hint but
   not something to build on; branch on `message`/`cause` for anything

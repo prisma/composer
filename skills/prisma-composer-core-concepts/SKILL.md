@@ -306,8 +306,9 @@ installation is needed.
    path; running `alchemy deploy .prisma-composer/alchemy.run.ts` directly
    separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
-   `DEPLOY.ENGINE_FAILED` carrying the exit code and that reproduce command;
-   the child's live output streams to the terminal either way.
+   `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
+   lines (credentials redacted, capped at 1000 characters) and that reproduce
+   command; the child's live output streams to the terminal either way.
 3. Destroy evaluates the same stack program as deploy, and evaluating it
    packages the assembled bundles, so **an app must be built before it can
    be torn down**.
