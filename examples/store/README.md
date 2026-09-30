@@ -77,14 +77,20 @@ To run the **whole real topology** locally instead — every service, its
 Postgres and buckets, wired as they deploy, credential-free:
 
 ```sh
-pnpm build && bun ../../node_modules/.bin/prisma dev module.ts
+pnpm build && prisma dev module.ts
 ```
 
-See [Running locally](../../docs/guides/running-locally.md).
+See [Running locally](../../docs/guides/running-locally.md), and
+[Runtime](../../docs/guides/deploying.md#runtime) for when to run `prisma`
+under Bun.
 
 ## Deploy
 
 ```sh
-pnpm deploy    # needs .env at the repo root (see examples/storefront-auth)
-pnpm destroy
+prisma deploy module.ts
 ```
+
+To tear it down, call the `destroy` operation from a script; see
+[Destroying](../../docs/guides/deploying.md#destroying). Inside the
+prisma/composer repository, `pnpm deploy` and `pnpm destroy` wrap both with
+the repository's `.env`.
