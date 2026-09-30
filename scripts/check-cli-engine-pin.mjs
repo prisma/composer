@@ -167,7 +167,7 @@ try {
 } catch (error) {
   require_(
     false,
-    `the prisma host is not installed for examples/orm-demo (${error.message}); run pnpm install.`,
+    `the prisma host is not installed for examples/orm-demo (${error.message.split('\n')[0]}); run pnpm install.`,
   );
 }
 if (hostManifestPath !== undefined) {
@@ -189,7 +189,7 @@ if (hostManifestPath !== undefined) {
   } catch (error) {
     require_(
       false,
-      `the installed prisma cannot resolve @prisma/composer-cli/family (${error.message}). ` +
+      `the installed prisma cannot resolve @prisma/composer-cli/family (${error.message.split('\n')[0]}). ` +
         "Check the root package.json's pnpm override and its @prisma/composer-cli devDependency (gotchas.md).",
     );
   }
