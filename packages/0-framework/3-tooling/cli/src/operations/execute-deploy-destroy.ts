@@ -21,7 +21,9 @@ import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
+  engineFailureFilePath,
   readDeploymentSummary,
+  readEngineFailureCause,
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
@@ -510,6 +512,12 @@ async function runStackPipelineInner(
       );
     }
 
+    // The cause the child recorded on its way out, appended after the status
+    // sentence so searches for that sentence still match.
+    const engineCause = readEngineFailureCause(resultFilePath);
+    const withCause = (sentence: string) =>
+      engineCause === undefined ? sentence : `${sentence}\n${engineCause}`;
+
     // A signal-killed converge is the user interrupting, not a deploy that
     // went wrong: it is still reported as a failure VALUE (the operation
     // promised a Result), but it carries the signal instead of an exit code
@@ -520,10 +528,11 @@ async function runStackPipelineInner(
       return notOk(
         new CliStructuredError(
           'DEPLOY.ENGINE_FAILED',
-          `alchemy ${action} was interrupted by ${outcome.signal}.`,
+          withCause(`alchemy ${action} was interrupted by ${outcome.signal}.`),
           {
             meta: {
               signal: outcome.signal,
+              ...(engineCause !== undefined ? { engineCause } : {}),
               diagnostics: {
                 exitCode: undefined,
                 signal: outcome.signal,
@@ -544,10 +553,11 @@ async function runStackPipelineInner(
       return notOk(
         new CliStructuredError(
           'DEPLOY.ENGINE_FAILED',
-          `alchemy ${action} exited with status ${status}.`,
+          withCause(`alchemy ${action} exited with status ${status}.`),
           {
             meta: {
               exitCode: status,
+              ...(engineCause !== undefined ? { engineCause } : {}),
               diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
             },
           },
@@ -598,6 +608,7 @@ async function runStackPipelineInner(
   } finally {
     try {
       fs.rmSync(resultFilePath, { force: true });
+      fs.rmSync(engineFailureFilePath(resultFilePath), { force: true });
     } catch {
       // Best-effort cleanup — never masks the result it wraps.
     }

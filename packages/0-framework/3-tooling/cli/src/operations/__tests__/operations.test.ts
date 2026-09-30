@@ -18,10 +18,15 @@ import type {
   ExtensionDescriptor,
   LocateContainerInput,
   PrismaAppConfig,
+  RunOutcome,
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
-import { DEPLOYMENT_RESULT_FILE_ENV, type DeploymentSummary } from '../../deployment-summary.ts';
+import {
+  DEPLOYMENT_RESULT_FILE_ENV,
+  type DeploymentSummary,
+  engineFailureFilePath,
+} from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
@@ -484,6 +489,87 @@ describe('deploy()', () => {
     });
   });
 
+  test('an engine failure carries the cause the child recorded, after the status sentence and in meta', async () => {
+    const app = makeAppDir();
+    let failureFile: string | undefined;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (resultFile === undefined) throw new Error('the result-file env var must be set');
+            failureFile = engineFailureFilePath(resultFile);
+            fs.writeFileSync(failureFile, '[web] fail — PrismaApiError: 409 Conflict');
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toBe(
+      'alchemy deploy exited with status 1.\n[web] fail — PrismaApiError: 409 Conflict',
+    );
+    expect(result.failure.meta?.['engineCause']).toBe('[web] fail — PrismaApiError: 409 Conflict');
+    expect(result.failure.meta?.['exitCode']).toBe(1);
+    expect(executionDiagnostics(result.failure)?.exitCode).toBe(1);
+    expect(fs.existsSync(failureFile ?? '')).toBe(false);
+  });
+
+  test('an engine failure with no recorded cause keeps the bare status sentence and no engineCause', async () => {
+    const app = makeAppDir();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 1, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.message).toBe('alchemy deploy exited with status 1.');
+    expect(result.failure.meta).not.toHaveProperty('engineCause');
+  });
+
+  test('an interrupted converge carries a recorded cause too, keeping its signal', async () => {
+    const app = makeAppDir();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        {
+          config: fakeConfig(),
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (resultFile === undefined) throw new Error('the result-file env var must be set');
+            fs.writeFileSync(engineFailureFilePath(resultFile), 'lease held by another deploy');
+            return { exitCode: null, signal: 'SIGTERM' };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.message).toBe(
+      'alchemy deploy was interrupted by SIGTERM.\nlease held by another deploy',
+    );
+    expect(result.failure.meta?.['signal']).toBe('SIGTERM');
+    expect(result.failure.meta?.['engineCause']).toBe('lease held by another deploy');
+  });
+
   test('.prisma-composer existing as a FILE is a pipeline failure, not a rejection', async () => {
     const app = makeAppDir('hello-ops');
     fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
@@ -669,6 +755,35 @@ describe('destroy()', () => {
     expect(result.failure.code).toBe('DEPLOY.TARGET_NOT_FOUND');
     expect(result.failure.message).toBe('Nothing deployed for fixture-app/staging.');
     expect(result.failure.fix).toBe('Deploy it first.');
+  });
+
+  test('a failed destroy carries the cause the child recorded, like deploy', async () => {
+    const app = makeAppDir();
+    fs.mkdirSync(path.join(app.dir, '.alchemy'), { recursive: true });
+    fs.writeFileSync(path.join(app.dir, '.alchemy', 'state.json'), '{}');
+
+    const result = await silently(() =>
+      destroyWithDeps(
+        { entry: app.entryPath, target: { kind: 'stage', stage: 'staging' }, cwd: app.dir },
+        {
+          config: fakeConfig({}, { alchemyStage: 'br_x' }),
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (resultFile === undefined) throw new Error('the result-file env var must be set');
+            fs.writeFileSync(engineFailureFilePath(resultFile), '[db] fail — timed out');
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEPLOY.ENGINE_FAILED');
+    expect(result.failure.message).toBe(
+      'alchemy destroy exited with status 1.\n[db] fail — timed out',
+    );
   });
 
   test('a successful destroy runs alchemy, then every teardown, then every container removal', async () => {
@@ -1535,6 +1650,44 @@ describe('deploy-run reporting', () => {
 
     expect(result.ok).toBe(false);
     expect(log.events.at(-1)).toBe('finish:cancelled');
+  });
+
+  test('the build report of a failed converge names the step and carries the engine cause in its message', async () => {
+    const app = makeAppDir();
+    const outcomes: RunOutcome[] = [];
+    const config = fakeConfig({
+      reporter: {
+        begin: async () => ({
+          childEnv: () => ({}),
+          attach: async () => {},
+          finish: async (outcome) => {
+            outcomes.push(outcome);
+          },
+        }),
+      },
+    });
+
+    await silently(() =>
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir },
+        {
+          config,
+          runAssembler: fakeAssembler,
+          alchemy: async (input) => {
+            const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
+            if (resultFile === undefined) throw new Error('the result-file env var must be set');
+            fs.writeFileSync(engineFailureFilePath(resultFile), '[web] fail — 409 Conflict');
+            return { exitCode: 1, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]?.failingStep).toBe('DEPLOY.ENGINE_FAILED');
+    expect(outcomes[0]?.errorMessage).toBe(
+      'alchemy deploy exited with status 1.\n[web] fail — 409 Conflict',
+    );
   });
 
   test('a reporter that throws at any step never fails the deploy', async () => {
