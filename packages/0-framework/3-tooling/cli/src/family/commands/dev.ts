@@ -112,6 +112,14 @@ function reportDevEvent(
         report({ kind: 'message', severity: 'warn', text: `Rebuild failed: ${event.message}` });
         return;
 
+      case 'config-changed':
+        report({
+          kind: 'message',
+          severity: 'warn',
+          text: `${event.file} changed. Restart dev to apply it; rebuilds are paused until then.`,
+        });
+        return;
+
       case 'watch-error':
         report({ kind: 'message', severity: 'warn', text: `Watch error: ${event.message}` });
         return;

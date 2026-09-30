@@ -32,7 +32,7 @@ import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
-import { devWithDeps } from '../dev.ts';
+import { type DevEvent, devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
 import { executionDiagnostics, executorLoadFailure } from '../shared.ts';
@@ -1106,6 +1106,69 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(result.failure.message).toBe('service two failed to bind its port');
     expect(stops).toBe(1);
   }, 15_000);
+
+  /**
+   * The session keeps the config it started with, while each rebuild's child
+   * would import prisma.config.ts from disk. So an edit is reported, and
+   * rebuilds stop until the user restarts dev, rather than mixing the two.
+   */
+  test('an edit to prisma.config.ts is reported, and rebuilds stop until dev restarts', async () => {
+    const app = makeAppDir('hello-dev');
+    const buildOutput = path.join(app.dir, 'built.txt');
+    fs.writeFileSync(buildOutput, 'v1');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const events: DevEvent[] = [];
+    let converges = 0;
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    const configChanges = () => events.filter((event) => event.kind === 'config-changed');
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [buildOutput],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+
+      fs.writeFileSync(path.join(app.dir, 'prisma.config.ts'), 'export default { composer: 1 };\n');
+      await until(() => configChanges().length >= 1);
+
+      fs.writeFileSync(buildOutput, 'v2');
+      await until(() => configChanges().length >= 2);
+
+      await start.value.stop();
+      await start.value.closed;
+    });
+
+    expect(configChanges()[0]).toEqual({
+      kind: 'config-changed',
+      file: path.join(app.dir, 'prisma.config.ts'),
+    });
+    expect(configChanges()).toHaveLength(2);
+    expect(converges).toBe(1);
+  }, 20_000);
 
   test('stop() surfaces a service that refuses to stop as a stop-error event, and still finishes', async () => {
     const app = makeAppDir('hello-dev');

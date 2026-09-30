@@ -218,6 +218,7 @@ export async function executeDev(
   const attachments: LocalTargetAttachment[] = [];
   const started: LocalTargetAttachment[] = [];
   let watch: WatchHandle | undefined;
+  let configWatch: WatchHandle | undefined;
   try {
     for (const [id, dev] of resolved) {
       try {
@@ -254,9 +255,20 @@ export async function executeDev(
     }
 
     const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const configFile = pipeline.configSource.file;
+    let configChanged = false;
+    const reportConfigChange = (): void => {
+      configChanged = true;
+      emit({ kind: 'config-changed', file: configFile });
+    };
+    configWatch = startWatch([{ address: configFile, paths: [configFile] }], reportConfigChange);
     watch = startWatch(
       targets,
       () => {
+        if (configChanged) {
+          reportConfigChange();
+          return;
+        }
         // The whole rebuild is inside one try/catch: this runs fire-and-forget,
         // so anything escaping it would be an unhandled rejection killing the
         // process — the exact opposite of "a converge failure keeps the running
@@ -301,7 +313,8 @@ export async function executeDev(
     // A rebuild finishing before the OS-level watches attach would otherwise
     // be missed entirely — wait until watching is real before handing over.
     const startedWatch = watch;
-    await watch.ready;
+    const startedConfigWatch = configWatch;
+    await Promise.all([watch.ready, configWatch.ready]);
 
     let stopping = false;
     let resolveClosed: () => void = () => undefined;
@@ -314,6 +327,7 @@ export async function executeDev(
         stopping = true;
         emit({ kind: 'stopping' });
         startedWatch.stop();
+        startedConfigWatch.stop();
         void (async () => {
           // A service that refuses to stop is surfaced, not swallowed —
           // teardown continues, `stopped` still fires, `closed` still settles.
@@ -337,6 +351,7 @@ export async function executeDev(
     // Cleanup runs whatever the error's shape; only structured failures come
     // back as values — a non-structured escape is a bug and throws (rule 6).
     watch?.stop();
+    configWatch?.stop();
     await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;

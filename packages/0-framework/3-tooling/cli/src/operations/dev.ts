@@ -19,6 +19,8 @@ export type DevEvent =
   | { readonly kind: 'rebuild-failed'; readonly message: string }
   /** The file watcher itself errored (EMFILE, a vanished directory); the session keeps running. */
   | { readonly kind: 'watch-error'; readonly message: string }
+  /** `prisma.config.ts` changed. The session keeps the config it started with and stops rebuilding until it is restarted. */
+  | { readonly kind: 'config-changed'; readonly file: string }
   /** The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
