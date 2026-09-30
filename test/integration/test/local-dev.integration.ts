@@ -100,7 +100,7 @@ const devDir = path.join(fixtureDir, DEV_DIR);
 const stackDir = devDir;
 const stackFile = path.join(stackDir, 'alchemy.run.ts');
 const stackFileRel = path.relative(fixtureDir, stackFile);
-const configFile = path.join(fixtureDir, 'dev-config.ts');
+const configFile = path.join(fixtureDir, 'prisma.config.ts');
 const webEntryFile = path.join(fixtureDir, 'built', 'web-server.mjs');
 const logDir = path.join(devDir, 'logs');
 const ALCHEMY_TIMEOUT_MS = 60_000;
@@ -216,8 +216,10 @@ function renderDevStackFile(bundles: Record<string, FixtureBundle>): string {
 import { lower } from '@prisma/composer/deploy';
 import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';
 import { localState } from 'alchemy/State/LocalState';
-import config from ${JSON.stringify(configImport)};
+import prismaConfig from ${JSON.stringify(configImport)};
 import app from ${JSON.stringify(appImport)};
+
+const config = prismaConfig.composer;
 
 const containers = deserializeContainers(config.extensions, process.env);
 const resolved = await resolveLocalTargets(config);
