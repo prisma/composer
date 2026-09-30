@@ -656,6 +656,8 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 - `pnpm.overrides["@prisma/composer-cli"] = "workspace:*"` makes the host depend on the workspace package. Without it, pnpm installs the registry version beside the host.
 - The root devDependency on `@prisma/composer-cli` puts that package's link in the root `node_modules`. The hoisted linker places `prisma` in the root `node_modules` but does not create the overridden link beside it (`node_modules/prisma/node_modules/@prisma/` stays empty), so the host finds the family only by walking up to the root.
 
+The examples also declare `@prisma/composer-cli` as a devDependency, so CI's filtered build (`turbo run build --filter <example>...`) builds the family dist the host loads.
+
 The same layout is why package scripts run `bun ../../node_modules/.bin/prisma`: the hoisted linker links bins of hoisted packages only into the root `node_modules/.bin`.
 
 **Guard.** `pnpm check:cli-engine-pin` resolves `@prisma/composer-cli/family` from the installed host and fails unless it is the workspace package, and fails unless the host and the family share one `@prisma/cli-engine`. The host version lives once, in the `catalog` of `pnpm-workspace.yaml`.
