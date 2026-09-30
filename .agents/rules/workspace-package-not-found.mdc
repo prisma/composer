@@ -1,13 +1,13 @@
 ---
-description: "A missing workspace package (Cannot find module '@prisma/composer-*' / '@prisma/composer-alchemy' / 'prisma-composer', ERR_MODULE_NOT_FOUND / bun ResolveMessage) is a build/install-state issue, not a code bug — verify with require.resolve (pnpm links per-consumer, not repo root), then pnpm build (stale dist) / pnpm install (new dep)"
+description: "A missing workspace package (Cannot find module '@prisma/composer-*' / '@prisma/composer-alchemy', ERR_MODULE_NOT_FOUND / bun ResolveMessage) is a build/install-state issue, not a code bug — verify with require.resolve (pnpm links per-consumer, not repo root), then pnpm build (stale dist) / pnpm install (new dep)"
 globs: []
 alwaysApply: true
 ---
 
 # A missing workspace package is a build/install state issue, not a code bug
 
-The workspace's own packages — `@prisma/composer`, `@prisma/composer-*`, `@prisma/composer-alchemy`,
-and the unscoped `prisma-composer` — build to `dist/` and export from there. When one
+The workspace's own packages — `@prisma/composer`, `@prisma/composer-*`, and `@prisma/composer-alchemy`
+— build to `dist/` and export from there. When one
 of them fails to resolve ("Cannot find module", `ERR_MODULE_NOT_FOUND`, or bun's
 `ResolveMessage`), don't chase it as an import/tsconfig/deps bug.
 

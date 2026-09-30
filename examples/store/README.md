@@ -77,8 +77,7 @@ To run the **whole real topology** locally instead — every service, its
 Postgres and buckets, wired as they deploy, credential-free:
 
 ```sh
-pnpm build && prisma-composer dev module.ts
-prisma-composer log module.ts          # logs, in another terminal
+pnpm build && bun ../../node_modules/.bin/prisma dev module.ts
 ```
 
 See [Running locally](../../docs/guides/running-locally.md).

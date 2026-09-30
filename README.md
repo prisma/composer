@@ -7,7 +7,7 @@ between them — to Prisma Cloud in minutes.
 Prisma Composer is a TypeScript framework for apps made of more than one
 piece. You declare each service and what it depends on — other services,
 databases, schedules, secrets — compose them into a **Prisma App**, and
-`prisma-composer deploy` provisions all of it. There is no infrastructure
+`prisma deploy` provisions all of it. There is no infrastructure
 configuration to write or maintain.
 
 ## You need Node 22.18 or newer
@@ -17,10 +17,10 @@ node --version
 ```
 
 **On anything older, Composer cannot load your app at all.** Your entry file is
-TypeScript and `prisma-composer` hands it straight to Node — the framework
+TypeScript and `prisma` hands it straight to Node — the framework
 never bundles or transforms your code. Node runs `.ts` files directly only from
 **22.18.0**, the release that turns type stripping on by default. Before that,
-`prisma-composer deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own
+`prisma deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own
 entry file, which reads as a broken file rather than a Node that is too old.
 
 22.17 is not close enough, and Node 20 never gets it: the default changed in

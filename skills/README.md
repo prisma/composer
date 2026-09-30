@@ -9,7 +9,7 @@ App without re-deriving the API from documentation each time.
 One skill, `prisma-composer-core-concepts`, covering the whole story: the mental model
 (Modules, `compute()`, `service.load()`), RPC contracts, databases, reusable
 modules (cron/storage/streams), config params, secrets, testing
-(`mockService`/`bootstrapService`), deploying (`prisma-composer deploy`,
+(`mockService`/`bootstrapService`), deploying (`prisma deploy`,
 stages, destroy), and the production pitfalls. Composer's surface is small
 enough for one skill; there is no router or per-topic cluster.
 

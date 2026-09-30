@@ -289,7 +289,7 @@ process.on("unhandledRejection", (e) => console.error(e));
 **Filed upstream:** [PRO-215](https://linear.app/prisma-company/issue/PRO-215/management-api-project-scoped-compute-service-create-collides-with) — _"Management API: project-scoped compute-service create collides with production on `main`; branchId-on-create differs from databases"_
 **Product:** Prisma Compute (Management API)
 **Version:** `@prisma/management-api-sdk` 1.47.0
-**First hit:** `prisma-composer deploy --stage staging` on `examples/storefront-auth` — the stage-as-branch live proof
+**First hit:** a `deploy --stage staging` of `examples/storefront-auth` — the stage-as-branch live proof
 **Cost:** ~1 hour — one failed live deploy, diagnosis, and a provider rework.
 
 **Symptom.** Deploying a same-named compute service into a preview Branch fails outright: `compute_service:already_exists: An app named "auth" already exists on branch "main"`.
@@ -556,14 +556,14 @@ The Management API is no help: the project and database both read `status: "read
 ## The deploy CLI's module-graph loader can't parse a `.tsx` file with real JSX — even though the runtime bundler handles it fine
 
 **Filed upstream:** not filed — worth tracking as a product gap, since react-email (a common email-templating library) is JSX by construction.
-**Product:** Prisma Compute (`prisma-composer deploy`, via Alchemy)
+**Product:** Prisma Compute (`prisma deploy`, via Alchemy)
 **Version:** Prisma Composer framework, observed 2026-07-22
 **First hit:** the email module example (`examples/email`) — its `welcome` template was rewritten as a react-email component (`src/mailer/emails/welcome.tsx`), imported (through `templates.tsx` and `service.ts`) from `module.ts`
 **Cost:** roughly half a day diagnosing and working around
 
 **Symptom.** `pnpm run deploy` failed with `TypeError: Unknown file extension ".tsx"`, thrown from Node's own `node:internal/modules/esm/get_format`, while loading `templates.tsx`. The same file bundles and runs correctly under Bun (`bun build`, `bun test`) — the failure is specific to the deploy CLI's module-graph-loading step.
 
-**Cause.** `prisma-composer deploy` loads the app's `module.ts` → `service.ts` → dependency-factory-argument import graph with Node's own native ESM loader, to build deploy topology (ADR-0005: the framework doesn't bundle the app's code). Node's native TypeScript support (`--experimental-strip-types` / `--experimental-transform-types`) strips *type* syntax but has no JSX transform at all — confirmed by direct testing: a `.tsx` file with real JSX syntax fails to load under bare `node` and under both experimental-types flags alike; only a separate loader hook (the `tsx` npm package, via `--import=tsx`) can execute it. No pre-existing `.tsx` file in this repo's example apps sits in a `module.ts`/`service.ts`-reachable import graph (the ones that exist are Next.js pages, reached only through the Next.js build adapter), so this is the first time the conflict surfaces.
+**Cause.** `prisma deploy` loads the app's `module.ts` → `service.ts` → dependency-factory-argument import graph with Node's own native ESM loader, to build deploy topology (ADR-0005: the framework doesn't bundle the app's code). Node's native TypeScript support (`--experimental-strip-types` / `--experimental-transform-types`) strips *type* syntax but has no JSX transform at all — confirmed by direct testing: a `.tsx` file with real JSX syntax fails to load under bare `node` and under both experimental-types flags alike; only a separate loader hook (the `tsx` npm package, via `--import=tsx`) can execute it. No pre-existing `.tsx` file in this repo's example apps sits in a `module.ts`/`service.ts`-reachable import graph (the ones that exist are Next.js pages, reached only through the Next.js build adapter), so this is the first time the conflict surfaces.
 
 Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make Node parse the JSX, but it also changes module resolution for every other Node process spawned during that deploy — it broke an unrelated, pre-existing import inside Alchemy's own CLI startup (`@alchemy.run/node-utils`'s `foregroundChild` export stopped resolving), so it isn't a safe fix.
 
@@ -574,7 +574,7 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 **Reproduction.**
 
 1. Add a `.tsx` file with real JSX syntax anywhere in a module's `module.ts` → `service.ts` → dependency-argument import graph.
-2. `prisma-composer deploy module.ts` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
+2. `prisma deploy module.ts` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
 3. Precompile the JSX away (e.g. `bun build --target=node --format=esm` with npm packages kept `--external`) into a plain `.ts`/`.mjs` file, and import that from `service.ts` instead → deploy succeeds.
 
 **References.**
@@ -618,7 +618,7 @@ Error: Dynamic require of "assert" is not supported
 **Version:** Bun 1.3.11 (`Bun.SQL`, prepared statements on by default); `@prisma/composer-prisma-cloud` ≤ 0.20.0
 **First hit:** a consumer app wiring `email()` + `auth()` under `prisma dev`; reproduced in `examples/email`
 
-**Symptom.** The first `prisma-composer dev` run is fine. The next one (or any restart of the service against the same database) crash-loops until the emulator holds it:
+**Symptom.** The first `prisma dev` run is fine. The next one (or any restart of the service against the same database) crash-loops until the emulator holds it:
 
 ```
 [email.service] PostgresError: prepared statement "P
