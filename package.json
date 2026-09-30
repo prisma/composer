@@ -12,6 +12,7 @@
     "lint:fix": "biome check --write .",
     "lint:fix:unsafe": "biome check --write --unsafe .",
     "lint:casts": "node scripts/lint-casts.mjs",
+    "lint:retired-cli-name": "node scripts/lint-retired-cli-name.mjs",
     "rules:sync": "node scripts/sync-agent-rules.mjs",
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
     "check:publish-deps": "node scripts/check-publish-deps.mjs",

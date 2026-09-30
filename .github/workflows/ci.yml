@@ -27,6 +27,8 @@ jobs:
         run: pnpm lint
       - name: Lint (dependency-cruiser — domain/layer/plane boundaries, ADR-0028)
         run: pnpm lint:deps
+      - name: Lint (guides, skills, examples and workflows name the prisma CLI, not the retired binary)
+        run: pnpm lint:retired-cli-name
 
   typecheck:
     name: Type Check
