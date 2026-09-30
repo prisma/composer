@@ -30,7 +30,7 @@
  *      catalog build adapter declares `Bundle.watch: [runnable.source]` —
  *      the built artifact path itself (build.ts) — so touching
  *      `modules/catalog/dist/server.mjs` is exactly the file session 1's own
- *      running `prisma-composer dev` process is already watching. The script
+ *      running `prisma dev` process is already watching. The script
  *      only touches the file and polls the compute emulator for the new pid
  *      — it never calls assemble or alchemy itself; the running process's
  *      own debounce, re-assemble, and re-converge are what's under test.

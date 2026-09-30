@@ -274,7 +274,7 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * the real workspace check for a real deploy lives where the value actually
  * matters, `container.ts`'s `ensureContainer`/`locateContainer`. An absent
  * `PRISMA_REGION` resolves to `undefined` without touching anything else —
- * required for `prisma-composer dev`, which never sets `PRISMA_REGION` and
+ * required for `prisma dev`, which never sets `PRISMA_REGION` and
  * must not fail on its absence (local-dev spec § 5).
  */
 function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {

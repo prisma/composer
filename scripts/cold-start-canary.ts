@@ -211,7 +211,7 @@ function requireString(record: unknown, key: string): string {
   return record[key];
 }
 
-/** The per-run project shares the stack's name (`prisma-composer deploy --name`). */
+/** The per-run project shares the stack's name (`prisma deploy --name`). */
 async function findProjectId(): Promise<string> {
   const projects = await apiData('GET', '/projects?limit=100');
   const list = Array.isArray(projects) ? projects : [];

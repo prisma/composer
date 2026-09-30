@@ -41,8 +41,7 @@ export interface LogInput {
   readonly name?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */
   readonly address?: string | undefined;
-  /** Trailing history lines before live output. Defaults to 0 (live only) —
-   * the attachment contract's default; the CLI's user-facing default of 20 stays in main.ts. */
+  /** Trailing history lines before live output. Defaults to 0 (live only). */
   readonly tail?: number | undefined;
   readonly cwd?: string | undefined;
   /** Ends the stream when aborted. The host owns SIGINT/SIGTERM → abort. */
@@ -51,7 +50,7 @@ export interface LogInput {
 }
 
 export interface LogAttached {
-  /** For the adapter's empty-services notice. */
+  /** The app's name, for a caller's empty-services notice. */
   readonly appName: string;
   /** Every running service. EMPTY means nothing is running — a valid, non-failure state;
    * `lines` is then an already-finished iterable. */

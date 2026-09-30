@@ -1,7 +1,7 @@
 /**
  * The app's configuration. The `composer` section is its control-plane config
- * (ADR-0017), read only by `prisma-composer deploy`/`destroy`/`dev`/`log` and
- * never imported by app code. Its static imports are the one place the
+ * (ADR-0017), read by `prisma deploy`, `prisma dev` and the `destroy` and `log`
+ * operations of `@prisma/composer/control`, and never imported by app code. Its static imports are the one place the
  * extensions' /control entries (provisioning, bundlers, alchemy) enter the
  * deploy; they resolve from this app's own dependencies.
  */
