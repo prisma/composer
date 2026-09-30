@@ -1,6 +1,6 @@
 /**
  * The extension's control entry (ADR-0017): `nodeBuild()` returns the build
- * descriptor `prisma-composer.config.ts` lists. Deploy-only (ADR-0005): the user
+ * descriptor `prisma.config.ts` lists. Deploy-only (ADR-0005): the user
  * builds their own runnable; `assemble` copies what they built under `bundle/`
  * and adds the framework's boot wrapper — it never bundles or transforms the
  * app's code.
@@ -419,7 +419,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   };
 }
 
-/** The node build extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
+/** The node build extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const nodeBuild = (): ExtensionDescriptor => ({
   id: '@prisma/composer/node',
   nodes: {

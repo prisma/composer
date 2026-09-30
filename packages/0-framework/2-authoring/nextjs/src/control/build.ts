@@ -1,6 +1,6 @@
 /**
  * The extension's control entry (ADR-0017): `nextjsBuild()` returns the build
- * descriptor `prisma-composer.config.ts` lists. Deploy-only (ADR-0005): the user
+ * descriptor `prisma.config.ts` lists. Deploy-only (ADR-0005): the user
  * runs `next build` (`output: "standalone"`); `assemble` then performs the
  * *documented* Next standalone deploy — it ships the standalone tree and copies
  * in the client assets Next deliberately omits (`.next/static`, `public/`) — and
@@ -336,7 +336,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   };
 }
 
-/** The nextjs build extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
+/** The nextjs build extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const nextjsBuild = (): ExtensionDescriptor => ({
   id: '@prisma/composer/nextjs',
   nodes: {

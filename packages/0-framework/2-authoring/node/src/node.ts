@@ -15,7 +15,7 @@
  *
  * Returns plain data — nothing runs on import. `extension` + `type` are the
  * control-plane registry key: deploy tooling routes assembly through the app's
- * `prisma-composer.config.ts` to this package's `/control` descriptor
+ * `prisma.config.ts` to this package's `/control` descriptor
  * (ADR-0017).
  */
 import type { BuildAdapter } from '@internal/core';

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 /**
  * The firewall by file boundary (ADR-0017): control-plane code is loaded only
- * through `prisma-composer.config.ts` — nothing reachable from this package's
+ * through `prisma.config.ts` — nothing reachable from this package's
  * AUTHORING entry may import a `/control` entry (its own or any other
  * extension's), or the wrapper bundle would drag esbuild and the rest of the
  * deploy toolchain into the runtime artifact.

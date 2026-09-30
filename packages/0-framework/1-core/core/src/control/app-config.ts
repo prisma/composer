@@ -1,4 +1,4 @@
-/** The `prisma-composer.config.ts` surface (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
+/** The `composer` section of `prisma.config.ts` (ADR-0017): statically imports each extension's node-descriptor registry plus the state store; core defines only the types. */
 import type * as Layer from 'effect/Layer';
 import type {
   ContainerCredentials,
@@ -328,7 +328,7 @@ export interface PrismaAppConfig {
   readonly state: StateDescriptor;
 }
 
-/** Typed identity — exists so `prisma-composer.config.ts` gets checked against PrismaAppConfig where it is written. */
+/** Typed identity — exists so the `composer` section of `prisma.config.ts` gets checked against PrismaAppConfig where it is written. */
 export function defineConfig(config: PrismaAppConfig): PrismaAppConfig {
   return config;
 }

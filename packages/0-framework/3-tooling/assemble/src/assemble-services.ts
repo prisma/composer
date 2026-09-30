@@ -31,7 +31,7 @@ function buildDescriptorAssemble(
     throw new AssembleError(
       'ASSEMBLE.EXTENSION_MISSING',
       `No extension "${extension}" is configured (needed by service "${node.name}"'s build).`,
-      { fix: "Add it to prisma-composer.config.ts's `extensions`." },
+      { fix: 'Add it to `extensions` in the `composer` section of prisma.config.ts.' },
     );
   }
   const nodeDescriptor = extensionDescriptor.nodes[type];

@@ -443,7 +443,7 @@ function extensionsById(
 function unknownExtensionError(extension: string, id: NodeId): LowerError {
   return new LowerError(
     `No extension "${extension}" is configured (needed by node "${id}") — add it to ` +
-      "prisma-composer.config.ts's `extensions` (import its /control entry and list its descriptor).",
+      '`extensions` in the `composer` section of prisma.config.ts (import its /control entry and list its descriptor).',
   );
 }
 

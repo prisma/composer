@@ -145,7 +145,7 @@ describe('assembleServices()', () => {
     if (!(error instanceof AssembleError)) throw new Error('unreachable');
     expect(error.code).toBe('ASSEMBLE.EXTENSION_MISSING');
     expect(error.message).toMatch(/No extension "@fixture\/node-adapter" is configured/);
-    expect(error.fix).toContain('prisma-composer.config.ts');
+    expect(error.fix).toBe('Add it to `extensions` in the `composer` section of prisma.config.ts.');
   });
 
   test('a build routed to a non-build descriptor throws AssembleError naming the kinds', async () => {

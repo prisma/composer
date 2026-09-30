@@ -662,7 +662,7 @@ describe('lowering a module root — a single service', () => {
 
     expect(error).toBeInstanceOf(LowerError);
     expect(error.message).toContain('@acme/other-cloud');
-    expect(error.message).toContain('prisma-composer.config.ts');
+    expect(error.message).toContain('the `composer` section of prisma.config.ts');
   });
 
   test('a resource node routed to a service descriptor is a LowerError naming (extension, type, expected kind)', () => {
