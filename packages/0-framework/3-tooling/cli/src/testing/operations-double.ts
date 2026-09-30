@@ -1,7 +1,9 @@
 /**
- * The published control-API double (`@prisma/composer/testing`): the two
- * control operations the family calls, `deploy` and `dev`, with their real signatures and Result shapes, backed by
- * fixtures instead of alchemy, containers, or a network.
+ * The published operations double (`@prisma/composer-cli/testing`): the two
+ * operations the command family calls, `deploy` and `dev`, with their real
+ * signatures and Result shapes, backed by fixtures instead of alchemy,
+ * containers, or a network. It does not cover `destroy` and `log`, which no
+ * command calls.
  *
  * Hosts that mount composer's command family — prisma-cli above all — test
  * against this instead of the real operations, so their suites never spawn a
@@ -10,8 +12,7 @@
  * defined as `typeof deployWithDeps` (etc.) of the REAL operations, and the
  * double is declared against it, so a drift in any real signature fails
  * `tsc --noEmit` right here. Every import of implementation modules is
- * type-only and erases
- * at build — the built `testing` chunk must contain no path to the real
+ * type-only and erases at build — the built `testing` chunk must contain no path to the real
  * control implementation, which scripts/check-family-static-graph.mjs proves
  * against the packed tarball.
  */
@@ -22,7 +23,7 @@ import type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 
-export interface ControlDoubleFixtures {
+export interface OperationsDoubleFixtures {
   /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary. */
   readonly deploy?: Result<DeploySuccess, CliStructuredError> | undefined;
   /**
@@ -40,22 +41,22 @@ export interface ControlDoubleFixtures {
  * converge spawn adapter and the credentials ride in on — so a host that
  * drops one of those is caught here rather than by its absence downstream.
  */
-export interface ControlDoubleDeps {
+export interface OperationsDoubleDeps {
   readonly deploy: readonly OperationDeps[];
   readonly dev: readonly OperationDeps[];
 }
 
 /** Every input each operation received, in call order — the assertion surface. */
-export interface ControlDoubleCalls {
+export interface OperationsDoubleCalls {
   readonly deploy: readonly DeployInput[];
   readonly dev: readonly DevInput[];
-  readonly deps: ControlDoubleDeps;
+  readonly deps: OperationsDoubleDeps;
 }
 
-export interface ControlDouble {
+export interface OperationsDouble {
   /** Drop-in for the real operations: hand to createComposerFamily({ operations }). */
   readonly operations: ComposerOperations;
-  readonly calls: ControlDoubleCalls;
+  readonly calls: OperationsDoubleCalls;
 }
 
 function devSessionDouble(input: DevInput, endpoints: readonly ServiceEndpoint[]): DevSession {
@@ -138,7 +139,7 @@ async function runConverge(
   );
 }
 
-export function createControlDouble(fixtures: ControlDoubleFixtures = {}): ControlDouble {
+export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}): OperationsDouble {
   const deployCalls: DeployInput[] = [];
   const devCalls: DevInput[] = [];
   const deployDeps: OperationDeps[] = [];

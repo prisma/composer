@@ -16,7 +16,7 @@
 // mechanism, not an optimization — flattening either dynamic import breaks
 // this check, which is the intended outcome, not a false positive.
 //
-// The same walk covers `dist/testing.mjs`: the control-API double's imports
+// The same walk covers `dist/testing.mjs`: the operations double's imports
 // of the real operation modules are type-only, and type-only is a claim about
 // built output — an accidental value import would inline the real control
 // implementation (the @internal scope is bundled) and hand every consumer of
@@ -77,8 +77,8 @@ const CHECKS = [
     entry: 'dist/testing.mjs',
     // The non-vacuous marker here is chunk content, not an import: the
     // double's constructor must be defined in the walked source.
-    expectedSource: /createControlDouble/,
-    expectedDescription: 'the createControlDouble definition',
+    expectedSource: /createOperationsDouble/,
+    expectedDescription: 'the createOperationsDouble definition',
     allowDynamicImports: false,
   },
 ];

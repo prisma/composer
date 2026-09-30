@@ -1,5 +1,5 @@
 /**
- * The control-API double behaves like the operations it stands in for: same
+ * The operations double behaves like the operations it stands in for: same
  * Result shapes, per-operation fixtures, a DevSession that actually runs its
  * lifecycle. Signature conformance is
  * compile-time (the double is typed as ComposerOperations = typeof the real
@@ -9,7 +9,7 @@ import { describe, expect, test } from 'bun:test';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../../composer-config.ts';
-import { createControlDouble } from '../control-double.ts';
+import { createOperationsDouble } from '../operations-double.ts';
 
 const ENTRY = './app/main.ts';
 const CONFIG = {
@@ -17,9 +17,9 @@ const CONFIG = {
   file: 'prisma.config.ts',
 } as unknown as ComposerConfigSource;
 
-describe('createControlDouble()', () => {
+describe('createOperationsDouble()', () => {
   test('deploy succeeds by default, with no summary, and records its input', async () => {
-    const double = createControlDouble();
+    const double = createOperationsDouble();
     const result = await double.operations.deploy(
       { entry: ENTRY, config: CONFIG, stage: 'preview' },
       {},
@@ -33,14 +33,14 @@ describe('createControlDouble()', () => {
     const failure = new CliStructuredError('DEPLOY.STAGE_INVALID', 'Bad stage.', {
       fix: 'Pick a valid stage.',
     });
-    const double = createControlDouble({ deploy: notOk(failure) });
+    const double = createOperationsDouble({ deploy: notOk(failure) });
     const result = await double.operations.deploy({ entry: ENTRY, config: CONFIG }, {});
     expect(!result.ok && result.failure).toBe(failure);
   });
 
   test('the DevSession double runs the whole lifecycle: ready, endpoints, stop, closed', async () => {
     const endpoints = [{ address: 'web', url: 'http://localhost:3000' }];
-    const double = createControlDouble({ devEndpoints: endpoints });
+    const double = createOperationsDouble({ devEndpoints: endpoints });
     const events: Array<{ kind: string }> = [];
     const result = await double.operations.dev(
       {

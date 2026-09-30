@@ -12,7 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';
-import { createControlDouble } from '../../testing/control-double.ts';
+import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
 
@@ -22,7 +22,7 @@ const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
 describe('dev, interrupted', () => {
   test('Ctrl-C settles 130, with the session stopped first', async () => {
-    const double = createControlDouble({});
+    const double = createOperationsDouble({});
     const family = createComposerFamily({ operations: double.operations });
     const cli = createTestCli({
       commandFamilies: [family],
