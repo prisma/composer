@@ -7,6 +7,10 @@
  * the app's `prisma.config.ts`: the one in the current directory, or the file
  * `--config` names. It does not look in parent directories.
  *
+ * `--production` and `--stage <name>` are the operation's two targets,
+ * `{ kind: 'production' }` and `{ kind: 'stage', stage }`, spelled as flags
+ * for the examples' package scripts only; no `prisma` command takes them.
+ *
  * Credentials come from PRISMA_SERVICE_TOKEN and PRISMA_WORKSPACE_ID.
  * Exits 2 on bad arguments. Exits 1 with the structured failure on stderr
  * when destroy fails, and with one line when the control entry or the config
