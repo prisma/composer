@@ -10,8 +10,8 @@
     "typecheck": "pnpm run render && tsc --noEmit",
     "test": "pnpm run render && bun test tests",
     "dev": "pnpm run render && bun run src/server.ts",
-    "deploy": "pnpm turbo run build --filter composer-docs-website && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} ${DOCS_STAGE:---production} )"
+    "deploy": "pnpm turbo run build --filter composer-docs-website && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun ../node_modules/.bin/prisma deploy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun ../scripts/composer-destroy.ts module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} ${DOCS_STAGE:---production} )"
   },
   "dependencies": {
     "@prisma/composer": "workspace:0.25.0",
