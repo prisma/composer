@@ -6,13 +6,13 @@
  * deploy; they resolve from this app's own dependencies.
  */
 import { definePrismaConfig } from '@prisma/cli-engine';
-import { defineConfig } from '@prisma/composer/config';
+import { defineConfig as composer } from '@prisma/composer/config';
 import { nextjsBuild } from '@prisma/composer/nextjs/control';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 
 export default definePrismaConfig({
-  composer: defineConfig({
+  composer: composer({
     extensions: [prismaCloud(), nodeBuild(), nextjsBuild()],
     // ONE state store per deploy — the workspace-hosted ledger (reads
     // PRISMA_WORKSPACE_ID), shared by every deployer of this app.

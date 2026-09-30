@@ -1,9 +1,9 @@
 import { definePrismaConfig } from '@prisma/cli-engine';
-import { defineConfig } from '@prisma/composer/config';
+import { defineConfig as composer } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import authPack from '@prisma/composer-prisma-cloud/auth/pack';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
-import * as orm from '@prisma/orm-postgres/config';
+import { defineConfig as orm } from '@prisma/orm-postgres/config';
 
 // The ORM config anchors the (empty) app contract and the migrations
 // directory, and declares the auth extension pack — `prisma migration
@@ -15,11 +15,11 @@ import * as orm from '@prisma/orm-postgres/config';
 export default definePrismaConfig({
   // Composer's control-plane config (ADR-0017), read only by the deploy
   // tooling and never imported by app code.
-  composer: defineConfig({
+  composer: composer({
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),
-  orm: orm.defineConfig({
+  orm: orm({
     contract: './contract.prisma',
     db: { connection: 'postgres://localhost:5432/placeholder' },
     extensions: [authPack],
