@@ -198,9 +198,38 @@ const ALCHEMY_PROBE = [
   "await import('alchemy/Stack');",
 ].join(' ');
 
+/**
+ * The same import, for the adversarial shape: on failure it reports whether
+ * `effect` is what broke. A wrong `effect` shows up either as a missing
+ * export of an `effect` module (the message or stack names
+ * `node_modules/effect/`, `@effect/` or an `effect` module specifier), or as
+ * `X.Y is not a function` where the installed `effect` has no `X.Y`. Paths
+ * are matched on `node_modules/`, because the scratch directory's own name
+ * contains "effect".
+ */
+const ALCHEMY_BLAME_PROBE = `
+try {
+  ${ALCHEMY_PROBE}
+} catch (error) {
+  const message = String(error?.message ?? error);
+  const text = message + '\\n' + String(error?.stack ?? '');
+  const namesEffect =
+    /node_modules\\/(?:effect|@effect\\/[^/]+)\\//.test(text) ||
+    /module ['"](?:effect|@effect\\/[^'"]+)(?:\\/[^'"]*)?['"]/.test(text);
+  const missing = /(\\w+)\\.(\\w+) is not a function/.exec(message);
+  let effectLacksIt = false;
+  if (missing !== null) {
+    const effect = await import('effect');
+    effectLacksIt = typeof effect[missing[1]]?.[missing[2]] !== 'function';
+  }
+  console.log(JSON.stringify({ message, blamesEffect: namesEffect || effectLacksIt }));
+  process.exit(1);
+}
+`;
+
 /** Imports alchemy's provider tree from the scratch app, as the app's own config would; returns { status, output }. */
-function importAlchemy(label, appDir) {
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', ALCHEMY_PROBE], {
+function importAlchemy(label, appDir, probe = ALCHEMY_PROBE) {
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], {
     cwd: appDir,
     encoding: 'utf-8',
   });
@@ -340,14 +369,27 @@ async function checkAdversarialShape(tarballs) {
     );
   }
 
-  const probe = importAlchemy(label, appDir);
+  const probe = importAlchemy(label, appDir, ALCHEMY_BLAME_PROBE);
   if (probe.status === 0) {
     fail(
       `[${label}] alchemy imported cleanly although it resolves effect@${resolvedVersion}, so ` +
         'this shape proves nothing. Point WRONG_EFFECT at a published version alchemy cannot load.',
     );
   }
-  process.stderr.write(`[${label}] alchemy fails to import, as expected:\n${probe.output}\n`);
+  const verdict = probe.output
+    .split('\n')
+    .filter((line) => line.startsWith('{'))
+    .map((line) => JSON.parse(line))
+    .at(-1);
+  if (verdict?.blamesEffect !== true) {
+    fail(
+      `[${label}] alchemy failed to import, but not because of effect, so this shape proves ` +
+        `nothing about the wrong effect:\n${probe.output}`,
+    );
+  }
+  process.stderr.write(
+    `[${label}] alchemy fails to import on effect, as expected: ${verdict.message}\n`,
+  );
 
   // `--help` must SURVIVE a tree this broken. The command family's static graph
   // is alchemy-free and effect-free (scripts/check-family-static-graph.mjs
