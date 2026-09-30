@@ -35,6 +35,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
+- [In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency](#in-this-repository-the-published-prisma-host-runs-the-workspace-family-only-through-a-pnpm-override-plus-a-root-devdependency)
 
 ---
 
@@ -639,3 +640,22 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 1. `startPrismaDevServer({ name, persistenceMode: 'stateless' })`, then take `database.connectionString`.
 2. `new SQL({ url, max: 1 })`, run `create table if not exists t (id int)`, then close it.
 3. Open a second `new SQL({ url, max: 1 })` and run the same statement → 42P05. With `prepare: false` both succeed.
+
+---
+
+## In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency
+
+**Filed upstream:** not applicable (workspace mechanics)
+**Product:** the `prisma` host (`prisma@8.0.0-rc.19`) installed with pnpm's `node-linker=hoisted`
+**First hit:** moving this repository's examples and CI from the standalone Composer binary to `prisma deploy` and `prisma dev`
+
+**Symptom.** Without both root entries below, one of two things happens. Either `prisma` fails at start with `Cannot find module '@prisma/composer-cli/family'`, or, worse, it starts and runs the registry's `@prisma/composer-cli` instead of the workspace package, so CI tests the last release of the family and stays green.
+
+**Cause.** The published `prisma` pins an exact `@prisma/composer-cli` from the registry. Two entries in the root `package.json` redirect it:
+
+- `pnpm.overrides["@prisma/composer-cli"] = "workspace:*"` makes the host depend on the workspace package. Without it, pnpm installs the registry version beside the host.
+- The root devDependency on `@prisma/composer-cli` puts that package's link in the root `node_modules`. The hoisted linker places `prisma` in the root `node_modules` but does not create the overridden link beside it (`node_modules/prisma/node_modules/@prisma/` stays empty), so the host finds the family only by walking up to the root.
+
+The same layout is why package scripts run `bun ../../node_modules/.bin/prisma`: the hoisted linker links bins of hoisted packages only into the root `node_modules/.bin`.
+
+**Guard.** `pnpm check:cli-engine-pin` resolves `@prisma/composer-cli/family` from the installed host and fails unless it is the workspace package, and fails unless the host and the family share one `@prisma/cli-engine`. The host version lives once, in the `catalog` of `pnpm-workspace.yaml`.
