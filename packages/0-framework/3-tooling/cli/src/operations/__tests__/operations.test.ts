@@ -576,32 +576,16 @@ describe('deploy()', () => {
     expect(alchemyRan).toBe(false);
   });
 
-  test('a broken effect tree is a structured failure naming the mismatch — the executor cannot load, the host stays alive', () => {
+  test('an executor that cannot load is a structured failure carrying the import error — the host stays alive', () => {
     const dir = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-executor-')),
     );
     tmpDirs.push(dir);
-    const writePackage = (segments: readonly string[], manifest: Record<string, unknown>) => {
-      const pkgDir = path.join(dir, ...segments);
-      fs.mkdirSync(pkgDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(pkgDir, 'package.json'),
-        JSON.stringify({ main: 'index.js', ...manifest }),
-      );
-      fs.writeFileSync(path.join(pkgDir, 'index.js'), 'module.exports = {};\n');
-    };
-    writePackage(['node_modules', 'alchemy'], { name: 'alchemy', version: '2.0.0-beta.59' });
-    writePackage(['node_modules', 'effect'], { name: 'effect', version: '4.0.0-beta.102' });
-    writePackage(['node_modules', '@prisma', 'composer'], {
-      name: '@prisma/composer',
-      version: '0.0.0',
-      dependencies: { effect: '4.0.0-beta.93' },
-    });
 
     // In a broken tree the executor's own import of alchemy throws. The repo's
     // tree is healthy, so a fresh bun process reproduces that throw with a
-    // plugin that fails the executor's load; deploy() must diagnose it against
-    // `cwd`'s tree and return a structured failure — silent stdio, exit 0.
+    // plugin that fails the executor's load; deploy() must return a structured
+    // failure — silent stdio, exit 0.
     const operationsPath = fileURLToPath(new URL('../deploy.ts', import.meta.url));
     const breakerPath = path.join(dir, 'break-executor.ts');
     fs.writeFileSync(
@@ -623,7 +607,7 @@ describe('deploy()', () => {
     fs.writeFileSync(
       probePath,
       `import { deploy } from ${JSON.stringify(operationsPath)};\n` +
-        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)} });\n` +
+        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)}, config: { value: { extensions: [], state: { extension: 'x', create: () => undefined } }, path: 'prisma.config.ts' } });\n` +
         "if (result.ok) throw new Error('expected a failure');\n" +
         'const cause = result.failure.cause;\n' +
         'await Bun.write(\n' +
@@ -648,8 +632,10 @@ describe('deploy()', () => {
       envelope: { code: string; summary: string };
       cause: { name: string; message: string };
     };
-    expect(result.envelope.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
-    expect(result.envelope.summary).toContain('alchemy resolves effect@4.0.0-beta.102');
+    expect(result.envelope.code).toBe('DEPS.EXECUTOR_UNLOADABLE');
+    expect(result.envelope.summary).toBe(
+      'Could not load the deploy executor: Schedule.either is not a function',
+    );
     expect(result.cause).toEqual({
       name: 'Error',
       message: 'Schedule.either is not a function',
@@ -658,14 +644,9 @@ describe('deploy()', () => {
 });
 
 describe('executorLoadFailure()', () => {
-  test("an undiagnosed load failure names the failing operation in DEPS.EXECUTOR_UNLOADABLE's summary and why", () => {
-    const dir = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-load-')),
-    );
-    tmpDirs.push(dir);
-
+  test("a load failure names the failing operation in DEPS.EXECUTOR_UNLOADABLE's summary and why", () => {
     for (const operation of ['deploy', 'destroy', 'dev', 'log'] as const) {
-      const failure = executorLoadFailure(operation, new Error('import blew up'), dir);
+      const failure = executorLoadFailure(operation, new Error('import blew up'));
       expect(failure.code).toBe('DEPS.EXECUTOR_UNLOADABLE');
       expect(failure.message).toBe(`Could not load the ${operation} executor: import blew up`);
       expect(failure.why).toContain(`The ${operation} operation's executor`);

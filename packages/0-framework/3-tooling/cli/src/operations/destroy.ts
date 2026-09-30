@@ -49,7 +49,7 @@ export async function destroyWithDeps(
   try {
     executor = await import('./execute-deploy-destroy.ts');
   } catch (error) {
-    return notOk(executorLoadFailure('destroy', error, cwd));
+    return notOk(executorLoadFailure('destroy', error));
   }
   return executor.executeDestroy(input, deps, cwd);
 }

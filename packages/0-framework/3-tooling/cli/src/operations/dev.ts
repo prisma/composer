@@ -72,7 +72,7 @@ export async function devWithDeps(
   try {
     executor = await import('./execute-dev.ts');
   } catch (error) {
-    return notOk(executorLoadFailure('dev', error, cwd));
+    return notOk(executorLoadFailure('dev', error));
   }
   return executor.executeDev(input, deps, cwd);
 }
