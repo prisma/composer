@@ -1,7 +1,7 @@
 /**
  * The programmatic `destroy` operation (`@prisma/composer/control`): typed
- * input, structured result, no argv, no console, no process.exit. The
- * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
+ * input, structured result, no argv, no console, no process.exit. No CLI
+ * command wraps it. The executor
  * loads lazily, so importing this module executes nothing; an executor that
  * fails to load comes back as a structured failure, never a throw out of
  * the host.

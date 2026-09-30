@@ -1,7 +1,7 @@
 /**
  * The programmatic `deploy` operation (`@prisma/composer/control`): typed
  * input, structured result, no argv, no console, no process.exit. The
- * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
+ * family's `deploy` command is a thin renderer over it. The executor
  * loads lazily, so importing this module executes nothing; an executor that
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
@@ -17,7 +17,7 @@ export interface DeployInput {
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
    */
   readonly config: ComposerConfigSource;
-  /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
+  /** Path to the entry module, resolved against `cwd` — same contract as `prisma deploy <entry>`. */
   readonly entry: string;
   /** Override the root node's name (the `--name` flag's slot). */
   readonly name?: string | undefined;

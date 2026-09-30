@@ -1,9 +1,9 @@
 /**
- * The one settlement rule no real deploy or destroy run can demonstrate: what
+ * The one settlement rule no real deploy run can demonstrate: what
  * `settleConverge` does when the operation SUCCEEDED and its child was killed
  * by a signal.
  *
- * Composer's own operations never produce that pair — deploy, destroy and dev
+ * Composer's own operations never produce that pair — deploy and dev
  * each report a signal-killed converge as a failure — so the rule is stated
  * here against a probe command that produces it deliberately. Composer used to
  * settle this as an abort and present nothing; it now presents the result it

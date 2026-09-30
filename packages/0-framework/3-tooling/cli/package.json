@@ -2,7 +2,7 @@
   "name": "@internal/cli",
   "version": "0.25.0",
   "type": "module",
-  "description": "The `prisma-composer` deploy CLI.",
+  "description": "Composer's command family and its programmatic deploy, destroy, dev and log operations.",
   "exports": {
     ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
