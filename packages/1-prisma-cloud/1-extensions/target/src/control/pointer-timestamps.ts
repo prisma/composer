@@ -27,7 +27,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * The alchemy-process side: the timestamps the CLI process transported. An
- * absent payload is the normal case for `prisma-composer dev` and for any run
+ * absent payload is the normal case for `prisma dev` and for any run
  * with no pointed variables, and reads as an empty map; a payload that is
  * present but unreadable is a framework bug and throws rather than silently
  * costing the deploy its rotation signal.
@@ -64,7 +64,7 @@ const payloadError = (reason: string): Error =>
  * `preflight` — in the CLI process, and the transported payload in the alchemy
  * process, where `own` is empty because that process never runs a preflight.
  * A name in neither reads as unknown, which is every name under
- * `prisma-composer dev`.
+ * `prisma dev`.
  */
 export function pointerUpdatedAtLookup(
   own: ReadonlyMap<string, string>,

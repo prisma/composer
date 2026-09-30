@@ -1,6 +1,6 @@
 /**
  * The S4 integration proof (local-dev spec, plan.md's S4 outcome; no CLI —
- * the `prisma-composer dev` command itself is S5's scope): a fixture
+ * the `prisma dev` command itself is S5's scope): a fixture
  * topology (compute × 2, postgres, bucket) lowered with `dev: true` and
  * driven through the real `alchemy` binary against the dev stack module
  * `dev` itself writes (`renderDevStackFile` from
@@ -14,7 +14,7 @@
  * or `@internal/lowering` directly.
  *
  * The Compute/buckets/postgres emulators are the real, machine-global daemon
- * programs a real `prisma-composer dev` session would spawn (D4) — there is
+ * programs a real `prisma dev` session would spawn (D4) — there is
  * no way to
  * redirect them to an isolated registry from here: `ensureDaemon`'s own
  * `{registryRoot}` override is real, but reaching it would mean importing

@@ -341,7 +341,7 @@ async function main(): Promise<void> {
       'the error must name LOCALDEV_FIXTURE_GREETING and the service that requires it',
     );
     assert(
-      log2.includes('Set each in the shell you run `prisma-composer dev` from.'),
+      log2.includes('Set each in the shell you run `prisma dev` from.'),
       'the pinned fix instruction must appear',
     );
     console.log(

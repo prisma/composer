@@ -387,8 +387,8 @@ async function runStackPipelineInner(
     // explicit --stage must.
     const pinnedStage = containers.get(config.state.extension)?.alchemyStage ?? stage;
     if (pinnedStage === undefined) {
-      // Reachable only for deploy without --stage, and destroy --production
-      // (destroy --stage always has a user stage) — so the remedy can be
+      // Reachable only for deploy without --stage, and destroy of production
+      // (a stage destroy always has a user stage) — so the remedy can be
       // command-specific without a third branch.
       throw new CliStructuredError(
         'DEPLOY.SCOPE_MISSING',
@@ -398,7 +398,7 @@ async function runStackPipelineInner(
           fix:
             action === 'deploy'
               ? 'Pass --stage <name> to choose the deploy scope explicitly.'
-              : 'destroy --production needs a target whose container supplies the production ' +
+              : 'Destroying production needs a target whose container supplies the production ' +
                 'deploy scope.',
         },
       );

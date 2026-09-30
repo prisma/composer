@@ -363,7 +363,7 @@ export function computeDescriptor(
 
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        // Answers "unknown" for every name under `prisma-composer dev`: dev runs
+        // Answers "unknown" for every name under `prisma dev`: dev runs
         // no platform preflight, so no rotation timestamps exist. That costs
         // nothing — the local Deployment provider reconciles unconditionally.
         const pointerUpdatedAt = o().pointerUpdatedAt;
