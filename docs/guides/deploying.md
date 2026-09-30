@@ -65,12 +65,12 @@ longer read, and the commands refuse the old setup rather than ignore it:
 
 | Diagnostic | When |
 | --- | --- |
-| `CONFIG.SECTION_MISSING` | No loaded `prisma.config.ts` has a `composer` section. |
-| `CONFIG.LEGACY_FIELD` | The section still has `configPath`, which pointed at the old file. |
-| `CONFIG.LEGACY_FILE` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
+| `CONFIG.SECTION_MISSING` | No loaded `prisma.config.ts` declares a `composer` section, including when there is no `prisma.config.ts` at all. |
+| `CONFIG.FIELD_RETIRED` | The section still has `configPath`, which pointed at the old file. |
+| `CONFIG.FILE_RETIRED` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
 
-The first two appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
-headline. All three give the same fix: move the old file's `extensions` and
+All three appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
+headline, and all three give the same fix: move the old file's `extensions` and
 `state` into `composer: composer({ ... })` in `prisma.config.ts`, then delete
 the old file. Nothing migrates it for you.
 
@@ -371,13 +371,17 @@ The `prisma-composer` commands are thin renderers over these same operations,
 so the two surfaces can't drift.
 
 ```ts
+import { fileURLToPath } from 'node:url';
 import { deploy } from '@prisma/composer/control';
 import prismaConfig from './prisma.config.ts';
 
 const result = await deploy({
   entry: 'module.ts',
   stage: 'pr-42',
-  config: { value: prismaConfig.composer, path: './prisma.config.ts' },
+  config: {
+    value: prismaConfig.composer,
+    file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
+  },
 });
 if (result.ok) {
   // result.value.summary — the deployed topology (app name + each node's
@@ -390,22 +394,29 @@ if (result.ok) {
 What to know before embedding it:
 
 - **You pass the config.** `deploy`, `destroy`, `dev` and `log` each take a
-  required `config: { value, path }`: the `composer` section of your
-  `prisma.config.ts` and the path of that file, relative to `cwd` or absolute.
-  The operations do not look for a config file themselves. The deploy imports
-  the file at `path` again while it runs, so `value` must be that file's
-  `composer` export.
+  required `config: { value, file }` (the `ComposerConfigSource` type): the
+  `composer` section of your `prisma.config.ts` and the path of the file that
+  declares it. A relative `file` resolves against `cwd`, not against your
+  script, which is why the example builds an absolute one. The operations do
+  not look for a config file themselves, but they refuse a config the CLI
+  would refuse, before any work starts: a `value` that fails the section's
+  checks (passing the whole export instead of its `composer` property is a
+  `CONFIG.FIELD_UNKNOWN` that says so), a `prisma-composer.config.*` beside
+  `file` (`CONFIG.FILE_RETIRED`), or a `file` that does not exist
+  (`CONFIG.FILE_MISSING`). The deploy imports `file` again while it runs and
+  uses its `composer` export, so `value` must be that export. `log` reads only
+  `value`.
 - **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
   exactly like the CLI. `destroy` takes a discriminated target —
   `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
   silent default to production and no flag-combination footgun.
-- **Failures are results, not throws.** Every operation resolves to either
-  its success shape or `{ outcome: 'failed', failure }`, where
-  `failure.kind` is one of `invalid-input`, `unsupported-platform`, `pipeline`
-  (anything between loading the deploy stack and the deploy engine — including
-  a failed import of the deploy engine, reported as `DEPS.EXECUTOR_UNLOADABLE`
-  with the import error), or `execution`
-  (the engine ran and failed). An `execution` failure's message ends with
+- **Failures are results, not throws.** Every operation resolves to
+  `{ ok: true, value }` or `{ ok: false, failure }`. `failure` is a structured
+  error with a dotted `code` from a closed registry — for example
+  `CONFIG.FIELD_INVALID`, `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED`, or
+  `DEPS.EXECUTOR_UNLOADABLE` when the deploy engine cannot be imported — and
+  the same fix-naming `message` the CLI prints; branch on `code`. When the
+  deploy engine ran and failed (`DEPLOY.ENGINE_FAILED`), the message ends with
   the engine's own error lines — the failed resource and the error it
   printed, with credentials redacted and capped at 1000 characters — which a
   deploy reporting to Prisma Cloud also records on the build. Its optional
@@ -421,12 +432,12 @@ What to know before embedding it:
   results but don't capture the live deploy output; run them where that
   output belongs, or with stdio redirected. Capturing it would be a new
   option on the operations.
-- **`dev` resolves to `{ outcome: 'started', session }` or a failure** —
+- **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
-  progress (`ready`, `converge-failed`, `watch-error`, …) delivered through
+  progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through
   `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
   `session.stop()` is yours.
-- **`log` resolves to `{ outcome: 'attached', appName, services, lines }` or
+- **`log` resolves to `{ ok: true, value: { appName, services, lines } }` or
   a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
   own (stopping early — `break`, `lines.return()` — also ends it cleanly).
   Zero running services is a valid result (empty `services`, finished

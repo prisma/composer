@@ -43,7 +43,7 @@ useful for printing a hint but deliberately outside the durable contract.
 
 Because the CLI's commands are renderers over the same operations, there is exactly one implementation of deploy orchestration. A fix or feature in the operation is a fix or feature in both surfaces; neither can gain behavior the other lacks.
 
-Each operation takes a required `config: { value, path }` input: the `composer` section of `prisma.config.ts` and the path of that file. *(Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the operations no longer discover a config file themselves.)*
+Each operation takes a required `config: { value, file }` input: the `composer` section of `prisma.config.ts` and the file that declares it. *(Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the operations no longer discover a config file themselves.)*
 
 ## Importing the subpath executes nothing
 

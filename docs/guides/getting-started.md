@@ -257,8 +257,8 @@ export default module('my-app', ({ provision }) => {
 
 Next to it goes `prisma.config.ts`, the one config file the Prisma CLI reads.
 Composer's configuration is its `composer` section: the extensions that deploy
-your app and the store that keeps deploy state. Only the `prisma-composer`
-commands read it — your app code never imports it:
+your app and the store that keeps deploy state. Composer's commands read the
+`composer` section; your app code never imports the file:
 
 ```ts
 // prisma.config.ts

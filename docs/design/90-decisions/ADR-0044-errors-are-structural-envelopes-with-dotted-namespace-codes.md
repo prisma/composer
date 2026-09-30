@@ -68,7 +68,7 @@ vocabulary, not import edges.
 
 | Namespace | Concern | Owning module (delegates) |
 | --- | --- | --- |
-| `CONFIG` | shape and coverage of the `composer` section of prisma.config.ts, and the refused old config file | family/section.ts, family/composer-config.ts (validate-coverage.ts) |
+| `CONFIG` | shape and coverage of the `composer` section of prisma.config.ts, and the refused old config file | composer-config.ts (family/section.ts, pipeline.ts, validate-coverage.ts) |
 | `COMPOSE` | topology loading: entry, root node, graph shape, naming | pipeline.ts (load-entry.ts, core's graph modules) |
 | `ASSEMBLE` | assembling each service's deploy artifact | `@internal/assemble`'s assemble-services.ts |
 | `DEPLOY` | target selection, stage, containers, preflight, engine, teardown, stack write | operations/execute-deploy-destroy.ts (main.ts, validate-stage.ts, run-alchemy.ts) |
@@ -78,9 +78,11 @@ vocabulary, not import edges.
 
 Closed subcode registry:
 
-- `CONFIG` — FILE_MISSING, EXPORT_INVALID, FIELD_INVALID, EXTENSION_DUPLICATE,
-  PATH_MISMATCH, EXTENSION_MISSING, DESCRIPTOR_MISSING,
-  DESCRIPTOR_KIND_MISMATCH, EVALUATION_FAILED
+- `CONFIG` — SECTION_MISSING, FIELD_INVALID, FIELD_UNKNOWN, FIELD_RETIRED,
+  FILE_MISSING, FILE_RETIRED, EXTENSION_DUPLICATE, EXTENSION_MISSING,
+  DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH *(EXPORT_INVALID, PATH_MISMATCH
+  and EVALUATION_FAILED retired by
+  [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE,
   NAME_MISSING, GRAPH_INVALID
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING,

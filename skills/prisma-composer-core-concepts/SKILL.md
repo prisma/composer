@@ -239,10 +239,11 @@ section is used whole, never merged key by key. Only `extensions` and `state`
 are allowed; any other key is an error. App code never imports the file.
 
 A separate `prisma-composer.config.ts` is no longer read, and the old setup is
-refused, never silently ignored: `CONFIG.SECTION_MISSING` when no loaded file
-has a `composer` section, `CONFIG.LEGACY_FIELD` when the section still has
-`configPath`, `CONFIG.LEGACY_FILE` when a `prisma-composer.config.*` sits next
-to the declaring `prisma.config.ts`. The fix for all three is to move the old
+refused, never silently ignored: `CONFIG.SECTION_MISSING` when no loaded
+`prisma.config.ts` declares a `composer` section, `CONFIG.FIELD_RETIRED` when
+the section still has `configPath`, `CONFIG.FILE_RETIRED` when a
+`prisma-composer.config.*` sits next to the declaring `prisma.config.ts`; all
+three under the CLI's `CLI.CONFIG_SECTION_INVALID`. The fix for all three is to move the old
 file's `extensions` and `state` into the section and delete the old file.
 `@prisma/composer-cli/family` no longer exports `ComposerSection`; the
 section's type is `PrismaAppConfig` from `@prisma/composer/config`.
@@ -362,10 +363,13 @@ authored the connection or an extension on one side.
 
 **Driving deploys from code.** `@prisma/composer/control` exposes typed
 `deploy`, `destroy`, `dev`, and `log` returning structured results. Each takes
-a required `config: { value, path }`: the `composer` export of your
-`prisma.config.ts` and that file's path (relative to `cwd` or absolute). The
-operations never look for a config file; the deploy re-imports the file at
-`path`, so `value` must be its `composer` export. Failures come back as
+a required `config: { value, file }` (`ComposerConfigSource`): the `composer`
+export of your `prisma.config.ts` and that file's path; a relative `file`
+resolves against `cwd`, so build it from `import.meta.url`. The operations
+never look for a config file, but refuse what the CLI refuses before any work
+starts (`CONFIG.FIELD_UNKNOWN` for the whole export instead of its `composer`
+property, `CONFIG.FILE_RETIRED`, `CONFIG.FILE_MISSING`); the deploy re-imports
+`file`, so `value` must be its `composer` export. Failures come back as
 `{ ok: false, failure }` with a dotted `failure.code` from a closed registry
 (e.g. `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED`,
 `DEPS.EXECUTOR_UNLOADABLE`); branch on the code, not the message. A
@@ -387,8 +391,8 @@ that surprise:
 3. `dev` does not print service logs; `log` is a separate, read-only command
    that follows the already-running app's merged logs. It never builds,
    provisions, starts, or stops anything.
-4. `dev` reads `prisma.config.ts` once, at start; restart `dev` after
-   changing it.
+4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
+   edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a
    warning, and only the code path that spends it fails, at the external
    service it calls.
