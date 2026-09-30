@@ -11,6 +11,7 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'composer-destroy.t
 const FAKE_CONTROL = `
 import { writeFileSync } from 'node:fs';
 export async function destroy(input) {
+  if (process.env.FAKE_THROW === '1') throw new Error('entry did not load');
   const { onEvent, config, ...rest } = input;
   writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ ...rest, file: config.file, section: config.value }));
   if (process.env.FAKE_EVENT === '1') onEvent?.({ kind: 'no-local-deploy-state', cwd: input.cwd });
@@ -108,6 +109,61 @@ describe('composer-destroy', () => {
 
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, new RegExp(`No prior deploy state under ${app}`));
+  });
+
+  it('reads the config file --config names, relative to the current directory', () => {
+    write('config/prisma.config.ts', "export default { composer: { marker: 'named' } };\n");
+
+    const result = run(['module.ts', '--production', '--config', 'config/prisma.config.ts']);
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(recorded(), {
+      entry: 'module.ts',
+      target: { kind: 'production' },
+      cwd: app,
+      file: join(app, 'config', 'prisma.config.ts'),
+      section: { marker: 'named' },
+    });
+  });
+
+  it('exits 1 with one line when the config file cannot be imported', () => {
+    write('prisma.config.ts', "throw new Error('broken config');\n");
+
+    const result = run(['module.ts', '--production']);
+
+    assert.equal(result.status, 1);
+    assert.equal(
+      result.stderr.trim(),
+      `Could not import ${join(app, 'prisma.config.ts')}: broken config`,
+    );
+  });
+
+  it('exits 1 with one line when the config file declares no composer section', () => {
+    write('prisma.config.ts', 'export default { orm: {} };\n');
+
+    const result = run(['module.ts', '--production']);
+
+    assert.equal(result.status, 1);
+    assert.equal(
+      result.stderr.trim(),
+      `${join(app, 'prisma.config.ts')} declares no \`composer\` section.`,
+    );
+  });
+
+  it('exits 1 with one line when @prisma/composer/control is not installed', () => {
+    rmSync(join(app, 'node_modules'), { recursive: true, force: true });
+
+    const result = run(['module.ts', '--production']);
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr.trim(), /^Could not load @prisma\/composer\/control from [^\n]+$/);
+  });
+
+  it('exits 1 with one line when destroy throws instead of returning a failure', () => {
+    const result = run(['module.ts', '--production'], { FAKE_THROW: '1' });
+
+    assert.equal(result.status, 1);
+    assert.equal(result.stderr.trim(), 'destroy threw: entry did not load');
   });
 
   for (const [label, args] of [
