@@ -5,8 +5,8 @@
  * and of effect VALUE imports: the `prisma` bin imports the family directly,
  * so anything in this static graph loads on `prisma --version`. The mechanism
  * that holds it is the existing lazy boundary inside the operation modules —
- * `operations/deploy.ts` and `dev.ts` each `await import()` their executor, and it is the executors that reach the provider
- * tree. Importing the operations here is therefore free; importing an
+ * `operations/deploy.ts` and `dev.ts` each `await import()` their executor,
+ * and it is the executors that reach the provider tree. Importing the operations here is therefore free; importing an
  * executor, or flattening one of those dynamic imports, is not.
  * scripts/check-family-static-graph.mjs enforces this against BUILT output,
  * where type-only imports have already been erased.

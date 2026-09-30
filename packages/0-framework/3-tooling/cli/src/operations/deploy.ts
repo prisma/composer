@@ -53,8 +53,8 @@ export async function deploy(
   return deployWithDeps(input, {});
 }
 
-/** In-package variant threading the injection seam (the CLI's RunDeps, unit
- * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
+/** In-package variant threading the injection seam, which the family's
+ * commands and the unit tests use. Deliberately NOT re-exported through `./control` — the seam mirrors
  * internal types and is not part of the published surface. */
 export async function deployWithDeps(
   input: DeployInput,

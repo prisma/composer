@@ -4,7 +4,6 @@
   "type": "module",
   "description": "Composer's command family and its programmatic deploy, destroy, dev and log operations.",
   "exports": {
-    ".": "./dist/index.mjs",
     "./control": "./dist/control.mjs",
     "./family": "./dist/family.mjs",
     "./report": "./dist/report.mjs",
@@ -42,6 +41,5 @@
   "engines": {
     "node": ">=22.18.0"
   },
-  "private": true,
-  "types": "./dist/index.d.mts"
+  "private": true
 }

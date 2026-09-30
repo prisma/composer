@@ -24,8 +24,8 @@ export type LogEvent =
    * `count` oldest lines were dropped since the last delivered line. */
   | { readonly kind: 'lines-dropped'; readonly count: number };
 
-/** The log operation's in-package injection seam (the CLI's LogRunDeps, unit
- * tests) — threaded through logWithDeps, never part of the published surface. */
+/** The log operation's in-package injection seam, for the unit tests —
+ * threaded through logWithDeps, never part of the published surface. */
 export interface LogDeps {
   /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
   readonly identity?: AppIdentity | undefined;
@@ -63,8 +63,8 @@ export async function log(input: LogInput): Promise<Result<LogAttached, CliStruc
   return logWithDeps(input, {});
 }
 
-/** In-package variant threading the injection seam (the CLI's LogRunDeps,
- * unit tests). Deliberately NOT re-exported through `./control` — the seam
+/** In-package variant threading the injection seam, for the unit tests.
+ * Deliberately NOT re-exported through `./control` — the seam
  * mirrors internal types and is not part of the published surface. */
 export async function logWithDeps(
   input: LogInput,
