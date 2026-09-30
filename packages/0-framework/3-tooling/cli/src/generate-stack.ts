@@ -2,6 +2,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { AssembledServices } from '@internal/assemble';
+import { noComposerExportMessage } from './composer-config.ts';
 
 export interface StackFileInput {
   /** Absolute path to the entry module (the app's default-exported node). */
@@ -75,6 +76,9 @@ import prismaConfig from ${quote(configImport)};
 import app from ${quote(appImport)};
 
 const config = prismaConfig.composer;
+if (config === undefined) {
+  throw new Error(${quote(noComposerExportMessage(input.configFile))});
+}
 
 // The app's own @prisma/composer may predate the failure recorder.
 report.captureEngineFailure?.();

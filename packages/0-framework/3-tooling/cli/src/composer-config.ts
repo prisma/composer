@@ -47,6 +47,11 @@ export const sectionMissing: ConfigFinding = {
   fix: MOVE_TO_SECTION_FIX,
 };
 
+/** What the generated stack file throws when the file it imports has no `composer` export. */
+export function noComposerExportMessage(configFile: string): string {
+  return `${configFile} declares no \`composer\` section. Pass the prisma.config.ts that declares it.`;
+}
+
 export function configFileMissing(file: string): ConfigFinding {
   return {
     code: 'CONFIG.FILE_MISSING',
