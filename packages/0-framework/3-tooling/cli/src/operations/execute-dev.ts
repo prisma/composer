@@ -64,7 +64,8 @@ export async function executeDev(
     // name resolution, assemble.
     const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
     pipeline = await runPipeline(input.entry, input.name, cwd, input.config, pipelineDeps);
-    const { config, graph, name } = pipeline;
+    const { graph, name } = pipeline;
+    const config = pipeline.configSource.value;
 
     // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
@@ -128,7 +129,7 @@ export async function executeDev(
       stackPath = writeDevStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configFile: pipeline.configFile,
+        configFile: pipeline.configSource.file,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });
@@ -272,7 +273,7 @@ export async function executeDev(
             const stackPath = writeDevStackFile({
               entryPath: rePipeline.entryModule.path,
               cwd,
-              configFile: rePipeline.configFile,
+              configFile: rePipeline.configSource.file,
               name: rePipeline.name,
               assembled: rePipeline.assembled,
             });

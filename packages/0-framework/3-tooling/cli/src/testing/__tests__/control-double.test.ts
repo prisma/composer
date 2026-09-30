@@ -8,14 +8,14 @@
 import { describe, expect, test } from 'bun:test';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk } from '@internal/foundation/result';
-import type { ComposerConfig } from '../../pipeline.ts';
+import type { ComposerConfigSource } from '../../composer-config.ts';
 import { createControlDouble } from '../control-double.ts';
 
 const ENTRY = './app/main.ts';
 const CONFIG = {
   value: { extensions: [], state: { extension: 'x', create: () => undefined } },
-  path: 'prisma.config.ts',
-} as unknown as ComposerConfig;
+  file: 'prisma.config.ts',
+} as unknown as ComposerConfigSource;
 
 describe('createControlDouble()', () => {
   test('deploy succeeds by default, with no summary, and records its input', async () => {

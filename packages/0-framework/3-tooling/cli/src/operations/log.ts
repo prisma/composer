@@ -8,7 +8,8 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
-import type { AppIdentity, ComposerConfig } from '../pipeline.ts';
+import type { ComposerConfigSource } from '../composer-config.ts';
+import type { AppIdentity } from '../pipeline.ts';
 import { executorLoadFailure, type ServiceEndpoint } from './shared.ts';
 
 export interface LogLine {
@@ -32,9 +33,10 @@ export interface LogDeps {
 
 export interface LogInput {
   /**
-   * Composer's configuration: the `composer` section of `prisma.config.ts` and the path of that file. The operation does not look for a config file.
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
+   * `log` reads only the section; it takes the same input as the other operations so a host builds it once.
    */
-  readonly config: ComposerConfig;
+  readonly config: ComposerConfigSource;
   readonly entry: string;
   readonly name?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */

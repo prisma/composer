@@ -8,12 +8,20 @@
  * `run()` (main.ts) and `runDev()` (dev/run-dev.ts), so the two pipelines
  * cannot drift.
  */
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type AssembledServices, assembleServices, type RunAssembler } from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
+import {
+  type ComposerConfigSource,
+  type ConfigFinding,
+  checkComposerSection,
+  configFileMissing,
+  retiredFileFinding,
+} from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
@@ -22,17 +30,9 @@ export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
 }
 
-/** Composer's configuration: the `composer` section of the `prisma.config.ts` that declared it. */
-export interface ComposerConfig {
-  readonly value: PrismaAppConfig;
-  /** The declaring `prisma.config.ts`; relative paths resolve against the operation's cwd. The generated stack file imports it. */
-  readonly path: string;
-}
-
 export interface PipelineResult {
-  /** The declaring `prisma.config.ts`, absolute. */
-  readonly configFile: string;
-  readonly config: PrismaAppConfig;
+  /** The checked config, with `file` absolute. */
+  readonly configSource: ComposerConfigSource;
   readonly entryModule: LoadedEntry;
   readonly graph: Graph;
   readonly name: string;
@@ -42,6 +42,29 @@ export interface PipelineResult {
 export interface AppIdentity {
   readonly config: PrismaAppConfig;
   readonly name: string;
+}
+
+function configError(finding: ConfigFinding, file: string): CliStructuredError {
+  return new CliStructuredError(finding.code, finding.summary, {
+    ...(finding.why === undefined ? {} : { why: finding.why }),
+    fix: finding.fix,
+    where: { path: finding.where ?? file },
+    ...(finding.field === undefined ? {} : { meta: { field: finding.field } }),
+  });
+}
+
+/**
+ * Refuses a caller's config the way the CLI's section validator refuses a section, before any work starts.
+ * Returns it with `file` resolved against `cwd`.
+ */
+export function checkConfigSource(source: ComposerConfigSource, cwd: string): ComposerConfigSource {
+  const file = path.resolve(cwd, source.file);
+  if (!fs.existsSync(file)) throw configError(configFileMissing(file), file);
+  const retired = retiredFileFinding(file);
+  if (retired !== undefined) throw configError(retired, file);
+  const checked = checkComposerSection(source.value);
+  if (!checked.ok) throw configError(checked.findings[0], file);
+  return { value: checked.value, file };
 }
 
 /**
@@ -55,8 +78,9 @@ export async function resolveAppIdentity(
   entry: string,
   overrideName: string | undefined,
   cwd: string,
-  config: ComposerConfig,
+  config: ComposerConfigSource,
 ): Promise<AppIdentity> {
+  const { value } = checkConfigSource(config, cwd);
   const entryModule = await loadEntry(entry, cwd);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
@@ -64,7 +88,7 @@ export async function resolveAppIdentity(
       fix: 'Name it at authoring, or pass --name.',
     });
   }
-  return { config: config.value, name };
+  return { config: value, name };
 }
 
 /**
@@ -77,12 +101,12 @@ export async function runPipeline(
   entry: string,
   overrideName: string | undefined,
   cwd: string,
-  composerConfig: ComposerConfig,
+  source: ComposerConfigSource,
   deps: PipelineDeps = {},
   onAssembleError?: (error: Error) => Error,
 ): Promise<PipelineResult> {
-  const config = composerConfig.value;
-  const configFile = path.resolve(cwd, composerConfig.path);
+  const configSource = checkConfigSource(source, cwd);
+  const config = configSource.value;
 
   // 1. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);
@@ -119,5 +143,5 @@ export async function runPipeline(
     throw error;
   }
 
-  return { configFile, config, entryModule, graph, name, assembled };
+  return { configSource, entryModule, graph, name, assembled };
 }

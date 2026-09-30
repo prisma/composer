@@ -182,7 +182,7 @@ describe('argument validation', () => {
             extensions: [{ id: 'ext-a', nodes: {} }],
             state: { extension: 'ext-a', create: expect.any(Function) },
           },
-          path: path.join(CWD, 'prisma.config.ts'),
+          file: path.join(CWD, 'prisma.config.ts'),
         },
         name: 'shop',
         stage: 'feat-auth',

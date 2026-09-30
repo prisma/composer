@@ -8,7 +8,6 @@
  */
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
 import type { DestroyTarget } from '../../operations/destroy.ts';
-import { composerConfigOf } from '../composer-config.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -54,14 +53,11 @@ export const createDestroyCommand = (operations: ComposerOperations) =>
     handler: async (args, ctx) => {
       const target = targetOf(args.flags.stage, args.flags.production);
       if (!target.ok) return target;
-      const config = composerConfigOf(ctx);
-      if (!config.ok) return config;
-
       const alchemy = convergeSpawn(ctx);
       const result = await operations.destroy(
         {
           entry: args.positionals.entry,
-          config: config.value,
+          config: ctx.config,
           name: args.flags.name,
           target: target.value satisfies DestroyTarget,
           cwd: ctx.cwd,

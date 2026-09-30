@@ -206,10 +206,13 @@ describe('the composer section through the engine', () => {
     const composer = composerConfig();
     const result = await probeCli({ composer }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
-    expect(result.presented?.data).toEqual(composer);
-    const data = result.presented?.data as typeof composer;
-    expect(data.extensions[0]).toBe(composer.extensions[0]);
-    expect(data.state).toBe(composer.state);
+    expect(result.presented?.data).toEqual({
+      value: composer,
+      file: path.resolve(path.sep, 'prisma.config.ts'),
+    });
+    const data = result.presented?.data as { value: typeof composer };
+    expect(data.value.extensions[0]).toBe(composer.extensions[0]);
+    expect(data.value.state).toBe(composer.state);
   });
 
   /**
@@ -233,7 +236,7 @@ describe('the composer section through the engine', () => {
           {
             code: 'CONFIG.SECTION_MISSING',
             severity: 'error',
-            summary: 'prisma.config.ts has no `composer` section.',
+            summary: 'No loaded prisma.config.ts declares a `composer` section.',
           },
         ],
       },
@@ -253,7 +256,7 @@ describe('the composer section through the engine', () => {
         error: { code: 'CLI.CONFIG_SECTION_INVALID' },
         diagnostics: [
           {
-            code: 'CONFIG.LEGACY_FIELD',
+            code: 'CONFIG.FIELD_RETIRED',
             severity: 'error',
             where: { path: path.resolve(path.sep, 'prisma.config.ts') },
             meta: { field: 'configPath' },
@@ -330,7 +333,10 @@ describe('the composer section through the engine', () => {
     const result = await cli.run(['probe', '--json'], { cwd: appDir });
 
     expect(result.exitCode).toBe(0);
-    expect(result.presented?.data).toEqual(root);
+    expect(result.presented?.data).toEqual({
+      value: root,
+      file: path.join(repo, 'prisma.config.ts'),
+    });
   });
 
   test("a shared config's orm section is recognised and ignored", async () => {
@@ -340,7 +346,10 @@ describe('the composer section through the engine', () => {
       orm: { contract: './contract.prisma' },
     }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
-    expect(result.presented?.data).toEqual(composer);
+    expect(result.presented?.data).toEqual({
+      value: composer,
+      file: path.resolve(path.sep, 'prisma.config.ts'),
+    });
   });
 
   test('a truly unknown section still fails the run', async () => {

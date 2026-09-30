@@ -19,7 +19,6 @@ import { ok } from '@prisma/cli-engine/protocol';
 import type { DevEvent } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
-import { composerConfigOf } from '../composer-config.ts';
 import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
@@ -200,14 +199,11 @@ export const createDevCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection },
     maySpawn: true,
     handler: async (args, ctx) => {
-      const config = composerConfigOf(ctx);
-      if (!config.ok) return config;
-
       const alchemy = convergeSpawn(ctx);
       const result = await operations.dev(
         {
           entry: args.positionals.entry,
-          config: config.value,
+          config: ctx.config,
           name: args.flags.name,
           fresh: args.flags.fresh,
           cwd: ctx.cwd,

@@ -22,12 +22,13 @@ import type {
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
+import type { ComposerConfigSource } from '../../composer-config.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
   engineFailureFilePath,
 } from '../../deployment-summary.ts';
-import type { AppIdentity, ComposerConfig } from '../../pipeline.ts';
+import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
@@ -137,9 +138,9 @@ function fakeConfig(
   };
 }
 
-/** The config input an operation takes; the path is only rendered into the stack file, which these tests never run. */
-function composerConfig(value: PrismaAppConfig): ComposerConfig {
-  return { value, path: 'prisma.config.ts' };
+/** The config input an operation takes; `makeAppDir` writes the file, which these tests never evaluate. */
+function composerConfig(value: PrismaAppConfig): ComposerConfigSource {
+  return { value, file: 'prisma.config.ts' };
 }
 
 const coreIndex = path.resolve(
@@ -160,6 +161,7 @@ function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
+  fs.writeFileSync(path.join(dir, 'prisma.config.ts'), 'export default { composer: {} };\n');
   const entryPath = path.join(dir, 'service.ts');
   fs.writeFileSync(
     entryPath,
@@ -405,6 +407,82 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
+  describe('a config the CLI would refuse is refused before any container call', () => {
+    async function deployWith(
+      app: { dir: string; entryPath: string },
+      config: ComposerConfigSource,
+    ) {
+      let alchemyRan = false;
+      const result = await silently(() =>
+        deployWithDeps(
+          { config, entry: app.entryPath, cwd: app.dir },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              alchemyRan = true;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+      if (result.ok) throw new Error('expected a failure');
+      return { failure: result.failure, alchemyRan };
+    }
+
+    test('the whole prisma.config.ts export in place of its composer property', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+      const wholeExport = { $prismaConfig: 1, composer: fakeConfig({}, { calls: containerCalls }) };
+
+      const { failure, alchemyRan } = await deployWith(app, {
+        value: wholeExport as unknown as PrismaAppConfig,
+        file: 'prisma.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FIELD_UNKNOWN',
+        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `extensions` and `state`.',
+        where: { path: path.join(app.dir, 'prisma.config.ts') },
+      });
+      expect(containerCalls).toEqual([]);
+      expect(alchemyRan).toBe(false);
+    });
+
+    test('an old prisma-composer.config.ts beside config.file', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+      fs.writeFileSync(path.join(app.dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+      const { failure, alchemyRan } = await deployWith(
+        app,
+        composerConfig(fakeConfig({}, { calls: containerCalls })),
+      );
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_RETIRED',
+        message: `${path.join(app.dir, 'prisma-composer.config.ts')} is no longer read.`,
+      });
+      expect(containerCalls).toEqual([]);
+      expect(alchemyRan).toBe(false);
+    });
+
+    test('a config.file that does not exist', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+
+      const { failure } = await deployWith(app, {
+        value: fakeConfig({}, { calls: containerCalls }),
+        file: 'missing.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_MISSING',
+        message: `${path.join(app.dir, 'missing.config.ts')} does not exist.`,
+      });
+      expect(containerCalls).toEqual([]);
+    });
+  });
+
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
     const app = makeAppDir('hello-preflight-fail');
     let alchemyRan = false;
@@ -607,7 +685,7 @@ describe('deploy()', () => {
     fs.writeFileSync(
       probePath,
       `import { deploy } from ${JSON.stringify(operationsPath)};\n` +
-        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)}, config: { value: { extensions: [], state: { extension: 'x', create: () => undefined } }, path: 'prisma.config.ts' } });\n` +
+        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)}, config: { value: { extensions: [], state: { extension: 'x', create: () => undefined } }, file: 'prisma.config.ts' } });\n` +
         "if (result.ok) throw new Error('expected a failure');\n" +
         'const cause = result.failure.cause;\n' +
         'await Bun.write(\n' +
@@ -1180,6 +1258,27 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 });
 
 describe.skipIf(process.platform === 'win32')('log()', () => {
+  test('a config the CLI would refuse is refused before the entry is loaded', async () => {
+    const app = makeAppDir();
+    const result = await silently(() =>
+      logWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          config: { value: {} as PrismaAppConfig, file: 'prisma.config.ts' },
+        },
+        {},
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure).toMatchObject({
+      code: 'CONFIG.FIELD_INVALID',
+      meta: { field: 'extensions' },
+    });
+  });
+
   test('merges every attachment into one stream and reports the running services', async () => {
     const attachments = [
       linesAttachment([{ address: 'a', url: 'http://a' }], [{ service: 'a', line: 'from-a' }]),

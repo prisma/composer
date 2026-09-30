@@ -16,6 +16,7 @@
 
 export type { CliStructuredError } from '@internal/foundation/errors';
 export type { NotOk, Ok, Result } from '@internal/foundation/result';
+export type { ComposerConfigSource } from '../composer-config.ts';
 export type { DeployedNodeSummary, DeploymentSummary } from '../deployment-summary.ts';
 export type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
 export { deploy } from '../operations/deploy.ts';
@@ -31,6 +32,5 @@ export type { LogAttached, LogEvent, LogInput, LogLine } from '../operations/log
 export { log } from '../operations/log.ts';
 export type { ExecutionDiagnostics, ServiceEndpoint } from '../operations/shared.ts';
 export { executionDiagnostics } from '../operations/shared.ts';
-export type { ComposerConfig } from '../pipeline.ts';
 export type { RunReport, RunReportFailure } from '../run-report.ts';
 export { RUN_REPORT_FILE_ENV, RUN_REPORT_VERSION } from '../run-report.ts';

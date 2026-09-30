@@ -25,7 +25,7 @@ describe('@prisma/composer/control — programmatic deploy over the real extensi
     const result = await deploy({
       entry: fixtureEntry,
       cwd: integrationDir,
-      config: { value: prismaConfig.composer, path: path.join(integrationDir, 'prisma.config.ts') },
+      config: { value: prismaConfig.composer, file: path.join(integrationDir, 'prisma.config.ts') },
     });
 
     expect(result.ok).toBe(false);

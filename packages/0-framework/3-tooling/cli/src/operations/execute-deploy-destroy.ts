@@ -18,6 +18,7 @@ import type {
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -26,12 +27,7 @@ import {
   readEngineFailureCause,
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
-import {
-  type ComposerConfig,
-  type PipelineDeps,
-  type PipelineResult,
-  runPipeline,
-} from '../pipeline.ts';
+import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
 import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
 import {
   RUN_REPORT_FILE_ENV,
@@ -54,7 +50,7 @@ function hasNoLocalDeployState(cwd: string): boolean {
 
 interface StackPipelineOptions {
   readonly entry: string;
-  readonly config: ComposerConfig;
+  readonly config: ComposerConfigSource;
   readonly name: string | undefined;
   readonly stage: string | undefined;
   readonly cwd: string;
@@ -329,7 +325,8 @@ async function runStackPipelineInner(
             })
         : undefined;
     pipeline = await runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError);
-    const { config, graph, name: resolvedName } = pipeline;
+    const { graph, name: resolvedName } = pipeline;
+    const config = pipeline.configSource.value;
 
     // Open reporting BEFORE containers are resolved: creating them is the
     // step that can leave a project behind with nothing recording why
@@ -471,7 +468,7 @@ async function runStackPipelineInner(
       stackPath = writeStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configFile: pipeline.configFile,
+        configFile: pipeline.configSource.file,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });
@@ -575,7 +572,7 @@ async function runStackPipelineInner(
       // infrastructure is, and whether losing it should fail the command, is the
       // extension's business, not this module's.
       if (action === 'destroy') {
-        for (const extension of pipeline.config.extensions) {
+        for (const extension of pipeline.configSource.value.extensions) {
           if (extension.teardown === undefined) continue;
           try {
             await extension.teardown({ container: containers.get(extension.id), stage });
@@ -588,7 +585,7 @@ async function runStackPipelineInner(
         // two-loop order — all teardowns, then all removes — is what structurally
         // preserves ADR-0034's guarantee that a stage's state database is deleted
         // before its Branch (a Branch with an attached database refuses deletion).
-        for (const extension of pipeline.config.extensions) {
+        for (const extension of pipeline.configSource.value.extensions) {
           if (extension.container === undefined) continue;
           const instance = containers.get(extension.id);
           if (instance === undefined) continue;

@@ -156,11 +156,11 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
         extensions: [{ id: 'ext-a', nodes: {} }],
         state: { extension: 'ext-a', create: expect.any(Function) },
       },
-      path: path.join(fs.realpathSync(dir), 'custom.config.ts'),
+      file: path.join(fs.realpathSync(dir), 'custom.config.ts'),
     });
   });
 
-  test('an old prisma-composer.config.ts beside the declaring file stops the handler before the operation', async () => {
+  test('an old prisma-composer.config.ts beside the declaring file fails the section before the operation', async () => {
     const double = refusingOperations();
     const dir = emptyDir();
     fs.writeFileSync(
@@ -184,10 +184,13 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     expect(exitCode).toBe(2);
     expect(JSON.parse(host.out.join(''))).toMatchObject({
       envelope: {
-        error: {
-          code: 'CONFIG.LEGACY_FILE',
-          summary: `${path.join(fs.realpathSync(dir), 'prisma-composer.config.ts')} is no longer read.`,
-        },
+        error: { code: 'CLI.CONFIG_SECTION_INVALID' },
+        diagnostics: [
+          {
+            code: 'CONFIG.FILE_RETIRED',
+            summary: `${path.join(fs.realpathSync(dir), 'prisma-composer.config.ts')} is no longer read.`,
+          },
+        ],
       },
     });
     expect(double.calls.dev).toEqual([]);

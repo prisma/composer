@@ -5,7 +5,9 @@
  * throwing validator into an internal error, which would report a user's
  * typo as a bug in composer.
  */
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SectionProvenance, SectionValidation } from '@prisma/cli-engine';
 import { composerSection } from '../section.ts';
@@ -39,7 +41,10 @@ function validSection() {
 function validate(
   raw: unknown,
   from: SectionProvenance = provenance(),
-): SectionValidation<{ readonly extensions: readonly unknown[]; readonly state: unknown }> {
+): SectionValidation<{
+  readonly value: { readonly extensions: readonly unknown[]; readonly state: unknown };
+  readonly file: string;
+}> {
   return composerSection.validate(raw, from);
 }
 
@@ -47,24 +52,32 @@ const SECTION_FIX =
   "Write `composer: composer({ extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
 
 describe('composerSection.validate() on a well-formed section', () => {
-  test('accepts extensions and state and returns them', () => {
+  test('returns extensions and state together with the file that declared them', () => {
     const section = validSection();
     const result = validate(section);
-    expect(result).toEqual({ ok: true, value: section, diagnostics: [] });
+    expect(result).toEqual({
+      ok: true,
+      value: { value: section, file: DECLARING_FILE },
+      diagnostics: [],
+    });
   });
 
   test('hands every descriptor to the command by reference, members untouched', () => {
     const section = validSection();
     const result = validate(section);
     if (!result.ok) throw new Error('expected the section to validate');
-    expect(result.value.extensions[0]).toBe(section.extensions[0]);
-    expect(result.value.extensions[1]).toBe(section.extensions[1]);
-    expect(result.value.state).toBe(section.state);
+    expect(result.value.value.extensions[0]).toBe(section.extensions[0]);
+    expect(result.value.value.extensions[1]).toBe(section.extensions[1]);
+    expect(result.value.value.state).toBe(section.state);
   });
 
   test('accepts an empty extensions list', () => {
     const section = { extensions: [], state: stateDescriptor() };
-    expect(validate(section)).toEqual({ ok: true, value: section, diagnostics: [] });
+    expect(validate(section)).toEqual({
+      ok: true,
+      value: { value: section, file: DECLARING_FILE },
+      diagnostics: [],
+    });
   });
 });
 
@@ -81,7 +94,7 @@ describe('composerSection.validate() on an absent section', () => {
         {
           code: 'CONFIG.SECTION_MISSING',
           severity: 'error',
-          summary: 'prisma.config.ts has no `composer` section.',
+          summary: 'No loaded prisma.config.ts declares a `composer` section.',
           why: 'Composer reads its configuration only from the `composer` section of prisma.config.ts. A prisma-composer.config.ts file is no longer read.',
           nextActions: [
             {
@@ -101,7 +114,7 @@ describe('composerSection.validate() on the retired configPath field', () => {
       ok: false,
       diagnostics: [
         {
-          code: 'CONFIG.LEGACY_FIELD',
+          code: 'CONFIG.FIELD_RETIRED',
           severity: 'error',
           summary:
             '`composer.configPath` is no longer supported: prisma-composer.config.ts is no longer read.',
@@ -109,7 +122,7 @@ describe('composerSection.validate() on the retired configPath field', () => {
           nextActions: [
             {
               kind: 'edit-file',
-              label: `Replace \`configPath\` with the contents of prisma-composer.config.ts. ${SECTION_FIX} Then delete prisma-composer.config.ts.`,
+              label: `Replace \`configPath\` with the section itself. ${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`,
             },
           ],
           where: { path: DECLARING_FILE },
@@ -123,7 +136,7 @@ describe('composerSection.validate() on the retired configPath field', () => {
     const result = validate({ ...validSection(), configPath: './x.ts' });
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]).toMatchObject({ code: 'CONFIG.LEGACY_FIELD' });
+    expect(result.diagnostics[0]).toMatchObject({ code: 'CONFIG.FIELD_RETIRED' });
   });
 });
 
@@ -235,23 +248,10 @@ describe('composerSection.validate() on the section itself', () => {
     }
   });
 
-  test('omits `where` when provenance names no file', () => {
-    expect(validate({ ...validSection(), stage: 'prod' }, NO_FILE)).toEqual({
+  test('a section the engine reports with no declaring file is refused as missing', () => {
+    expect(validate(validSection(), NO_FILE)).toMatchObject({
       ok: false,
-      diagnostics: [
-        {
-          code: 'CONFIG.FIELD_UNKNOWN',
-          severity: 'error',
-          summary: 'The `composer` section has no field `stage`.',
-          nextActions: [
-            {
-              kind: 'edit-file',
-              label: 'Remove `stage`. The section takes only `extensions` and `state`.',
-            },
-          ],
-          meta: { field: 'stage' },
-        },
-      ],
+      diagnostics: [{ code: 'CONFIG.SECTION_MISSING' }],
     });
   });
 });
@@ -443,4 +443,59 @@ describe('composerSection.merge', () => {
 
 test('the section is named `composer`', () => {
   expect(composerSection.name).toBe('composer');
+});
+
+describe('composerSection.validate() on a retired config file', () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function tempDir(): string {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-section-')));
+    dirs.push(dir);
+    return dir;
+  }
+
+  test('an old config file beside the declaring file is refused, naming it', () => {
+    for (const name of [
+      'prisma-composer.config.ts',
+      'prisma-composer.config.mts',
+      'prisma-composer.config.mjs',
+      'prisma-composer.config.js',
+    ]) {
+      const dir = tempDir();
+      const retired = path.join(dir, name);
+      fs.writeFileSync(retired, 'export default {};\n');
+
+      expect(validate(validSection(), provenance(path.join(dir, 'prisma.config.ts')))).toEqual({
+        ok: false,
+        diagnostics: [
+          {
+            code: 'CONFIG.FILE_RETIRED',
+            severity: 'error',
+            summary: `${retired} is no longer read.`,
+            why: 'Composer reads its configuration only from the `composer` section of prisma.config.ts.',
+            nextActions: [
+              {
+                kind: 'edit-file',
+                label: `${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`,
+              },
+            ],
+            where: { path: retired },
+          },
+        ],
+      });
+    }
+  });
+
+  test('an old config file in any other directory is not checked', () => {
+    const root = tempDir();
+    const app = path.join(root, 'app');
+    fs.mkdirSync(app);
+    fs.writeFileSync(path.join(app, 'prisma-composer.config.ts'), 'export default {};\n');
+
+    const result = validate(validSection(), provenance(path.join(root, 'prisma.config.ts')));
+    expect(result.ok).toBe(true);
+  });
 });
