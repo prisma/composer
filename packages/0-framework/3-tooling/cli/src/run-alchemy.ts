@@ -25,7 +25,13 @@ import spawn from 'cross-spawn';
  * `require.resolve('alchemy/package.json')` cannot be used.
  */
 function findAlchemyPackageDir(fromFile: string): string | undefined {
-  let dir = path.dirname(fs.realpathSync(fromFile));
+  let realFile: string;
+  try {
+    realFile = fs.realpathSync(fromFile);
+  } catch {
+    return undefined;
+  }
+  let dir = path.dirname(realFile);
   while (true) {
     const candidate = path.join(dir, 'node_modules', 'alchemy');
     if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
@@ -62,20 +68,21 @@ export function resolveAlchemyEntry(fromFile: string = fileURLToPath(import.meta
       'DEPLOY.ALCHEMY_BIN_MISSING',
       `Could not resolve the \`alchemy\` package from "${path.dirname(fromFile)}", where Composer is installed, or its bin entry.`,
       {
-        fix: 'Reinstall your dependencies: @prisma/composer depends on alchemy and installs it with itself.',
+        fix: "Check that `alchemy` is installed beside @prisma/composer, which depends on it, in a node_modules directory: layouts without one, such as Yarn Plug'n'Play, are not supported.",
       },
     );
   }
   return entry;
 }
 
-/** The runtime facts that decide which Node runs Alchemy; injectable for tests. */
+/** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
 export interface NodeRuntime {
   /** True when this process runs under Bun. */
   readonly bun: boolean;
   readonly execPath: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly platform: NodeJS.Platform;
+  readonly exists: (file: string) => boolean;
 }
 
 function currentRuntime(): NodeRuntime {
@@ -84,28 +91,45 @@ function currentRuntime(): NodeRuntime {
     execPath: process.execPath,
     env: process.env,
     platform: process.platform,
+    exists: fs.existsSync,
   };
 }
 
+function envValue(env: NodeRuntime['env'], name: string): string | undefined {
+  return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+}
+
+/** The file names `node` may have in a PATH directory: PATHEXT's extensions on Windows. */
+function nodeFileNames(runtime: NodeRuntime): readonly string[] {
+  if (runtime.platform !== 'win32') return ['node'];
+  const extensions = (envValue(runtime.env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .filter((extension) => extension.length > 0);
+  return extensions.map((extension) => `node${extension}`);
+}
+
 /**
- * The Node that runs Alchemy. Under Node it is this process's own runtime.
- * Under Bun (the examples run `bun …/prisma`) it is the first `node` on PATH:
- * Alchemy runs under Node whatever the host runs under, as its `node` shebang
- * always made it.
+ * The Node that starts Alchemy's launcher: this process's own runtime under
+ * Node, and the first `node` on PATH under Bun. Alchemy's launcher may still
+ * move itself to Bun when the package-manager environment says Bun invoked
+ * it (`bunx`, `bun run`), so the runtime Alchemy ends up on follows how
+ * `prisma` was invoked.
  */
 export function nodeExecutable(runtime: NodeRuntime = currentRuntime()): string {
   if (!runtime.bun) return runtime.execPath;
-  const pathValue =
-    Object.entries(runtime.env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '';
-  const name = runtime.platform === 'win32' ? 'node.exe' : 'node';
-  for (const dir of pathValue.split(path.delimiter)) {
+  const paths = runtime.platform === 'win32' ? path.win32 : path.posix;
+  const names = nodeFileNames(runtime);
+  for (const rawDir of (envValue(runtime.env, 'PATH') ?? '').split(paths.delimiter)) {
+    const dir = rawDir.replace(/^"(.*)"$/, '$1');
     if (dir.length === 0) continue;
-    const candidate = path.join(dir, name);
-    if (fs.existsSync(candidate)) return candidate;
+    for (const name of names) {
+      const candidate = paths.join(dir, name);
+      if (runtime.exists(candidate)) return candidate;
+    }
   }
   throw new CliStructuredError(
     'DEPLOY.NODE_MISSING',
-    'Alchemy runs under Node, and no `node` was found on PATH.',
+    'Composer starts Alchemy with Node, and no `node` was found on PATH.',
     { fix: 'Install Node 22.18 or newer and put it on PATH, or run `prisma` under Node.' },
   );
 }

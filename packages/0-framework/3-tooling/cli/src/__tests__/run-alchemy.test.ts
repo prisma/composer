@@ -99,6 +99,62 @@ describe('resolveAlchemyEntry()', () => {
     expect(resolveAlchemyEntry(composerFile)).toBe(entry);
   });
 
+  test('resolves from Composer reached through a symlink, as pnpm links it into the app', () => {
+    const root = makeTmpDir();
+    const { composerFile, storeDir } = pnpmStoreLayout(root);
+    const entry = installFakeAlchemy(path.dirname(storeDir));
+    const appLink = path.join(root, 'node_modules', '@prisma', 'composer');
+    fs.mkdirSync(path.dirname(appLink), { recursive: true });
+    fs.symlinkSync(path.join(storeDir, '@prisma', 'composer'), appLink, 'dir');
+
+    expect(resolveAlchemyEntry(path.join(appLink, 'dist', path.basename(composerFile)))).toBe(
+      entry,
+    );
+  });
+
+  test('reads a bin given as a string', () => {
+    const root = makeTmpDir();
+    const { composerFile, storeDir } = pnpmStoreLayout(root);
+    const packageDir = path.join(storeDir, 'alchemy');
+    fs.mkdirSync(path.join(packageDir, 'bin'), { recursive: true });
+    fs.writeFileSync(
+      path.join(packageDir, 'package.json'),
+      JSON.stringify({ name: 'alchemy', bin: './bin/cli.js' }),
+    );
+    fs.writeFileSync(path.join(packageDir, 'bin', 'cli.js'), '');
+
+    expect(resolveAlchemyEntry(composerFile)).toBe(path.join(packageDir, 'bin', 'cli.js'));
+  });
+
+  for (const [label, bin, writeEntry] of [
+    ['a bin object without an alchemy key', { other: './bin/cli.js' }, true],
+    ['a bin that names a missing file', { alchemy: './bin/missing.js' }, true],
+  ] as const) {
+    test(`raises DEPLOY.ALCHEMY_BIN_MISSING for ${label}`, () => {
+      const root = makeTmpDir();
+      const { composerFile, storeDir } = pnpmStoreLayout(root);
+      const packageDir = path.join(storeDir, 'alchemy');
+      fs.mkdirSync(path.join(packageDir, 'bin'), { recursive: true });
+      fs.writeFileSync(
+        path.join(packageDir, 'package.json'),
+        JSON.stringify({ name: 'alchemy', bin }),
+      );
+      if (writeEntry) fs.writeFileSync(path.join(packageDir, 'bin', 'cli.js'), '');
+
+      expect(() => resolveAlchemyEntry(composerFile)).toThrow(
+        expect.objectContaining({ code: 'DEPLOY.ALCHEMY_BIN_MISSING' }),
+      );
+    });
+  }
+
+  test('raises DEPLOY.ALCHEMY_BIN_MISSING, not a raw ENOENT, when Composer is not a file on disk', () => {
+    const missing = path.join(makeTmpDir(), 'virtual', 'control.mjs');
+
+    expect(() => resolveAlchemyEntry(missing)).toThrow(
+      expect.objectContaining({ code: 'DEPLOY.ALCHEMY_BIN_MISSING' }),
+    );
+  });
+
   test('raises DEPLOY.ALCHEMY_BIN_MISSING, naming the package lookup, when alchemy is not installed', () => {
     const { composerFile } = pnpmStoreLayout(makeTmpDir());
 
@@ -106,6 +162,7 @@ describe('resolveAlchemyEntry()', () => {
       expect.objectContaining({
         code: 'DEPLOY.ALCHEMY_BIN_MISSING',
         message: expect.stringContaining('Could not resolve the `alchemy` package'),
+        fix: expect.stringContaining('installed beside @prisma/composer'),
       }),
     );
   });
@@ -123,7 +180,13 @@ describe('nodeExecutable()', () => {
 
   test('under Node, is the running Node itself', () => {
     expect(
-      nodeExecutable({ bun: false, execPath: '/opt/node/bin/node', env: {}, platform: 'linux' }),
+      nodeExecutable({
+        bun: false,
+        execPath: '/opt/node/bin/node',
+        env: {},
+        platform: 'linux',
+        exists: fs.existsSync,
+      }),
     ).toBe('/opt/node/bin/node');
   });
 
@@ -139,6 +202,21 @@ describe('nodeExecutable()', () => {
         execPath: '/opt/bun/bin/bun',
         env: { PATH: [empty, withNode].join(path.delimiter) },
         platform: process.platform,
+        exists: fs.existsSync,
+      }),
+    ).toBe(node);
+  });
+
+  test('on Windows, splits PATH on ";", unquotes entries and tries PATHEXT, whatever the host platform', () => {
+    const node = 'C:\\Program Files\\nodejs\\node.EXE';
+
+    expect(
+      nodeExecutable({
+        bun: true,
+        execPath: 'C:\\bun\\bun.exe',
+        env: { Path: 'C:\\missing;"C:\\Program Files\\nodejs"', PATHEXT: '.COM;.EXE' },
+        platform: 'win32',
+        exists: (file) => file === node,
       }),
     ).toBe(node);
   });
@@ -150,6 +228,7 @@ describe('nodeExecutable()', () => {
         execPath: '/opt/bun/bin/bun',
         env: { PATH: makeTmpDir() },
         platform: process.platform,
+        exists: fs.existsSync,
       }),
     ).toThrow(expect.objectContaining({ code: 'DEPLOY.NODE_MISSING' }));
   });
@@ -304,7 +383,7 @@ describe('spawnCommandLine()', () => {
       const outcome = await runFake(entry, {
         action: 'deploy',
         stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
-        stage: 'ci-42',
+        stage: 'spaces & symbols',
         cwd: dir,
         env: { PRISMA_COMPOSER_CONTAINER_FOO: 'serialized-instance' },
       });
@@ -316,7 +395,7 @@ describe('spawnCommandLine()', () => {
         '.prisma-composer/alchemy.run.ts',
         '--yes',
         '--stage',
-        'ci-42',
+        'spaces & symbols',
       ]);
       expect(fs.realpathSync(captured.cwd)).toBe(dir);
       expect(captured.BASE_VAR).toBe('base');

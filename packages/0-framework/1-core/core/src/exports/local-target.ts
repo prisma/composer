@@ -7,9 +7,10 @@
  * local-target-flavored is exported from `/deploy` or the root.
  */
 
-// The dev stack file's state. Re-exported so the stack file reaches alchemy
-// through Composer: alchemy is Composer's dependency, and under pnpm the app
-// itself cannot import it.
+/**
+ * @internal Exists for the generated dev stack file, which cannot import
+ * alchemy itself under pnpm; not part of the authoring surface.
+ */
 export { localState } from 'alchemy/State/LocalState';
 export {
   DEV_DIR,
