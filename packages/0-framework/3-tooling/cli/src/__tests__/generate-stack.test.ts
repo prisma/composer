@@ -37,6 +37,18 @@ describe('renderStackFile() — a module root', () => {
     expect(content).not.toContain('stage:');
   });
 
+  test('imports alchemy only through @prisma/composer, which the app can resolve under pnpm', () => {
+    const content = renderStackFile({
+      entryPath: '/app/module.ts',
+      cwd: '/app',
+      configFile: '/app/prisma.config.ts',
+      name: 'app',
+      assembled: { bundles: {} },
+    });
+
+    expect(content).not.toContain("from 'alchemy");
+  });
+
   test('passes the deploy report through, so the renderer runs in the alchemy child where the resolved result is', () => {
     const content = renderStackFile({
       entryPath: '/repo/app/module.ts',
