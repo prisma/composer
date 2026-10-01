@@ -328,7 +328,8 @@ never-deployed stage fails rather than standing one up.
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 Composer runs the alchemy package it is installed with, found from its own
-location and started with the current runtime, so the app needs no direct
+location and started under Node (the first `node` on PATH when `prisma` runs
+under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
 `alchemy` dependency and no `.bin` link. No global Alchemy installation is
 needed.
 
