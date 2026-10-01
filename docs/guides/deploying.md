@@ -40,11 +40,20 @@ you source at deploy time, or CI secrets).
 
 The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
 `module.ts` and every module it imports, so run the bin under the runtime
-those modules need. Node is the default. If they use Bun APIs (they import
-`bun`, or call `Bun.serve` when imported), run the bin under Bun instead:
-`bun node_modules/.bin/prisma deploy module.ts`. The examples in the
-prisma/composer repository run it under Bun, which is why their scripts
-start with `bun`.
+those modules need. Node is the default: `pnpm prisma deploy module.ts` or
+`npx prisma deploy module.ts`. If they use Bun APIs (they import `bun`, or
+call `Bun.serve` when imported), run the bin's JavaScript entry with Bun:
+
+```sh
+bun node_modules/prisma/dist/prisma.js deploy module.ts
+```
+
+Shorter forms do not work. With pnpm, `node_modules/.bin/prisma` is a shell
+script, which Bun cannot run. `bunx prisma` follows the bin's `node` shebang,
+so it runs `prisma` under Node. `bunx --bun prisma` runs it under Bun but also
+puts Bun in place of `node` for every child process, including Alchemy, which
+Composer runs under Node. The examples in the prisma/composer repository run
+`prisma` under Bun, which is why their scripts start with `bun`.
 
 ## Configuration
 
