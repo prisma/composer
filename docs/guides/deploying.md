@@ -99,10 +99,10 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 
 ## Build first
 
-Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
-for hoisted installations. On Windows it prefers `alchemy.exe`, then
-`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
-Windows shim must not be reported as a missing Alchemy dependency.
+Composer runs the `alchemy` it is installed with: it finds that package from
+its own location and runs its entry with the runtime `prisma` runs under. Your
+app does not need `alchemy` as a direct dependency, and no
+`node_modules/.bin/alchemy` link is needed on any platform.
 
 `prisma deploy` does not build for you — it assembles what your
 build produced:
