@@ -13,26 +13,17 @@
  * `fetch()` + `fs.readFileSync`), never by importing `@internal/dev-emulators`
  * or `@internal/lowering` directly.
  *
- * The Compute/buckets/postgres emulators are the real, machine-global daemon
- * programs a real `prisma dev` session would spawn (D4) — there is
- * no way to
- * redirect them to an isolated registry from here: `ensureDaemon`'s own
- * `{registryRoot}` override is real, but reaching it would mean importing
- * `@internal/dev-emulators` directly, which a test importing only 9-public
- * cannot do, and `LocalTargetEmulatorsInput`/`LocalTargetProvidersInput`
- * (the public surface) carry no such field by design — the local
- * providers are never meant to target anything but the one real registry.
- * (A `$HOME` redirect was tried
- * and does NOT work: bun's `os.homedir()` does not observe an in-process
- * `process.env.HOME` mutation made after startup, and a spawned child's
- * `os.homedir()` was confirmed — by checking the real
- * `~/.prisma-composer/emulators` after a run — to resolve the real home
- * regardless of the overridden env passed to `spawnSync`.) This test
- * therefore records whether each daemon was ALREADY running before it acts
- * (a baseline check) and only stops the ones it caused to start; every
- * app-scoped record is removed at the end regardless, through the
- * extension's own `dev.teardown`, and the `postgres-main`-hosted server this
- * test created (plus its persisted data) is removed too.
+ * The Compute/buckets/postgres emulators are the real daemon programs a
+ * real `prisma dev` session would spawn (D4), registered under
+ * `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`:
+ * `$PRISMA_COMPOSER_EMULATORS_DIR` when set, else the machine-wide
+ * `~/.prisma-composer/emulators`. Without the variable they are shared with
+ * every other dev session on the machine, so this test records whether
+ * each daemon was ALREADY running before it acts (a baseline check) and
+ * only stops the ones it caused to start; every app-scoped record is
+ * removed at the end regardless, through the extension's own
+ * `dev.teardown`, and the `postgres-main`-hosted server this test created
+ * (plus its persisted data) is removed too.
  *
  * WHY THIS IS A STANDALONE SCRIPT, NOT A `bun:test` FILE:
  *
@@ -61,7 +52,6 @@
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load } from '@prisma/composer';
 import type {
@@ -73,6 +63,7 @@ import { containerEnv, DEV_DIR } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
+import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 import bgService from './fixtures/local-dev/bg-service.ts';
 import appModule from './fixtures/local-dev/module.ts';
 import webService from './fixtures/local-dev/web-service.ts';
@@ -206,8 +197,8 @@ function renderStack(bundles: Record<string, FixtureBundle>): string {
 
 /**
  * Runs one `alchemy deploy` against the generated dev stack file, exactly
- * as a real dev session would (--stage dev, always — D3), against the one
- * real, machine-global emulator registry.
+ * as a real dev session would (--stage dev, always — D3), against the
+ * emulator registry `emulatorRegistryRoot()` names.
  *
  * stdout/stderr are redirected straight to a log FILE (raw file descriptors,
  * not Node's `encoding: 'utf8'` pipe-and-buffer capture) — confirmed live
@@ -274,11 +265,6 @@ function isRegistryEntry(value: unknown): value is EmulatorRegistryEntry {
     'port' in value &&
     typeof value.port === 'number'
   );
-}
-
-/** The documented on-disk registry contract (spec § 2 daemon.ts) — read directly, never through @internal/dev-emulators. The one real, machine-global root, exactly like `defaultRegistryRoot()` resolves. */
-function emulatorRegistryRoot(): string {
-  return path.join(os.homedir(), '.prisma-composer', 'emulators');
 }
 
 function readEmulatorEntry(

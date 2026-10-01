@@ -129,6 +129,15 @@ token, workspace, or network is involved. Three consequences worth knowing:
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.
+- **`PRISMA_COMPOSER_EMULATORS_DIR` gives a checkout or a CI job its own
+  emulators.** By default every `dev` on the machine shares one set of
+  emulator daemons, registered under `~/.prisma-composer/emulators`. Set the
+  variable to an absolute directory and `dev` starts and finds its own
+  emulators there instead, with their own data, so two checkouts or two CI
+  jobs never share a daemon by accident. Both pick free ports, so they can
+  run side by side. A relative path is refused with `DEV.EMULATORS_DIR_INVALID`.
+  `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`
+  returns the directory in effect.
 - **The local Postgres is one shared session.** Every connection to a local
   database lands in the same Postgres session, which outlives your service
   processes. If you use Bun's `SQL`, pass `prepare: false`
