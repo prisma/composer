@@ -793,6 +793,9 @@ importers:
 
   packages/1-prisma-cloud/0-lowering/dev-emulators:
     dependencies:
+      '@internal/foundation':
+        specifier: workspace:0.25.0
+        version: link:../../../0-framework/0-foundation/foundation
       '@internal/s3-protocol':
         specifier: workspace:0.25.0
         version: link:../s3-protocol
