@@ -89,9 +89,10 @@ longer read, and the commands refuse the old setup rather than ignore it:
 | `CONFIG.FILE_RETIRED` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
 
 All three appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
-headline, and all three give the same fix: move the old file's `extensions` and
-`state` into `composer: composer({ ... })` in `prisma.config.ts`, then delete
-the old file. Nothing migrates it for you.
+headline. `SECTION_MISSING` is fixed by adding `composer: composer({ ... })` to
+`prisma.config.ts`. `FIELD_RETIRED` and `FILE_RETIRED` are fixed by moving the
+old file's `extensions` and `state` into that section, then removing
+`configPath` or deleting the old file. Nothing migrates it for you.
 
 If you mount Composer's commands into your own CLI through
 `@prisma/composer-cli/family`, note that the `ComposerSection` type is gone: the

@@ -243,8 +243,10 @@ refused, never silently ignored: `CONFIG.SECTION_MISSING` when no loaded
 `prisma.config.ts` declares a `composer` section, `CONFIG.FIELD_RETIRED` when
 the section still has `configPath`, `CONFIG.FILE_RETIRED` when a
 `prisma-composer.config.*` sits next to the declaring `prisma.config.ts`; all
-three under the CLI's `CLI.CONFIG_SECTION_INVALID`. The fix for all three is to move the old
-file's `extensions` and `state` into the section and delete the old file.
+three under the CLI's `CLI.CONFIG_SECTION_INVALID`. `SECTION_MISSING` is fixed by
+adding the `composer` section to `prisma.config.ts`. `FIELD_RETIRED` and
+`FILE_RETIRED` are fixed by moving the old file's `extensions` and `state` into
+the section, then removing `configPath` or deleting the old file.
 `@prisma/composer-cli/family` no longer exports `ComposerSection`; the
 section's type is `PrismaAppConfig` from `@prisma/composer/config`.
 
