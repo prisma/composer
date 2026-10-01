@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import {
   alchemyCommandLine,
   alchemyInvocation,
+  nodeExecutable,
   resolveAlchemyEntry,
   type spawnAlchemy,
   spawnCommandLine,
@@ -117,6 +118,43 @@ describe('resolveAlchemyEntry()', () => {
   });
 });
 
+describe('nodeExecutable()', () => {
+  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
+
+  test('under Node, is the running Node itself', () => {
+    expect(
+      nodeExecutable({ bun: false, execPath: '/opt/node/bin/node', env: {}, platform: 'linux' }),
+    ).toBe('/opt/node/bin/node');
+  });
+
+  test('under Bun, is the first node on PATH, so Alchemy keeps running under Node', () => {
+    const empty = makeTmpDir();
+    const withNode = makeTmpDir();
+    const node = path.join(withNode, nodeName);
+    fs.writeFileSync(node, '', { mode: 0o755 });
+
+    expect(
+      nodeExecutable({
+        bun: true,
+        execPath: '/opt/bun/bin/bun',
+        env: { PATH: [empty, withNode].join(path.delimiter) },
+        platform: process.platform,
+      }),
+    ).toBe(node);
+  });
+
+  test('under Bun with no node on PATH, raises DEPLOY.NODE_MISSING', () => {
+    expect(() =>
+      nodeExecutable({
+        bun: true,
+        execPath: '/opt/bun/bin/bun',
+        env: { PATH: makeTmpDir() },
+        platform: process.platform,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'DEPLOY.NODE_MISSING' }));
+  });
+});
+
 describe('alchemyInvocation()', () => {
   /**
    * The invocation names WHAT to converge and resolves nothing. That split is
@@ -144,7 +182,7 @@ describe('alchemyInvocation()', () => {
     });
   });
 
-  test('becomes `<runtime> <alchemy entry> <command> <stack file> --yes --stage <stage>`', () => {
+  test('becomes `<node> <alchemy entry> <command> <stack file> --yes --stage <stage>`', () => {
     const dir = makeTmpDir();
     const entry = installFakeAlchemy(dir);
 
@@ -158,9 +196,10 @@ describe('alchemyInvocation()', () => {
           containerEnv: {},
         }),
         entry,
+        '/opt/node/bin/node',
       ),
     ).toEqual({
-      command: process.execPath,
+      command: '/opt/node/bin/node',
       args: [entry, 'deploy', '.prisma-composer/alchemy.run.ts', '--yes', '--stage', 'ci-42'],
       cwd: dir,
       env: {},

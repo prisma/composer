@@ -101,9 +101,10 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 ## Build first
 
 Composer runs the `alchemy` it is installed with: it finds that package from
-its own location and runs its entry with the runtime `prisma` runs under. Your
-app does not need `alchemy` as a direct dependency, and no
-`node_modules/.bin/alchemy` link is needed on any platform.
+its own location and runs its entry under Node, even when `prisma` runs under
+Bun (it then uses the first `node` on PATH, and fails with `DEPLOY.NODE_MISSING`
+if there is none). Your app does not need `alchemy` as a direct dependency, and
+no `node_modules/.bin/alchemy` link is needed on any platform.
 
 `prisma deploy` does not build for you — it assembles what your
 build produced:

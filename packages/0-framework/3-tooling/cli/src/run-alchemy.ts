@@ -3,8 +3,8 @@
  * Alchemy" call): hand the terminal to the generated stack file.
  *
  * Runs the `alchemy` package Composer itself depends on: its `bin` entry,
- * with the current runtime. Never a `node_modules/.bin` link, which pnpm
- * creates only for an app's direct dependencies.
+ * under Node. Never a `node_modules/.bin` link, which pnpm creates only for an
+ * app's direct dependencies.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -69,6 +69,47 @@ export function resolveAlchemyEntry(fromFile: string = fileURLToPath(import.meta
   return entry;
 }
 
+/** The runtime facts that decide which Node runs Alchemy; injectable for tests. */
+export interface NodeRuntime {
+  /** True when this process runs under Bun. */
+  readonly bun: boolean;
+  readonly execPath: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly platform: NodeJS.Platform;
+}
+
+function currentRuntime(): NodeRuntime {
+  return {
+    bun: process.versions.bun !== undefined,
+    execPath: process.execPath,
+    env: process.env,
+    platform: process.platform,
+  };
+}
+
+/**
+ * The Node that runs Alchemy. Under Node it is this process's own runtime.
+ * Under Bun (the examples run `bun …/prisma`) it is the first `node` on PATH:
+ * Alchemy runs under Node whatever the host runs under, as its `node` shebang
+ * always made it.
+ */
+export function nodeExecutable(runtime: NodeRuntime = currentRuntime()): string {
+  if (!runtime.bun) return runtime.execPath;
+  const pathValue =
+    Object.entries(runtime.env).find(([key]) => key.toLowerCase() === 'path')?.[1] ?? '';
+  const name = runtime.platform === 'win32' ? 'node.exe' : 'node';
+  for (const dir of pathValue.split(path.delimiter)) {
+    if (dir.length === 0) continue;
+    const candidate = path.join(dir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  throw new CliStructuredError(
+    'DEPLOY.NODE_MISSING',
+    'Alchemy runs under Node, and no `node` was found on PATH.',
+    { fix: 'Install Node 22.18 or newer and put it on PATH, or run `prisma` under Node.' },
+  );
+}
+
 /**
  * WHAT to converge. Deliberately not a command line: which alchemy binary to
  * run is a question about this machine's installed tree, and answering it
@@ -99,16 +140,18 @@ export interface AlchemyCommandLine {
 
 /**
  * Resolves the invocation against this machine — the step every adapter takes
- * and no caller should. Runs alchemy's JavaScript entry with the current
- * runtime, so no shell shim is involved on any platform. Raises
- * DEPLOY.ALCHEMY_BIN_MISSING when Composer's alchemy cannot be resolved.
+ * and no caller should. Runs alchemy's JavaScript entry with Node, so no shell
+ * shim is involved on any platform. Raises DEPLOY.ALCHEMY_BIN_MISSING when
+ * Composer's alchemy cannot be resolved, and DEPLOY.NODE_MISSING when no Node
+ * can run it.
  */
 export function alchemyCommandLine(
   invocation: AlchemyInvocation,
   alchemyEntry: string = resolveAlchemyEntry(),
+  node: string = nodeExecutable(),
 ): AlchemyCommandLine {
   return {
-    command: process.execPath,
+    command: node,
     args: [
       alchemyEntry,
       invocation.action,
