@@ -18,9 +18,11 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
     expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
     expect(content).toContain(
-      "import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
+      "import { DEV_DIR, localState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     );
-    expect(content).toContain("import { localState } from 'alchemy/State/LocalState';");
+    // alchemy is Composer's dependency, not the app's: under pnpm the app
+    // cannot import it, so the stack file reaches it through Composer.
+    expect(content).not.toContain("from 'alchemy");
     expect(content).toContain('import prismaConfig from "../../prisma.config.ts";');
     expect(content).toContain('const config = prismaConfig.composer;');
     expect(content).toContain('import app from "../../module.ts";');

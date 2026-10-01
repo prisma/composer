@@ -71,8 +71,7 @@ export function renderDevStackFile(input: DevStackFileInput): string {
     "import * as path from 'node:path';",
     "import { deserializeContainers } from '@prisma/composer/config';",
     "import { lower } from '@prisma/composer/deploy';",
-    "import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
-    "import { localState } from 'alchemy/State/LocalState';",
+    "import { DEV_DIR, localState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     `import prismaConfig from ${quote(configImport)};`,
     `import app from ${quote(appImport)};`,
   ].join('\n');

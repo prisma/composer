@@ -7,6 +7,11 @@
  * local-target-flavored is exported from `/deploy` or the root.
  */
 
+/**
+ * @internal Exists for the generated dev stack file, which cannot import
+ * alchemy itself under pnpm; not part of the authoring surface.
+ */
+export { localState } from 'alchemy/State/LocalState';
 export {
   DEV_DIR,
   type LocalTargetAttachInput,
