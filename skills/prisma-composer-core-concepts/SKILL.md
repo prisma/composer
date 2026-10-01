@@ -300,7 +300,9 @@ a destroy script, never use that session: `deploy` and `destroy` read
 `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from the environment (both
 in the workspace's Console settings); `dev` and `log` read neither. The
 `prisma` bin starts under Node; when the modules `module.ts` imports use Bun
-APIs, run it under Bun (`bun node_modules/.bin/prisma deploy module.ts`).
+APIs, run its JavaScript entry with Bun
+(`bun node_modules/prisma/dist/prisma.js deploy module.ts`); `bunx prisma`
+still runs under Node, and `bunx --bun prisma` also moves Alchemy off Node.
 
 **Stages.** A stage is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
