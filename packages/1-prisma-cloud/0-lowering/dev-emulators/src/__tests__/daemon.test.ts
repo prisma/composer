@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
@@ -14,6 +15,7 @@ import { bucketsClient, computeClient } from '../client.ts';
 import {
   type DaemonName,
   daemonStateDir,
+  defaultRegistryRoot,
   ensureDaemon,
   isPidAlive,
   lockFilePath,
@@ -22,7 +24,13 @@ import {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
-import { ensureFreshDaemon, entryFor, tempDir, waitFor } from './helpers.ts';
+import {
+  ensureFreshDaemon,
+  entryFor,
+  skipContendedDaemonPorts,
+  tempDir,
+  waitFor,
+} from './helpers.ts';
 
 let registryRoot: string;
 const started = new Set<DaemonName>();
@@ -435,5 +443,51 @@ describe('concurrent-ensure protocol', () => {
     } finally {
       holder.kill('SIGKILL');
     }
+  }, 15_000);
+});
+
+describe('PRISMA_COMPOSER_EMULATORS_DIR', () => {
+  const variable = 'PRISMA_COMPOSER_EMULATORS_DIR';
+  let saved: string | undefined;
+
+  beforeEach(() => {
+    saved = process.env[variable];
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env[variable];
+    else process.env[variable] = saved;
+  });
+
+  test('unset, the registry root is ~/.prisma-composer/emulators', () => {
+    delete process.env[variable];
+    expect(defaultRegistryRoot()).toBe(path.join(os.homedir(), '.prisma-composer', 'emulators'));
+  });
+
+  test('an absolute path becomes the registry root', () => {
+    process.env[variable] = registryRoot;
+    expect(defaultRegistryRoot()).toBe(registryRoot);
+  });
+
+  test('a relative path is refused with a structured error naming the variable', () => {
+    process.env[variable] = 'emulators';
+    expect(() => defaultRegistryRoot()).toThrow(
+      expect.objectContaining({
+        code: 'DEV.EMULATORS_DIR_INVALID',
+        message: 'PRISMA_COMPOSER_EMULATORS_DIR must be an absolute path; got "emulators".',
+      }),
+    );
+  });
+
+  test('a daemon started without a registryRoot registers under the directory it names', async () => {
+    process.env[variable] = registryRoot;
+    await skipContendedDaemonPorts(registryRoot);
+    const { url } = await ensureDaemon('compute', entryFor('compute'));
+    started.add('compute');
+
+    expect(readEntry('compute')).toMatchObject({
+      port: Number(new URL(url).port),
+      logPath: path.join(registryRoot, 'compute.log'),
+    });
   }, 15_000);
 });

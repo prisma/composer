@@ -5,11 +5,12 @@
  * `unref()`'d child process that outlives whatever called `ensureDaemon` —
  * the registry is how a later call finds it again.
  *
- * `registryRoot` defaults to `~/.prisma-composer/emulators/` and governs
- * every path this module manages for a given daemon: the registry JSON
- * itself, the daemon's own state directory, and its stdio log file. The
- * `{ registryRoot }` override exists solely so tests never touch the real
- * home directory; production code never passes it.
+ * `registryRoot` defaults to `$PRISMA_COMPOSER_EMULATORS_DIR`, else
+ * `~/.prisma-composer/emulators/`, and governs every path this module
+ * manages for a given daemon: the registry JSON itself, the daemon's own
+ * state directory, and its stdio log file. The `{ registryRoot }` override
+ * exists solely so tests never touch the real home directory; production
+ * code never passes it.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -17,6 +18,7 @@ import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CliStructuredError } from '@internal/foundation/errors';
 import getPort, { portNumbers } from 'get-port';
 import * as properLockfile from 'proper-lockfile';
 import { readJsonFile, StateFile } from './state-file.ts';
@@ -112,9 +114,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** `~/.prisma-composer/emulators/` — `registryRoot`'s default. */
+const EMULATORS_DIR_VARIABLE = 'PRISMA_COMPOSER_EMULATORS_DIR';
+
+/** `registryRoot`'s default: `$PRISMA_COMPOSER_EMULATORS_DIR` (an absolute path) when set, else `~/.prisma-composer/emulators/`. */
 export function defaultRegistryRoot(): string {
-  return path.join(os.homedir(), '.prisma-composer', 'emulators');
+  const dir = process.env[EMULATORS_DIR_VARIABLE];
+  if (dir === undefined || dir === '') {
+    return path.join(os.homedir(), '.prisma-composer', 'emulators');
+  }
+  if (!path.isAbsolute(dir)) {
+    throw new CliStructuredError(
+      'DEV.EMULATORS_DIR_INVALID',
+      `${EMULATORS_DIR_VARIABLE} must be an absolute path; got "${dir}".`,
+      {
+        why: 'Every process that starts or reaches the local emulators resolves this directory, and a relative path would name a different one in each working directory.',
+        fix: `Set ${EMULATORS_DIR_VARIABLE} to an absolute path, or unset it to use ~/.prisma-composer/emulators.`,
+        meta: { variable: EMULATORS_DIR_VARIABLE, value: dir },
+      },
+    );
+  }
+  return dir;
 }
 
 /** `<registryRoot>/<name>.json`. */
