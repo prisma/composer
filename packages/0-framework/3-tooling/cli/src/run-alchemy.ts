@@ -2,8 +2,9 @@
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
- * Resolves the installed `alchemy` bin and launches package-manager shims with
- * cross-spawn.
+ * Runs the `alchemy` package Composer itself depends on: its `bin` entry,
+ * with the current runtime. Never a `node_modules/.bin` link, which pnpm
+ * creates only for an app's direct dependencies.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -13,29 +14,59 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
 
-/** Walks up from `startDir` looking for the installed Alchemy executable. */
-export function resolveAlchemyBin(startDir: string): string {
-  const names =
-    process.platform === 'win32' ? ['alchemy.exe', 'alchemy.cmd', 'alchemy'] : ['alchemy'];
-  let dir = startDir;
+/**
+ * The directory of the `alchemy` package a module at `fromFile` imports:
+ * Node's package lookup, walking up `node_modules` from the module's real
+ * location. alchemy's exports map does not export its package.json, so
+ * `require.resolve('alchemy/package.json')` cannot be used.
+ */
+function findAlchemyPackageDir(fromFile: string): string | undefined {
+  let dir = path.dirname(fs.realpathSync(fromFile));
   while (true) {
-    for (const name of names) {
-      const candidate = path.join(dir, 'node_modules', '.bin', name);
-      if (fs.existsSync(candidate)) return candidate;
-    }
+    const candidate = path.join(dir, 'node_modules', 'alchemy');
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
     const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new CliStructuredError(
-        'DEPLOY.ALCHEMY_BIN_MISSING',
-        `Could not find an installed \`alchemy\` bin above "${startDir}".`,
-        { fix: 'Add "alchemy" as a dependency of your app.' },
-      );
-    }
+    if (parent === dir) return undefined;
     dir = parent;
   }
+}
+
+function binEntryOf(packageDir: string): string | undefined {
+  const manifest: unknown = JSON.parse(
+    fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'),
+  );
+  if (typeof manifest !== 'object' || manifest === null || !('bin' in manifest)) return undefined;
+  const bin = manifest.bin;
+  const relative =
+    typeof bin === 'string'
+      ? bin
+      : typeof bin === 'object' && bin !== null && 'alchemy' in bin
+        ? bin.alchemy
+        : undefined;
+  return typeof relative === 'string' ? path.join(packageDir, relative) : undefined;
+}
+
+/**
+ * The JavaScript entry of the `alchemy` package Composer is installed with,
+ * resolved from `fromFile` (this module, by default).
+ */
+export function resolveAlchemyEntry(fromFile: string = fileURLToPath(import.meta.url)): string {
+  const packageDir = findAlchemyPackageDir(fromFile);
+  const entry = packageDir === undefined ? undefined : binEntryOf(packageDir);
+  if (entry === undefined || !fs.existsSync(entry)) {
+    throw new CliStructuredError(
+      'DEPLOY.ALCHEMY_BIN_MISSING',
+      `Could not resolve the \`alchemy\` package from "${path.dirname(fromFile)}", where Composer is installed, or its bin entry.`,
+      {
+        fix: 'Reinstall your dependencies: @prisma/composer depends on alchemy and installs it with itself.',
+      },
+    );
+  }
+  return entry;
 }
 
 /**
@@ -68,13 +99,18 @@ export interface AlchemyCommandLine {
 
 /**
  * Resolves the invocation against this machine — the step every adapter takes
- * and no caller should. Raises DEPLOY.ALCHEMY_BIN_MISSING when the app has no
- * alchemy installed.
+ * and no caller should. Runs alchemy's JavaScript entry with the current
+ * runtime, so no shell shim is involved on any platform. Raises
+ * DEPLOY.ALCHEMY_BIN_MISSING when Composer's alchemy cannot be resolved.
  */
-export function alchemyCommandLine(invocation: AlchemyInvocation): AlchemyCommandLine {
+export function alchemyCommandLine(
+  invocation: AlchemyInvocation,
+  alchemyEntry: string = resolveAlchemyEntry(),
+): AlchemyCommandLine {
   return {
-    command: resolveAlchemyBin(invocation.cwd),
+    command: process.execPath,
     args: [
+      alchemyEntry,
       invocation.action,
       invocation.stackFileRelativePath,
       '--yes',
@@ -131,8 +167,11 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  * collapse a signal into an exit code — that collapse is what made a
  * Ctrl-C'd deploy report itself as a failure.
  */
-export const spawnAlchemy: RunAlchemy = async (invocation) => {
-  const line = alchemyCommandLine(invocation);
+export const spawnAlchemy: RunAlchemy = async (invocation) =>
+  spawnCommandLine(alchemyCommandLine(invocation));
+
+/** Starts a resolved command line with inherited stdio and returns how it ended. */
+export function spawnCommandLine(line: AlchemyCommandLine): Promise<AlchemyOutcome> {
   return new Promise<AlchemyOutcome>((resolve, reject) => {
     const child = spawn(line.command, [...line.args], {
       cwd: line.cwd,
@@ -144,4 +183,4 @@ export const spawnAlchemy: RunAlchemy = async (invocation) => {
       resolve({ exitCode, signal });
     });
   });
-};
+}
