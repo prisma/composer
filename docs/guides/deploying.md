@@ -39,21 +39,35 @@ you source at deploy time, or CI secrets).
 ## Runtime
 
 The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
-`module.ts` and every module it imports, so run the bin under the runtime
-those modules need. Node is the default: `pnpm prisma deploy module.ts` or
-`npx prisma deploy module.ts`. If they use Bun APIs (they import `bun`, or
-call `Bun.serve` when imported), run the bin's JavaScript entry with Bun:
+`module.ts` and every module it imports, so those modules decide the runtime
+`prisma` needs. Run it with your package manager by default:
+`pnpm prisma deploy module.ts` or `npx prisma deploy module.ts`.
+
+Composer starts Alchemy's launcher with Node: the Node `prisma` runs on, or
+the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
+if there is none). Alchemy's launcher then moves itself to Bun when the
+package-manager environment says Bun invoked it, which `bunx` and `bun run`
+do. So the invocation decides where each ends up:
+
+| Invocation | `prisma` runs under | Alchemy runs under |
+| --- | --- | --- |
+| `pnpm prisma …` or `npx prisma …` | Node | Node |
+| `bunx prisma …` | Node (the bin's `node` shebang) | Bun |
+| `bunx --bun prisma …` | Bun | Bun (Bun stands in for `node` on PATH) |
+| `bun node_modules/prisma/dist/prisma.js …` | Bun | Node |
+
+If your modules use Bun APIs (they import `bun`, or call `Bun.serve` when
+imported), `prisma` must run under Bun. To keep Alchemy on Node at the same
+time, run the bin's JavaScript entry with Bun from a shell, not from a
+`bun run` script:
 
 ```sh
 bun node_modules/prisma/dist/prisma.js deploy module.ts
 ```
 
-Shorter forms do not work. With pnpm, `node_modules/.bin/prisma` is a shell
-script, which Bun cannot run. `bunx prisma` follows the bin's `node` shebang,
-so it runs `prisma` under Node. `bunx --bun prisma` runs it under Bun but also
-puts Bun in place of `node` for every child process, including Alchemy, which
-Composer runs under Node. The examples in the prisma/composer repository run
-`prisma` under Bun, which is why their scripts start with `bun`.
+`bun node_modules/.bin/prisma` does not run with pnpm, where that file is a
+shell script. The examples in the prisma/composer repository run `prisma`
+under Bun, which is why their scripts start with `bun`.
 
 ## Configuration
 
@@ -110,10 +124,9 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 ## Build first
 
 Composer runs the `alchemy` it is installed with: it finds that package from
-its own location and runs its entry under Node, even when `prisma` runs under
-Bun (it then uses the first `node` on PATH, and fails with `DEPLOY.NODE_MISSING`
-if there is none). Your app does not need `alchemy` as a direct dependency, and
-no `node_modules/.bin/alchemy` link is needed on any platform.
+its own location and starts its entry with Node ([Runtime](#runtime) says
+when Alchemy then moves to Bun). Your app does not need `alchemy` as a direct
+dependency, and no `node_modules/.bin/alchemy` link is needed on any platform.
 
 `prisma deploy` does not build for you — it assembles what your
 build produced:
