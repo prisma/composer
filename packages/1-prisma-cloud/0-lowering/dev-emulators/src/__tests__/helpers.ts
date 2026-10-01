@@ -119,6 +119,7 @@ const DEFAULT_MIN_PORT = 4300;
 export async function ensureFreshDaemon(
   name: DaemonName,
   registryRoot: string,
+  entry: string = entryFor(name),
 ): Promise<{ url: string }> {
   const freePort = await getPort({ port: portNumbers(DEFAULT_MIN_PORT, DEFAULT_MIN_PORT + 200) });
   fs.mkdirSync(registryRoot, { recursive: true });
@@ -128,7 +129,7 @@ export async function ensureFreshDaemon(
       JSON.stringify({ pid: process.pid, port, version: 'fake', logPath: '/dev/null' }),
     );
   }
-  return ensureDaemon(name, entryFor(name), { registryRoot });
+  return ensureDaemon(name, entry, { registryRoot });
 }
 
 const DEFAULT_MIN_SERVICE_PORT = 3000;
