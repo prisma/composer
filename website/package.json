@@ -14,6 +14,7 @@
     "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} ${DOCS_STAGE:---production} )"
   },
   "dependencies": {
+    "@prisma/cli-engine": "0.6.2",
     "@prisma/composer": "workspace:0.25.0",
     "@prisma/composer-prisma-cloud": "workspace:0.25.0",
     "alchemy": "2.0.0-beta.78"

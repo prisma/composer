@@ -31,7 +31,7 @@ export type PnExtensionPack = NonNullable<
  *
  * The packs are `extensionPacks` here, not `extensions`: Prisma ORM calls the
  * key the user types `extensions`, but `extensions` is already Composer's word
- * for the things listed in `prisma-composer.config.ts` (`prismaCloud()`,
+ * for the things listed in the `composer` section of `prisma.config.ts` (`prismaCloud()`,
  * `nodeBuild()`), and `1-extensions/` is a layer name. This type is Composer's
  * side of the boundary, so it uses Composer's word.
  */

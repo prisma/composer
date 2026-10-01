@@ -18,6 +18,7 @@ import type {
 import { containerEnv, preflightEnv, preflightEnvVarName } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, okVoid, type Result } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -49,6 +50,7 @@ function hasNoLocalDeployState(cwd: string): boolean {
 
 interface StackPipelineOptions {
   readonly entry: string;
+  readonly config: ComposerConfigSource;
   readonly name: string | undefined;
   readonly stage: string | undefined;
   readonly cwd: string;
@@ -65,6 +67,7 @@ export async function executeDeploy(
 ): Promise<Result<DeploySuccess, CliStructuredError>> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
+    config: input.config,
     name: input.name,
     stage: input.stage,
     cwd,
@@ -98,6 +101,7 @@ export async function executeDestroy(
 ): Promise<Result<void, CliStructuredError>> {
   const outcome = await runStackPipeline('destroy', {
     entry: input.entry,
+    config: input.config,
     name: input.name,
     stage: input.target.kind === 'stage' ? input.target.stage : undefined,
     cwd,
@@ -275,7 +279,7 @@ async function runStackPipelineInner(
   opts: StackPipelineOptions,
   reporters: ExtensionReporter[],
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { entry, name, stage, cwd, onEvent, deps } = opts;
+  const { entry, config: composerConfig, name, stage, cwd, onEvent, deps } = opts;
 
   if (stage !== undefined) {
     try {
@@ -306,13 +310,9 @@ async function runStackPipelineInner(
   let preflightTransportEnv: Record<string, string> = {};
 
   try {
-    // The shared prefix (pipeline.ts): config discovery/load, entry load,
-    // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
-    };
+    // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
+    // name resolution, assemble.
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
@@ -324,8 +324,9 @@ async function runStackPipelineInner(
               cause: error,
             })
         : undefined;
-    pipeline = await runPipeline(entry, name, cwd, pipelineDeps, onAssembleError);
-    const { config, graph, name: resolvedName } = pipeline;
+    pipeline = await runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError);
+    const { graph, name: resolvedName } = pipeline;
+    const config = pipeline.configSource.value;
 
     // Open reporting BEFORE containers are resolved: creating them is the
     // step that can leave a project behind with nothing recording why
@@ -467,7 +468,7 @@ async function runStackPipelineInner(
       stackPath = writeStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configPath: pipeline.configPath,
+        configFile: pipeline.configSource.file,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });
@@ -571,7 +572,7 @@ async function runStackPipelineInner(
       // infrastructure is, and whether losing it should fail the command, is the
       // extension's business, not this module's.
       if (action === 'destroy') {
-        for (const extension of pipeline.config.extensions) {
+        for (const extension of pipeline.configSource.value.extensions) {
           if (extension.teardown === undefined) continue;
           try {
             await extension.teardown({ container: containers.get(extension.id), stage });
@@ -584,7 +585,7 @@ async function runStackPipelineInner(
         // two-loop order — all teardowns, then all removes — is what structurally
         // preserves ADR-0034's guarantee that a stage's state database is deleted
         // before its Branch (a Branch with an attached database refuses deletion).
-        for (const extension of pipeline.config.extensions) {
+        for (const extension of pipeline.configSource.value.extensions) {
           if (extension.container === undefined) continue;
           const instance = containers.get(extension.id);
           if (instance === undefined) continue;

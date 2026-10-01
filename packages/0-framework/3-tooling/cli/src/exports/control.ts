@@ -4,8 +4,9 @@
  * Importing it executes nothing — the heavy pipeline loads lazily inside
  * each operation. Distinct from an EXTENSION's `/control`
  * entry (ADR-0017's control-plane descriptors, importable only from
- * `prisma-composer.config.ts`): this subpath is for hosts driving the deploy
- * pipeline in-process.
+ * `prisma.config.ts`): this subpath is for hosts driving the deploy
+ * pipeline in-process. Each operation takes the `composer` section of
+ * `prisma.config.ts` and that file's path as its `config` input.
  *
  * Failures are `CliStructuredError`s on the shared `Result` shape. The
  * class itself is deliberately not value-exported: hosts recognize failures
@@ -15,6 +16,7 @@
 
 export type { CliStructuredError } from '@internal/foundation/errors';
 export type { NotOk, Ok, Result } from '@internal/foundation/result';
+export type { ComposerConfigSource } from '../composer-config.ts';
 export type { DeployedNodeSummary, DeploymentSummary } from '../deployment-summary.ts';
 export type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
 export { deploy } from '../operations/deploy.ts';

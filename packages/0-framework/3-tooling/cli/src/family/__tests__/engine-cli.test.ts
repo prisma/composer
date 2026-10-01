@@ -24,7 +24,7 @@ import { createTestCli } from '@prisma/cli-engine/testing';
 import { createComposerCli, foreignOrmSectionFamily, runComposerCli } from '../engine-cli.ts';
 import { createComposerFamily, realOperations } from '../family.ts';
 import { createRuntime } from '../runtime.ts';
-import { type ComposerSection, composerSection } from '../section.ts';
+import { composerSection } from '../section.ts';
 
 const VERSION = '0.6.0-test';
 const NO_CONFIG = (): Promise<LoadedConfig> =>
@@ -189,38 +189,132 @@ function probeCli(sections: Record<string, unknown>) {
   });
 }
 
-describe('the composer section through the engine', () => {
-  test('no section at all still runs — absence is normal', async () => {
-    const result = await probeCli({}).run(['probe', '--json']);
-    expect(result.exitCode).toBe(0);
-    expect(result.presented?.data).toEqual({});
-  });
+function composerConfig() {
+  return {
+    extensions: [{ id: 'ext-a', nodes: {}, providers: () => 'layer' }],
+    state: { extension: 'ext-a', create: () => 'state' },
+  };
+}
 
-  test('a configPath reaches the handler as ctx.config, resolved against the declaring file', async () => {
-    // The harness seeds the config file at the run's cwd, `/`, so the
-    // section's relative path resolves against that directory — not against
-    // wherever this test process happens to run.
-    const result = await probeCli({
-      composer: { configPath: './x/prisma-composer.config.ts' },
-    }).run(['probe', '--json']);
+/** The terminal result event of a `--json` run, which carries the error and its diagnostics. */
+function resultEvent(result: { json: readonly unknown[] }) {
+  return result.json.at(-1);
+}
+
+describe('the composer section through the engine', () => {
+  test('a valid section reaches the handler as the config file’s own descriptors', async () => {
+    const composer = composerConfig();
+    const result = await probeCli({ composer }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: path.resolve(path.sep, 'x', 'prisma-composer.config.ts'),
-    } satisfies ComposerSection);
+      value: composer,
+      file: path.resolve(path.sep, 'prisma.config.ts'),
+    });
+    const data = result.presented?.data as { value: typeof composer };
+    expect(data.value.extensions[0]).toBe(composer.extensions[0]);
+    expect(data.value.state).toBe(composer.state);
   });
 
   /**
-   * The reason the section resolves paths at all. prisma.config.ts files form a
-   * chain — discovered from cwd up to the repo root and merged per key — so a
-   * `composer` section written once at the root reaches commands run in any
-   * subdirectory. The root file is the only one declaring `configPath`, and the
-   * run happens two directories below it, so both wrong answers are visible:
-   * resolving against cwd or against the nearest file on the chain would name
-   * `/repo/apps/shop/prisma-composer.config.ts`.
+   * The engine calls the validator with `undefined` and an empty provenance
+   * when no loaded file declares the section, so Composer's diagnostic rides
+   * under the engine's own "section is missing" headline.
    */
-  test('a configPath declared at the repo root names the same file from a subdirectory', async () => {
+  test('no section fails before the handler, with the section to write', async () => {
+    const result = await probeCli({}).run(['probe', '--json']);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.presented).toBeUndefined();
+    expect(resultEvent(result)).toMatchObject({
+      kind: 'result',
+      envelope: {
+        ok: false,
+        error: {
+          code: 'CLI.CONFIG_SECTION_INVALID',
+          summary: "The 'composer' section is missing: no loaded config file declares it.",
+        },
+        diagnostics: [
+          {
+            code: 'CONFIG.SECTION_MISSING',
+            severity: 'error',
+            summary: 'No loaded prisma.config.ts declares a `composer` section.',
+          },
+        ],
+      },
+    });
+  });
+
+  test('a configPath section fails before the handler, naming the retired field', async () => {
+    const result = await probeCli({
+      composer: { configPath: './prisma-composer.config.ts' },
+    }).run(['probe', '--json']);
+    expect(result.exitCode).not.toBe(0);
+    expect(result.presented).toBeUndefined();
+    expect(resultEvent(result)).toMatchObject({
+      kind: 'result',
+      envelope: {
+        ok: false,
+        error: { code: 'CLI.CONFIG_SECTION_INVALID' },
+        diagnostics: [
+          {
+            code: 'CONFIG.FIELD_RETIRED',
+            severity: 'error',
+            where: { path: path.resolve(path.sep, 'prisma.config.ts') },
+            meta: { field: 'configPath' },
+          },
+        ],
+      },
+    });
+  });
+
+  /**
+   * prisma.config.ts files form a chain, discovered from cwd up to the repo
+   * root. The engine's default would merge the section per key, so a nearer
+   * file's `extensions` could combine with a farther file's `state`. The
+   * section takes the nearest declaring file's section whole instead, so the
+   * farther `state` must not appear, and the missing one is reported.
+   */
+  test('the nearest declaring file’s section wins whole over a farther one', async () => {
     const repo = path.resolve(path.sep, 'repo');
     const appDir = path.join(repo, 'apps', 'shop');
+    const root = composerConfig();
+    const nearer = { extensions: [{ id: 'ext-b', nodes: {} }] };
+    const cli = createTestCli({
+      commandFamilies: [
+        defineCommandFamily({ configSection: composerSection, commands: { probe } }),
+      ],
+      commands: { probe },
+      loadConfig: () =>
+        Promise.resolve({
+          files: [
+            { path: path.join(appDir, 'prisma.config.ts'), sections: { composer: nearer } },
+            { path: path.join(repo, 'prisma.config.ts'), sections: { composer: root } },
+          ],
+          diagnostics: [],
+        }),
+    });
+
+    const result = await cli.run(['probe', '--json'], { cwd: appDir });
+
+    expect(result.exitCode).not.toBe(0);
+    expect(resultEvent(result)).toMatchObject({
+      kind: 'result',
+      envelope: {
+        ok: false,
+        diagnostics: [
+          {
+            code: 'CONFIG.FIELD_INVALID',
+            where: { path: path.join(appDir, 'prisma.config.ts') },
+            meta: { field: 'state' },
+          },
+        ],
+      },
+    });
+  });
+
+  test('a section declared only at the repo root reaches a command run below it', async () => {
+    const repo = path.resolve(path.sep, 'repo');
+    const appDir = path.join(repo, 'apps', 'shop');
+    const root = composerConfig();
     const cli = createTestCli({
       commandFamilies: [
         defineCommandFamily({ configSection: composerSection, commands: { probe } }),
@@ -230,10 +324,7 @@ describe('the composer section through the engine', () => {
         Promise.resolve({
           files: [
             { path: path.join(appDir, 'prisma.config.ts'), sections: {} },
-            {
-              path: path.join(repo, 'prisma.config.ts'),
-              sections: { composer: { configPath: './prisma-composer.config.ts' } },
-            },
+            { path: path.join(repo, 'prisma.config.ts'), sections: { composer: root } },
           ],
           diagnostics: [],
         }),
@@ -243,29 +334,26 @@ describe('the composer section through the engine', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: path.join(repo, 'prisma-composer.config.ts'),
-    } satisfies ComposerSection);
-  });
-
-  test('an invalid section fails the command rather than reaching the handler', async () => {
-    const result = await probeCli({ composer: { configPath: 42 } }).run(['probe']);
-    expect(result.exitCode).not.toBe(0);
-    expect(result.presented).toBeUndefined();
+      value: root,
+      file: path.join(repo, 'prisma.config.ts'),
+    });
   });
 
   test("a shared config's orm section is recognised and ignored", async () => {
+    const composer = composerConfig();
     const result = await probeCli({
-      composer: { configPath: './x/prisma-composer.config.ts' },
+      composer,
       orm: { contract: './contract.prisma' },
     }).run(['probe', '--json']);
     expect(result.exitCode).toBe(0);
     expect(result.presented?.data).toEqual({
-      configPath: path.resolve('/x/prisma-composer.config.ts'),
-    } satisfies ComposerSection);
+      value: composer,
+      file: path.resolve(path.sep, 'prisma.config.ts'),
+    });
   });
 
   test('a truly unknown section still fails the run', async () => {
-    const result = await probeCli({ tpyo: {} }).run(['probe']);
+    const result = await probeCli({ composer: composerConfig(), tpyo: {} }).run(['probe']);
     expect(result.exitCode).not.toBe(0);
     expect(result.presented).toBeUndefined();
   });

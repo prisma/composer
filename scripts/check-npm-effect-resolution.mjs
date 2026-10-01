@@ -20,15 +20,17 @@
 // end state with an npm `override` instead, because the hoisting route only
 // reproduces while a suitable release exists relative to our pin, which made
 // the check hostage to the registry. Nothing we declare can stop a consumer's
-// tree going wrong, so the acceptance is the CLI's own start-up check: running
-// the built `prisma-composer` there must exit non-zero with our actionable
-// error rather than crashing inside alchemy. The healthy shapes assert the
-// inverse: the check must NOT trip on a good tree, and the built bin must
-// still start — which is what proves the resolved `effect` genuinely satisfies
-// alchemy, since starting loads alchemy's provider tree.
+// tree going wrong, and Composer no longer checks the tree itself: a broken
+// tree fails when `prisma.config.ts` is evaluated, because its `composer`
+// section imports alchemy's providers. So every shape asserts on the thing
+// that breaks, importing alchemy's provider tree from the installed app. The
+// healthy shapes must import it cleanly, which proves the resolved `effect`
+// genuinely satisfies alchemy; the adversarial shape must fail to import it.
+// The healthy shapes also run the built bin's `--help`, and the adversarial
+// shape checks that `--help` survives the broken tree.
 //
 // The `prisma-composer` bin ships in @prisma/composer-cli, so every shape
-// that runs it installs the composer-cli tarball alongside the composer
+// installs the composer-cli tarball alongside the composer
 // tarball — npm resolves composer-cli's exact `@prisma/composer` dependency
 // against the co-installed tarball because the versions match, and the
 // `@prisma/cli-engine` peer is auto-installed by npm from the registry.
@@ -128,9 +130,6 @@ function collectEffectVersions(node, found = new Map()) {
 const CURRENT_NPM = ['npm'];
 const NPM_10 = ['npx', '--yes', 'npm@10'];
 
-/** The stable marker of the CLI's own start-up check (check-effect-resolution.ts). */
-const CLI_CHECK_MARKER = 'alchemy resolves effect@';
-
 /** Runs `npm install` for a scratch app; returns { appDir, status, output } instead of throwing so callers can judge HOW an install failed. */
 function installApp(
   label,
@@ -186,30 +185,51 @@ function effectSeenByAlchemy(label, appDir) {
   return { version, entry };
 }
 
-/** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
 /**
- * A service token that parses and is nowhere near expiry. The engine refuses a
- * credentialed command before the handler runs, so a check that wants to reach
- * the handler has to be signed in — this token never leaves the temp app and
- * authenticates nothing: the run fails on the dependency tree long before any
- * request.
+ * The alchemy entries @prisma/composer itself loads for a deploy. A wrong
+ * `effect` breaks these at import time, which is where a user meets it, when
+ * `prisma.config.ts` is evaluated. The Prisma Cloud providers are left out:
+ * they need platform peers only @prisma/composer-prisma-cloud installs.
  */
-function fakeServiceToken() {
-  const claim = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  return `${claim({ alg: 'none', typ: 'JWT' })}.${claim({
-    sub: 'user_1',
-    workspace_id: 'ws_1',
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  })}.`;
+const ALCHEMY_PROBE = [
+  "await import('alchemy');",
+  "await import('alchemy/Output');",
+  "await import('alchemy/Provider');",
+  "await import('alchemy/Stack');",
+].join(' ');
+
+/**
+ * The same import, for the adversarial shape: on failure it reports whether
+ * the installed `effect` is what broke, decided by ./effect-blame.mjs.
+ */
+const ALCHEMY_BLAME_PROBE = `
+import { blamesEffect } from ${JSON.stringify(new URL('./effect-blame.mjs', import.meta.url).href)};
+try {
+  ${ALCHEMY_PROBE}
+} catch (error) {
+  const effect = await import('effect');
+  console.log(JSON.stringify({ message: String(error?.message ?? error), blamesEffect: blamesEffect(error, effect) }));
+  process.exit(1);
+}
+`;
+
+/** Imports alchemy's provider tree from the scratch app, as the app's own config would; returns { status, output }. */
+function importAlchemy(label, appDir, probe = ALCHEMY_PROBE) {
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], {
+    cwd: appDir,
+    encoding: 'utf-8',
+  });
+  if (result.error) fail(`[${label}] failed to spawn node for the alchemy import: ${result.error}`);
+  return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
-function runCli(label, appDir, args, env = {}) {
+/** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
+function runCli(label, appDir, args) {
   const bin = join(appDir, 'node_modules', '.bin', 'prisma-composer');
   if (!existsSync(bin)) fail(`[${label}] the prisma-composer bin is not installed`);
   const result = spawnSync(bin, args, {
     cwd: appDir,
     encoding: 'utf-8',
-    env: { ...process.env, ...env },
   });
   if (result.error) fail(`[${label}] failed to spawn the prisma-composer bin: ${result.error}`);
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
@@ -285,34 +305,17 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   }
 
   // Proof the resolved effect actually satisfies alchemy, not just that the
-  // version string matches: importing the bin loads alchemy's provider tree,
-  // which is where a wrong effect blows up. `assertCliStarts` below does that
-  // against the built bin — a stronger check than probing for any single
-  // combinator, which only ever stood in for "alchemy can run on this".
+  // version string matches: a wrong effect blows up when alchemy's provider
+  // tree is imported, which is what evaluating the app's prisma.config.ts does.
+  const probe = importAlchemy(label, appDir);
+  if (probe.status !== 0) {
+    fail(`[${label}] alchemy's provider tree did not import in a healthy tree:\n${probe.output}`);
+  }
 
-  // Positive proof the CLI actually starts in this healthy tree — without it,
-  // "the failure marker is absent" would also hold for a CLI that never ran.
   assertCliStarts(label, appDir);
 
-  // The start-up check must NOT trip on this healthy tree — the deploy should
-  // get past it and fail on the app itself (no entry/config here), never on a
-  // broken module graph.
-  // Signed in, because `deploy` declares a credentials need and the engine
-  // refuses before the handler otherwise — which would prove nothing about the
-  // dependency tree.
-  const cli = runCli(label, appDir, ['deploy', 'app.ts'], {
-    PRISMA_SERVICE_TOKEN: fakeServiceToken(),
-    PRISMA_WORKSPACE_ID: 'ws_1',
-  });
-  if (cli.output.includes(CLI_CHECK_MARKER)) {
-    fail(`[${label}] the CLI's effect check misfired on a healthy tree:\n${cli.output}`);
-  }
-  if (/is not a function|Cannot find module/.test(cli.output)) {
-    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${cli.output}`);
-  }
-
   process.stderr.write(
-    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, CLI starts\n`,
+    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, alchemy imports, CLI starts\n`,
   );
 }
 
@@ -323,7 +326,8 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
  * suitable release exists relative to wherever our pin sits, which made the
  * test hostage to the registry. This shape builds the same end state directly,
  * with an override, so it keeps proving the thing that matters: when alchemy
- * resolves an `effect` we did not pin, the CLI says so instead of crashing.
+ * resolves an `effect` we did not pin, importing alchemy fails, and `--help`
+ * still works.
  */
 const WRONG_EFFECT = '4.0.0-beta.93';
 
@@ -351,25 +355,27 @@ async function checkAdversarialShape(tarballs) {
     );
   }
 
-  // Signed in, because `deploy` declares a credentials need and the engine
-  // refuses before the handler otherwise — which would prove nothing about the
-  // dependency tree.
-  const cli = runCli(label, appDir, ['deploy', 'app.ts'], {
-    PRISMA_SERVICE_TOKEN: fakeServiceToken(),
-    PRISMA_WORKSPACE_ID: 'ws_1',
-  });
-  if (cli.status === 0) {
-    fail(`[${label}] the CLI exited 0 in a tree where alchemy resolves effect@${resolvedVersion}`);
-  }
-  if (!cli.output.includes(CLI_CHECK_MARKER)) {
+  const probe = importAlchemy(label, appDir, ALCHEMY_BLAME_PROBE);
+  if (probe.status === 0) {
     fail(
-      `[${label}] the CLI failed without the effect check's error (expected "${CLI_CHECK_MARKER}"):\n` +
-        cli.output,
+      `[${label}] alchemy imported cleanly although it resolves effect@${resolvedVersion}, so ` +
+        'this shape proves nothing. Point WRONG_EFFECT at a published version alchemy cannot load.',
     );
   }
-  if (/is not a function/.test(cli.output)) {
-    fail(`[${label}] the CLI crashed with a TypeError instead of the effect check:\n${cli.output}`);
+  const verdict = probe.output
+    .split('\n')
+    .filter((line) => line.startsWith('{'))
+    .map((line) => JSON.parse(line))
+    .at(-1);
+  if (verdict?.blamesEffect !== true) {
+    fail(
+      `[${label}] alchemy failed to import, but not because of effect, so this shape proves ` +
+        `nothing about the wrong effect:\n${probe.output}`,
+    );
   }
+  process.stderr.write(
+    `[${label}] alchemy fails to import on effect, as expected: ${verdict.message}\n`,
+  );
 
   // `--help` must SURVIVE a tree this broken. The command family's static graph
   // is alchemy-free and effect-free (scripts/check-family-static-graph.mjs
@@ -385,8 +391,7 @@ async function checkAdversarialShape(tarballs) {
   }
 
   process.stderr.write(
-    `[${label}] OK — the broken tree is caught with the actionable error when a command ` +
-      'actually loads the executor, and --help still works\n',
+    `[${label}] OK — the broken tree fails at the alchemy import, and --help still works\n`,
   );
 }
 
@@ -404,8 +409,8 @@ try {
   await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
 
   process.stderr.write(
-    `\nOK — a bare npm install dedupes to a single effect@${pinnedEffect} in the healthy shapes, and the CLI ` +
-      'catches the adversarial tree at start-up.\n',
+    `\nOK — a bare npm install dedupes to a single effect@${pinnedEffect} in the healthy shapes, and ` +
+      'alchemy fails to import in the adversarial tree.\n',
   );
 } finally {
   rmSync(work, { recursive: true, force: true });

@@ -45,7 +45,7 @@ describe('toEngineError()', () => {
         severity: 'warn',
         why: 'The deploy needs one state store.',
         fix: 'See defineConfig().',
-        where: { path: '/app/prisma-composer.config.ts', line: 4 },
+        where: { path: '/app/prisma.config.ts', line: 4 },
         meta: { field: 'state' },
         docsUrl: 'https://example.invalid/errors#CONFIG.FIELD_INVALID',
       }),
@@ -54,7 +54,7 @@ describe('toEngineError()', () => {
     expect(translated.message).toBe('`state` must be a state descriptor.');
     expect(translated.severity).toBe('warn');
     expect(translated.why).toBe('The deploy needs one state store.');
-    expect(translated.where).toEqual({ path: '/app/prisma-composer.config.ts', line: 4 });
+    expect(translated.where).toEqual({ path: '/app/prisma.config.ts', line: 4 });
     expect(translated.meta).toEqual({ field: 'state' });
     expect(translated.docsUrl).toBe('https://example.invalid/errors#CONFIG.FIELD_INVALID');
   });

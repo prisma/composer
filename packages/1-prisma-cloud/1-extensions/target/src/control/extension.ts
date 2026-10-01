@@ -1,6 +1,6 @@
 /**
  * The extension's control-plane entry (ADR-0017) — the only place
- * @internal/lowering is imported; loaded only by `prisma-composer.config.ts`.
+ * @internal/lowering is imported; loaded only by `prisma.config.ts`.
  */
 
 import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config';
@@ -163,7 +163,7 @@ const selfOriginValue: ServiceProviderParam['valueForService'] = (provisioned, a
     return v;
   });
 
-/** The user-facing state descriptor: `state: prismaState()` in `prisma-composer.config.ts` (ADR-0017). */
+/** The user-facing state descriptor: `state: prismaState()` in the `composer` section of `prisma.config.ts` (ADR-0017). */
 export const prismaState = (): StateDescriptor => ({
   extension: PRISMA_CLOUD_EXTENSION_ID,
   create: (container) => {
@@ -317,7 +317,7 @@ function lazyOptions(
   };
 }
 
-/** The Prisma Cloud extension descriptor — `prisma-composer.config.ts` lists it under `extensions`. */
+/** The Prisma Cloud extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
   // When each pointed-at platform variable was last written — filled by the
   // deploy preflight, read by the environment fingerprint. A closure, not a

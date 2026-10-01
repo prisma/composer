@@ -22,6 +22,7 @@ import type {
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
 import * as Layer from 'effect/Layer';
+import type { ComposerConfigSource } from '../../composer-config.ts';
 import {
   DEPLOYMENT_RESULT_FILE_ENV,
   type DeploymentSummary,
@@ -31,7 +32,7 @@ import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
-import { devWithDeps } from '../dev.ts';
+import { type DevEvent, devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
 import { type LogLine, logWithDeps } from '../log.ts';
 import { executionDiagnostics, executorLoadFailure } from '../shared.ts';
@@ -137,6 +138,11 @@ function fakeConfig(
   };
 }
 
+/** The config input an operation takes; `makeAppDir` writes the file, which these tests never evaluate. */
+function composerConfig(value: PrismaAppConfig): ComposerConfigSource {
+  return { value, file: 'prisma.config.ts' };
+}
+
 const coreIndex = path.resolve(
   import.meta.dir,
   '..',
@@ -151,19 +157,11 @@ const coreIndex = path.resolve(
   'index.ts',
 );
 
-function makeAppDir(
-  name = 'fixture-app',
-  opts: { config?: boolean } = {},
-): { dir: string; entryPath: string } {
+function makeAppDir(name = 'fixture-app'): { dir: string; entryPath: string } {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-')));
   tmpDirs.push(dir);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'fixture-app' }));
-  if (opts.config !== false) {
-    fs.writeFileSync(
-      path.join(dir, 'prisma-composer.config.ts'),
-      '// fixture config — discovery target only; tests inject deps.config instead of evaluating this\nexport default {};\n',
-    );
-  }
+  fs.writeFileSync(path.join(dir, 'prisma.config.ts'), 'export default { composer: {} };\n');
   const entryPath = path.join(dir, 'service.ts');
   fs.writeFileSync(
     entryPath,
@@ -208,12 +206,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             calls.push(input);
@@ -242,12 +240,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -265,12 +263,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const file = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
@@ -295,7 +293,6 @@ describe('deploy()', () => {
     );
     const resultFiles: (string | undefined)[] = [];
     const deps = {
-      config: fakeConfig(),
       runAssembler: fakeAssembler,
       alchemy: async (input: AlchemyInvocation) => {
         resultFiles.push(input.env?.[DEPLOYMENT_RESULT_FILE_ENV]);
@@ -304,10 +301,16 @@ describe('deploy()', () => {
     };
 
     const first = await silently(() =>
-      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        deps,
+      ),
     );
     const second = await silently(() =>
-      deployWithDeps({ entry: app.entryPath, stage: 'ci-7', cwd: app.dir }, deps),
+      deployWithDeps(
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
+        deps,
+      ),
     );
 
     expect(first.ok).toBe(true);
@@ -322,9 +325,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             resultFile = input.env?.[DEPLOYMENT_RESULT_FILE_ENV];
@@ -358,9 +360,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const child = spawnSync(process.execPath, [childPath], {
@@ -387,12 +388,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig({}, { calls: containerCalls })),
           entry: app.entryPath,
           stage: 'bad..ref',
           cwd: app.dir,
         },
         {
-          config: fakeConfig({}, { calls: containerCalls }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -406,23 +407,114 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
-  test('a missing config file is a pipeline failure naming the accepted spellings', async () => {
-    const app = makeAppDir('no-config', { config: false });
+  describe('a config the CLI would refuse is refused before any container call', () => {
+    async function deployWith(
+      app: { dir: string; entryPath: string },
+      config: ComposerConfigSource,
+    ) {
+      let alchemyRan = false;
+      const result = await silently(() =>
+        deployWithDeps(
+          { config, entry: app.entryPath, cwd: app.dir },
+          {
+            runAssembler: fakeAssembler,
+            alchemy: async () => {
+              alchemyRan = true;
+              return { exitCode: 0, signal: null };
+            },
+          },
+        ),
+      );
+      if (result.ok) throw new Error('expected a failure');
+      return { failure: result.failure, alchemyRan };
+    }
 
-    const result = await silently(() =>
-      deployWithDeps(
-        {
-          entry: app.entryPath,
-          cwd: app.dir,
-        },
-        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
-      ),
-    );
+    test('the whole prisma.config.ts export in place of its composer property', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+      const wholeExport = { $prismaConfig: 1, composer: fakeConfig({}, { calls: containerCalls }) };
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.failure.code).toBe('CONFIG.FILE_MISSING');
-    expect(result.failure.message).toContain('prisma-composer.config.{ts,mts,mjs,js}');
+      const { failure, alchemyRan } = await deployWith(app, {
+        value: wholeExport as unknown as PrismaAppConfig,
+        file: 'prisma.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FIELD_UNKNOWN',
+        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `extensions` and `state`.',
+        where: { path: path.join(app.dir, 'prisma.config.ts') },
+      });
+      expect(containerCalls).toEqual([]);
+      expect(alchemyRan).toBe(false);
+    });
+
+    test('an old prisma-composer.config.ts beside config.file', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+      fs.writeFileSync(path.join(app.dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+      const { failure, alchemyRan } = await deployWith(
+        app,
+        composerConfig(fakeConfig({}, { calls: containerCalls })),
+      );
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_RETIRED',
+        message: `${path.join(app.dir, 'prisma-composer.config.ts')} is no longer read.`,
+      });
+      expect(containerCalls).toEqual([]);
+      expect(alchemyRan).toBe(false);
+    });
+
+    test('every finding, in the order the CLI reports them', async () => {
+      const app = makeAppDir();
+      fs.writeFileSync(path.join(app.dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+      const { failure } = await deployWith(app, {
+        value: { extensions: [] } as unknown as PrismaAppConfig,
+        file: 'prisma.config.ts',
+      });
+
+      expect(failure.code).toBe('CONFIG.FILE_RETIRED');
+      expect(failure.meta).toMatchObject({
+        findings: [{ code: 'CONFIG.FILE_RETIRED' }, { code: 'CONFIG.FIELD_INVALID' }],
+      });
+    });
+
+    test('a symlinked config.file is checked beside the file it links to', async () => {
+      const app = makeAppDir();
+      const real = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-real-config-')));
+      tmpDirs.push(real);
+      fs.writeFileSync(path.join(real, 'prisma.config.ts'), 'export default {};\n');
+      fs.writeFileSync(path.join(real, 'prisma-composer.config.ts'), 'export default {};\n');
+      fs.symlinkSync(path.join(real, 'prisma.config.ts'), path.join(app.dir, 'linked.config.ts'));
+
+      const { failure } = await deployWith(app, {
+        value: fakeConfig(),
+        file: 'linked.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_RETIRED',
+        where: { path: path.join(real, 'prisma-composer.config.ts') },
+      });
+    });
+
+    test('a config.file that does not exist', async () => {
+      const app = makeAppDir();
+      const containerCalls: ContainerCall[] = [];
+
+      const { failure } = await deployWith(app, {
+        value: fakeConfig({}, { calls: containerCalls }),
+        file: 'missing.config.ts',
+      });
+
+      expect(failure).toMatchObject({
+        code: 'CONFIG.FILE_MISSING',
+        message: `${path.join(app.dir, 'missing.config.ts')} does not exist.`,
+      });
+      expect(containerCalls).toEqual([]);
+    });
   });
 
   test('an extension-preflight throw is a pipeline failure — alchemy never runs, no stack file is written', async () => {
@@ -432,16 +524,18 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async () => {
+                throw new Error('SECRET_X is not provisioned');
+              },
+            }),
+          ),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig({
-            preflight: async () => {
-              throw new Error('SECRET_X is not provisioned');
-            },
-          }),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -465,12 +559,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 42, signal: null }),
         },
@@ -495,9 +589,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -527,9 +620,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 1, signal: null }),
         },
@@ -547,9 +639,8 @@ describe('deploy()', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, config: composerConfig(fakeConfig()) },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -576,12 +667,12 @@ describe('deploy()', () => {
     const result = await silently(() =>
       deployWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           stage: 'ci-7',
           cwd: app.dir,
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -597,32 +688,16 @@ describe('deploy()', () => {
     expect(alchemyRan).toBe(false);
   });
 
-  test('a broken effect tree is a structured failure naming the mismatch — the executor cannot load, the host stays alive', () => {
+  test('an executor that cannot load is a structured failure carrying the import error — the host stays alive', () => {
     const dir = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-effect-')),
+      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-executor-')),
     );
     tmpDirs.push(dir);
-    const writePackage = (segments: readonly string[], manifest: Record<string, unknown>) => {
-      const pkgDir = path.join(dir, ...segments);
-      fs.mkdirSync(pkgDir, { recursive: true });
-      fs.writeFileSync(
-        path.join(pkgDir, 'package.json'),
-        JSON.stringify({ main: 'index.js', ...manifest }),
-      );
-      fs.writeFileSync(path.join(pkgDir, 'index.js'), 'module.exports = {};\n');
-    };
-    writePackage(['node_modules', 'alchemy'], { name: 'alchemy', version: '2.0.0-beta.59' });
-    writePackage(['node_modules', 'effect'], { name: 'effect', version: '4.0.0-beta.102' });
-    writePackage(['node_modules', '@prisma', 'composer'], {
-      name: '@prisma/composer',
-      version: '0.0.0',
-      dependencies: { effect: '4.0.0-beta.93' },
-    });
 
     // In a broken tree the executor's own import of alchemy throws. The repo's
     // tree is healthy, so a fresh bun process reproduces that throw with a
-    // plugin that fails the executor's load; deploy() must diagnose it against
-    // `cwd`'s tree and return a structured failure — silent stdio, exit 0.
+    // plugin that fails the executor's load; deploy() must return a structured
+    // failure — silent stdio, exit 0.
     const operationsPath = fileURLToPath(new URL('../deploy.ts', import.meta.url));
     const breakerPath = path.join(dir, 'break-executor.ts');
     fs.writeFileSync(
@@ -644,7 +719,7 @@ describe('deploy()', () => {
     fs.writeFileSync(
       probePath,
       `import { deploy } from ${JSON.stringify(operationsPath)};\n` +
-        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)} });\n` +
+        `const result = await deploy({ entry: 'service.ts', cwd: ${JSON.stringify(dir)}, config: { value: { extensions: [], state: { extension: 'x', create: () => undefined } }, file: 'prisma.config.ts' } });\n` +
         "if (result.ok) throw new Error('expected a failure');\n" +
         'const cause = result.failure.cause;\n' +
         'await Bun.write(\n' +
@@ -669,8 +744,10 @@ describe('deploy()', () => {
       envelope: { code: string; summary: string };
       cause: { name: string; message: string };
     };
-    expect(result.envelope.code).toBe('DEPS.EFFECT_VERSION_CONFLICT');
-    expect(result.envelope.summary).toContain('alchemy resolves effect@4.0.0-beta.102');
+    expect(result.envelope.code).toBe('DEPS.EXECUTOR_UNLOADABLE');
+    expect(result.envelope.summary).toBe(
+      'Could not load the deploy executor: Schedule.either is not a function',
+    );
     expect(result.cause).toEqual({
       name: 'Error',
       message: 'Schedule.either is not a function',
@@ -679,14 +756,9 @@ describe('deploy()', () => {
 });
 
 describe('executorLoadFailure()', () => {
-  test("an undiagnosed load failure names the failing operation in DEPS.EXECUTOR_UNLOADABLE's summary and why", () => {
-    const dir = fs.realpathSync(
-      fs.mkdtempSync(path.join(os.tmpdir(), 'prisma-composer-cli-ops-load-')),
-    );
-    tmpDirs.push(dir);
-
+  test("a load failure names the failing operation in DEPS.EXECUTOR_UNLOADABLE's summary and why", () => {
     for (const operation of ['deploy', 'destroy', 'dev', 'log'] as const) {
-      const failure = executorLoadFailure(operation, new Error('import blew up'), dir);
+      const failure = executorLoadFailure(operation, new Error('import blew up'));
       expect(failure.code).toBe('DEPS.EXECUTOR_UNLOADABLE');
       expect(failure.message).toBe(`Could not load the ${operation} executor: import blew up`);
       expect(failure.why).toContain(`The ${operation} operation's executor`);
@@ -708,12 +780,12 @@ describe('destroy()', () => {
       const result = await silently(() =>
         destroyWithDeps(
           {
+            config: composerConfig(fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' })),
             entry: app.entryPath,
             target,
             cwd: app.dir,
           },
           {
-            config: fakeConfig({}, { calls: containerCalls, alchemyStage: 'br_x' }),
             runAssembler: fakeAssembler,
             alchemy: async () => ({ exitCode: 0, signal: null }),
           },
@@ -736,12 +808,12 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig({}, { notFound: true })),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
         },
         {
-          config: fakeConfig({}, { notFound: true }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -762,9 +834,13 @@ describe('destroy()', () => {
 
     const result = await silently(() =>
       destroyWithDeps(
-        { entry: app.entryPath, target: { kind: 'stage', stage: 'staging' }, cwd: app.dir },
         {
-          config: fakeConfig({}, { alchemyStage: 'br_x' }),
+          entry: app.entryPath,
+          target: { kind: 'stage', stage: 'staging' },
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({}, { alchemyStage: 'br_x' })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -793,15 +869,17 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(
+            fakeConfig(
+              { teardown: async () => void order.push('teardown') },
+              { onRemove: () => void order.push('remove') },
+            ),
+          ),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
         },
         {
-          config: fakeConfig(
-            { teardown: async () => void order.push('teardown') },
-            { onRemove: () => void order.push('remove') },
-          ),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             order.push('alchemy');
@@ -822,13 +900,13 @@ describe('destroy()', () => {
     const result = await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
           onEvent: (event) => void order.push(event.kind),
         },
         {
-          config: fakeConfig(),
           runAssembler: async (node) => {
             order.push('assemble');
             return fakeAssembler(node);
@@ -851,13 +929,13 @@ describe('destroy()', () => {
     await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: fakeConfig(),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -930,7 +1008,7 @@ function configWith(attachments: readonly LocalTargetAttachment[]): PrismaAppCon
 }
 
 function identityFor(attachments: readonly LocalTargetAttachment[]): AppIdentity {
-  return { configPath: 'c', config: configWith(attachments), name: 'app' };
+  return { config: configWith(attachments), name: 'app' };
 }
 
 async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
@@ -974,8 +1052,12 @@ function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
 
 describe.skipIf(process.platform !== 'win32')('local operations on Windows', () => {
   test('dev and log return their platform refusal before touching the pipeline', async () => {
-    const devResult = await silently(() => devWithDeps({ entry: 'service.ts' }, {}));
-    const logResult = await silently(() => logWithDeps({ entry: 'service.ts' }, {}));
+    const devResult = await silently(() =>
+      devWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
+    );
+    const logResult = await silently(() =>
+      logWithDeps({ entry: 'service.ts', config: composerConfig(fakeConfig()) }, {}),
+    );
 
     expect(devResult.ok).toBe(false);
     if (devResult.ok) throw new Error('unreachable');
@@ -1004,11 +1086,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1041,11 +1123,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1058,6 +1140,255 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(result.failure.message).toBe('service two failed to bind its port');
     expect(stops).toBe(1);
   }, 15_000);
+
+  /**
+   * The session keeps the config it started with, while each rebuild's child
+   * would import prisma.config.ts from disk. So an edit is reported, and
+   * rebuilds stop until the user restarts dev, rather than mixing the two.
+   */
+  test('an edit to prisma.config.ts is reported, and rebuilds stop until dev restarts', async () => {
+    const app = makeAppDir('hello-dev');
+    const buildOutput = path.join(app.dir, 'built.txt');
+    fs.writeFileSync(buildOutput, 'v1');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    const events: DevEvent[] = [];
+    let converges = 0;
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 50) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    const configChanges = () => events.filter((event) => event.kind === 'config-changed');
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [buildOutput],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+
+      fs.writeFileSync(path.join(app.dir, 'prisma.config.ts'), 'export default { composer: 1 };\n');
+      await until(() => configChanges().length >= 1);
+
+      fs.writeFileSync(buildOutput, 'v2');
+      await until(() => configChanges().length >= 2);
+
+      await start.value.stop();
+      await start.value.closed;
+    });
+
+    expect(configChanges()[0]).toEqual({
+      kind: 'config-changed',
+      file: path.join(app.dir, 'prisma.config.ts'),
+    });
+    expect(configChanges()).toHaveLength(2);
+    expect(converges).toBe(1);
+  }, 20_000);
+
+  /**
+   * A rebuild re-assembles every service's artifact directory, and the
+   * converge child reads those directories. A second rebuild starting while
+   * the first child is still running rewrites them underneath it.
+   */
+  test('a build change during a rebuild waits for it, and later changes coalesce into one rebuild', async () => {
+    const app = makeAppDir('hello-dev');
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+    let buildChange: () => void = () => undefined;
+    let converges = 0;
+    let running = 0;
+    let mostRunning = 0;
+    const releases: (() => void)[] = [];
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 10) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    };
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [path.join(app.dir, 'built.txt')],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            running += 1;
+            mostRunning = Math.max(mostRunning, running);
+            if (converges > 1) await new Promise<void>((resolve) => releases.push(resolve));
+            running -= 1;
+            return { exitCode: 0, signal: null };
+          },
+          watch: (targets, onChange) => {
+            if (!targets.some((t) => t.paths.includes(path.join(app.dir, 'prisma.config.ts')))) {
+              buildChange = onChange;
+            }
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+
+      buildChange();
+      await until(() => converges === 2);
+      buildChange();
+      buildChange();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(converges).toBe(2);
+
+      releases.shift()?.();
+      await until(() => converges === 3);
+      releases.shift()?.();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(converges).toBe(3);
+      expect(mostRunning).toBe(1);
+      await start.value.stop();
+    });
+  }, 15_000);
+
+  describe('the prisma.config.ts watch', () => {
+    const quietAttachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => Promise.resolve(),
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const until = async (done: () => boolean) => {
+      for (let waited = 0; !done() && waited < 5_000; waited += 25) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    };
+
+    /** A dev session whose watchers are handed to the test instead of chokidar. */
+    async function devWithFakeWatchers(app: { dir: string; entryPath: string }) {
+      const events: DevEvent[] = [];
+      const watchers: {
+        paths: readonly string[];
+        onChange: () => void;
+        onError: ((error: unknown) => void) | undefined;
+      }[] = [];
+      let converges = 0;
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(quietAttachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          onEvent: (event) => void events.push(event),
+        },
+        {
+          runAssembler: async (node: ServiceNode) => ({
+            ...(await fakeAssembler(node)),
+            watch: [path.join(app.dir, 'built.txt')],
+          }),
+          alchemy: async () => {
+            converges += 1;
+            return { exitCode: 0, signal: null };
+          },
+          watch: (targets, onChange, onError) => {
+            watchers.push({ paths: targets.flatMap((t) => t.paths), onChange, onError });
+            return { ready: Promise.resolve(), stop: () => undefined };
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      const configFile = path.join(app.dir, 'prisma.config.ts');
+      const configWatcher = watchers.find((w) => w.paths.includes(configFile));
+      const buildWatcher = watchers.find((w) => !w.paths.includes(configFile));
+      if (configWatcher === undefined || buildWatcher === undefined) {
+        throw new Error('expected a config watcher and a build watcher');
+      }
+      return {
+        session: start.value,
+        events,
+        configWatcher,
+        buildWatcher,
+        converges: () => converges,
+        configFile,
+      };
+    }
+
+    test('a save that leaves prisma.config.ts unchanged is ignored', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        fs.writeFileSync(dev.configFile, fs.readFileSync(dev.configFile));
+        dev.configWatcher.onChange();
+        dev.buildWatcher.onChange();
+        await until(() => dev.converges() >= 2);
+
+        expect(dev.events.filter((e) => e.kind === 'config-changed')).toEqual([]);
+        expect(dev.converges()).toBe(2);
+        await dev.session.stop();
+      });
+    }, 15_000);
+
+    test('a failing config watcher is reported as a watch-error and dev keeps running', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        dev.configWatcher.onError?.(new Error('EMFILE: too many open files'));
+        dev.buildWatcher.onChange();
+        await until(() => dev.converges() >= 2);
+
+        expect(dev.events).toContainEqual({
+          kind: 'watch-error',
+          message: 'EMFILE: too many open files',
+        });
+        expect(dev.converges()).toBe(2);
+        await dev.session.stop();
+      });
+    }, 15_000);
+
+    /**
+     * A build watch on a directory that contains prisma.config.ts can fire
+     * before the config watcher does. The rebuild must still see the edit.
+     */
+    test('a rebuild that fires before the config watcher still sees the edit and pauses', async () => {
+      const app = makeAppDir('hello-dev');
+      await silently(async () => {
+        const dev = await devWithFakeWatchers(app);
+        fs.writeFileSync(dev.configFile, 'export default { composer: 2 };\n');
+        dev.buildWatcher.onChange();
+
+        expect(dev.events.filter((e) => e.kind === 'config-changed')).toEqual([
+          { kind: 'config-changed', file: dev.configFile },
+        ]);
+        expect(dev.converges()).toBe(1);
+        await dev.session.stop();
+      });
+    }, 15_000);
+  });
 
   test('stop() surfaces a service that refuses to stop as a stop-error event, and still finishes', async () => {
     const app = makeAppDir('hello-dev');
@@ -1072,12 +1403,12 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1107,12 +1438,12 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: (event) => void events.push(event.kind),
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1153,6 +1484,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(async () => {
       const start = await devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
           onEvent: () => {
@@ -1160,7 +1492,6 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
           },
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1188,11 +1519,11 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const result = await silently(() =>
       devWithDeps(
         {
+          config: composerConfig(devConfigWith(attachment)),
           entry: app.entryPath,
           cwd: app.dir,
         },
         {
-          config: devConfigWith(attachment),
           runAssembler: fakeAssembler,
           alchemy: async () => {
             alchemyRan = true;
@@ -1210,6 +1541,27 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
 });
 
 describe.skipIf(process.platform === 'win32')('log()', () => {
+  test('a config the CLI would refuse is refused before the entry is loaded', async () => {
+    const app = makeAppDir();
+    const result = await silently(() =>
+      logWithDeps(
+        {
+          entry: app.entryPath,
+          cwd: app.dir,
+          config: { value: {} as PrismaAppConfig, file: 'prisma.config.ts' },
+        },
+        {},
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure).toMatchObject({
+      code: 'CONFIG.FIELD_INVALID',
+      meta: { field: 'extensions' },
+    });
+  });
+
   test('merges every attachment into one stream and reports the running services', async () => {
     const attachments = [
       linesAttachment([{ address: 'a', url: 'http://a' }], [{ service: 'a', line: 'from-a' }]),
@@ -1217,7 +1569,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     ];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1247,7 +1602,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     ];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts', address: 'a' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', address: 'a', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1258,7 +1616,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const attachments = [linesAttachment([{ address: 'a', url: 'http://a' }], [])];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts', address: 'nope' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', address: 'nope', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(false);
@@ -1271,7 +1632,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const attachments = [linesAttachment([], [])];
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor(attachments) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor(attachments) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1293,6 +1657,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           signal: controller.signal,
         },
@@ -1323,7 +1688,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     };
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([flaky]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([flaky]) },
+      ),
     );
 
     expect(result.ok).toBe(true);
@@ -1339,7 +1707,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     });
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([stubborn]) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1358,7 +1729,10 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     });
 
     const result = await silently(() =>
-      logWithDeps({ entry: 'service.ts' }, { identity: identityFor([stubborn]) }),
+      logWithDeps(
+        { entry: 'service.ts', config: composerConfig(fakeConfig()) },
+        { identity: identityFor([stubborn]) },
+      ),
     );
 
     if (!result.ok) throw new Error('expected attached');
@@ -1377,6 +1751,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => {
             if (event.kind === 'lines-dropped') droppedCounts.push(event.count);
@@ -1413,6 +1788,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => void events.push(event.kind),
         },
@@ -1444,6 +1820,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: () => {
             throw new Error('host renderer blew up');
@@ -1473,6 +1850,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     const result = await silently(() =>
       logWithDeps(
         {
+          config: composerConfig(fakeConfig()),
           entry: 'service.ts',
           onEvent: (event) => {
             if (event.kind === 'stream-failed') events.push(event.message);
@@ -1553,9 +1931,13 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-1', cwd: app.dir },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-1',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async (invocation) => {
             invocations.push(invocation);
@@ -1580,9 +1962,14 @@ describe('deploy-run reporting', () => {
 
     await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-2', cwd: app.dir, reportId: 'bld_from_ci' },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-2',
+          cwd: app.dir,
+          reportId: 'bld_from_ci',
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
           credentials: { workspaceId: 'ws-1', client: {} },
@@ -1615,9 +2002,8 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-3', cwd: app.dir, config: composerConfig(refusing) },
         {
-          config: refusing,
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1637,9 +2023,13 @@ describe('deploy-run reporting', () => {
 
     const result = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-4', cwd: app.dir },
         {
-          config: fakeConfig({ reporter: log.reporter }),
+          entry: app.entryPath,
+          stage: 'ci-4',
+          cwd: app.dir,
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: null, signal: 'SIGINT' }),
         },
@@ -1667,9 +2057,8 @@ describe('deploy-run reporting', () => {
 
     await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir },
+        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, config: composerConfig(config) },
         {
-          config,
           runAssembler: fakeAssembler,
           alchemy: async (input) => {
             const resultFile = input.env[DEPLOYMENT_RESULT_FILE_ENV];
@@ -1695,9 +2084,13 @@ describe('deploy-run reporting', () => {
 
       const result = await quietly(() =>
         deployWithDeps(
-          { entry: app.entryPath, stage: 'ci-5', cwd: app.dir },
           {
-            config: fakeConfig({ reporter: log.reporter }),
+            entry: app.entryPath,
+            stage: 'ci-5',
+            cwd: app.dir,
+            config: composerConfig(fakeConfig({ reporter: log.reporter })),
+          },
+          {
             runAssembler: fakeAssembler,
             alchemy: async () => ({ exitCode: 0, signal: null }),
           },
@@ -1715,13 +2108,13 @@ describe('deploy-run reporting', () => {
     await silently(() =>
       destroyWithDeps(
         {
+          config: composerConfig(fakeConfig({ reporter: log.reporter })),
           entry: app.entryPath,
           target: { kind: 'stage', stage: 'staging' },
           onEvent: undefined,
           cwd: app.dir,
         },
         {
-          config: fakeConfig({ reporter: log.reporter }),
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1737,9 +2130,14 @@ describe('deploy-run reporting', () => {
 
     const ok = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-6', cwd: app.dir, reportPath: target },
         {
-          config: fakeConfig(),
+          entry: app.entryPath,
+          stage: 'ci-6',
+          cwd: app.dir,
+          reportPath: target,
+          config: composerConfig(fakeConfig()),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
@@ -1756,11 +2154,18 @@ describe('deploy-run reporting', () => {
     const failedTarget = path.join(app.dir, 'failed.json');
     const failed = await silently(() =>
       deployWithDeps(
-        { entry: app.entryPath, stage: 'ci-7', cwd: app.dir, reportPath: failedTarget },
         {
-          config: fakeConfig({
-            preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
-          }),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          reportPath: failedTarget,
+          config: composerConfig(
+            fakeConfig({
+              preflight: () => Promise.reject(new Error('STRIPE_KEY is missing')),
+            }),
+          ),
+        },
+        {
           runAssembler: fakeAssembler,
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },

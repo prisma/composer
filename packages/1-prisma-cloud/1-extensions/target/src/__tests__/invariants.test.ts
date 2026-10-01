@@ -194,7 +194,7 @@ describe('invariant 5: no runtime coupling in shipped surface', () => {
 describe('invariant 6 (ADR-0017, extension config): the authoring entry never reaches the control entry', () => {
   test('no module reachable from src/index.ts imports a /control entry — the firewall by file boundary', () => {
     // Control-plane code (this extension's control.ts, and transitively
-    // prisma-alchemy/alchemy/effect) is imported ONLY by prisma-composer.config.ts.
+    // prisma-alchemy/alchemy/effect) is imported ONLY by prisma.config.ts.
     // A control import reachable from the authoring barrel would get followed
     // and inlined by the wrapper's own bundler (esbuild), dragging
     // deploy-only tooling into the runtime artifact.

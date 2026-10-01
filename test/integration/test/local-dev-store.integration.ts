@@ -35,10 +35,11 @@
  *      — it never calls assemble or alchemy itself; the running process's
  *      own debounce, re-assemble, and re-converge are what's under test.
  *      Attempt 2 is the direct-converge variant kept as a fallback assertion:
- *      the artifact is touched, then the SAME dev stack file is re-converged
- *      directly with the real `alchemy` binary (matching
- *      local-dev.integration.ts's own pattern), bypassing the watch loop
- *      entirely — this re-hashes catalog's now-different bundle bytes and
+ *      the artifact is touched, the watch loop's own rebuild for that touch
+ *      is awaited (the two would otherwise rewrite and read the same
+ *      artifact directories at once), then the SAME dev stack file is
+ *      re-converged directly with the real `alchemy` binary (matching
+ *      local-dev.integration.ts's own pattern) — this re-hashes catalog's now-different bundle bytes and
  *      PUTs a fresh deployment for every service, letting the emulator's own
  *      (untouched) hash/env diffing decide which one(s) actually restart.
  *      Session 1's services are NEVER stopped in between (SIGINT is
@@ -478,8 +479,20 @@ async function touchCatalogAndAwaitRealWatchLoop(
   }, 15_000);
 }
 
-async function rebuildCatalogAndReconverge(): Promise<Record<string, number | undefined>> {
+async function rebuildCatalogAndReconverge(
+  session: DevSession,
+): Promise<Record<string, number | undefined>> {
+  // The touch also fires session 1's own watch loop, which re-assembles every
+  // service's artifact directory. Converging directly while it does races
+  // that rewrite (seen as "no main.js/main.mjs found in bundle dir
+  // .../artifacts/storefront", and as an unrelated service restarting), so
+  // the direct converge starts only after the loop's own front-door reprint.
+  const beforeLineCount = readLog(session.logPath).split('\n').length;
   fs.appendFileSync(catalogDist, `\n// proving-script touch ${Date.now()}\n`);
+  await waitForAsync(async () => {
+    const newLines = readLog(session.logPath).split('\n').slice(beforeLineCount);
+    return parseFrontDoor(newLines.join('\n'));
+  }, REAL_WATCH_TIMEOUT_MS);
 
   const catalogServiceModule = path.join(storeDir, 'modules', 'catalog', 'src', 'service.ts');
   const buildDescriptor = nodeBuild().nodes['node'];
@@ -578,7 +591,10 @@ async function main(): Promise<void> {
         run: (before: Record<string, number | undefined>) =>
           touchCatalogAndAwaitRealWatchLoop(activeSession, before),
       },
-      { label: 'direct converge (fallback)', run: () => rebuildCatalogAndReconverge() },
+      {
+        label: 'direct converge (fallback)',
+        run: () => rebuildCatalogAndReconverge(activeSession),
+      },
     ] as const;
     for (const [index, strategy] of RECONVERGE_STRATEGIES.entries()) {
       const attempt = index + 1;

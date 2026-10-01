@@ -70,6 +70,7 @@ export const createLogCommand = (operations: ComposerOperations) =>
       const result = await operations.log(
         {
           entry: args.positionals.entry,
+          config: ctx.config,
           name: args.flags.name,
           address: args.positionals.address,
           tail: args.flags.tail ?? DEFAULT_TAIL,
@@ -77,7 +78,7 @@ export const createLogCommand = (operations: ComposerOperations) =>
           signal: ctx.signal,
           onEvent: reportLogEvent,
         },
-        { configPath: ctx.config.configPath },
+        {},
       );
 
       if (!result.ok) return notOk(toEngineError(result.failure));

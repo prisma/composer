@@ -21,7 +21,8 @@ Maintainers changing the `alchemy` or `effect` pins in this repo.
 
 **Check what upstream ships before working around what we pin.** The pinned
 version is not a constant, and treating it as one is expensive: TML-3158 was a
-long chase through pinning, peer dependencies, and a CLI preflight, all to keep
+long chase through pinning, peer dependencies, and a CLI preflight (since
+retired), all to keep
 a consumer's tree away from an `effect` that alchemy 2.0.0-beta.59 could not
 run — while a newer alchemy that had already fixed it sat on the registry the
 whole time. One command would have shown it:
@@ -52,7 +53,7 @@ companion in the tree is unsatisfiable, and npm resolves that by installing a
 simple way to stay above every floor at once. Treat them as one constellation,
 never as individual bumps.
 
-alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0` at beta.78). That range is what lets a stray dependency drag a different `effect` in, and it is why the CLI preflight exists.
+alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0` at beta.78). That range is what lets a stray dependency drag a different `effect` in.
 
 ## Two audiences, two failure modes
 
@@ -66,8 +67,20 @@ alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0`
   Only the consumer's own `overrides` can force alchemy's copy.
 
 That asymmetry is why `scripts/check-npm-effect-resolution.mjs` installs real
-tarballs with real npm, and why the CLI refuses to run when alchemy's resolved
-`effect` is not our pin (`check-effect-resolution.ts`).
+tarballs with real npm.
+
+## What a consumer sees when the tree is wrong
+
+Composer has no check of its own for a wrong `effect`. The app's
+`prisma.config.ts` imports the extensions' `/control` entries in its `composer`
+section, and those import alchemy, so a wrong `effect` fails the moment the
+engine evaluates the config file, before any command runs. The error is the
+engine's `CLI.CONFIG_UNREADABLE`, naming the file and carrying the module error,
+for example `prisma.config.ts could not be evaluated: Schema.TaggedError is not
+a function`. Only the consumer's package manager can fix that tree, usually
+with an `overrides` entry that forces our pinned `effect`
+(`docs/guides/deploying.md`). Keep the pins below exact and consistent so a bare
+install never gets there.
 
 ## Steps
 
@@ -209,8 +222,10 @@ pin. Two things about it are easy to get wrong after an upgrade:
 
 - **Do not assert the presence of a specific combinator.** That only ever stood
   in for "alchemy can run on this `effect`", and it breaks the moment upstream
-  removes it for good reasons. `assertCliStarts` answers the same question
-  directly, because starting the built bin loads alchemy's provider tree.
+  removes it for good reasons. `importAlchemy` answers the same question
+  directly: it imports alchemy's root, `Output`, `Provider` and `Stack` entries
+  from the installed app, which must succeed in the healthy shapes and fail in
+  the adversarial one.
 - **`WRONG_EFFECT` must stay a published version other than the pin.** The
   adversarial shape used to depend on a release whose peer sat *above* our pin;
   that stopped existing once the pin reached the newest beta, and the shape
@@ -229,9 +244,8 @@ pin. Two things about it are easy to get wrong after an upgrade:
 - **`pnpm dedupe` after the pins move**, so stale peer-resolution keys do not
   linger in the lockfile — but commit it separately, since it touches
   resolutions beyond the ones being upgraded.
-- **The CLI preflight reads `@prisma/composer`'s `dependencies.effect` and
-  compares with `===`.** That pin must stay an exact version;
-  `check:npm-effect-resolution` enforces it.
+- **`@prisma/composer`'s `dependencies.effect` must stay an exact version.**
+  `check:npm-effect-resolution` reads it and fails on a range.
 
 ## What this skill does NOT do
 

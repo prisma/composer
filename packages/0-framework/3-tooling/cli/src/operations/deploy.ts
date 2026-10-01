@@ -8,10 +8,15 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
 export interface DeployInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
+   */
+  readonly config: ComposerConfigSource;
   /** Path to the entry module, resolved against `cwd` — same contract as `prisma-composer deploy <entry>`. */
   readonly entry: string;
   /** Override the root node's name (the `--name` flag's slot). */
@@ -60,7 +65,7 @@ export async function deployWithDeps(
   try {
     executor = await import('./execute-deploy-destroy.ts');
   } catch (error) {
-    return notOk(executorLoadFailure('deploy', error, cwd));
+    return notOk(executorLoadFailure('deploy', error));
   }
   return executor.executeDeploy(input, deps, cwd);
 }

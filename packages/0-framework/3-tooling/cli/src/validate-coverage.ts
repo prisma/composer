@@ -9,7 +9,6 @@
 import type { Graph } from '@internal/core';
 import type { ExtensionDescriptor, NodeDescriptor, PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { CONFIG_FILENAME } from './load-config.ts';
 
 function lookup(
   extensions: ReadonlyMap<string, ExtensionDescriptor>,
@@ -25,7 +24,7 @@ function lookup(
       `No extension "${extension}" is configured (needed by ${what}).`,
       {
         fix:
-          `Add it to ${CONFIG_FILENAME}'s \`extensions\` ` +
+          'Add it to `extensions` in the `composer` section of prisma.config.ts ' +
           '(import its /control entry and list its descriptor).',
         meta: { extension, type },
       },

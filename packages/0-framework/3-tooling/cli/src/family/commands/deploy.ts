@@ -59,6 +59,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       const result = await operations.deploy(
         {
           entry: args.positionals.entry,
+          config: ctx.config,
           name: args.flags.name,
           stage: args.flags.stage,
           cwd: ctx.cwd,
@@ -67,7 +68,6 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         },
         operationDeps({
           alchemy,
-          configPath: ctx.config.configPath,
           workspaceId: await workspaceIdOf(ctx),
           client: ctx.api,
         }),

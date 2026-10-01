@@ -24,6 +24,7 @@ import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { type ControlDouble, createControlDouble } from '../../testing/control-double.ts';
 import { createDestroyCommand } from '../commands/destroy.ts';
 import { createComposerFamily } from '../family.ts';
+import { validComposerSection } from './fixtures/composer-section.ts';
 
 type Fixtures = Parameters<typeof createControlDouble>[0];
 
@@ -76,7 +77,7 @@ function composerCli(
   const cli = createTestCli({
     commandFamilies: [family],
     commands: { ...family.commands, destroy: createDestroyCommand(double.operations) },
-    config: {},
+    config: { composer: validComposerSection() },
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
   });
@@ -174,7 +175,19 @@ describe('argument validation', () => {
 
     expect(result.exitCode).toBe(0);
     expect(double.calls.deploy).toEqual([
-      { entry: 'src/service.ts', name: 'shop', stage: 'feat-auth', cwd: CWD },
+      {
+        entry: 'src/service.ts',
+        config: {
+          value: {
+            extensions: [{ id: 'ext-a', nodes: {} }],
+            state: { extension: 'ext-a', create: expect.any(Function) },
+          },
+          file: path.join(CWD, 'prisma.config.ts'),
+        },
+        name: 'shop',
+        stage: 'feat-auth',
+        cwd: CWD,
+      },
     ]);
   });
 

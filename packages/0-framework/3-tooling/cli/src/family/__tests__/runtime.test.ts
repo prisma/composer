@@ -267,7 +267,7 @@ describe('createRuntime()', () => {
 
   test('the loader is exposed as loadConfig, and its result is passed through untouched', async () => {
     const config: LoadedConfig = {
-      files: [{ path: '/app/prisma.config.ts', sections: { composer: { configPath: 'x.ts' } } }],
+      files: [{ path: '/app/prisma.config.ts', sections: { composer: { extensions: [] } } }],
       diagnostics: [],
     };
     const runtime = createRuntime(fakeHost(), () => Promise.resolve(config));
@@ -281,8 +281,8 @@ describe('createRuntime()', () => {
    */
   test('loadConfig forwards the config path the engine asked for', async () => {
     const asked: (string | undefined)[] = [];
-    const runtime = createRuntime(fakeHost(), (configPath) => {
-      asked.push(configPath);
+    const runtime = createRuntime(fakeHost(), (requestedFile) => {
+      asked.push(requestedFile);
       return noConfig();
     });
 

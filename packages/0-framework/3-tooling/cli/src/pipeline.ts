@@ -1,6 +1,6 @@
 /**
  * The shared prefix of `deploy`/`destroy`/`dev` (deploy-cli.md § The
- * pipeline; local-dev spec § 6): config discovery/load, entry load, Load,
+ * pipeline; local-dev spec § 6): entry load, Load,
  * registry coverage validation, name resolution, assemble. Deploy and dev
  * diverge after this — deploy resolves containers/preflight/stack file
  * against the hosted providers, dev against the local ones — so everything
@@ -8,55 +8,30 @@
  * `run()` (main.ts) and `runDev()` (dev/run-dev.ts), so the two pipelines
  * cannot drift.
  */
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { type AssembledServices, assembleServices, type RunAssembler } from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { loadAppConfig, resolveConfigFile } from './load-config.ts';
+import {
+  type ComposerConfigSource,
+  type ConfigFinding,
+  checkComposerConfig,
+  configFileMissing,
+} from './composer-config.ts';
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
-/** Injectable seams so tests can drive the pipeline without a real wrapper build or config evaluation. */
+/** Injectable seams so tests can drive the pipeline without a real wrapper build. */
 export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
-  /** Substituted for the c12 evaluation of the discovered config file (discovery itself still runs). */
-  readonly config?: PrismaAppConfig | undefined;
-  /**
-   * The config file to load, named explicitly instead of discovered —
-   * absolute. When present the entry-anchored walk is skipped entirely, so a
-   * config that does not sit above the entry is still usable — and the walk's
-   * path-mismatch check has nothing left to check. Supplied by the engine's
-   * `composer` config section, whose validator already resolved a relative
-   * path against the config file that declared it.
-   */
-  readonly configPath?: string | undefined;
-}
-
-/**
- * The config step both pipelines share: the effect-resolution check and the
- * choice of config file (load-config.ts's shared front), then evaluation —
- * unless the caller substituted a config, which replaces the evaluation and
- * nothing before it.
- */
-async function loadConfigStep(
-  entryPath: string,
-  cwd: string,
-  deps: PipelineDeps,
-): Promise<{ configPath: string; config: PrismaAppConfig }> {
-  const { path: configPath, explicit } = resolveConfigFile({
-    entryPath,
-    configPath: deps.configPath,
-    cwd,
-  });
-  const config = deps.config ?? (await loadAppConfig(configPath, !explicit)).config;
-  return { configPath, config };
 }
 
 export interface PipelineResult {
-  readonly configPath: string;
-  readonly config: PrismaAppConfig;
+  /** The checked config, with `file` absolute. */
+  readonly configSource: ComposerConfigSource;
   readonly entryModule: LoadedEntry;
   readonly graph: Graph;
   readonly name: string;
@@ -64,13 +39,40 @@ export interface PipelineResult {
 }
 
 export interface AppIdentity {
-  readonly configPath: string;
   readonly config: PrismaAppConfig;
   readonly name: string;
 }
 
+function configError(
+  findings: readonly [ConfigFinding, ...ConfigFinding[]],
+  file: string,
+): CliStructuredError {
+  const [first] = findings;
+  return new CliStructuredError(first.code, first.summary, {
+    ...(first.why === undefined ? {} : { why: first.why }),
+    fix: first.fix,
+    where: { path: first.where ?? file },
+    meta: {
+      ...(first.field === undefined ? {} : { field: first.field }),
+      findings,
+    },
+  });
+}
+
 /**
- * The pipeline's front — config discovery/load, entry load, name resolution —
+ * Refuses a caller's config with the same findings, in the same order, as the CLI's section validator.
+ * The error is the first finding and carries all of them in `meta.findings`. Returns the config with `file` resolved against `cwd`.
+ */
+export function checkConfigSource(source: ComposerConfigSource, cwd: string): ComposerConfigSource {
+  const file = path.resolve(cwd, source.file);
+  if (!fs.existsSync(file)) throw configError([configFileMissing(file)], file);
+  const checked = checkComposerConfig(source.value, file);
+  if (!checked.ok) throw configError(checked.findings, file);
+  return { value: checked.value, file };
+}
+
+/**
+ * The pipeline's front — entry load and name resolution —
  * WITHOUT Load, coverage, or assemble. `log` needs only who the app is (its
  * config and resolved name) to reach the already-running local instance; it
  * neither builds nor provisions, so it must not require the user's built
@@ -80,9 +82,9 @@ export async function resolveAppIdentity(
   entry: string,
   overrideName: string | undefined,
   cwd: string,
-  deps: PipelineDeps = {},
+  config: ComposerConfigSource,
 ): Promise<AppIdentity> {
-  const { configPath, config } = await loadConfigStep(path.resolve(cwd, entry), cwd, deps);
+  const { value } = checkConfigSource(config, cwd);
   const entryModule = await loadEntry(entry, cwd);
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
@@ -90,12 +92,11 @@ export async function resolveAppIdentity(
       fix: 'Name it at authoring, or pass --name.',
     });
   }
-  return { configPath, config, name };
+  return { config: value, name };
 }
 
 /**
- * Runs config discovery/load, entry load, Load, registry coverage, name
- * resolution, and assemble — steps 1–6 of `run()`. `onAssembleError`, when
+ * Runs entry load, Load, registry coverage, name resolution, and assemble — steps 1–5 of `run()`. `onAssembleError`, when
  * given, lets a caller decorate an assemble failure with command-specific
  * guidance (destroy's "build first" hint) without this shared step knowing
  * about any one command.
@@ -104,16 +105,17 @@ export async function runPipeline(
   entry: string,
   overrideName: string | undefined,
   cwd: string,
+  source: ComposerConfigSource,
   deps: PipelineDeps = {},
   onAssembleError?: (error: Error) => Error,
 ): Promise<PipelineResult> {
-  // 1. Find + load prisma-composer.config.ts — runs extension env validation before the entry import.
-  const { configPath, config } = await loadConfigStep(path.resolve(cwd, entry), cwd, deps);
+  const configSource = checkConfigSource(source, cwd);
+  const config = configSource.value;
 
-  // 2. Import the entry module; its default export must be a node.
+  // 1. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);
 
-  // 3. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
+  // 2. Load — core's LoadError (unwired connection input, etc.) surfaces as-is.
   const graph = Load(entryModule.root);
   if (graph.root.node.kind !== 'module') {
     throw new CliStructuredError('COMPOSE.ROOT_NOT_MODULE', 'The deploy root must be a module.', {
@@ -123,10 +125,10 @@ export async function runPipeline(
     });
   }
 
-  // 4. Registry coverage: every node/build in the graph has a matching descriptor in the config.
+  // 3. Registry coverage: every node/build in the graph has a matching descriptor in the config.
   validateRegistryCoverage(graph, config);
 
-  // 5. Resolve the name.
+  // 4. Resolve the name.
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
     throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {
@@ -134,7 +136,7 @@ export async function runPipeline(
     });
   }
 
-  // 6. Assemble each service through the config's registries.
+  // 5. Assemble each service through the config's registries.
   let assembled: AssembledServices;
   try {
     assembled = await assembleServices(graph, config, cwd, deps.runAssembler);
@@ -145,5 +147,5 @@ export async function runPipeline(
     throw error;
   }
 
-  return { configPath, config, entryModule, graph, name, assembled };
+  return { configSource, entryModule, graph, name, assembled };
 }

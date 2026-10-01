@@ -6,9 +6,9 @@
  * to load comes back as a structured failure, never a throw out of the
  * host.
  */
-import type { PrismaAppConfig } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import type { AppIdentity } from '../pipeline.ts';
 import { executorLoadFailure, type ServiceEndpoint } from './shared.ts';
 
@@ -27,15 +27,16 @@ export type LogEvent =
 /** The log operation's in-package injection seam (the CLI's LogRunDeps, unit
  * tests) — threaded through logWithDeps, never part of the published surface. */
 export interface LogDeps {
-  /** Substituted for the c12 evaluation of the discovered config file (discovery still runs). */
-  readonly config?: PrismaAppConfig | undefined;
   /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
   readonly identity?: AppIdentity | undefined;
-  /** Names the config file explicitly instead of walking up from the entry. */
-  readonly configPath?: string | undefined;
 }
 
 export interface LogInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
+   * `log` reads only the section; it takes the same input as the other operations so a host builds it once.
+   */
+  readonly config: ComposerConfigSource;
   readonly entry: string;
   readonly name?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */
@@ -75,7 +76,7 @@ export async function logWithDeps(
   try {
     executor = await import('./execute-log.ts');
   } catch (error) {
-    return notOk(executorLoadFailure('log', error, cwd));
+    return notOk(executorLoadFailure('log', error));
   }
   return executor.executeLog(input, deps, cwd);
 }

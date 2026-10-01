@@ -13,6 +13,5 @@ export type { ComposerCliSpec } from '../family/engine-cli.ts';
 export { BINARY_NAME, createComposerCli, runComposerCli } from '../family/engine-cli.ts';
 export type { ComposerOperations, CreateComposerFamilyOptions } from '../family/family.ts';
 export { createComposerFamily, realOperations } from '../family/family.ts';
-export type { ComposerSection } from '../family/section.ts';
 export { composerSection } from '../family/section.ts';
 export { toEngineError } from '../family/translate-error.ts';

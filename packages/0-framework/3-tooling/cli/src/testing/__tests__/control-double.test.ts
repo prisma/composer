@@ -8,17 +8,25 @@
 import { describe, expect, test } from 'bun:test';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../../composer-config.ts';
 import { createControlDouble } from '../control-double.ts';
 
 const ENTRY = './app/main.ts';
+const CONFIG = {
+  value: { extensions: [], state: { extension: 'x', create: () => undefined } },
+  file: 'prisma.config.ts',
+} as unknown as ComposerConfigSource;
 
 describe('createControlDouble()', () => {
   test('deploy succeeds by default, with no summary, and records its input', async () => {
     const double = createControlDouble();
-    const result = await double.operations.deploy({ entry: ENTRY, stage: 'preview' }, {});
+    const result = await double.operations.deploy(
+      { entry: ENTRY, config: CONFIG, stage: 'preview' },
+      {},
+    );
     expect(result.ok).toBe(true);
     expect(result.ok && result.value).toEqual({ summary: undefined });
-    expect(double.calls.deploy).toEqual([{ entry: ENTRY, stage: 'preview' }]);
+    expect(double.calls.deploy).toEqual([{ entry: ENTRY, config: CONFIG, stage: 'preview' }]);
   });
 
   test('a fixture failure comes back exactly as given', async () => {
@@ -26,7 +34,7 @@ describe('createControlDouble()', () => {
       fix: 'Pick a valid stage.',
     });
     const double = createControlDouble({ deploy: notOk(failure) });
-    const result = await double.operations.deploy({ entry: ENTRY }, {});
+    const result = await double.operations.deploy({ entry: ENTRY, config: CONFIG }, {});
     expect(!result.ok && result.failure).toBe(failure);
   });
 
@@ -38,6 +46,7 @@ describe('createControlDouble()', () => {
     const result = await double.operations.destroy(
       {
         entry: ENTRY,
+        config: CONFIG,
         target: { kind: 'production' },
         onEvent: (event) => events.push(event),
       },
@@ -54,6 +63,7 @@ describe('createControlDouble()', () => {
     const result = await double.operations.dev(
       {
         entry: ENTRY,
+        config: CONFIG,
         onEvent: (event) => events.push(event),
       },
       {},
@@ -84,7 +94,7 @@ describe('createControlDouble()', () => {
         { service: 'worker', line: 'polling' },
       ],
     });
-    const attached = (await double.operations.log({ entry: ENTRY }, {})).assertOk();
+    const attached = (await double.operations.log({ entry: ENTRY, config: CONFIG }, {})).assertOk();
     expect(attached.appName).toBe('store');
     const lines = [];
     for await (const line of attached.lines) lines.push(line);
@@ -99,7 +109,7 @@ describe('createControlDouble()', () => {
       ],
     });
     const attached = (
-      await double.operations.log({ entry: ENTRY, address: 'worker' }, {})
+      await double.operations.log({ entry: ENTRY, config: CONFIG, address: 'worker' }, {})
     ).assertOk();
     const lines = [];
     for await (const line of attached.lines) lines.push(line);
@@ -111,7 +121,7 @@ describe('createControlDouble()', () => {
     controller.abort();
     const double = createControlDouble({ logLines: [{ service: 'web', line: 'never' }] });
     const attached = (
-      await double.operations.log({ entry: ENTRY, signal: controller.signal }, {})
+      await double.operations.log({ entry: ENTRY, config: CONFIG, signal: controller.signal }, {})
     ).assertOk();
     const lines = [];
     for await (const line of attached.lines) lines.push(line);

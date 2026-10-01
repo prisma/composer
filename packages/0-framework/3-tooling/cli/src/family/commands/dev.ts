@@ -112,6 +112,14 @@ function reportDevEvent(
         report({ kind: 'message', severity: 'warn', text: `Rebuild failed: ${event.message}` });
         return;
 
+      case 'config-changed':
+        report({
+          kind: 'message',
+          severity: 'warn',
+          text: `${event.file} changed. Restart dev to apply it; rebuilds are paused until then.`,
+        });
+        return;
+
       case 'watch-error':
         report({ kind: 'message', severity: 'warn', text: `Watch error: ${event.message}` });
         return;
@@ -203,12 +211,13 @@ export const createDevCommand = (operations: ComposerOperations) =>
       const result = await operations.dev(
         {
           entry: args.positionals.entry,
+          config: ctx.config,
           name: args.flags.name,
           fresh: args.flags.fresh,
           cwd: ctx.cwd,
           onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
-        { alchemy: coalescedConverge(alchemy), configPath: ctx.config.configPath },
+        { alchemy: coalescedConverge(alchemy) },
       );
 
       // Nothing is live yet, so the ending is the converge's — settled by the

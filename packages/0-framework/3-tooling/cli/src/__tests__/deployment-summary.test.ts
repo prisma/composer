@@ -55,7 +55,7 @@ describe('engineFailureCause', () => {
       'line 1',
       'line 2',
       'file:///app/.prisma-composer/alchemy.run.ts:3',
-      "import config from '../prisma-composer.config.ts';",
+      "import prismaConfig from '../prisma.config.ts';",
       '       ^',
       "SyntaxError: The requested module '@prisma/composer/report' does not provide an export",
       '    at ModuleJob._instantiate (node:internal/modules/esm/module_job:180:21)',
@@ -65,7 +65,7 @@ describe('engineFailureCause', () => {
     expect(engineFailureCause(output, {})).toBe(
       [
         'file:///app/.prisma-composer/alchemy.run.ts:3',
-        "import config from '../prisma-composer.config.ts';",
+        "import prismaConfig from '../prisma.config.ts';",
         '^',
         "SyntaxError: The requested module '@prisma/composer/report' does not provide an export",
         'Node.js v24.16.0',

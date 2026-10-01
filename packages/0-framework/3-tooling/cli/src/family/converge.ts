@@ -13,6 +13,9 @@
  * makes the engine refuse a near-expiry credential BEFORE the handler runs —
  * before the in-process leg creates anything on any platform.
  */
+
+import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
+import type { Result as ComposerResult } from '@internal/foundation/result';
 import type {
   ChildResult,
   ChildStatusSettlement,
@@ -25,11 +28,6 @@ import { notOk, ok } from '@prisma/cli-engine/protocol';
 import { executionDiagnostics, type OperationDeps } from '../operations/shared.ts';
 import { alchemyCommandLine, type RunAlchemy } from '../run-alchemy.ts';
 import { toEngineError } from './translate-error.ts';
-
-// Inline import types, not aliased imports: the no-bare-cast plugin reads the
-// `as` in `import type { X as Y }` as a cast and the ratchet rejects it.
-type ComposerError = import('@internal/foundation/errors').CliStructuredError;
-type ComposerResult<T, F> = import('@internal/foundation/result').Result<T, F>;
 
 /** What a result command's handler may settle with. */
 export type HandlerResult = Result<
@@ -70,13 +68,11 @@ export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
  *  own client and workspace id rather than anything read from the env. */
 export function operationDeps(spec: {
   readonly alchemy: RunAlchemy;
-  readonly configPath: string | undefined;
   readonly workspaceId: string | undefined;
   readonly client: ManagementApiClient;
 }): OperationDeps {
   return {
     alchemy: spec.alchemy,
-    configPath: spec.configPath,
     credentials: { workspaceId: spec.workspaceId, client: spec.client },
   };
 }

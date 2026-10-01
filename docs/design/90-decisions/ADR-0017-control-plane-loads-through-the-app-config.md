@@ -1,26 +1,31 @@
 # ADR-0017: Control-plane code loads through the app's config file
 
+Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the config is the `composer` section of the app's `prisma.config.ts`, loaded by the Prisma CLI engine; there is no separate `prisma-composer.config.ts`. The firewall and the registry lookup below are unchanged.
+
 ## Decision
 
-An application root carries a `prisma-composer.config.ts`. The config statically
+An application root carries a `prisma.config.ts` whose `composer` section is Composer's config. The config statically
 imports **extension** descriptors — the control-plane face of each extension
 package the app deploys with — and declares the deploy's one state store:
 
 ```ts
-// prisma-composer.config.ts — loaded by the CLI, never imported by app code
-import { defineConfig } from "@prisma/composer/config";
+// prisma.config.ts — loaded by the CLI, never imported by app code
+import { defineConfig as composer } from "@prisma/composer/config";
 import { prismaCloud, prismaState } from "@prisma/composer-prisma-cloud/control";
 import { nodeBuild } from "@prisma/composer/node/control";
+import { definePrismaConfig } from "prisma/config";
 
-export default defineConfig({
-  extensions: [prismaCloud(), nodeBuild()],
-  state: prismaState(),
+export default definePrismaConfig({
+  composer: composer({
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+  }),
 });
 ```
 
-Deploy tooling loads the config (found by walking up from the deploy entry,
-loaded with c12 — the same mechanism Prisma ORM uses for
-`prisma.config.ts`), then looks up each node's control-plane behavior in
+Deploy tooling loads the config (the Prisma CLI engine finds
+`prisma.config.ts` from the command's working directory and hands Composer
+its validated `composer` section), then looks up each node's control-plane behavior in
 the registries the descriptors provide, keyed by **(extension ID, node ID)**:
 a node's `extension` field (`"@prisma/composer-prisma-cloud"`) and its `type`
 (`"compute"`). Nodes are pure data; the framework never constructs a module
@@ -40,7 +45,7 @@ code imports*.
 The config file is that boundary, and it is a file boundary rather than a
 compiler trick. App code — service modules, the module entry — imports
 authoring factories, which are pure data. Only the CLI loads
-`prisma-composer.config.ts`, and only the config imports the `/control` entries
+`prisma.config.ts`, and only the config imports the `/control` entries
 where the heavy code lives. A bundler walking the app's import graph never
 encounters the config, so no discipline about *how* imports are written is
 needed: the firewall holds by construction. (Each extension still carries a

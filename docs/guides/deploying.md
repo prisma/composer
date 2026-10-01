@@ -27,6 +27,57 @@ or creates everything else. Keep the values out of the repo (an `.env` you
 source at deploy time, or CI secrets). There's no interactive login; the
 token is the only authentication.
 
+## Configuration
+
+Composer reads its configuration from the `composer` section of
+`prisma.config.ts` and nowhere else:
+
+```ts
+// prisma.config.ts
+import { defineConfig as composer } from '@prisma/composer/config';
+import { nodeBuild } from '@prisma/composer/node/control';
+import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
+import { definePrismaConfig } from 'prisma/config';
+
+export default definePrismaConfig({
+  composer: composer({
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+  }),
+});
+```
+
+The commands look for `prisma.config.ts` in the directory you run them from
+and in its parent directories up to the repository root, and each file may
+declare its own `composer` section. The nearest file that declares one wins,
+and its section is used whole: a `composer` section is never merged key by key
+with one further up. The deploy imports that file again while it runs, so keep
+the section in the file itself rather than building it somewhere the file
+cannot reach.
+
+Before a command runs, the section is checked: `extensions` must be a list of
+extension descriptors with distinct ids, and `state` a state descriptor. Any
+other key is an error. The descriptors reach the deploy exactly as your file
+built them.
+
+Earlier versions read a separate `prisma-composer.config.ts`. That file is no
+longer read, and the commands refuse the old setup rather than ignore it:
+
+| Diagnostic | When |
+| --- | --- |
+| `CONFIG.SECTION_MISSING` | No loaded `prisma.config.ts` declares a `composer` section, including when there is no `prisma.config.ts` at all. |
+| `CONFIG.FIELD_RETIRED` | The section still has `configPath`, which pointed at the old file. |
+| `CONFIG.FILE_RETIRED` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
+
+All three appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
+headline, and all three give the same fix: move the old file's `extensions` and
+`state` into `composer: composer({ ... })` in `prisma.config.ts`, then delete
+the old file. Nothing migrates it for you.
+
+If you mount Composer's commands into your own CLI through
+`@prisma/composer-cli/family`, note that the `ComposerSection` type is gone: the
+section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
+
 ## Build first
 
 Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
@@ -41,7 +92,7 @@ build produced:
 turbo run build && prisma-composer deploy module.ts
 ```
 
-Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `prismaState()` line in `prisma-composer.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
+Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `state: prismaState()` line in the `composer` section of `prisma.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
 
 ## Production and stages
 
@@ -178,27 +229,26 @@ You'll only meet this if you wrote the connection or the extension on one side
 of the wire — every block that ships with the framework supplies what it
 declares.
 
-## When a deploy stops on an effect version conflict
+## When prisma.config.ts fails on an effect version conflict
 
-Before doing anything else, every `prisma-composer` command verifies that the
-installed dependency tree gives alchemy (the deploy engine Composer drives)
-the exact `effect` version `@prisma/composer` pins. When it doesn't, the
-command stops immediately:
+alchemy, the deploy engine Composer drives, needs the exact `effect` version
+`@prisma/composer` pins. The extensions in your `composer` section import
+alchemy, so when your installed tree gives alchemy a different `effect`,
+evaluating `prisma.config.ts` fails before any command runs:
 
 ```text
-Error: Dependency conflict: alchemy resolves effect@<found>, but
-@prisma/composer requires effect@<required>. Your package manager installed a
-second effect that alchemy picks up; deploying with it would crash inside
-alchemy.
+CLI.CONFIG_UNREADABLE  /path/to/prisma.config.ts could not be evaluated:
+Schema.TaggedError is not a function
 ```
 
-This happens when your app, or another dependency of it, pins a different
-`effect` than `@prisma/composer` does and your package manager hoists that copy
-where alchemy resolves it. npm allows this with only a warning, and without
-the check the deploy would crash mid-run with a `TypeError` from inside
-alchemy. A plain Composer app never hits it: `@prisma/composer` and
-`@prisma/composer-prisma-cloud` pin every `effect`-family package alchemy
-would otherwise float, so a fresh install resolves a single `effect`.
+The message after the colon is the module error from inside alchemy, and it
+varies with the versions involved. This happens when your app, or another
+dependency of it, pins a different `effect` than `@prisma/composer` does and
+your package manager hoists that copy where alchemy resolves it. npm allows
+this with only a warning. A plain Composer app never hits it:
+`@prisma/composer` and `@prisma/composer-prisma-cloud` pin every
+`effect`-family package alchemy would otherwise float, so a fresh install
+resolves a single `effect`.
 
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
@@ -321,11 +371,20 @@ The `prisma-composer` commands are thin renderers over these same operations,
 so the two surfaces can't drift.
 
 ```ts
+import { fileURLToPath } from 'node:url';
 import { deploy } from '@prisma/composer/control';
+import prismaConfig from './prisma.config.ts';
 
-const result = await deploy({ entry: 'module.ts', stage: 'pr-42' });
-if (result.outcome === 'deployed') {
-  // result.summary — the deployed topology (app name + each node's
+const result = await deploy({
+  entry: 'module.ts',
+  stage: 'pr-42',
+  config: {
+    value: prismaConfig.composer,
+    file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
+  },
+});
+if (result.ok) {
+  // result.value.summary — the deployed topology (app name + each node's
   // address and entities), when the deploy engine reported one.
 } else {
   console.error(result.failure.message); // same fix-naming text the CLI prints
@@ -334,17 +393,30 @@ if (result.outcome === 'deployed') {
 
 What to know before embedding it:
 
+- **You pass the config.** `deploy`, `destroy`, `dev` and `log` each take a
+  required `config: { value, file }` (the `ComposerConfigSource` type): the
+  `composer` section of your `prisma.config.ts` and the path of the file that
+  declares it. A relative `file` resolves against `cwd`, not against your
+  script, which is why the example builds an absolute one. The operations do
+  not look for a config file themselves, but they refuse a config the CLI
+  would refuse, before any work starts: a `value` that fails the section's
+  checks (passing the whole export instead of its `composer` property is a
+  `CONFIG.FIELD_UNKNOWN` that says so), a `prisma-composer.config.*` beside
+  `file` (`CONFIG.FILE_RETIRED`), or a `file` that does not exist
+  (`CONFIG.FILE_MISSING`). The deploy imports `file` again while it runs and
+  uses its `composer` export, so `value` must be that export. `log` reads only
+  `value`.
 - **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
   exactly like the CLI. `destroy` takes a discriminated target —
   `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
   silent default to production and no flag-combination footgun.
-- **Failures are results, not throws.** Every operation resolves to either
-  its success shape or `{ outcome: 'failed', failure }`, where
-  `failure.kind` is one of `invalid-input`, `unsupported-platform`, `pipeline`
-  (anything between loading the deploy stack and the deploy engine — including
-  the [effect version conflict](#when-a-deploy-stops-on-an-effect-version-conflict),
-  reported with the same fix-naming message the CLI prints), or `execution`
-  (the engine ran and failed). An `execution` failure's message ends with
+- **Failures are results, not throws.** Every operation resolves to
+  `{ ok: true, value }` or `{ ok: false, failure }`. `failure` is a structured
+  error with a dotted `code` from a closed registry — for example
+  `CONFIG.FIELD_INVALID`, `ASSEMBLE.BUILD_FAILED`, `DEPLOY.ENGINE_FAILED`, or
+  `DEPS.EXECUTOR_UNLOADABLE` when the deploy engine cannot be imported — and
+  the same fix-naming `message` the CLI prints; branch on `code`. When the
+  deploy engine ran and failed (`DEPLOY.ENGINE_FAILED`), the message ends with
   the engine's own error lines — the failed resource and the error it
   printed, with credentials redacted and capped at 1000 characters — which a
   deploy reporting to Prisma Cloud also records on the build. Its optional
@@ -360,12 +432,12 @@ What to know before embedding it:
   results but don't capture the live deploy output; run them where that
   output belongs, or with stdio redirected. Capturing it would be a new
   option on the operations.
-- **`dev` resolves to `{ outcome: 'started', session }` or a failure** —
+- **`dev` resolves to `{ ok: true, value: session }` or a failure** —
   never an exit code. The session is `{ endpoints, stop(), closed }`, with
-  progress (`ready`, `converge-failed`, `watch-error`, …) delivered through
+  progress (`ready`, `converge-failed`, `config-changed`, `watch-error`, …) delivered through
   `onEvent`. The operation never installs signal handlers; wiring Ctrl-C to
   `session.stop()` is yours.
-- **`log` resolves to `{ outcome: 'attached', appName, services, lines }` or
+- **`log` resolves to `{ ok: true, value: { appName, services, lines } }` or
   a failure.** `lines` is an `AsyncIterable` ended by an `AbortSignal` you
   own (stopping early — `break`, `lines.return()` — also ends it cleanly).
   Zero running services is a valid result (empty `services`, finished

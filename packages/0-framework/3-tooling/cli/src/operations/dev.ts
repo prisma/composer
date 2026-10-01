@@ -9,6 +9,7 @@
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
+import type { ComposerConfigSource } from '../composer-config.ts';
 import { executorLoadFailure, type OperationDeps, type ServiceEndpoint } from './shared.ts';
 
 export type DevEvent =
@@ -18,6 +19,8 @@ export type DevEvent =
   | { readonly kind: 'rebuild-failed'; readonly message: string }
   /** The file watcher itself errored (EMFILE, a vanished directory); the session keeps running. */
   | { readonly kind: 'watch-error'; readonly message: string }
+  /** `prisma.config.ts` changed. The session keeps the config it started with and stops rebuilding until it is restarted. */
+  | { readonly kind: 'config-changed'; readonly file: string }
   /** The app keeps running, still watching. */
   | {
       readonly kind: 'converge-failed';
@@ -31,6 +34,10 @@ export type DevEvent =
   | { readonly kind: 'stopped' };
 
 export interface DevInput {
+  /**
+   * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
+   */
+  readonly config: ComposerConfigSource;
   readonly entry: string;
   readonly name?: string | undefined;
   readonly fresh?: boolean | undefined;
@@ -67,7 +74,7 @@ export async function devWithDeps(
   try {
     executor = await import('./execute-dev.ts');
   } catch (error) {
-    return notOk(executorLoadFailure('dev', error, cwd));
+    return notOk(executorLoadFailure('dev', error));
   }
   return executor.executeDev(input, deps, cwd);
 }

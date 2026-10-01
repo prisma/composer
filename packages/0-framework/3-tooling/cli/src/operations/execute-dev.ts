@@ -6,6 +6,8 @@
  * from dev.ts — this module's static graph transitively loads alchemy's
  * provider tree, so the control entry must never import it statically.
  */
+import { createHash } from 'node:crypto';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { ContainerInstance } from '@internal/core/config';
 import { containerEnv } from '@internal/core/config';
@@ -38,6 +40,15 @@ async function mergedEndpoints(
 }
 
 /** Runs the full dev pipeline; resolves to a running session or a structured failure. */
+/** The file's content hash; undefined when it cannot be read, which counts as a change. */
+function contentHash(file: string): string | undefined {
+  try {
+    return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  } catch {
+    return undefined;
+  }
+}
+
 export async function executeDev(
   input: DevInput,
   deps: OperationDeps,
@@ -60,15 +71,12 @@ export async function executeDev(
   const containers = new Map<ExtensionId, ContainerInstance>();
 
   try {
-    // The shared prefix (pipeline.ts): config discovery/load, entry load,
-    // Load, registry coverage, name resolution, assemble.
-    const pipelineDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
-    };
-    pipeline = await runPipeline(input.entry, input.name, cwd, pipelineDeps);
-    const { config, graph, name } = pipeline;
+    // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
+    // name resolution, assemble.
+    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    pipeline = await runPipeline(input.entry, input.name, cwd, input.config, pipelineDeps);
+    const { graph, name } = pipeline;
+    const config = pipeline.configSource.value;
 
     // Dev-capability check — resolve every non-build-only extension's lazy
     // `localTarget` thunk ONCE (ADR-0041's lazy reference); its pinned error
@@ -132,7 +140,7 @@ export async function executeDev(
       stackPath = writeDevStackFile({
         entryPath: pipeline.entryModule.path,
         cwd,
-        configPath: pipeline.configPath,
+        configFile: pipeline.configSource.file,
         name: pipeline.name,
         assembled: pipeline.assembled,
       });
@@ -221,6 +229,7 @@ export async function executeDev(
   const attachments: LocalTargetAttachment[] = [];
   const started: LocalTargetAttachment[] = [];
   let watch: WatchHandle | undefined;
+  let configWatch: WatchHandle | undefined;
   try {
     for (const [id, dev] of resolved) {
       try {
@@ -256,53 +265,88 @@ export async function executeDev(
       emit({ kind: 'unwatchable', address });
     }
 
-    const watchDeps: PipelineDeps = {
-      runAssembler: deps.runAssembler,
-      config: deps.config,
-      configPath: deps.configPath,
+    const watchDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const watchFiles = deps.watch ?? startWatch;
+    const onWatchError = (error: unknown): void =>
+      emit({ kind: 'watch-error', message: failureMessage(error) });
+    const configFile = pipeline.configSource.file;
+    const startedConfig = contentHash(configFile);
+    let configChanged = false;
+    // Read on every event, not only from the config watcher: a build watch
+    // on a directory that contains the file can fire first.
+    const pausedForConfig = (): boolean => {
+      if (!configChanged && contentHash(configFile) === startedConfig) return false;
+      configChanged = true;
+      emit({ kind: 'config-changed', file: configFile });
+      return true;
     };
-    watch = startWatch(
+    configWatch = watchFiles(
+      [{ address: configFile, paths: [configFile] }],
+      () => void pausedForConfig(),
+      onWatchError,
+    );
+    // The whole rebuild is inside one try/catch: it runs fire-and-forget, so
+    // anything escaping it would be an unhandled rejection killing the
+    // process — the exact opposite of "a converge failure keeps the running
+    // app and keeps watching".
+    const rebuild = async (): Promise<void> => {
+      try {
+        const rePipeline = await runPipeline(input.entry, input.name, cwd, input.config, watchDeps);
+        const stackPath = writeDevStackFile({
+          entryPath: rePipeline.entryModule.path,
+          cwd,
+          configFile: rePipeline.configSource.file,
+          name: rePipeline.name,
+          assembled: rePipeline.assembled,
+        });
+        const outcome = await (deps.alchemy ?? spawnAlchemy)(
+          alchemyInvocation({
+            command: 'deploy',
+            stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+            cwd,
+            stage: 'dev',
+            containerEnv: containerEnv(containers),
+          }),
+        );
+        if (outcome.signal !== null || outcome.exitCode !== 0) {
+          emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
+          return;
+        }
+        emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
+      } catch (error) {
+        emit({ kind: 'rebuild-failed', message: failureMessage(error) });
+      }
+    };
+    // One rebuild at a time: a rebuild rewrites every service's artifact
+    // directory, which the previous rebuild's converge child may still be
+    // reading. Changes during a rebuild coalesce into one more after it.
+    let rebuilding = false;
+    let changedDuringRebuild = false;
+    const rebuildUntilSettled = async (): Promise<void> => {
+      rebuilding = true;
+      do {
+        changedDuringRebuild = false;
+        await rebuild();
+      } while (changedDuringRebuild && !pausedForConfig());
+      rebuilding = false;
+    };
+    watch = watchFiles(
       targets,
       () => {
-        // The whole rebuild is inside one try/catch: this runs fire-and-forget,
-        // so anything escaping it would be an unhandled rejection killing the
-        // process — the exact opposite of "a converge failure keeps the running
-        // app and keeps watching".
-        void (async () => {
-          try {
-            const rePipeline = await runPipeline(input.entry, input.name, cwd, watchDeps);
-            const stackPath = writeDevStackFile({
-              entryPath: rePipeline.entryModule.path,
-              cwd,
-              configPath: rePipeline.configPath,
-              name: rePipeline.name,
-              assembled: rePipeline.assembled,
-            });
-            const outcome = await (deps.alchemy ?? spawnAlchemy)(
-              alchemyInvocation({
-                command: 'deploy',
-                stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-                cwd,
-                stage: 'dev',
-                containerEnv: containerEnv(containers),
-              }),
-            );
-            if (outcome.signal !== null || outcome.exitCode !== 0) {
-              emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
-              return;
-            }
-            emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
-          } catch (error) {
-            emit({ kind: 'rebuild-failed', message: failureMessage(error) });
-          }
-        })();
+        if (pausedForConfig()) return;
+        if (rebuilding) {
+          changedDuringRebuild = true;
+          return;
+        }
+        void rebuildUntilSettled();
       },
-      (error) => emit({ kind: 'watch-error', message: failureMessage(error) }),
+      onWatchError,
     );
     // A rebuild finishing before the OS-level watches attach would otherwise
     // be missed entirely — wait until watching is real before handing over.
     const startedWatch = watch;
-    await watch.ready;
+    const startedConfigWatch = configWatch;
+    await Promise.all([watch.ready, configWatch.ready]);
 
     let stopping = false;
     let resolveClosed: () => void = () => undefined;
@@ -315,6 +359,7 @@ export async function executeDev(
         stopping = true;
         emit({ kind: 'stopping' });
         startedWatch.stop();
+        startedConfigWatch.stop();
         void (async () => {
           // A service that refuses to stop is surfaced, not swallowed —
           // teardown continues, `stopped` still fires, `closed` still settles.
@@ -338,6 +383,7 @@ export async function executeDev(
     // Cleanup runs whatever the error's shape; only structured failures come
     // back as values — a non-structured escape is a bug and throws (rule 6).
     watch?.stop();
+    configWatch?.stop();
     await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;

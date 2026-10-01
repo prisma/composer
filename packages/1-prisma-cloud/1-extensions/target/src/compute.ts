@@ -47,7 +47,7 @@ type ReservedParams = typeof reservedParams;
  *
  * The underlying node carries `extension: '@prisma/composer-prisma-cloud'` —
  * the control-plane registry key `prisma-composer deploy` resolves through the
- * app's `prisma-composer.config.ts` (ADR-0017). This module loads nothing at
+ * app's `prisma.config.ts` (ADR-0017). This module loads nothing at
  * deploy time; nodes are pure data until run() or load() is called.
  */
 export class ComputeService<

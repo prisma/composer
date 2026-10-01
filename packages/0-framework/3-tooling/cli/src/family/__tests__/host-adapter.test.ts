@@ -76,9 +76,9 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
   /**
    * The regression this file exists for. With the Runtime's config seam
    * misspelled, this run settles CLI.INTERNAL_ERROR instead of reaching the
-   * handler at all.
+   * section validator at all.
    */
-  test('a run with no config file reaches the handler — absence is normal', async () => {
+  test('a run with no config file is refused by the section validator, not the Runtime', async () => {
     const double = refusingOperations();
     const host = fakeHost(emptyDir());
 
@@ -87,13 +87,14 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
       operations: double.operations,
     });
 
-    // The fake host is not a TTY, so engine 0.2.0 answers with a
-    // structured result frame on stdout rather than human text on stderr.
-    const output = host.out.join('') + host.err.join('');
-    expect(output).not.toContain('CLI.INTERNAL_ERROR');
-    expect(double.calls.dev).toHaveLength(1);
     expect(exitCode).toBe(2);
-    expect(host.out.join('')).toContain('DEV.REFUSED');
+    expect(JSON.parse(host.out.join(''))).toMatchObject({
+      envelope: {
+        error: { code: 'CLI.CONFIG_SECTION_INVALID' },
+        diagnostics: [{ code: 'CONFIG.SECTION_MISSING' }],
+      },
+    });
+    expect(double.calls.dev).toEqual([]);
   });
 
   /**
@@ -132,7 +133,13 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
     const configFile = path.join(dir, 'custom.config.ts');
     fs.writeFileSync(
       configFile,
-      'export default { $prismaConfig: 1, composer: { configPath: "custom" } };\n',
+      [
+        'export default {',
+        '  $prismaConfig: 1,',
+        "  composer: { extensions: [{ id: 'ext-a', nodes: {} }], state: { extension: 'ext-a', create: () => undefined } },",
+        '};',
+        '',
+      ].join('\n'),
     );
 
     const exitCode = await runComposerCli(
@@ -143,11 +150,49 @@ describe('runComposerCli() — the real Runtime, on a command that needs config'
 
     expect(exitCode).toBe(2);
     expect(double.calls.dev).toHaveLength(1);
-    // The section's own field, not just the fact that dev ran: `configPath`
-    // travels in the operation's SECOND argument, so a handler that read the
-    // section but forgot to pass it on would still satisfy the call count.
-    // The value arrives resolved against the config file that declared it
-    // (which the loader realpaths), not against the run's cwd.
-    expect(double.calls.deps.dev[0]?.configPath).toBe(path.join(fs.realpathSync(dir), 'custom'));
+    // The section and the file that declared it, which the loader realpaths.
+    expect(double.calls.dev[0]?.config).toEqual({
+      value: {
+        extensions: [{ id: 'ext-a', nodes: {} }],
+        state: { extension: 'ext-a', create: expect.any(Function) },
+      },
+      file: path.join(fs.realpathSync(dir), 'custom.config.ts'),
+    });
+  });
+
+  test('an old prisma-composer.config.ts beside the declaring file fails the section before the operation', async () => {
+    const double = refusingOperations();
+    const dir = emptyDir();
+    fs.writeFileSync(
+      path.join(dir, 'prisma.config.ts'),
+      [
+        'export default {',
+        '  $prismaConfig: 1,',
+        "  composer: { extensions: [{ id: 'ext-a', nodes: {} }], state: { extension: 'ext-a', create: () => undefined } },",
+        '};',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(path.join(dir, 'prisma-composer.config.ts'), 'export default {};\n');
+
+    const host = fakeHost(dir);
+    const exitCode = await runComposerCli(['dev', 'src/service.ts'], host, {
+      version: VERSION,
+      operations: double.operations,
+    });
+
+    expect(exitCode).toBe(2);
+    expect(JSON.parse(host.out.join(''))).toMatchObject({
+      envelope: {
+        error: { code: 'CLI.CONFIG_SECTION_INVALID' },
+        diagnostics: [
+          {
+            code: 'CONFIG.FILE_RETIRED',
+            summary: `${path.join(fs.realpathSync(dir), 'prisma-composer.config.ts')} is no longer read.`,
+          },
+        ],
+      },
+    });
+    expect(double.calls.dev).toEqual([]);
   });
 });

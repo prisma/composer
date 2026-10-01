@@ -2,11 +2,11 @@
  * The S4 integration proof (local-dev spec, plan.md's S4 outcome; no CLI —
  * the `prisma-composer dev` command itself is S5's scope): a fixture
  * topology (compute × 2, postgres, bucket) lowered with `dev: true` and
- * driven through the real `alchemy` binary against a hand-written stack
- * module (S5 owns `generate-dev-stack.ts`; this test hand-writes the
- * equivalent per spec § 6's template).
+ * driven through the real `alchemy` binary against the dev stack module
+ * `dev` itself writes (`renderDevStackFile` from
+ * `@prisma/composer-cli/testing`).
  *
- * Only `@prisma/composer`/`@prisma/composer-prisma-cloud` (9-public) are
+ * Only `@prisma/composer`, `@prisma/composer-cli` and `@prisma/composer-prisma-cloud` (9-public) are
  * imported (ADR-0028: examples/website/test import only the published
  * surface) — the emulator daemons and the dev-instance store are verified
  * through their DOCUMENTED wire protocol and on-disk file contracts (plain
@@ -71,6 +71,7 @@ import type {
 } from '@prisma/composer/config';
 import { containerEnv, DEV_DIR } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
+import { renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import bgService from './fixtures/local-dev/bg-service.ts';
 import appModule from './fixtures/local-dev/module.ts';
@@ -100,7 +101,7 @@ const devDir = path.join(fixtureDir, DEV_DIR);
 const stackDir = devDir;
 const stackFile = path.join(stackDir, 'alchemy.run.ts');
 const stackFileRel = path.relative(fixtureDir, stackFile);
-const configFile = path.join(fixtureDir, 'dev-config.ts');
+const configFile = path.join(fixtureDir, 'prisma.config.ts');
 const webEntryFile = path.join(fixtureDir, 'built', 'web-server.mjs');
 const logDir = path.join(devDir, 'logs');
 const ALCHEMY_TIMEOUT_MS = 60_000;
@@ -168,11 +169,6 @@ async function dumpDiagnostics(): Promise<void> {
   console.error('=== end diagnostics ===\n');
 }
 
-function relImportSpecifier(fromDir: string, toFile: string): string {
-  const rel = path.relative(fromDir, toFile).split(path.sep).join('/');
-  return rel.startsWith('.') ? rel : `./${rel}`;
-}
-
 interface FixtureBundle {
   readonly dir: string;
   readonly entry: string;
@@ -197,44 +193,19 @@ async function assembleFixture(): Promise<Record<string, FixtureBundle>> {
   return { web, bkg };
 }
 
-function renderDevStackFile(bundles: Record<string, FixtureBundle>): string {
-  const configImport = relImportSpecifier(stackDir, configFile);
-  const appImport = relImportSpecifier(stackDir, path.join(fixtureDir, 'module.ts'));
-  const bundleLines = Object.entries(bundles)
-    .map(
-      ([id, b]) =>
-        `    ${JSON.stringify(id)}: { dir: ${JSON.stringify(b.dir)}, entry: ${JSON.stringify(b.entry)} },`,
-    )
-    .join('\n');
-  // Hand-written for the S4 integration proof — S5 owns generate-dev-stack.ts.
-  // This module IS the one orchestration point (deploy.ts's REVISED —
-  // operator review of #162): `lower()` itself learns nothing about the
-  // local target; this file resolves the app's local-target descriptors
-  // and containers itself and passes `providers:` + `state:` explicitly,
-  // exactly like the real generated dev stack module will.
-  return `import { deserializeContainers } from '@prisma/composer/config';
-import { lower } from '@prisma/composer/deploy';
-import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';
-import { localState } from 'alchemy/State/LocalState';
-import config from ${JSON.stringify(configImport)};
-import app from ${JSON.stringify(appImport)};
-
-const containers = deserializeContainers(config.extensions, process.env);
-const resolved = await resolveLocalTargets(config);
-
-export default lower(app, config, {
-  name: ${JSON.stringify(APP_NAME)},
-  bundles: {
-${bundleLines}
-  },
-  providers: localTargetProviders(resolved, containers, \`\${process.cwd()}/\${DEV_DIR}\`),
-  state: localState(),
-});
-`;
+/** The dev stack file `dev` itself writes, from the real generator. */
+function renderStack(bundles: Record<string, FixtureBundle>): string {
+  return renderDevStackFile({
+    entryPath: path.join(fixtureDir, 'module.ts'),
+    cwd: fixtureDir,
+    configFile,
+    name: APP_NAME,
+    assembled: { bundles },
+  });
 }
 
 /**
- * Runs one `alchemy deploy` against the hand-written dev stack file, exactly
+ * Runs one `alchemy deploy` against the generated dev stack file, exactly
  * as a real dev session would (--stage dev, always — D3), against the one
  * real, machine-global emulator registry.
  *
@@ -496,7 +467,7 @@ async function main(): Promise<void> {
 
     // 7. Write the dev stack file and converge through the REAL alchemy binary.
     fs.mkdirSync(stackDir, { recursive: true });
-    fs.writeFileSync(stackFile, renderDevStackFile(bundles));
+    fs.writeFileSync(stackFile, renderStack(bundles));
     const containerEnvVars = containerEnv(new Map([[descriptor.id, devContainer]]));
     const first = runAlchemyDeploy(containerEnvVars);
     if (first.status !== 0) {
@@ -638,7 +609,7 @@ async function main(): Promise<void> {
     );
     try {
       const rebundled = await assembleFixture();
-      fs.writeFileSync(stackFile, renderDevStackFile(rebundled));
+      fs.writeFileSync(stackFile, renderStack(rebundled));
       const third = runAlchemyDeploy(containerEnvVars);
       if (third.status !== 0) {
         throw new Error(

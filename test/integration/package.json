@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
+    "@prisma/cli-engine": "0.6.2",
     "@prisma/composer": "workspace:0.25.0",
     "@prisma/composer-cli": "workspace:0.25.0",
     "@prisma/composer-prisma-cloud": "workspace:0.25.0",
