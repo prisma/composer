@@ -22,9 +22,9 @@
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
+import { emulatorRegistryRoot } from '@prisma/composer-prisma-cloud/local-target';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
@@ -67,11 +67,6 @@ function readLog(logPath: string): string {
   } catch {
     return '';
   }
-}
-
-/** `~/.prisma-composer/emulators/` — the one real, machine-global root, same as `defaultRegistryRoot()` resolves. */
-function emulatorRegistryRoot(): string {
-  return path.join(os.homedir(), '.prisma-composer', 'emulators');
 }
 
 function tailOf(filePath: string, n = 60): string {
