@@ -304,10 +304,12 @@ identity: `prisma auth login` stores a session on a developer machine, and
 a destroy script, never use that session: `deploy` and `destroy` read
 `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from the environment (both
 in the workspace's Console settings); `dev` and `log` read neither. The
-`prisma` bin starts under Node; when the modules `module.ts` imports use Bun
-APIs, run its JavaScript entry with Bun
-(`bun node_modules/prisma/dist/prisma.js deploy module.ts`); `bunx prisma`
-still runs under Node, and `bunx --bun prisma` also moves Alchemy off Node.
+`prisma` bin starts under Node; use `pnpm prisma …` or `npx prisma …` by
+default. Composer starts Alchemy with Node, but Alchemy's launcher moves to
+Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
+`bunx --bun prisma` Bun then Bun. When the modules `module.ts` imports use
+Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
+shell runs `prisma` under Bun with Alchemy on Node.
 
 **Stages.** A stage is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
@@ -335,7 +337,7 @@ never-deployed stage fails rather than standing one up.
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 Composer runs the alchemy package it is installed with, found from its own
-location and started under Node (the first `node` on PATH when `prisma` runs
+location and started with Node (the first `node` on PATH when `prisma` runs
 under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
 `alchemy` dependency and no `.bin` link. No global Alchemy installation is
 needed.
