@@ -10,7 +10,7 @@
  * Operator-visible one-time effects of the first migrated deploy (branch-stage
  * database rename + default-connection rotation, one fresh deployment per
  * service) are documented in docs/guides/deploying.md. Hosted state only:
- * local dev state is cleared with `prisma-composer dev --fresh` instead.
+ * local dev state is cleared with `prisma dev --fresh` instead.
  */
 
 import * as Redacted from 'effect/Redacted';

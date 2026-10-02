@@ -10,7 +10,7 @@ If you cannot use GitHub's form for any reason, you may instead email `security@
 
 When reporting, please include:
 
-- The affected package and version (e.g. `@prisma/composer@0.1.0`, or the `prisma-composer` CLI).
+- The affected package and version (e.g. `@prisma/composer@0.1.0`, or `@prisma/composer-cli`, which runs `prisma deploy` and `prisma dev`).
 - A reproduction or proof-of-concept, where possible.
 - Your assessment of severity and impact.
 - Any disclosure timeline you are working under.
@@ -27,7 +27,7 @@ We are still establishing public response-time and patch-time SLOs; the 5-busine
 
 In scope — we accept reports against any of the following published packages:
 
-- The `prisma-composer` CLI launcher.
+- `@prisma/composer-cli`, the command family the `prisma` CLI runs as `deploy` and `dev`.
 - The framework packages published to npm: `@prisma/composer`, `@prisma/composer/nextjs`, `@prisma/composer/node`, `@prisma/composer-prisma-cloud`, `@prisma/composer/service-rpc`, `@internal/assemble`, `@internal/cli`, and `@internal/lowering`. The canonical list is whichever of these packages appear on npm at any given time.
 
 Out of scope (please do not file vulnerability reports for these):

@@ -4,8 +4,8 @@ import { defineConfig } from 'tsdown';
 // Thin re-export entries over the @internal/* packages' built dist; the
 // @internal scope is inlined so the published tarball is self-contained
 // (ADR-0028) — external npm deps stay imports. `exports` is hand-maintained
-// in package.json, so exports:false. The command family and the
-// `prisma-composer` bin live in @prisma/composer-cli, which is also the only
+// in package.json, so exports:false. The command family lives in
+// @prisma/composer-cli, which is also the only
 // package with an `@prisma/cli-engine` relationship — this library must not
 // import the engine at all (scripts/check-cli-engine-pin.mjs asserts the
 // packed dist is engine-free).

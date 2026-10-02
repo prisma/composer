@@ -8,13 +8,17 @@
 #
 # Usage: destroy-guard.sh <label> <entry-file> <stack-name>
 # <label> prefixes log lines (e.g. "" for storefront-auth).
-# `destroy` requires an explicit target (--stage or --production); this
-# cleanup targets the production environment of the per-run stack name.
+# Run from the example's directory: composer-destroy.ts reads its
+# prisma.config.ts. Destroy requires an explicit target (--stage or
+# --production); this cleanup targets the production environment of the
+# per-run stack name.
 set -euo pipefail
+
+scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 label="$1"
 entry="$2"
 stack_name="$3"
 
 echo "Destroying ${label}stack $stack_name…"
-bun node_modules/.bin/prisma-composer destroy "$entry" --name "$stack_name" --production
+bun "$scripts_dir/composer-destroy.ts" "$entry" --name "$stack_name" --production

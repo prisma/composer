@@ -24,8 +24,8 @@ export type LogEvent =
    * `count` oldest lines were dropped since the last delivered line. */
   | { readonly kind: 'lines-dropped'; readonly count: number };
 
-/** The log operation's in-package injection seam (the CLI's LogRunDeps, unit
- * tests) — threaded through logWithDeps, never part of the published surface. */
+/** The log operation's in-package injection seam, for the unit tests —
+ * threaded through logWithDeps, never part of the published surface. */
 export interface LogDeps {
   /** Overrides the identity resolution (config + name) — lets tests skip a real entry module. */
   readonly identity?: AppIdentity | undefined;
@@ -41,8 +41,7 @@ export interface LogInput {
   readonly name?: string | undefined;
   /** Restrict to one service's dotted address; validated against running services. */
   readonly address?: string | undefined;
-  /** Trailing history lines before live output. Defaults to 0 (live only) —
-   * the attachment contract's default; the CLI's user-facing default of 20 stays in main.ts. */
+  /** Trailing history lines before live output. Defaults to 0 (live only). */
   readonly tail?: number | undefined;
   readonly cwd?: string | undefined;
   /** Ends the stream when aborted. The host owns SIGINT/SIGTERM → abort. */
@@ -51,7 +50,7 @@ export interface LogInput {
 }
 
 export interface LogAttached {
-  /** For the adapter's empty-services notice. */
+  /** The app's name, for a caller's empty-services notice. */
   readonly appName: string;
   /** Every running service. EMPTY means nothing is running — a valid, non-failure state;
    * `lines` is then an already-finished iterable. */
@@ -64,8 +63,8 @@ export async function log(input: LogInput): Promise<Result<LogAttached, CliStruc
   return logWithDeps(input, {});
 }
 
-/** In-package variant threading the injection seam (the CLI's LogRunDeps,
- * unit tests). Deliberately NOT re-exported through `./control` — the seam
+/** In-package variant threading the injection seam, for the unit tests.
+ * Deliberately NOT re-exported through `./control` — the seam
  * mirrors internal types and is not part of the published surface. */
 export async function logWithDeps(
   input: LogInput,

@@ -2,14 +2,15 @@
  * Proves the extension-config design (ADR-0017) resolves REAL extension
  * `/control` entries — not fixtures. This cannot live in packages/app-cli's
  * own suite: the CLI itself must not depend on any specific extension (see
- * test/README.md), but this package genuinely does, so `prisma-composer deploy`
+ * test/README.md), but this package genuinely does, so `prisma deploy`
  * here evaluates this package's own `prisma.config.ts`, whose `composer` section's static
  * imports of `@prisma/composer-prisma-cloud/control` and `@prisma/composer/node/control`
  * resolve from THIS app's own dependency tree — ambient resolution, no
  * anchor file, no framework-constructed specifier.
  *
- * Drives the CLI as a binary (`node_modules/.bin/prisma-composer`), the same way
- * the example apps do, rather than importing the CLI's internals.
+ * Drives the installed `prisma` host as a binary, which mounts this workspace's
+ * Composer family through the root pnpm override, the same way the example
+ * apps do, rather than importing the CLI's internals.
  *
  * `deploy` declares `needs: { credentials: 'child' }`, so the engine refuses
  * the run before the handler when nothing is signed in — which would stop
@@ -21,7 +22,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as path from 'node:path';
-import { integrationDir, spawnComposer } from './spawn-composer.ts';
+import { integrationDir, spawnPrisma } from './spawn-prisma.ts';
 
 const fixtureEntry = path.join(
   integrationDir,
@@ -42,11 +43,11 @@ function serviceToken(claims: Record<string, unknown>): string {
   })}.`;
 }
 
-describe('prisma-composer deploy — real extension-config resolution of prisma-cloud + node', () => {
+describe('prisma deploy — real extension-config resolution of prisma-cloud + node', () => {
   // Spawns the real CLI, which resolves /control entries and evaluates a config —
   // inherently slower than bun test's default 5000ms, so give it real headroom.
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnComposer(['deploy', fixtureEntry], {
+    const result = spawnPrisma(['deploy', fixtureEntry], {
       ...process.env,
       PRISMA_SERVICE_TOKEN: serviceToken({ workspace_id: 'ws-integration-test' }),
       PRISMA_WORKSPACE_ID: 'ws-integration-test',
@@ -76,7 +77,7 @@ describe('prisma-composer deploy — real extension-config resolution of prisma-
     const env: NodeJS.ProcessEnv = { ...process.env, PRISMA_SERVICE_TOKEN: serviceToken({}) };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnComposer(['deploy', fixtureEntry], env);
+    const result = spawnPrisma(['deploy', fixtureEntry], env);
 
     const output = result.stdout + result.stderr;
     expect(result.status).not.toBe(0);

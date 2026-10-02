@@ -1,5 +1,5 @@
 ---
-description: "A change users can observe — a public export, a CLI flag, or behaviour they hit without touching their code — must update docs/guides/ AND skills/prisma-composer/SKILL.md in the SAME PR. The guides ARE the public website's content; the skill is installed into user repos. Internal-only changes need neither."
+description: "A change users can observe — a public export, a CLI flag, or behaviour they hit without touching their code — must update docs/guides/ AND skills/prisma-composer-core-concepts/SKILL.md in the SAME PR. The guides ARE the public website's content; the skill is installed into user repos. Internal-only changes need neither."
 alwaysApply: true
 ---
 
@@ -13,7 +13,7 @@ go stale **silently** — nothing fails when they're wrong:
   (`website/scripts/render-content.ts`), and `.github/workflows/deploy-docs.yml`
   redeploys the site whenever `docs/guides/**` changes on main. Editing a guide
   *is* shipping a site change; no generated file to commit.
-- **`skills/prisma-composer/SKILL.md`** — the agent-condensed mirror. It ships
+- **`skills/prisma-composer-core-concepts/SKILL.md`** — the agent-condensed mirror. It ships
   inside the `@prisma/composer` tarball and lands in other people's repos when
   they run `prisma skills sync`, so it reaches them on their next upgrade
   whether or not anyone re-runs an install command. An agent reading a stale
@@ -48,7 +48,7 @@ nothing an app author does or sees changes, skip both.
 - **Read `skills/README.md` before editing the skill.** It has its own binding
   rules: verify every claim against a real export map / the CLI (if ripgrep
   can't find it, it doesn't ship), stay self-contained (no link may resolve
-  outside `skills/prisma-composer/`), teach concepts not procedures.
+  outside `skills/prisma-composer-core-concepts/`), teach concepts not procedures.
 - A new guide needs no registration — `website/tests/content.test.ts` asserts
   one rendered guide per `docs/guides/*.md` and that every in-site link
   resolves, so a broken cross-link fails CI.

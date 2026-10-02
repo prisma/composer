@@ -28,7 +28,7 @@ function missingEnvParamsError(missing: readonly PreflightName[]): Error {
   return new Error(
     `local dev preflight failed — ${missing.length} env-sourced param(s) are not set in this shell:\n` +
       `${lines.join('\n')}\n\n` +
-      'Set each in the shell you run `prisma-composer dev` from.',
+      'Set each in the shell you run `prisma dev` from.',
   );
 }
 

@@ -148,7 +148,7 @@ text children by construction, so a react-email template needs no manual
 the full worked version, alongside `verification` as a plain function —
 both authoring styles side by side.
 
-One deploy caveat: `prisma-composer deploy` loads your module graph with
+One deploy caveat: `prisma deploy` loads your module graph with
 Node's own loader, which cannot transform JSX — a `.tsx` file imported by
 your topology fails with `Unknown file extension ".tsx"`. Precompile the
 templates file in your app's own build and import the compiled output, as

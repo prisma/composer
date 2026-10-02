@@ -16,7 +16,7 @@ import { isValidSegment } from './segments.ts';
 
 function notRunningError(name: DaemonName): Error {
   return new Error(
-    `the ${name} emulator is not running — \`prisma-composer dev\` starts it via the extension's dev.emulators hook.`,
+    `the ${name} emulator is not running — \`prisma dev\` starts it via the extension's dev.emulators hook.`,
   );
 }
 

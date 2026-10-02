@@ -9,7 +9,7 @@ import { readSkillFrontmatter, stampSkillVersion } from './skill-frontmatter.ts'
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 const SKILL = `---
-name: prisma-composer
+name: example-skill
 metadata:
   library: "@prisma/composer"
   library_version: "0.11.0"

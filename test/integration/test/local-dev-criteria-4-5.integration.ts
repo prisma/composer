@@ -1,6 +1,6 @@
 /**
  * The plan-S5 proving script for acceptance criteria 4 and 5 (spec's
- * acceptance criteria list): drives the real `prisma-composer` binary
+ * acceptance criteria list): drives the installed `prisma` host's `dev`
  * against the S4 fixture (`test/fixtures/local-dev/`), extended for this
  * proof with a bucket consumer flow on `web` and a secret/env-param on
  * `bkg` (module.ts's `apiKey`/`greeting` binding). Same pattern as
@@ -25,6 +25,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
+import { prismaBinDir } from './spawn-prisma.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
@@ -43,7 +44,7 @@ const integrationDir = path.resolve(import.meta.dir, '..');
 const fixtureEntry = path.join('test', 'fixtures', 'local-dev', 'module.ts');
 const devDir = path.join(integrationDir, '.prisma-composer', 'dev');
 const logDir = path.join(integrationDir, '.local-dev-criteria-4-5-logs');
-const CLI_BIN = path.join(integrationDir, 'node_modules', '.bin', 'prisma-composer');
+const CLI_BIN = path.join(prismaBinDir(integrationDir), 'prisma');
 const READY_TIMEOUT_MS = 90_000;
 const EXIT_TIMEOUT_MS = 30_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
@@ -176,7 +177,7 @@ function baseEnv(extra: Record<string, string | undefined>): NodeJS.ProcessEnv {
   return env;
 }
 
-/** Starts `prisma-composer dev [--fresh]` against the fixture, teed to a log file. Does not wait for readiness — callers pick the wait strategy (ready vs. exit). */
+/** Starts `prisma dev [--fresh]` against the fixture, teed to a log file. Does not wait for readiness — callers pick the wait strategy (ready vs. exit). */
 function startDevRaw(
   env: NodeJS.ProcessEnv,
   opts: { readonly fresh?: boolean } = {},
@@ -340,7 +341,7 @@ async function main(): Promise<void> {
       'the error must name LOCALDEV_FIXTURE_GREETING and the service that requires it',
     );
     assert(
-      log2.includes('Set each in the shell you run `prisma-composer dev` from.'),
+      log2.includes('Set each in the shell you run `prisma dev` from.'),
       'the pinned fix instruction must appear',
     );
     console.log(
@@ -379,7 +380,7 @@ async function main(): Promise<void> {
         `[proving] final cleanup did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const stray = spawnSync('pgrep', ['-f', `prisma-composer dev ${fixtureEntry}`]);
+    const stray = spawnSync('pgrep', ['-f', `prisma dev ${fixtureEntry}`]);
     for (const line of (stray.stdout?.toString() ?? '').split('\n')) {
       const pid = Number(line.trim());
       if (Number.isFinite(pid) && pid > 0) {

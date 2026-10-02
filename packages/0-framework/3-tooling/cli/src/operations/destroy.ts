@@ -1,7 +1,7 @@
 /**
  * The programmatic `destroy` operation (`@prisma/composer/control`): typed
- * input, structured result, no argv, no console, no process.exit. The
- * prisma-composer CLI (main.ts) is a thin renderer over it. The executor
+ * input, structured result, no argv, no console, no process.exit. No CLI
+ * command wraps it. The executor
  * loads lazily, so importing this module executes nothing; an executor that
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
@@ -37,8 +37,8 @@ export async function destroy(input: DestroyInput): Promise<Result<void, CliStru
   return destroyWithDeps(input, {});
 }
 
-/** In-package variant threading the injection seam (the CLI's RunDeps, unit
- * tests). Deliberately NOT re-exported through `./control` — the seam mirrors
+/** In-package variant threading the injection seam, for the unit tests.
+ * Deliberately NOT re-exported through `./control` — the seam mirrors
  * internal types and is not part of the published surface. */
 export async function destroyWithDeps(
   input: DestroyInput,

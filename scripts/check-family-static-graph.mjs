@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Nothing statically reachable from `@prisma/composer-cli/family` — or from
-// the published `prisma-composer` executable — may import alchemy or effect.
+// Nothing statically reachable from `@prisma/composer-cli/family` may import
+// alchemy or effect.
 //
 // The `prisma` bin imports composer's command family directly, so every module
 // in that entrypoint's static graph loads on `prisma --version`. Alchemy's
@@ -10,14 +10,13 @@
 // that may happen because someone ran an unrelated command.
 //
 // What keeps it out is the lazy boundary already inside the operation modules:
-// operations/deploy.ts, destroy.ts, dev.ts and log.ts each `await import()`
-// their executor, and it is the executors that reach the provider tree
-// (execute-dev.ts and execute-log.ts reach effect/Layer through
-// resolveLocalTargets). That boundary is a load-order mechanism, not an
-// optimization — flattening any of those four dynamic imports breaks this
-// check, which is the intended outcome, not a false positive.
+// operations/deploy.ts and dev.ts each `await import()` their executor, and it
+// is the executors that reach the provider tree (execute-dev.ts reaches
+// effect/Layer through resolveLocalTargets). That boundary is a load-order
+// mechanism, not an optimization — flattening either dynamic import breaks
+// this check, which is the intended outcome, not a false positive.
 //
-// The same walk covers `dist/testing.mjs`: the control-API double's imports
+// The same walk covers `dist/testing.mjs`: the operations double's imports
 // of the real operation modules are type-only, and type-only is a claim about
 // built output — an accidental value import would inline the real control
 // implementation (the @internal scope is bundled) and hand every consumer of
@@ -75,23 +74,11 @@ const CHECKS = [
     allowDynamicImports: true,
   },
   {
-    // The published executable, built by its own tsdown config. `--help`,
-    // `--version` and every grammar error must survive a tree whose alchemy is
-    // unloadable (scripts/check-npm-effect-resolution.mjs asserts exactly that
-    // against a real install), which holds only while start-up loads none of
-    // it. The engine specifier doubles as the proof that the executable's
-    // config left the engine external rather than inlining a private copy.
-    entry: 'dist/bin.mjs',
-    expectedSpecifier: /^@prisma\/cli-engine(\/|$)/,
-    expectedDescription: 'a @prisma/cli-engine import',
-    allowDynamicImports: true,
-  },
-  {
     entry: 'dist/testing.mjs',
     // The non-vacuous marker here is chunk content, not an import: the
     // double's constructor must be defined in the walked source.
-    expectedSource: /createControlDouble/,
-    expectedDescription: 'the createControlDouble definition',
+    expectedSource: /createOperationsDouble/,
+    expectedDescription: 'the createOperationsDouble definition',
     allowDynamicImports: false,
   },
 ];
@@ -238,6 +225,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 process.stderr.write(
-  '\nOK — dist/family.mjs, dist/bin.mjs and dist/testing.mjs are free of alchemy and effect, the ' +
-    'executable keeps the engine external, and the testing graph carries no dynamic imports.\n',
+  '\nOK — dist/family.mjs and dist/testing.mjs are free of alchemy and effect, the family keeps ' +
+    'the engine external, and the testing graph carries no dynamic imports.\n',
 );

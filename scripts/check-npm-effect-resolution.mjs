@@ -7,7 +7,7 @@
 // (`@effect/vitest`, optional platform peers, `effect` itself). Without exact,
 // mutually consistent pins of the whole constellation in the public packages,
 // npm installs a second `effect` and hoists it where alchemy resolves it — the
-// first `prisma-composer deploy` then dies inside a provider it never asked
+// first `prisma deploy` then dies inside a provider it never asked
 // for, with a `TypeError` naming a combinator that version removed. pnpm in
 // this workspace only warns, so the break is invisible in-repo; this check
 // installs the real tarballs with real npm against the real registry.
@@ -26,10 +26,10 @@
 // that breaks, importing alchemy's provider tree from the installed app. The
 // healthy shapes must import it cleanly, which proves the resolved `effect`
 // genuinely satisfies alchemy; the adversarial shape must fail to import it.
-// The healthy shapes also run the built bin's `--help`, and the adversarial
-// shape checks that `--help` survives the broken tree.
+// Every shape also imports the command family the `prisma` bin mounts, which
+// must load in the broken tree too.
 //
-// The `prisma-composer` bin ships in @prisma/composer-cli, so every shape
+// The family ships in @prisma/composer-cli, so every shape
 // installs the composer-cli tarball alongside the composer
 // tarball — npm resolves composer-cli's exact `@prisma/composer` dependency
 // against the co-installed tarball because the versions match, and the
@@ -223,42 +223,35 @@ function importAlchemy(label, appDir, probe = ALCHEMY_PROBE) {
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
-/** Runs the built prisma-composer bin in the scratch app; returns { status, output }. */
-function runCli(label, appDir, args) {
-  const bin = join(appDir, 'node_modules', '.bin', 'prisma-composer');
-  if (!existsSync(bin)) fail(`[${label}] the prisma-composer bin is not installed`);
-  const result = spawnSync(bin, args, {
+/**
+ * Imports the command family from the scratch app, as the `prisma` bin does,
+ * and prints whether it mounts `deploy`; returns { status, output }.
+ */
+function importFamily(label, appDir) {
+  const probe =
+    "const { createComposerFamily } = await import('@prisma/composer-cli/family');" +
+    "console.log(`mounts deploy: ${Object.hasOwn(createComposerFamily().commands, 'deploy')}`);";
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], {
     cwd: appDir,
     encoding: 'utf-8',
   });
-  if (result.error) fail(`[${label}] failed to spawn the prisma-composer bin: ${result.error}`);
+  if (result.error) fail(`[${label}] failed to spawn node for the family import: ${result.error}`);
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /**
- * Asserts the bundled bin starts and reaches its own usage output. The proof is
- * that help lists the commands the family mounts: the engine renders help, so
- * naming every command is what says the family was mounted rather than that
- * some banner was printed.
+ * Asserts the family imports from the installed tarballs and mounts `deploy`,
+ * the command whose dependency graph `effect` affects. Finding the command is
+ * what says the family was built, rather than that some module loaded; which
+ * commands the family has is the family test's business.
  */
-function assertCliStarts(label, appDir) {
-  const help = runCli(label, appDir, ['--help']);
-  // Matched as the engine renders each usage line — `<name> <entry>`, since
-  // cli-engine 0.1.0 lists commands by name alone — not as a bare word: "dev"
-  // and "log" appear inside "development", "--log-level" and the prose around
-  // them, so a bare search would call the family mounted on the strength of
-  // unrelated text.
-  const missing = ['deploy', 'destroy', 'dev', 'log'].filter(
-    (command) => !help.output.includes(`${command} <entry>`),
-  );
-  if (missing.length > 0) {
+function assertFamilyImports(label, appDir, situation) {
+  const family = importFamily(label, appDir);
+  if (family.status !== 0 || !family.output.includes('mounts deploy: true')) {
     fail(
-      `[${label}] \`prisma-composer --help\` did not list ${missing.join(', ')} in a healthy ` +
-        `tree, so the command family was not mounted (exit ${help.status}):\n${help.output}`,
+      `[${label}] @prisma/composer-cli/family did not import and mount deploy in ${situation} ` +
+        `(exit ${family.status}); the family's static graph must not reach alchemy:\n${family.output}`,
     );
-  }
-  if (/is not a function|Cannot find module/.test(help.output)) {
-    fail(`[${label}] the CLI crashed on its module graph in a healthy tree:\n${help.output}`);
   }
 }
 
@@ -312,10 +305,10 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     fail(`[${label}] alchemy's provider tree did not import in a healthy tree:\n${probe.output}`);
   }
 
-  assertCliStarts(label, appDir);
+  assertFamilyImports(label, appDir, 'a healthy tree');
 
   process.stderr.write(
-    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, alchemy imports, CLI starts\n`,
+    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, alchemy imports, the family imports\n`,
   );
 }
 
@@ -326,8 +319,8 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
  * suitable release exists relative to wherever our pin sits, which made the
  * test hostage to the registry. This shape builds the same end state directly,
  * with an override, so it keeps proving the thing that matters: when alchemy
- * resolves an `effect` we did not pin, importing alchemy fails, and `--help`
- * still works.
+ * resolves an `effect` we did not pin, importing alchemy fails, and the family
+ * still imports.
  */
 const WRONG_EFFECT = '4.0.0-beta.93';
 
@@ -377,21 +370,14 @@ async function checkAdversarialShape(tarballs) {
     `[${label}] alchemy fails to import on effect, as expected: ${verdict.message}\n`,
   );
 
-  // `--help` must SURVIVE a tree this broken. The command family's static graph
-  // is alchemy-free and effect-free (scripts/check-family-static-graph.mjs
-  // proves it against built output), so help, version and grammar errors never
-  // load the modules that cannot load. Before that was true, every command met
-  // the raw TypeError and this asserted the opposite.
-  const help = runCli(label, appDir, ['--help']);
-  if (help.status !== 0 || /is not a function/.test(help.output)) {
-    fail(
-      `[${label}] \`prisma-composer --help\` did not survive a broken tree (exit ` +
-        `${help.status}); the family's static graph must not reach alchemy:\n${help.output}`,
-    );
-  }
+  // The family must still import in a tree this broken. Its static graph is
+  // alchemy-free and effect-free (scripts/check-family-static-graph.mjs proves
+  // it against built output), so `prisma --help`, `--version` and grammar
+  // errors never load the modules that cannot load.
+  assertFamilyImports(label, appDir, 'a broken tree');
 
   process.stderr.write(
-    `[${label}] OK — the broken tree fails at the alchemy import, and --help still works\n`,
+    `[${label}] OK — the broken tree fails at the alchemy import, and the family still imports\n`,
   );
 }
 

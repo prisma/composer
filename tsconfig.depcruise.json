@@ -45,14 +45,12 @@
       ],
       "@internal/nextjs": ["./packages/0-framework/2-authoring/nextjs/src/exports/index.ts"],
       "@internal/assemble": ["./packages/0-framework/3-tooling/assemble/src/exports/index.ts"],
-      "@internal/cli/bin": ["./packages/0-framework/3-tooling/cli/src/bin.ts"],
       "@internal/cli/report": [
         "./packages/0-framework/3-tooling/cli/src/exports/render-deployment.ts"
       ],
       "@internal/cli/control": ["./packages/0-framework/3-tooling/cli/src/exports/control.ts"],
       "@internal/cli/family": ["./packages/0-framework/3-tooling/cli/src/exports/family.ts"],
       "@internal/cli/testing": ["./packages/0-framework/3-tooling/cli/src/exports/testing.ts"],
-      "@internal/cli": ["./packages/0-framework/3-tooling/cli/src/exports/index.ts"],
       "@internal/lowering/postgres": [
         "./packages/1-prisma-cloud/0-lowering/lowering/src/exports/postgres.ts"
       ],

@@ -12,6 +12,7 @@
     "lint:fix": "biome check --write .",
     "lint:fix:unsafe": "biome check --write --unsafe .",
     "lint:casts": "node scripts/lint-casts.mjs",
+    "lint:retired-binary-name": "node scripts/lint-retired-binary-name.mjs",
     "rules:sync": "node scripts/sync-agent-rules.mjs",
     "lint:rules:symlinks": "node scripts/sync-agent-rules.mjs --check",
     "check:publish-deps": "node scripts/check-publish-deps.mjs",
@@ -25,7 +26,8 @@
     "test": "turbo run test",
     "test:scripts": "node --test scripts/*.test.mjs scripts/*.test.ts",
     "test:conformance:local": "pnpm --filter @internal/streams test:conformance:local",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && pnpm typecheck:scripts",
+    "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "clean": "turbo run clean",
     "prepare": "husky && skills add prisma/skills --skill \"*\" --agent universal claude-code -y && skills add ./skills-contrib --skill \"*\" --agent universal claude-code -y && node scripts/sync-agent-rules.mjs",
     "lint:deps": "depcruise --config dependency-cruiser.config.mjs packages examples test website && node scripts/lint-architecture-coverage.mjs && node scripts/lint-publishable-location.mjs && node scripts/lint-framework-vocabulary.mjs && node scripts/lint-orm-pins.mjs && node scripts/lint-contract-snapshots.mjs"
@@ -33,6 +35,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@clack/prompts": "^1.7.0",
+    "@prisma/composer": "workspace:0.26.0",
+    "@prisma/composer-cli": "workspace:0.26.0",
     "dependency-cruiser": "^17.4.3",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
@@ -43,10 +47,13 @@
     "typescript": "^6.0.3"
   },
   "pnpm": {
+    "overrides": {
+      "@prisma/composer-cli": "workspace:*"
+    },
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"
     ]
   },
-  "version": "0.25.0"
+  "version": "0.26.0"
 }

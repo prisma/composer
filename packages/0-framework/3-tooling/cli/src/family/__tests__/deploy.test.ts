@@ -1,32 +1,21 @@
 /**
- * `deploy` and `destroy` driven end to end through the engine — real grammar,
- * real argument validation, the real credential check, the real settlement
- * rules — with the published control double standing in for alchemy.
- *
- * This is the semantic half of the CLI's end-to-end coverage. It replaces the
- * old suite that drove a bespoke runner's `run()` and asserted on
- * `console.log` spies: everything those tests reached around, the engine now
- * owns, so the only honest way to cover it is to run a real invocation and
- * look at the exit code and the rendered output.
- *
- * The harness names its binary `prisma-test`, not `prisma-composer` — the
- * binary name belongs to the process, so it is pinned by the process-level
- * test (test/integration/test/cli.engine-shell.test.ts) instead.
+ * `deploy` driven end to end through the engine — real grammar, real
+ * argument validation, the real credential check, the real settlement rules —
+ * with the published operations double standing in for alchemy.
  */
 import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { notOk, ok, okVoid } from '@internal/foundation/result';
+import { notOk, ok } from '@internal/foundation/result';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
-import { type ControlDouble, createControlDouble } from '../../testing/control-double.ts';
-import { createDestroyCommand } from '../commands/destroy.ts';
+import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
 
-type Fixtures = Parameters<typeof createControlDouble>[0];
+type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
 /**
  * A real directory with an `alchemy` binary installed, because the handler's
@@ -57,14 +46,10 @@ function activeCredential() {
 
 interface Harness {
   readonly cli: TestCli;
-  readonly double: ControlDouble;
+  readonly double: OperationsDouble;
 }
 
-/**
- * Composer's family mounted at the top level of a test CLI, exactly as
- * `createComposerCli` mounts it — including `destroy`, which the bin mounts
- * on top of the family now that the family no longer ships it.
- */
+/** Composer's family mounted at the top level of a test CLI, as the `prisma` host mounts it. */
 function composerCli(
   spec: {
     readonly fixtures?: Fixtures;
@@ -72,11 +57,11 @@ function composerCli(
     readonly spawnScript?: ScriptedChildProgram;
   } = {},
 ): Harness {
-  const double = createControlDouble(spec.fixtures ?? {});
+  const double = createOperationsDouble(spec.fixtures ?? {});
   const family = createComposerFamily({ operations: double.operations });
   const cli = createTestCli({
     commandFamilies: [family],
-    commands: { ...family.commands, destroy: createDestroyCommand(double.operations) },
+    commands: family.commands,
     config: { composer: validComposerSection() },
     ...(spec.signedIn === false ? {} : { credential: activeCredential() }),
     ...(spec.spawnScript === undefined ? {} : { spawnScript: spec.spawnScript }),
@@ -112,15 +97,6 @@ describe('argument validation', () => {
     expect(double.calls.deploy).toEqual([]);
   });
 
-  test('destroy without an entry fails the same way', async () => {
-    const { cli, double } = composerCli();
-    const result = await cli.run(['destroy', '--production'], AS_TTY);
-
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('Expected argument for entry');
-    expect(double.calls.destroy).toEqual([]);
-  });
-
   test('an unknown flag is refused, naming the flag', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(['deploy', 'src/service.ts', '--nope'], AS_TTY);
@@ -142,28 +118,6 @@ describe('argument validation', () => {
 
     expect(result.exitCode).toBe(2);
     expect(plain(result.stderr)).toContain('--production');
-  });
-
-  test('destroy demands a target, and says which two flags provide one', async () => {
-    const { cli, double } = composerCli();
-    const result = await cli.run(['destroy', 'src/service.ts'], AS_TTY);
-
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('DEPLOY.TARGET_MISSING');
-    expect(plain(result.stderr)).toContain('--stage <name>');
-    expect(plain(result.stderr)).toContain('--production');
-    expect(double.calls.destroy).toEqual([]);
-  });
-
-  test('destroy refuses both targets at once', async () => {
-    const { cli, double } = composerCli();
-    const result = await cli.run(['destroy', 'src/service.ts', '--stage', 'x', '--production'], {
-      ...AS_TTY,
-    });
-
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('DEPLOY.TARGET_CONFLICT');
-    expect(double.calls.destroy).toEqual([]);
   });
 
   test('deploy passes entry, --name and --stage through to the operation verbatim', async () => {
@@ -190,16 +144,6 @@ describe('argument validation', () => {
       },
     ]);
   });
-
-  test('destroy --stage and --production become the operation’s two targets', async () => {
-    const staged = composerCli();
-    await staged.cli.run(['destroy', 'src/service.ts', '--stage', 'feat-auth'], AS_TTY);
-    expect(staged.double.calls.destroy[0]?.target).toEqual({ kind: 'stage', stage: 'feat-auth' });
-
-    const production = composerCli();
-    await production.cli.run(['destroy', 'src/service.ts', '--production'], AS_TTY);
-    expect(production.double.calls.destroy[0]?.target).toEqual({ kind: 'production' });
-  });
 });
 
 /**
@@ -209,16 +153,13 @@ describe('argument validation', () => {
  * diagnostics — instead of being refused up front as it was on engine 0.1.1.
  */
 describe('--json on a spawning command', () => {
-  for (const argv of [
-    ['deploy', 'src/service.ts'],
-    ['destroy', 'src/service.ts', '--production'],
-  ]) {
+  for (const argv of [['deploy', 'src/service.ts']]) {
     test(`\`${argv[0]} --json\` runs and emits one result frame`, async () => {
       const { cli, double } = composerCli();
       const result = await cli.run([...argv, '--json'], AS_TTY);
 
       expect(result.exitCode).toBe(0);
-      expect([...double.calls.deploy, ...double.calls.destroy]).toHaveLength(1);
+      expect(double.calls.deploy).toHaveLength(1);
       const frames = result.json.filter((frame) => frame.kind === 'result');
       expect(frames).toHaveLength(1);
       expect(frames[0]?.envelope).toMatchObject({ ok: true, commandId: argv[0] });
@@ -243,15 +184,6 @@ describe('credentials', () => {
     expect(plain(result.stderr)).toContain('CLI.CREDENTIALS_REQUIRED');
     expect(result.spawns).toEqual([]);
     expect(double.calls.deploy).toEqual([]);
-  });
-
-  test('a signed-out destroy is refused the same way', async () => {
-    const { cli, double } = composerCli({ signedIn: false });
-    const result = await cli.run(['destroy', 'src/service.ts', '--production'], AS_TTY);
-
-    expect(result.exitCode).toBe(2);
-    expect(plain(result.stderr)).toContain('CLI.CREDENTIALS_REQUIRED');
-    expect(double.calls.destroy).toEqual([]);
   });
 
   /**
@@ -308,15 +240,6 @@ describe('settlement', () => {
     test(`a deploy whose converge is killed by ${signal} settles ${String(code)} in silence`, async () => {
       const { cli } = composerCli({ spawnScript: childKilledBy(signal) });
       const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
-
-      expect(result.exitCode).toBe(code);
-      expect(plain(result.stderr)).toBe('');
-      expect(plain(result.stdout)).toBe('');
-    });
-
-    test(`a destroy whose converge is killed by ${signal} settles ${String(code)} in silence`, async () => {
-      const { cli } = composerCli({ spawnScript: childKilledBy(signal) });
-      const result = await cli.run(['destroy', 'src/service.ts', '--production'], AS_TTY);
 
       expect(result.exitCode).toBe(code);
       expect(plain(result.stderr)).toBe('');
@@ -390,29 +313,5 @@ describe('what a successful run presents', () => {
     expect(result.exitCode).toBe(0);
     expect(plain(result.stderr)).toContain('Deployed.');
     expect(result.presented?.data).toEqual({ summary: null });
-  });
-
-  test('destroy reports success', async () => {
-    const { cli } = composerCli({ fixtures: { destroy: okVoid() } });
-    const result = await cli.run(['destroy', 'src/service.ts', '--production'], AS_TTY);
-
-    expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toContain('Destroyed.');
-  });
-
-  test("destroy's no-prior-state notice reaches the user as a warning, not a failure", async () => {
-    const { cli } = composerCli({
-      fixtures: { destroyEvents: [{ kind: 'no-local-deploy-state', cwd: CWD }] },
-    });
-    const result = await cli.run(['destroy', 'src/service.ts', '--production'], AS_TTY);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.events).toContainEqual({
-      kind: 'message',
-      severity: 'warn',
-      text:
-        `No prior deploy state under ${CWD} — if you deployed from a different directory, run ` +
-        'destroy from there; otherwise this is a no-op.',
-    });
   });
 });
