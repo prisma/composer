@@ -7,12 +7,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
 import { bucketsClient, computeClient } from '../client.ts';
 import {
   type DaemonName,
+  daemonStateDir,
+  defaultRegistryRoot,
   ensureDaemon,
   isPidAlive,
   lockFilePath,
@@ -21,7 +24,13 @@ import {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
-import { ensureFreshDaemon, entryFor, tempDir, waitFor } from './helpers.ts';
+import {
+  ensureFreshDaemon,
+  entryFor,
+  skipContendedDaemonPorts,
+  tempDir,
+  waitFor,
+} from './helpers.ts';
 
 let registryRoot: string;
 const started = new Set<DaemonName>();
@@ -42,6 +51,20 @@ async function ensure(name: DaemonName): Promise<{ url: string }> {
   const result = await ensureFreshDaemon(name, registryRoot);
   started.add(name);
   return result;
+}
+
+/**
+ * The daemon's listening lines, once at least one is in its log. Under bun,
+ * the daemon can answer /health before its `listen` callback writes the line.
+ */
+async function awaitListeningLines(logPath: string): Promise<string[]> {
+  const listeningLines = () =>
+    fs
+      .readFileSync(logPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.includes('listening on 127.0.0.1:'));
+  await waitFor(() => listeningLines().length > 0, 5000);
+  return listeningLines();
 }
 
 function readEntry(name: DaemonName): RegistryEntry {
@@ -203,50 +226,26 @@ describe('ensureDaemon', () => {
 
 describe('fresh-allocation port retry (spec § 2 step 5)', () => {
   test('a bind failure on a fresh allocation retries the next free port', async () => {
-    // Find a REAL free port at or above 4300 to squat — the machine may
-    // have unrelated processes (other local daemons, other test runs)
-    // already bound near 4300, and this test must not depend on the
-    // externally-quietest possible machine. Whatever port that turns out
-    // to be, fake-occupy every port below it in THIS test's own registry
-    // so ensureDaemon's own "smallest unused" calculation lands on the
-    // exact same port this test is about to squat.
-    const squatPort = await getPort({ port: portNumbers(4300, 4500) });
-    fs.mkdirSync(registryRoot, { recursive: true });
-    for (let p = 4300; p < squatPort; p++) {
-      fs.writeFileSync(
-        path.join(registryRoot, `fake-occupant-${String(p)}.json`),
-        JSON.stringify({ pid: process.pid, port: p, version: 'fake', logPath: '/dev/null' }),
-      );
-    }
+    const entry = fileURLToPath(
+      new URL('./fixtures/port-taken-on-first-start.ts', import.meta.url),
+    );
+    const result = await ensureFreshDaemon('compute', registryRoot, entry);
+    started.add('compute');
+    const resultPort = Number(new URL(result.url).port);
 
-    const squatter = http.createServer();
-    await new Promise<void>((resolve, reject) => {
-      squatter.once('error', reject);
-      squatter.listen(squatPort, '127.0.0.1', () => {
-        squatter.off('error', reject);
-        resolve();
-      });
-    });
-    try {
-      const result = await ensure('compute');
-      const resultPort = Number(new URL(result.url).port);
-      expect(resultPort).toBeGreaterThan(squatPort);
+    const takenPort = Number(
+      fs.readFileSync(path.join(daemonStateDir(registryRoot, 'compute'), 'taken-port'), 'utf8'),
+    );
+    expect(resultPort).toBeGreaterThan(takenPort);
 
-      const entry = readEntry('compute');
-      expect(entry.port).toBe(resultPort);
-      expect(isPidAlive(entry.pid)).toBe(true);
+    const entryRecord = readEntry('compute');
+    expect(entryRecord.port).toBe(resultPort);
+    expect(isPidAlive(entryRecord.pid)).toBe(true);
 
-      // Exactly one successful spawn — the failed squatPort attempt never
-      // reported healthy, so it never wrote a listening line either.
-      const logText = fs.readFileSync(entry.logPath, 'utf8');
-      const startupLines = logText
-        .split('\n')
-        .filter((line) => line.includes('listening on 127.0.0.1:'));
-      expect(startupLines).toHaveLength(1);
-      expect(startupLines[0]).toContain(`127.0.0.1:${String(resultPort)}`);
-    } finally {
-      squatter.close();
-    }
+    // The failed start never bound, so only the retried start logs a listening line.
+    expect(await awaitListeningLines(entryRecord.logPath)).toEqual([
+      `[dev-emulators] compute-main listening on 127.0.0.1:${String(resultPort)}`,
+    ]);
   }, 15_000);
 
   test('a persisted port occupied at spawn never moves — the pinned failure, no retry', async () => {
@@ -397,11 +396,7 @@ describe('concurrent-ensure protocol', () => {
     // exactly once into its own stdio log. A lock that failed to serialize
     // the two racing calls would show a second spawn's listening line here
     // too, even after the losing process was since killed.
-    const logText = fs.readFileSync(entry.logPath, 'utf8');
-    const startupLines = logText
-      .split('\n')
-      .filter((line) => line.includes('listening on 127.0.0.1:'));
-    expect(startupLines).toHaveLength(1);
+    expect(await awaitListeningLines(entry.logPath)).toHaveLength(1);
   }, 20_000);
 
   test('a stale lock is broken and ensure proceeds', async () => {
@@ -448,5 +443,51 @@ describe('concurrent-ensure protocol', () => {
     } finally {
       holder.kill('SIGKILL');
     }
+  }, 15_000);
+});
+
+describe('PRISMA_COMPOSER_EMULATORS_DIR', () => {
+  const variable = 'PRISMA_COMPOSER_EMULATORS_DIR';
+  let saved: string | undefined;
+
+  beforeEach(() => {
+    saved = process.env[variable];
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env[variable];
+    else process.env[variable] = saved;
+  });
+
+  test('unset, the registry root is ~/.prisma-composer/emulators', () => {
+    delete process.env[variable];
+    expect(defaultRegistryRoot()).toBe(path.join(os.homedir(), '.prisma-composer', 'emulators'));
+  });
+
+  test('an absolute path becomes the registry root', () => {
+    process.env[variable] = registryRoot;
+    expect(defaultRegistryRoot()).toBe(registryRoot);
+  });
+
+  test('a relative path is refused with a structured error naming the variable', () => {
+    process.env[variable] = 'emulators';
+    expect(() => defaultRegistryRoot()).toThrow(
+      expect.objectContaining({
+        code: 'DEV.EMULATORS_DIR_INVALID',
+        message: 'PRISMA_COMPOSER_EMULATORS_DIR must be an absolute path; got "emulators".',
+      }),
+    );
+  });
+
+  test('a daemon started without a registryRoot registers under the directory it names', async () => {
+    process.env[variable] = registryRoot;
+    await skipContendedDaemonPorts(registryRoot);
+    const { url } = await ensureDaemon('compute', entryFor('compute'));
+    started.add('compute');
+
+    expect(readEntry('compute')).toMatchObject({
+      port: Number(new URL(url).port),
+      logPath: path.join(registryRoot, 'compute.log'),
+    });
   }, 15_000);
 });

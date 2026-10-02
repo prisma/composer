@@ -6,4 +6,5 @@
  * reference `control/extension.ts` carries. Implementation lives in
  * `../local-target/descriptor.ts`.
  */
+export { defaultRegistryRoot as emulatorRegistryRoot } from '@internal/dev-emulators';
 export { localTargetDescriptor } from '../local-target/descriptor.ts';

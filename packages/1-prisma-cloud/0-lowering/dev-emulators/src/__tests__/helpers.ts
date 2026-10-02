@@ -119,7 +119,14 @@ const DEFAULT_MIN_PORT = 4300;
 export async function ensureFreshDaemon(
   name: DaemonName,
   registryRoot: string,
+  entry: string = entryFor(name),
 ): Promise<{ url: string }> {
+  await skipContendedDaemonPorts(registryRoot);
+  return ensureDaemon(name, entry, { registryRoot });
+}
+
+/** Records every port below the first free one at or above 4300 as taken in `registryRoot`, so its first daemon starts on a free port. */
+export async function skipContendedDaemonPorts(registryRoot: string): Promise<void> {
   const freePort = await getPort({ port: portNumbers(DEFAULT_MIN_PORT, DEFAULT_MIN_PORT + 200) });
   fs.mkdirSync(registryRoot, { recursive: true });
   for (let port = DEFAULT_MIN_PORT; port < freePort; port++) {
@@ -128,7 +135,6 @@ export async function ensureFreshDaemon(
       JSON.stringify({ pid: process.pid, port, version: 'fake', logPath: '/dev/null' }),
     );
   }
-  return ensureDaemon(name, entryFor(name), { registryRoot });
 }
 
 const DEFAULT_MIN_SERVICE_PORT = 3000;
