@@ -81,49 +81,6 @@ export async function resolveMigrationsDir(configPath: string): Promise<string> 
   return (await resolveOrmConfig(configPath)).migrationsDir;
 }
 
-/** Percent-encode each path segment so `#` / `?` stay path data, not URL delimiters. */
-function encodeFileUrlPathname(pathname: string): string {
-  return pathname
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-}
-
-/**
- * `file://` href for an absolute filesystem path, without `node:url`
- * (invariant 5). Bare Windows paths (`C:\…`) cannot be passed to `import()` —
- * the loader treats `C:` as the URL protocol. Path segments are encoded so a
- * directory name containing `#` or `?` is not parsed as a fragment/query.
- */
-export function fileUrlHrefFromAbsolutePath(absolutePath: string): string {
-  const normalized = absolutePath.replace(/\\/g, '/');
-  if (/^[a-zA-Z]:\//.test(normalized)) {
-    // Drive letter stays literal (`C:`); only segments after it are encoded.
-    const drive = normalized.slice(0, 2);
-    const tail = encodeFileUrlPathname(normalized.slice(2));
-    return `file:///${drive}${tail}`;
-  }
-  if (normalized.startsWith('//')) {
-    // UNC \\server\share\path → file://server/share/path
-    return `file:${encodeFileUrlPathname(normalized)}`;
-  }
-  return `file://${encodeFileUrlPathname(normalized)}`;
-}
-
-/** Loads the emitted `contract.json` at the resolved artifact path. */
-export async function loadContractJson(contractArtifactPath: string): Promise<unknown> {
-  // Freshen the specifier so repeated dev-loop reconciles re-read the file
-  // after `prisma contract emit` updates it in place. Always use a file://
-  // URL — required on Windows, harmless elsewhere.
-  const loaded = await import(
-    `${fileUrlHrefFromAbsolutePath(contractArtifactPath)}?t=${Date.now()}`,
-    {
-      with: { type: 'json' },
-    }
-  );
-  return loaded.default;
-}
-
 /**
  * The pack-head identity entries the `OrmMigration` resource folds into its
  * diff key: `"<packId>:<headRefHash>"` — each pack's contract-space head ref,
