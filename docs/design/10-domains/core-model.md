@@ -1029,14 +1029,17 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
       // deployment target. No `url` entity — a connection string is not a public
       // endpoint, and only this descriptor could know that (ADR-0033). `id` is the
       // module provision id (e.g. "db"), so a resource shared by several consumers
-      // is created exactly once.
+      // is created exactly once. The `url` output references the whole migration,
+      // so every consumer deploys only after the schema is at the target (ADR-0022).
       postgres: Object.assign(
         ({ id, application }) =>
           Effect.gen(function* () {
             const db = yield* Prisma.Database(`${id}-db`, { project: projectIdOf(application), name: id, region })
             const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id })
-            const warm = yield* Prisma.PgWarm(`${id}-warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
-            return { outputs: { url: warm.url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
+            const warm = yield* PgWarm(`${id}-warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
+            const migration = yield* OrmMigration(`${id}-migrate`, { url: warm.url, /* target ref, config path */ })
+            const url = Output.map(Output.all(warm.url, Output.of(migration)), ([value]) => value)
+            return { outputs: { url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
           }),
         { kind: "resource" as const },
       ),

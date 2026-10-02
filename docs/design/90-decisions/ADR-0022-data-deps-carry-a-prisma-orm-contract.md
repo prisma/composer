@@ -142,6 +142,16 @@ place that can actually enforce it, and it means a running service can never be
 crashed (nor meaningfully warned) by a runtime marker check. The framework
 injects the connection URL at hydrate, so user code never reads the environment.
 
+> Amended 2026-10-02: **a service that uses a database deploys only after that
+> database's migration has completed.** The guarantee above needs this order:
+> without it, new code can start against a database that is not yet at its
+> target. The lowering enforces it by making the database's `url` output
+> reference the migration step, so every consumer's environment rows and
+> deployment wait for it, and a failed migration stops the new code from
+> shipping. Old code still runs against the new schema in the window between
+> the migration finishing and the new deployment going live. What keeps that
+> window safe is the rule that a destructive step needs an explicit opt-in.
+
 **The target must be a ref, not a bare hash.** A marker's invariants only ever accumulate — a step's postcondition, once recorded, is never removed. Keying the migration on `storageHash` alone would silently skip a pure data-invariant change: it is an A→A self-edge (the same hash), which a hash-keyed deploy reads as "already there". Making the target a ref — hash equality plus invariant subset, mirroring Prisma ORM's own verifier — closes this. (Before the replay-only revision, the ref also ruled `dbInit` out for invariant-bearing targets, since additive-only synthesis never runs the data steps that establish invariants; with synthesis gone, replay covers that case by construction.)
 
 ## Consequences
