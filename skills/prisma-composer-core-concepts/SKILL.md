@@ -276,6 +276,13 @@ including the first schema of a new database, follows one loop:
 4. Commit `migrations/` with the change, then deploy. A fresh database
    replays the whole path from empty.
 
+Every service that uses the database deploys only after its migration
+completes: a failed migration means the new code does not ship, and a
+change that moves the migration target (a new contract or ref) redeploys
+those services even when their code is unchanged. The old code serves
+against the new schema until the new deployment is live, so keep each
+migration compatible with the code it replaces.
+
 If no authored path reaches the target contract, deploy (and `dev` against a
 stale local database) refuses with `MIGRATION_PATH_NOT_FOUND`; its message
 lists the two ways out: author the missing migration, or, when iterating
