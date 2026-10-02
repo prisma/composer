@@ -2,6 +2,7 @@
 
 import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
+import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
 import { packHeadRefHashes, resolveOrmConfig } from '../orm-config.ts';
 import { resolveTargetRef, targetStorageHash } from '../orm-migrate.ts';
@@ -50,7 +51,7 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
 
       // Keyed on the ref identity so a data-only change (same hash, new
       // invariant) still triggers reconcile.
-      yield* OrmMigration(`${id}-migrate`, {
+      const migration = yield* OrmMigration(`${id}-migrate`, {
         url: warm.url,
         migrationsDir,
         currentContractHash,
@@ -64,7 +65,11 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
       // No `url` entity field — same reason as postgres: a connection string is
       // not a public endpoint, and only the descriptor can know that.
       return {
-        outputs: { url: warm.url },
+        // Consumers deploy after the url's upstreams, so it also references
+        // the whole migration: a service must not boot before its schema.
+        outputs: {
+          url: Output.map(Output.all(warm.url, Output.of(migration)), ([value]) => value),
+        },
         entities: [{ kind: 'postgres-database', id: db.databaseId }],
       };
     });
