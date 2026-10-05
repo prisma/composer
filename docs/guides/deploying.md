@@ -123,8 +123,8 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 
 ## Build first
 
-Composer runs the `alchemy` it is installed with: it finds that package from
-its own location and starts its entry with Node ([Runtime](#runtime) says
+Composer runs the `alchemy` that your app's `@prisma/composer` depends on: it
+finds that package beside `@prisma/composer` and starts its entry with Node ([Runtime](#runtime) says
 when Alchemy then moves to Bun). Your app does not need `alchemy` as a direct
 dependency, and no `node_modules/.bin/alchemy` link is needed on any platform.
 
