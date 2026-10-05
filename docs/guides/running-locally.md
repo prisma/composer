@@ -135,7 +135,10 @@ token, workspace, or network is involved. Three consequences worth knowing:
   variable to an absolute directory and `dev` starts and finds its own
   emulators there instead, with their own data, so two checkouts or two CI
   jobs never share a daemon by accident. Both pick free ports, so they can
-  run side by side. A relative path is refused with `DEV.EMULATORS_DIR_INVALID`.
+  run side by side. The variable doesn't cover local Postgres: `@prisma/dev`
+  keeps its server records machine-wide whatever it's set to, so two registry
+  roots still share local Postgres data. A relative path is refused with
+  `DEV.EMULATORS_DIR_INVALID`.
   `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`
   returns the directory in effect.
 - **The local Postgres is one shared session.** Every connection to a local
