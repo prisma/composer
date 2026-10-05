@@ -7,7 +7,7 @@ import type {
   PrismaAppConfig,
 } from '../control/app-config.ts';
 import type { AlchemyStateLayer } from '../control/deploy.ts';
-import { localTargetProviders, resolveLocalTargets } from '../control/local-target.ts';
+import { devState, localTargetProviders, resolveLocalTargets } from '../control/local-target.ts';
 
 const stateSentinel = (tag: string): AlchemyStateLayer =>
   ({ __sentinel: tag }) as unknown as AlchemyStateLayer;
@@ -108,5 +108,11 @@ describe('localTargetProviders', () => {
 
   test('an empty resolved map yields the empty layer', () => {
     expect(localTargetProviders(new Map(), new Map(), '/tmp/dev')).toBe(Layer.empty);
+  });
+});
+
+describe('devState()', () => {
+  test('is a state layer the dev stack passes to lower()', () => {
+    expect(Layer.isLayer(devState())).toBe(true);
   });
 });

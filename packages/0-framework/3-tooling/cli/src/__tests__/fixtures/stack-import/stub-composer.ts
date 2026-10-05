@@ -28,7 +28,7 @@ plugin({
     build.module(
       '@prisma/composer/local-target',
       js(
-        "export const DEV_DIR = '.dev'; export const localState = () => ({}); export const localTargetProviders = () => ({}); export const resolveLocalTargets = async () => new Map();",
+        "export const DEV_DIR = '.dev'; export const devState = () => ({}); export const localTargetProviders = () => ({}); export const resolveLocalTargets = async () => new Map();",
       ),
     );
   },
