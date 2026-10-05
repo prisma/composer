@@ -28,6 +28,7 @@ import {
   ensureFreshDaemon,
   entryFor,
   skipContendedDaemonPorts,
+  sleep,
   tempDir,
   waitFor,
 } from './helpers.ts';
@@ -54,8 +55,9 @@ async function ensure(name: DaemonName): Promise<{ url: string }> {
 }
 
 /**
- * The daemon's listening lines, once at least one is in its log. Under bun,
- * the daemon can answer /health before its `listen` callback writes the line.
+ * The daemon's listening lines, once at least one is in its log and the count
+ * holds across two reads. Under bun, the daemon can answer /health before its
+ * `listen` callback writes the line, and a second spawn's line can land later.
  */
 async function awaitListeningLines(logPath: string): Promise<string[]> {
   const listeningLines = () =>
@@ -64,7 +66,14 @@ async function awaitListeningLines(logPath: string): Promise<string[]> {
       .split('\n')
       .filter((line) => line.includes('listening on 127.0.0.1:'));
   await waitFor(() => listeningLines().length > 0, 5000);
-  return listeningLines();
+  const deadline = Date.now() + 5000;
+  let previous = listeningLines();
+  for (;;) {
+    await sleep(500);
+    const current = listeningLines();
+    if (current.length === previous.length || Date.now() >= deadline) return current;
+    previous = current;
+  }
 }
 
 function readEntry(name: DaemonName): RegistryEntry {
