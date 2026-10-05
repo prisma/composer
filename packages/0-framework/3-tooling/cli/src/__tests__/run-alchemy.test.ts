@@ -278,7 +278,7 @@ describe('reproduceCommand()', () => {
     ["o'brien", "'o'\\''brien'", '"o\'brien"'],
     ['say "hi"', '\'say "hi"\'', '"say ""hi"""'],
   ] as const) {
-    test(`quotes ${stage} so each platform's shell reads it literally`, () => {
+    test(`quotes ${stage} as far as each platform's shell quoting allows`, () => {
       const staged = { ...invocation, stage };
       const prefix = 'alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage';
 
