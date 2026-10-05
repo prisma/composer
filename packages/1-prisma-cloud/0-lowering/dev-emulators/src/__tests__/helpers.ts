@@ -125,7 +125,11 @@ export async function ensureFreshDaemon(
   return ensureDaemon(name, entry, { registryRoot });
 }
 
-/** Records every port below the first free one at or above 4300 as taken in `registryRoot`, so its first daemon starts on a free port. */
+/**
+ * Records every port below the first free one at or above 4300 as taken in
+ * `registryRoot`. `get-port` then holds that free port inside this process,
+ * so the registry's first daemon starts on the next free port above it.
+ */
 export async function skipContendedDaemonPorts(registryRoot: string): Promise<void> {
   const freePort = await getPort({ port: portNumbers(DEFAULT_MIN_PORT, DEFAULT_MIN_PORT + 200) });
   fs.mkdirSync(registryRoot, { recursive: true });

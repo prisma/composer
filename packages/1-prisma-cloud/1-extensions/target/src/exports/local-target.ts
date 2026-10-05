@@ -1,10 +1,12 @@
 /**
- * The extension's local-target control-plane entry (ADR-0041, operator
- * directive; naming, operator 2026-07-23) — a SEPARATE entry from
- * `./control`, loaded only via the lazy
- * `localTarget: () => import('@prisma/composer-prisma-cloud/local-target').then(...)`
- * reference `control/extension.ts` carries. Implementation lives in
- * `../local-target/descriptor.ts`.
+ * The extension's local-target control-plane entry (ADR-0041), a separate
+ * entry from `./control`. `control/extension.ts` loads `localTargetDescriptor`
+ * through its lazy `localTarget` reference; the descriptor lives in
+ * `../local-target/descriptor.ts`. The entry also exposes the emulator
+ * registry root and the variable that sets it, from `@internal/dev-emulators`.
  */
-export { defaultRegistryRoot as emulatorRegistryRoot } from '@internal/dev-emulators';
+export {
+  defaultRegistryRoot as emulatorRegistryRoot,
+  EMULATORS_DIR_ENV,
+} from '@internal/dev-emulators';
 export { localTargetDescriptor } from '../local-target/descriptor.ts';

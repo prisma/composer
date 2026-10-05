@@ -14,4 +14,6 @@ declare module '@prisma/composer-prisma-cloud/local-target' {
   import type { LocalTargetDescriptor } from '@internal/core/config';
 
   export function localTargetDescriptor(): LocalTargetDescriptor;
+  export function emulatorRegistryRoot(): string;
+  export const EMULATORS_DIR_ENV: 'PRISMA_COMPOSER_EMULATORS_DIR';
 }

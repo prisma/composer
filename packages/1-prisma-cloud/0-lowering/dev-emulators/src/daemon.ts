@@ -114,26 +114,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const EMULATORS_DIR_VARIABLE = 'PRISMA_COMPOSER_EMULATORS_DIR';
+/** The environment variable that names the emulator registry root. */
+export const EMULATORS_DIR_ENV = 'PRISMA_COMPOSER_EMULATORS_DIR';
 
-/** `registryRoot`'s default: `$PRISMA_COMPOSER_EMULATORS_DIR` (an absolute path) when set, else `~/.prisma-composer/emulators/`. */
+/** `registryRoot`'s default: `$PRISMA_COMPOSER_EMULATORS_DIR` (an absolute path, normalised) when set, else `~/.prisma-composer/emulators/`. */
 export function defaultRegistryRoot(): string {
-  const dir = process.env[EMULATORS_DIR_VARIABLE];
+  const dir = process.env[EMULATORS_DIR_ENV];
   if (dir === undefined || dir === '') {
     return path.join(os.homedir(), '.prisma-composer', 'emulators');
   }
   if (!path.isAbsolute(dir)) {
     throw new CliStructuredError(
       'DEV.EMULATORS_DIR_INVALID',
-      `${EMULATORS_DIR_VARIABLE} must be an absolute path; got "${dir}".`,
+      `${EMULATORS_DIR_ENV} must be an absolute path; got "${dir}".`,
       {
         why: 'Every process that starts or reaches the local emulators resolves this directory, and a relative path would name a different one in each working directory.',
-        fix: `Set ${EMULATORS_DIR_VARIABLE} to an absolute path, or unset it to use ~/.prisma-composer/emulators.`,
-        meta: { variable: EMULATORS_DIR_VARIABLE, value: dir },
+        fix: `Set ${EMULATORS_DIR_ENV} to an absolute path (\`~\` is not expanded), or unset it to use ~/.prisma-composer/emulators.`,
+        meta: { variable: EMULATORS_DIR_ENV, value: dir },
       },
     );
   }
-  return dir;
+  return path.resolve(dir);
 }
 
 /** `<registryRoot>/<name>.json`. */

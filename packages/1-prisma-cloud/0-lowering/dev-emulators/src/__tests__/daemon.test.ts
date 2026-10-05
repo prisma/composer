@@ -16,6 +16,7 @@ import {
   type DaemonName,
   daemonStateDir,
   defaultRegistryRoot,
+  EMULATORS_DIR_ENV,
   ensureDaemon,
   isPidAlive,
   lockFilePath,
@@ -56,24 +57,32 @@ async function ensure(name: DaemonName): Promise<{ url: string }> {
 
 /**
  * The daemon's listening lines, once at least one is in its log and the count
- * holds across two reads. Under bun, the daemon can answer /health before its
- * `listen` callback writes the line, and a second spawn's line can land later.
+ * has held for two consecutive 500 ms windows. Under bun, the daemon can
+ * answer /health before its `listen` callback writes the line; that lag
+ * measured under 300 ms. A missing log counts as no lines.
  */
 async function awaitListeningLines(logPath: string): Promise<string[]> {
-  const listeningLines = () =>
-    fs
+  const listeningLines = () => {
+    if (!fs.existsSync(logPath)) return [];
+    return fs
       .readFileSync(logPath, 'utf8')
       .split('\n')
       .filter((line) => line.includes('listening on 127.0.0.1:'));
+  };
   await waitFor(() => listeningLines().length > 0, 5000);
   const deadline = Date.now() + 5000;
-  let previous = listeningLines();
-  for (;;) {
+  let lines = listeningLines();
+  let quietWindows = 0;
+  while (quietWindows < 2) {
+    if (Date.now() >= deadline) {
+      throw new Error(`the listening-line count in ${logPath} never settled`);
+    }
     await sleep(500);
     const current = listeningLines();
-    if (current.length === previous.length || Date.now() >= deadline) return current;
-    previous = current;
+    quietWindows = current.length === lines.length ? quietWindows + 1 : 0;
+    lines = current;
   }
+  return lines;
 }
 
 function readEntry(name: DaemonName): RegistryEntry {
@@ -456,40 +465,59 @@ describe('concurrent-ensure protocol', () => {
 });
 
 describe('PRISMA_COMPOSER_EMULATORS_DIR', () => {
-  const variable = 'PRISMA_COMPOSER_EMULATORS_DIR';
   let saved: string | undefined;
 
   beforeEach(() => {
-    saved = process.env[variable];
+    saved = process.env[EMULATORS_DIR_ENV];
   });
 
   afterEach(() => {
-    if (saved === undefined) delete process.env[variable];
-    else process.env[variable] = saved;
+    if (saved === undefined) delete process.env[EMULATORS_DIR_ENV];
+    else process.env[EMULATORS_DIR_ENV] = saved;
+  });
+
+  test('the variable is PRISMA_COMPOSER_EMULATORS_DIR', () => {
+    expect(EMULATORS_DIR_ENV).toBe('PRISMA_COMPOSER_EMULATORS_DIR');
   });
 
   test('unset, the registry root is ~/.prisma-composer/emulators', () => {
-    delete process.env[variable];
+    delete process.env[EMULATORS_DIR_ENV];
     expect(defaultRegistryRoot()).toBe(path.join(os.homedir(), '.prisma-composer', 'emulators'));
   });
 
   test('an absolute path becomes the registry root', () => {
-    process.env[variable] = registryRoot;
+    process.env[EMULATORS_DIR_ENV] = registryRoot;
+    expect(defaultRegistryRoot()).toBe(registryRoot);
+  });
+
+  test('an absolute path is normalised, without trailing separators', () => {
+    process.env[EMULATORS_DIR_ENV] = `${registryRoot}/./nested//../`;
     expect(defaultRegistryRoot()).toBe(registryRoot);
   });
 
   test('a relative path is refused with a structured error naming the variable', () => {
-    process.env[variable] = 'emulators';
+    process.env[EMULATORS_DIR_ENV] = 'emulators';
     expect(() => defaultRegistryRoot()).toThrow(
       expect.objectContaining({
         code: 'DEV.EMULATORS_DIR_INVALID',
         message: 'PRISMA_COMPOSER_EMULATORS_DIR must be an absolute path; got "emulators".',
+        meta: { variable: 'PRISMA_COMPOSER_EMULATORS_DIR', value: 'emulators' },
+      }),
+    );
+  });
+
+  test('a path starting with ~ is refused, and the fix says ~ is not expanded', () => {
+    process.env[EMULATORS_DIR_ENV] = '~/emulators';
+    expect(() => defaultRegistryRoot()).toThrow(
+      expect.objectContaining({
+        code: 'DEV.EMULATORS_DIR_INVALID',
+        fix: expect.stringContaining('`~` is not expanded'),
       }),
     );
   });
 
   test('a daemon started without a registryRoot registers under the directory it names', async () => {
-    process.env[variable] = registryRoot;
+    process.env[EMULATORS_DIR_ENV] = registryRoot;
     await skipContendedDaemonPorts(registryRoot);
     const { url } = await ensureDaemon('compute', entryFor('compute'));
     started.add('compute');
