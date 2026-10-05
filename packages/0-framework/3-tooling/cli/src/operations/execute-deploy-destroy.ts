@@ -28,7 +28,12 @@ import {
 } from '../deployment-summary.ts';
 import { GENERATED_STACK_RELATIVE_PATH, writeStackFile } from '../generate-stack.ts';
 import { type PipelineDeps, type PipelineResult, runPipeline } from '../pipeline.ts';
-import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
+import {
+  type AlchemyOutcome,
+  alchemyInvocation,
+  reproduceCommand,
+  spawnAlchemy,
+} from '../run-alchemy.ts';
 import {
   RUN_REPORT_FILE_ENV,
   resolveRunReportPath,
@@ -478,25 +483,23 @@ async function runStackPipelineInner(
       return notOk(toStructured('DEPLOY.STACK_WRITE_FAILED', error));
     }
 
-    const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
+    const invocation = alchemyInvocation({
+      command: action,
+      stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
+      cwd,
+      stage: alchemyStage,
+      containerEnv: containerEnv(containers),
+      preflightEnv: preflightTransportEnv,
+      env: {
+        ...reporterChildEnv(reporters),
+        [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
+      },
+    });
 
     // Hand the terminal to alchemy against the generated file.
     let outcome: AlchemyOutcome;
     try {
-      outcome = await (deps.alchemy ?? spawnAlchemy)(
-        alchemyInvocation({
-          command: action,
-          stackFileRelativePath: GENERATED_STACK_RELATIVE_PATH,
-          cwd,
-          stage: alchemyStage,
-          containerEnv: containerEnv(containers),
-          preflightEnv: preflightTransportEnv,
-          env: {
-            ...reporterChildEnv(reporters),
-            [DEPLOYMENT_RESULT_FILE_ENV]: resultFilePath,
-          },
-        }),
-      );
+      outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
     } catch (error) {
       if (CliStructuredError.is(error)) return notOk(error);
       return notOk(
@@ -506,12 +509,18 @@ async function runStackPipelineInner(
           {
             cause: error,
             meta: {
-              diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
+              diagnostics: {
+                exitCode: undefined,
+                stackFilePath: stackPath,
+                reproduceCommand: reproduceCommand(invocation),
+                cwd,
+              },
             },
           },
         ),
       );
     }
+    const reproduce = reproduceCommand(invocation, outcome);
 
     // A signal-killed converge is the user interrupting, not a deploy that
     // went wrong: it is still reported as a failure VALUE (the operation
@@ -531,7 +540,7 @@ async function runStackPipelineInner(
                 exitCode: undefined,
                 signal: outcome.signal,
                 stackFilePath: stackPath,
-                reproduceCommand,
+                reproduceCommand: reproduce,
                 cwd,
               },
             },
@@ -558,7 +567,12 @@ async function runStackPipelineInner(
             meta: {
               exitCode: status,
               ...(engineCause !== undefined ? { engineCause } : {}),
-              diagnostics: { exitCode: status, stackFilePath: stackPath, reproduceCommand, cwd },
+              diagnostics: {
+                exitCode: status,
+                stackFilePath: stackPath,
+                reproduceCommand: reproduce,
+                cwd,
+              },
             },
           },
         ),

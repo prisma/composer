@@ -18,16 +18,25 @@ import { validComposerSection } from './fixtures/composer-section.ts';
 type Fixtures = Parameters<typeof createOperationsDouble>[0];
 
 /**
- * A real directory with an `alchemy` binary installed, because the handler's
- * spawn adapter resolves the app's own alchemy before handing the terminal
- * over — the same resolution a real run does. The binary is never executed:
+ * A real app directory with @prisma/composer and its `alchemy` installed,
+ * because the handler's spawn adapter resolves that alchemy's bin before
+ * handing the terminal over, as a real run does. The bin is never executed:
  * the engine's scripted fake child stands in for the process.
  */
 const CWD = (() => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-family-'));
-  const bin = path.join(dir, 'node_modules', '.bin');
-  fs.mkdirSync(bin, { recursive: true });
-  fs.writeFileSync(path.join(bin, 'alchemy'), '#!/usr/bin/env node\n', { mode: 0o755 });
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'composer-family-')));
+  const nodeModules = path.join(dir, 'node_modules');
+  fs.mkdirSync(path.join(nodeModules, '@prisma', 'composer'), { recursive: true });
+  fs.writeFileSync(
+    path.join(nodeModules, '@prisma', 'composer', 'package.json'),
+    JSON.stringify({ name: '@prisma/composer', exports: { './package.json': './package.json' } }),
+  );
+  fs.mkdirSync(path.join(nodeModules, 'alchemy', 'bin'), { recursive: true });
+  fs.writeFileSync(
+    path.join(nodeModules, 'alchemy', 'package.json'),
+    JSON.stringify({ name: 'alchemy', bin: { alchemy: './bin/cli.js' } }),
+  );
+  fs.writeFileSync(path.join(nodeModules, 'alchemy', 'bin', 'cli.js'), '');
   return dir;
 })();
 
@@ -221,7 +230,9 @@ describe('settlement', () => {
     expect(plain(result.stderr)).toContain(
       `Run the converge directly from ${CWD} to reproduce this`,
     );
-    expect(plain(result.stderr)).toContain('alchemy deploy .prisma-composer/alchemy.run.ts');
+    expect(plain(result.stderr)).toContain(
+      `${path.join(CWD, 'node_modules', 'alchemy', 'bin', 'cli.js')} deploy .prisma-composer/alchemy.run.ts --yes --stage test`,
+    );
     expect(plain(result.stderr)).not.toContain('✖');
   });
 

@@ -29,7 +29,7 @@ import {
   engineFailureFilePath,
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
-import type { AlchemyInvocation } from '../../run-alchemy.ts';
+import { type AlchemyInvocation, alchemyCommandLine } from '../../run-alchemy.ts';
 import { deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
@@ -581,6 +581,39 @@ describe('deploy()', () => {
       reproduceCommand: `alchemy deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
       cwd: app.dir,
     });
+  });
+
+  test('the reproduce command is the command line the adapter started', async () => {
+    const app = makeAppDir();
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => ({
+            exitCode: 1,
+            signal: null,
+            commandLine: alchemyCommandLine(
+              invocation,
+              '/store/alchemy/bin/cli.js',
+              '/usr/bin/node',
+            ),
+          }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(executionDiagnostics(result.failure)?.reproduceCommand).toBe(
+      `/usr/bin/node /store/alchemy/bin/cli.js deploy ${path.join('.prisma-composer', 'alchemy.run.ts')} --yes --stage ci-7`,
+    );
   });
 
   test('an engine failure carries the cause the child recorded, after the status sentence and in meta', async () => {

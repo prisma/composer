@@ -2,11 +2,10 @@
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
- * Runs the `alchemy` package Composer itself depends on: its `bin` entry,
- * under Node. Never a `node_modules/.bin` link, which pnpm creates only for an
- * app's direct dependencies. This module is bundled into @prisma/composer and
- * @prisma/composer-cli, and both declare `alchemy`, so pnpm puts it beside
- * either one even with hoisting off.
+ * Runs the bin of the `alchemy` the app's `@prisma/composer` depends on
+ * (`resolveAlchemyBin`), started with Node (`nodeExecutable`). Never a
+ * `node_modules/.bin` link, which pnpm creates only for an app's direct
+ * dependencies.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -16,75 +15,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
-
-/**
- * The directory of the `alchemy` package a module at `fromFile` imports:
- * Node's package lookup, walking up `node_modules` from the module's real
- * location. alchemy's exports map does not export its package.json, so
- * `require.resolve('alchemy/package.json')` cannot be used.
- */
-function findAlchemyPackageDir(fromFile: string): string | undefined {
-  let realFile: string;
-  try {
-    realFile = fs.realpathSync(fromFile);
-  } catch {
-    return undefined;
-  }
-  let dir = path.dirname(realFile);
-  while (true) {
-    const candidate = path.join(dir, 'node_modules', 'alchemy');
-    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
-
-function readManifest(packageDir: string): unknown {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
-  } catch {
-    return undefined;
-  }
-}
-
-function binEntryOf(packageDir: string): string | undefined {
-  const manifest = readManifest(packageDir);
-  if (typeof manifest !== 'object' || manifest === null || !('bin' in manifest)) return undefined;
-  const bin = manifest.bin;
-  const relative =
-    typeof bin === 'string'
-      ? bin
-      : typeof bin === 'object' && bin !== null && 'alchemy' in bin
-        ? bin.alchemy
-        : undefined;
-  return typeof relative === 'string' ? path.join(packageDir, relative) : undefined;
-}
-
-/**
- * The JavaScript entry of the `alchemy` package Composer is installed with,
- * resolved from `fromFile` (this module, by default).
- */
-export function resolveAlchemyEntry(fromFile: string = fileURLToPath(import.meta.url)): string {
-  const packageDir = findAlchemyPackageDir(fromFile);
-  const entry = packageDir === undefined ? undefined : binEntryOf(packageDir);
-  if (entry === undefined || !fs.existsSync(entry)) {
-    throw new CliStructuredError(
-      'DEPLOY.ALCHEMY_BIN_MISSING',
-      `Could not resolve the \`alchemy\` package from "${path.dirname(fromFile)}", where Composer is installed, or its bin entry.`,
-      {
-        fix: "Check that `alchemy` is installed beside the Composer package that runs it (@prisma/composer-cli under `prisma`, @prisma/composer from a script), which declares it as a dependency, in a node_modules directory. Layouts without one, such as Yarn Plug'n'Play, are not supported.",
-      },
-    );
-  }
-  return entry;
-}
+import { resolveAlchemyBin } from './alchemy-bin.ts';
 
 /** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
-export interface NodeRuntime {
+export interface HostRuntime {
   /** True when this process runs under Bun. */
   readonly bun: boolean;
   readonly execPath: string;
@@ -93,7 +29,7 @@ export interface NodeRuntime {
   readonly exists: (file: string) => boolean;
 }
 
-function currentRuntime(): NodeRuntime {
+function currentRuntime(): HostRuntime {
   return {
     bun: process.versions.bun !== undefined,
     execPath: process.execPath,
@@ -103,12 +39,12 @@ function currentRuntime(): NodeRuntime {
   };
 }
 
-function envValue(env: NodeRuntime['env'], name: string): string | undefined {
+function envValue(env: HostRuntime['env'], name: string): string | undefined {
   return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
 }
 
 /** The file names `node` may have in a PATH directory: PATHEXT's extensions on Windows. */
-function nodeFileNames(runtime: NodeRuntime): readonly string[] {
+function nodeFileNames(runtime: HostRuntime): readonly string[] {
   if (runtime.platform !== 'win32') return ['node'];
   const extensions = (envValue(runtime.env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD')
     .split(';')
@@ -123,7 +59,7 @@ function nodeFileNames(runtime: NodeRuntime): readonly string[] {
  * it (`bunx`, `bun run`), so the runtime Alchemy ends up on follows how
  * `prisma` was invoked.
  */
-export function nodeExecutable(runtime: NodeRuntime = currentRuntime()): string {
+export function nodeExecutable(runtime: HostRuntime = currentRuntime()): string {
   if (!runtime.bun) return runtime.execPath;
   const paths = runtime.platform === 'win32' ? path.win32 : path.posix;
   const names = nodeFileNames(runtime);
@@ -179,13 +115,13 @@ export interface AlchemyCommandLine {
  */
 export function alchemyCommandLine(
   invocation: AlchemyInvocation,
-  alchemyEntry: string = resolveAlchemyEntry(),
+  alchemyBin: string = resolveAlchemyBin(invocation.cwd),
   node: string = nodeExecutable(),
 ): AlchemyCommandLine {
   return {
     command: node,
     args: [
-      alchemyEntry,
+      alchemyBin,
       invocation.action,
       invocation.stackFileRelativePath,
       '--yes',
@@ -207,6 +143,8 @@ export function alchemyCommandLine(
 export interface AlchemyOutcome {
   readonly exitCode: number | null;
   readonly signal: string | null;
+  /** The command line the adapter started, when it can say; failures print it as the reproduce command. */
+  readonly commandLine?: AlchemyCommandLine;
 }
 
 /** Starts the converge and resolves when it ends. The CLI supplies one backed
@@ -242,8 +180,34 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  * collapse a signal into an exit code — that collapse is what made a
  * Ctrl-C'd deploy report itself as a failure.
  */
-export const spawnAlchemy: RunAlchemy = async (invocation) =>
-  spawnCommandLine(alchemyCommandLine(invocation));
+export const spawnAlchemy: RunAlchemy = async (invocation) => {
+  const commandLine = alchemyCommandLine(invocation);
+  return { ...(await spawnCommandLine(commandLine)), commandLine };
+};
+
+function shellArg(arg: string): string {
+  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : JSON.stringify(arg);
+}
+
+/**
+ * The command a user runs from the invocation's directory to repeat a
+ * converge: the command line the adapter started, or, from an adapter that
+ * does not report one, `alchemy` with the same arguments.
+ */
+export function reproduceCommand(invocation: AlchemyInvocation, outcome?: AlchemyOutcome): string {
+  const argv =
+    outcome?.commandLine === undefined
+      ? [
+          'alchemy',
+          invocation.action,
+          invocation.stackFileRelativePath,
+          '--yes',
+          '--stage',
+          invocation.stage,
+        ]
+      : [outcome.commandLine.command, ...outcome.commandLine.args];
+  return argv.map(shellArg).join(' ');
+}
 
 /** Starts a resolved command line with inherited stdio and returns how it ended. */
 export function spawnCommandLine(line: AlchemyCommandLine): Promise<AlchemyOutcome> {

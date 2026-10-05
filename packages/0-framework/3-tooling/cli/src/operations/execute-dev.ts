@@ -18,7 +18,12 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import { DEV_STACK_RELATIVE_PATH, writeDevStackFile } from '../dev/generate-dev-stack.ts';
 import { startWatch, type WatchHandle, watchTargetsFrom } from '../dev/watch.ts';
 import { type PipelineDeps, runPipeline } from '../pipeline.ts';
-import { type AlchemyOutcome, alchemyInvocation, spawnAlchemy } from '../run-alchemy.ts';
+import {
+  type AlchemyOutcome,
+  alchemyInvocation,
+  reproduceCommand,
+  spawnAlchemy,
+} from '../run-alchemy.ts';
 import type { DevEvent, DevInput, DevSession } from './dev.ts';
 import { withEmulatorRetry } from './emulator-retry.ts';
 import {
@@ -132,7 +137,13 @@ export async function executeDev(
     throw error;
   }
 
-  const reproduceCommand = `alchemy deploy ${DEV_STACK_RELATIVE_PATH} --yes --stage dev`;
+  const invocation = alchemyInvocation({
+    command: 'deploy',
+    stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
+    cwd,
+    stage: 'dev',
+    containerEnv: containerEnv(containers),
+  });
 
   const converge = async (): Promise<{ outcome: AlchemyOutcome; stackPath: string }> => {
     let stackPath: string;
@@ -150,21 +161,18 @@ export async function executeDev(
     }
     let outcome: AlchemyOutcome;
     try {
-      outcome = await (deps.alchemy ?? spawnAlchemy)(
-        alchemyInvocation({
-          command: 'deploy',
-          stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-          cwd,
-          stage: 'dev',
-          containerEnv: containerEnv(containers),
-        }),
-      );
+      outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
     } catch (error) {
       if (CliStructuredError.is(error)) throw error;
       throw new CliStructuredError('DEV.CONVERGE_FAILED', failureMessage(error), {
         cause: error,
         meta: {
-          diagnostics: { exitCode: undefined, stackFilePath: stackPath, reproduceCommand, cwd },
+          diagnostics: {
+            exitCode: undefined,
+            stackFilePath: stackPath,
+            reproduceCommand: reproduceCommand(invocation),
+            cwd,
+          },
         },
       });
     }
@@ -198,7 +206,7 @@ export async function executeDev(
               exitCode: firstStatus ?? undefined,
               ...(first.outcome.signal !== null ? { signal: first.outcome.signal } : {}),
               stackFilePath: first.stackPath,
-              reproduceCommand,
+              reproduceCommand: reproduceCommand(invocation, first.outcome),
               cwd,
             },
           },
@@ -299,17 +307,14 @@ export async function executeDev(
           name: rePipeline.name,
           assembled: rePipeline.assembled,
         });
-        const outcome = await (deps.alchemy ?? spawnAlchemy)(
-          alchemyInvocation({
-            command: 'deploy',
-            stackFileRelativePath: DEV_STACK_RELATIVE_PATH,
-            cwd,
-            stage: 'dev',
-            containerEnv: containerEnv(containers),
-          }),
-        );
+        const outcome = await (deps.alchemy ?? spawnAlchemy)(invocation);
         if (outcome.signal !== null || outcome.exitCode !== 0) {
-          emit({ kind: 'converge-failed', stackFilePath: stackPath, reproduceCommand, cwd });
+          emit({
+            kind: 'converge-failed',
+            stackFilePath: stackPath,
+            reproduceCommand: reproduceCommand(invocation, outcome),
+            cwd,
+          });
           return;
         }
         emit({ kind: 'ready', endpoints: await mergedEndpoints(attachments) });
