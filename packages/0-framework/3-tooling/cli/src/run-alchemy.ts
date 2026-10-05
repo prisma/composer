@@ -186,7 +186,7 @@ export const spawnAlchemy: RunAlchemy = async (invocation) => {
 };
 
 function shellArg(arg: string): string {
-  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : JSON.stringify(arg);
+  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
 }
 
 /**

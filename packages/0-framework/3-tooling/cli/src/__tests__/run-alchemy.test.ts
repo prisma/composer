@@ -265,9 +265,23 @@ describe('reproduceCommand()', () => {
     );
 
     expect(reproduceCommand(invocation, { exitCode: 1, signal: null, commandLine })).toBe(
-      '"/Program Files/node/node" /app/node_modules/.pnpm/alchemy@2/node_modules/alchemy/bin/cli.js deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7',
+      "'/Program Files/node/node' /app/node_modules/.pnpm/alchemy@2/node_modules/alchemy/bin/cli.js deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7",
     );
   });
+
+  for (const [stage, printed] of [
+    ['pr-$USER', "'pr-$USER'"],
+    ['it`s!', "'it`s!'"],
+    ["o'brien", "'o'\\''brien'"],
+  ] as const) {
+    test(`single-quotes ${stage} so a shell pastes it literally`, () => {
+      const staged = { ...invocation, stage };
+
+      expect(reproduceCommand(staged)).toBe(
+        `alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage ${printed}`,
+      );
+    });
+  }
 
   test('names alchemy with the same arguments when the adapter does not report its command line', () => {
     expect(reproduceCommand(invocation, { exitCode: 1, signal: null })).toBe(
