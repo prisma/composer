@@ -71,6 +71,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { checkHost } from './check-cli-engine-pin-host.mjs';
+import { catalogVersion } from './pnpm-catalog.mjs';
 
 const ENGINE = '@prisma/cli-engine';
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
@@ -124,12 +125,6 @@ for (const [label, pin] of [
   );
 }
 
-/** The `prisma` version pinned in the pnpm catalog of pnpm-workspace.yaml. */
-function catalogHostVersion() {
-  const workspace = readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8');
-  return /^catalog:\n(?:[ \t]+.*\n)*?[ \t]+prisma:[ \t]*['"]?([^'"\s]+)/m.exec(workspace)?.[1];
-}
-
 /** Every tracked workspace manifest that declares `prisma`, with the specifier it uses. */
 function hostDeclarations() {
   const manifests = execFileSync('git', ['ls-files', '*package.json', ':!docs/design/**'], {
@@ -150,7 +145,10 @@ function realResolve(fromFile, specifier) {
   return realpathSync(createRequire(fromFile).resolve(specifier));
 }
 
-const hostVersion = catalogHostVersion();
+const hostVersion = catalogVersion(
+  readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8'),
+  'prisma',
+);
 require_(
   hostVersion !== undefined && EXACT_VERSION.test(hostVersion),
   `pnpm-workspace.yaml's catalog must pin prisma to an exact version; found "${hostVersion}".`,
