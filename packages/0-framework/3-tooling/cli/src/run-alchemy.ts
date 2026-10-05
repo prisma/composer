@@ -185,7 +185,13 @@ export const spawnAlchemy: RunAlchemy = async (invocation) => {
   return { ...(await spawnCommandLine(commandLine)), commandLine };
 };
 
-/** One argument as the platform's shell reads it literally: single quotes for POSIX shells, double quotes for cmd.exe. */
+/**
+ * One argument as the platform's shell reads it literally: single quotes for
+ * POSIX shells, double quotes for cmd.exe. cmd.exe expands `%VAR%` inside
+ * double quotes, and strips or expands `!` when delayed expansion is on; no
+ * quoting prevents either, so an argument containing them is not fully
+ * literal there.
+ */
 function shellArg(arg: string, platform: NodeJS.Platform): string {
   if (platform === 'win32') {
     return /^[\w@+=:,./\\~-]+$/.test(arg) ? arg : `"${arg.replaceAll('"', '""')}"`;

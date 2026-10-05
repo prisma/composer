@@ -230,8 +230,9 @@ describe('settlement', () => {
     expect(plain(result.stderr)).toContain(
       `Run the converge directly from ${CWD} to reproduce this`,
     );
-    // The bin path is quoted when the platform's shell needs it (a Windows
-    // short name like RUNNER~1), so the path and the arguments are checked apart.
+    // The bin path is quoted when it contains a character the platform's shell
+    // treats specially, such as a space, so the path and the arguments are
+    // checked apart.
     expect(plain(result.stderr)).toContain(
       path.join(CWD, 'node_modules', 'alchemy', 'bin', 'cli.js'),
     );

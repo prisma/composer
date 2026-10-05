@@ -269,8 +269,9 @@ describe('reproduceCommand()', () => {
     );
   });
 
-  // cmd.exe expands %VAR% even inside double quotes, and no quoting stops it,
-  // so a stage containing %...% cannot be printed fully literal for cmd.
+  // cmd.exe expands %VAR% even inside double quotes, and strips or expands !
+  // when delayed expansion is on. No quoting stops either, so a stage
+  // containing them cannot be printed fully literal for cmd.exe.
   for (const [stage, posix, win32] of [
     ['pr-$USER', "'pr-$USER'", '"pr-$USER"'],
     ['it`s!', "'it`s!'", '"it`s!"'],
