@@ -4,7 +4,9 @@
  *
  * Runs the `alchemy` package Composer itself depends on: its `bin` entry,
  * under Node. Never a `node_modules/.bin` link, which pnpm creates only for an
- * app's direct dependencies.
+ * app's direct dependencies. This module is bundled into @prisma/composer and
+ * @prisma/composer-cli, and both declare `alchemy`, so pnpm puts it beside
+ * either one even with hoisting off.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -74,7 +76,7 @@ export function resolveAlchemyEntry(fromFile: string = fileURLToPath(import.meta
       'DEPLOY.ALCHEMY_BIN_MISSING',
       `Could not resolve the \`alchemy\` package from "${path.dirname(fromFile)}", where Composer is installed, or its bin entry.`,
       {
-        fix: "Check that `alchemy` is installed beside @prisma/composer, which depends on it, in a node_modules directory: layouts without one, such as Yarn Plug'n'Play, are not supported.",
+        fix: "Check that `alchemy` is installed beside the Composer package that runs it (@prisma/composer-cli under `prisma`, @prisma/composer from a script), which declares it as a dependency, in a node_modules directory. Layouts without one, such as Yarn Plug'n'Play, are not supported.",
       },
     );
   }

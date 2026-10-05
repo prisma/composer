@@ -48,21 +48,34 @@ function installFakeAlchemy(dir: string, body: readonly string[] = []): string {
 }
 
 /**
- * pnpm's isolated layout: Composer's real files sit in the store next to its
- * own dependencies, and the app's node_modules has no `.bin/alchemy`.
+ * pnpm's isolated layout with hoisting off (`hoist-pattern=`): a package's
+ * real files sit in its own store directory beside its direct dependencies
+ * only. There is no `node_modules/.pnpm/node_modules` and no root `alchemy`.
  */
-function pnpmStoreLayout(root: string): { composerFile: string; storeDir: string } {
+function pnpmStoreLayout(
+  root: string,
+  packageName = '@prisma/composer',
+): { composerFile: string; storeDir: string } {
   const storeDir = path.join(
     root,
     'node_modules',
     '.pnpm',
-    '@prisma+composer@0.26.0',
+    `${packageName.replace('/', '+')}@0.26.0`,
     'node_modules',
   );
-  const composerFile = path.join(storeDir, '@prisma', 'composer', 'dist', 'control.mjs');
+  const composerFile = path.join(storeDir, packageName, 'dist', 'control.mjs');
   fs.mkdirSync(path.dirname(composerFile), { recursive: true });
   fs.writeFileSync(composerFile, '');
   return { composerFile, storeDir };
+}
+
+function publishedManifest(directory: string): { dependencies?: Record<string, string> } {
+  return JSON.parse(
+    fs.readFileSync(
+      path.join(import.meta.dir, '../../../../../9-public', directory, 'package.json'),
+      'utf8',
+    ),
+  );
 }
 
 afterEach(() => {
@@ -80,6 +93,35 @@ describe('resolveAlchemyEntry()', () => {
 
     expect(resolveAlchemyEntry(composerFile)).toBe(entry);
     expect(fs.existsSync(path.join(root, 'node_modules', '.bin', 'alchemy'))).toBe(false);
+  });
+
+  test('every published package that runs alchemy declares the same alchemy as a dependency', () => {
+    const composer = publishedManifest('composer').dependencies?.['alchemy'];
+
+    expect(composer).toBeDefined();
+    expect(publishedManifest('composer-cli').dependencies?.['alchemy']).toBe(composer);
+  });
+
+  for (const packageName of ['@prisma/composer', '@prisma/composer-cli']) {
+    test(`resolves from ${packageName} under pnpm with hoisting off`, () => {
+      const root = makeTmpDir();
+      const { composerFile, storeDir } = pnpmStoreLayout(root, packageName);
+      const entry = installFakeAlchemy(path.dirname(storeDir));
+
+      expect(resolveAlchemyEntry(composerFile)).toBe(entry);
+      expect(fs.existsSync(path.join(root, 'node_modules', '.pnpm', 'node_modules'))).toBe(false);
+      expect(fs.existsSync(path.join(root, 'node_modules', 'alchemy'))).toBe(false);
+    });
+  }
+
+  test('raises DEPLOY.ALCHEMY_BIN_MISSING from a package that does not declare alchemy, when pnpm hoists nothing', () => {
+    const root = makeTmpDir();
+    installFakeAlchemy(path.dirname(pnpmStoreLayout(root, '@prisma/composer').storeDir));
+    const { composerFile } = pnpmStoreLayout(root, '@prisma/other');
+
+    expect(() => resolveAlchemyEntry(composerFile)).toThrow(
+      expect.objectContaining({ code: 'DEPLOY.ALCHEMY_BIN_MISSING' }),
+    );
   });
 
   test('walks up from Composer to a hoisted alchemy', () => {
@@ -181,7 +223,7 @@ describe('resolveAlchemyEntry()', () => {
       expect.objectContaining({
         code: 'DEPLOY.ALCHEMY_BIN_MISSING',
         message: expect.stringContaining('Could not resolve the `alchemy` package'),
-        fix: expect.stringContaining('installed beside @prisma/composer'),
+        fix: expect.stringContaining('installed beside the Composer package that runs it'),
       }),
     );
   });
