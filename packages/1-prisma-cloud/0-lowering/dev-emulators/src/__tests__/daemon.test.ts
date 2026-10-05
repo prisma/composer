@@ -323,13 +323,13 @@ describe('daemon survival', () => {
 describe('loopback clients', () => {
   test('computeClient throws the pinned not-running error when no daemon is registered', () => {
     expect(() => computeClient({ registryRoot })).toThrow(
-      "the compute emulator is not running — `prisma-composer dev` starts it via the extension's dev.emulators hook.",
+      "the compute emulator is not running — `prisma dev` starts it via the extension's dev.emulators hook.",
     );
   });
 
   test('bucketsClient throws the pinned not-running error when no daemon is registered', () => {
     expect(() => bucketsClient({ registryRoot })).toThrow(
-      "the buckets emulator is not running — `prisma-composer dev` starts it via the extension's dev.emulators hook.",
+      "the buckets emulator is not running — `prisma dev` starts it via the extension's dev.emulators hook.",
     );
   });
 

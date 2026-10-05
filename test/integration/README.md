@@ -8,7 +8,7 @@ packages), unlike `packages/app-cli` itself, which must not depend on any
 specific extension.
 
 This package carries its own `prisma.config.ts` with a `composer` section
-(ADR-0017): `prisma-composer deploy` run from this directory loads it through
+(ADR-0017): `prisma deploy` run from this directory loads it through
 the CLI engine, so its static imports of `@prisma/composer-prisma-cloud/control` and
 `@prisma/composer/node/control` resolve from THIS package's own dependency tree —
 the same ambient resolution an end user's app gets. No special install layout

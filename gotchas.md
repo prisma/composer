@@ -35,6 +35,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
+- [In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency](#in-this-repository-the-published-prisma-host-runs-the-workspace-family-only-through-a-pnpm-override-plus-a-root-devdependency)
 
 ---
 
@@ -563,7 +564,7 @@ The Management API is no help: the project and database both read `status: "read
 
 **Symptom.** `pnpm run deploy` failed with `TypeError: Unknown file extension ".tsx"`, thrown from Node's own `node:internal/modules/esm/get_format`, while loading `templates.tsx`. The same file bundles and runs correctly under Bun (`bun build`, `bun test`) — the failure is specific to the deploy CLI's module-graph-loading step.
 
-**Cause.** `prisma-composer deploy` loads the app's `module.ts` → `service.ts` → dependency-factory-argument import graph with Node's own native ESM loader, to build deploy topology (ADR-0005: the framework doesn't bundle the app's code). Node's native TypeScript support (`--experimental-strip-types` / `--experimental-transform-types`) strips *type* syntax but has no JSX transform at all — confirmed by direct testing: a `.tsx` file with real JSX syntax fails to load under bare `node` and under both experimental-types flags alike; only a separate loader hook (the `tsx` npm package, via `--import=tsx`) can execute it. No pre-existing `.tsx` file in this repo's example apps sits in a `module.ts`/`service.ts`-reachable import graph (the ones that exist are Next.js pages, reached only through the Next.js build adapter), so this is the first time the conflict surfaces.
+**Cause.** `prisma deploy` loads the app's `module.ts` → `service.ts` → dependency-factory-argument import graph with Node's own native ESM loader, to build deploy topology (ADR-0005: the framework doesn't bundle the app's code). Node's native TypeScript support (`--experimental-strip-types` / `--experimental-transform-types`) strips *type* syntax but has no JSX transform at all — confirmed by direct testing: a `.tsx` file with real JSX syntax fails to load under bare `node` and under both experimental-types flags alike; only a separate loader hook (the `tsx` npm package, via `--import=tsx`) can execute it. No pre-existing `.tsx` file in this repo's example apps sits in a `module.ts`/`service.ts`-reachable import graph (the ones that exist are Next.js pages, reached only through the Next.js build adapter), so this is the first time the conflict surfaces.
 
 Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make Node parse the JSX, but it also changes module resolution for every other Node process spawned during that deploy — it broke an unrelated, pre-existing import inside Alchemy's own CLI startup (`@alchemy.run/node-utils`'s `foregroundChild` export stopped resolving), so it isn't a safe fix.
 
@@ -574,7 +575,7 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 **Reproduction.**
 
 1. Add a `.tsx` file with real JSX syntax anywhere in a module's `module.ts` → `service.ts` → dependency-argument import graph.
-2. `prisma-composer deploy module.ts` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
+2. `prisma deploy module.ts` → `TypeError: Unknown file extension ".tsx"` from Node's ESM loader, before any resources are planned.
 3. Precompile the JSX away (e.g. `bun build --target=node --format=esm` with npm packages kept `--external`) into a plain `.ts`/`.mjs` file, and import that from `service.ts` instead → deploy succeeds.
 
 **References.**
@@ -618,7 +619,7 @@ Error: Dynamic require of "assert" is not supported
 **Version:** Bun 1.3.11 (`Bun.SQL`, prepared statements on by default); `@prisma/composer-prisma-cloud` ≤ 0.20.0
 **First hit:** a consumer app wiring `email()` + `auth()` under `prisma dev`; reproduced in `examples/email`
 
-**Symptom.** The first `prisma-composer dev` run is fine. The next one (or any restart of the service against the same database) crash-loops until the emulator holds it:
+**Symptom.** The first `prisma dev` run is fine. The next one (or any restart of the service against the same database) crash-loops until the emulator holds it:
 
 ```
 [email.service] PostgresError: prepared statement "P
@@ -639,3 +640,24 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 1. `startPrismaDevServer({ name, persistenceMode: 'stateless' })`, then take `database.connectionString`.
 2. `new SQL({ url, max: 1 })`, run `create table if not exists t (id int)`, then close it.
 3. Open a second `new SQL({ url, max: 1 })` and run the same statement → 42P05. With `prepare: false` both succeed.
+
+---
+
+## In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency
+
+**Filed upstream:** not applicable (workspace mechanics)
+**Product:** the `prisma` host (`prisma@8.0.0-rc.19`) installed with pnpm's `node-linker=hoisted`
+**First hit:** moving this repository's examples and CI from the standalone Composer binary to `prisma deploy` and `prisma dev`
+
+**Symptom.** Without both root entries below, one of two things happens. Either `prisma` fails at start with `Cannot find module '@prisma/composer-cli/family'`, or, worse, it starts and runs the registry's `@prisma/composer-cli` instead of the workspace package, so CI tests the last release of the family and stays green.
+
+**Cause.** The published `prisma` pins an exact `@prisma/composer-cli` from the registry. Two entries in the root `package.json` redirect it:
+
+- `pnpm.overrides["@prisma/composer-cli"] = "workspace:*"` makes the host depend on the workspace package. Without it, pnpm installs the registry version beside the host.
+- The root devDependency on `@prisma/composer-cli` puts that package's link in the root `node_modules`. The hoisted linker places `prisma` in the root `node_modules` but does not create the overridden link beside it (`node_modules/prisma/node_modules/@prisma/` stays empty), so the host finds the family only by walking up to the root.
+
+The examples also declare `@prisma/composer-cli` as a devDependency, so CI's filtered build (`turbo run build --filter <example>...`) builds the family dist the host loads.
+
+The same layout is why package scripts run `bun ../../node_modules/.bin/prisma`: the hoisted linker links bins of hoisted packages only into the root `node_modules/.bin`.
+
+**Guard.** `pnpm check:cli-engine-pin` resolves `@prisma/composer-cli/family` from the installed host and fails unless it is the workspace package, and fails unless the host and the family share one `@prisma/cli-engine`. The host version lives once, in the `catalog` of `pnpm-workspace.yaml`.

@@ -1,5 +1,5 @@
 /**
- * What `deploy` and `destroy` share: the two-leg authenticated run of a
+ * The `deploy` command's converge: the two-leg authenticated run of a
  * converge, and the settlement rules for how the child ended.
  *
  * The two legs (S3 § Auth). The IN-PROCESS leg is the pre-work that happens
@@ -95,7 +95,7 @@ export function reproduceHint(failure: ComposerError): readonly NextAction[] {
 }
 
 /**
- * How a FAILED converge settles. `deploy`, `destroy` and `dev` all end this
+ * How a FAILED converge settles. `deploy` and `dev` both end this
  * way and must not drift apart, so the decision lives here once rather than
  * inline in each handler.
  *

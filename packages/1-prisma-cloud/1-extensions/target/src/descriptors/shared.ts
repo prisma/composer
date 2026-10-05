@@ -84,7 +84,7 @@ export interface ResolvedCloudOptions {
    * environment fingerprint. The deploy preflight supplies the times (it
    * already reads exactly these names off the platform) and transports them to
    * the alchemy process. Always present: a run with no times to offer — every
-   * `prisma-composer dev` run, which talks to no platform — supplies a lookup
+   * `prisma dev` run, which talks to no platform — supplies a lookup
    * that answers "unknown" for every name, so no caller has to.
    */
   readonly pointerUpdatedAt: PointerUpdatedAt;

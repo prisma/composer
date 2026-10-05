@@ -91,7 +91,7 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
       // The loader carries the .d.ts artefact as opaque text (a types file
       // for editors); the bundled testing export ships no source files, so a
       // marker comment stands in.
-      contractDts: '// prisma-composer auth local bootstrap — types artefact not shipped\n',
+      contractDts: '// Composer auth local bootstrap — types artefact not shipped\n',
       headRef: space.headRef,
     });
     const spaceDir = spaceMigrationDirectory(migrationsDir, AUTH_PACK_ID);

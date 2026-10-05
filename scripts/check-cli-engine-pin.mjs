@@ -12,7 +12,7 @@
 // Why each part matters:
 //
 //   Exact + identical. Composer's command family runs inside whichever
-//   process mounts it — composer's own CLI or the `prisma` bin — and both
+//   process mounts it (the `prisma` bin), and both
 //   sides must agree on the engine's types and its runtime classes. The
 //   engine and composer are released in tandem (engine → composer →
 //   prisma-cli), so the version is a hand-coordinated fact, not a range to be
@@ -26,7 +26,7 @@
 //   was built against. Dependabot is told to leave it alone
 //   (.github/dependabot.yml), which is what makes this check the only guard.
 //
-//   External. Both of composer-cli's tsdown configs bundle node_modules
+//   External. composer-cli's tsdown config bundles node_modules
 //   (`skipNodeModulesBundle: false`) so the @internal scope is inlined, and
 //   what survives as a real import is then the bundler's decision — one it
 //   can change without anyone editing a manifest. A private copy of the
@@ -36,9 +36,7 @@
 //   module-level registry would silently disagree. Grepping the emitted
 //   chunks for a surviving bare specifier is what proves externalization
 //   actually happened, which the manifest alone cannot say (see the
-//   inventory's hazard H7). The executable is checked BY NAME as well as in
-//   the whole-dist sweep, because it is built by a second config with its own
-//   externals and would otherwise ride on the library entries' specifier.
+//   inventory's hazard H7).
 //
 //   Engine-free library. @prisma/composer is the application-facing library;
 //   it declares no engine relationship, so nothing in its packed dist may
@@ -51,20 +49,31 @@
 //   specifier and fails here, instead of being inlined into a silent private
 //   copy the scan cannot detect.
 //
+//   The workspace's host. The examples and CI run the published `prisma`
+//   host (pinned once, in the pnpm catalog), and a root pnpm override points
+//   its `@prisma/composer-cli` at the workspace package. This script checks
+//   that the installed host really resolves the workspace family and that
+//   the host and the family resolve the same engine copy, because a drifted
+//   override leaves CI green while it tests the registry's family, and two
+//   engine copies break every cross-package instanceof. It compares resolved
+//   copies, not declared versions: see check-cli-engine-pin-host.mjs.
+//
 // Requires both public packages to be built (`pnpm turbo run build
-// --filter=@prisma/composer --filter=@prisma/composer-cli`).
+// --filter=@prisma/composer --filter=@prisma/composer-cli`) and the
+// workspace to be installed.
 //
 // Usage: node scripts/check-cli-engine-pin.mjs
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkHost } from './check-cli-engine-pin-host.mjs';
+import { catalogVersion } from './pnpm-catalog.mjs';
 
 const ENGINE = '@prisma/cli-engine';
-/** The published executable, built by its own tsdown config — see the bin-specific check below. */
-const BIN = 'bin.mjs';
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -114,6 +123,66 @@ for (const [label, pin] of [
     pin === undefined || EXACT_VERSION.test(pin),
     `${label} declares ${ENGINE} as "${pin}" — it must be an exact version, with no range operator.`,
   );
+}
+
+/** Every tracked workspace manifest that declares `prisma`, with the specifier it uses. */
+function hostDeclarations() {
+  const manifests = execFileSync('git', ['ls-files', '*package.json', ':!docs/design/**'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  })
+    .split('\n')
+    .filter((file) => file.length > 0);
+  return manifests.flatMap((file) => {
+    const pkg = JSON.parse(readFileSync(join(repoRoot, file), 'utf-8'));
+    const spec = pkg.dependencies?.prisma ?? pkg.devDependencies?.prisma;
+    return spec === undefined ? [] : [{ file, spec }];
+  });
+}
+
+/** Where a module the given file would import actually lives on disk. */
+function realResolve(fromFile, specifier) {
+  return realpathSync(createRequire(fromFile).resolve(specifier));
+}
+
+const hostVersion = catalogVersion(
+  readFileSync(join(repoRoot, 'pnpm-workspace.yaml'), 'utf-8'),
+  'prisma',
+);
+require_(
+  hostVersion !== undefined && EXACT_VERSION.test(hostVersion),
+  `pnpm-workspace.yaml's catalog must pin prisma to an exact version; found "${hostVersion}".`,
+);
+for (const { file, spec } of hostDeclarations()) {
+  require_(
+    spec === 'catalog:',
+    `${file} declares prisma as "${spec}"; use "catalog:" so every package runs the same host.`,
+  );
+}
+
+const hostProbe = join(repoRoot, 'examples/orm-demo/package.json');
+let hostManifestPath;
+try {
+  hostManifestPath = realResolve(hostProbe, 'prisma/package.json');
+} catch (error) {
+  require_(
+    false,
+    `the prisma host is not installed for examples/orm-demo (${error.message.split('\n')[0]}); run pnpm install.`,
+  );
+}
+if (hostManifestPath !== undefined) {
+  const host = JSON.parse(readFileSync(hostManifestPath, 'utf-8'));
+  require_(
+    host.version === hostVersion,
+    `the installed prisma is ${host.version}, but the catalog pins ${hostVersion}; run pnpm install.`,
+  );
+  const hostFailures = checkHost({ hostManifestPath, cliDir });
+  for (const failure of hostFailures) require_(false, failure);
+  if (hostFailures.length === 0) {
+    process.stderr.write(
+      `prisma@${host.version} resolves the workspace family and shares ${ENGINE} with it\n`,
+    );
+  }
 }
 
 /** Packs one package and returns the extracted tarball's `package/` root. */
@@ -179,18 +248,6 @@ try {
     require_(
       importing.length > 0,
       `no chunk in the packed dist/ imports ${ENGINE} by specifier — it has been inlined into the tarball instead of left external. Add it to tsdown.config.ts's \`external\` array.`,
-    );
-    // The executable specifically. The whole-dist check above passes as soon
-    // as ONE chunk keeps the specifier, so the library entries alone would
-    // satisfy it while the bin — built by a second tsdown config, with its own
-    // externals — carried a private copy of the engine.
-    require_(
-      !chunks.includes(BIN) || importsEngine(distDir, BIN),
-      `the packed ${BIN} does not import ${ENGINE} by specifier — the executable's tsdown config has inlined its own copy of the engine. Add it to that config's \`external\` array.`,
-    );
-    require_(
-      chunks.includes(BIN),
-      `the packed dist/ has no ${BIN} — the executable @prisma/composer-cli publishes as its bin is missing from the tarball.`,
     );
     if (importing.length > 0) {
       process.stderr.write(`${ENGINE} stays external in: ${importing.join(', ')}\n`);

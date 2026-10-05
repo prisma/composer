@@ -1,6 +1,6 @@
 {
   "name": "@prisma/example-env-param",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,18 +8,18 @@
     "typecheck": "tsc --noEmit",
     "dev": "bun run src/server.ts",
     "smoke:deployed": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun scripts/smoke.ts )",
-    "deploy": "pnpm turbo run build --filter @prisma/example-env-param... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} ${ENV_PARAM_STAGE:+--stage \"$ENV_PARAM_STAGE\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --production ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )",
-    "destroy:stage": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts --stage \"${ENV_PARAM_STAGE:?ENV_PARAM_STAGE is required}\" ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )"
+    "deploy": "pnpm turbo run build --filter @prisma/example-env-param... && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../node_modules/.bin/prisma deploy module.ts ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} ${ENV_PARAM_STAGE:+--stage \"$ENV_PARAM_STAGE\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts module.ts --production ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )",
+    "destroy:stage": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../../.env}\"; set +a; bun ../../scripts/composer-destroy.ts module.ts --stage \"${ENV_PARAM_STAGE:?ENV_PARAM_STAGE is required}\" ${ENV_PARAM_STACK_NAME:+--name \"$ENV_PARAM_STACK_NAME\"} )"
   },
   "dependencies": {
-    "@prisma/cli-engine": "0.6.2",
-    "@prisma/composer": "workspace:0.25.0",
-    "@prisma/composer-cli": "workspace:0.25.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.25.0"
+    "@prisma/composer": "workspace:0.26.0",
+    "@prisma/composer-cli": "workspace:0.26.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.26.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.13",
+    "prisma": "catalog:",
     "typescript": "^6.0.3"
   }
 }

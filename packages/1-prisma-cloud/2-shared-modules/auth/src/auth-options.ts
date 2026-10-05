@@ -61,7 +61,7 @@ function hardenedPool(databaseUrl: string): pg.Pool {
     // Better Auth is schema-unqualified; every query runs against the auth
     // schema via search_path — the same posture the conformance test pins.
     // `options` applies it at connection startup on Prisma Postgres, but the
-    // local `prisma-composer dev` emulator (and poolers such as pgbouncer)
+    // local `prisma dev` emulator (and poolers such as pgbouncer)
     // drop the startup `options` param, so it is also set per connection below.
     options: `-c search_path=${AUTH_SCHEMA}`,
     connectionTimeoutMillis: 20_000,

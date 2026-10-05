@@ -1,8 +1,8 @@
 /**
  * The plan-S5 proving script (plan.md's S5 outcome; local-dev spec's
- * acceptance criteria 1, 2, 3, 6): drives the REAL, published
- * `prisma-composer` binary — `examples/store/node_modules/.bin/prisma-composer`
- * — as a real child process against `examples/store`, a real multi-module
+ * acceptance criteria 1, 2, 3, 6): drives the REAL, published `prisma`
+ * host's `dev`, which mounts this workspace's Composer family, as a real
+ * child process against `examples/store`, a real multi-module
  * app (four services, two Postgres-backed modules, cron), exactly as an
  * operator would run it. Every other integration script in this package
  * drives the pipeline's own functions directly; this one is deliberately at
@@ -30,7 +30,7 @@
  *      catalog build adapter declares `Bundle.watch: [runnable.source]` —
  *      the built artifact path itself (build.ts) — so touching
  *      `modules/catalog/dist/server.mjs` is exactly the file session 1's own
- *      running `prisma-composer dev` process is already watching. The script
+ *      running `prisma dev` process is already watching. The script
  *      only touches the file and polls the compute emulator for the new pid
  *      — it never calls assemble or alchemy itself; the running process's
  *      own debounce, re-assemble, and re-converge are what's under test.
@@ -76,6 +76,7 @@ import * as path from 'node:path';
 import { containerEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
+import { prismaBinDir } from './spawn-prisma.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
@@ -97,7 +98,7 @@ const storeDir = path.join(repoRoot, 'examples', 'store');
 // removes that whole directory (runDevTeardown), which would delete these
 // logs mid-run otherwise.
 const logDir = path.join(integrationDir, '.local-dev-store-proving-logs');
-const CLI_BIN = path.join(storeDir, 'node_modules', '.bin', 'prisma-composer');
+const CLI_BIN = path.join(prismaBinDir(storeDir), 'prisma');
 const READY_TIMEOUT_MS = 90_000;
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
@@ -297,7 +298,7 @@ async function waitForAsync<T>(
 }
 
 /**
- * Starts `prisma-composer dev module.ts [--fresh]` as a real, teed child
+ * Starts `prisma dev module.ts [--fresh]` as a real, teed child
  * process (stdout/stderr appended to a log FILE by raw fd — the same reason
  * local-dev.integration.ts avoids piped capture: nested grandchildren losing
  * output under some parent process trees). Bounded: the ready-wait itself is
@@ -427,7 +428,7 @@ function alchemyBin(startDir: string): string {
  * runnable into `.prisma-composer/artifacts/catalog.service/bundle/` —
  * touching the source alone does not move anything alchemy actually reads;
  * the copy must be refreshed), then re-converges the SAME dev stack file
- * session 1's own `prisma-composer dev` already wrote, directly with the
+ * session 1's own `prisma dev` already wrote, directly with the
  * real `alchemy` binary — no CLI re-invocation, no SIGINT, session 1's
  * services stay running throughout. The stack file's `bundles` map needs no
  * edit: `assemble()`'s output directory is a deterministic function of the
@@ -440,7 +441,7 @@ const REAL_WATCH_TIMEOUT_MS = 30_000;
 
 /**
  * Touches ONLY catalog's built artifact — the same file the running
- * `prisma-composer dev` process's own chokidar watch loop is already
+ * `prisma dev` process's own chokidar watch loop is already
  * watching (`Bundle.watch: [runnable.source]`, build.ts). This does not call
  * assemble or alchemy itself: the running process's own debounce (300ms),
  * re-assemble, and re-converge are what's being proved.
@@ -536,7 +537,7 @@ async function rebuildCatalogAndReconverge(
 }
 
 async function main(): Promise<void> {
-  console.log('local dev (S5 proving): examples/store via the real prisma-composer dev binary');
+  console.log('local dev (S5 proving): examples/store via the real prisma dev');
 
   fs.rmSync(path.join(storeDir, '.prisma-composer'), { recursive: true, force: true });
   fs.rmSync(path.join(storeDir, '.alchemy'), { recursive: true, force: true });
@@ -732,7 +733,7 @@ async function main(): Promise<void> {
         `[proving] final --fresh cleanup did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const stray = spawnSync('pgrep', ['-f', 'prisma-composer dev module.ts']);
+    const stray = spawnSync('pgrep', ['-f', 'prisma dev module.ts']);
     for (const line of (stray.stdout?.toString() ?? '').split('\n')) {
       const pid = Number(line.trim());
       if (Number.isFinite(pid) && pid > 0) {

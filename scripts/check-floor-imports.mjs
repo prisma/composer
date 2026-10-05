@@ -2,14 +2,13 @@
 // Every published entry of @prisma/composer and @prisma/composer-cli must
 // load in a fresh `node`.
 //
-// `engines.node` is a promise about the version a consumer installs on, and
-// until this existed nothing in CI kept that promise past `--version`. The
-// node-floor job smoked `dist/bin.mjs --version` and `--help`, but the CLI
-// keeps its executors behind `await import()` (scripts/check-family-static-
-// graph.mjs enforces that boundary), so start-up deliberately loads none of
-// alchemy or effect. The whole constellation a `deploy` run evaluates was
-// therefore never imported on the floor version by anything here, and a
-// consumer running `prisma-composer deploy` was the first to find out.
+// `engines.node` is a promise about the version a consumer installs on. The
+// family keeps its executors behind `await import()` (scripts/check-family-
+// static-graph.mjs enforces that boundary), so loading it deliberately loads
+// none of alchemy or effect. Without this check, the whole constellation a
+// `deploy` run evaluates would never be imported on the floor version by
+// anything in CI, and a consumer running `prisma deploy` would be the first
+// to find out.
 //
 // Each entry gets a process of its own. Sharing one would let the first
 // import's module cache satisfy the rest, so a single passing entry would

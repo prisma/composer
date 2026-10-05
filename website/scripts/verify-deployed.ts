@@ -81,7 +81,7 @@ if (matches.length > 1) {
     fail(
       `Project '${app.name}' has ${matches.length} '${siteService.name}' apps on its default ` +
         'Branch, so production cannot be identified. Tear down the stray stage(s) ' +
-        '(`prisma-composer destroy module.ts --stage <name>`) and re-run.\n' +
+        '(`DOCS_STAGE=<name> pnpm run destroy` in website/) and re-run.\n' +
         matches.map((s) => `  - ${s.id} ${s.appEndpointDomain}`).join('\n'),
     );
   }

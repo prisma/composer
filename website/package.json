@@ -1,6 +1,6 @@
 {
   "name": "composer-docs-website",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,23 +10,23 @@
     "typecheck": "pnpm run render && tsc --noEmit",
     "test": "pnpm run render && bun test tests",
     "dev": "pnpm run render && bun run src/server.ts",
-    "deploy": "pnpm turbo run build --filter composer-docs-website && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun node_modules/.bin/prisma-composer deploy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} )",
-    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun node_modules/.bin/prisma-composer destroy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} ${DOCS_STAGE:---production} )"
+    "deploy": "pnpm turbo run build --filter composer-docs-website && ( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun ../node_modules/.bin/prisma deploy module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} )",
+    "destroy": "( set -a; . \"${PRISMA_DEPLOY_ENV:-../.env}\"; set +a; bun ../scripts/composer-destroy.ts module.ts ${DOCS_STAGE:+--stage \"$DOCS_STAGE\"} ${DOCS_STAGE:---production} )"
   },
   "dependencies": {
-    "@prisma/cli-engine": "0.6.2",
-    "@prisma/composer": "workspace:0.25.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.25.0",
+    "@prisma/composer": "workspace:0.26.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.26.0",
     "alchemy": "2.0.0-beta.78"
   },
   "devDependencies": {
-    "@prisma/composer": "workspace:0.25.0",
-    "@prisma/composer-cli": "workspace:0.25.0",
-    "@prisma/composer-prisma-cloud": "workspace:0.25.0",
+    "@prisma/composer": "workspace:0.26.0",
+    "@prisma/composer-cli": "workspace:0.26.0",
+    "@prisma/composer-prisma-cloud": "workspace:0.26.0",
     "@prisma/management-api-sdk": "^1.80.0",
     "@types/bun": "^1.3.13",
     "@types/markdown-it": "^14.1.2",
     "markdown-it": "^14.1.0",
+    "prisma": "catalog:",
     "shiki": "^4.2.0",
     "typescript": "^6.0.3"
   }

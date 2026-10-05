@@ -27,6 +27,8 @@ jobs:
         run: pnpm lint
       - name: Lint (dependency-cruiser — domain/layer/plane boundaries, ADR-0028)
         run: pnpm lint:deps
+      - name: Lint (docs, examples, workflows and package messages never name the retired binary)
+        run: pnpm lint:retired-binary-name
 
   typecheck:
     name: Type Check
@@ -166,9 +168,8 @@ jobs:
     # above runs under bun, which ignores `engines.node` entirely, and
     # `.tool-versions` pins node 24.16.0 — so nothing else here ever executes
     # the floor version. This job does. It covers what a Node user hits first:
-    # the two runtime features the floor rests on, the CLI's TypeScript entry
-    # under a real node, `node --test` over the repo's TypeScript scripts, the
-    # built binary a consumer installs, and every published entrypoint of
+    # the two runtime features the floor rests on, `node --test` over the
+    # repo's TypeScript scripts, and every published entrypoint of
     # @prisma/composer and @prisma/composer-cli. It deliberately does NOT re-run the bun suites under
     # node — bun is the runner there, so doing so would prove nothing about
     # node.
@@ -208,31 +209,15 @@ jobs:
           printf 'const greeting: string = "type stripping works"\nconsole.log(greeting)\n' > "$RUNNER_TEMP/floor-check.mts"
           node "$RUNNER_TEMP/floor-check.mts"
           node -e "const { DatabaseSync } = require('node:sqlite'); new DatabaseSync(':memory:').exec('create table t(x)'); console.log('node:sqlite works')"
-      # The one test in the repo that spawns a real `node` at the CLI's
-      # TypeScript entry (src/bin.ts). bun runs the SUITE; the process under
-      # test is the 22.18.0 node put on PATH above, which is what makes this
-      # the proof for the CLI's front door.
-      - name: CLI node-compat smoke test (spawns node at src/bin.ts)
-        run: pnpm --filter @internal/cli exec bun test src/__tests__/node-compat.test.ts
       # `node --test` over scripts/*.test.ts — a real node executing TypeScript
       # test files directly, so type stripping again, across the script suite.
       - name: Repo script tests (node --test over TypeScript sources)
         run: pnpm test:scripts
-      # What a consumer actually installs and runs in their first minutes.
-      # `--help` writes to stderr, hence the redirect.
-      - name: Smoke the published CLI binary
-        run: |
-          BIN=packages/9-public/composer-cli/dist/bin.mjs
-          VERSION=$(node -p "require('./packages/9-public/composer-cli/package.json').version")
-          node "$BIN" --version | grep -q "$VERSION"
-          node "$BIN" --help 2>&1 | grep -q 'deploy <entry>'
-      # The step above proves start-up, and start-up is exactly the part that
-      # loads none of the deploy machinery: the CLI keeps its executors behind
-      # `await import()` (check-family-static-graph.mjs enforces that), so
-      # `--version` never touches alchemy, effect, or any provider. Until this
-      # step, the constellation a real `deploy` evaluates had never been
-      # imported on the floor version anywhere in CI, and a consumer running
-      # `prisma-composer deploy` was the first to find out.
+      # The family keeps its executors behind `await import()`
+      # (check-family-static-graph.mjs enforces that), so loading it touches
+      # none of alchemy, effect, or any provider. This step imports every
+      # published entry, which is what puts the constellation a real `deploy`
+      # evaluates on the floor version.
       - name: Import every published entrypoint on the floor
         run: pnpm check:floor-imports
 

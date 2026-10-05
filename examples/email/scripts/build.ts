@@ -4,7 +4,7 @@
  * stand-in for `templates.tsx` that the deploy CLI's module-graph loader can
  * read.
  *
- * `prisma-composer deploy` loads `module.ts`'s import graph
+ * `prisma deploy` loads `module.ts`'s import graph
  * (`module.ts` -> `service.ts` -> `templates.tsx`) with Node's own ESM
  * loader to build deploy topology. Node's native TypeScript support strips
  * types but has no JSX transform, so a `.tsx` file with real JSX syntax

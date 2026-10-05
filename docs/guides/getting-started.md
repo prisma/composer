@@ -49,13 +49,13 @@ You'll need:
 - **Node 22.18 or newer** — check with `node --version` before anything else.
   Composer hands your TypeScript entry file straight to Node, and Node runs
   `.ts` directly only from 22.18.0, the release that turns type stripping on by
-  default. On anything older `prisma-composer` stops at
+  default. On anything older `prisma deploy` stops at
   `ERR_UNKNOWN_FILE_EXTENSION` naming your own file; 22.17 is not close enough.
 - [Bun](https://bun.sh) — Prisma Compute runs Bun, so that's what the server
   code targets (`Bun.serve`), and it's the fastest way to run things locally.
 - pnpm (or npm).
-- For the deploy at the end: a Prisma Cloud workspace, plus a service token
-  and your workspace id from the [Prisma Console](https://console.prisma.io).
+- For the deploy at the end: a Prisma Cloud workspace you can sign in to
+  with `prisma auth login`.
   (Naming, once: **Prisma Cloud** is the platform; **Prisma Compute** runs
   your services on it, and **Prisma Postgres** hosts the databases.)
 
@@ -287,7 +287,7 @@ build first (the build is §6, just below):
 
 ```sh
 pnpm build
-prisma-composer dev module.ts
+pnpm prisma dev module.ts
 ```
 
 It runs the same pipeline a deploy runs, against local stand-ins for Prisma
@@ -297,7 +297,6 @@ Cloud, and prints the front door — each service's local URL:
 [dev] ready:
 [dev] gateway   http://localhost:3001
 [dev] quotes    http://localhost:3000
-[dev] logs: prisma-composer log module.ts
 
 curl localhost:3001
 # Make it work, make it right, make it fast.
@@ -305,12 +304,9 @@ curl localhost:3001
 
 `dev` keeps running and restarts a service when its build changes; `Ctrl-C`
 stops it (your data stays, so the next start is warm). It doesn't print
-service logs — that's a separate command so it doesn't bury the front door:
-
-```sh
-prisma-composer log module.ts            # every service, merged and prefixed
-prisma-composer log module.ts quotes     # just one
-```
+service logs, so it doesn't bury the front door. The logs come from the `log`
+operation in `@prisma/composer/control`, which a short script calls;
+[Running locally](running-locally.md#logs) has one.
 
 Under the hood the local providers write the same `COMPOSER_*` environment
 variables a deploy writes, each keyed by the service's address —
@@ -318,8 +314,8 @@ variables a deploy writes, each keyed by the service's address —
 `COMPOSER_QUOTES_INPUT` for its input document, `COMPOSER_QUOTES_URL` for a
 `quotes` dependency's URL — so `service.load()`, `service.input()`, and
 `service.port()` read exactly what they'll read in production. You never set
-them by hand locally; `dev` *is* the deploy. Full workflow (one-service
-logs, `--tail`, `--fresh`, what persists) in
+them by hand locally; `dev` *is* the deploy. Full workflow (logs, `--fresh`,
+what persists) in
 [Running locally](running-locally.md).
 
 ## 6. Build and deploy
@@ -345,16 +341,21 @@ shared contract code into a chunk neither output contains:
 pnpm run build
 ```
 
-Deploying needs exactly two environment variables. Create a service token in
-your workspace in the [Prisma Console](https://console.prisma.io); the
-workspace id is in the workspace's settings:
+Deploying needs a signed-in `prisma`. Sign in once; it opens a browser and
+stores a session for one workspace:
 
 ```sh
-export PRISMA_SERVICE_TOKEN=...
-export PRISMA_WORKSPACE_ID=...
-
-pnpm exec prisma-composer deploy module.ts
+pnpm prisma auth login
+pnpm prisma deploy module.ts
 ```
+
+In CI, set `PRISMA_SERVICE_TOKEN` to a service token from the
+[Prisma Console](https://console.prisma.io) instead.
+
+`pnpm prisma` runs under Node, which suits this app: the modules `prisma`
+loads declare services and never call Bun APIs themselves. An app whose
+modules do needs the bin run under Bun; see
+[Deploying and operating § Runtime](deploying.md#runtime).
 
 The CLI creates a Project named `my-app` in your workspace, provisions both
 services on Prisma Compute, points the gateway's `quotes` dependency at the
@@ -391,13 +392,18 @@ works — it just isn't deduplicated.)
 [Building an app](building-an-app.md#calls-retry-safely-for-you) has these too.
 
 Re-deploying is idempotent — it updates the same Project. For an isolated
-copy of the whole app (own services, own config), deploy a **stage**, and
-tear it down when you're done:
+copy of the whole app (own services, own config), deploy a **stage**:
 
 ```sh
-pnpm exec prisma-composer deploy module.ts --stage demo
-pnpm exec prisma-composer destroy module.ts --stage demo
+pnpm prisma deploy module.ts --stage demo
 ```
+
+Tear it down when you're done with the `destroy` operation from
+`@prisma/composer/control`; [Deploying and operating](deploying.md#destroying)
+has the script. The script runs outside the `prisma` CLI, so it does not use
+your `prisma auth login` session: it needs `PRISMA_SERVICE_TOKEN` and
+`PRISMA_WORKSPACE_ID` in the environment, and
+[Credentials](deploying.md#credentials) says where to find both.
 
 ## Porting an existing app
 
@@ -455,9 +461,8 @@ the wiring for free.
   config params, secrets.
 - [Testing](testing.md) — unit tests with `mockService`, integration tests
   with `bootstrapService`.
-- [Running locally](running-locally.md) — `prisma-composer dev` and
-  `prisma-composer log` in full: one service, `--tail`, `--fresh`, warm
-  restarts.
+- [Running locally](running-locally.md) — `prisma dev` and the `log`
+  operation in full: one service, history, `--fresh`, warm restarts.
 - [Deploying and operating](deploying.md) — stages, destroy, CI, how the app
   behaves in production.
 - [`examples/`](../../examples/) — complete apps: start with

@@ -7,7 +7,7 @@
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
  * Idempotent: `ensureDaemon` itself adopts an already-healthy daemon, so
- * repeated `prisma-composer dev` sessions are cheap.
+ * repeated `prisma dev` sessions are cheap.
  *
  * Entry resolution (spec § 2's publish note): `ensureDaemon` does not
  * resolve its own daemon program — it takes the resolved `entry` path from

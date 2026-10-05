@@ -1,31 +1,50 @@
 # Deploying and operating
 
-One CLI, two commands. `prisma-composer deploy` takes your entry file (the
-one whose default export is the root module) and stands the whole app up on
-Prisma Cloud; `prisma-composer destroy` tears an environment down. Which
-environment you're touching — production or an isolated **stage** — is always
-a command-line choice, never something in your code.
+`prisma deploy` takes your entry file (the one whose default export is the
+root module) and stands the whole app up on Prisma Cloud. Tearing an
+environment down is not a `prisma` command: it is the `destroy` operation from
+`@prisma/composer/control`, which you call from a script (see
+[Destroying](#destroying)). Which environment you're touching — production or
+an isolated **stage** — is always your choice when you run it, never something
+in your code.
 
 | You want to… | Run |
 | --- | --- |
-| Deploy to production | `prisma-composer deploy module.ts` |
-| Deploy an isolated environment | `prisma-composer deploy module.ts --stage <name>` |
-| Deploy under a different app name | `prisma-composer deploy module.ts --name demo-42` |
-| Tear down an isolated environment | `prisma-composer destroy module.ts --stage <name>` |
-| Tear down production's resources | `prisma-composer destroy module.ts --production` |
+| Deploy to production | `prisma deploy module.ts` |
+| Deploy an isolated environment | `prisma deploy module.ts --stage <name>` |
+| Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
+| Tear down an environment | the `destroy` operation (see [Destroying](#destroying)) |
 
 ## Credentials
 
-Two environment variables, nothing else:
+The `prisma` commands and the operations you call from a script sign in
+differently:
 
-- `PRISMA_SERVICE_TOKEN` — create a service token for your workspace in the
-  [Prisma Console](https://console.prisma.io).
-- `PRISMA_WORKSPACE_ID` — in the workspace's settings.
+- **`prisma deploy`** signs in the way every `prisma` command does. On your
+  machine, run `prisma auth login` once; it opens a browser and stores a
+  session for one workspace. In CI, set `PRISMA_SERVICE_TOKEN` instead; it
+  overrides any stored session. `prisma dev` needs no sign-in.
+- **The operations of `@prisma/composer/control`**, and so a destroy script,
+  never use a `prisma auth login` session. `deploy` and `destroy` read two
+  environment variables, and each is required once the operation reaches
+  Prisma Cloud: `PRISMA_SERVICE_TOKEN`, a service token you create in the
+  workspace's settings in the [Prisma Console](https://console.prisma.io), and
+  `PRISMA_WORKSPACE_ID`, the workspace's id, shown in the same settings. `dev`
+  and `log` read neither, because they never reach the platform.
 
-A fresh checkout with just those two set deploys successfully — the CLI finds
-or creates everything else. Keep the values out of the repo (an `.env` you
-source at deploy time, or CI secrets). There's no interactive login; the
-token is the only authentication.
+A fresh checkout with credentials in place deploys successfully — the CLI
+finds or creates everything else. Keep token values out of the repo (an `.env`
+you source at deploy time, or CI secrets).
+
+## Runtime
+
+The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
+`module.ts` and every module it imports, so run the bin under the runtime
+those modules need. Node is the default. If they use Bun APIs (they import
+`bun`, or call `Bun.serve` when imported), run the bin under Bun instead:
+`bun node_modules/.bin/prisma deploy module.ts`. The examples in the
+prisma/composer repository run it under Bun, which is why their scripts
+start with `bun`.
 
 ## Configuration
 
@@ -85,11 +104,11 @@ for hoisted installations. On Windows it prefers `alchemy.exe`, then
 `alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
 Windows shim must not be reported as a missing Alchemy dependency.
 
-`prisma-composer deploy` does not build for you — it assembles what your
+`prisma deploy` does not build for you — it assembles what your
 build produced:
 
 ```sh
-turbo run build && prisma-composer deploy module.ts
+turbo run build && prisma deploy module.ts
 ```
 
 Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `state: prismaState()` line in the `composer` section of `prisma.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
@@ -105,9 +124,9 @@ service, every database, its own configuration — as a Branch of that same
 Project. Nothing is shared with production except the code:
 
 ```sh
-prisma-composer deploy module.ts                  # production
-prisma-composer deploy module.ts --stage staging  # a persistent staging environment
-prisma-composer deploy module.ts --stage pr-42    # one environment per PR
+prisma deploy module.ts                  # production
+prisma deploy module.ts --stage staging  # a persistent staging environment
+prisma deploy module.ts --stage pr-42    # one environment per PR
 ```
 
 Re-deploying any environment is idempotent — it updates the resources in
@@ -160,15 +179,36 @@ configure printed it and nothing depended on it.
 
 ## Destroying
 
-`destroy` refuses to guess. A bare `prisma-composer destroy` is an error —
-name the target:
+The `prisma` CLI has no teardown command. Call the `destroy` operation from
+`@prisma/composer/control` in a script, run from the directory you deploy
+from. It refuses to guess: `target` is required, either
+`{ kind: 'stage', stage }` or `{ kind: 'production' }`.
 
-```sh
-prisma-composer destroy module.ts --stage staging  # staging only; production untouched
-prisma-composer destroy module.ts --production     # production's resources
+```ts
+// destroy-staging.ts
+import { fileURLToPath } from 'node:url';
+import { destroy } from '@prisma/composer/control';
+import prismaConfig from './prisma.config.ts';
+
+const result = await destroy({
+  entry: 'module.ts',
+  target: { kind: 'stage', stage: 'staging' }, // or { kind: 'production' }
+  config: {
+    value: prismaConfig.composer,
+    file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
+  },
+});
+if (!result.ok) {
+  console.error(result.failure.message);
+  process.exitCode = 1;
+}
 ```
 
-`--stage` and `--production` together is an error too. The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
+Run it with the two variables under [Credentials](#credentials) set, for
+example `bun destroy-staging.ts`, or `node destroy-staging.ts` on Node 22.18
+or newer. A `prisma auth login` session is not used.
+
+The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
 Destroying production also removes the app's Project once nothing is left in
 it, so hand-run stacks don't pile up as empty Projects in your workspace. If
@@ -176,13 +216,11 @@ the Project still holds another stage's resources, it's left in place.
 
 ## CI
 
-Nothing is CI-specific — set the two variables as CI secrets, build, run the
-same commands. The per-PR environment pattern:
-
-```sh
-prisma-composer deploy module.ts --stage "pr-$PR_NUMBER"    # on push
-prisma-composer destroy module.ts --stage "pr-$PR_NUMBER"   # on close
-```
+Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
+as CI secrets, build, and run the same commands. The per-PR environment
+pattern: on push, run `prisma deploy module.ts --stage "pr-$PR_NUMBER"`; on
+close, run a script like the one under [Destroying](#destroying) whose
+target is that stage, `{ kind: 'stage', stage: 'pr-42' }` for PR 42.
 
 One extra: if your app binds input fields with `envSecret` or `envParam`
 (see [Building an app § Service input](building-an-app.md#service-input)),
@@ -347,7 +385,7 @@ Deleting the variables by hand is not useful: the next deploy's claim (or the pl
 
 That same reconcile can also **rotate the database's default connection credentials**, exactly as the stage bullet above describes: rotation happens when the deploy state carries no stored connection secrets for the database — always the case for state migrated from the legacy store. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (Console-copied URLs, BI tools, backup jobs) stop working and must be re-issued.
 
-Local dev state is not migrated: if `prisma-composer dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
+Local dev state is not migrated: if `prisma dev` fails at plan time with `No provider is registered for resource type 'PrismaComposer.…'`, run it once with `--fresh` to clear the stale local state.
 
 ## Updating a database whose schema an older version synthesized
 
@@ -364,11 +402,18 @@ With the graph empty, planning auto-baselines from the ref: it authors empty →
 
 ## Driving deploys from code
 
-Everything the CLI does is also callable in-process, from
-`@prisma/composer/control`: typed `deploy`, `destroy`, `dev`, and `log`
+`@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, and `log`
 operations that return structured results instead of printing and exiting.
-The `prisma-composer` commands are thin renderers over these same operations,
-so the two surfaces can't drift.
+`prisma deploy` and `prisma dev` are thin renderers over the `deploy` and
+`dev` operations, so the two surfaces can't drift. `destroy` and `log` have
+no command; these operations are how you run them. They read their
+credentials from the environment (see [Credentials](#credentials)).
+
+A script imports only `@prisma/composer/control`. The extensions' own
+`/control` entries, such as `@prisma/composer/node/control` and
+`@prisma/composer-prisma-cloud/control`, are different: only
+`prisma.config.ts` imports them (ADR-0017), and the script reaches them
+through that file's `composer` section.
 
 ```ts
 import { fileURLToPath } from 'node:url';
