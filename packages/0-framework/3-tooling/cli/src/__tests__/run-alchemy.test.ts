@@ -155,6 +155,25 @@ describe('resolveAlchemyEntry()', () => {
     );
   });
 
+  for (const [label, writeManifest] of [
+    [
+      'a malformed manifest',
+      (manifestPath: string) => fs.writeFileSync(manifestPath, '{ "name": "alchemy",'),
+    ],
+    ['an unreadable manifest', (manifestPath: string) => fs.mkdirSync(manifestPath)],
+  ] as const) {
+    test(`raises DEPLOY.ALCHEMY_BIN_MISSING, not a raw error, for ${label}`, () => {
+      const { composerFile, storeDir } = pnpmStoreLayout(makeTmpDir());
+      const packageDir = path.join(storeDir, 'alchemy');
+      fs.mkdirSync(packageDir, { recursive: true });
+      writeManifest(path.join(packageDir, 'package.json'));
+
+      expect(() => resolveAlchemyEntry(composerFile)).toThrow(
+        expect.objectContaining({ code: 'DEPLOY.ALCHEMY_BIN_MISSING' }),
+      );
+    });
+  }
+
   test('raises DEPLOY.ALCHEMY_BIN_MISSING, naming the package lookup, when alchemy is not installed', () => {
     const { composerFile } = pnpmStoreLayout(makeTmpDir());
 

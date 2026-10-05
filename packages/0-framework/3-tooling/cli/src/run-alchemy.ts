@@ -41,10 +41,16 @@ function findAlchemyPackageDir(fromFile: string): string | undefined {
   }
 }
 
+function readManifest(packageDir: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 function binEntryOf(packageDir: string): string | undefined {
-  const manifest: unknown = JSON.parse(
-    fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'),
-  );
+  const manifest = readManifest(packageDir);
   if (typeof manifest !== 'object' || manifest === null || !('bin' in manifest)) return undefined;
   const bin = manifest.bin;
   const relative =
