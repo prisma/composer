@@ -422,12 +422,14 @@ that surprise:
    service it calls.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
-   to an absolute directory to give a checkout or CI job its own emulators and
-   data there; a relative path fails with `DEV.EMULATORS_DIR_INVALID`.
-   Local Postgres is not covered: `@prisma/dev` keeps its server records
-   machine-wide, so two registry roots still share local Postgres data.
-   `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`
-   returns the directory in effect.
+   to an absolute directory to give a checkout or CI job its own compute and
+   buckets daemons, registry and data; a relative path (or an unexpanded `~`)
+   fails with `DEV.EMULATORS_DIR_INVALID`. It does not isolate local Postgres:
+   servers are named after the app and database, so two checkouts of one app
+   share a server, and `--fresh` or teardown in either stops it and deletes
+   the database for both. `emulatorRegistryRoot()` from
+   `@prisma/composer-prisma-cloud/local-target` returns the directory in
+   effect.
 7. Windows isn't supported yet.
 
 Local Postgres runs on `@prisma/dev`, which `@prisma/composer-prisma-cloud`

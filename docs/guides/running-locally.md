@@ -130,17 +130,22 @@ token, workspace, or network is involved. Three consequences worth knowing:
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.
 - **`PRISMA_COMPOSER_EMULATORS_DIR` gives a checkout or a CI job its own
-  emulators.** By default every `dev` on the machine shares one set of
-  emulator daemons, registered under `~/.prisma-composer/emulators`. Set the
-  variable to an absolute directory and `dev` starts and finds its own
-  emulators there instead, with their own data, so two checkouts or two CI
-  jobs never share a daemon by accident. Both pick free ports, so they can
-  run side by side. The variable doesn't cover local Postgres: `@prisma/dev`
-  keeps its server records machine-wide whatever it's set to, so two registry
-  roots still share local Postgres data. A relative path is refused with
-  `DEV.EMULATORS_DIR_INVALID`.
-  `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`
-  returns the directory in effect.
+  compute and buckets emulators.** By default every `dev` on the machine
+  shares one set of emulator daemons, registered under
+  `~/.prisma-composer/emulators`. Set the variable to an absolute directory
+  and `dev` starts and finds its compute and buckets daemons, their registry
+  and their data there instead. Each picks free ports, so several can run side
+  by side. A relative path is refused with `DEV.EMULATORS_DIR_INVALID`; `~` is
+  not expanded. `emulatorRegistryRoot()` from
+  `@prisma/composer-prisma-cloud/local-target` returns the directory in
+  effect.
+
+  The variable does not isolate local Postgres. Local Postgres servers are
+  named after the app and the database, not the directory, so two checkouts
+  of the same app get the same server names. The second checkout's Postgres
+  emulator adopts the server the first one is running, and `--fresh` or a
+  teardown in either checkout stops that server and deletes its database for
+  both.
 - **The local Postgres is one shared session.** Every connection to a local
   database lands in the same Postgres session, which outlives your service
   processes. If you use Bun's `SQL`, pass `prepare: false`

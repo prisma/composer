@@ -143,11 +143,19 @@ the scoping changes restart behavior only.
 
 1. **Converge-scoped** — the Alchemy child (ADR-0007). Providers run here;
    nothing started here survives its exit.
-2. **Machine-scoped emulators** — one per node kind, multi-tenant, holding
-   every long-lived process: the Compute emulator (service children), the
-   `prisma dev` Postgres instances (managed by the ORM CLI, per-Database),
-   and the bucket emulator. They survive dev sessions; `--fresh` removes an
-   app's instances.
+2. **Machine-scoped emulators** — one per node kind per registry root,
+   multi-tenant, holding every long-lived process: the Compute emulator
+   (service children), the `prisma dev` Postgres instances (managed by the
+   ORM CLI, per-Database), and the bucket emulator. They survive dev
+   sessions; `--fresh` removes an app's instances. The registry root is
+   `~/.prisma-composer/emulators` unless `PRISMA_COMPOSER_EMULATORS_DIR`
+   names another absolute directory, so by default one machine shares one
+   set. A root isolates the compute and buckets daemons and their registry,
+   not Postgres: Postgres instance names come from the app and database, so
+   two checkouts of one app still share a server. A daemon whose version
+   differs from the caller's is replaced, so two Composer versions sharing a
+   root replace each other's daemons back and forth; a separate root per
+   checkout stops that.
 3. **The dev session owns no processes at all** — it is a view (`attach`):
    endpoints, the stop control, and the watch loop. That same view's merged
    logs back the separate `prisma-composer log` command.
