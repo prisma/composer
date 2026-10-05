@@ -19,6 +19,7 @@ export {
   daemonLogPath,
   daemonStateDir,
   defaultRegistryRoot,
+  EMULATORS_DIR_ENV,
   ensureDaemon,
   healthPathFor,
   readOwnVersion,

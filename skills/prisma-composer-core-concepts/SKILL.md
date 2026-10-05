@@ -420,7 +420,17 @@ that surprise:
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a
    warning, and only the code path that spends it fails, at the external
    service it calls.
-6. Windows isn't supported yet.
+6. The emulators are machine-wide daemons shared by every `dev`, registered
+   under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
+   to an absolute directory to give a checkout or CI job its own compute and
+   buckets daemons, registry and data; a relative path (or an unexpanded `~`)
+   fails with `DEV.EMULATORS_DIR_INVALID`. It does not isolate local Postgres:
+   servers are named after the app and database, so two checkouts of one app
+   share a server, and `--fresh` or teardown in either stops it and deletes
+   the database for both. `emulatorRegistryRoot()` from
+   `@prisma/composer-prisma-cloud/local-target` returns the directory in
+   effect.
+7. Windows isn't supported yet.
 
 Local Postgres runs on `@prisma/dev`, which `@prisma/composer-prisma-cloud`
 declares as its own dependency (`^0.25.2`) and resolves from its own package.
