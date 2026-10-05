@@ -53,6 +53,19 @@ that relative imports inside the entry graph may use `./x.js` or extensionless
 bun APIs can only deploy under bun, since loading the graph imports that module
 — the app's choice, not a CLI limit.
 
+**The Alchemy child's runtime.** Composer runs the `bin` of the `alchemy`
+package that the app's `@prisma/composer` depends on, found from the app
+directory the way the generated stack file's own imports are, so the CLI and
+the stack code come from one install. It starts that bin with Node, as the
+bin's `#!/usr/bin/env node` line would: the host's own Node when the host runs
+under Node, and the first `node` on PATH when it runs under Bun
+(`DEPLOY.NODE_MISSING` when there is none). Composer does not pick the final
+runtime: Alchemy's launcher may move itself to Bun when the package-manager
+environment says Bun invoked it (`bunx`, `bun run`). The invocation table in
+[docs/guides/deploying.md](../../guides/deploying.md) is the user-facing
+result. The failure output prints the command line that was started, so a
+user can rerun it by hand (ADR-0007).
+
 ## The pipeline
 
 `prisma-composer deploy` is one pass from a module path to a driven Alchemy stack:
@@ -100,7 +113,7 @@ bun APIs can only deploy under bun, since loading the graph imports that module
    as an opaque value. See § Stages and containers.
 7. **Lower and drive.** Write the pipeline's results as a runnable stack
    module at `.prisma-composer/alchemy.run.ts` and drive the `alchemy` CLI against
-   it (ADR-0007), carrying every resolved container across to the child as one
+   it (ADR-0007), started as § Runtime describes, carrying every resolved container across to the child as one
    environment variable per extension — content the CLI writes but never
    reads (ADR-0038). Both `deploy` and `destroy` set it, since `alchemy
    destroy` re-imports and re-evaluates the same stack, so its target

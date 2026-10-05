@@ -350,8 +350,9 @@ needed.
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
 2. Failures are bisectable through that file. A failing deploy names its
-   path; running `alchemy deploy .prisma-composer/alchemy.run.ts` directly
-   separates "the framework computed the wrong thing" from "the engine or
+   path and prints a reproduce command: Node running the bin of the `alchemy`
+   Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
+   --stage <stage>`. Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
    lines (credentials redacted, capped at 1000 characters) and that reproduce
