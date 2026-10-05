@@ -514,9 +514,10 @@ today the blocks above plus your own Modules are the whole set, so verify a
    `Schema.TaggedError is not a function`). The extensions in the `composer`
    section import alchemy, and the app, or one of its dependencies, pins a
    different `effect` that the package manager hoisted over Composer's pin. Match the app's own
-   `effect` to `@prisma/composer`'s exact pin, or force it with
-   `"overrides": { "effect": "<pin>" }` in the app's `package.json` (yarn:
-   `resolutions`; pnpm: `pnpm.overrides`), then reinstall. A plain Composer
+   `effect` to `@prisma/composer`'s exact pin, or force it, then reinstall:
+   npm: `"overrides": { "effect": "<pin>" }` in `package.json`; pnpm 11+:
+   an `overrides:` block in `pnpm-workspace.yaml`; pnpm 10 and earlier:
+   `pnpm.overrides` in `package.json`; Yarn: `resolutions` in `package.json`. A plain Composer
    app never hits this: the public packages pin every `effect`-family
    package alchemy would float.
 2. **A deployed `/rpc/<method>` returns `401` to anything but a wired

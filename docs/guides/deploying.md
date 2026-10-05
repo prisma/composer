@@ -315,7 +315,7 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's in your app's `package.json`:
+Composer's. With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
@@ -323,8 +323,17 @@ Composer's in your app's `package.json`:
 }
 ```
 
-yarn spells the block `resolutions`, and pnpm nests it under
-`"pnpm": { "overrides": ... }`.
+With pnpm 11 and later, in `pnpm-workspace.yaml` (pnpm 11 ignores the
+`pnpm` field of `package.json`):
+
+```yaml
+overrides:
+  effect: <required>
+```
+
+With pnpm 10 and earlier, nest the npm block under
+`"pnpm": { "overrides": ... }` in `package.json`. With Yarn, the
+`package.json` block is `resolutions`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
 
