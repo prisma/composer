@@ -195,8 +195,6 @@ describe('resolveAlchemyEntry()', () => {
 });
 
 describe('nodeExecutable()', () => {
-  const nodeName = process.platform === 'win32' ? 'node.exe' : 'node';
-
   test('under Node, is the running Node itself', () => {
     expect(
       nodeExecutable({
@@ -204,24 +202,21 @@ describe('nodeExecutable()', () => {
         execPath: '/opt/node/bin/node',
         env: {},
         platform: 'linux',
-        exists: fs.existsSync,
+        exists: () => false,
       }),
     ).toBe('/opt/node/bin/node');
   });
 
   test('under Bun, is the first node on PATH, so Alchemy keeps running under Node', () => {
-    const empty = makeTmpDir();
-    const withNode = makeTmpDir();
-    const node = path.join(withNode, nodeName);
-    fs.writeFileSync(node, '', { mode: 0o755 });
+    const node = '/usr/local/bin/node';
 
     expect(
       nodeExecutable({
         bun: true,
         execPath: '/opt/bun/bin/bun',
-        env: { PATH: [empty, withNode].join(path.delimiter) },
-        platform: process.platform,
-        exists: fs.existsSync,
+        env: { PATH: '/missing:/usr/local/bin:/usr/bin' },
+        platform: 'linux',
+        exists: (file) => file === node || file === '/usr/bin/node',
       }),
     ).toBe(node);
   });
@@ -240,17 +235,36 @@ describe('nodeExecutable()', () => {
     ).toBe(node);
   });
 
-  test('under Bun with no node on PATH, raises DEPLOY.NODE_MISSING', () => {
-    expect(() =>
+  test('on Windows without PATHEXT, tries the default extensions', () => {
+    const node = 'C:\\nodejs\\node.EXE';
+
+    expect(
       nodeExecutable({
         bun: true,
-        execPath: '/opt/bun/bin/bun',
-        env: { PATH: makeTmpDir() },
-        platform: process.platform,
-        exists: fs.existsSync,
+        execPath: 'C:\\bun\\bun.exe',
+        env: { PATH: 'C:\\nodejs' },
+        platform: 'win32',
+        exists: (file) => file === node,
       }),
-    ).toThrow(expect.objectContaining({ code: 'DEPLOY.NODE_MISSING' }));
+    ).toBe(node);
   });
+
+  for (const [platform, PATH] of [
+    ['linux', '/usr/local/bin:/usr/bin'],
+    ['win32', 'C:\\nodejs;C:\\Windows'],
+  ] as const) {
+    test(`under Bun with no node on PATH, raises DEPLOY.NODE_MISSING on ${platform}`, () => {
+      expect(() =>
+        nodeExecutable({
+          bun: true,
+          execPath: '/opt/bun/bin/bun',
+          env: { PATH },
+          platform,
+          exists: () => false,
+        }),
+      ).toThrow(expect.objectContaining({ code: 'DEPLOY.NODE_MISSING' }));
+    });
+  }
 });
 
 describe('alchemyInvocation()', () => {
