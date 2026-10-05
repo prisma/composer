@@ -264,30 +264,45 @@ describe('reproduceCommand()', () => {
       '/Program Files/node/node',
     );
 
-    expect(reproduceCommand(invocation, { exitCode: 1, signal: null, commandLine })).toBe(
+    expect(reproduceCommand(invocation, { exitCode: 1, signal: null, commandLine }, 'linux')).toBe(
       "'/Program Files/node/node' /app/node_modules/.pnpm/alchemy@2/node_modules/alchemy/bin/cli.js deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7",
     );
   });
 
-  for (const [stage, printed] of [
-    ['pr-$USER', "'pr-$USER'"],
-    ['it`s!', "'it`s!'"],
-    ["o'brien", "'o'\\''brien'"],
+  // cmd.exe expands %VAR% even inside double quotes, and no quoting stops it,
+  // so a stage containing %...% cannot be printed fully literal for cmd.
+  for (const [stage, posix, win32] of [
+    ['pr-$USER', "'pr-$USER'", '"pr-$USER"'],
+    ['it`s!', "'it`s!'", '"it`s!"'],
+    ["o'brien", "'o'\\''brien'", '"o\'brien"'],
+    ['say "hi"', '\'say "hi"\'', '"say ""hi"""'],
   ] as const) {
-    test(`single-quotes ${stage} so a shell pastes it literally`, () => {
+    test(`quotes ${stage} so each platform's shell reads it literally`, () => {
       const staged = { ...invocation, stage };
+      const prefix = 'alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage';
 
-      expect(reproduceCommand(staged)).toBe(
-        `alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage ${printed}`,
-      );
+      expect(reproduceCommand(staged, undefined, 'linux')).toBe(`${prefix} ${posix}`);
+      expect(reproduceCommand(staged, undefined, 'win32')).toBe(`${prefix} ${win32}`);
     });
   }
 
+  test('on Windows, double-quotes a path with spaces and leaves a plain path bare', () => {
+    const commandLine = alchemyCommandLine(
+      invocation,
+      'C:\\app\\node_modules\\alchemy\\bin\\cli.js',
+      'C:\\Program Files\\nodejs\\node.exe',
+    );
+
+    expect(reproduceCommand(invocation, { exitCode: 1, signal: null, commandLine }, 'win32')).toBe(
+      '"C:\\Program Files\\nodejs\\node.exe" C:\\app\\node_modules\\alchemy\\bin\\cli.js deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7',
+    );
+  });
+
   test('names alchemy with the same arguments when the adapter does not report its command line', () => {
-    expect(reproduceCommand(invocation, { exitCode: 1, signal: null })).toBe(
+    expect(reproduceCommand(invocation, { exitCode: 1, signal: null }, 'linux')).toBe(
       'alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7',
     );
-    expect(reproduceCommand(invocation)).toBe(
+    expect(reproduceCommand(invocation, undefined, 'win32')).toBe(
       'alchemy deploy .prisma-composer/alchemy.run.ts --yes --stage ci-7',
     );
   });

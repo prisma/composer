@@ -185,8 +185,12 @@ export const spawnAlchemy: RunAlchemy = async (invocation) => {
   return { ...(await spawnCommandLine(commandLine)), commandLine };
 };
 
-function shellArg(arg: string): string {
-  return /^[\w@%+=:,./\\-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
+/** One argument as the platform's shell reads it literally: single quotes for POSIX shells, double quotes for cmd.exe. */
+function shellArg(arg: string, platform: NodeJS.Platform): string {
+  if (platform === 'win32') {
+    return /^[\w@+=:,./\\~-]+$/.test(arg) ? arg : `"${arg.replaceAll('"', '""')}"`;
+  }
+  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
 }
 
 /**
@@ -194,7 +198,11 @@ function shellArg(arg: string): string {
  * converge: the command line the adapter started, or, from an adapter that
  * does not report one, `alchemy` with the same arguments.
  */
-export function reproduceCommand(invocation: AlchemyInvocation, outcome?: AlchemyOutcome): string {
+export function reproduceCommand(
+  invocation: AlchemyInvocation,
+  outcome?: AlchemyOutcome,
+  platform: NodeJS.Platform = process.platform,
+): string {
   const argv =
     outcome?.commandLine === undefined
       ? [
@@ -206,7 +214,7 @@ export function reproduceCommand(invocation: AlchemyInvocation, outcome?: Alchem
           invocation.stage,
         ]
       : [outcome.commandLine.command, ...outcome.commandLine.args];
-  return argv.map(shellArg).join(' ');
+  return argv.map((arg) => shellArg(arg, platform)).join(' ');
 }
 
 /** Starts a resolved command line with inherited stdio and returns how it ended. */

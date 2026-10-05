@@ -230,8 +230,13 @@ describe('settlement', () => {
     expect(plain(result.stderr)).toContain(
       `Run the converge directly from ${CWD} to reproduce this`,
     );
+    // The bin path is quoted when the platform's shell needs it (a Windows
+    // short name like RUNNER~1), so the path and the arguments are checked apart.
     expect(plain(result.stderr)).toContain(
-      `${path.join(CWD, 'node_modules', 'alchemy', 'bin', 'cli.js')} deploy .prisma-composer/alchemy.run.ts --yes --stage test`,
+      path.join(CWD, 'node_modules', 'alchemy', 'bin', 'cli.js'),
+    );
+    expect(plain(result.stderr)).toContain(
+      'deploy .prisma-composer/alchemy.run.ts --yes --stage test',
     );
     expect(plain(result.stderr)).not.toContain('✖');
   });
