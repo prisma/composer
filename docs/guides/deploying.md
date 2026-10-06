@@ -163,7 +163,7 @@ with how long it took:
 ▸ record result
 ✔ record result (10.3s)
 web: https://uvw.ewr.prisma.build
-✔ Deployed storefront-auth to production in 5m 25s.
+✔ Deployed storefront-auth to production in 6m 5s.
 ```
 
 Assembling is one step per service. A service built in directory form
