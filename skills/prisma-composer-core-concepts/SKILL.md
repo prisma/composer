@@ -305,6 +305,17 @@ in the workspace's Console settings); `dev` and `log` read neither. The
 `prisma` bin starts under Node; when the modules `module.ts` imports use Bun
 APIs, run it under Bun (`bun node_modules/.bin/prisma deploy module.ts`).
 
+**Progress.** `prisma deploy` prints each step as it starts and finishes, with
+its duration (`✔ assemble web (3m 42s)`), and ends with the real total
+(`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
+assemble per service, connect to project and branch, check environment
+variables, plan and apply (one step: alchemy does both in one process), record
+result. A slow assemble is a directory-form service whose runtime
+dependencies are being traced. In json mode (`--json`, or stdout not a
+terminal) each step is a `step-started`/`step-finished` line whose `data`
+holds `durationMs` and the step's counts; the `deploy` operation's `onEvent`
+receives the same steps.
+
 **Stages.** A stage is an environment name chosen on the command line at
 deploy time, never written in the topology. The identical graph deploys
 everywhere. On the Prisma Cloud target, a Prisma App is one Project and a

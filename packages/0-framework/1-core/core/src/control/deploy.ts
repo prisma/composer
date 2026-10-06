@@ -229,6 +229,20 @@ export interface Bundle {
    * field still compiles; a bundle without it is simply not watched.
    */
   readonly watch?: readonly string[];
+  /** What this assemble did, for the deploy's progress output. An adapter that measures nothing leaves it out. */
+  readonly stats?: BundleStats;
+}
+
+/** What one assemble did, as a build adapter reports it. */
+export interface BundleStats {
+  /** `file`: one built file is the whole runnable. `directory`: a built tree plus its traced runtime dependencies. */
+  readonly form: 'file' | 'directory';
+  /** Files the runtime dependency trace found. */
+  readonly filesTraced?: number;
+  /** Traced entries (files, directories, links) staged into the bundle from outside the built tree. */
+  readonly filesStaged?: number;
+  /** Total size in bytes of the staged files. */
+  readonly bytesStaged?: number;
 }
 
 /** Shared input shape for every extension's build descriptor. */

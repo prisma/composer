@@ -30,7 +30,7 @@ import {
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import type { AlchemyInvocation } from '../../run-alchemy.ts';
-import { deployWithDeps } from '../deploy.ts';
+import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
@@ -752,6 +752,130 @@ describe('deploy()', () => {
       name: 'Error',
       message: 'Schedule.either is not a function',
     });
+  });
+});
+
+/** Each event as `kind name[:address] outcome`, for asserting order without timings. */
+function stepLine(event: DeployEvent): string {
+  const name =
+    event.step.name === 'assemble-service'
+      ? `assemble-service:${event.step.address}`
+      : event.step.name;
+  return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
+}
+
+describe('deploy() step events', () => {
+  test('a successful deploy reports every step in order, each with a duration and its data', async () => {
+    const app = makeAppDir('hello-steps');
+    const events: DeployEvent[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async (input) => {
+                input.report?.({ checked: 3, filled: 1, missing: 0 });
+                return undefined;
+              },
+            }),
+          ),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: async (node) => ({
+            ...(await fakeAssembler(node)),
+            stats: { form: 'directory', filesTraced: 975, filesStaged: 885, bytesStaged: 4096 },
+          }),
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app ok',
+      'finished assemble ok',
+      'started connect',
+      'finished connect ok',
+      'started preflight',
+      'finished preflight ok',
+      'started apply',
+      'finished apply ok',
+      'started record',
+      'finished record ok',
+    ]);
+    for (const event of events) {
+      if (event.kind === 'step-finished') expect(event.durationMs).toBeGreaterThanOrEqual(0);
+    }
+    const finished = (name: string) =>
+      events.find((event) => event.kind === 'step-finished' && event.step.name === name);
+    expect(finished('assemble-service')).toMatchObject({
+      data: { form: 'directory', filesTraced: 975, filesStaged: 885, bytesStaged: 4096 },
+    });
+    expect(finished('preflight')).toMatchObject({ data: { checked: 3, filled: 1, missing: 0 } });
+  });
+
+  test('a failed step and every step around it close as failed, and the result is still recorded', async () => {
+    const app = makeAppDir('hello-steps-fail');
+    const events: DeployEvent[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: async () => {
+            throw new Error('no built entry');
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app failed',
+      'finished assemble failed',
+      'started record',
+      'finished record ok',
+    ]);
+  });
+
+  test('an onEvent that throws cannot fail the deploy', async () => {
+    const app = makeAppDir('hello-steps-throw');
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: () => {
+            throw new Error('renderer bug');
+          },
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
   });
 });
 

@@ -144,6 +144,43 @@ also shown in the Console.
 
 ## What a deploy prints
 
+While it runs, a deploy prints each step as it starts and when it finishes,
+with how long it took:
+
+```
+▸ load config and app
+✔ load config and app (1.1s)
+▸ assemble services
+▸ assemble web
+✔ assemble web (3m 42s)
+✔ assemble services (3m 42s)
+▸ connect to project and branch
+✔ connect to project and branch (2.0s)
+▸ check environment variables
+✔ check environment variables (38.2s)
+▸ plan and apply
+✔ plan and apply (1m 31s)
+▸ record result
+✔ record result (10.3s)
+web: https://uvw.ewr.prisma.build
+✔ Deployed storefront-auth to production in 5m 25s.
+```
+
+Assembling is one step per service. A service built in directory form
+(`dir` set) can take minutes here, because its runtime dependencies are
+traced and copied into the bundle. Planning and applying run in one deploy
+engine process, so they are one step. The last line is the whole deploy,
+from start to finish.
+
+With `--json`, or whenever stdout is not a terminal, each step is a
+`step-started` and a `step-finished` line on stdout, followed by an
+`endpoint` line per public URL and the `result` line. A `step-finished` line
+carries `data.durationMs`, plus what the step measured: an assembled
+service's `form` (`file` or `directory`) and, for directory form,
+`filesTraced`, `filesStaged` and `bytesStaged`; the env var check's
+`checked`, `filled` and `missing` counts. The `result` line has the deploy's
+total `durationMs` beside `summary`.
+
 A deploy ends by printing your app's own topology — the names you authored,
 what each one became on the platform, and the public URLs:
 
@@ -469,6 +506,13 @@ What to know before embedding it:
   details of the current execution mechanism, handy for printing a hint but
   not something to build on; branch on `message`/`cause` for anything
   durable. Importing the module executes nothing until you call an operation.
+- **`onEvent` reports each step.** Pass `onEvent` to `deploy` to receive a
+  `step-started` and a `step-finished` event per step (`prepare`, `assemble`,
+  one `assemble-service` per service, `connect`, `preflight`, `apply`,
+  `record`), as they happen. A finished step has `outcome`, `durationMs` and
+  the `data` described in [What a deploy prints](#what-a-deploy-prints). When
+  a step fails, it and the steps around it finish as `failed`; `record` still
+  runs. An `onEvent` that throws does not fail the deploy.
 - **`summary` is best-effort.** It rides a result file the deploy engine's
   child process writes; a deploy that converged without writing one still
   succeeds, with `summary: undefined`.

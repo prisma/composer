@@ -141,6 +141,7 @@ describe('argument validation', () => {
         name: 'shop',
         stage: 'feat-auth',
         cwd: CWD,
+        onEvent: expect.any(Function),
       },
     ]);
   });
@@ -292,7 +293,7 @@ describe('what a successful run presents', () => {
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toContain('Deployed shop.');
+    expect(plain(result.stderr)).toMatch(/Deployed shop to production in \d+ms\./);
     expect(plain(result.stderr)).toContain('catalog.service');
     expect(plain(result.stderr)).toContain('Worker orders-worker');
     expect(result.presented?.data).toEqual({
@@ -303,6 +304,7 @@ describe('what a successful run presents', () => {
           { address: 'orders.service', entities: [{ kind: 'Worker', id: 'orders-worker' }] },
         ],
       },
+      durationMs: expect.any(Number),
     });
   });
 
@@ -311,7 +313,111 @@ describe('what a successful run presents', () => {
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toContain('Deployed.');
-    expect(result.presented?.data).toEqual({ summary: null });
+    expect(plain(result.stderr)).toMatch(/Deployed to production in \d+ms\./);
+    expect(result.presented?.data).toEqual({ summary: null, durationMs: expect.any(Number) });
+  });
+});
+
+describe('step events', () => {
+  const deployEvents: NonNullable<Fixtures>['deployEvents'] = [
+    { kind: 'step-started', step: { name: 'assemble' } },
+    { kind: 'step-started', step: { name: 'assemble-service', address: 'console' } },
+    {
+      kind: 'step-finished',
+      step: { name: 'assemble-service', address: 'console' },
+      outcome: 'ok',
+      durationMs: 221_780,
+      data: { form: 'directory', filesTraced: 975 },
+    },
+    { kind: 'step-finished', step: { name: 'assemble' }, outcome: 'ok', durationMs: 222_380 },
+    { kind: 'step-started', step: { name: 'preflight' } },
+    {
+      kind: 'step-finished',
+      step: { name: 'preflight' },
+      outcome: 'ok',
+      durationMs: 38_170,
+      data: { checked: 53, filled: 0, missing: 0 },
+    },
+    { kind: 'step-started', step: { name: 'record' } },
+    { kind: 'step-finished', step: { name: 'record' }, outcome: 'failed', durationMs: 850 },
+  ];
+  const deploy = ok({
+    summary: {
+      app: 'shop',
+      nodes: [
+        {
+          address: 'console',
+          entities: [
+            { kind: 'compute-service', id: 'cps_1', url: 'https://console.ewr.prisma.build' },
+          ],
+        },
+        { address: 'db', entities: [{ kind: 'postgres', id: 'db_1' }] },
+      ],
+    },
+  });
+
+  test('a person sees each step start and finish with its duration, then the URLs and the total', async () => {
+    const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
+    const result = await cli.run(['deploy', 'src/service.ts', '--stage', 'pr-7'], AS_TTY);
+
+    expect(result.exitCode).toBe(0);
+    const lines = plain(result.stderr).split('\n');
+    const expected = [
+      '▸ assemble services',
+      '▸ assemble console',
+      '✔ assemble console (3m 42s)',
+      '✔ assemble services (3m 42s)',
+      '▸ check environment variables',
+      '✔ check environment variables (38.2s)',
+      '▸ record result',
+      '✘ record result (850ms)',
+      'console: https://console.ewr.prisma.build',
+    ];
+    expect(lines.filter((line) => expected.includes(line))).toEqual(expected);
+    expect(plain(result.stderr)).toMatch(/Deployed shop to pr-7 in \d+ms\./);
+  });
+
+  test('json mode streams each step with its id, parent and data, then the endpoints and the result', async () => {
+    const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
+    const result = await cli.run(['deploy', 'src/service.ts', '--json'], AS_TTY);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.json.map((frame) => frame.kind)).toEqual([
+      'step-started',
+      'step-started',
+      'step-finished',
+      'step-finished',
+      'step-started',
+      'step-finished',
+      'step-started',
+      'step-finished',
+      'endpoint',
+      'result',
+    ]);
+    expect(result.json[1]).toMatchObject({
+      kind: 'step-started',
+      step: 'assemble console',
+      id: 'deploy.assemble.console',
+      parentId: 'deploy.assemble',
+    });
+    expect(result.json[2]).toMatchObject({
+      kind: 'step-finished',
+      id: 'deploy.assemble.console',
+      outcome: 'ok',
+      data: { durationMs: 221_780, form: 'directory', filesTraced: 975 },
+    });
+    expect(result.json[5]).toMatchObject({
+      id: 'deploy.preflight',
+      data: { durationMs: 38_170, checked: 53, filled: 0, missing: 0 },
+    });
+    expect(result.json[8]).toMatchObject({
+      kind: 'endpoint',
+      name: 'console',
+      url: 'https://console.ewr.prisma.build',
+    });
+    expect(result.json[9]).toMatchObject({
+      kind: 'result',
+      envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: expect.any(Number) } },
+    });
   });
 });

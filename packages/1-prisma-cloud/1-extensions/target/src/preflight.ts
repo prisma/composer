@@ -275,11 +275,15 @@ export async function runPreflight(
   for (const meta of [...collected.secrets, ...collected.envParams]) {
     if (!names.has(meta.name)) names.set(meta.name, meta);
   }
-  if (names.size === 0) return new Map();
+  if (names.size === 0) {
+    input.report?.({ checked: 0, filled: 0, missing: 0 });
+    return new Map();
+  }
 
   const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
   const missing: MissingBinding[] = [];
   const updatedAt = new Map<string, string>();
+  let filled = 0;
   for (const meta of names.values()) {
     const platform = await readPlatformVariable(client, projectId, branchId, meta.name);
     if (platform.exists) {
@@ -288,12 +292,14 @@ export async function runPreflight(
     }
     const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
-      const filled = await fillMissing(client, projectId, branchId, meta.name, shellValue);
-      if (filled !== undefined) updatedAt.set(meta.name, filled);
+      const filledAt = await fillMissing(client, projectId, branchId, meta.name, shellValue);
+      if (filledAt !== undefined) updatedAt.set(meta.name, filledAt);
+      filled += 1;
       continue;
     }
     missing.push(meta);
   }
+  input.report?.({ checked: names.size, filled, missing: missing.length });
   if (missing.length > 0) throw missingError(missing, projectId, branchId, input.stage);
   return updatedAt;
 }

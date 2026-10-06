@@ -38,7 +38,7 @@ import {
 } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
-import type { AssembleInput, Bundle } from '@internal/core/deploy';
+import type { AssembleInput, Bundle, BundleStats } from '@internal/core/deploy';
 import { nodeFileTrace } from '@vercel/nft';
 import { build } from 'esbuild';
 import type { NodeBuildAdapter } from '../node.ts';
@@ -203,7 +203,7 @@ async function copyTracedEntry(
   stagingRoot: string,
   bundleDir: string,
   dirPath: string,
-): Promise<void> {
+): Promise<number> {
   const stat = await fs.promises.lstat(source);
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
 
@@ -224,11 +224,11 @@ async function copyTracedEntry(
       copySource: realTarget,
       copyWithinRoot: bundleDir,
     });
-    return;
+    return 0;
   }
   if (stat.isDirectory()) {
     await fs.promises.mkdir(destination, { recursive: true });
-    return;
+    return 0;
   }
   if (!stat.isFile()) {
     throw new Error(
@@ -236,6 +236,7 @@ async function copyTracedEntry(
     );
   }
   await fs.promises.copyFile(source, destination);
+  return stat.size;
 }
 
 /**
@@ -294,7 +295,7 @@ async function stageRuntimeDependencies(options: {
   readonly dirPath: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<void> {
+}): Promise<Required<Omit<BundleStats, 'form'>>> {
   const [moduleDir, entryPath, dirPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
@@ -321,6 +322,7 @@ async function stageRuntimeDependencies(options: {
   );
 
   const stagedFrom = new Map<string, string>();
+  let bytesStaged = 0;
   for (const { source, origin } of tracedEntries) {
     if (isWithin(dirPath, source)) continue;
     const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
@@ -336,9 +338,16 @@ async function stageRuntimeDependencies(options: {
       );
     }
     if (await pathExists(destination)) continue;
-    await copyTracedEntry(source, destination, stagingRoot, options.bundleDir, dirPath);
+    bytesStaged += await copyTracedEntry(
+      source,
+      destination,
+      stagingRoot,
+      options.bundleDir,
+      dirPath,
+    );
     stagedFrom.set(destination, origin);
   }
+  return { filesTraced: fileList.size, filesStaged: stagedFrom.size, bytesStaged };
 }
 
 /**
@@ -399,14 +408,18 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  if (buildDescriptor.dir !== undefined) {
-    await stageRuntimeDependencies({
-      entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
-      dirPath: runnable.source,
-      moduleDir,
-      bundleDir,
-    });
-  }
+  const stats: BundleStats =
+    buildDescriptor.dir === undefined
+      ? { form: 'file' }
+      : {
+          form: 'directory',
+          ...(await stageRuntimeDependencies({
+            entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
+            dirPath: runnable.source,
+            moduleDir,
+            bundleDir,
+          })),
+        };
   await assertBundleSymlinksStayInside(bundleDir);
 
   return {
@@ -416,6 +429,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     // watch the whole dir (== source too) — a rebuild may touch only a
     // sibling of entry (ADR-0041).
     watch: [runnable.source],
+    stats,
   };
 }
 

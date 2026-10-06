@@ -5,11 +5,60 @@
  * valid with destroy"), so no invocation using it could ever have succeeded;
  * deploy targets production by default when no `--stage` is given.
  */
+import type { EngineEvent } from '@prisma/cli-engine';
 import { defineCommand, flag, positional } from '@prisma/cli-engine';
+import type { DeployEvent, DeployStep } from '../../operations/deploy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { workspaceIdOf } from '../workspace.ts';
+
+const STEP_LABELS = {
+  prepare: 'load config and app',
+  assemble: 'assemble services',
+  connect: 'connect to project and branch',
+  preflight: 'check environment variables',
+  apply: 'plan and apply',
+  record: 'record result',
+} as const;
+
+function stepLabel(step: DeployStep): string {
+  return step.name === 'assemble-service' ? `assemble ${step.address}` : STEP_LABELS[step.name];
+}
+
+function stepId(step: DeployStep): string {
+  return step.name === 'assemble-service'
+    ? `deploy.assemble.${step.address}`
+    : `deploy.${step.name}`;
+}
+
+/** `850ms`, `12.3s`, `9m 35s`. */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${String(Math.round(ms))}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const seconds = Math.round(ms / 1000);
+  return `${String(Math.floor(seconds / 60))}m ${String(seconds % 60)}s`;
+}
+
+/** The operation's step events as engine events. The engine prints only `step`, so a finished step carries its duration in the text too. */
+function toEngineEvent(event: DeployEvent): EngineEvent {
+  const id = stepId(event.step);
+  if (event.kind === 'step-started') {
+    return {
+      kind: 'step-started',
+      step: stepLabel(event.step),
+      id,
+      ...(event.step.name === 'assemble-service' ? { parentId: 'deploy.assemble' } : {}),
+    };
+  }
+  return {
+    kind: 'step-finished',
+    step: `${stepLabel(event.step)} (${formatDuration(event.durationMs)})`,
+    id,
+    outcome: event.outcome,
+    data: { durationMs: event.durationMs, ...event.data },
+  };
+}
 
 export const createDeployCommand = (operations: ComposerOperations) =>
   defineCommand({
@@ -55,6 +104,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
+      const startedAt = performance.now();
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
@@ -65,6 +115,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
           cwd: ctx.cwd,
           reportPath: args.flags.report,
           reportId: args.flags.buildId,
+          onEvent: (event) => ctx.report(toEngineEvent(event)),
         },
         operationDeps({
           alchemy,
@@ -73,18 +124,27 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         }),
       );
 
-      return settleConverge(result, ctx, ({ summary }) =>
-        ctx.present(
-          { data: { summary: summary ?? null } },
+      return settleConverge(result, ctx, ({ summary }) => {
+        const durationMs = Math.round(performance.now() - startedAt);
+        const target = `to ${args.flags.stage ?? 'production'} in ${formatDuration(durationMs)}`;
+        for (const node of summary?.nodes ?? []) {
+          for (const entity of node.entities) {
+            if (entity.url !== undefined) {
+              ctx.report({ kind: 'endpoint', name: node.address, url: entity.url });
+            }
+          }
+        }
+        return ctx.present(
+          { data: { summary: summary ?? null, durationMs } },
           {
             human: (ui) =>
               summary === undefined
-                ? [{ kind: 'summary', status: 'ok', text: 'Deployed.' }]
+                ? [{ kind: 'summary', status: 'ok', text: `Deployed ${target}.` }]
                 : [
                     {
                       kind: 'summary',
                       status: 'ok',
-                      text: `Deployed ${ui.emphasize(summary.app)}.`,
+                      text: `Deployed ${ui.emphasize(summary.app)} ${target}.`,
                     },
                     {
                       kind: 'table',
@@ -96,10 +156,10 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                     },
                   ],
             stdout: () => [],
-            json: () => ({ summary: summary ?? null }),
+            json: () => ({ summary: summary ?? null, durationMs }),
             next: () => [],
           },
-        ),
-      );
+        );
+      });
     },
   });

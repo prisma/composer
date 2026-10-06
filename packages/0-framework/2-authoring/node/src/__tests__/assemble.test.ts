@@ -174,6 +174,7 @@ describe('assemble()', () => {
     expect(result.dir.includes('node_modules')).toBe(false);
     // Bundle.watch names the resolved entry file (ADR-0041).
     expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server.js')]);
+    expect(result.stats).toEqual({ form: 'file' });
   }, 20_000);
 
   test('copies exactly the named file — the siblings sitting beside it in the build dir are not swept in', async () => {
@@ -664,6 +665,17 @@ describe('assemble() — the directory form', () => {
         'utf8',
       ),
     ).toContain(marker);
+    // Traced: the entry, the package's index.js and its package.json. Only the
+    // last two sit outside the built tree, so only they are staged.
+    const pkgDir = path.join(serviceDir, 'node_modules', 'runtime-fixture');
+    expect(result.stats).toEqual({
+      form: 'directory',
+      filesTraced: 3,
+      filesStaged: 2,
+      bytesStaged:
+        fs.statSync(path.join(pkgDir, 'index.js')).size +
+        fs.statSync(path.join(pkgDir, 'package.json')).size,
+    });
   }, 20_000);
 
   test('stages the files a "bun"-conditional export resolves to (stock Elysia shape)', async () => {

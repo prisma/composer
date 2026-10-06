@@ -13,6 +13,11 @@ export interface AssembledServices {
 /** Assembles one service node — the seam tests substitute to avoid a real build. */
 export type RunAssembler = (node: ServiceNode, address: string, cwd: string) => Promise<Bundle>;
 
+/** One service's assemble starting or finishing, for a caller that reports progress. */
+export type AssembleEvent =
+  | { readonly kind: 'service-started'; readonly address: string }
+  | { readonly kind: 'service-assembled'; readonly address: string; readonly bundle: Bundle };
+
 /**
  * The registry route for one service's build: extension by
  * `build.extension`, node descriptor by `build.type`, kind must be "build".
@@ -61,6 +66,7 @@ export async function assembleServices(
   config: PrismaAppConfig,
   cwd: string,
   run?: RunAssembler,
+  onEvent?: (event: AssembleEvent) => void,
 ): Promise<AssembledServices> {
   const runAssembler: RunAssembler =
     run ?? ((node, address, nodeCwd) => buildDescriptorAssemble(config, node, address, nodeCwd));
@@ -76,8 +82,10 @@ export async function assembleServices(
 
   const bundles: Record<string, Bundle> = {};
   for (const { id, node } of serviceNodes) {
+    onEvent?.({ kind: 'service-started', address: id });
+    let bundle: Bundle;
     try {
-      bundles[id] = await runAssembler(node, id, cwd);
+      bundle = await runAssembler(node, id, cwd);
     } catch (error) {
       // A foreign build failure (the RunAssembler or a descriptor's own
       // assemble) is structured here, at the loop that knows the address
@@ -89,6 +97,8 @@ export async function assembleServices(
         { meta: { address: id }, cause: error },
       );
     }
+    bundles[id] = bundle;
+    onEvent?.({ kind: 'service-assembled', address: id, bundle });
   }
   return { bundles };
 }

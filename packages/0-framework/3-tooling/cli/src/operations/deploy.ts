@@ -12,6 +12,22 @@ import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
 
+/** A deploy step. `assemble-service` steps run inside `assemble`, one per service. */
+export type DeployStep =
+  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'preflight' | 'apply' | 'record' }
+  | { readonly name: 'assemble-service'; readonly address: string };
+
+export type DeployEvent =
+  | { readonly kind: 'step-started'; readonly step: DeployStep }
+  | {
+      readonly kind: 'step-finished';
+      readonly step: DeployStep;
+      readonly outcome: 'ok' | 'failed';
+      readonly durationMs: number;
+      /** Counts and labels the step measured, e.g. a bundle's form and size, or how many env vars preflight checked. */
+      readonly data?: Readonly<Record<string, string | number>> | undefined;
+    };
+
 export interface DeployInput {
   /**
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
@@ -39,6 +55,8 @@ export interface DeployInput {
    * one. Absent falls back to whatever the target reads from the environment.
    */
   readonly reportId?: string | undefined;
+  /** Each step as it starts and finishes, in real time. Rendering is the host's. */
+  readonly onEvent?: ((event: DeployEvent) => void) | undefined;
 }
 
 export interface DeploySuccess {

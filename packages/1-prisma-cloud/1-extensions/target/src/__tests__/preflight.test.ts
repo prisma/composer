@@ -324,6 +324,34 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(state.posts).toEqual([]);
   });
 
+  test('reports how many names it checked, filled from the shell, and found missing', async () => {
+    const reports: Readonly<Record<string, number>>[] = [];
+    const run = () =>
+      runPreflight(
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          stage: undefined,
+          report: (counts) => reports.push(counts),
+        },
+        { client: fakeClient(state) },
+      );
+
+    await withEnv({ STRIPE_SECRET_KEY: 'sk_live_fill' }, run);
+    state.rows = [
+      { projectId: 'proj', class: 'production', key: 'STRIPE_SECRET_KEY', branchId: null },
+    ];
+    await run();
+    state.rows = [];
+    await run().catch(() => undefined);
+
+    expect(reports).toEqual([
+      { checked: 1, filled: 1, missing: 0 },
+      { checked: 1, filled: 0, missing: 0 },
+      { checked: 1, filled: 0, missing: 1 },
+    ]);
+  });
+
   test('a graph with no pointer secrets is a pass-through — no platform calls at all', async () => {
     await runPreflight(
       { graph: noSecretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
