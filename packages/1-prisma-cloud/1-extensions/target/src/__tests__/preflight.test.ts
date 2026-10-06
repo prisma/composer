@@ -376,14 +376,23 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     state.rows = [];
     state.postStatus = 409;
 
+    const reports: Readonly<Record<string, number>>[] = [];
+
     await withEnv({ STRIPE_SECRET_KEY: 'sk_live_race' }, () =>
       runPreflight(
-        { graph: secretGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+        {
+          graph: secretGraph(),
+          container: fakeContainer('proj', undefined),
+          stage: undefined,
+          report: (counts) => reports.push(counts),
+        },
         { client: fakeClient(state) },
       ),
     );
 
     expect(state.posts).toHaveLength(1);
+    // The other deploy's row won, so this run filled nothing.
+    expect(reports).toEqual([{ checked: 1, filled: 0, missing: 0 }]);
   });
 
   test('follows pagination — a present name on a later page is not reported missing', async () => {

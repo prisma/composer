@@ -293,8 +293,10 @@ export async function runPreflight(
     const shellValue = process.env[meta.name];
     if (shellValue !== undefined && shellValue.length > 0) {
       const filledAt = await fillMissing(client, projectId, branchId, meta.name, shellValue);
-      if (filledAt !== undefined) updatedAt.set(meta.name, filledAt);
-      filled += 1;
+      if (filledAt !== undefined) {
+        updatedAt.set(meta.name, filledAt);
+        filled += 1;
+      }
       continue;
     }
     missing.push(meta);

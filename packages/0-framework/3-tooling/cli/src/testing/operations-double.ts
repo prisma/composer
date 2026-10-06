@@ -153,7 +153,13 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
     deploy: async (input, operationDeps) => {
       calls.deploy.push(input);
       deps.deploy.push(operationDeps);
-      for (const event of fixtures.deployEvents ?? []) input.onEvent?.(event);
+      for (const event of fixtures.deployEvents ?? []) {
+        try {
+          input.onEvent?.(event);
+        } catch {
+          // The real deploy ignores a throwing onEvent, so the double does too.
+        }
+      }
       const converge = await runConverge(operationDeps, input.cwd);
       if (converge !== undefined) return converge;
       return fixtures.deploy ?? ok({ summary: undefined });
