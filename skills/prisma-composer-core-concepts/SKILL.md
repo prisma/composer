@@ -318,8 +318,9 @@ its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with `dir` set, whose
-runtime dependencies are being traced. In json mode (`--json`, or stdout not
-a terminal) each step is a `step-started`/`step-finished` line whose `data`
+runtime dependencies are being traced; `standalone: true` skips that when the
+build folder runs on its own. In json mode (`--json`, or stdout not a
+terminal) each step is a `step-started`/`step-finished` line whose `data`
 holds `durationMs` plus whatever the build adapter or deploy target reported;
 those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's

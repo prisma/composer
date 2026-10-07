@@ -168,9 +168,10 @@ web: https://uvw.ewr.prisma.build
 
 Assembling is one step per service. A Node service with `dir` set can take
 minutes here, because its runtime dependencies are traced and copied into
-the deploy artifact. Planning and applying run in one deploy engine process,
-so they are one step. The last line is the whole deploy, from start to
-finish.
+the deploy artifact. A build folder that runs on its own can skip this with
+`standalone: true` (see [Building an app § Builds](building-an-app.md#builds)).
+Planning and applying run in one deploy engine process, so they are one step.
+The last line is the whole deploy, from start to finish.
 
 With `--json`, or whenever stdout is not a terminal, each step is a
 `step-started` and a `step-finished` line on stdout, followed by an

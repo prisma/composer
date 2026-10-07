@@ -938,8 +938,10 @@ describe('assemble() — standalone directory builds', () => {
     return spyOn(performance, 'now').mockImplementation(() => calls++ * 130_000);
   }
 
-  test('standalone: true copies dir as it is and stages nothing from outside it', async () => {
+  test('standalone: true copies dir as it is, stages nothing from outside it, and reports no trace counts', async () => {
     const serviceDir = serviceWithInstalledImport();
+    const standaloneReports: Readonly<Record<string, string | number>>[] = [];
+    const tracedReports: Readonly<Record<string, string | number>>[] = [];
 
     const standalone = await assemble({
       build: node({
@@ -950,11 +952,13 @@ describe('assemble() — standalone directory builds', () => {
       }),
       address: 'svc',
       cwd: makeCwd(),
+      report: (data) => standaloneReports.push(data),
     });
     const traced = await assemble({
       build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
       address: 'svc',
       cwd: makeCwd(),
+      report: (data) => tracedReports.push(data),
     });
 
     expect(standalone.entry).toBe('bundle/server/entry.mjs');
@@ -967,6 +971,10 @@ describe('assemble() — standalone directory builds', () => {
     expect(treeContents(path.join(traced.dir, 'bundle'))).toContain(
       'node_modules/runtime-fixture/index.js',
     );
+    expect(standaloneReports).toEqual([{ form: 'directory', standalone: 'true' }]);
+    expect(tracedReports).toEqual([
+      { form: 'directory', filesTraced: 3, filesStaged: 2, bytesStaged: expect.any(Number) },
+    ]);
   }, 20_000);
 
   test('rejects standalone on the single-file form — it ships one file and never searches for packages', async () => {
