@@ -7,10 +7,26 @@
  * the host.
  */
 import type { CliStructuredError } from '@internal/foundation/errors';
-import { notOk, type Result } from '@internal/foundation/result';
+import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
 import type { DeploymentSummary } from '../deployment-summary.ts';
 import { executorLoadFailure, type OperationDeps } from './shared.ts';
+
+/** A deploy step. `assemble-service` steps run inside `assemble`, one per service. */
+export type DeployStep =
+  | { readonly name: 'prepare' | 'assemble' | 'connect' | 'preflight' | 'apply' | 'record' }
+  | { readonly name: 'assemble-service'; readonly address: string };
+
+export type DeployEvent =
+  | { readonly kind: 'step-started'; readonly step: DeployStep }
+  | {
+      readonly kind: 'step-finished';
+      readonly step: DeployStep;
+      readonly outcome: 'ok' | 'failed';
+      readonly durationMs: number;
+      /** What the step measured, as its build adapter or deploy target reported it. The fields vary by adapter and target. */
+      readonly data?: Readonly<Record<string, string | number>> | undefined;
+    };
 
 export interface DeployInput {
   /**
@@ -39,12 +55,16 @@ export interface DeployInput {
    * one. Absent falls back to whatever the target reads from the environment.
    */
   readonly reportId?: string | undefined;
+  /** Each step as it starts and finishes, in real time. Rendering is the host's. */
+  readonly onEvent?: ((event: DeployEvent) => void) | undefined;
 }
 
 export interface DeploySuccess {
   /** Parsed from the alchemy child's result file. Undefined when the child
    * did not write one (injected fake alchemy, or a report-less apply). */
   readonly summary: DeploymentSummary | undefined;
+  /** How long the whole deploy took, from the call to its result. */
+  readonly durationMs: number;
 }
 
 export async function deploy(
@@ -60,6 +80,7 @@ export async function deployWithDeps(
   input: DeployInput,
   deps: OperationDeps,
 ): Promise<Result<DeploySuccess, CliStructuredError>> {
+  const startedAt = performance.now();
   const cwd = input.cwd ?? process.cwd();
   let executor: typeof import('./execute-deploy-destroy.ts');
   try {
@@ -67,5 +88,7 @@ export async function deployWithDeps(
   } catch (error) {
     return notOk(executorLoadFailure('deploy', error));
   }
-  return executor.executeDeploy(input, deps, cwd);
+  const result = await executor.executeDeploy(input, deps, cwd);
+  if (!result.ok) return result;
+  return ok({ ...result.value, durationMs: Math.round(performance.now() - startedAt) });
 }

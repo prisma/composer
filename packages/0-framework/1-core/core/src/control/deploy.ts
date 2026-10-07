@@ -238,6 +238,8 @@ export interface AssembleInput {
   readonly address: string;
   /** The directory the deploy command was run from. The assembler puts its working directory under it (`<cwd>/.prisma-composer/`), the same place the CLI writes its other generated files. */
   readonly cwd: string;
+  /** Counts and labels this assemble measured, for the deploy's progress output. Core never reads them. */
+  readonly report?: ((data: Readonly<Record<string, string | number>>) => void) | undefined;
 }
 
 /** package()'s product. */

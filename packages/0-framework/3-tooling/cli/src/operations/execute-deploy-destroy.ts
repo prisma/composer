@@ -36,7 +36,7 @@ import {
   writeRunReport,
 } from '../run-report.ts';
 import { validateStageName } from '../validate-stage.ts';
-import type { DeployInput, DeploySuccess } from './deploy.ts';
+import type { DeployEvent, DeployInput, DeployStep, DeploySuccess } from './deploy.ts';
 import type { DestroyEvent, DestroyInput } from './destroy.ts';
 import { type ExtensionId, type OperationDeps, toStructured } from './shared.ts';
 
@@ -48,6 +48,52 @@ function hasNoLocalDeployState(cwd: string): boolean {
   return !(fs.existsSync(stateDir) && fs.readdirSync(stateDir).length > 0);
 }
 
+/**
+ * Times each deploy step for the host's `onEvent`. A step still open when the
+ * run fails is closed as failed, innermost first. A host `onEvent` that throws
+ * is the host's bug and cannot fail the deploy.
+ */
+function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
+  const open = new Map<string, { readonly step: DeployStep; readonly startedAt: number }>();
+  const keyOf = (step: DeployStep): string =>
+    step.name === 'assemble-service' ? `${step.name}:${step.address}` : step.name;
+  const emit = (event: DeployEvent): void => {
+    try {
+      onEvent?.(event);
+    } catch {
+      // Rendering is the host's; its failures are not the deploy's.
+    }
+  };
+  const finish = (
+    step: DeployStep,
+    outcome: 'ok' | 'failed',
+    data?: Readonly<Record<string, string | number>>,
+  ): void => {
+    const entry = open.get(keyOf(step));
+    if (entry === undefined) return;
+    open.delete(keyOf(step));
+    const durationMs = Math.round(performance.now() - entry.startedAt);
+    emit({ kind: 'step-finished', step, outcome, durationMs, data });
+  };
+  return {
+    start(step: DeployStep): void {
+      open.set(keyOf(step), { step, startedAt: performance.now() });
+      emit({ kind: 'step-started', step });
+    },
+    finish(step: DeployStep, data?: Readonly<Record<string, string | number>>): void {
+      finish(step, 'ok', data);
+    },
+    fail(step: DeployStep): void {
+      finish(step, 'failed');
+    },
+    failOpen(): void {
+      for (const { step } of [...open.values()].reverse()) finish(step, 'failed');
+    },
+  };
+}
+
+type DeploySteps = ReturnType<typeof deploySteps>;
+
 interface StackPipelineOptions {
   readonly entry: string;
   readonly config: ComposerConfigSource;
@@ -58,13 +104,16 @@ interface StackPipelineOptions {
   readonly deps: OperationDeps;
   /** Deploy only: an existing report record to join, from `--build-id`. */
   readonly reportId: string | undefined;
+  /** Deploy only: where to write the run report, already resolved. */
+  readonly reportPath: string | undefined;
+  readonly steps: DeploySteps;
 }
 
 export async function executeDeploy(
   input: DeployInput,
   deps: OperationDeps,
   cwd: string,
-): Promise<Result<DeploySuccess, CliStructuredError>> {
+): Promise<Result<Omit<DeploySuccess, 'durationMs'>, CliStructuredError>> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     config: input.config,
@@ -74,22 +123,9 @@ export async function executeDeploy(
     onEvent: undefined,
     deps,
     reportId: input.reportId,
+    reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
+    steps: deploySteps(input.onEvent),
   });
-
-  const reportPath = resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd);
-  if (reportPath !== undefined) {
-    writeRunReport(
-      reportPath,
-      toRunReport({
-        summary: outcome.ok ? outcome.value : undefined,
-        stage: input.stage,
-        failure: outcome.ok
-          ? undefined
-          : { code: outcome.failure.code, message: outcome.failure.message },
-      }),
-    );
-  }
-
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
 }
@@ -108,6 +144,8 @@ export async function executeDestroy(
     onEvent: input.onEvent,
     deps,
     reportId: undefined,
+    reportPath: undefined,
+    steps: deploySteps(undefined),
   });
   if (!outcome.ok) return outcome;
   return okVoid();
@@ -235,7 +273,8 @@ async function finishReporters(
 /**
  * Owns the reporting sessions around the pipeline: the inner run opens them
  * once it knows which extensions are configured, and this closes them on
- * every exit path — a returned failure, a success, or a thrown defect.
+ * every exit path — a returned failure, a success, or a thrown defect — as
+ * the `record` step, which also writes the run report.
  * Nothing here can change what the pipeline returns.
  */
 async function runStackPipeline(
@@ -247,6 +286,8 @@ async function runStackPipeline(
   try {
     outcome = await runStackPipelineInner(action, opts, reporters);
   } catch (error) {
+    opts.steps.failOpen();
+    opts.steps.start({ name: 'record' });
     // A defect, not a structured failure — still the end of the run, and the
     // only chance to record that it ended at all.
     await finishReporters(reporters, {
@@ -255,8 +296,11 @@ async function runStackPipeline(
       code: 'DEPLOY.UNEXPECTED',
       message: error instanceof Error ? error.message : String(error),
     });
+    opts.steps.finish({ name: 'record' });
     throw error;
   }
+  if (!outcome.ok) opts.steps.failOpen();
+  opts.steps.start({ name: 'record' });
   await finishReporters(
     reporters,
     outcome.ok
@@ -268,6 +312,21 @@ async function runStackPipeline(
           message: outcome.failure.message,
         },
   );
+  // Best-effort: an unwritable report fails the step, never the deploy.
+  const reportWritten =
+    opts.reportPath === undefined ||
+    writeRunReport(
+      opts.reportPath,
+      toRunReport({
+        summary: outcome.ok ? outcome.value : undefined,
+        stage: opts.stage,
+        failure: outcome.ok
+          ? undefined
+          : { code: outcome.failure.code, message: outcome.failure.message },
+      }),
+    );
+  if (reportWritten) opts.steps.finish({ name: 'record' });
+  else opts.steps.fail({ name: 'record' });
   return outcome;
 }
 
@@ -279,8 +338,9 @@ async function runStackPipelineInner(
   opts: StackPipelineOptions,
   reporters: ExtensionReporter[],
 ): Promise<Result<DeploymentSummary | undefined, CliStructuredError>> {
-  const { entry, config: composerConfig, name, stage, cwd, onEvent, deps } = opts;
+  const { entry, config: composerConfig, name, stage, cwd, onEvent, deps, steps } = opts;
 
+  steps.start({ name: 'prepare' });
   if (stage !== undefined) {
     try {
       validateStageName(stage);
@@ -312,7 +372,23 @@ async function runStackPipelineInner(
   try {
     // The shared prefix (pipeline.ts): entry load, Load, registry coverage,
     // name resolution, assemble.
-    const pipelineDeps: PipelineDeps = { runAssembler: deps.runAssembler };
+    const pipelineDeps: PipelineDeps = {
+      runAssembler: deps.runAssembler,
+      onEvent: (event) => {
+        switch (event.kind) {
+          case 'loaded':
+            steps.finish({ name: 'prepare' });
+            steps.start({ name: 'assemble' });
+            return;
+          case 'service-started':
+            steps.start({ name: 'assemble-service', address: event.address });
+            return;
+          case 'service-assembled':
+            steps.finish({ name: 'assemble-service', address: event.address }, event.data);
+            return;
+        }
+      },
+    };
     const onAssembleError =
       action === 'destroy'
         ? (error: Error): CliStructuredError =>
@@ -325,9 +401,11 @@ async function runStackPipelineInner(
             })
         : undefined;
     pipeline = await runPipeline(entry, name, cwd, composerConfig, pipelineDeps, onAssembleError);
+    steps.finish({ name: 'assemble' });
     const { graph, name: resolvedName } = pipeline;
     const config = pipeline.configSource.value;
 
+    steps.start({ name: 'connect' });
     // Open reporting BEFORE containers are resolved: creating them is the
     // step that can leave a project behind with nothing recording why
     // (composer#103), so a session that started afterwards would miss the
@@ -404,12 +482,21 @@ async function runStackPipelineInner(
       );
     }
     alchemyStage = pinnedStage;
+    steps.finish({ name: 'connect' });
 
     // Preflight (deploy only): each extension verifies its platform
     // prerequisites — e.g. that every secret env var in the provision manifest
     // exists for the resolved stage (ADR-0029) — BEFORE any stack file is written
     // or Alchemy runs, so a missing secret fails fast with nothing side-effected.
     if (action === 'deploy') {
+      steps.start({ name: 'preflight' });
+      // Summed across extensions: each reports counts of its own checks.
+      const counts: Record<string, number> = {};
+      const report = (reported: Readonly<Record<string, number>>): void => {
+        for (const [key, value] of Object.entries(reported)) {
+          counts[key] = (counts[key] ?? 0) + value;
+        }
+      };
       for (const extension of config.extensions) {
         if (extension.preflight === undefined) continue;
         try {
@@ -418,6 +505,7 @@ async function runStackPipelineInner(
             container: containers.get(extension.id),
             stage,
             credentials: deps.credentials,
+            report,
           });
           if (payload !== undefined) preflightPayloads.set(extension.id, payload);
         } catch (error) {
@@ -432,6 +520,7 @@ async function runStackPipelineInner(
       } catch (error) {
         throw toStructured('DEPLOY.PREFLIGHT_FAILED', error);
       }
+      steps.finish({ name: 'preflight' }, counts);
     }
     // The child inherits this process's environment, so every transport var
     // this run did NOT produce is blanked — a stale value exported into the
@@ -480,7 +569,9 @@ async function runStackPipelineInner(
 
     const reproduceCommand = `alchemy ${action} ${GENERATED_STACK_RELATIVE_PATH} --yes --stage ${alchemyStage}`;
 
-    // Hand the terminal to alchemy against the generated file.
+    // Hand the terminal to alchemy against the generated file. Alchemy plans
+    // and applies in this one child, so the two cannot be timed apart here.
+    steps.start({ name: 'apply' });
     let outcome: AlchemyOutcome;
     try {
       outcome = await (deps.alchemy ?? spawnAlchemy)(
@@ -564,6 +655,7 @@ async function runStackPipelineInner(
         ),
       );
     }
+    steps.finish({ name: 'apply' });
 
     try {
       // Teardown (destroy only): each extension removes infrastructure it
