@@ -30,7 +30,7 @@ export function databaseIdentityProviderService(
           });
           if (error)
             throw new Error(
-              `Could not bind database ${news.databaseId} to topology node ${news.logicalId}.`,
+              `Could not bind database ${news.databaseId} to topology node ${news.logicalId}: ${JSON.stringify(error)}`,
             );
           return { databaseId: news.databaseId, logicalId: news.logicalId };
         },

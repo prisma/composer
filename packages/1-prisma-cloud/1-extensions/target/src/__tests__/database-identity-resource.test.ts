@@ -40,8 +40,11 @@ test('repeating the binding retains the same identity', async () => {
 });
 
 test('fails deployment when the identity is already claimed', async () => {
-  const { reconcile } = setup({ error: 'conflict' });
-  await expect(Effect.runPromise(reconcile())).rejects.toThrow('Could not bind database');
+  const error = { error: 'logicalId catalog is already claimed by another database' };
+  const { reconcile } = setup(error);
+  await expect(Effect.runPromise(reconcile())).rejects.toThrow(
+    `Could not bind database db_catalog to topology node catalog: ${JSON.stringify(error)}`,
+  );
 });
 
 test('removing the binding resource leaves database deletion to its owner', async () => {
