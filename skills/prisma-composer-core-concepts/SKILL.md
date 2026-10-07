@@ -305,6 +305,11 @@ in the workspace's Console settings); `dev` and `log` read neither. The
 `prisma` bin starts under Node; when the modules `module.ts` imports use Bun
 APIs, run it under Bun (`bun node_modules/.bin/prisma deploy module.ts`).
 
+Managed Postgres databases bind their authored resource name to their Branch.
+Console uses that identity to open the matching database from topology and
+compare it with main. Existing environments receive it on their next deploy;
+a conflicting binding fails deploy before creating the connection.
+
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 (`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one

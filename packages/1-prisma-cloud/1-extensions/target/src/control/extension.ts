@@ -1,6 +1,5 @@
 /**
- * The extension's control-plane entry (ADR-0017) — the only place
- * @internal/lowering is imported; loaded only by `prisma.config.ts`.
+ * The extension's control-plane entry (ADR-0017), loaded only by `prisma.config.ts`.
  */
 
 import type { ExtensionDescriptor, StateDescriptor } from '@internal/core/config';
@@ -18,6 +17,7 @@ import {
   PRISMA_CLOUD_EXTENSION_ID,
   prismaCloudContainerOf,
 } from '../container.ts';
+import { DatabaseIdentityProvider } from '../database-identity-resource.ts';
 import { bucketDescriptor } from '../descriptors/bucket.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import { postgresDescriptor } from '../descriptors/orm-postgres.ts';
@@ -183,11 +183,6 @@ export interface PrismaCloudOptions {
   region?: Prisma.ProjectRegion;
 }
 
-/** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
-function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<never> {
-  return layer as unknown as Layer.Layer<never>;
-}
-
 /**
  * This extension's brands, each with the two halves ADR-0031 splits: the
  * PROVISIONER core resolves a mint through, and the reserved PROVIDER PARAM
@@ -333,10 +328,14 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     container: containerDescriptor({ region: () => o().region }),
 
     providers: () =>
-      asProvidersLayer(
+      blindCast<
+        Layer.Layer<never>,
+        'Prisma provider collection satisfies the control provider layer at runtime; upstream types do not unify'
+      >(
         Layer.mergeAll(
           Prisma.providers(),
           PgWarmProvider(),
+          DatabaseIdentityProvider(),
           OrmMigrationProvider(),
           S3CredentialsProvider(),
           GeneratedParamProvider(),

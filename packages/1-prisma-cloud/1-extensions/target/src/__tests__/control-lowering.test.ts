@@ -20,6 +20,7 @@ import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
+import * as RealDatabaseIdentity from '../database-identity-resource.ts';
 import type { ComputeProvisioned, ComputeSerialized } from '../descriptors/compute.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import type { S3StoreSerialized } from '../descriptors/s3-store.ts';
@@ -57,6 +58,7 @@ const recorded: {
   generated: Array<[string, unknown]>;
   pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
+  identities: Array<[string, { databaseId: string; logicalId: string }]>;
 } = {
   envVar: [],
   envVarProps: [],
@@ -73,6 +75,7 @@ const recorded: {
   generated: [],
   pnMigrate: [],
   databaseUrlClaims: [],
+  identities: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -150,6 +153,14 @@ mock.module('alchemy/Prisma', () => ({
       connectionId: `${id}#cloud-id`,
       directConnectionString: Redacted.make(`postgres://${id}`),
     });
+  },
+}));
+
+mock.module('../database-identity-resource.ts', () => ({
+  ...RealDatabaseIdentity,
+  DatabaseIdentity: (id: string, props: { databaseId: string; logicalId: string }) => {
+    recorded.identities.push([id, props]);
+    return Effect.succeed(props);
   },
 }));
 
@@ -515,11 +526,14 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
           { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
         ],
       ]);
+      expect(recorded.identities).toEqual([
+        ['data-identity', { databaseId: 'data-db#cloud-id', logicalId: 'data' }],
+      ]);
       expect(recorded.conn).toEqual([
         [
           'data-conn',
           {
-            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
+            database: 'data-db#cloud-id',
             name: 'data',
           },
         ],
@@ -1993,7 +2007,7 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
         [
           'data-conn',
           {
-            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
+            database: 'data-db#cloud-id',
             name: 'data',
           },
         ],

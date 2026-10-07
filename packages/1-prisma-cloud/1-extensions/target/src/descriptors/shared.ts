@@ -6,6 +6,7 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
+import { DatabaseIdentity } from '../database-identity-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 
 /**
@@ -192,7 +193,14 @@ export const stageDatabase = ({
       region: region ?? 'inherit',
       ...(branchId !== undefined ? { branchId } : { name: id }),
     });
-    const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+    const identity =
+      branchId !== undefined
+        ? yield* DatabaseIdentity(`${id}-identity`, { databaseId: db.databaseId, logicalId: id })
+        : undefined;
+    const conn = yield* Prisma.Connection(`${id}-conn`, {
+      database: identity ? identity.databaseId : db,
+      name: id,
+    });
     const url = Output.map(conn.directConnectionString, (value) => {
       if (value === undefined) {
         throw new Error(
