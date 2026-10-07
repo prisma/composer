@@ -112,22 +112,22 @@
               "columns": {
                 "description": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 },
                 "id": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 },
                 "name": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 },
                 "priceCents": {
                   "codecId": "pg/int4@1",
-                  "nativeType": "int4",
+                  "dataType": "pg/int4",
                   "nullable": false
                 }
               },
@@ -142,12 +142,12 @@
               "columns": {
                 "id": {
                   "codecId": "pg/int4@1",
-                  "nativeType": "int4",
+                  "dataType": "pg/int4",
                   "nullable": false
                 },
                 "productId": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 }
               },
@@ -164,11 +164,13 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "6e17ba1a02b94d229e945c92406158ed240eeb2afb84ab890413c4b0d1774a16"
+    "storageHash": "6db9c25a3e2e1fcaa023871b01a2b5e9180ad55f6c5be50d8f66113b098723f7"
   },
   "capabilities": {
     "postgres": {
       "distinctOn": true,
+      "forKeyShare": true,
+      "forNoKeyUpdate": true,
       "jsonAgg": true,
       "lateral": true,
       "limit": true,
@@ -179,9 +181,14 @@
       "checkConstraint": true,
       "defaultInInsert": true,
       "enums": true,
+      "forShare": true,
+      "forUpdate": true,
       "insertOnConflictSkip": true,
       "insertOnConflictWithoutTarget": true,
       "lateral": true,
+      "lockNowait": true,
+      "lockOf": true,
+      "lockSkipLocked": true,
       "returning": true,
       "scalarList": true
     }
