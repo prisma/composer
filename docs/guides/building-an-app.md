@@ -585,7 +585,8 @@ says what your build did with installed packages, in the words bundlers use
 - `'external'`: the build left packages as imports. Deploy traces `entry` and
   stages the installed packages it imports beside the output, keeping their
   `node_modules` layout. This works for the single-file form too: deploy then
-  stages the packages that one file imports.
+  stages the packages that one file imports. If that file also imports other
+  files from your build, use the directory form.
 
 ```ts
 // The build leaves packages external, so stage them from node_modules.

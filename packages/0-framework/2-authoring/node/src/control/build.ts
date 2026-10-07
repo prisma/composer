@@ -57,7 +57,6 @@ function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
   );
 }
 
-/** The values `dependencies` may take, absent included. Typed `unknown` so a runtime descriptor's value can be checked against it. */
 const allowedDependencies: readonly unknown[] = [undefined, 'bundled', 'external'];
 
 /**
@@ -320,7 +319,6 @@ async function stageRuntimeDependencies(options: {
     fs.promises.realpath(options.outputPath),
   ]);
   const copied: CopiedOutput = { source: outputPath, at: options.outputAt };
-  const outputIsFile = (await fs.promises.stat(outputPath)).isFile();
   const base = path.parse(moduleDir).root;
   const [nodeTrace, bunTrace] = await Promise.all([
     nodeFileTrace([entryPath], { base, processCwd: moduleDir }),
@@ -341,34 +339,11 @@ async function stageRuntimeDependencies(options: {
     tracedEntries.flatMap(({ source, origin }) => [source, origin]),
   );
 
-  // A single copied entry resolves its relative imports against its own
-  // location in the bundle, so a traced file outside node_modules keeps its
-  // place relative to the entry. A package.json is found by walking up the
-  // folders, so one above the entry can stay at its staged place.
-  const destinationFor = (source: string): string => {
-    const staged = stagedRuntimePath(source, stagingRoot, options.bundleDir);
-    if (
-      !outputIsFile ||
-      path.relative(stagingRoot, source).split(path.sep).includes('node_modules')
-    ) {
-      return staged;
-    }
-    const fromEntry = path.relative(path.dirname(outputPath), source);
-    const besideEntry = path.join(path.dirname(copied.at), fromEntry);
-    if (isWithin(options.bundleDir, besideEntry)) return besideEntry;
-    if (path.basename(source) === 'package.json') return staged;
-    throw new Error(
-      `${path.basename(outputPath)} imports ${fromEntry.split(path.sep).join('/')}, which is outside ` +
-        'its folder, so the copied entry cannot load it. Use the directory form with a dir that ' +
-        'contains both files.',
-    );
-  };
-
   const stagedFrom = new Map<string, string>();
   let bytesStaged = 0;
   for (const { source, origin } of tracedEntries) {
     if (isWithin(outputPath, source)) continue;
-    const destination = destinationFor(source);
+    const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
     const alreadyStaged = stagedFrom.get(destination);
     if (alreadyStaged !== undefined) {
       if (alreadyStaged === origin) continue;
