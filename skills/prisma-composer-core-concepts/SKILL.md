@@ -213,9 +213,9 @@ deploy. Rules that bite:
    If `dir` runs without installed packages (a fully bundled server), add
    `standalone: true`: deploy ships `dir` as it is and skips the trace, which
    can take minutes on a large bundle. Deploy suggests it when a trace takes
-   over 10 s and finds no installed code. If a standalone build then cannot
-   load a package at startup, the service prints which package and exits;
-   bundle that package or remove `standalone`. Only valid with `dir`.
+   over 10 s and finds no installed code. If a standalone service fails to
+   start with `Cannot find package 'x'`, bundle `x` into the build or remove
+   `standalone: true`. Only valid with `dir`.
 3. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because

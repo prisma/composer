@@ -591,7 +591,7 @@ build: node({ module: import.meta.url, dir: '../build', entry: 'server.mjs', sta
 
 Deploy then ships the folder as it is and skips the trace. For a large
 bundled entry the trace can take minutes and find nothing to stage, so this
-saves that time on every deploy. Two messages help you choose.
+saves that time on every deploy.
 
 Without `standalone`, when the trace takes longer than 10 seconds and finds no
 installed code, deploy suggests the option (shown here for a service named
@@ -601,12 +601,8 @@ installed code, deploy suggests the option (shown here for a service named
 console: its build folder does not use any installed packages (checked in 2m 10s). If that stays true, add `standalone: true` to its node() build to skip this check.
 ```
 
-With `standalone: true`, if the service cannot load a package when it starts,
-it prints this and then exits with the original error:
-
-```text
-console could not load package 'pg'. Its build is marked `standalone: true`, so Composer did not include installed packages. Bundle 'pg' into the build, or remove `standalone: true`.
-```
+If a standalone service fails to start with `Cannot find package 'x'`, bundle
+`x` into the build or remove `standalone: true`.
 
 `standalone` only works with `dir`. The single-file form never traces, so
 setting it there is an error.

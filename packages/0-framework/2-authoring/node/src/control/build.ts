@@ -59,38 +59,6 @@ function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
 const SLOW_TRACE_MS = 10_000;
 
 /**
- * The wrapper entry for a `standalone: true` build: the service module's run(),
- * with a startup failure to load a package explained before it is rethrown.
- * Bun reports the bare specifier on the error; Node only names it in the
- * message. Relative and absolute paths are the build's own files, not packages.
- */
-function standaloneWrapper(serviceModule: string): string {
-  return `import service from ${JSON.stringify(serviceModule)};
-
-export default {
-  run: (address, boot) =>
-    service.run(address, () =>
-      boot().catch((error) => {
-        if (error?.code === "ERR_MODULE_NOT_FOUND" || error?.code === "MODULE_NOT_FOUND") {
-          const specifier =
-            error.specifier ?? /Cannot find (?:package|module) '([^']+)'/.exec(String(error.message))?.[1];
-          if (specifier !== undefined && !/^(?:[./]|[a-zA-Z]+:)/.test(specifier)) {
-            const name = specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/");
-            console.error(
-              address + " could not load package '" + name + "'. Its build is marked \`standalone: true\`, " +
-                "so Composer did not include installed packages. Bundle '" + name +
-                "' into the build, or remove \`standalone: true\`.",
-            );
-          }
-        }
-        throw error;
-      }),
-    ),
-};
-`;
-}
-
-/**
  * What the author built, resolved: the path copied under `bundle/`, and
  * what `Bundle.watch` names for this form (ADR-0041) — the single-file form
  * watches the entry file itself; the directory form watches the whole `dir`,
@@ -440,20 +408,13 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(workDir, { recursive: true });
 
   await build({
-    ...(standalone
-      ? {
-          stdin: {
-            contents: standaloneWrapper(serviceModule),
-            resolveDir: moduleDir,
-            sourcefile: 'standalone-wrapper.mjs',
-          },
-          outfile: path.join(workDir, 'main.mjs'),
-        }
-      : { entryPoints: { main: serviceModule }, outdir: workDir, outExtension: { '.js': '.mjs' } }),
+    entryPoints: { main: serviceModule },
+    outdir: workDir,
     bundle: true,
     format: 'esm',
     platform: 'node',
     external: ['bun', 'bun:*'],
+    outExtension: { '.js': '.mjs' },
   });
   if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
     throw new Error(`esbuild produced no main.mjs in ${workDir}`);
