@@ -166,10 +166,10 @@ web: https://uvw.ewr.prisma.build
 ✔ Deployed storefront-auth to production in 6m 5s.
 ```
 
-Assembling is one step per service. A Node service with `dir` set can take
-minutes here, because its runtime dependencies are traced and copied into
-the deploy artifact. A build folder that runs on its own can skip this with
-`standalone: true` (see [Building an app § Builds](building-an-app.md#builds)).
+Assembling is one step per service. A Node service with
+`dependencies: 'external'` can take minutes here, because its runtime
+dependencies are traced and copied into the deploy artifact (see
+[Building an app § Builds](building-an-app.md#builds)).
 Planning and applying run in one deploy engine process, so they are one step.
 The last line is the whole deploy, from start to finish.
 

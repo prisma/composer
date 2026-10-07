@@ -6,16 +6,16 @@
  * app's code.
  *
  * Two forms, chosen by the descriptor: without `dir`, `entry` is a single
- * self-contained file and only that file is copied. With `dir`, the whole
- * directory is copied verbatim and `entry` names the file inside it that boots.
- * The directory form also follows the declared entry's static runtime dependency
- * graph and stages those files beside the output. The staging root is derived
- * from the declared paths and the traced files themselves — never from the
- * deploy cwd — so the bundle's layout is the same whichever directory the
- * deploy is invoked from. This is deterministic dependency assembly (not app
+ * file and only that file is copied. With `dir`, the whole directory is copied
+ * verbatim and `entry` names the file inside it that boots. Either form with
+ * `dependencies: 'external'` also follows the declared entry's static runtime
+ * dependency graph and stages those files beside the output. The staging root
+ * is derived from the declared paths and the traced files themselves — never
+ * from the deploy cwd — so the bundle's layout is the same whichever directory
+ * the deploy is invoked from. This is deterministic dependency assembly (not app
  * bundling), and is what makes framework outputs such as Astro's Node adapter
- * self-contained. With `standalone: true` the author states that `dir` already
- * runs on its own, so the trace is skipped and `dir` ships as it is.
+ * self-contained. With the default, `dependencies: 'bundled'`, nothing is
+ * traced: the author's build already inlined its packages.
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -51,12 +51,11 @@ function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
   return (
     descriptor.type === 'node' &&
     (!('dir' in descriptor) || typeof descriptor.dir === 'string') &&
-    (!('standalone' in descriptor) || typeof descriptor.standalone === 'boolean')
+    (!('dependencies' in descriptor) ||
+      descriptor.dependencies === 'bundled' ||
+      descriptor.dependencies === 'external')
   );
 }
-
-/** A trace slower than this, which found no installed code, earns the `standalone: true` hint. */
-const SLOW_TRACE_MS = 10_000;
 
 /**
  * What the author built, resolved: the path copied under `bundle/`, and
@@ -203,12 +202,18 @@ function stagedRuntimePath(source: string, stagingRoot: string, bundleDir: strin
   return path.join(bundleDir, ...stagedSegments);
 }
 
+/** The author's build output as copied: `source` on disk (the built dir, or the single built file) and where it sits in the bundle. */
+interface CopiedOutput {
+  readonly source: string;
+  readonly at: string;
+}
+
 async function copyTracedEntry(
   source: string,
   destination: string,
   stagingRoot: string,
   bundleDir: string,
-  dirPath: string,
+  copied: CopiedOutput,
 ): Promise<number> {
   const stat = await fs.promises.lstat(source);
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
@@ -220,8 +225,8 @@ async function copyTracedEntry(
         `the runtime dependency trace found a symlink outside its staging root: ${source} -> ${realTarget}`,
       );
     }
-    const stagedTarget = isWithin(dirPath, realTarget)
-      ? path.join(bundleDir, path.relative(dirPath, realTarget))
+    const stagedTarget = isWithin(copied.source, realTarget)
+      ? path.join(copied.at, path.relative(copied.source, realTarget))
       : stagedRuntimePath(realTarget, stagingRoot, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
     const linkType = (await fs.promises.stat(realTarget)).isDirectory() ? 'dir' : 'file';
@@ -258,13 +263,13 @@ async function copyTracedEntry(
  */
 function stagingRootFor(
   moduleDir: string,
-  dirPath: string,
+  outputPath: string,
   tracedPaths: readonly string[],
 ): string {
-  let root = commonAncestor(moduleDir, dirPath);
+  let root = commonAncestor(moduleDir, outputPath);
   if (isFilesystemRoot(root)) {
     throw new Error(
-      `the build adapter's dir ("${dirPath}") and the directory of its module ("${moduleDir}") share no ` +
+      `the build output ("${outputPath}") and the directory of its module ("${moduleDir}") share no ` +
         'common ancestor below the filesystem root, so runtime dependency staging has no root to work from.',
     );
   }
@@ -273,7 +278,7 @@ function stagingRootFor(
     if (isFilesystemRoot(widened)) {
       throw new Error(
         `the runtime dependency trace reached ${traced}, which shares no directory with the build ` +
-          `output ("${dirPath}") below the filesystem root — staging from there would sweep in ` +
+          `output ("${outputPath}") below the filesystem root — staging from there would sweep in ` +
           'arbitrary files. Keep the traced dependency inside the project that holds the build output.',
       );
     }
@@ -282,9 +287,10 @@ function stagingRootFor(
   return root;
 }
 
-/** Stages the explicit entry's runtime file graph beside the copied build dir.
+/** Stages the explicit entry's runtime file graph beside the copied build output.
  * `nodeFileTrace` follows import/require/package metadata; it does not rewrite
- * the app. Files already supplied by `dir` remain the author's verbatim copy.
+ * the app. Files already supplied by the build output (`dir`, or the single
+ * entry file) remain the author's verbatim copy.
  *
  * The trace itself runs from the filesystem root so nothing it finds is dropped
  * for sitting outside a narrower base — a pnpm virtual store at the workspace
@@ -295,36 +301,27 @@ function stagingRootFor(
  * condition, and the union is staged: Compute boots the bundle with Bun, which
  * resolves a package's "bun"-conditional exports to files a node-conditions
  * trace never visits, while nft's `conditions` option replaces the default
- * set rather than extending it.
- *
- * Returns the trace and staging counts, how long the trace took, and whether
- * anything staged can hold code: a file or file link other than a
- * `package.json`. Directories, directory links and `package.json` files alone
- * mean the build ran on its own. */
+ * set rather than extending it. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
-  readonly dirPath: string;
+  /** The copied build output: the built dir, or the single entry file. */
+  readonly outputPath: string;
+  /** Where `outputPath` sits in the bundle. */
+  readonly outputAt: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<{
-  filesTraced: number;
-  filesStaged: number;
-  bytesStaged: number;
-  traceMs: number;
-  stagedCode: boolean;
-}> {
-  const [moduleDir, entryPath, dirPath] = await Promise.all([
+}): Promise<{ filesTraced: number; filesStaged: number; bytesStaged: number }> {
+  const [moduleDir, entryPath, outputPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
-    fs.promises.realpath(options.dirPath),
+    fs.promises.realpath(options.outputPath),
   ]);
+  const copied: CopiedOutput = { source: outputPath, at: options.outputAt };
   const base = path.parse(moduleDir).root;
-  const traceStart = performance.now();
   const [nodeTrace, bunTrace] = await Promise.all([
     nodeFileTrace([entryPath], { base, processCwd: moduleDir }),
     nodeFileTrace([entryPath], { base, processCwd: moduleDir, conditions: ['bun'] }),
   ]);
-  const traceMs = performance.now() - traceStart;
   const fileList = new Set([...nodeTrace.fileList, ...bunTrace.fileList]);
 
   const tracedEntries = await Promise.all(
@@ -336,15 +333,14 @@ async function stageRuntimeDependencies(options: {
 
   const stagingRoot = stagingRootFor(
     moduleDir,
-    dirPath,
+    outputPath,
     tracedEntries.flatMap(({ source, origin }) => [source, origin]),
   );
 
   const stagedFrom = new Map<string, string>();
   let bytesStaged = 0;
-  let stagedCode = false;
   for (const { source, origin } of tracedEntries) {
-    if (isWithin(dirPath, source)) continue;
+    if (isWithin(outputPath, source)) continue;
     const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
     const alreadyStaged = stagedFrom.get(destination);
     if (alreadyStaged !== undefined) {
@@ -363,19 +359,11 @@ async function stageRuntimeDependencies(options: {
       destination,
       stagingRoot,
       options.bundleDir,
-      dirPath,
+      copied,
     );
     stagedFrom.set(destination, origin);
-    stagedCode ||=
-      path.basename(source) !== 'package.json' && !(await fs.promises.stat(source)).isDirectory();
   }
-  return {
-    filesTraced: fileList.size,
-    filesStaged: stagedFrom.size,
-    bytesStaged,
-    traceMs,
-    stagedCode,
-  };
+  return { filesTraced: fileList.size, filesStaged: stagedFrom.size, bytesStaged };
 }
 
 /**
@@ -407,13 +395,7 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     );
   }
   const buildDescriptor = input.build;
-  const standalone = buildDescriptor.standalone === true;
-  if (buildDescriptor.standalone !== undefined && buildDescriptor.dir === undefined) {
-    throw new Error(
-      "the build adapter's standalone option needs dir — the single-file form already ships " +
-        'only its one file and never searches for installed packages, so drop standalone.',
-    );
-  }
+  const dependencies = buildDescriptor.dependencies ?? 'bundled';
 
   const serviceModule = fileURLToPath(buildDescriptor.module);
   const moduleDir = path.dirname(serviceModule);
@@ -443,26 +425,21 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  if (buildDescriptor.dir === undefined) {
-    input.report?.({ form: 'file' });
-  } else if (standalone) {
-    input.report?.({ form: 'directory', standalone: 'true' });
+  const form = buildDescriptor.dir === undefined ? 'file' : 'directory';
+  if (dependencies === 'bundled') {
+    input.report?.({ form, dependencies });
   } else {
-    const { traceMs, stagedCode, ...counts } = await stageRuntimeDependencies({
-      entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
-      dirPath: runnable.source,
+    const counts = await stageRuntimeDependencies({
+      entryPath:
+        form === 'file'
+          ? runnable.source
+          : path.join(runnable.source, ...runnable.entry.split('/')),
+      outputPath: runnable.source,
+      outputAt: form === 'file' ? path.join(bundleDir, runnable.entry) : bundleDir,
       moduleDir,
       bundleDir,
     });
-    input.report?.({ form: 'directory', ...counts });
-    if (traceMs > SLOW_TRACE_MS && !stagedCode) {
-      const seconds = Math.round(traceMs / 1000);
-      const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-      console.warn(
-        `${input.address}: its build folder does not use any installed packages (checked in ${took}). ` +
-          'If that stays true, add `standalone: true` to its node() build to skip this check.',
-      );
-    }
+    input.report?.({ form, dependencies, ...counts });
   }
   await assertBundleSymlinksStayInside(bundleDir);
 

@@ -538,10 +538,10 @@ the deploy report can print it verbatim.
 The framework never bundles your code — it assembles what your build
 produced, byte for byte. Two build adapters ship:
 
-**`node` — any plain server process.** Point `entry` at a self-contained ESM
-file: everything inlined except runtime built-ins (`bun`, `bun:*`, `node:*`),
-which the deploy VM provides. Deploy copies that one file and never ships
-`node_modules`, so anything left un-inlined fails at boot. Any bundler that
+**`node` — any plain server process.** Point `entry` at the file your build
+produced. By default deploy copies exactly that and never ships
+`node_modules`, so the build must inline everything except runtime built-ins
+(`bun`, `bun:*`, `node:*`), which the deploy VM provides. Any bundler that
 produces such a file works. With bun:
 
 ```sh
@@ -566,48 +566,50 @@ finds its siblings exactly where the build left them — resolve them against
 `import.meta.url`, not the working directory.
 
 Nothing is guessed: you name the directory and the entry, and that is what
-ships. Three things to know:
+ships. Two things to know:
 
 - Symlinks are kept as symlinks, never followed and copied. A link whose target
   resolves inside the built output ships as-is. A link that points outside it,
   or at something that isn't there, fails the deploy with an error naming the
   link, rather than shipping a broken artifact or packaging files from your
   machine.
-- The entry's runtime imports ship too. Deploy traces the file you named and
-  stages the packages it imports beside `dir`, so framework output that keeps
-  bare imports (Astro's Node adapter, for example) boots without you copying
-  `node_modules` into the build.
 - `entry` must be a file inside `dir`. Pointing it outside with `../` is an
-  error, not an escape hatch — only `dir` is copied verbatim; everything else
-  arrives through the trace.
+  error, not an escape hatch. Only `dir` is copied verbatim.
 
-If the build folder runs on its own, without your installed packages, add
-`standalone: true`. A fully bundled server is one example; Next.js
-`output: 'standalone'` is another:
+**Packages your build leaves external.** Both forms take `dependencies`, which
+says what your build did with installed packages, in the words bundlers use
+(esbuild's and Rollup's `external`, Vite's `ssr.external`):
+
+- `'bundled'`, the default: the build inlined its packages. Deploy copies
+  exactly what you built.
+- `'external'`: the build left packages as imports. Deploy traces `entry` and
+  stages the installed packages it imports beside the output, keeping their
+  `node_modules` layout. This works for the single-file form too: deploy then
+  stages the packages that one file imports.
 
 ```ts
-build: node({ module: import.meta.url, dir: '../build', entry: 'server.mjs', standalone: true })
+// The build leaves packages external, so stage them from node_modules.
+build: node({ module: import.meta.url, dir: '../dist', entry: 'server/entry.mjs', dependencies: 'external' })
 ```
 
-Deploy then ships the folder as it is and skips the trace. For a large
-bundled entry the trace can take minutes and find nothing to stage, so this
-saves that time on every deploy.
+The trace reads every file the entry reaches, so on a large build it can take
+minutes. Use `'external'` only when the build needs it.
 
-Without `standalone`, when the trace takes longer than 10 seconds and finds no
-installed code, deploy suggests the option (shown here for a service named
-`console`):
+If `dependencies` is wrong and a package is missing, the service fails to start
+with the runtime's own error. If it fails with `Cannot find package 'x'`,
+bundle `x` into the build or set `dependencies: 'external'`.
 
-```text
-console: its build folder does not use any installed packages (checked in 2m 10s). If that stays true, add `standalone: true` to its node() build to skip this check.
-```
+**Framework server builds.** These leave packages external by default, so set
+`dependencies: 'external'` on their `node()` build:
 
-If a standalone service fails to start with `Cannot find package 'x'`, bundle
-`x` into the build or remove `standalone: true`.
+- Astro with the Node adapter (`@astrojs/node`).
+- SvelteKit with `@sveltejs/adapter-node`.
+- React Router's server build (`react-router build`), unless you set Vite's
+  `ssr.noExternal: true` to bundle everything.
 
-`standalone` only works with `dir`. The single-file form never traces, so
-setting it there is an error.
-
-Without `dir` you get the single-file form above, unchanged.
+Through v0.28, the directory form always traced. A directory build that
+relied on that now needs `dependencies: 'external'`, or it fails at boot with
+a missing-package error.
 
 **`nextjs` — a Next.js app.** `next build` with `output: 'standalone'` is the
 whole build; the adapter just needs to know where the app lives:

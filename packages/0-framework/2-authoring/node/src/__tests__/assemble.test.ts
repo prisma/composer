@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assemble } from '../exports/control.ts';
-import node, { type NodeBuildAdapter } from '../exports/index.ts';
+import node from '../exports/index.ts';
 
 const tmpDirs: string[] = [];
 
@@ -176,7 +176,7 @@ describe('assemble()', () => {
     expect(result.dir.includes('node_modules')).toBe(false);
     // Bundle.watch names the resolved entry file (ADR-0041).
     expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server.js')]);
-    expect(reports).toEqual([{ form: 'file' }]);
+    expect(reports).toEqual([{ form: 'file', dependencies: 'bundled' }]);
   }, 20_000);
 
   test('copies exactly the named file — the siblings sitting beside it in the build dir are not swept in', async () => {
@@ -656,6 +656,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'astro',
       cwd,
@@ -675,6 +676,7 @@ describe('assemble() — the directory form', () => {
     expect(reports).toEqual([
       {
         form: 'directory',
+        dependencies: 'external',
         filesTraced: 3,
         filesStaged: 2,
         bytesStaged:
@@ -716,6 +718,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'svc',
       cwd,
@@ -759,6 +762,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'astro',
       cwd: workspaceRoot,
@@ -821,7 +825,12 @@ describe('assemble() — the directory form', () => {
 
     const assembleFrom = (cwd: string) =>
       assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        build: node({
+          module: moduleUrl(serviceDir),
+          dir: '../dist',
+          entry: 'server/entry.mjs',
+          dependencies: 'external',
+        }),
         address: 'astro',
         cwd,
       });
@@ -911,7 +920,12 @@ describe('assemble() — the directory form', () => {
 
     await expect(
       assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        build: node({
+          module: moduleUrl(serviceDir),
+          dir: '../dist',
+          entry: 'server/entry.mjs',
+          dependencies: 'external',
+        }),
         address: 'svc',
         cwd: makeCwd(),
       }),
@@ -919,133 +933,101 @@ describe('assemble() — the directory form', () => {
   }, 20_000);
 });
 
-describe('assemble() — standalone directory builds', () => {
-  /** A dir build whose entry imports an installed package — the default mode stages it. */
+describe('assemble() with dependencies', () => {
+  type Report = Readonly<Record<string, string | number>>;
+
+  /** A service whose built entry imports an installed package: `dir/server/entry.mjs`, or the single file `dist/server.mjs`. */
   function serviceWithInstalledImport(): string {
     const serviceDir = makeServiceDir();
+    const source = 'import { marker } from "runtime-fixture"; export default marker;\n';
     writeTree(path.join(serviceDir, 'dist'), {
-      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+      'server/entry.mjs': source,
       'server/chunk.mjs': 'export const chunk = 1;\n',
+      'server.mjs': source,
     });
     installFixturePackage(serviceDir, 'runtime-fixture');
     writeServiceModule(serviceDir);
     return serviceDir;
   }
 
-  /** Makes every performance.now() call 130 s later than the one before, so a trace "takes" 2m 10s without waiting. */
-  function slowClock() {
-    let calls = 0;
-    return spyOn(performance, 'now').mockImplementation(() => calls++ * 130_000);
-  }
-
-  test('standalone: true copies dir as it is, stages nothing from outside it, and reports no trace counts', async () => {
+  test('the directory form defaults to bundled: copies dir as it is, stages nothing, and reports no trace counts', async () => {
     const serviceDir = serviceWithInstalledImport();
-    const standaloneReports: Readonly<Record<string, string | number>>[] = [];
-    const tracedReports: Readonly<Record<string, string | number>>[] = [];
+    const reports: Report[] = [];
 
-    const standalone = await assemble({
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'entry.mjs' }),
+      address: 'svc',
+      cwd: makeCwd(),
+      report: (data) => reports.push(data),
+    });
+
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual(['chunk.mjs', 'entry.mjs']);
+    expect(reports).toEqual([{ form: 'directory', dependencies: 'bundled' }]);
+  }, 20_000);
+
+  test("the directory form with dependencies: 'external' stages the installed packages entry imports", async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const reports: Report[] = [];
+
+    const result = await assemble({
       build: node({
         module: moduleUrl(serviceDir),
-        dir: '../dist',
-        entry: 'server/entry.mjs',
-        standalone: true,
+        dir: '../dist/server',
+        entry: 'entry.mjs',
+        dependencies: 'external',
       }),
       address: 'svc',
       cwd: makeCwd(),
-      report: (data) => standaloneReports.push(data),
+      report: (data) => reports.push(data),
     });
-    const traced = await assemble({
-      build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual([
+      'chunk.mjs',
+      'entry.mjs',
+      'node_modules/runtime-fixture/index.js',
+      'node_modules/runtime-fixture/package.json',
+    ]);
+    expect(reports).toEqual([
+      {
+        form: 'directory',
+        dependencies: 'external',
+        filesTraced: 3,
+        filesStaged: 2,
+        bytesStaged: expect.any(Number),
+      },
+    ]);
+  }, 20_000);
+
+  test("the single-file form with dependencies: 'external' stages the installed packages that one file imports", async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const reports: Report[] = [];
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.mjs',
+        dependencies: 'external',
+      }),
       address: 'svc',
       cwd: makeCwd(),
-      report: (data) => tracedReports.push(data),
+      report: (data) => reports.push(data),
     });
 
-    expect(standalone.entry).toBe('bundle/server/entry.mjs');
-    expect(treeContents(path.join(standalone.dir, 'bundle'))).toEqual([
-      'server/chunk.mjs',
-      'server/entry.mjs',
-    ]);
-    expect(fs.existsSync(path.join(standalone.dir, 'main.mjs'))).toBe(true);
-    // The default mode is unchanged: the same build stages the installed package.
-    expect(treeContents(path.join(traced.dir, 'bundle'))).toContain(
+    expect(result.entry).toBe('bundle/server.mjs');
+    // The file's siblings in dist/ are not swept in; only the package it imports is staged.
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual([
       'node_modules/runtime-fixture/index.js',
-    );
-    expect(standaloneReports).toEqual([{ form: 'directory', standalone: 'true' }]);
-    expect(tracedReports).toEqual([
-      { form: 'directory', filesTraced: 3, filesStaged: 2, bytesStaged: expect.any(Number) },
+      'node_modules/runtime-fixture/package.json',
+      'server.mjs',
+    ]);
+    expect(reports).toEqual([
+      {
+        form: 'file',
+        dependencies: 'external',
+        filesTraced: 3,
+        filesStaged: 2,
+        bytesStaged: expect.any(Number),
+      },
     ]);
   }, 20_000);
-
-  test('rejects standalone on the single-file form — it ships one file and never searches for packages', async () => {
-    const serviceDir = makeServiceDir();
-    writeTree(path.join(serviceDir, 'dist'), { 'server.js': 'export default 1;\n' });
-    writeServiceModule(serviceDir);
-    const build: NodeBuildAdapter = {
-      extension: '@prisma/composer/node',
-      type: 'node',
-      module: moduleUrl(serviceDir),
-      entry: '../dist/server.js',
-      standalone: true,
-    };
-    await expect(assemble({ build, address: 'svc', cwd: makeCwd() })).rejects.toThrow(
-      /standalone option needs dir/,
-    );
-  });
-
-  test('hints at standalone: true after a slow trace that staged no code', async () => {
-    const serviceDir = makeServiceDir();
-    writeTree(path.join(serviceDir, 'dist'), {
-      'server/entry.mjs': 'import { chunk } from "./chunk.mjs"; export default chunk;\n',
-      'server/chunk.mjs': 'export const chunk = 1;\n',
-    });
-    writeServiceModule(serviceDir);
-    const clock = slowClock();
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      await assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
-        address: 'console',
-        cwd: makeCwd(),
-      });
-      expect(warn.mock.calls).toEqual([
-        [
-          'console: its build folder does not use any installed packages (checked in 2m 10s). ' +
-            'If that stays true, add `standalone: true` to its node() build to skip this check.',
-        ],
-      ]);
-    } finally {
-      clock.mockRestore();
-      warn.mockRestore();
-    }
-  }, 20_000);
-
-  test('gives no hint when the trace staged code, when it was fast, or when the build is standalone', async () => {
-    const serviceDir = serviceWithInstalledImport();
-    const warn = spyOn(console, 'warn').mockImplementation(() => {});
-    const assembleIt = (standalone?: boolean) =>
-      assemble({
-        build: node({
-          module: moduleUrl(serviceDir),
-          dir: '../dist',
-          entry: 'server/entry.mjs',
-          ...(standalone === undefined ? {} : { standalone }),
-        }),
-        address: 'svc',
-        cwd: makeCwd(),
-      });
-    try {
-      await assembleIt();
-      const clock = slowClock();
-      try {
-        await assembleIt();
-        await assembleIt(true);
-      } finally {
-        clock.mockRestore();
-      }
-      expect(warn).not.toHaveBeenCalled();
-    } finally {
-      warn.mockRestore();
-    }
-  }, 30_000);
 });

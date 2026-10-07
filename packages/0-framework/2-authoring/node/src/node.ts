@@ -13,8 +13,9 @@
  * inside `dir` and may be nested. Nothing is discovered: the author names the
  * directory and the entry, and the assembler copies exactly that.
  *
- * The directory form also accepts `standalone: true`, for a build folder that
- * runs without the project's installed packages.
+ * Both forms accept `dependencies`. The default, `'bundled'`, ships exactly
+ * what was built. `'external'` says the build leaves packages external, so
+ * deploy traces `entry` and stages the installed packages it imports.
  *
  * Returns plain data — nothing runs on import. `extension` + `type` are the
  * control-plane registry key: deploy tooling routes assembly through the app's
@@ -27,25 +28,27 @@ import type { BuildAdapter } from '@internal/core';
 export interface NodeBuildAdapter extends BuildAdapter {
   readonly type: 'node';
   readonly dir?: string;
-  /** Directory form only: ship `dir` as it is, without searching for installed packages the entry uses. */
-  readonly standalone?: boolean;
+  /** Whether the build inlined its packages (`'bundled'`, the default) or left them for deploy to stage from `node_modules` (`'external'`). */
+  readonly dependencies?: NodeDependencies;
 }
 
+/**
+ * How the build treats installed packages, in bundler terms (esbuild's and
+ * Rollup's `external`, Vite's `ssr.external`). `'bundled'`: the build inlined
+ * them, so deploy copies exactly what was built. `'external'`: the build left
+ * them as imports, so deploy traces `entry` and stages the installed packages
+ * it imports.
+ */
+export type NodeDependencies = 'bundled' | 'external';
+
 /** The two forms an author may write. `dir?: never` on the single-file branch is what makes them exclusive: with `dir`, `entry` is required and names a file inside it. */
-type NodeBuildOptions =
-  | { module: string; entry: string; dir?: never; standalone?: never }
-  | {
-      module: string;
-      dir: string;
-      entry: string;
-      /**
-       * The build folder runs on its own, without the project's installed
-       * packages (for example a fully bundled server, or Next.js
-       * `output: 'standalone'`). Composer then ships the folder as it is and
-       * skips searching for installed packages the build uses. Default `false`.
-       */
-      standalone?: boolean;
-    };
+type NodeBuildOptions = (
+  | { module: string; entry: string; dir?: never }
+  | { module: string; dir: string; entry: string }
+) & {
+  /** `'bundled'` (default) ships exactly what was built. `'external'` also stages the installed packages `entry` imports. */
+  dependencies?: NodeDependencies;
+};
 
 const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => ({
   extension: '@prisma/composer/node',
@@ -53,7 +56,7 @@ const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => ({
   module: opts.module,
   entry: opts.entry,
   ...(opts.dir === undefined ? {} : { dir: opts.dir }),
-  ...(opts.standalone === undefined ? {} : { standalone: opts.standalone }),
+  ...(opts.dependencies === undefined ? {} : { dependencies: opts.dependencies }),
 });
 
 export default nodeBuild;
