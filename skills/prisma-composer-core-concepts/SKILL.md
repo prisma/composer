@@ -195,11 +195,12 @@ be reimplemented:
 
 ## Builds are yours
 
-You build, the framework assembles. For a plain server process, `entry` must
-point at a single self-contained ESM file: everything inlined except runtime
-built-ins (`bun`, `bun:*`, `node:*`). Deploy copies that one file and never
-ships `node_modules`, so anything left un-inlined fails at boot, not at
-deploy. Rules that bite:
+You build, the framework assembles. For a plain server process, `entry`
+points at the ESM file your build produced. By default
+(`dependencies: 'bundled'`) deploy copies exactly that and never ships
+`node_modules`, so everything except runtime built-ins (`bun`, `bun:*`,
+`node:*`) must be inlined, or it fails at boot, not at deploy. Rules that
+bite:
 
 1. **Two services in one package means two separate builds**, one per entry.
    A single multi-entry build splits shared code into a chunk neither output
@@ -209,12 +210,19 @@ deploy. Rules that bite:
    copied verbatim, so the server must resolve siblings against
    `import.meta.url`, not the working directory. The tree must contain no
    symlinks: the packager rejects them, names the link, and assembly fails.
-3. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
+3. **A build that leaves packages external sets `dependencies: 'external'`**
+   (either form). Deploy then traces `entry` and stages the installed
+   packages it imports, which can take minutes on a large build. Astro's Node
+   adapter, SvelteKit's `adapter-node` and React Router's server build leave
+   packages external by default. The default, `'bundled'`, copies exactly
+   what was built. A service that fails to start with
+   `Cannot find package 'x'` needs `x` bundled, or `dependencies: 'external'`.
+4. **Next.js**: `next build` with `output: 'standalone'` is the whole build;
    `nextjs({ module, appDir })` names the app root. Any page or action that
    calls `load()` needs `export const dynamic = 'force-dynamic'`, because
    the runtime environment doesn't exist at build time and Next ignores
    runtime env for prerendered routes.
-4. **Always build before `deploy` or `dev`.** Neither builds for you.
+5. **Always build before `deploy` or `dev`.** Neither builds for you.
 
 Deploy configuration is the `composer` section of `prisma.config.ts`, and
 nothing else. It registers extensions (`prismaCloud()`, `nodeBuild()`,
@@ -310,9 +318,9 @@ its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 (`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
-result. A slow assemble is usually a Node service with `dir` set, whose
-runtime dependencies are being traced. In json mode (`--json`, or stdout not
-a terminal) each step is a `step-started`/`step-finished` line whose `data`
+result. A slow assemble is usually a Node service with
+`dependencies: 'external'`, whose runtime dependencies are being traced. In json mode (`--json`, or stdout not a
+terminal) each step is a `step-started`/`step-finished` line whose `data`
 holds `durationMs` plus whatever the build adapter or deploy target reported;
 those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's

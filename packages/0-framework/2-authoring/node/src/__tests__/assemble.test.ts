@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { BuildAdapter } from '@internal/core';
 import { assemble } from '../exports/control.ts';
 import node from '../exports/index.ts';
 
@@ -176,7 +177,7 @@ describe('assemble()', () => {
     expect(result.dir.includes('node_modules')).toBe(false);
     // Bundle.watch names the resolved entry file (ADR-0041).
     expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server.js')]);
-    expect(reports).toEqual([{ form: 'file' }]);
+    expect(reports).toEqual([{ form: 'file', dependencies: 'bundled' }]);
   }, 20_000);
 
   test('copies exactly the named file — the siblings sitting beside it in the build dir are not swept in', async () => {
@@ -656,6 +657,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'astro',
       cwd,
@@ -675,6 +677,7 @@ describe('assemble() — the directory form', () => {
     expect(reports).toEqual([
       {
         form: 'directory',
+        dependencies: 'external',
         filesTraced: 3,
         filesStaged: 2,
         bytesStaged:
@@ -716,6 +719,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'svc',
       cwd,
@@ -759,6 +763,7 @@ describe('assemble() — the directory form', () => {
         module: moduleUrl(serviceDir),
         dir: '../dist',
         entry: 'server/entry.mjs',
+        dependencies: 'external',
       }),
       address: 'astro',
       cwd: workspaceRoot,
@@ -821,7 +826,12 @@ describe('assemble() — the directory form', () => {
 
     const assembleFrom = (cwd: string) =>
       assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        build: node({
+          module: moduleUrl(serviceDir),
+          dir: '../dist',
+          entry: 'server/entry.mjs',
+          dependencies: 'external',
+        }),
         address: 'astro',
         cwd,
       });
@@ -911,10 +921,128 @@ describe('assemble() — the directory form', () => {
 
     await expect(
       assemble({
-        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        build: node({
+          module: moduleUrl(serviceDir),
+          dir: '../dist',
+          entry: 'server/entry.mjs',
+          dependencies: 'external',
+        }),
         address: 'svc',
         cwd: makeCwd(),
       }),
     ).rejects.toThrow(/stage to the same bundle path.*node_modules[\\/]dup.*packages[\\/]lib/s);
   }, 20_000);
+});
+
+describe('assemble() with dependencies', () => {
+  type Report = Readonly<Record<string, string | number>>;
+
+  /** A service whose built entry imports an installed package: `dir/server/entry.mjs`, or the single file `dist/server.mjs`. */
+  function serviceWithInstalledImport(): string {
+    const serviceDir = makeServiceDir();
+    const source = 'import { marker } from "runtime-fixture"; export default marker;\n';
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': source,
+      'server/chunk.mjs': 'export const chunk = 1;\n',
+      'server.mjs': source,
+    });
+    installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+    return serviceDir;
+  }
+
+  test('the directory form defaults to bundled: copies dir as it is, stages nothing, and reports no trace counts', async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const reports: Report[] = [];
+
+    const result = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist/server', entry: 'entry.mjs' }),
+      address: 'svc',
+      cwd: makeCwd(),
+      report: (data) => reports.push(data),
+    });
+
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual(['chunk.mjs', 'entry.mjs']);
+    expect(reports).toEqual([{ form: 'directory', dependencies: 'bundled' }]);
+  }, 20_000);
+
+  test("the directory form with dependencies: 'external' stages the installed packages entry imports", async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const reports: Report[] = [];
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist/server',
+        entry: 'entry.mjs',
+        dependencies: 'external',
+      }),
+      address: 'svc',
+      cwd: makeCwd(),
+      report: (data) => reports.push(data),
+    });
+
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual([
+      'chunk.mjs',
+      'entry.mjs',
+      'node_modules/runtime-fixture/index.js',
+      'node_modules/runtime-fixture/package.json',
+    ]);
+    expect(reports).toEqual([
+      {
+        form: 'directory',
+        dependencies: 'external',
+        filesTraced: 3,
+        filesStaged: 2,
+        bytesStaged: expect.any(Number),
+      },
+    ]);
+  }, 20_000);
+
+  test("the single-file form with dependencies: 'external' stages the installed packages that one file imports", async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const reports: Report[] = [];
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.mjs',
+        dependencies: 'external',
+      }),
+      address: 'svc',
+      cwd: makeCwd(),
+      report: (data) => reports.push(data),
+    });
+
+    expect(result.entry).toBe('bundle/server.mjs');
+    // The file's siblings in dist/ are not swept in; only the package it imports is staged.
+    expect(treeContents(path.join(result.dir, 'bundle'))).toEqual([
+      'node_modules/runtime-fixture/index.js',
+      'node_modules/runtime-fixture/package.json',
+      'server.mjs',
+    ]);
+    expect(reports).toEqual([
+      {
+        form: 'file',
+        dependencies: 'external',
+        filesTraced: 3,
+        filesStaged: 2,
+        bytesStaged: expect.any(Number),
+      },
+    ]);
+  }, 20_000);
+
+  test('rejects a dependencies value other than bundled or external, naming it', async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const build: BuildAdapter & { dependencies: string } = {
+      extension: '@prisma/composer/node',
+      type: 'node',
+      module: moduleUrl(serviceDir),
+      entry: '../dist/server.mjs',
+      dependencies: 'Externel',
+    };
+    await expect(assemble({ build, address: 'svc', cwd: makeCwd() })).rejects.toThrow(
+      `the node build adapter's dependencies must be 'bundled' or 'external', got "Externel"`,
+    );
+  });
 });
