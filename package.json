@@ -35,8 +35,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@clack/prompts": "^1.7.0",
-    "@prisma/composer": "workspace:0.26.0",
-    "@prisma/composer-cli": "workspace:0.26.0",
+    "@prisma/composer": "workspace:0.27.0",
+    "@prisma/composer-cli": "workspace:0.27.0",
     "dependency-cruiser": "^17.4.3",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
@@ -48,12 +48,13 @@
   },
   "pnpm": {
     "overrides": {
-      "@prisma/composer-cli": "workspace:*"
+      "@prisma/composer-cli": "workspace:*",
+      "@prisma/cli-engine": "0.6.3"
     },
     "onlyBuiltDependencies": [
       "prisma",
       "@prisma/engines"
     ]
   },
-  "version": "0.26.0"
+  "version": "0.27.0"
 }
