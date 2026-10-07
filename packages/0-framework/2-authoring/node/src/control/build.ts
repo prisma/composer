@@ -209,7 +209,7 @@ async function copyTracedEntry(
   stagingRoot: string,
   bundleDir: string,
   dirPath: string,
-): Promise<void> {
+): Promise<number> {
   const stat = await fs.promises.lstat(source);
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
 
@@ -230,11 +230,11 @@ async function copyTracedEntry(
       copySource: realTarget,
       copyWithinRoot: bundleDir,
     });
-    return;
+    return 0;
   }
   if (stat.isDirectory()) {
     await fs.promises.mkdir(destination, { recursive: true });
-    return;
+    return 0;
   }
   if (!stat.isFile()) {
     throw new Error(
@@ -242,6 +242,7 @@ async function copyTracedEntry(
     );
   }
   await fs.promises.copyFile(source, destination);
+  return stat.size;
 }
 
 /**
@@ -296,15 +297,22 @@ function stagingRootFor(
  * trace never visits, while nft's `conditions` option replaces the default
  * set rather than extending it.
  *
- * Returns how long the trace took and whether anything staged can hold code:
- * a file or file link other than a `package.json`. Directories, directory
- * links and `package.json` files alone mean the build ran on its own. */
+ * Returns the trace and staging counts, how long the trace took, and whether
+ * anything staged can hold code: a file or file link other than a
+ * `package.json`. Directories, directory links and `package.json` files alone
+ * mean the build ran on its own. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
   readonly dirPath: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<{ readonly traceMs: number; readonly stagedCode: boolean }> {
+}): Promise<{
+  filesTraced: number;
+  filesStaged: number;
+  bytesStaged: number;
+  traceMs: number;
+  stagedCode: boolean;
+}> {
   const [moduleDir, entryPath, dirPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
@@ -333,6 +341,7 @@ async function stageRuntimeDependencies(options: {
   );
 
   const stagedFrom = new Map<string, string>();
+  let bytesStaged = 0;
   let stagedCode = false;
   for (const { source, origin } of tracedEntries) {
     if (isWithin(dirPath, source)) continue;
@@ -349,12 +358,24 @@ async function stageRuntimeDependencies(options: {
       );
     }
     if (await pathExists(destination)) continue;
-    await copyTracedEntry(source, destination, stagingRoot, options.bundleDir, dirPath);
+    bytesStaged += await copyTracedEntry(
+      source,
+      destination,
+      stagingRoot,
+      options.bundleDir,
+      dirPath,
+    );
     stagedFrom.set(destination, origin);
     stagedCode ||=
       path.basename(source) !== 'package.json' && !(await fs.promises.stat(source)).isDirectory();
   }
-  return { traceMs, stagedCode };
+  return {
+    filesTraced: fileList.size,
+    filesStaged: stagedFrom.size,
+    bytesStaged,
+    traceMs,
+    stagedCode,
+  };
 }
 
 /**
@@ -422,13 +443,18 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  if (buildDescriptor.dir !== undefined && !standalone) {
-    const { traceMs, stagedCode } = await stageRuntimeDependencies({
+  if (buildDescriptor.dir === undefined) {
+    input.report?.({ form: 'file' });
+  } else if (standalone) {
+    input.report?.({ form: 'directory', standalone: 'true' });
+  } else {
+    const { traceMs, stagedCode, ...counts } = await stageRuntimeDependencies({
       entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
       dirPath: runnable.source,
       moduleDir,
       bundleDir,
     });
+    input.report?.({ form: 'directory', ...counts });
     if (traceMs > SLOW_TRACE_MS && !stagedCode) {
       const seconds = Math.round(traceMs / 1000);
       const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;

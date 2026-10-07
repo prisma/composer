@@ -149,6 +149,7 @@ describe('assemble()', () => {
       'export default { hello: "wrapper" as const };\n',
     );
 
+    const reports: Readonly<Record<string, string | number>>[] = [];
     const result = await assemble({
       build: {
         extension: '@prisma/composer/node',
@@ -158,6 +159,7 @@ describe('assemble()', () => {
       },
       address,
       cwd,
+      report: (data) => reports.push(data),
     });
 
     expect(result.dir).toBe(path.join(cwd, '.prisma-composer', 'artifacts', address));
@@ -174,6 +176,7 @@ describe('assemble()', () => {
     expect(result.dir.includes('node_modules')).toBe(false);
     // Bundle.watch names the resolved entry file (ADR-0041).
     expect(result.watch).toEqual([path.join(serviceDir, 'dist', 'server.js')]);
+    expect(reports).toEqual([{ form: 'file' }]);
   }, 20_000);
 
   test('copies exactly the named file — the siblings sitting beside it in the build dir are not swept in', async () => {
@@ -647,6 +650,7 @@ describe('assemble() — the directory form', () => {
     const marker = installFixturePackage(serviceDir, 'runtime-fixture');
     writeServiceModule(serviceDir);
 
+    const reports: Readonly<Record<string, string | number>>[] = [];
     const result = await assemble({
       build: node({
         module: moduleUrl(serviceDir),
@@ -655,6 +659,7 @@ describe('assemble() — the directory form', () => {
       }),
       address: 'astro',
       cwd,
+      report: (data) => reports.push(data),
     });
 
     expect(result.entry).toBe('bundle/server/entry.mjs');
@@ -664,6 +669,19 @@ describe('assemble() — the directory form', () => {
         'utf8',
       ),
     ).toContain(marker);
+    // Traced: the entry, the package's index.js and its package.json. Only the
+    // last two sit outside the built tree, so only they are staged.
+    const pkgDir = path.join(serviceDir, 'node_modules', 'runtime-fixture');
+    expect(reports).toEqual([
+      {
+        form: 'directory',
+        filesTraced: 3,
+        filesStaged: 2,
+        bytesStaged:
+          fs.statSync(path.join(pkgDir, 'index.js')).size +
+          fs.statSync(path.join(pkgDir, 'package.json')).size,
+      },
+    ]);
   }, 20_000);
 
   test('stages the files a "bun"-conditional export resolves to (stock Elysia shape)', async () => {

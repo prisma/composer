@@ -10,7 +10,12 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { type AssembledServices, assembleServices, type RunAssembler } from '@internal/assemble';
+import {
+  type AssembledServices,
+  type AssembleEvent,
+  assembleServices,
+  type RunAssembler,
+} from '@internal/assemble';
 import type { Graph } from '@internal/core';
 import { Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
@@ -24,9 +29,14 @@ import {
 import { type LoadedEntry, loadEntry } from './load-entry.ts';
 import { validateRegistryCoverage } from './validate-coverage.ts';
 
+/** The app is loaded and checked, and assemble is about to start; then one assemble event per service. */
+export type PipelineEvent = { readonly kind: 'loaded' } | AssembleEvent;
+
 /** Injectable seams so tests can drive the pipeline without a real wrapper build. */
 export interface PipelineDeps {
   readonly runAssembler?: RunAssembler | undefined;
+  /** Progress, for a caller that reports each step. */
+  readonly onEvent?: ((event: PipelineEvent) => void) | undefined;
 }
 
 export interface PipelineResult {
@@ -137,9 +147,10 @@ export async function runPipeline(
   }
 
   // 5. Assemble each service through the config's registries.
+  deps.onEvent?.({ kind: 'loaded' });
   let assembled: AssembledServices;
   try {
-    assembled = await assembleServices(graph, config, cwd, deps.runAssembler);
+    assembled = await assembleServices(graph, config, cwd, deps.runAssembler, deps.onEvent);
   } catch (error) {
     if (onAssembleError !== undefined && error instanceof Error) {
       throw onAssembleError(error);

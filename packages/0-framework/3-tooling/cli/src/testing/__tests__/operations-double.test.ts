@@ -25,7 +25,7 @@ describe('createOperationsDouble()', () => {
       {},
     );
     expect(result.ok).toBe(true);
-    expect(result.ok && result.value).toEqual({ summary: undefined });
+    expect(result.ok && result.value).toEqual({ summary: undefined, durationMs: 0 });
     expect(double.calls.deploy).toEqual([{ entry: ENTRY, config: CONFIG, stage: 'preview' }]);
   });
 
@@ -36,6 +36,29 @@ describe('createOperationsDouble()', () => {
     const double = createOperationsDouble({ deploy: notOk(failure) });
     const result = await double.operations.deploy({ entry: ENTRY, config: CONFIG }, {});
     expect(!result.ok && result.failure).toBe(failure);
+  });
+
+  test('deploy replays every fixture event, and an onEvent that throws does not fail it', async () => {
+    const double = createOperationsDouble({
+      deployEvents: [
+        { kind: 'step-started', step: { name: 'prepare' } },
+        { kind: 'step-finished', step: { name: 'prepare' }, outcome: 'ok', durationMs: 5 },
+      ],
+    });
+    const seen: string[] = [];
+    const result = await double.operations.deploy(
+      {
+        entry: ENTRY,
+        config: CONFIG,
+        onEvent: (event) => {
+          seen.push(event.kind);
+          throw new Error('renderer bug');
+        },
+      },
+      {},
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(['step-started', 'step-finished']);
   });
 
   test('the DevSession double runs the whole lifecycle: ready, endpoints, stop, closed', async () => {
