@@ -3,7 +3,7 @@ import type { ServiceNode } from '@internal/core';
 import { Load, module, service } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { AssembleError } from '../assemble-error.ts';
-import { assembleServices } from '../assemble-services.ts';
+import { type AssembleEvent, assembleServices } from '../assemble-services.ts';
 
 const CWD = '/deploy-cwd';
 
@@ -130,6 +130,46 @@ describe('assembleServices()', () => {
 
     expect(seen).toEqual([{ type: 'cron', address: 'svc', cwd: CWD }]);
     expect(assembled.bundles['svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
+  });
+
+  test('each service reports its start and end, carrying what its build descriptor reported', async () => {
+    const config: PrismaAppConfig = {
+      extensions: [
+        {
+          id: '@community/adapter',
+          nodes: {
+            loud: {
+              kind: 'build',
+              assemble: async (input) => {
+                input.report?.({ strategy: 'copy', files: 3 });
+                return { dir: '/bundles/loud', entry: 'x' };
+              },
+            },
+            quiet: { kind: 'build', assemble: async () => ({ dir: '/bundles/quiet', entry: 'x' }) },
+          },
+        },
+      ],
+      state: emptyConfig.state,
+    };
+    const root = module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('loud', { extension: '@community/adapter', type: 'loud' }), {
+        id: 'loud',
+      });
+      provision(makeService('quiet', { extension: '@community/adapter', type: 'quiet' }), {
+        id: 'quiet',
+      });
+      return {};
+    });
+    const events: AssembleEvent[] = [];
+
+    await assembleServices(Load(root), config, CWD, undefined, (event) => events.push(event));
+
+    expect(events).toEqual([
+      { kind: 'service-started', address: 'loud' },
+      { kind: 'service-assembled', address: 'loud', data: { strategy: 'copy', files: 3 } },
+      { kind: 'service-started', address: 'quiet' },
+      { kind: 'service-assembled', address: 'quiet', data: {} },
+    ]);
   });
 
   test("a build whose extension isn't configured throws AssembleError naming it and the config fix", async () => {

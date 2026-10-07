@@ -133,6 +133,8 @@ export interface PreflightInput<C = unknown> {
   readonly stage: string | undefined;
   /** What the caller has already authenticated, for the platform calls preflight makes. Absent means the extension falls back to its own credential protocol. */
   readonly credentials?: ContainerCredentials<C> | undefined;
+  /** Hands the deploy's progress output what the check covered, as counts (e.g. `{ checked: 53, filled: 0, missing: 0 }`). Counts only: never a name or a value. */
+  readonly report?: ((counts: Readonly<Record<string, number>>) => void) | undefined;
 }
 
 /** The resolved destroy context handed to an extension's `teardown` hook. */
