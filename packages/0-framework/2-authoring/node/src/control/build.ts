@@ -343,7 +343,8 @@ async function stageRuntimeDependencies(options: {
 
   // A single copied entry resolves its relative imports against its own
   // location in the bundle, so a traced file outside node_modules keeps its
-  // place relative to the entry, unless that would leave the bundle.
+  // place relative to the entry. A package.json is found by walking up the
+  // folders, so one above the entry can stay at its staged place.
   const destinationFor = (source: string): string => {
     const staged = stagedRuntimePath(source, stagingRoot, options.bundleDir);
     if (
@@ -352,11 +353,15 @@ async function stageRuntimeDependencies(options: {
     ) {
       return staged;
     }
-    const besideEntry = path.join(
-      path.dirname(copied.at),
-      path.relative(path.dirname(outputPath), source),
+    const fromEntry = path.relative(path.dirname(outputPath), source);
+    const besideEntry = path.join(path.dirname(copied.at), fromEntry);
+    if (isWithin(options.bundleDir, besideEntry)) return besideEntry;
+    if (path.basename(source) === 'package.json') return staged;
+    throw new Error(
+      `${path.basename(outputPath)} imports ${fromEntry.split(path.sep).join('/')}, which is outside ` +
+        'its folder, so the copied entry cannot load it. Use the directory form with a dir that ' +
+        'contains both files.',
     );
-    return isWithin(options.bundleDir, besideEntry) ? besideEntry : staged;
   };
 
   const stagedFrom = new Map<string, string>();

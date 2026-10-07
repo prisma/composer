@@ -1060,6 +1060,57 @@ describe('assemble() with dependencies', () => {
     expect(booted.default).toBe(`${marker}:CHUNK`);
   }, 20_000);
 
+  test("the single-file form with dependencies: 'external' keeps the app's package.json above the entry", async () => {
+    const serviceDir = makeServiceDir();
+    fs.writeFileSync(
+      path.join(serviceDir, 'package.json'),
+      JSON.stringify({ name: 'app', type: 'module' }),
+    );
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server.js':
+        'import { marker } from "runtime-fixture";\nimport { chunk } from "./chunk.js";\nexport default `${marker}:${chunk}`;\n',
+      'chunk.js': 'export const chunk = "CHUNK";\n',
+    });
+    const marker = installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.js',
+        dependencies: 'external',
+      }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const bundleDir = path.join(result.dir, 'bundle');
+    expect(treeContents(bundleDir)).toContain('package.json');
+    const booted = await import(pathToFileURL(path.join(bundleDir, 'server.js')).href);
+    expect(booted.default).toBe(`${marker}:CHUNK`);
+  }, 20_000);
+
+  test("the single-file form with dependencies: 'external' rejects an import from outside the entry's folder", async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(serviceDir, {
+      'dist/server.mjs': 'import { shared } from "../shared.mjs";\nexport default shared;\n',
+      'shared.mjs': 'export const shared = "SHARED";\n',
+    });
+    writeServiceModule(serviceDir);
+
+    await expect(
+      assemble({
+        build: node({
+          module: moduleUrl(serviceDir),
+          entry: '../dist/server.mjs',
+          dependencies: 'external',
+        }),
+        address: 'svc',
+        cwd: makeCwd(),
+      }),
+    ).rejects.toThrow('server.mjs imports ../shared.mjs, which is outside its folder');
+  }, 20_000);
+
   test('rejects a dependencies value other than bundled or external, naming it', async () => {
     const serviceDir = serviceWithInstalledImport();
     const build: BuildAdapter & { dependencies: string } = {
