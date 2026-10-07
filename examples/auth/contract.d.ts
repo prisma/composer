@@ -308,7 +308,7 @@ type ContractBase = Omit<
       readonly id: 'auth';
       readonly kind: 'extension';
       readonly targetId: 'postgres';
-      readonly version: '0.27.0';
+      readonly version: '0.28.0';
     };
   };
   readonly meta: {};
