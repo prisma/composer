@@ -104,7 +104,6 @@ export const createDeployCommand = (operations: ComposerOperations) =>
     needs: { config: composerSection, credentials: 'child' },
     maySpawn: true,
     handler: async (args, ctx) => {
-      const startedAt = performance.now();
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
@@ -124,8 +123,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
         }),
       );
 
-      return settleConverge(result, ctx, ({ summary }) => {
-        const durationMs = Math.round(performance.now() - startedAt);
+      return settleConverge(result, ctx, ({ summary, durationMs }) => {
         const target = `to ${args.flags.stage ?? 'production'} in ${formatDuration(durationMs)}`;
         for (const node of summary?.nodes ?? []) {
           for (const entity of node.entities) {

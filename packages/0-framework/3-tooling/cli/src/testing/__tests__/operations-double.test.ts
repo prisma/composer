@@ -25,7 +25,7 @@ describe('createOperationsDouble()', () => {
       {},
     );
     expect(result.ok).toBe(true);
-    expect(result.ok && result.value).toEqual({ summary: undefined });
+    expect(result.ok && result.value).toEqual({ summary: undefined, durationMs: 0 });
     expect(double.calls.deploy).toEqual([{ entry: ENTRY, config: CONFIG, stage: 'preview' }]);
   });
 

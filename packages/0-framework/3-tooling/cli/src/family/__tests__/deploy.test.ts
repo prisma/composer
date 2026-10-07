@@ -287,13 +287,14 @@ describe('what a successful run presents', () => {
               { address: 'orders.service', entities: [{ kind: 'Worker', id: 'orders-worker' }] },
             ],
           },
+          durationMs: 575_000,
         }),
       },
     });
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toMatch(/Deployed shop to production in \d+ms\./);
+    expect(plain(result.stderr)).toContain('Deployed shop to production in 9m 35s.');
     expect(plain(result.stderr)).toContain('catalog.service');
     expect(plain(result.stderr)).toContain('Worker orders-worker');
     expect(result.presented?.data).toEqual({
@@ -304,17 +305,19 @@ describe('what a successful run presents', () => {
           { address: 'orders.service', entities: [{ kind: 'Worker', id: 'orders-worker' }] },
         ],
       },
-      durationMs: expect.any(Number),
+      durationMs: 575_000,
     });
   });
 
   test('a deploy whose child wrote no report still reports success', async () => {
-    const { cli } = composerCli({ fixtures: { deploy: ok({ summary: undefined }) } });
+    const { cli } = composerCli({
+      fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },
+    });
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toMatch(/Deployed to production in \d+ms\./);
-    expect(result.presented?.data).toEqual({ summary: null, durationMs: expect.any(Number) });
+    expect(plain(result.stderr)).toContain('Deployed to production in 850ms.');
+    expect(result.presented?.data).toEqual({ summary: null, durationMs: 850 });
   });
 });
 
@@ -327,7 +330,7 @@ describe('step events', () => {
       step: { name: 'assemble-service', address: 'console' },
       outcome: 'ok',
       durationMs: 221_780,
-      data: { form: 'directory', filesTraced: 975 },
+      data: { strategy: 'traced', filesTraced: 975 },
     },
     { kind: 'step-finished', step: { name: 'assemble' }, outcome: 'ok', durationMs: 222_380 },
     { kind: 'step-started', step: { name: 'preflight' } },
@@ -354,6 +357,7 @@ describe('step events', () => {
         { address: 'db', entities: [{ kind: 'postgres', id: 'db_1' }] },
       ],
     },
+    durationMs: 12_300,
   });
 
   test('a person sees each step start and finish with its duration, then the URLs and the total', async () => {
@@ -374,7 +378,7 @@ describe('step events', () => {
       'console: https://console.ewr.prisma.build',
     ];
     expect(lines.filter((line) => expected.includes(line))).toEqual(expected);
-    expect(plain(result.stderr)).toMatch(/Deployed shop to pr-7 in \d+ms\./);
+    expect(plain(result.stderr)).toContain('Deployed shop to pr-7 in 12.3s.');
   });
 
   test('json mode streams each step with its id, parent and data, then the endpoints and the result', async () => {
@@ -404,7 +408,7 @@ describe('step events', () => {
       kind: 'step-finished',
       id: 'deploy.assemble.console',
       outcome: 'ok',
-      data: { durationMs: 221_780, form: 'directory', filesTraced: 975 },
+      data: { durationMs: 221_780, strategy: 'traced', filesTraced: 975 },
     });
     expect(result.json[5]).toMatchObject({
       id: 'deploy.preflight',
@@ -417,7 +421,7 @@ describe('step events', () => {
     });
     expect(result.json[9]).toMatchObject({
       kind: 'result',
-      envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: expect.any(Number) } },
+      envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: 12_300 } },
     });
   });
 });

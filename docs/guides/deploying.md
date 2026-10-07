@@ -166,20 +166,20 @@ web: https://uvw.ewr.prisma.build
 ✔ Deployed storefront-auth to production in 6m 5s.
 ```
 
-Assembling is one step per service. A service built in directory form
-(`dir` set) can take minutes here, because its runtime dependencies are
-traced and copied into the bundle. Planning and applying run in one deploy
-engine process, so they are one step. The last line is the whole deploy,
-from start to finish.
+Assembling is one step per service. A Node service with `dir` set can take
+minutes here, because its runtime dependencies are traced and copied into
+the deploy artifact. Planning and applying run in one deploy engine process,
+so they are one step. The last line is the whole deploy, from start to
+finish.
 
 With `--json`, or whenever stdout is not a terminal, each step is a
 `step-started` and a `step-finished` line on stdout, followed by an
 `endpoint` line per public URL and the `result` line. A `step-finished` line
-carries `data.durationMs`, plus what the step measured: an assembled
-service's `form` (`file` or `directory`) and, for directory form,
-`filesTraced`, `filesStaged` and `bytesStaged`; the env var check's
-`checked`, `filled` and `missing` counts. The `result` line has the deploy's
-total `durationMs` beside `summary`.
+carries `data.durationMs`. An assemble step's `data` also holds whatever the
+service's build adapter reports, and the env var check's `data` holds
+whatever the deploy target reports. Those extra fields vary by adapter and
+target, so read them as information, not as a stable format. The `result`
+line has the deploy's total `durationMs` beside `summary`.
 
 A deploy ends by printing your app's own topology — the names you authored,
 what each one became on the platform, and the public URLs:
@@ -512,7 +512,8 @@ What to know before embedding it:
   `record`), as they happen. A finished step has `outcome`, `durationMs` and
   the `data` described in [What a deploy prints](#what-a-deploy-prints). When
   a step fails, it and the steps around it finish as `failed`; `record` still
-  runs. An `onEvent` that throws does not fail the deploy.
+  runs. An `onEvent` that throws does not fail the deploy. A successful
+  result's `durationMs` is the whole deploy's total.
 - **`summary` is best-effort.** It rides a result file the deploy engine's
   child process writes; a deploy that converged without writing one still
   succeeds, with `summary: undefined`.

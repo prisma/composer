@@ -38,7 +38,7 @@ import {
 } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
-import type { AssembleInput, Bundle, BundleStats } from '@internal/core/deploy';
+import type { AssembleInput, Bundle } from '@internal/core/deploy';
 import { nodeFileTrace } from '@vercel/nft';
 import { build } from 'esbuild';
 import type { NodeBuildAdapter } from '../node.ts';
@@ -295,7 +295,7 @@ async function stageRuntimeDependencies(options: {
   readonly dirPath: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<Required<Omit<BundleStats, 'form'>>> {
+}): Promise<{ filesTraced: number; filesStaged: number; bytesStaged: number }> {
   const [moduleDir, entryPath, dirPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
@@ -408,18 +408,17 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  const stats: BundleStats =
-    buildDescriptor.dir === undefined
-      ? { form: 'file' }
-      : {
-          form: 'directory',
-          ...(await stageRuntimeDependencies({
-            entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
-            dirPath: runnable.source,
-            moduleDir,
-            bundleDir,
-          })),
-        };
+  if (buildDescriptor.dir === undefined) {
+    input.report?.({ form: 'file' });
+  } else {
+    const staged = await stageRuntimeDependencies({
+      entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
+      dirPath: runnable.source,
+      moduleDir,
+      bundleDir,
+    });
+    input.report?.({ form: 'directory', ...staged });
+  }
   await assertBundleSymlinksStayInside(bundleDir);
 
   return {
@@ -429,7 +428,6 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     // watch the whole dir (== source too) — a rebuild may touch only a
     // sibling of entry (ADR-0041).
     watch: [runnable.source],
-    stats,
   };
 }
 

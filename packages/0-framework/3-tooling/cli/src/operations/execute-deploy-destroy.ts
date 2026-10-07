@@ -101,6 +101,8 @@ interface StackPipelineOptions {
   readonly deps: OperationDeps;
   /** Deploy only: an existing report record to join, from `--build-id`. */
   readonly reportId: string | undefined;
+  /** Deploy only: where to write the run report, already resolved. */
+  readonly reportPath: string | undefined;
   readonly steps: DeploySteps;
 }
 
@@ -108,8 +110,7 @@ export async function executeDeploy(
   input: DeployInput,
   deps: OperationDeps,
   cwd: string,
-): Promise<Result<DeploySuccess, CliStructuredError>> {
-  const steps = deploySteps(input.onEvent);
+): Promise<Result<Omit<DeploySuccess, 'durationMs'>, CliStructuredError>> {
   const outcome = await runStackPipeline('deploy', {
     entry: input.entry,
     config: input.config,
@@ -119,24 +120,9 @@ export async function executeDeploy(
     onEvent: undefined,
     deps,
     reportId: input.reportId,
-    steps,
+    reportPath: resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd),
+    steps: deploySteps(input.onEvent),
   });
-
-  const reportPath = resolveRunReportPath(input.reportPath, process.env[RUN_REPORT_FILE_ENV], cwd);
-  if (reportPath !== undefined) {
-    writeRunReport(
-      reportPath,
-      toRunReport({
-        summary: outcome.ok ? outcome.value : undefined,
-        stage: input.stage,
-        failure: outcome.ok
-          ? undefined
-          : { code: outcome.failure.code, message: outcome.failure.message },
-      }),
-    );
-  }
-  steps.finish({ name: 'record' });
-
   if (!outcome.ok) return outcome;
   return ok({ summary: outcome.value });
 }
@@ -155,6 +141,7 @@ export async function executeDestroy(
     onEvent: input.onEvent,
     deps,
     reportId: undefined,
+    reportPath: undefined,
     steps: deploySteps(undefined),
   });
   if (!outcome.ok) return outcome;
@@ -283,7 +270,8 @@ async function finishReporters(
 /**
  * Owns the reporting sessions around the pipeline: the inner run opens them
  * once it knows which extensions are configured, and this closes them on
- * every exit path — a returned failure, a success, or a thrown defect.
+ * every exit path — a returned failure, a success, or a thrown defect — as
+ * the `record` step, which also writes the run report.
  * Nothing here can change what the pipeline returns.
  */
 async function runStackPipeline(
@@ -296,6 +284,7 @@ async function runStackPipeline(
     outcome = await runStackPipelineInner(action, opts, reporters);
   } catch (error) {
     opts.steps.failOpen();
+    opts.steps.start({ name: 'record' });
     // A defect, not a structured failure — still the end of the run, and the
     // only chance to record that it ended at all.
     await finishReporters(reporters, {
@@ -304,6 +293,7 @@ async function runStackPipeline(
       code: 'DEPLOY.UNEXPECTED',
       message: error instanceof Error ? error.message : String(error),
     });
+    opts.steps.finish({ name: 'record' });
     throw error;
   }
   if (!outcome.ok) opts.steps.failOpen();
@@ -319,6 +309,19 @@ async function runStackPipeline(
           message: outcome.failure.message,
         },
   );
+  if (opts.reportPath !== undefined) {
+    writeRunReport(
+      opts.reportPath,
+      toRunReport({
+        summary: outcome.ok ? outcome.value : undefined,
+        stage: opts.stage,
+        failure: outcome.ok
+          ? undefined
+          : { code: outcome.failure.code, message: outcome.failure.message },
+      }),
+    );
+  }
+  opts.steps.finish({ name: 'record' });
   return outcome;
 }
 
@@ -376,10 +379,7 @@ async function runStackPipelineInner(
             steps.start({ name: 'assemble-service', address: event.address });
             return;
           case 'service-assembled':
-            steps.finish(
-              { name: 'assemble-service', address: event.address },
-              event.bundle.stats === undefined ? undefined : { ...event.bundle.stats },
-            );
+            steps.finish({ name: 'assemble-service', address: event.address }, event.data);
             return;
         }
       },

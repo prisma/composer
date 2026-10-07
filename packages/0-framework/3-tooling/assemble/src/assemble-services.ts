@@ -10,13 +10,25 @@ export interface AssembledServices {
   readonly bundles: Record<string, Bundle>;
 }
 
-/** Assembles one service node — the seam tests substitute to avoid a real build. */
-export type RunAssembler = (node: ServiceNode, address: string, cwd: string) => Promise<Bundle>;
+/** What a build adapter measured during one assemble, for progress output. Never read here. */
+export type AssembleReport = (data: Readonly<Record<string, string | number>>) => void;
 
-/** One service's assemble starting or finishing, for a caller that reports progress. */
+/** Assembles one service node — the seam tests substitute to avoid a real build. */
+export type RunAssembler = (
+  node: ServiceNode,
+  address: string,
+  cwd: string,
+  report?: AssembleReport,
+) => Promise<Bundle>;
+
+/** One service's assemble starting or finishing, for a caller that reports progress. `data` is what the build adapter reported. */
 export type AssembleEvent =
   | { readonly kind: 'service-started'; readonly address: string }
-  | { readonly kind: 'service-assembled'; readonly address: string; readonly bundle: Bundle };
+  | {
+      readonly kind: 'service-assembled';
+      readonly address: string;
+      readonly data: Readonly<Record<string, string | number>>;
+    };
 
 /**
  * The registry route for one service's build: extension by
@@ -29,6 +41,7 @@ function buildDescriptorAssemble(
   node: ServiceNode,
   address: string,
   cwd: string,
+  report: AssembleReport | undefined,
 ): Promise<Bundle> {
   const { extension, type } = node.build;
   const extensionDescriptor = config.extensions.find((candidate) => candidate.id === extension);
@@ -58,6 +71,7 @@ function buildDescriptorAssemble(
     build: node.build,
     address,
     cwd,
+    report,
   });
 }
 
@@ -69,7 +83,9 @@ export async function assembleServices(
   onEvent?: (event: AssembleEvent) => void,
 ): Promise<AssembledServices> {
   const runAssembler: RunAssembler =
-    run ?? ((node, address, nodeCwd) => buildDescriptorAssemble(config, node, address, nodeCwd));
+    run ??
+    ((node, address, nodeCwd, report) =>
+      buildDescriptorAssemble(config, node, address, nodeCwd, report));
   const serviceNodes = graph.nodes.filter(
     (n): n is GraphNode & { node: ServiceNode } => n.node.kind === 'service',
   );
@@ -83,9 +99,10 @@ export async function assembleServices(
   const bundles: Record<string, Bundle> = {};
   for (const { id, node } of serviceNodes) {
     onEvent?.({ kind: 'service-started', address: id });
-    let bundle: Bundle;
+    const data: Record<string, string | number> = {};
+    let artifact: Bundle;
     try {
-      bundle = await runAssembler(node, id, cwd);
+      artifact = await runAssembler(node, id, cwd, (reported) => Object.assign(data, reported));
     } catch (error) {
       // A foreign build failure (the RunAssembler or a descriptor's own
       // assemble) is structured here, at the loop that knows the address
@@ -97,8 +114,8 @@ export async function assembleServices(
         { meta: { address: id }, cause: error },
       );
     }
-    bundles[id] = bundle;
-    onEvent?.({ kind: 'service-assembled', address: id, bundle });
+    bundles[id] = artifact;
+    onEvent?.({ kind: 'service-assembled', address: id, data });
   }
   return { bundles };
 }

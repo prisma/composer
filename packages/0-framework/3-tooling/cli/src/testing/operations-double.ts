@@ -24,7 +24,7 @@ import type { DevInput, DevSession } from '../operations/dev.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 
 export interface OperationsDoubleFixtures {
-  /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary. */
+  /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary and a zero duration. */
   readonly deploy?: Result<DeploySuccess, CliStructuredError> | undefined;
   /** Sent to the deploy's `onEvent`, in order, before it returns. */
   readonly deployEvents?: readonly DeployEvent[] | undefined;
@@ -162,7 +162,7 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
       }
       const converge = await runConverge(operationDeps, input.cwd);
       if (converge !== undefined) return converge;
-      return fixtures.deploy ?? ok({ summary: undefined });
+      return fixtures.deploy ?? ok({ summary: undefined, durationMs: 0 });
     },
     dev: async (input, operationDeps) => {
       calls.dev.push(input);

@@ -786,10 +786,11 @@ describe('deploy() step events', () => {
           onEvent: (event) => events.push(event),
         },
         {
-          runAssembler: async (node) => ({
-            ...(await fakeAssembler(node)),
-            stats: { form: 'directory', filesTraced: 975, filesStaged: 885, bytesStaged: 4096 },
-          }),
+          runAssembler: async (node, _address, _cwd, report) => {
+            report?.({ strategy: 'traced', filesTraced: 975 });
+            report?.({ bytes: 4096 });
+            return fakeAssembler(node);
+          },
           alchemy: async () => ({ exitCode: 0, signal: null }),
         },
       ),
@@ -818,9 +819,62 @@ describe('deploy() step events', () => {
     const finished = (name: string) =>
       events.find((event) => event.kind === 'step-finished' && event.step.name === name);
     expect(finished('assemble-service')).toMatchObject({
-      data: { form: 'directory', filesTraced: 975, filesStaged: 885, bytesStaged: 4096 },
+      data: { strategy: 'traced', filesTraced: 975, bytes: 4096 },
     });
     expect(finished('preflight')).toMatchObject({ data: { checked: 3, filled: 1, missing: 0 } });
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('a thrown defect closes the open steps as failed and still records the result', async () => {
+    const app = makeAppDir('hello-steps-defect');
+    const events: DeployEvent[] = [];
+    const brokenContainer: ContainerDescriptor = {
+      ...fakeContainerDescriptor(),
+      ensure: async (input) => ({
+        input,
+        get alchemyStage(): string {
+          throw new Error('container bug');
+        },
+        serialize: () => '{}',
+      }),
+    };
+    const config = fakeConfig();
+    const extension = config.extensions[0];
+    if (extension === undefined) throw new Error('unreachable');
+
+    const outcome = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...config,
+            extensions: [
+              { ...extension, container: brokenContainer },
+              ...config.extensions.slice(1),
+            ],
+          }),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ).catch((error: unknown) => error),
+    );
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app ok',
+      'finished assemble ok',
+      'started connect',
+      'finished connect failed',
+      'started record',
+      'finished record ok',
+    ]);
   });
 
   test('a failed step and every step around it close as failed, and the result is still recorded', async () => {
