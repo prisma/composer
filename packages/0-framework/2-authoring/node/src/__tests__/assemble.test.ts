@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import type { BuildAdapter } from '@internal/core';
 import { assemble } from '../exports/control.ts';
 import node from '../exports/index.ts';
 
@@ -1030,4 +1031,46 @@ describe('assemble() with dependencies', () => {
       },
     ]);
   }, 20_000);
+
+  test("the single-file form with dependencies: 'external' places a relative sibling where the copied entry imports it", async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server.mjs':
+        'import { marker } from "runtime-fixture";\nimport { chunk } from "./chunk.mjs";\nexport default `${marker}:${chunk}`;\n',
+      'chunk.mjs': 'export const chunk = "CHUNK";\n',
+    });
+    const marker = installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        entry: '../dist/server.mjs',
+        dependencies: 'external',
+      }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    const bundleDir = path.join(result.dir, 'bundle');
+    expect(treeContents(bundleDir)).toContain('chunk.mjs');
+    expect(treeContents(bundleDir)).toContain('node_modules/runtime-fixture/index.js');
+    // Importing the copied entry proves both resolve from where it sits in the bundle.
+    const booted = await import(pathToFileURL(path.join(bundleDir, 'server.mjs')).href);
+    expect(booted.default).toBe(`${marker}:CHUNK`);
+  }, 20_000);
+
+  test('rejects a dependencies value other than bundled or external, naming it', async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const build: BuildAdapter & { dependencies: string } = {
+      extension: '@prisma/composer/node',
+      type: 'node',
+      module: moduleUrl(serviceDir),
+      entry: '../dist/server.mjs',
+      dependencies: 'Externel',
+    };
+    await expect(assemble({ build, address: 'svc', cwd: makeCwd() })).rejects.toThrow(
+      `the node build adapter's dependencies must be 'bundled' or 'external', got "Externel"`,
+    );
+  });
 });
