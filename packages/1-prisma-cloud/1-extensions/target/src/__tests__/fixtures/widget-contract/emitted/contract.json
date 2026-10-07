@@ -60,7 +60,7 @@
               "columns": {
                 "id": {
                   "codecId": "sql/char@1",
-                  "nativeType": "character",
+                  "dataType": "pg/char",
                   "nullable": false,
                   "typeParams": {
                     "length": 36
@@ -68,7 +68,7 @@
                 },
                 "name": {
                   "codecId": "pg/text@1",
-                  "nativeType": "text",
+                  "dataType": "pg/text",
                   "nullable": false
                 }
               },
@@ -87,7 +87,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "6d63ff5784d780f7f8858becf843959dccf1e3272eab21ce3396dca9d255bd16"
+    "storageHash": "4ac61af81be17e9f549065e62bbcf92fff553d2844ef1f340c1bed33af837d82"
   },
   "execution": {
     "executionHash": "135e2930e315fc22e070649b3dfc0bbbea85c31b9956875c3ec4fba757dd1d88",
@@ -110,6 +110,8 @@
   "capabilities": {
     "postgres": {
       "distinctOn": true,
+      "forKeyShare": true,
+      "forNoKeyUpdate": true,
       "jsonAgg": true,
       "lateral": true,
       "limit": true,
@@ -120,9 +122,14 @@
       "checkConstraint": true,
       "defaultInInsert": true,
       "enums": true,
+      "forShare": true,
+      "forUpdate": true,
       "insertOnConflictSkip": true,
       "insertOnConflictWithoutTarget": true,
       "lateral": true,
+      "lockNowait": true,
+      "lockOf": true,
+      "lockSkipLocked": true,
       "returning": true,
       "scalarList": true
     }
