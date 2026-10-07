@@ -381,6 +381,27 @@ describe('step events', () => {
     expect(plain(result.stderr)).toContain('Deployed shop to pr-7 in 12.3s.');
   });
 
+  test("a finished step's durationMs is the measured one, even when the adapter reported its own", async () => {
+    const { cli } = composerCli({
+      fixtures: {
+        deploy,
+        deployEvents: [
+          { kind: 'step-started', step: { name: 'assemble-service', address: 'console' } },
+          {
+            kind: 'step-finished',
+            step: { name: 'assemble-service', address: 'console' },
+            outcome: 'ok',
+            durationMs: 500,
+            data: { durationMs: 1, filesTraced: 3 },
+          },
+        ],
+      },
+    });
+    const result = await cli.run(['deploy', 'src/service.ts', '--json'], AS_TTY);
+
+    expect(result.json[1]).toMatchObject({ data: { durationMs: 500, filesTraced: 3 } });
+  });
+
   test('json mode streams each step with its id, parent and data, then the endpoints and the result', async () => {
     const { cli } = composerCli({ fixtures: { deploy, deployEvents } });
     const result = await cli.run(['deploy', 'src/service.ts', '--json'], AS_TTY);

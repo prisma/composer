@@ -911,6 +911,32 @@ describe('deploy() step events', () => {
     ]);
   });
 
+  test('an unwritable run report fails the record step but not the deploy', async () => {
+    const app = makeAppDir('hello-steps-report');
+    const events: DeployEvent[] = [];
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    let result: Awaited<ReturnType<typeof deployWithDeps>>;
+    try {
+      result = await deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          // A path under a regular file can never be created.
+          reportPath: path.join(app.dir, 'package.json', 'report.json'),
+          onEvent: (event) => events.push(event),
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(result.ok).toBe(true);
+    expect(events.map(stepLine).slice(-2)).toEqual(['started record', 'finished record failed']);
+  });
+
   test('an onEvent that throws cannot fail the deploy', async () => {
     const app = makeAppDir('hello-steps-throw');
 

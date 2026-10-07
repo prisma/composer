@@ -56,7 +56,7 @@ function toEngineEvent(event: DeployEvent): EngineEvent {
     step: `${stepLabel(event.step)} (${formatDuration(event.durationMs)})`,
     id,
     outcome: event.outcome,
-    data: { durationMs: event.durationMs, ...event.data },
+    data: { ...event.data, durationMs: event.durationMs },
   };
 }
 

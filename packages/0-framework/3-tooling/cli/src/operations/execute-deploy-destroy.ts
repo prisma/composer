@@ -83,6 +83,9 @@ function deploySteps(onEvent: ((event: DeployEvent) => void) | undefined) {
     finish(step: DeployStep, data?: Readonly<Record<string, string | number>>): void {
       finish(step, 'ok', data);
     },
+    fail(step: DeployStep): void {
+      finish(step, 'failed');
+    },
     failOpen(): void {
       for (const { step } of [...open.values()].reverse()) finish(step, 'failed');
     },
@@ -309,7 +312,9 @@ async function runStackPipeline(
           message: outcome.failure.message,
         },
   );
-  if (opts.reportPath !== undefined) {
+  // Best-effort: an unwritable report fails the step, never the deploy.
+  const reportWritten =
+    opts.reportPath === undefined ||
     writeRunReport(
       opts.reportPath,
       toRunReport({
@@ -320,8 +325,8 @@ async function runStackPipeline(
           : { code: outcome.failure.code, message: outcome.failure.message },
       }),
     );
-  }
-  opts.steps.finish({ name: 'record' });
+  if (reportWritten) opts.steps.finish({ name: 'record' });
+  else opts.steps.fail({ name: 'record' });
   return outcome;
 }
 
