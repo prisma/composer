@@ -28,6 +28,12 @@ describe('node({ module, entry }) — the single-file form', () => {
   test("omits the dir key entirely, rather than carrying an undefined — dir's presence is what selects the directory form", () => {
     expect('dir' in node({ module: 'file:///app/src/service.ts', entry: 'server.js' })).toBe(false);
   });
+
+  test('omits the standalone key when the author does not set it', () => {
+    expect('standalone' in node({ module: 'file:///app/src/service.ts', entry: 'server.js' })).toBe(
+      false,
+    );
+  });
 });
 
 describe('node({ module, dir, entry }) — the directory form', () => {
@@ -41,6 +47,17 @@ describe('node({ module, dir, entry }) — the directory form', () => {
       dir: '../dist/server',
       entry: 'start.js',
     });
+  });
+
+  test('carries standalone through when the author sets it', () => {
+    expect(
+      node({
+        module: 'file:///app/src/service.ts',
+        dir: '../dist/server',
+        entry: 'start.js',
+        standalone: true,
+      }).standalone,
+    ).toBe(true);
   });
 
   test('carries dir and a nested entry through unmodified — both resolve at assemble time, neither is rewritten', () => {
@@ -64,5 +81,15 @@ describe('the two forms are exclusive at the type level', () => {
 
     // Defeating the type leaves the descriptor with nothing to boot.
     expect(descriptor.entry).toBeUndefined();
+  });
+});
+
+describe('standalone belongs to the directory form only', () => {
+  test('standalone without dir does not type-check — the single-file form never searches for packages', () => {
+    const module = 'file:///app/src/service.ts';
+    // @ts-expect-error — standalone needs dir. Checked by `tsc --noEmit`; assemble rejects it at runtime too.
+    const descriptor = node({ module, entry: 'server.js', standalone: true });
+
+    expect(descriptor.standalone).toBe(true);
   });
 });

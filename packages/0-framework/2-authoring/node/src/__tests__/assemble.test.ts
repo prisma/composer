@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assemble } from '../exports/control.ts';
-import node from '../exports/index.ts';
+import node, { type NodeBuildAdapter } from '../exports/index.ts';
 
 const tmpDirs: string[] = [];
 
@@ -898,5 +899,221 @@ describe('assemble() — the directory form', () => {
         cwd: makeCwd(),
       }),
     ).rejects.toThrow(/stage to the same bundle path.*node_modules[\\/]dup.*packages[\\/]lib/s);
+  }, 20_000);
+});
+
+describe('assemble() — standalone directory builds', () => {
+  /** A dir build whose entry imports an installed package — the default mode stages it. */
+  function serviceWithInstalledImport(): string {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { marker } from "runtime-fixture"; export default marker;\n',
+      'server/chunk.mjs': 'export const chunk = 1;\n',
+    });
+    installFixturePackage(serviceDir, 'runtime-fixture');
+    writeServiceModule(serviceDir);
+    return serviceDir;
+  }
+
+  /** Makes every performance.now() call 130 s later than the one before, so a trace "takes" 2m 10s without waiting. */
+  function slowClock() {
+    let calls = 0;
+    return spyOn(performance, 'now').mockImplementation(() => calls++ * 130_000);
+  }
+
+  test('standalone: true copies dir as it is and stages nothing from outside it', async () => {
+    const serviceDir = serviceWithInstalledImport();
+
+    const standalone = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'server/entry.mjs',
+        standalone: true,
+      }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+    const traced = await assemble({
+      build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+      address: 'svc',
+      cwd: makeCwd(),
+    });
+
+    expect(standalone.entry).toBe('bundle/server/entry.mjs');
+    expect(treeContents(path.join(standalone.dir, 'bundle'))).toEqual([
+      'server/chunk.mjs',
+      'server/entry.mjs',
+    ]);
+    expect(fs.existsSync(path.join(standalone.dir, 'main.mjs'))).toBe(true);
+    // The default mode is unchanged: the same build stages the installed package.
+    expect(treeContents(path.join(traced.dir, 'bundle'))).toContain(
+      'node_modules/runtime-fixture/index.js',
+    );
+  }, 20_000);
+
+  test('rejects standalone on the single-file form — it ships one file and never searches for packages', async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), { 'server.js': 'export default 1;\n' });
+    writeServiceModule(serviceDir);
+    const build: NodeBuildAdapter = {
+      extension: '@prisma/composer/node',
+      type: 'node',
+      module: moduleUrl(serviceDir),
+      entry: '../dist/server.js',
+      standalone: true,
+    };
+    await expect(assemble({ build, address: 'svc', cwd: makeCwd() })).rejects.toThrow(
+      /standalone option needs dir/,
+    );
+  });
+
+  test('hints at standalone: true after a slow trace that staged no code', async () => {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), {
+      'server/entry.mjs': 'import { chunk } from "./chunk.mjs"; export default chunk;\n',
+      'server/chunk.mjs': 'export const chunk = 1;\n',
+    });
+    writeServiceModule(serviceDir);
+    const clock = slowClock();
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await assemble({
+        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'server/entry.mjs' }),
+        address: 'console',
+        cwd: makeCwd(),
+      });
+      expect(warn.mock.calls).toEqual([
+        [
+          'console: its build folder does not use any installed packages (checked in 2m 10s). ' +
+            'If that stays true, add `standalone: true` to its node() build to skip this check.',
+        ],
+      ]);
+    } finally {
+      clock.mockRestore();
+      warn.mockRestore();
+    }
+  }, 20_000);
+
+  test('gives no hint when the trace staged code, when it was fast, or when the build is standalone', async () => {
+    const serviceDir = serviceWithInstalledImport();
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    const assembleIt = (standalone?: boolean) =>
+      assemble({
+        build: node({
+          module: moduleUrl(serviceDir),
+          dir: '../dist',
+          entry: 'server/entry.mjs',
+          ...(standalone === undefined ? {} : { standalone }),
+        }),
+        address: 'svc',
+        cwd: makeCwd(),
+      });
+    try {
+      await assembleIt();
+      const clock = slowClock();
+      try {
+        await assembleIt();
+        await assembleIt(true);
+      } finally {
+        clock.mockRestore();
+      }
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
+
+  /** Boots an assembled bundle the way the Compute bootstrap does, under `runtime`. */
+  function boot(workDir: string, entry: string, runtime: string) {
+    const script = [
+      `const main = (await import(${JSON.stringify(pathToFileURL(path.join(workDir, 'main.mjs')).href)})).default;`,
+      `await main.run("shop.web", () => import(${JSON.stringify(pathToFileURL(path.join(workDir, entry)).href)}));`,
+    ].join('\n');
+    const scriptPath = path.join(workDir, 'boot-test.mjs');
+    fs.writeFileSync(scriptPath, script);
+    return spawnSync(runtime, [scriptPath], { encoding: 'utf8' });
+  }
+
+  /** A dir build whose entry imports a package that is not installed anywhere. */
+  function serviceWithMissingImport(entry: string, contents: string): string {
+    const serviceDir = makeServiceDir();
+    writeTree(path.join(serviceDir, 'dist'), { [entry]: contents });
+    fs.writeFileSync(
+      path.join(serviceDir, 'src', 'service.ts'),
+      'export default { run: (_address: string, boot: () => Promise<unknown>) => boot() };\n',
+    );
+    return serviceDir;
+  }
+
+  const missingImports = [
+    {
+      form: 'ESM',
+      entry: 'entry.mjs',
+      contents: 'import "missing-pkg/sub";\n',
+      name: 'missing-pkg',
+    },
+    {
+      form: 'CJS',
+      entry: 'entry.cjs',
+      contents: 'require("@missing-scope/pkg/sub");\n',
+      name: '@missing-scope/pkg',
+    },
+  ];
+
+  for (const runtime of [process.execPath, 'node']) {
+    for (const { form, entry, contents, name } of missingImports) {
+      test(`a standalone build that cannot load a package explains why and still fails (${form}, ${path.basename(runtime)})`, async () => {
+        const serviceDir = serviceWithMissingImport(entry, contents);
+        const result = await assemble({
+          build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry, standalone: true }),
+          address: 'shop.web',
+          cwd: makeCwd(),
+        });
+
+        const run = boot(result.dir, result.entry, runtime);
+
+        expect(run.status).not.toBe(0);
+        expect(run.stderr).toContain(
+          `shop.web could not load package '${name}'. Its build is marked \`standalone: true\`, ` +
+            `so Composer did not include installed packages. Bundle '${name}' into the build, ` +
+            'or remove `standalone: true`.',
+        );
+      }, 20_000);
+    }
+
+    test(`a default build that cannot load a package fails without the standalone guidance (${path.basename(runtime)})`, async () => {
+      const serviceDir = serviceWithMissingImport('entry.mjs', 'import "missing-pkg";\n');
+      const result = await assemble({
+        build: node({ module: moduleUrl(serviceDir), dir: '../dist', entry: 'entry.mjs' }),
+        address: 'shop.web',
+        cwd: makeCwd(),
+      });
+
+      const run = boot(result.dir, result.entry, runtime);
+
+      expect(run.status).not.toBe(0);
+      expect(run.stderr).toContain('missing-pkg');
+      expect(run.stderr).not.toContain('standalone');
+    }, 20_000);
+  }
+
+  test('a standalone build that is missing one of its own files gets no package guidance', async () => {
+    const serviceDir = serviceWithMissingImport('entry.mjs', 'import "./gone.mjs";\n');
+    const result = await assemble({
+      build: node({
+        module: moduleUrl(serviceDir),
+        dir: '../dist',
+        entry: 'entry.mjs',
+        standalone: true,
+      }),
+      address: 'shop.web',
+      cwd: makeCwd(),
+    });
+
+    const run = boot(result.dir, result.entry, process.execPath);
+
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).not.toContain('could not load package');
   }, 20_000);
 });

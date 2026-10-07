@@ -13,6 +13,9 @@
  * inside `dir` and may be nested. Nothing is discovered: the author names the
  * directory and the entry, and the assembler copies exactly that.
  *
+ * The directory form also accepts `standalone: true`, for a build folder that
+ * runs without the project's installed packages.
+ *
  * Returns plain data — nothing runs on import. `extension` + `type` are the
  * control-plane registry key: deploy tooling routes assembly through the app's
  * `prisma.config.ts` to this package's `/control` descriptor
@@ -24,12 +27,25 @@ import type { BuildAdapter } from '@internal/core';
 export interface NodeBuildAdapter extends BuildAdapter {
   readonly type: 'node';
   readonly dir?: string;
+  /** Directory form only: ship `dir` as it is, without searching for installed packages the entry uses. */
+  readonly standalone?: boolean;
 }
 
 /** The two forms an author may write. `dir?: never` on the single-file branch is what makes them exclusive: with `dir`, `entry` is required and names a file inside it. */
 type NodeBuildOptions =
-  | { module: string; entry: string; dir?: never }
-  | { module: string; dir: string; entry: string };
+  | { module: string; entry: string; dir?: never; standalone?: never }
+  | {
+      module: string;
+      dir: string;
+      entry: string;
+      /**
+       * The build folder runs on its own, without the project's installed
+       * packages (for example a fully bundled server, or Next.js
+       * `output: 'standalone'`). Composer then ships the folder as it is and
+       * skips searching for installed packages the build uses. Default `false`.
+       */
+      standalone?: boolean;
+    };
 
 const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => ({
   extension: '@prisma/composer/node',
@@ -37,6 +53,7 @@ const nodeBuild = (opts: NodeBuildOptions): NodeBuildAdapter => ({
   module: opts.module,
   entry: opts.entry,
   ...(opts.dir === undefined ? {} : { dir: opts.dir }),
+  ...(opts.standalone === undefined ? {} : { standalone: opts.standalone }),
 });
 
 export default nodeBuild;

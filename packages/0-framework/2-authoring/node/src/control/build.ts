@@ -14,7 +14,8 @@
  * deploy cwd — so the bundle's layout is the same whichever directory the
  * deploy is invoked from. This is deterministic dependency assembly (not app
  * bundling), and is what makes framework outputs such as Astro's Node adapter
- * self-contained.
+ * self-contained. With `standalone: true` the author states that `dir` already
+ * runs on its own, so the trace is skipped and `dir` ships as it is.
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -48,8 +49,45 @@ export type { AssembleInput, Bundle } from '@internal/core/deploy';
 /** Narrows the shared BuildAdapter to this extension's own descriptor — the value-level mirror of the registry routing on (extension, type). `dir` is optional: absent is the single-file form. */
 function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
   return (
-    descriptor.type === 'node' && (!('dir' in descriptor) || typeof descriptor.dir === 'string')
+    descriptor.type === 'node' &&
+    (!('dir' in descriptor) || typeof descriptor.dir === 'string') &&
+    (!('standalone' in descriptor) || typeof descriptor.standalone === 'boolean')
   );
+}
+
+/** A trace slower than this, which found no installed code, earns the `standalone: true` hint. */
+const SLOW_TRACE_MS = 10_000;
+
+/**
+ * The wrapper entry for a `standalone: true` build: the service module's run(),
+ * with a startup failure to load a package explained before it is rethrown.
+ * Bun reports the bare specifier on the error; Node only names it in the
+ * message. Relative and absolute paths are the build's own files, not packages.
+ */
+function standaloneWrapper(serviceModule: string): string {
+  return `import service from ${JSON.stringify(serviceModule)};
+
+export default {
+  run: (address, boot) =>
+    service.run(address, () =>
+      boot().catch((error) => {
+        if (error?.code === "ERR_MODULE_NOT_FOUND" || error?.code === "MODULE_NOT_FOUND") {
+          const specifier =
+            error.specifier ?? /Cannot find (?:package|module) '([^']+)'/.exec(String(error.message))?.[1];
+          if (specifier !== undefined && !/^(?:[./]|[a-zA-Z]+:)/.test(specifier)) {
+            const name = specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/");
+            console.error(
+              address + " could not load package '" + name + "'. Its build is marked \`standalone: true\`, " +
+                "so Composer did not include installed packages. Bundle '" + name +
+                "' into the build, or remove \`standalone: true\`.",
+            );
+          }
+        }
+        throw error;
+      }),
+    ),
+};
+`;
 }
 
 /**
@@ -288,23 +326,29 @@ function stagingRootFor(
  * condition, and the union is staged: Compute boots the bundle with Bun, which
  * resolves a package's "bun"-conditional exports to files a node-conditions
  * trace never visits, while nft's `conditions` option replaces the default
- * set rather than extending it. */
+ * set rather than extending it.
+ *
+ * Returns how long the trace took and whether anything staged can hold code:
+ * a file or file link other than a `package.json`. Directories, directory
+ * links and `package.json` files alone mean the build ran on its own. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
   readonly dirPath: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<void> {
+}): Promise<{ readonly traceMs: number; readonly stagedCode: boolean }> {
   const [moduleDir, entryPath, dirPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
     fs.promises.realpath(options.dirPath),
   ]);
   const base = path.parse(moduleDir).root;
+  const traceStart = performance.now();
   const [nodeTrace, bunTrace] = await Promise.all([
     nodeFileTrace([entryPath], { base, processCwd: moduleDir }),
     nodeFileTrace([entryPath], { base, processCwd: moduleDir, conditions: ['bun'] }),
   ]);
+  const traceMs = performance.now() - traceStart;
   const fileList = new Set([...nodeTrace.fileList, ...bunTrace.fileList]);
 
   const tracedEntries = await Promise.all(
@@ -321,6 +365,7 @@ async function stageRuntimeDependencies(options: {
   );
 
   const stagedFrom = new Map<string, string>();
+  let stagedCode = false;
   for (const { source, origin } of tracedEntries) {
     if (isWithin(dirPath, source)) continue;
     const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
@@ -338,7 +383,10 @@ async function stageRuntimeDependencies(options: {
     if (await pathExists(destination)) continue;
     await copyTracedEntry(source, destination, stagingRoot, options.bundleDir, dirPath);
     stagedFrom.set(destination, origin);
+    stagedCode ||=
+      path.basename(source) !== 'package.json' && !(await fs.promises.stat(source)).isDirectory();
   }
+  return { traceMs, stagedCode };
 }
 
 /**
@@ -370,6 +418,13 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
     );
   }
   const buildDescriptor = input.build;
+  const standalone = buildDescriptor.standalone === true;
+  if (buildDescriptor.standalone !== undefined && buildDescriptor.dir === undefined) {
+    throw new Error(
+      "the build adapter's standalone option needs dir — the single-file form already ships " +
+        'only its one file and never searches for installed packages, so drop standalone.',
+    );
+  }
 
   const serviceModule = fileURLToPath(buildDescriptor.module);
   const moduleDir = path.dirname(serviceModule);
@@ -385,13 +440,20 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   await fs.promises.mkdir(workDir, { recursive: true });
 
   await build({
-    entryPoints: { main: serviceModule },
-    outdir: workDir,
+    ...(standalone
+      ? {
+          stdin: {
+            contents: standaloneWrapper(serviceModule),
+            resolveDir: moduleDir,
+            sourcefile: 'standalone-wrapper.mjs',
+          },
+          outfile: path.join(workDir, 'main.mjs'),
+        }
+      : { entryPoints: { main: serviceModule }, outdir: workDir, outExtension: { '.js': '.mjs' } }),
     bundle: true,
     format: 'esm',
     platform: 'node',
     external: ['bun', 'bun:*'],
-    outExtension: { '.js': '.mjs' },
   });
   if (!fs.existsSync(path.join(workDir, 'main.mjs'))) {
     throw new Error(`esbuild produced no main.mjs in ${workDir}`);
@@ -399,13 +461,21 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  if (buildDescriptor.dir !== undefined) {
-    await stageRuntimeDependencies({
+  if (buildDescriptor.dir !== undefined && !standalone) {
+    const { traceMs, stagedCode } = await stageRuntimeDependencies({
       entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
       dirPath: runnable.source,
       moduleDir,
       bundleDir,
     });
+    if (traceMs > SLOW_TRACE_MS && !stagedCode) {
+      const seconds = Math.round(traceMs / 1000);
+      const took = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+      console.warn(
+        `${input.address}: its build folder does not use any installed packages (checked in ${took}). ` +
+          'If that stays true, add `standalone: true` to its node() build to skip this check.',
+      );
+    }
   }
   await assertBundleSymlinksStayInside(bundleDir);
 
