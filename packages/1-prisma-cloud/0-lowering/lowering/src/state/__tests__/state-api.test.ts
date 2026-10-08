@@ -11,11 +11,11 @@ import {
 import * as ConfigProvider from 'effect/ConfigProvider';
 import * as Effect from 'effect/Effect';
 import * as Fiber from 'effect/Fiber';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as Headers from 'effect/http/Headers';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as Headers from 'effect/unstable/http/Headers';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import { stateLayerAgainst } from '../layer.ts';
 import {
   acquireDeployLease,

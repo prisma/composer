@@ -33,14 +33,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/sql-d1": "4.0.0-rc.115",
-    "@effect/sql-sqlite-do": "4.0.0-rc.115",
-    "@effect/vitest": "4.0.0-rc.115",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.78",
+    "alchemy": "2.0.0-beta.81",
     "arktype": "^2.2.3",
     "cross-spawn": "^7.0.6",
-    "effect": "4.0.0-rc.115",
+    "effect": "^4.0.0",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.80.0"
   },
