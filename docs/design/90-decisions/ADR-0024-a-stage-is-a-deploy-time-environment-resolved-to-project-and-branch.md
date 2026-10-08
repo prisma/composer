@@ -1,5 +1,7 @@
 # ADR-0024: A stage is a deploy-time environment; the CLI resolves its Project and Branch before Alchemy
 
+Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): deploys run as `prisma deploy <entry> [--stage <name>]`. Teardown is the `destroy` operation on `@prisma/composer/control`, whose required `target` is `{ kind: 'stage', stage }` or `{ kind: 'production' }`; there is no destroy command. The `prisma-composer` binary is retired. Stage resolution below is unchanged.
+
 ## Decision
 
 An app is deployed to a named **stage** — an environment. The topology is
@@ -96,7 +98,11 @@ derived from Branch presence, never from a role lookup.
   `--stage <name>` or `--production`; a bare destroy is an error, so an omitted
   or mistyped stage can never silently tear down production. Destroying a named
   stage removes its resources and then its Branch; the production Branch is
-  never deleted.
+  never deleted. *(Amended by
+  [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): there
+  is no destroy command; the `destroy` operation's `target` is required, either
+  `{ kind: 'stage', stage }` or `{ kind: 'production' }`, so the same rule holds
+  in code.)*
 - **Stage is a first-class deploy-plane input**, threaded from the CLI through
   lowering to the target.
 - **Deploy state stays per (Project, Branch)** through Alchemy's existing
