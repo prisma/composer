@@ -14,9 +14,15 @@
 
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { bucketsClient, computeClient, postgresClient } from '@internal/dev-emulators';
+import {
+  bucketsClient,
+  computeClient,
+  ensureDaemon,
+  postgresClient,
+} from '@internal/dev-emulators';
 import { removeLocalPaths } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
+import { daemonEntry } from './daemon-entry.ts';
 
 async function tolerateUnreachable(action: () => Promise<void>): Promise<void> {
   try {
@@ -33,7 +39,10 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const cwd = process.cwd();
 
   await tolerateUnreachable(() => postgresClient().deleteApp(app));
-  await tolerateUnreachable(() => computeClient().deleteApp(app));
+  // Compute persists port allocations across restarts, so a stopped daemon
+  // would hand the old ports back; start it so the delete always lands.
+  await ensureDaemon('compute', daemonEntry('compute'));
+  await computeClient().deleteApp(app);
   await tolerateUnreachable(() => bucketsClient().deleteApp(app));
 
   removeLocalPaths([`${cwd}/${DEV_DIR}`, `${cwd}/.alchemy/state/${app}/dev`]);

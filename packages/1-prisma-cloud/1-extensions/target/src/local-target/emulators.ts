@@ -23,10 +23,11 @@
  * source stays free of `node:`/`bun:` imports — invariant 5).
  */
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
-import type { DaemonName } from '@internal/dev-emulators';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { reserveServicePorts, resolvePackageEntry } from '@internal/local-target';
+import { reserveServicePorts } from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
+import { serviceAppName } from '../service-app.ts';
+import { daemonEntry } from './daemon-entry.ts';
 
 function usesBuckets(input: LocalTargetEmulatorsInput): boolean {
   return input.graph.nodes.some((n) => n.node.kind === 'resource' && n.node.type === 's3');
@@ -39,22 +40,17 @@ function usesPostgres(input: LocalTargetEmulatorsInput): boolean {
   );
 }
 
-/** This extension's services, in `graph.nodes` order: dependencies first, ties in declaration order. */
-function serviceAddresses(input: LocalTargetEmulatorsInput): string[] {
+/** The `App` name of each of this extension's services, in `graph.nodes` order: dependencies first, ties in declaration order. */
+function serviceAppNames(input: LocalTargetEmulatorsInput): string[] {
   return input.graph.nodes
     .filter((n) => n.node.kind === 'service' && n.node.extension === PRISMA_CLOUD_EXTENSION_ID)
-    .map((n) => n.id);
-}
-
-/** The resolved absolute path to this daemon's published entrypoint. */
-function daemonEntry(name: DaemonName): string {
-  return resolvePackageEntry(`@prisma/composer-prisma-cloud/local-target/${name}-main`);
+    .map((n) => serviceAppName(n.id));
 }
 
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
-  await reserveServicePorts(input.container, serviceAddresses(input));
+  await reserveServicePorts(input.container, serviceAppNames(input));
 
   if (usesBuckets(input)) {
     const { url: bucketsUrl } = await ensureDaemon('buckets', daemonEntry('buckets'));

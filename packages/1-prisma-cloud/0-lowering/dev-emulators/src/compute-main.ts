@@ -14,7 +14,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
-import getPort, { portNumbers } from 'get-port';
+import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { readOwnVersion } from './daemon.ts';
 import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
@@ -757,6 +757,10 @@ function main(): void {
           }
           delete state[app];
           schedulePersist();
+          // get-port holds every port it returns for up to 30 seconds; the
+          // freed ports must be free again for a `--fresh` restart.
+          // `usedServicePorts()` already keeps other apps' ports out.
+          clearLockedPorts();
         }
         await fs.promises.rm(path.join(stateDir, 'logs', app), { recursive: true, force: true });
         res.writeHead(204);
