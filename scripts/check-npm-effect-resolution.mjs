@@ -267,8 +267,10 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
       `[${label}] npm install did not finish within ${INSTALL_TIMEOUT_MS / 1000}s. npm is ` +
         'backtracking over an effect-family package alchemy declares with a floating range: ' +
         'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
-        "`effect` satisfies. Pin that package exactly in @prisma/composer's `dependencies` " +
-        '(next to @effect/sql-d1).',
+        '`effect` satisfies. Pin that package exactly where Composer pins its siblings: ' +
+        "alchemy's regular dependencies in @prisma/composer's `dependencies` (next to " +
+        '@effect/sql-d1), the optional platform peers (@effect/platform-*) in ' +
+        "@prisma/composer-prisma-cloud's `dependencies`. See skills-contrib/upgrade-alchemy-effect.",
     );
   }
   if (installStatus !== 0) {

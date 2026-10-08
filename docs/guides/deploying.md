@@ -353,11 +353,12 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's. With npm, in your app's `package.json`:
+Composer's. `<pin>` below stands for that exact version (`4.0.0-rc.115` in
+Composer 0.29.1). With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
-  "effect": "<required>"
+  "effect": "<pin>"
 }
 ```
 
@@ -366,7 +367,7 @@ With pnpm 11 and later, in `pnpm-workspace.yaml` (pnpm 11 ignores the
 
 ```yaml
 overrides:
-  effect: <required>
+  effect: <pin>
 ```
 
 With pnpm 10 and earlier, nest the npm block under
