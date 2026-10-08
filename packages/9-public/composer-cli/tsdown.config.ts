@@ -9,6 +9,12 @@ import { defineConfig } from 'tsdown';
 // `@prisma/composer` stays external without appearing in `external`: it is a
 // declared dependency, and tsdown leaves declared dependencies as real
 // imports on its own.
+//
+// `alchemy` stays a declared dependency although no source file here imports
+// it: the inlined core code imports from `alchemy` (`alchemy/State/LocalState`),
+// so the packed dist does. The workspace installs hoisted, which would hide
+// its removal from every local check; only a strict pnpm install of the
+// tarball would fail.
 export default defineConfig({
   ...baseConfig,
   entry: {

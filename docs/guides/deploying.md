@@ -39,12 +39,35 @@ you source at deploy time, or CI secrets).
 ## Runtime
 
 The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
-`module.ts` and every module it imports, so run the bin under the runtime
-those modules need. Node is the default. If they use Bun APIs (they import
-`bun`, or call `Bun.serve` when imported), run the bin under Bun instead:
-`bun node_modules/.bin/prisma deploy module.ts`. The examples in the
-prisma/composer repository run it under Bun, which is why their scripts
-start with `bun`.
+`module.ts` and every module it imports, so those modules decide the runtime
+`prisma` needs. Run it with your package manager by default:
+`pnpm prisma deploy module.ts` or `npx prisma deploy module.ts`.
+
+Composer starts Alchemy's launcher with Node: the Node `prisma` runs on, or
+the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
+if there is none). Alchemy's launcher then moves itself to Bun when the
+package-manager environment says Bun invoked it, which `bunx` and `bun run`
+do. So the invocation decides where each ends up:
+
+| Invocation | `prisma` runs under | Alchemy runs under |
+| --- | --- | --- |
+| `pnpm prisma …` or `npx prisma …` | Node | Node |
+| `bunx prisma …` | Node (the bin's `node` shebang) | Bun |
+| `bunx --bun prisma …` | Bun | Bun (Bun stands in for `node` on PATH) |
+| `bun node_modules/prisma/dist/prisma.js …` | Bun | Node |
+
+If your modules use Bun APIs (they import `bun`, or call `Bun.serve` when
+imported), `prisma` must run under Bun. To keep Alchemy on Node at the same
+time, run the bin's JavaScript entry with Bun from a shell, not from a
+`bun run` script:
+
+```sh
+bun node_modules/prisma/dist/prisma.js deploy module.ts
+```
+
+`bun node_modules/.bin/prisma` does not run with pnpm, where that file is a
+shell script. The examples in the prisma/composer repository run `prisma`
+under Bun, which is why their scripts start with `bun`.
 
 ## Configuration
 
@@ -89,9 +112,10 @@ longer read, and the commands refuse the old setup rather than ignore it:
 | `CONFIG.FILE_RETIRED` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
 
 All three appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
-headline, and all three give the same fix: move the old file's `extensions` and
-`state` into `composer: composer({ ... })` in `prisma.config.ts`, then delete
-the old file. Nothing migrates it for you.
+headline. `SECTION_MISSING` is fixed by adding `composer: composer({ ... })` to
+`prisma.config.ts`. `FIELD_RETIRED` and `FILE_RETIRED` are fixed by moving the
+old file's `extensions` and `state` into that section, then removing
+`configPath` or deleting the old file. Nothing migrates it for you.
 
 If you mount Composer's commands into your own CLI through
 `@prisma/composer-cli/family`, note that the `ComposerSection` type is gone: the
@@ -99,10 +123,10 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 
 ## Build first
 
-Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
-for hoisted installations. On Windows it prefers `alchemy.exe`, then
-`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
-Windows shim must not be reported as a missing Alchemy dependency.
+Composer runs the `alchemy` that your app's `@prisma/composer` depends on: it
+finds that package beside `@prisma/composer` and starts its entry with Node ([Runtime](#runtime) says
+when Alchemy then moves to Bun). Your app does not need `alchemy` as a direct
+dependency, and no `node_modules/.bin/alchemy` link is needed on any platform.
 
 `prisma deploy` does not build for you — it assembles what your
 build produced:
@@ -326,7 +350,7 @@ warning. A plain Composer app never hits it: a fresh install resolves a single
 
 The fix is to use an `effect` 4.x release. Change your own `effect`
 dependency to `^4.0.0`, or, when a dependency you cannot change requires
-another version, force one in your app's `package.json`:
+another version, force one. With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
@@ -334,8 +358,17 @@ another version, force one in your app's `package.json`:
 }
 ```
 
-yarn spells the block `resolutions`, and pnpm nests it under
-`"pnpm": { "overrides": ... }`.
+With pnpm 11 and later, in `pnpm-workspace.yaml` (pnpm 11 ignores the
+`pnpm` field of `package.json`):
+
+```yaml
+overrides:
+  effect: ^4.0.0
+```
+
+With pnpm 10 and earlier, nest the npm block under
+`"pnpm": { "overrides": ... }` in `package.json`. With Yarn, the
+`package.json` block is `resolutions`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
 

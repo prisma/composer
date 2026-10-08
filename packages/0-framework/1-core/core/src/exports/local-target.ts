@@ -15,4 +15,4 @@ export {
   type LocalTargetEmulatorsInput,
   type LocalTargetProvidersInput,
 } from '../control/app-config.ts';
-export { localTargetProviders, resolveLocalTargets } from '../control/local-target.ts';
+export { devState, localTargetProviders, resolveLocalTargets } from '../control/local-target.ts';

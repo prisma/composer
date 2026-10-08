@@ -251,8 +251,10 @@ refused, never silently ignored: `CONFIG.SECTION_MISSING` when no loaded
 `prisma.config.ts` declares a `composer` section, `CONFIG.FIELD_RETIRED` when
 the section still has `configPath`, `CONFIG.FILE_RETIRED` when a
 `prisma-composer.config.*` sits next to the declaring `prisma.config.ts`; all
-three under the CLI's `CLI.CONFIG_SECTION_INVALID`. The fix for all three is to move the old
-file's `extensions` and `state` into the section and delete the old file.
+three under the CLI's `CLI.CONFIG_SECTION_INVALID`. `SECTION_MISSING` is fixed by
+adding the `composer` section to `prisma.config.ts`. `FIELD_RETIRED` and
+`FILE_RETIRED` are fixed by moving the old file's `extensions` and `state` into
+the section, then removing `configPath` or deleting the old file.
 `@prisma/composer-cli/family` no longer exports `ComposerSection`; the
 section's type is `PrismaAppConfig` from `@prisma/composer/config`.
 
@@ -310,8 +312,12 @@ identity: `prisma auth login` stores a session on a developer machine, and
 a destroy script, never use that session: `deploy` and `destroy` read
 `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` from the environment (both
 in the workspace's Console settings); `dev` and `log` read neither. The
-`prisma` bin starts under Node; when the modules `module.ts` imports use Bun
-APIs, run it under Bun (`bun node_modules/.bin/prisma deploy module.ts`).
+`prisma` bin starts under Node; use `pnpm prisma …` or `npx prisma …` by
+default. Composer starts Alchemy with Node, but Alchemy's launcher moves to
+Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
+`bunx --bun prisma` Bun then Bun. When the modules `module.ts` imports use
+Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
+shell runs `prisma` under Bun with Alchemy on Node.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
@@ -351,10 +357,11 @@ never-deployed stage fails rather than standing one up.
 
 **The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
-Alchemy is resolved from the nearest `node_modules/.bin`, including hoisted
-ancestor directories. Windows resolves `alchemy.exe`, then `alchemy.cmd`,
-then the extensionless shim; POSIX resolves `alchemy`. No global Alchemy
-installation is needed.
+Composer runs the alchemy package installed beside the app's
+`@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
+under Bun; `DEPLOY.NODE_MISSING` if none), so the app needs no direct
+`alchemy` dependency and no `.bin` link. No global Alchemy installation is
+needed.
 
 1. The deploy and destroy operations write the pipeline's results to a generated, gitignored
    stack file at `.prisma-composer/alchemy.run.ts`, then run the alchemy CLI
@@ -364,8 +371,9 @@ installation is needed.
    `fromEnv()`, so nothing sensitive lands on disk, and it is regenerated
    every run: output, not configuration, never edited.
 2. Failures are bisectable through that file. A failing deploy names its
-   path; running `alchemy deploy .prisma-composer/alchemy.run.ts` directly
-   separates "the framework computed the wrong thing" from "the engine or
+   path and prints a reproduce command: Node running the bin of the `alchemy`
+   Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
+   --stage <stage>`. Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
    lines (credentials redacted, capped at 1000 characters) and that reproduce
@@ -526,10 +534,11 @@ today the blocks above plus your own Modules are the whole set, so verify a
    `Schema.TaggedError is not a function`). The extensions in the `composer`
    section import alchemy, and the app, or one of its dependencies, requires
    an `effect` outside 4.x that the package manager hoisted where alchemy
-   resolves it. Change the app's own `effect` to `^4.0.0`, or force it with
-   `"overrides": { "effect": "^4.0.0" }` in the app's `package.json` (yarn:
-   `resolutions`; pnpm: `pnpm.overrides`), then reinstall. A plain Composer
-   app never hits this.
+   resolves it. Change the app's own `effect` to `^4.0.0`, or force it, then
+   reinstall: npm: `"overrides": { "effect": "^4.0.0" }` in `package.json`;
+   pnpm 11+: an `overrides:` block in `pnpm-workspace.yaml`; pnpm 10 and
+   earlier: `pnpm.overrides` in `package.json`; Yarn: `resolutions` in
+   `package.json`. A plain Composer app never hits this.
 2. **A deployed `/rpc/<method>` returns `401` to anything but a wired
    peer.** Not a broken deploy; see Contracts above.
 3. **Scale-to-zero closes idle database connections.** A persistent client
