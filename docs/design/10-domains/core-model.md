@@ -54,9 +54,9 @@ glossary's Lowering — live in `/deploy`):
 **`/control` is a shipped entry, not a reservation** (ADR-0017): every extension
 exposes one, and it is where its heavy deploy-time code lives —
 `@prisma/composer-prisma-cloud/control` exports `prismaCloud()`,
-`@prisma/composer/node/control` exports `nodeBuild()`. Only
-`prisma-composer.config.ts` imports those entries, and only the CLI loads that
-file, so nothing an app's own import graph reaches can pull control-plane code
+`@prisma/composer/node/control` exports `nodeBuild()`. Only the `composer`
+section of `prisma.config.ts` imports those entries (ADR-0049), and app code
+never imports that file, so nothing an app's own import graph reaches can pull control-plane code
 into the runtime artifact. Core's own control-plane surface (`Load`, `configOf`)
 is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 `ExtensionDescriptor`) live on `@prisma/composer/config`.
@@ -64,7 +64,7 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | Entry | Exports | Imports (weight) |
 | --- | --- | --- |
 | `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
-| `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types `prisma-composer.config.ts` is checked against (ADR-0017) | nothing (types + one identity function) |
+| `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types the `composer` section of `prisma.config.ts` is checked against (ADR-0017, ADR-0049) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
 | `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract`, `http()` | `@prisma/composer` only |
 | `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
@@ -107,10 +107,10 @@ Who imports what, end to end:
   *application* is still derived from the root node (ADR-0003).
   `prisma deploy <entry>` imports it and calls
   `@prisma/composer/deploy`'s `lower()` internally;
-- the **`prisma-composer.config.ts`** at the app root carries the two things the
-  graph cannot yield — the **extension list** and the **state store** (ADR-0017).
-  The CLI finds it by walking up from the deploy entry and loads it with c12. It
-  is the only importer of the `/control` entries where heavy code lives, and app
+- the **`composer` section of `prisma.config.ts`** carries the two things the
+  graph cannot yield — the **extension list** and the **state store** (ADR-0017,
+  ADR-0049). The Prisma CLI engine finds and loads the file, searching from the
+  command's working directory up to the repository root. The section is the only importer of the `/control` entries where heavy code lives, and app
   code never imports it, which is what keeps that code out of the artifact. The
   app author still writes no *stack* file — `prisma deploy` generates one
   at `.prisma-composer/alchemy.run.ts` per run and drives it; see
@@ -455,10 +455,10 @@ finds, deps before dependents.
 import type { Layer } from "effect"
 import type { Effect } from "effect"
 
-// The config file's default export (ADR-0017). `prisma-composer.config.ts` sits at
-// the app root and STATICALLY imports each extension's /control entry, so the
-// framework never builds a module specifier, never resolves a path, and never
-// imports by a computed name. Only the CLI loads it — app code never does, which
+// The `composer` section of prisma.config.ts (ADR-0017, ADR-0049). The file
+// STATICALLY imports each extension's /control entry, so the framework never
+// builds a module specifier, never resolves a path, and never imports by a
+// computed name. The Prisma CLI engine loads it — app code never does, which
 // is what keeps control-plane code out of the runtime artifact.
 interface PrismaAppConfig {
   readonly extensions: ExtensionDescriptor[]
@@ -965,7 +965,7 @@ const stash = (shape: readonly ConfigDeclaration[], config: Config): void => { /
 ```
 
 Control entry (`@prisma/composer-prisma-cloud/control`) — the extension
-descriptor `prisma-composer.config.ts` lists, and the only place `@internal/lowering`
+descriptor the `composer` section of `prisma.config.ts` lists, and the only place `@internal/lowering`
 is imported. Each node kind's hooks live in their own descriptor file; the
 descriptor stitches them into one `nodes` registry:
 
@@ -1213,8 +1213,8 @@ Bun.serve({ port, hostname: "0.0.0.0",
 //   prisma deploy src/module.ts
 //
 // The application is derived from the module root (ADR-0003); the extension list
-// and state store come from prisma-composer.config.ts at the app root (ADR-0017),
-// whose /control entries the CLI loads. It runs each service's assembly and drives
+// and state store come from the `composer` section of prisma.config.ts (ADR-0017,
+// ADR-0049), whose /control entries the CLI loads. It runs each service's assembly and drives
 // Alchemy — no bundle map, no hand-written stack file.
 ```
 
@@ -1326,7 +1326,7 @@ producer from a resource — one mechanism.
 - **Build-adapter ecosystem** — `node` and `nextjs` are the first two; the
   descriptor/assembler split is the seam for community adapters (Nuxt, TanStack
   Start, a cron access-pattern, a static site). Each is a package the app lists in
-  its `prisma-composer.config.ts`; nothing in core, the prisma-cloud extension,
+  the `composer` section of its `prisma.config.ts`; nothing in core, the prisma-cloud extension,
   `@internal/assemble`, or the CLI changes to add one — the assembler is a
   `{ kind: "build" }` entry in the adapter's own `/control` registry, found by the
   build descriptor's `(extension, type)` pair (ADR-0017), exactly like every other

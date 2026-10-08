@@ -153,7 +153,7 @@ the path and build rules:
   runnables and satisfies the requirement at publish time (ADR-0004 makes the
   paths resolve correctly either way, including from inside `node_modules`).
 - **A service's build descriptor names its extension as data** (`extension` +
-  `type`), and the consuming app's `prisma-composer.config.ts` lists the extensions
+  `type`), and the `composer` section of the consuming app's `prisma.config.ts` lists the extensions
   its graph uses — including those a published module uses internally. The
   module documents them and can re-export a config fragment
   (`extensions: [...authModuleExtensions, prismaCloud()]`), keeping the cost to
