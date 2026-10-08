@@ -10,7 +10,7 @@ architecture/design phase that comes *after* the high-level model is settled.
   (`prisma deploy`, and the `destroy` operation): the pipeline,
   stages and container (Project/Branch) resolution, the pack CLI seam and
   per-kind assembly contracts, and the error surface. Rests on ADR-0003 …
-  ADR-0006, ADR-0023, ADR-0024.
+  ADR-0006, ADR-0023, ADR-0024, ADR-0049 and ADR-0050.
 - [`module-composition.md`](module-composition.md) — module boundaries
   (deps/expose), forwarding, nesting, and the packaged reusable module. Rests
   on ADR-0016.
@@ -20,7 +20,8 @@ architecture/design phase that comes *after* the high-level model is settled.
   Rests on ADR-0018 and ADR-0019.
 - [`local-dev.md`](local-dev.md) — the local dev loop (`prisma dev`):
   the pipeline deltas vs deploy, the process table and supervisor, per-resource
-  stand-ins, value sourcing, and the dev error surface. Rests on ADR-0041.
+  stand-ins, value sourcing, and the dev error surface. Rests on ADR-0041 and
+  ADR-0050.
 
 The settled high-level model is recorded in:
 
