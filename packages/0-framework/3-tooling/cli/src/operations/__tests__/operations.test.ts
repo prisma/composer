@@ -30,7 +30,7 @@ import {
 } from '../../deployment-summary.ts';
 import type { AppIdentity } from '../../pipeline.ts';
 import { type AlchemyInvocation, alchemyCommandLine } from '../../run-alchemy.ts';
-import { deployWithDeps } from '../deploy.ts';
+import { type DeployEvent, deployWithDeps } from '../deploy.ts';
 import { destroyWithDeps } from '../destroy.ts';
 import { type DevEvent, devWithDeps } from '../dev.ts';
 import { LOG_QUEUE_LIMIT } from '../execute-log.ts';
@@ -785,6 +785,210 @@ describe('deploy()', () => {
       name: 'Error',
       message: 'Schedule.either is not a function',
     });
+  });
+});
+
+/** Each event as `kind name[:address] outcome`, for asserting order without timings. */
+function stepLine(event: DeployEvent): string {
+  const name =
+    event.step.name === 'assemble-service'
+      ? `assemble-service:${event.step.address}`
+      : event.step.name;
+  return event.kind === 'step-started' ? `started ${name}` : `finished ${name} ${event.outcome}`;
+}
+
+describe('deploy() step events', () => {
+  test('a successful deploy reports every step in order, each with a duration and its data', async () => {
+    const app = makeAppDir('hello-steps');
+    const events: DeployEvent[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(
+            fakeConfig({
+              preflight: async (input) => {
+                input.report?.({ checked: 3, filled: 1, missing: 0 });
+                return undefined;
+              },
+            }),
+          ),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: async (node, _address, _cwd, report) => {
+            report?.({ strategy: 'traced', filesTraced: 975 });
+            report?.({ bytes: 4096 });
+            return fakeAssembler(node);
+          },
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app ok',
+      'finished assemble ok',
+      'started connect',
+      'finished connect ok',
+      'started preflight',
+      'finished preflight ok',
+      'started apply',
+      'finished apply ok',
+      'started record',
+      'finished record ok',
+    ]);
+    for (const event of events) {
+      if (event.kind === 'step-finished') expect(event.durationMs).toBeGreaterThanOrEqual(0);
+    }
+    const finished = (name: string) =>
+      events.find((event) => event.kind === 'step-finished' && event.step.name === name);
+    expect(finished('assemble-service')).toMatchObject({
+      data: { strategy: 'traced', filesTraced: 975, bytes: 4096 },
+    });
+    expect(finished('preflight')).toMatchObject({ data: { checked: 3, filled: 1, missing: 0 } });
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  test('a thrown defect closes the open steps as failed and still records the result', async () => {
+    const app = makeAppDir('hello-steps-defect');
+    const events: DeployEvent[] = [];
+    const brokenContainer: ContainerDescriptor = {
+      ...fakeContainerDescriptor(),
+      ensure: async (input) => ({
+        input,
+        get alchemyStage(): string {
+          throw new Error('container bug');
+        },
+        serialize: () => '{}',
+      }),
+    };
+    const config = fakeConfig();
+    const extension = config.extensions[0];
+    if (extension === undefined) throw new Error('unreachable');
+
+    const outcome = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig({
+            ...config,
+            extensions: [
+              { ...extension, container: brokenContainer },
+              ...config.extensions.slice(1),
+            ],
+          }),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ).catch((error: unknown) => error),
+    );
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app ok',
+      'finished assemble ok',
+      'started connect',
+      'finished connect failed',
+      'started record',
+      'finished record ok',
+    ]);
+  });
+
+  test('a failed step and every step around it close as failed, and the result is still recorded', async () => {
+    const app = makeAppDir('hello-steps-fail');
+    const events: DeployEvent[] = [];
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: (event) => events.push(event),
+        },
+        {
+          runAssembler: async () => {
+            throw new Error('no built entry');
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(events.map(stepLine)).toEqual([
+      'started prepare',
+      'finished prepare ok',
+      'started assemble',
+      'started assemble-service:app',
+      'finished assemble-service:app failed',
+      'finished assemble failed',
+      'started record',
+      'finished record ok',
+    ]);
+  });
+
+  test('an unwritable run report fails the record step but not the deploy', async () => {
+    const app = makeAppDir('hello-steps-report');
+    const events: DeployEvent[] = [];
+    const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
+    let result: Awaited<ReturnType<typeof deployWithDeps>>;
+    try {
+      result = await deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          // A path under a regular file can never be created.
+          reportPath: path.join(app.dir, 'package.json', 'report.json'),
+          onEvent: (event) => events.push(event),
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+
+    expect(result.ok).toBe(true);
+    expect(events.map(stepLine).slice(-2)).toEqual(['started record', 'finished record failed']);
+  });
+
+  test('an onEvent that throws cannot fail the deploy', async () => {
+    const app = makeAppDir('hello-steps-throw');
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig()),
+          entry: app.entryPath,
+          stage: 'ci-7',
+          cwd: app.dir,
+          onEvent: () => {
+            throw new Error('renderer bug');
+          },
+        },
+        { runAssembler: fakeAssembler, alchemy: async () => ({ exitCode: 0, signal: null }) },
+      ),
+    );
+
+    expect(result.ok).toBe(true);
   });
 });
 

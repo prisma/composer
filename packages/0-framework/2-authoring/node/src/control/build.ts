@@ -6,15 +6,16 @@
  * app's code.
  *
  * Two forms, chosen by the descriptor: without `dir`, `entry` is a single
- * self-contained file and only that file is copied. With `dir`, the whole
- * directory is copied verbatim and `entry` names the file inside it that boots.
- * The directory form also follows the declared entry's static runtime dependency
- * graph and stages those files beside the output. The staging root is derived
- * from the declared paths and the traced files themselves — never from the
- * deploy cwd — so the bundle's layout is the same whichever directory the
- * deploy is invoked from. This is deterministic dependency assembly (not app
+ * file and only that file is copied. With `dir`, the whole directory is copied
+ * verbatim and `entry` names the file inside it that boots. Either form with
+ * `dependencies: 'external'` also follows the declared entry's static runtime
+ * dependency graph and stages those files beside the output. The staging root
+ * is derived from the declared paths and the traced files themselves — never
+ * from the deploy cwd — so the bundle's layout is the same whichever directory
+ * the deploy is invoked from. This is deterministic dependency assembly (not app
  * bundling), and is what makes framework outputs such as Astro's Node adapter
- * self-contained.
+ * self-contained. With the default, `dependencies: 'bundled'`, nothing is
+ * traced: the author's build already inlined its packages.
  *
  * The wrapper is a SEPARATE esbuild build of the service module (declarations
  * only, whose node carries run()/load()), emitted as `main.mjs` at the
@@ -48,9 +49,15 @@ export type { AssembleInput, Bundle } from '@internal/core/deploy';
 /** Narrows the shared BuildAdapter to this extension's own descriptor — the value-level mirror of the registry routing on (extension, type). `dir` is optional: absent is the single-file form. */
 function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
   return (
-    descriptor.type === 'node' && (!('dir' in descriptor) || typeof descriptor.dir === 'string')
+    descriptor.type === 'node' &&
+    (!('dir' in descriptor) || typeof descriptor.dir === 'string') &&
+    (!('dependencies' in descriptor) ||
+      descriptor.dependencies === 'bundled' ||
+      descriptor.dependencies === 'external')
   );
 }
+
+const allowedDependencies: readonly unknown[] = [undefined, 'bundled', 'external'];
 
 /**
  * What the author built, resolved: the path copied under `bundle/`, and
@@ -197,13 +204,19 @@ function stagedRuntimePath(source: string, stagingRoot: string, bundleDir: strin
   return path.join(bundleDir, ...stagedSegments);
 }
 
+/** The author's build output as copied: `source` on disk (the built dir, or the single built file) and where it sits in the bundle. */
+interface CopiedOutput {
+  readonly source: string;
+  readonly at: string;
+}
+
 async function copyTracedEntry(
   source: string,
   destination: string,
   stagingRoot: string,
   bundleDir: string,
-  dirPath: string,
-): Promise<void> {
+  copied: CopiedOutput,
+): Promise<number> {
   const stat = await fs.promises.lstat(source);
   await fs.promises.mkdir(path.dirname(destination), { recursive: true });
 
@@ -214,8 +227,8 @@ async function copyTracedEntry(
         `the runtime dependency trace found a symlink outside its staging root: ${source} -> ${realTarget}`,
       );
     }
-    const stagedTarget = isWithin(dirPath, realTarget)
-      ? path.join(bundleDir, path.relative(dirPath, realTarget))
+    const stagedTarget = isWithin(copied.source, realTarget)
+      ? path.join(copied.at, path.relative(copied.source, realTarget))
       : stagedRuntimePath(realTarget, stagingRoot, bundleDir);
     const linkTarget = path.relative(path.dirname(destination), stagedTarget);
     const linkType = (await fs.promises.stat(realTarget)).isDirectory() ? 'dir' : 'file';
@@ -224,11 +237,11 @@ async function copyTracedEntry(
       copySource: realTarget,
       copyWithinRoot: bundleDir,
     });
-    return;
+    return 0;
   }
   if (stat.isDirectory()) {
     await fs.promises.mkdir(destination, { recursive: true });
-    return;
+    return 0;
   }
   if (!stat.isFile()) {
     throw new Error(
@@ -236,6 +249,7 @@ async function copyTracedEntry(
     );
   }
   await fs.promises.copyFile(source, destination);
+  return stat.size;
 }
 
 /**
@@ -251,13 +265,13 @@ async function copyTracedEntry(
  */
 function stagingRootFor(
   moduleDir: string,
-  dirPath: string,
+  outputPath: string,
   tracedPaths: readonly string[],
 ): string {
-  let root = commonAncestor(moduleDir, dirPath);
+  let root = commonAncestor(moduleDir, outputPath);
   if (isFilesystemRoot(root)) {
     throw new Error(
-      `the build adapter's dir ("${dirPath}") and the directory of its module ("${moduleDir}") share no ` +
+      `the build output ("${outputPath}") and the directory of its module ("${moduleDir}") share no ` +
         'common ancestor below the filesystem root, so runtime dependency staging has no root to work from.',
     );
   }
@@ -266,7 +280,7 @@ function stagingRootFor(
     if (isFilesystemRoot(widened)) {
       throw new Error(
         `the runtime dependency trace reached ${traced}, which shares no directory with the build ` +
-          `output ("${dirPath}") below the filesystem root — staging from there would sweep in ` +
+          `output ("${outputPath}") below the filesystem root — staging from there would sweep in ` +
           'arbitrary files. Keep the traced dependency inside the project that holds the build output.',
       );
     }
@@ -275,9 +289,10 @@ function stagingRootFor(
   return root;
 }
 
-/** Stages the explicit entry's runtime file graph beside the copied build dir.
+/** Stages the explicit entry's runtime file graph beside the copied build output.
  * `nodeFileTrace` follows import/require/package metadata; it does not rewrite
- * the app. Files already supplied by `dir` remain the author's verbatim copy.
+ * the app. Files already supplied by the build output (`dir`, or the single
+ * entry file) remain the author's verbatim copy.
  *
  * The trace itself runs from the filesystem root so nothing it finds is dropped
  * for sitting outside a narrower base — a pnpm virtual store at the workspace
@@ -291,15 +306,19 @@ function stagingRootFor(
  * set rather than extending it. */
 async function stageRuntimeDependencies(options: {
   readonly entryPath: string;
-  readonly dirPath: string;
+  /** The copied build output: the built dir, or the single entry file. */
+  readonly outputPath: string;
+  /** Where `outputPath` sits in the bundle. */
+  readonly outputAt: string;
   readonly moduleDir: string;
   readonly bundleDir: string;
-}): Promise<void> {
-  const [moduleDir, entryPath, dirPath] = await Promise.all([
+}): Promise<{ filesTraced: number; filesStaged: number; bytesStaged: number }> {
+  const [moduleDir, entryPath, outputPath] = await Promise.all([
     fs.promises.realpath(options.moduleDir),
     fs.promises.realpath(options.entryPath),
-    fs.promises.realpath(options.dirPath),
+    fs.promises.realpath(options.outputPath),
   ]);
+  const copied: CopiedOutput = { source: outputPath, at: options.outputAt };
   const base = path.parse(moduleDir).root;
   const [nodeTrace, bunTrace] = await Promise.all([
     nodeFileTrace([entryPath], { base, processCwd: moduleDir }),
@@ -316,13 +335,14 @@ async function stageRuntimeDependencies(options: {
 
   const stagingRoot = stagingRootFor(
     moduleDir,
-    dirPath,
+    outputPath,
     tracedEntries.flatMap(({ source, origin }) => [source, origin]),
   );
 
   const stagedFrom = new Map<string, string>();
+  let bytesStaged = 0;
   for (const { source, origin } of tracedEntries) {
-    if (isWithin(dirPath, source)) continue;
+    if (isWithin(outputPath, source)) continue;
     const destination = stagedRuntimePath(source, stagingRoot, options.bundleDir);
     const alreadyStaged = stagedFrom.get(destination);
     if (alreadyStaged !== undefined) {
@@ -336,9 +356,16 @@ async function stageRuntimeDependencies(options: {
       );
     }
     if (await pathExists(destination)) continue;
-    await copyTracedEntry(source, destination, stagingRoot, options.bundleDir, dirPath);
+    bytesStaged += await copyTracedEntry(
+      source,
+      destination,
+      stagingRoot,
+      options.bundleDir,
+      copied,
+    );
     stagedFrom.set(destination, origin);
   }
+  return { filesTraced: fileList.size, filesStaged: stagedFrom.size, bytesStaged };
 }
 
 /**
@@ -364,12 +391,18 @@ function assertOutsideWorkDir(runnable: BuiltRunnable, workDir: string): void {
 }
 
 export async function assemble(input: AssembleInput): Promise<Bundle> {
+  if ('dependencies' in input.build && !allowedDependencies.includes(input.build.dependencies)) {
+    throw new Error(
+      `the node build adapter's dependencies must be 'bundled' or 'external', got "${String(input.build.dependencies)}"`,
+    );
+  }
   if (!isNodeBuild(input.build)) {
     throw new Error(
       `@prisma/composer/node/control: expected a "node" build adapter, got "${input.build.type}".`,
     );
   }
   const buildDescriptor = input.build;
+  const dependencies = buildDescriptor.dependencies ?? 'bundled';
 
   const serviceModule = fileURLToPath(buildDescriptor.module);
   const moduleDir = path.dirname(serviceModule);
@@ -399,13 +432,21 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
 
   const bundleDir = path.join(workDir, 'bundle');
   await runnable.copyInto(bundleDir);
-  if (buildDescriptor.dir !== undefined) {
-    await stageRuntimeDependencies({
-      entryPath: path.join(runnable.source, ...runnable.entry.split('/')),
-      dirPath: runnable.source,
+  const form = buildDescriptor.dir === undefined ? 'file' : 'directory';
+  if (dependencies === 'bundled') {
+    input.report?.({ form, dependencies });
+  } else {
+    const counts = await stageRuntimeDependencies({
+      entryPath:
+        form === 'file'
+          ? runnable.source
+          : path.join(runnable.source, ...runnable.entry.split('/')),
+      outputPath: runnable.source,
+      outputAt: form === 'file' ? path.join(bundleDir, runnable.entry) : bundleDir,
       moduleDir,
       bundleDir,
     });
+    input.report?.({ form, dependencies, ...counts });
   }
   await assertBundleSymlinksStayInside(bundleDir);
 

@@ -34,8 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'6e17ba1a02b94d229e945c92406158ed240eeb2afb84ab890413c4b0d1774a16'>;
-export type ExecutionHash = ExecutionHashBase<string>;
+  StorageHashBase<'37a51f5613ada855a5cfabe9b5b25d154acf46e13ffd472c047817d8e42e3633'>;
+export type ExecutionHash =
+  ExecutionHashBase<'b5c434581da9e8e337c5f3b6c33380510ec06e99563a75042cc746221f8de695'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -241,80 +242,68 @@ type DefaultLiteralValue<CodecId extends string, Encoded> = CodecId extends keyo
 
 export type FieldOutputTypes = {
   readonly public: {
-    readonly Product: {
+    readonly Order: {
       readonly id: CodecTypes['pg/text@1']['output'];
-      readonly name: CodecTypes['pg/text@1']['output'];
-      readonly description: CodecTypes['pg/text@1']['output'];
-      readonly priceCents: CodecTypes['pg/int4@1']['output'];
-    };
-    readonly Special: {
-      readonly id: CodecTypes['pg/int4@1']['output'];
       readonly productId: CodecTypes['pg/text@1']['output'];
+      readonly productName: CodecTypes['pg/text@1']['output'];
+      readonly quantity: CodecTypes['pg/int4@1']['output'];
+      readonly totalCents: CodecTypes['pg/int4@1']['output'];
+      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
     };
   };
 };
 export type FieldInputTypes = {
   readonly public: {
-    readonly Product: {
+    readonly Order: {
       readonly id: CodecTypes['pg/text@1']['input'];
-      readonly name: CodecTypes['pg/text@1']['input'];
-      readonly description: CodecTypes['pg/text@1']['input'];
-      readonly priceCents: CodecTypes['pg/int4@1']['input'];
-    };
-    readonly Special: {
-      readonly id: CodecTypes['pg/int4@1']['input'];
       readonly productId: CodecTypes['pg/text@1']['input'];
+      readonly productName: CodecTypes['pg/text@1']['input'];
+      readonly quantity: CodecTypes['pg/int4@1']['input'];
+      readonly totalCents: CodecTypes['pg/int4@1']['input'];
+      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['input'];
     };
   };
 };
 export type StorageColumnTypes = {
   readonly public: {
-    readonly product: {
-      readonly description: CodecTypes['pg/text@1']['output'];
+    readonly order: {
       readonly id: CodecTypes['pg/text@1']['output'];
-      readonly name: CodecTypes['pg/text@1']['output'];
-      readonly priceCents: CodecTypes['pg/int4@1']['output'];
-    };
-    readonly special: {
-      readonly id: CodecTypes['pg/int4@1']['output'];
+      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
       readonly productId: CodecTypes['pg/text@1']['output'];
+      readonly productName: CodecTypes['pg/text@1']['output'];
+      readonly quantity: CodecTypes['pg/int4@1']['output'];
+      readonly totalCents: CodecTypes['pg/int4@1']['output'];
     };
   };
 };
 export type StorageColumnInputTypes = {
   readonly public: {
-    readonly product: {
-      readonly description: CodecTypes['pg/text@1']['input'];
+    readonly order: {
       readonly id: CodecTypes['pg/text@1']['input'];
-      readonly name: CodecTypes['pg/text@1']['input'];
-      readonly priceCents: CodecTypes['pg/int4@1']['input'];
-    };
-    readonly special: {
-      readonly id: CodecTypes['pg/int4@1']['input'];
+      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['input'];
       readonly productId: CodecTypes['pg/text@1']['input'];
+      readonly productName: CodecTypes['pg/text@1']['input'];
+      readonly quantity: CodecTypes['pg/int4@1']['input'];
+      readonly totalCents: CodecTypes['pg/int4@1']['input'];
     };
   };
 };
 
 export namespace Models {
-  export type public_Product = {
+  export type public_Order = {
     id: CodecTypes['pg/text@1']['output'];
-    name: CodecTypes['pg/text@1']['output'];
-    description: CodecTypes['pg/text@1']['output'];
-    priceCents: CodecTypes['pg/int4@1']['output'];
-    readonly [RelationKeys]?: never;
-  };
-  export type public_Special = {
-    id: CodecTypes['pg/int4@1']['output'];
     productId: CodecTypes['pg/text@1']['output'];
+    productName: CodecTypes['pg/text@1']['output'];
+    quantity: CodecTypes['pg/int4@1']['output'];
+    totalCents: CodecTypes['pg/int4@1']['output'];
+    placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
     readonly [RelationKeys]?: never;
   };
 }
 
 export declare const models: {
   public: {
-    Product: Models.public_Product;
-    Special: Models.public_Special;
+    Order: Models.public_Order;
   };
 };
 
@@ -336,45 +325,44 @@ type ContractBase = Omit<
         readonly kind: 'postgres-schema';
         readonly entries: {
           readonly table: {
-            readonly product: {
+            readonly order: {
               columns: {
                 readonly id: {
-                  readonly nativeType: 'text';
+                  readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
-                };
-                readonly name: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly description: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly priceCents: {
-                  readonly nativeType: 'int4';
-                  readonly codecId: 'pg/int4@1';
-                  readonly nullable: false;
-                };
-              };
-              primaryKey: { readonly columns: readonly ['id'] };
-              uniques: readonly [];
-              indexes: readonly [];
-              foreignKeys: readonly [];
-            };
-            readonly special: {
-              columns: {
-                readonly id: {
-                  readonly nativeType: 'int4';
-                  readonly codecId: 'pg/int4@1';
-                  readonly nullable: false;
+                  readonly many: false;
                 };
                 readonly productId: {
-                  readonly nativeType: 'text';
+                  readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly productName: {
+                  readonly dataType: 'pg/text';
+                  readonly codecId: 'pg/text@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly quantity: {
+                  readonly dataType: 'pg/int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly totalCents: {
+                  readonly dataType: 'pg/int4';
+                  readonly codecId: 'pg/int4@1';
+                  readonly nullable: false;
+                  readonly many: false;
+                };
+                readonly placedAt: {
+                  readonly dataType: 'pg/timestamptz';
+                  readonly codecId: 'pg/timestamptz-string@1';
+                  readonly nullable: false;
+                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly many: false;
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
@@ -393,62 +381,53 @@ type ContractBase = Omit<
   readonly target: 'postgres';
   readonly targetFamily: 'sql';
   readonly roots: {
-    readonly product: { readonly namespace: 'public' & NamespaceId; readonly model: 'Product' };
-    readonly special: { readonly namespace: 'public' & NamespaceId; readonly model: 'Special' };
+    readonly order: { readonly namespace: 'public' & NamespaceId; readonly model: 'Order' };
   };
   readonly domain: {
     readonly namespaces: {
       readonly public: {
         readonly models: {
-          readonly Product: {
+          readonly Order: {
             readonly fields: {
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly name: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly description: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly priceCents: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
-              };
-            };
-            readonly relations: Record<string, never>;
-            readonly storage: {
-              readonly table: 'product';
-              readonly namespaceId: 'public';
-              readonly fields: {
-                readonly id: { readonly column: 'id' };
-                readonly name: { readonly column: 'name' };
-                readonly description: { readonly column: 'description' };
-                readonly priceCents: { readonly column: 'priceCents' };
-              };
-            };
-          };
-          readonly Special: {
-            readonly fields: {
-              readonly id: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
               };
               readonly productId: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
+              readonly productName: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
+              };
+              readonly quantity: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly totalCents: {
+                readonly nullable: false;
+                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
+              };
+              readonly placedAt: {
+                readonly nullable: false;
+                readonly type: {
+                  readonly kind: 'scalar';
+                  readonly codecId: 'pg/timestamptz-string@1';
+                };
+              };
             };
             readonly relations: Record<string, never>;
             readonly storage: {
-              readonly table: 'special';
+              readonly table: 'order';
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly id: { readonly column: 'id' };
                 readonly productId: { readonly column: 'productId' };
+                readonly productName: { readonly column: 'productName' };
+                readonly quantity: { readonly column: 'quantity' };
+                readonly totalCents: { readonly column: 'totalCents' };
+                readonly placedAt: { readonly column: 'placedAt' };
               };
             };
           };
@@ -475,6 +454,21 @@ type ContractBase = Omit<
     };
   };
   readonly extensions: {};
+  readonly execution: {
+    readonly executionHash: ExecutionHash;
+    readonly mutations: {
+      readonly defaults: readonly [
+        {
+          readonly ref: {
+            readonly entry: 'order';
+            readonly field: 'id';
+            readonly namespace: 'public';
+          };
+          readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv4' };
+        },
+      ];
+    };
+  };
   readonly meta: {};
 
   readonly profileHash: ProfileHash;

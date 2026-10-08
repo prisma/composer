@@ -34,9 +34,9 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'a2c3b4739043e9c6f4f73292efb624bb2f1a9be70503e580c9dc7b34b6d366cf'>;
+  StorageHashBase<'175be57590fa5824e15c09338d2e8c3fd18a5d96d8cf804d8e86eff38010e7ee'>;
 export type ExecutionHash =
-  ExecutionHashBase<'b5c434581da9e8e337c5f3b6c33380510ec06e99563a75042cc746221f8de695'>;
+  ExecutionHashBase<'eeaf1f4046a71ed6f02d863393397a283adf15b8666139245223083206542e82'>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
 
@@ -242,68 +242,48 @@ type DefaultLiteralValue<CodecId extends string, Encoded> = CodecId extends keyo
 
 export type FieldOutputTypes = {
   readonly public: {
-    readonly Order: {
+    readonly Widget: {
       readonly id: CodecTypes['pg/text@1']['output'];
-      readonly productId: CodecTypes['pg/text@1']['output'];
-      readonly productName: CodecTypes['pg/text@1']['output'];
-      readonly quantity: CodecTypes['pg/int4@1']['output'];
-      readonly totalCents: CodecTypes['pg/int4@1']['output'];
-      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
+      readonly label: CodecTypes['pg/text@1']['output'];
     };
   };
 };
 export type FieldInputTypes = {
   readonly public: {
-    readonly Order: {
+    readonly Widget: {
       readonly id: CodecTypes['pg/text@1']['input'];
-      readonly productId: CodecTypes['pg/text@1']['input'];
-      readonly productName: CodecTypes['pg/text@1']['input'];
-      readonly quantity: CodecTypes['pg/int4@1']['input'];
-      readonly totalCents: CodecTypes['pg/int4@1']['input'];
-      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['input'];
+      readonly label: CodecTypes['pg/text@1']['input'];
     };
   };
 };
 export type StorageColumnTypes = {
   readonly public: {
-    readonly order: {
+    readonly Widget: {
       readonly id: CodecTypes['pg/text@1']['output'];
-      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
-      readonly productId: CodecTypes['pg/text@1']['output'];
-      readonly productName: CodecTypes['pg/text@1']['output'];
-      readonly quantity: CodecTypes['pg/int4@1']['output'];
-      readonly totalCents: CodecTypes['pg/int4@1']['output'];
+      readonly label: CodecTypes['pg/text@1']['output'];
     };
   };
 };
 export type StorageColumnInputTypes = {
   readonly public: {
-    readonly order: {
+    readonly Widget: {
       readonly id: CodecTypes['pg/text@1']['input'];
-      readonly placedAt: CodecTypes['pg/timestamptz-string@1']['input'];
-      readonly productId: CodecTypes['pg/text@1']['input'];
-      readonly productName: CodecTypes['pg/text@1']['input'];
-      readonly quantity: CodecTypes['pg/int4@1']['input'];
-      readonly totalCents: CodecTypes['pg/int4@1']['input'];
+      readonly label: CodecTypes['pg/text@1']['input'];
     };
   };
 };
 
 export namespace Models {
-  export type public_Order = {
+  export type public_Widget = {
     id: CodecTypes['pg/text@1']['output'];
-    productId: CodecTypes['pg/text@1']['output'];
-    productName: CodecTypes['pg/text@1']['output'];
-    quantity: CodecTypes['pg/int4@1']['output'];
-    totalCents: CodecTypes['pg/int4@1']['output'];
-    placedAt: CodecTypes['pg/timestamptz-string@1']['output'];
+    label: CodecTypes['pg/text@1']['output'];
     readonly [RelationKeys]?: never;
   };
 }
 
 export declare const models: {
   public: {
-    Order: Models.public_Order;
+    Widget: Models.public_Widget;
   };
 };
 
@@ -325,38 +305,19 @@ type ContractBase = Omit<
         readonly kind: 'postgres-schema';
         readonly entries: {
           readonly table: {
-            readonly order: {
+            readonly Widget: {
               columns: {
                 readonly id: {
-                  readonly nativeType: 'text';
+                  readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
+                  readonly many: false;
                 };
-                readonly productId: {
-                  readonly nativeType: 'text';
+                readonly label: {
+                  readonly dataType: 'pg/text';
                   readonly codecId: 'pg/text@1';
                   readonly nullable: false;
-                };
-                readonly productName: {
-                  readonly nativeType: 'text';
-                  readonly codecId: 'pg/text@1';
-                  readonly nullable: false;
-                };
-                readonly quantity: {
-                  readonly nativeType: 'int4';
-                  readonly codecId: 'pg/int4@1';
-                  readonly nullable: false;
-                };
-                readonly totalCents: {
-                  readonly nativeType: 'int4';
-                  readonly codecId: 'pg/int4@1';
-                  readonly nullable: false;
-                };
-                readonly placedAt: {
-                  readonly nativeType: 'timestamptz';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                  readonly nullable: false;
-                  readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
+                  readonly many: false;
                 };
               };
               primaryKey: { readonly columns: readonly ['id'] };
@@ -375,53 +336,30 @@ type ContractBase = Omit<
   readonly target: 'postgres';
   readonly targetFamily: 'sql';
   readonly roots: {
-    readonly order: { readonly namespace: 'public' & NamespaceId; readonly model: 'Order' };
+    readonly Widget: { readonly namespace: 'public' & NamespaceId; readonly model: 'Widget' };
   };
   readonly domain: {
     readonly namespaces: {
       readonly public: {
         readonly models: {
-          readonly Order: {
+          readonly Widget: {
             readonly fields: {
               readonly id: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
               };
-              readonly productId: {
+              readonly label: {
                 readonly nullable: false;
                 readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly productName: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/text@1' };
-              };
-              readonly quantity: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
-              };
-              readonly totalCents: {
-                readonly nullable: false;
-                readonly type: { readonly kind: 'scalar'; readonly codecId: 'pg/int4@1' };
-              };
-              readonly placedAt: {
-                readonly nullable: false;
-                readonly type: {
-                  readonly kind: 'scalar';
-                  readonly codecId: 'pg/timestamptz-string@1';
-                };
               };
             };
             readonly relations: Record<string, never>;
             readonly storage: {
-              readonly table: 'order';
+              readonly table: 'Widget';
               readonly namespaceId: 'public';
               readonly fields: {
                 readonly id: { readonly column: 'id' };
-                readonly productId: { readonly column: 'productId' };
-                readonly productName: { readonly column: 'productName' };
-                readonly quantity: { readonly column: 'quantity' };
-                readonly totalCents: { readonly column: 'totalCents' };
-                readonly placedAt: { readonly column: 'placedAt' };
+                readonly label: { readonly column: 'label' };
               };
             };
           };
@@ -454,9 +392,9 @@ type ContractBase = Omit<
       readonly defaults: readonly [
         {
           readonly ref: {
-            readonly entry: 'order';
-            readonly field: 'id';
             readonly namespace: 'public';
+            readonly table: 'Widget';
+            readonly column: 'id';
           };
           readonly onCreate: { readonly kind: 'generator'; readonly id: 'uuidv4' };
         },

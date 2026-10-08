@@ -18,7 +18,12 @@ export type { CliStructuredError } from '@internal/foundation/errors';
 export type { NotOk, Ok, Result } from '@internal/foundation/result';
 export type { ComposerConfigSource } from '../composer-config.ts';
 export type { DeployedNodeSummary, DeploymentSummary } from '../deployment-summary.ts';
-export type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
+export type {
+  DeployEvent,
+  DeployInput,
+  DeployStep,
+  DeploySuccess,
+} from '../operations/deploy.ts';
 export { deploy } from '../operations/deploy.ts';
 export type {
   DestroyEvent,

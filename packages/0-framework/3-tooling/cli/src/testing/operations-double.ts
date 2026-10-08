@@ -19,14 +19,16 @@
 import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
-import type { DeployInput, DeploySuccess } from '../operations/deploy.ts';
+import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
 
 export interface OperationsDoubleFixtures {
-  /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary. */
+  /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary and a zero duration. */
   readonly deploy?: Result<DeploySuccess, CliStructuredError> | undefined;
+  /** Sent to the deploy's `onEvent`, in order, before it returns. */
+  readonly deployEvents?: readonly DeployEvent[] | undefined;
   /**
    * A failing dev: returned as-is, no session starts. When absent, dev
    * succeeds with a working DevSession double over `devEndpoints`.
@@ -158,9 +160,16 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
     deploy: async (input, operationDeps) => {
       calls.deploy.push(input);
       deps.deploy.push(operationDeps);
+      for (const event of fixtures.deployEvents ?? []) {
+        try {
+          input.onEvent?.(event);
+        } catch {
+          // The real deploy ignores a throwing onEvent, so the double does too.
+        }
+      }
       const converge = await runConverge(operationDeps, input.cwd);
       if (converge !== undefined) return converge;
-      return fixtures.deploy ?? ok({ summary: undefined });
+      return fixtures.deploy ?? ok({ summary: undefined, durationMs: 0 });
     },
     dev: async (input, operationDeps) => {
       calls.dev.push(input);
