@@ -26,6 +26,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopDaemon('compute', { registryRoot }).catch(() => undefined);
+  fs.rmSync(registryRoot, { recursive: true, force: true });
   if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
   else process.env[EMULATORS_DIR_ENV] = savedEmulatorsDir;
 });
@@ -58,18 +59,34 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
   return Number(new URL(attributes.appEndpointDomain ?? '').port);
 }
 
-test('services reserved in graph order keep that order when the App providers then race', async () => {
+async function reservedPorts(appName: string): Promise<Record<string, number>> {
+  const services = await computeClient().listServices(appName);
+  return Object.fromEntries(services.map((svc) => [svc.id, svc.port]));
+}
+
+test('each App provider returns the port reserved for its service, even when the providers race', async () => {
   for (let run = 0; run < 10; run++) {
-    const container = fakeContainer(`port-order-${String(run)}`);
+    const appName = `port-order-${String(run)}`;
+    const container = fakeContainer(appName);
     await reserveServicePorts(container, ['quotes', 'gateway']);
+    const reserved = await reservedPorts(appName);
 
     const [gateway, quotes] = await Promise.all([
       reconcileApp(container, 'gateway'),
       reconcileApp(container, 'quotes'),
     ]);
 
-    expect(quotes).toBeLessThan(gateway);
+    expect({ quotes, gateway }).toEqual({
+      quotes: reserved['quotes'] ?? -1,
+      gateway: reserved['gateway'] ?? -1,
+    });
   }
+});
+
+test('a failed reservation names the service', async () => {
+  await expect(reserveServicePorts(fakeContainer('Bad-App'), ['quotes'])).rejects.toThrow(
+    'service "quotes"',
+  );
 });
 
 test('reserving the services of an app that already has ports keeps those ports', async () => {
