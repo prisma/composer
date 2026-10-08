@@ -355,7 +355,7 @@ another stage's resources is kept. Destroy never creates anything:
 destroying a
 never-deployed stage fails rather than standing one up.
 
-**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
+**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.81 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 Composer runs the alchemy package installed beside the app's
 `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
