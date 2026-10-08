@@ -20,7 +20,7 @@
     "@internal/assemble": "workspace:0.28.0",
     "@internal/core": "workspace:0.28.0",
     "@internal/foundation": "workspace:0.28.0",
-    "@prisma/cli-engine": "0.6.3",
+    "@prisma/cli-engine": "0.7.0",
     "chokidar": "^4.0.3",
     "cross-spawn": "^7.0.6"
   },
