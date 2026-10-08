@@ -35,8 +35,8 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@clack/prompts": "^1.7.0",
-    "@prisma/composer": "workspace:0.28.0",
-    "@prisma/composer-cli": "workspace:0.28.0",
+    "@prisma/composer": "workspace:0.29.0",
+    "@prisma/composer-cli": "workspace:0.29.0",
     "dependency-cruiser": "^17.4.3",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
@@ -56,5 +56,5 @@
       "@prisma/engines"
     ]
   },
-  "version": "0.28.0"
+  "version": "0.29.0"
 }
