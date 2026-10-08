@@ -1,7 +1,7 @@
 # The deploy commands (`prisma deploy`, `prisma dev`)
 
 Prisma Composer's deploy entrypoint: what the `prisma deploy` and `prisma dev`
-commands do, the contracts it introduces, and what stays out of its scope.
+commands do, the contracts they introduce, and what stays out of its scope.
 The decisions it
 rests on are recorded in
 [ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)
@@ -43,7 +43,9 @@ command family, plus one operation with no command:
 
 `deploy` flags: `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--stage <name>` (target a named, isolated
-environment instead of production). The `destroy` operation takes the same
+environment instead of production), `--report <path>` (write the deploy's
+outcome as JSON to that file), `--build-id <id>` (join a deploy record that CI
+already created). The `destroy` operation takes the same
 `name` and a required `target`, `{ kind: 'stage', stage }` or
 `{ kind: 'production' }`. `--stage` does not exist on `dev`. A build command
 and topology emission are out of scope (see § Out of scope).
@@ -224,6 +226,8 @@ them:
 | Deploy root isn't a Module | to wrap the service in a Module |
 | Unwired dependency slot | which input, and to deploy the composing Module |
 | Missing `composer` section in `prisma.config.ts` | what the section must contain (ADR-0049) |
+| Old `configPath` field in the section (`CONFIG.FIELD_RETIRED`) | to move `extensions` and `state` into the section and delete the old file (ADR-0049) |
+| Old `prisma-composer.config.*` beside `prisma.config.ts` (`CONFIG.FILE_RETIRED`) | the same fix (ADR-0049) |
 | Node `(extension, type)` not covered | the extension to add to the `composer` section |
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |

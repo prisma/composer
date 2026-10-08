@@ -17,13 +17,14 @@ One command and one operation:
   is `entry`'s default export, entirely on the local machine, and keep it up:
   watch built output, restart changed services, until interrupted. It does
   **not** stream service logs — once it is supervising several processes,
-  streaming them all inline drowns the front door and the rebuild notices; it
-  prints a one-line pointer to `log` instead.
+  streaming them all inline drowns the front door and the rebuild notices. To
+  read them, call the `log` operation from a script (see
+  [docs/guides/running-locally.md](../../guides/running-locally.md)).
 - **`log`**, an operation on `@prisma/composer/control` with no command
   (ADR-0050) — tail the merged logs of that already-running app: every
   service, or one named by its dotted `address` (`catalog.service`). Follows
-  live until the caller aborts; a `tail` count sets how much recent history
-  to return first (default 20, `0` for live-only). It only reads the running
+  live until the caller aborts; a `tail` count sets how many recent lines to
+  return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
 
 Flags: `dev` takes `--fresh` (destroy the dev stack and wipe the dev state
@@ -32,9 +33,10 @@ exactly one dev instance; parallel instances are parallel checkouts.
 
 **Naming.** The `prisma` CLI mounts this as `prisma dev <entry>`
 ([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
-Below, "ORM `prisma dev`" means the ORM's local-Postgres server, which this
-harness starts for each database; it is a different thing from Composer's
-`prisma dev <entry>`.
+Local Postgres comes from `@prisma/dev`, the local Prisma Postgres server
+library that the Prisma 7 ORM CLI's own `prisma dev` command runs. Composer
+does not run that command: its Postgres emulator daemon calls `@prisma/dev`'s
+`startPrismaDevServer()` in-process, one server per `Database` resource.
 
 ## The pipeline, relative to deploy
 
@@ -147,8 +149,8 @@ the scoping changes restart behavior only.
    nothing started here survives its exit.
 2. **Machine-scoped emulators** — one per node kind per registry root,
    multi-tenant, holding every long-lived process: the Compute emulator
-   (service children), the `prisma dev` Postgres instances (managed by the
-   ORM CLI, per-Database), and the bucket emulator. They survive dev
+   (service children), the Postgres emulator (one `@prisma/dev` server per
+   `Database`, hosted in-process), and the bucket emulator. They survive dev
    sessions; `--fresh` removes an app's instances. The registry root is
    `~/.prisma-composer/emulators` unless `PRISMA_COMPOSER_EMULATORS_DIR`
    names another absolute directory, so by default one machine shares one
@@ -163,9 +165,9 @@ the scoping changes restart behavior only.
    logs back the separate `log` operation.
 
 The emulator daemon bookkeeping (registry, stable ports, readiness,
-version-skew restart) is framework-owned and minimal; Postgres reuses the
-ORM CLI's mature manager (`prisma dev ls|stop|rm`) rather than duplicating
-it.
+version-skew restart) is framework-owned and minimal, and the Postgres
+emulator uses the same bookkeeping, hosting `@prisma/dev` servers rather than
+reimplementing a Postgres server.
 
 ## Resource substitution
 
@@ -176,7 +178,7 @@ semantics):
 | Resource | Dev behavior |
 | --- | --- |
 | `Project` | a local identity record; no platform |
-| `Database` | a database on the local Postgres server (ORM `prisma dev`) |
+| `Database` | a database on a local `@prisma/dev` Postgres server, hosted by the Postgres emulator |
 | `Connection` | the local connection URL |
 | `App` | registers the service with the Compute emulator, which allocates its stable port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
 | `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the Compute emulator, which (re)starts the child |
@@ -195,7 +197,7 @@ SQLite test server remains a testing utility, not part of the dev loop.
 
 ### Postgres
 
-The emulator is the ORM CLI's local Postgres (`prisma dev`), **one named, detached instance per `Database` resource** — instance names are derived from the app and database ids, so instances are isolated, discoverable (`prisma dev ls`), and survive across dev sessions for warm starts. Migrations are not special-cased: `OrmMigration` runs exactly as it does in a deploy, against the local URL — replay-only (ADR-0022 as revised), so it applies committed migrations and never synthesizes schema. At reconcile time it reloads the emitted `contract.json` identified by `prisma.config.ts`, attests its `storageHash` against the compact contract identity persisted in deploy state, and only then opens the database. Dev-loop schema iteration therefore happens through the ORM's own `prisma db update`, run directly against the emulator database: `db update` moves the database and its marker to the current contract, and the pipeline's migration step no-ops because the marker matches the target. A dev run against a database that was neither updated nor covered by a planned migration hits the same structured refusal a deploy would, naming both exits (`prisma db update` to iterate, `contract emit` + `migration plan` to author the path). `PgWarm` is near-instant locally and is kept (not stubbed) so the provider set stays uniform.
+The emulator is a daemon hosting `@prisma/dev` servers, **one named, persistent server per `Database` resource** — server names are derived from the app and database ids, so instances are isolated and survive across dev sessions for warm starts. Migrations are not special-cased: `OrmMigration` runs exactly as it does in a deploy, against the local URL — replay-only (ADR-0022 as revised), so it applies committed migrations and never synthesizes schema. At reconcile time it reloads the emitted `contract.json` identified by `prisma.config.ts`, attests its `storageHash` against the compact contract identity persisted in deploy state, and only then opens the database. Dev-loop schema iteration therefore happens through the ORM's own `prisma db update`, run directly against the emulator database: `db update` moves the database and its marker to the current contract, and the pipeline's migration step no-ops because the marker matches the target. A dev run against a database that was neither updated nor covered by a planned migration hits the same structured refusal a deploy would, naming both exits (`prisma db update` to iterate, `contract emit` + `migration plan` to author the path). `PgWarm` is near-instant locally and is kept (not stubbed) so the provider set stays uniform.
 
 ### Buckets: a disk-backed S3 emulator
 
@@ -267,9 +269,9 @@ Deploy's rule holds: every failure names its fix.
 | extension has no `localTarget` descriptor | which extension, and that it does not support local dev |
 | built output missing | same as deploy: the expected path, "run your build" |
 | `bun` not on PATH | that dev runs services under bun (the Compute runtime) and how to install it |
-| no installed `prisma` bin (the local-Postgres emulator) | what was searched for and to add `prisma` to devDependencies |
+| `@prisma/dev` cannot be loaded (the local-Postgres emulator) | the module path that was tried |
 | the bucket emulator fails to start or report healthy | the instance name, its log file path, and the port it tried |
-| ORM `prisma dev` fails to start | the exact command that was attempted and its output, sanitized — connection-URL credentials are masked before embedding |
+| a `@prisma/dev` server fails to start | the underlying error, sanitized — connection-URL credentials are masked before embedding |
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
 | secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
@@ -295,7 +297,7 @@ Deploy's rule holds: every failure names its fix.
 (none outstanding from the design phase — see Known limitations below for
 gaps found during implementation.)
 
-(Settled since the first draft: Postgres runs one named `prisma dev` instance
+(Settled since the first draft: Postgres runs one named `@prisma/dev` server
 per `Database` resource; the front door prints every service URL ordered by
 address depth then name, shallowest first; port allocation and the remaining
 mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md).
