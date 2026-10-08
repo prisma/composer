@@ -4,6 +4,7 @@ import * as RealLocalTarget from '@internal/local-target';
 import { PrismaCloudContainer } from '../container.ts';
 
 const events: string[] = [];
+let computeDeleteFails = false;
 
 const unreachable = (name: string) => () => ({
   deleteApp: async () => {
@@ -20,6 +21,7 @@ mock.module('@internal/dev-emulators', () => ({
   computeClient: () => ({
     deleteApp: async (app: string) => {
       events.push(`delete compute ${app}`);
+      if (computeDeleteFails) throw new Error('compute delete failed');
     },
   }),
   postgresClient: unreachable('postgres'),
@@ -46,10 +48,20 @@ const container = new PrismaCloudContainer(
 
 beforeEach(() => {
   events.length = 0;
+  computeDeleteFails = false;
 });
 
 test('starts the compute emulator before deleting the app from it, so a stopped emulator still forgets the old ports', async () => {
   await runDevTeardown({ container, stage: undefined });
 
+  expect(events).toEqual(['daemon compute', 'delete compute my-app', 'remove local paths']);
+});
+
+test('a failed compute delete still removes the local state, then fails the teardown', async () => {
+  computeDeleteFails = true;
+
+  await expect(runDevTeardown({ container, stage: undefined })).rejects.toThrow(
+    'compute delete failed',
+  );
   expect(events).toEqual(['daemon compute', 'delete compute my-app', 'remove local paths']);
 });

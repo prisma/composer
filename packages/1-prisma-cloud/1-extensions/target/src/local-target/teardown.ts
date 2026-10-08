@@ -7,7 +7,8 @@
  * the dev state directory, and the dev stage's `localState()` directory.
  * Compute is started first if it is down, and its delete must succeed,
  * because it persists port allocations; Postgres and buckets are skipped
- * when unreachable.
+ * when unreachable. The local directories are removed even when the
+ * Compute step fails, and the failure is then reported.
  *
  * Every actual filesystem operation is delegated to `@internal/local-target`
  * (this extension's own source stays free of `node:`/`bun:` imports —
@@ -44,9 +45,11 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   await tolerateUnreachable(() => postgresClient().deleteApp(app));
   // Compute persists port allocations across restarts, so a stopped daemon
   // would hand the old ports back; start it so the delete always lands.
-  await ensureDaemon('compute', daemonEntry('compute'));
-  await computeClient().deleteApp(app);
-  await tolerateUnreachable(() => bucketsClient().deleteApp(app));
-
-  removeLocalPaths([`${cwd}/${DEV_DIR}`, `${cwd}/.alchemy/state/${app}/dev`]);
+  try {
+    await ensureDaemon('compute', daemonEntry('compute'));
+    await computeClient().deleteApp(app);
+  } finally {
+    await tolerateUnreachable(() => bucketsClient().deleteApp(app));
+    removeLocalPaths([`${cwd}/${DEV_DIR}`, `${cwd}/.alchemy/state/${app}/dev`]);
+  }
 }
