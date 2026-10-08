@@ -1,11 +1,10 @@
 ---
 name: upgrade-alchemy-effect
 description: >-
-  How to upgrade `alchemy` and the `effect` constellation across this repo and
-  keep them consistent for consumers: which packages pin what, why `effect` and
-  every `@effect/*` companion move as one set, what breaks in a typical
-  upgrade, and how to verify a standalone `npm install` still resolves a single
-  `effect`. Use when asked to upgrade or bump alchemy or effect, when a deploy
+  How to upgrade `alchemy` and `effect` across this repo and keep them
+  consistent for consumers: which packages declare what, what breaks in a
+  typical upgrade, and how to verify a standalone `npm install` still resolves
+  a single `effect`. Use when asked to upgrade or bump alchemy or effect, when a deploy
   dies inside an alchemy provider with a `TypeError` naming a missing
   combinator, when `check:npm-effect-resolution` fails, or when deciding
   whether the alchemy patch is still needed.
@@ -15,7 +14,7 @@ description: >-
 
 ## Audience
 
-Maintainers changing the `alchemy` or `effect` pins in this repo.
+Maintainers changing the `alchemy` or `effect` versions in this repo.
 
 ## Read this first
 
@@ -32,28 +31,26 @@ npm view alchemy dist-tags
 npm view alchemy@<latest> peerDependencies
 ```
 
-If alchemy's `effect` peer range has moved past our pin, the upgrade *is* the
+If alchemy's `effect` peer range has moved past ours, the upgrade *is* the
 fix. Reach for workarounds only after that check says otherwise.
 
-## Why the versions move as a set
+## How the versions are declared
 
-`effect` and its companions — `@effect/platform-node`, `@effect/platform-bun`,
-`@effect/platform-node-shared`, `@effect/vitest` — each declare a peer that is
-**floored at their own version**:
+alchemy pins its own `effect`-family dependencies and declares `effect` as a
+peer with a semver range (`^4.0.0` at beta.81). The repo follows that range:
 
-```jsonc
-// @effect/platform-bun@4.0.0-rc.111
-"peerDependencies": { "effect": "^4.0.0-rc.111" }
-```
+- `alchemy` is pinned exactly everywhere. It is a beta and its API moves.
+- `effect`, and `@effect/platform-node` (which lowering imports), use
+  alchemy's `effect` range. Nothing else in the `@effect/*` family is
+  declared: we only list packages we import.
+- `@distilled.cloud/prisma`, which the provider wiring imports, stays at the
+  exact version alchemy depends on so npm installs one copy.
 
-That caret is a range, not an exact pin: it accepts `4.0.0-rc.112` and stable
-`4.x`, but nothing below `4.0.0-rc.111`. So an `effect` **older** than any
-companion in the tree is unsatisfiable, and npm resolves that by installing a
-*second* `effect`. Pinning every package in this repo to the same beta is the
-simple way to stay above every floor at once. Treat them as one constellation,
-never as individual bumps.
-
-alchemy sits on top with a deliberately loose range (`>=4.0.0-rc.115 || >=4.0.0` at beta.78). That range is what lets a stray dependency drag a different `effect` in.
+Before `effect` 4.0.0 shipped, this repo pinned `effect` and every companion
+alchemy pulled in (`@effect/vitest`, `@effect/sql-*`, the platform adapters)
+exactly. Release-candidate versions do not satisfy caret ranges the way stable
+ones do, so that was the only way to keep npm on one `effect`. Do not bring
+those pins back unless the npm check below fails without them.
 
 ## Two audiences, two failure modes
 
@@ -78,24 +75,23 @@ engine evaluates the config file, before any command runs. The error is the
 engine's `CLI.CONFIG_UNREADABLE`, naming the file and carrying the module error,
 for example `prisma.config.ts could not be evaluated: Schema.TaggedError is not
 a function`. Only the consumer's package manager can fix that tree, usually
-with an `overrides` entry that forces our pinned `effect`
-(`docs/guides/deploying.md`). Keep the pins below exact and consistent so a bare
-install never gets there.
+with an `overrides` entry that forces an `effect` 4.x
+(`docs/guides/deploying.md`).
 
 ## Steps
 
-1. **Pick the target.** Read alchemy's latest peer range, then choose the newest beta where *every* companion publishes a matching version:
+1. **Pick the target.** Take alchemy's latest release and read its `effect`
+   peer range and its `@distilled.cloud/prisma` version:
 
    ```bash
    npm view alchemy dist-tags
-   npm view alchemy@<version> peerDependencies
-   for p in effect @effect/platform-node @effect/platform-bun \
-            @effect/platform-node-shared @effect/vitest; do
-     echo "$p $(npm view $p dist-tags.beta)"
-   done
+   npm view alchemy@<version> dependencies peerDependencies
    ```
 
-   alchemy's floor is not a compatibility promise. alchemy 2.0.0-beta.75 to beta.77 accept `effect` rc.112 and later, but call `Config.string`, which rc.113 removed, so they crash on it. Pin the `effect` release alchemy was built against: the newest one published before that alchemy release (`npm view effect time`). Check the new alchemy's `alchemy/Prisma` still loads from a plain npm install: in beta.79 it imports the optional peer `@alchemy.run/frontend-frameworks` and fails.
+   Use that `effect` range for `effect` and `@effect/platform-node`. Check the
+   new alchemy's `alchemy/Prisma` still loads from a plain npm install: in
+   beta.79 it imported the optional peer `@alchemy.run/frontend-frameworks`
+   and failed.
 
 2. **Find every pin.** They are spread across public packages, framework
    packages, examples, `test/integration`, and `website`:
@@ -109,8 +105,8 @@ install never gets there.
    longer installed and the next install fails or silently skips the patch.
    Remove the entry now and re-create it in step 5 once you know whether it is
    still needed.
-4. **Bump all of them to the same versions**, then `pnpm install`. Nothing may
-   be left behind — a single stale companion reintroduces the second `effect`.
+4. **Bump all of them**, then `pnpm install`. Nothing may be left behind — a
+   single stale `effect` declaration can reintroduce a second `effect`.
 5. **Decide the patch** (see below): typecheck without it, and only re-create
    it against the new version if upstream still needs the fix.
 6. **`pnpm typecheck`.** Expect real API breakage; see the classes below. Note
@@ -121,21 +117,14 @@ install never gets there.
 8. **The E2E deploy jobs are the real bar.** An alchemy upgrade changes the
    deploy engine; a green typecheck says very little about it.
 
-## alchemy's floating dependencies are pinned in the public packages
+## The npm check
 
-alchemy's `effect`-family ranges float past what its code supports (the
-upstream `TaggedErrorClass` drift), and a floater whose newest release names
-an `effect` peer that does not exist yet sends npm into hours of backtracking
-instead of an error (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of
-`effect`). Consumers carry no overrides block; instead the public packages
-pin, in `dependencies`, every package alchemy declares with a floating range
-so a consumer's npm resolves our copy:
-
-- `@prisma/composer` — alchemy's regular dependencies: `@effect/sql-d1`,
-  `@effect/sql-sqlite-do`, `@effect/vitest`.
-- `@prisma/composer-prisma-cloud` — the optional platform peers: `@effect/platform-bun`, `@effect/platform-node`, `@effect/platform-node-shared`. It also depends on `@distilled.cloud/prisma`, whose `Credentials` the provider wiring imports; keep it at the exact version alchemy depends on so npm installs one copy.
-
-When alchemy adds a floating `effect`-family dependency, add its pin next to these; `check-npm-effect-resolution` installs the tarballs bare and fails when the install backtracks or resolves a second `effect`. It installs once more with npm 10, the npm that Node 22 bundles: npm 10 crashes on `vitest@4.1.x`, which `@effect/vitest` rc.112 and earlier pull in. The only case left to a consumer's own `overrides` is an app that pins a different `effect` itself (documented in `docs/guides/deploying.md`).
+`check-npm-effect-resolution` installs the tarballs bare and fails when the
+install backtracks or resolves a second `effect`. It installs once more with
+npm 10, the npm that Node 22 bundles. If it ever fails because alchemy pulls in
+an `effect`-family package whose newest release needs an `effect` that does not
+exist yet (2026-09-11: `@effect/*@4.0.0-rc.114` published ahead of `effect`),
+pin that one package exactly in `@prisma/composer`'s `dependencies` and say why.
 
 ## Breakage classes seen in practice
 
@@ -217,8 +206,8 @@ node -e 'const c=()=>process.listenerCount("SIGINT")+process.listenerCount("SIGT
 ## Keeping the regression check honest
 
 `scripts/check-npm-effect-resolution.mjs` has three shapes: two healthy
-installs and one adversarial tree where alchemy resolves an `effect` we did not
-pin. Two things about it are easy to get wrong after an upgrade:
+installs and one adversarial tree where alchemy resolves an `effect` outside
+our range. Two things about it are easy to get wrong after an upgrade:
 
 - **Do not assert the presence of a specific combinator.** That only ever stood
   in for "alchemy can run on this `effect`", and it breaks the moment upstream
@@ -226,11 +215,9 @@ pin. Two things about it are easy to get wrong after an upgrade:
   directly: it imports alchemy's root, `Output`, `Provider` and `Stack` entries
   from the installed app, which must succeed in the healthy shapes and fail in
   the adversarial one.
-- **`WRONG_EFFECT` must stay a published version other than the pin.** The
-  adversarial shape used to depend on a release whose peer sat *above* our pin;
-  that stopped existing once the pin reached the newest beta, and the shape
-  quietly stopped being adversarial. It now sets the version with an npm
-  `override` instead, so it does not depend on what the registry publishes.
+- **`WRONG_EFFECT` must stay a published version outside our range.** The
+  shape sets it with an npm `override`, so it does not depend on what the
+  registry publishes.
 
 ## Gotchas
 
@@ -244,8 +231,6 @@ pin. Two things about it are easy to get wrong after an upgrade:
 - **`pnpm dedupe` after the pins move**, so stale peer-resolution keys do not
   linger in the lockfile — but commit it separately, since it touches
   resolutions beyond the ones being upgraded.
-- **`@prisma/composer`'s `dependencies.effect` must stay an exact version.**
-  `check:npm-effect-resolution` reads it and fails on a range.
 
 ## What this skill does NOT do
 
