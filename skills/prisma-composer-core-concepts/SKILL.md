@@ -433,9 +433,7 @@ that surprise:
 1. It runs the same pipeline as deploy, so **build first**, exactly like
    deploy. It watches built output and restarts a service when its build
    changes.
-2. Ctrl-C stops the app's processes but leaves local databases, buckets, and
-   their data up: the next `dev` is a warm start. Starting clean, wiping
-   this app's local instances and data first, is an explicit opt-in flag.
+2. Ctrl-C stops the app's processes but leaves local databases, buckets, and their data up: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data first, is an explicit opt-in flag. On a fresh start, service ports count up from 3000 in dependency order (a callee before its callers, otherwise provision order); a warm start keeps them.
 3. `dev` does not print service logs. The `log` operation follows the
    already-running app's merged logs; it never builds, provisions, starts, or
    stops anything:

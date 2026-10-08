@@ -299,11 +299,7 @@ Deploy's rule holds: every failure names its fix.
 (none outstanding from the design phase — see Known limitations below for
 gaps found during implementation.)
 
-(Settled since the first draft: Postgres runs one named `@prisma/dev` server
-per `Database` resource; the front door prints every service URL ordered by
-address depth then name, shallowest first; port allocation and the remaining
-mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md).
-Restart latency is measured — see Known limitations.)
+(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook reserves them one at a time from `graph.nodes` before Alchemy applies the `App` resources concurrently — and a warm start keeps each service's saved port; port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
 
 ## Proven against a real app
 

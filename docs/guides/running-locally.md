@@ -57,6 +57,8 @@ buckets, and their data stay up, so the next `prisma dev` is a warm
 start — same ports, same data. `--fresh` is what wipes this app's local
 instances and data before starting.
 
+On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service gets its port before the services that call it, and services with no dependency between them go in the order you provisioned them. A warm start keeps the ports services already have.
+
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
 unregistered resource type (for example
