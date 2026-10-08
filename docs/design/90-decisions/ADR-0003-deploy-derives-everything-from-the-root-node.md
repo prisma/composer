@@ -1,5 +1,7 @@
 # ADR-0003: `prisma-composer deploy` derives the application from the root node
 
+Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma deploy <entry>`; the `prisma-composer` binary is retired. Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): the extensions and state store live in the `composer` section of `prisma.config.ts`, not in `prisma-composer.config.ts`. The derivation from the root node below is unchanged.
+
 ## Decision
 
 The deploy entrypoint is `prisma-composer deploy <entry>`, where `entry` is a module
