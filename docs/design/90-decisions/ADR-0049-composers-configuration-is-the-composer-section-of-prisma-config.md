@@ -45,7 +45,7 @@ Moving evaluation into the engine also retires Composer's effect pre-flight. The
 - `dev` reads the section once, at start, and watches the declaring file. After an edit it reports that the file changed and pauses rebuilds until it is restarted, so the in-process steps and the child never run against different versions of the file.
 - `deploy`, `destroy`, `dev` and `log` on `@prisma/composer/control` take a required `config: ComposerConfigSource` and never look for a config file. This is a breaking change to that surface. `log` reads only `value`; it takes the same input so a host builds it once.
 - `@prisma/composer-cli/family` no longer exports `ComposerSection`; the section's value type is `ComposerConfigSource`, exported from `@prisma/composer/control`.
-- A broken `effect` tree surfaces as the engine's `CLI.CONFIG_UNREADABLE`, not as a Composer code. `DEPS.EFFECT_VERSION_CONFLICT` no longer exists.
+- A broken `effect` tree fails fast: it surfaces as the engine's `CLI.CONFIG_UNREADABLE` with exit code 2, not as a Composer code. `DEPS.EFFECT_VERSION_CONFLICT` no longer exists.
 - On the CLI, every section-level failure (`CONFIG.SECTION_MISSING`, `CONFIG.FIELD_RETIRED`, `CONFIG.FILE_RETIRED` and field errors) appears as a diagnostic under the engine's `CLI.CONFIG_SECTION_INVALID` headline. In code, the same `CONFIG.` code is the failure itself.
 - `c12` is no longer a Composer dependency.
 - The dependency-cruiser configuration excludes `prisma.config.ts` by name, so the `/control` imports in the section are not cruised, and [ADR-0028](ADR-0028-numbered-domains-and-layers-enforced-by-dependency-cruiser.md)'s rule that examples, the website and tests import only the published packages no longer covers the file that imports `/control` entries.
@@ -57,6 +57,10 @@ Moving evaluation into the engine also retires Composer's effect pre-flight. The
 - **The engine's default per-key merge**: rejected. A section merged from several files has no single file for the generated stack to import.
 - **Migrate the old file automatically**: rejected. Rewriting a user's `prisma.config.ts` is out of place for a deploy command; a refusal naming the exact change is deterministic and short.
 - **Keep the effect pre-flight**: rejected for the reasons above. It would be a second, Composer-owned check for a failure the engine already reports, fixable only in the user's package manager.
+- **An engine hook that lets a command family veto config evaluation with its own diagnostic**, so the effect check could run before the engine evaluates `prisma.config.ts`: rejected. It would be an engine extension point with one consumer.
+- **Composer's commands load the config themselves, after running the effect check**: rejected. It has the same cost in practice, and only Composer's commands would benefit; every other command that reads `prisma.config.ts` would still report the raw import error.
+- **Run the effect check at import time inside `@prisma/composer/config`**: rejected. It depends on the import order in the user's file, and import sorters such as Biome's organize-imports put `@prisma/composer-prisma-cloud/control`, which loads Alchemy, before `@prisma/composer/config`.
+- **Make the extensions' `/control` entries import Alchemy lazily**, so evaluating the config never loads it: rejected for now. Those entries import Alchemy and `effect` at module load in many files, so this is a refactor of the lowering layer.
 - **Programmatic operations that find the config themselves**: rejected. It would need a private loader in `@prisma/composer`, which must stay free of the engine, and so reintroduce the second loader.
 - **The handler recovers the declaring file by resolving the config chain again**: rejected. It repeats work the engine already did for the validator, and a command that forgot the call would silently skip the old-file check. The validator returns the file instead.
 
