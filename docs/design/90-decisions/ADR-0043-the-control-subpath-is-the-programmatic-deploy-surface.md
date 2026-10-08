@@ -2,7 +2,7 @@
 
 ## Decision
 
-Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart.
+Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart. *(Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired. The `prisma` CLI renders two of the operations, as `prisma deploy` and `prisma dev`; `destroy` and `log` have no command and are called from scripts.)*
 
 A host — another CLI embedding Composer, a CI tool, a test — uses it like this:
 
