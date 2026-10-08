@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@distilled.cloud/prisma": "1.0.0-rc.13",
+    "@effect/platform-bun": "^4.0.0",
     "@effect/platform-node": "^4.0.0",
     "@prisma/composer": "workspace:0.28.0",
     "@prisma/dev": "^0.25.2",

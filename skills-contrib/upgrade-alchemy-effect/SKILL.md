@@ -40,9 +40,11 @@ alchemy pins its own `effect`-family dependencies and declares `effect` as a
 peer with a semver range (`^4.0.0` at beta.81). The repo follows that range:
 
 - `alchemy` is pinned exactly everywhere. It is a beta and its API moves.
-- `effect`, and `@effect/platform-node` (which lowering imports), use
-  alchemy's `effect` range. Nothing else in the `@effect/*` family is
-  declared: we only list packages we import.
+- `effect`, `@effect/platform-node` and `@effect/platform-bun` use alchemy's
+  `effect` range. alchemy loads the platform package for the runtime it runs
+  on (its CLI re-runs itself under Bun when started from Bun), so
+  `@prisma/composer-prisma-cloud` and the Bun examples declare both. Nothing
+  else in the `@effect/*` family is declared.
 - `@distilled.cloud/prisma`, which the provider wiring imports, stays at the
   exact version alchemy depends on so npm installs one copy.
 
