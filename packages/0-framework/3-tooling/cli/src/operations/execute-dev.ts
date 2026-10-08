@@ -121,7 +121,7 @@ export async function executeDev(
       }
     }
 
-    // Emulators — ensure the daemons this topology's node kinds need.
+    // Emulators — ensure the daemons this topology's node kinds need, and their per-node state.
     for (const [id, dev] of resolved) {
       if (dev.emulators === undefined) continue;
       try {

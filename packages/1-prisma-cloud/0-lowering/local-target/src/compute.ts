@@ -10,7 +10,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { LocalTargetProvidersInput } from '@internal/core/config';
+import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -211,6 +211,30 @@ export function LocalAppProvider(
     read: ({ output }) => Effect.succeed(output),
   };
   return Provider.effect(App, Effect.succeed(service));
+}
+
+/**
+ * Reserves each service's emulator port one at a time, in the order given,
+ * before Alchemy applies the `App` resources concurrently. A new service gets
+ * the smallest free port, so on a fresh start the ports follow this order; a
+ * service that already has a port keeps it. `serviceAppNames` are the
+ * `App` resources' `displayName`s.
+ */
+export async function reserveServicePorts(
+  container: ContainerInstance | undefined,
+  serviceAppNames: readonly string[],
+): Promise<void> {
+  const appName = appNameOf(container);
+  for (const service of serviceAppNames) {
+    try {
+      await computeClient().ensureService(appName, slugServiceId(service));
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`reserving a local port for service "${service}" failed: ${reason}`, {
+        cause,
+      });
+    }
+  }
 }
 
 /** `Prisma.EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Upstream's value is `Redacted`; env.json holds the plain string the child process is given. */

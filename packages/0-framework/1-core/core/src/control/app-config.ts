@@ -247,7 +247,7 @@ export interface LocalTargetDescriptor {
   readonly container: ContainerDescriptor;
   /** Value sourcing (secrets/env-params) — runs where deploy's preflight runs. */
   preflight?(input: PreflightInput): Promise<void>;
-  /** Ensure the emulator daemons this topology's node kinds need are running (idempotent; they persist across sessions). */
+  /** Ensure the emulator daemons this topology's node kinds need are running, plus any per-node emulator state that must exist before converge (idempotent; daemons persist across sessions). */
   emulators?(input: LocalTargetEmulatorsInput): Promise<void>;
   /** The dev session's view of the running app. Core renders it and never learns an emulator's API. */
   attach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment>;
