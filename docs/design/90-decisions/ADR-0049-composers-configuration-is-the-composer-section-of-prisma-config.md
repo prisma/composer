@@ -1,5 +1,7 @@
 # ADR-0049: Composer's configuration is the `composer` section of `prisma.config.ts`
 
+Amended after acceptance: the Alternatives section adds four rejected ways to keep a Composer-owned effect check, and the Consequences state the exit code of `CLI.CONFIG_UNREADABLE`. The decision is unchanged.
+
 ## Decision
 
 Composer reads its configuration from one place: the `composer` section of the app's `prisma.config.ts`, the file every Prisma CLI command family already shares. There is no separate Composer config file.
