@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderDevStackFile } from '../generate-dev-stack.ts';
 
 describe('renderDevStackFile()', () => {
-  test('renders the config + app imports (relative), resolved dev providers, localState(), no report', () => {
+  test('renders the config + app imports (relative), resolved dev providers, devState(), no report', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
@@ -18,9 +18,11 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain("import { lower } from '@prisma/composer/deploy';");
     expect(content).toContain("import { deserializeContainers } from '@prisma/composer/config';");
     expect(content).toContain(
-      "import { DEV_DIR, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
+      "import { DEV_DIR, devState, localTargetProviders, resolveLocalTargets } from '@prisma/composer/local-target';",
     );
-    expect(content).toContain("import { localState } from 'alchemy/State/LocalState';");
+    // alchemy is Composer's dependency, not the app's: under pnpm the app
+    // cannot import it, so the stack file reaches it through Composer.
+    expect(content).not.toContain("from 'alchemy");
     expect(content).toContain('import prismaConfig from "../../prisma.config.ts";');
     expect(content).toContain('const config = prismaConfig.composer;');
     expect(content).toContain('import app from "../../module.ts";');
@@ -36,7 +38,7 @@ describe('renderDevStackFile()', () => {
     expect(content).toContain('lower(app, config, {');
     expect(content).toContain('name: "app"');
     expect(content).toContain('providers: localTargetProviders(resolved, containers, devDir)');
-    expect(content).toContain('state: localState()');
+    expect(content).toContain('state: devState()');
     expect(content).not.toContain('dev: true');
     expect(content).toContain(
       '"web": { dir: "/repo/app/modules/web/dist/bundle", entry: "server.js" }',
@@ -46,7 +48,7 @@ describe('renderDevStackFile()', () => {
     expect(content).not.toContain('deploymentReport');
   });
 
-  test('the header comment names the --stage dev reproduction command', () => {
+  test('the header comment names the command Composer starts, at stage dev', () => {
     const content = renderDevStackFile({
       entryPath: '/repo/app/module.ts',
       cwd: '/repo/app',
@@ -55,6 +57,8 @@ describe('renderDevStackFile()', () => {
       assembled: { bundles: {} },
     });
 
-    expect(content).toContain('alchemy deploy .prisma-composer/dev/alchemy.run.ts --stage dev');
+    expect(content).toContain(
+      '<node> <bin of the alchemy @prisma/composer depends on> deploy .prisma-composer/dev/alchemy.run.ts --yes --stage dev',
+    );
   });
 });

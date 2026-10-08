@@ -59,7 +59,7 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    created at provision through the ORM CLI).
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
    `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
-   `localTarget.providers()` layer and Alchemy's built-in `localState()` store, always
+   `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`), always
    at Alchemy stage `dev`. Providers provision emulator instances (a running
    service, a database, a bucket) by talking to the emulators; converge
    terminates as always, and the Compute emulator keeps serving.
@@ -141,7 +141,8 @@ the scoping changes restart behavior only.
 
 ### Process lifetimes
 
-1. **Converge-scoped** — the Alchemy child (ADR-0007). Providers run here;
+1. **Converge-scoped** — the Alchemy child (ADR-0007), started as
+   [deploy-cli.md § Runtime](deploy-cli.md) describes. Providers run here;
    nothing started here survives its exit.
 2. **Machine-scoped emulators** — one per node kind per registry root,
    multi-tenant, holding every long-lived process: the Compute emulator

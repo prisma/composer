@@ -2,8 +2,10 @@
  * Pipeline step 7 (deploy-cli.md § The pipeline; design-notes.md's "Driving
  * Alchemy" call): hand the terminal to the generated stack file.
  *
- * Resolves the installed `alchemy` bin and launches package-manager shims with
- * cross-spawn.
+ * Runs the bin of the `alchemy` the app's `@prisma/composer` depends on
+ * (`resolveAlchemyBin`), started with Node (`nodeExecutable`). Never a
+ * `node_modules/.bin` link, which pnpm creates only for an app's direct
+ * dependencies.
  *
  * This module composes the invocation; it does not decide how the child is
  * started. Under the CLI the engine starts it (`ctx.spawn`), which is what
@@ -15,27 +17,65 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { CliStructuredError } from '@internal/foundation/errors';
 import spawn from 'cross-spawn';
+import { resolveAlchemyBin } from './alchemy-bin.ts';
 
-/** Walks up from `startDir` looking for the installed Alchemy executable. */
-export function resolveAlchemyBin(startDir: string): string {
-  const names =
-    process.platform === 'win32' ? ['alchemy.exe', 'alchemy.cmd', 'alchemy'] : ['alchemy'];
-  let dir = startDir;
-  while (true) {
+/** The runtime facts that decide which Node starts Alchemy; injectable for tests. */
+export interface HostRuntime {
+  /** True when this process runs under Bun. */
+  readonly bun: boolean;
+  readonly execPath: string;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly platform: NodeJS.Platform;
+  readonly exists: (file: string) => boolean;
+}
+
+function currentRuntime(): HostRuntime {
+  return {
+    bun: process.versions.bun !== undefined,
+    execPath: process.execPath,
+    env: process.env,
+    platform: process.platform,
+    exists: fs.existsSync,
+  };
+}
+
+function envValue(env: HostRuntime['env'], name: string): string | undefined {
+  return Object.entries(env).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+}
+
+/** The file names `node` may have in a PATH directory: PATHEXT's extensions on Windows. */
+function nodeFileNames(runtime: HostRuntime): readonly string[] {
+  if (runtime.platform !== 'win32') return ['node'];
+  const extensions = (envValue(runtime.env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .filter((extension) => extension.length > 0);
+  return extensions.map((extension) => `node${extension}`);
+}
+
+/**
+ * The Node that starts Alchemy's launcher: this process's own runtime under
+ * Node, and the first `node` on PATH under Bun. Alchemy's launcher may still
+ * move itself to Bun when the package-manager environment says Bun invoked
+ * it (`bunx`, `bun run`), so the runtime Alchemy ends up on follows how
+ * `prisma` was invoked.
+ */
+export function nodeExecutable(runtime: HostRuntime = currentRuntime()): string {
+  if (!runtime.bun) return runtime.execPath;
+  const paths = runtime.platform === 'win32' ? path.win32 : path.posix;
+  const names = nodeFileNames(runtime);
+  for (const rawDir of (envValue(runtime.env, 'PATH') ?? '').split(paths.delimiter)) {
+    const dir = rawDir.replace(/^"(.*)"$/, '$1');
+    if (dir.length === 0) continue;
     for (const name of names) {
-      const candidate = path.join(dir, 'node_modules', '.bin', name);
-      if (fs.existsSync(candidate)) return candidate;
+      const candidate = paths.join(dir, name);
+      if (runtime.exists(candidate)) return candidate;
     }
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new CliStructuredError(
-        'DEPLOY.ALCHEMY_BIN_MISSING',
-        `Could not find an installed \`alchemy\` bin above "${startDir}".`,
-        { fix: 'Add "alchemy" as a dependency of your app.' },
-      );
-    }
-    dir = parent;
   }
+  throw new CliStructuredError(
+    'DEPLOY.NODE_MISSING',
+    'Composer starts Alchemy with Node, and no `node` was found on PATH.',
+    { fix: 'Install Node 22.18 or newer and put it on PATH, or run `prisma` under Node.' },
+  );
 }
 
 /**
@@ -68,13 +108,20 @@ export interface AlchemyCommandLine {
 
 /**
  * Resolves the invocation against this machine — the step every adapter takes
- * and no caller should. Raises DEPLOY.ALCHEMY_BIN_MISSING when the app has no
- * alchemy installed.
+ * and no caller should. Runs alchemy's JavaScript entry with Node, so no shell
+ * shim is involved on any platform. Raises DEPLOY.ALCHEMY_BIN_MISSING when
+ * Composer's alchemy cannot be resolved, and DEPLOY.NODE_MISSING when no Node
+ * can run it.
  */
-export function alchemyCommandLine(invocation: AlchemyInvocation): AlchemyCommandLine {
+export function alchemyCommandLine(
+  invocation: AlchemyInvocation,
+  alchemyBin: string = resolveAlchemyBin(invocation.cwd),
+  node: string = nodeExecutable(),
+): AlchemyCommandLine {
   return {
-    command: resolveAlchemyBin(invocation.cwd),
+    command: node,
     args: [
+      alchemyBin,
       invocation.action,
       invocation.stackFileRelativePath,
       '--yes',
@@ -96,6 +143,8 @@ export function alchemyCommandLine(invocation: AlchemyInvocation): AlchemyComman
 export interface AlchemyOutcome {
   readonly exitCode: number | null;
   readonly signal: string | null;
+  /** The command line the adapter started, when it can say; failures print it as the reproduce command. */
+  readonly commandLine?: AlchemyCommandLine;
 }
 
 /** Starts the converge and resolves when it ends. The CLI supplies one backed
@@ -132,7 +181,50 @@ export function alchemyInvocation(input: AlchemyInvocationInput): AlchemyInvocat
  * Ctrl-C'd deploy report itself as a failure.
  */
 export const spawnAlchemy: RunAlchemy = async (invocation) => {
-  const line = alchemyCommandLine(invocation);
+  const commandLine = alchemyCommandLine(invocation);
+  return { ...(await spawnCommandLine(commandLine)), commandLine };
+};
+
+/**
+ * One argument as the platform's shell reads it literally: single quotes for
+ * POSIX shells, double quotes for cmd.exe. cmd.exe expands `%VAR%` inside
+ * double quotes, and strips or expands `!` when delayed expansion is on; no
+ * quoting prevents either, so an argument containing them is not fully
+ * literal there.
+ */
+function shellArg(arg: string, platform: NodeJS.Platform): string {
+  if (platform === 'win32') {
+    return /^[\w@+=:,./\\~-]+$/.test(arg) ? arg : `"${arg.replaceAll('"', '""')}"`;
+  }
+  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The command a user runs from the invocation's directory to repeat a
+ * converge: the command line the adapter started, or, from an adapter that
+ * does not report one, `alchemy` with the same arguments.
+ */
+export function reproduceCommand(
+  invocation: AlchemyInvocation,
+  outcome?: AlchemyOutcome,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const argv =
+    outcome?.commandLine === undefined
+      ? [
+          'alchemy',
+          invocation.action,
+          invocation.stackFileRelativePath,
+          '--yes',
+          '--stage',
+          invocation.stage,
+        ]
+      : [outcome.commandLine.command, ...outcome.commandLine.args];
+  return argv.map((arg) => shellArg(arg, platform)).join(' ');
+}
+
+/** Starts a resolved command line with inherited stdio and returns how it ended. */
+export function spawnCommandLine(line: AlchemyCommandLine): Promise<AlchemyOutcome> {
   return new Promise<AlchemyOutcome>((resolve, reject) => {
     const child = spawn(line.command, [...line.args], {
       cwd: line.cwd,
@@ -144,4 +236,4 @@ export const spawnAlchemy: RunAlchemy = async (invocation) => {
       resolve({ exitCode, signal });
     });
   });
-};
+}

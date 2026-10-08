@@ -22,6 +22,7 @@ import type { ComposerOperations } from '../family/family.ts';
 import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
+import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
 
 export interface OperationsDoubleFixtures {
   /** Returned as-is; pass notOk(error) for a failing deploy. Default: ok with no summary and a zero duration. */
@@ -99,15 +100,16 @@ async function runConverge(
 ): Promise<Result<never, CliStructuredError> | undefined> {
   if (deps.alchemy === undefined) return undefined;
   const stackFilePath = '.prisma-composer/alchemy.run.ts';
-  const reproduceCommand = `alchemy deploy ${stackFilePath} --yes --stage test`;
   const workingDirectory = cwd ?? '.';
-  const outcome = await deps.alchemy({
+  const invocation: AlchemyInvocation = {
     action: 'deploy',
     stackFileRelativePath: stackFilePath,
     cwd: workingDirectory,
     stage: 'test',
     env: {},
-  });
+  };
+  const outcome = await deps.alchemy(invocation);
+  const reproduce = reproduceCommand(invocation, outcome);
 
   if (outcome.signal !== null) {
     return notOk(
@@ -121,7 +123,7 @@ async function runConverge(
               exitCode: undefined,
               signal: outcome.signal,
               stackFilePath,
-              reproduceCommand,
+              reproduceCommand: reproduce,
               cwd: workingDirectory,
             },
           },
@@ -135,7 +137,12 @@ async function runConverge(
     new CliStructuredError('DEPLOY.ENGINE_FAILED', `alchemy deploy exited with status ${status}.`, {
       meta: {
         exitCode: status,
-        diagnostics: { exitCode: status, stackFilePath, reproduceCommand, cwd: workingDirectory },
+        diagnostics: {
+          exitCode: status,
+          stackFilePath,
+          reproduceCommand: reproduce,
+          cwd: workingDirectory,
+        },
       },
     }),
   );
