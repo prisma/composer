@@ -2,9 +2,12 @@
  * `--fresh` teardown (local-dev spec § 5, ADR-0041 D12, REVISED — operator
  * review of #162): wholesale LOCAL deletion — never an `alchemy destroy`.
  * Removes this app's records on the three machine-global emulator daemons
- * (never the daemons themselves — other apps may be using them; postgres's
+ * (never stops the daemons — other apps may be using them; postgres's
  * `DELETE /apps/<app>` closes its servers and deletes their persisted data),
  * the dev state directory, and the dev stage's `localState()` directory.
+ * Compute is started first if it is down, and its delete must succeed,
+ * because it persists port allocations; Postgres and buckets are skipped
+ * when unreachable.
  *
  * Every actual filesystem operation is delegated to `@internal/local-target`
  * (this extension's own source stays free of `node:`/`bun:` imports —

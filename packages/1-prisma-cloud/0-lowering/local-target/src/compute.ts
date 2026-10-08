@@ -217,20 +217,20 @@ export function LocalAppProvider(
  * Reserves each service's emulator port one at a time, in the order given,
  * before Alchemy applies the `App` resources concurrently. A new service gets
  * the smallest free port, so on a fresh start the ports follow this order; a
- * service that already has a port keeps it. `appNames` are the `App`
- * resources' `displayName`s.
+ * service that already has a port keeps it. `serviceAppNames` are the
+ * `App` resources' `displayName`s.
  */
 export async function reserveServicePorts(
   container: ContainerInstance | undefined,
-  appNames: readonly string[],
+  serviceAppNames: readonly string[],
 ): Promise<void> {
   const appName = appNameOf(container);
-  for (const name of appNames) {
+  for (const service of serviceAppNames) {
     try {
-      await computeClient().ensureService(appName, slugServiceId(name));
+      await computeClient().ensureService(appName, slugServiceId(service));
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`reserving a local port for service "${name}" failed: ${reason}`, {
+      throw new Error(`reserving a local port for service "${service}" failed: ${reason}`, {
         cause,
       });
     }
