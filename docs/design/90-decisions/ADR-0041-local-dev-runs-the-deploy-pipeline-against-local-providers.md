@@ -1,5 +1,7 @@
 # ADR-0041: Local dev runs the deploy pipeline against local providers
 
+Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma dev <entry>`, and reading the running app's logs is the `log` operation on `@prisma/composer/control`, not a command. The `prisma-composer` binary is retired. The local pipeline below is unchanged.
+
 ## Decision
 
 `prisma-composer dev <entry>` boots the whole application locally, with no cloud
