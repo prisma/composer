@@ -27,8 +27,9 @@ One command and one operation:
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
 
-Flags: `dev` takes `--fresh` (destroy the dev stack and wipe the dev state
-directory before starting). Stages do not apply — a working directory has
+Flags: `dev` takes `--name` (override the root's name, as on deploy) and
+`--fresh` (destroy the dev stack and wipe the dev state directory before
+starting). Stages do not apply — a working directory has
 exactly one dev instance; parallel instances are parallel checkouts.
 
 **Naming.** The `prisma` CLI mounts this as `prisma dev <entry>`
@@ -58,8 +59,9 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    stable local identity from the app name with no platform calls. Then the
    `localTarget.emulators` hook inspects the loaded graph and ensures one emulator
    daemon per node kind the topology uses (Compute always; buckets when
-   bucket resources exist; Postgres needs no pre-start — its instances are
-   created at provision through the ORM CLI).
+   bucket resources exist; Postgres when `postgres` or `raw-postgres`
+   resources exist). The Postgres daemon starts no server here: the database
+   provider asks it for one `@prisma/dev` server per `Database` at provision.
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
    `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
    `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`), always
