@@ -6,6 +6,10 @@
  * `postgres` resource kind (REVISED — Postgres is a first-class daemon
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
+ * Once Compute is up, every service's port is reserved in graph order, so a
+ * fresh start numbers ports dependencies first; Alchemy's concurrent `App`
+ * applies would otherwise pick them in arrival order.
+ *
  * Idempotent: `ensureDaemon` itself adopts an already-healthy daemon, so
  * repeated `prisma dev` sessions are cheap.
  *
@@ -21,7 +25,8 @@
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import type { DaemonName } from '@internal/dev-emulators';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { resolvePackageEntry } from '@internal/local-target';
+import { reserveServicePorts, resolvePackageEntry } from '@internal/local-target';
+import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 
 function usesBuckets(input: LocalTargetEmulatorsInput): boolean {
   return input.graph.nodes.some((n) => n.node.kind === 'resource' && n.node.type === 's3');
@@ -34,6 +39,13 @@ function usesPostgres(input: LocalTargetEmulatorsInput): boolean {
   );
 }
 
+/** This extension's services, in `graph.nodes` order: dependencies first, ties in declaration order. */
+function serviceAddresses(input: LocalTargetEmulatorsInput): string[] {
+  return input.graph.nodes
+    .filter((n) => n.node.kind === 'service' && n.node.extension === PRISMA_CLOUD_EXTENSION_ID)
+    .map((n) => n.id);
+}
+
 /** The resolved absolute path to this daemon's published entrypoint. */
 function daemonEntry(name: DaemonName): string {
   return resolvePackageEntry(`@prisma/composer-prisma-cloud/local-target/${name}-main`);
@@ -42,6 +54,7 @@ function daemonEntry(name: DaemonName): string {
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
+  await reserveServicePorts(input.container, serviceAddresses(input));
 
   if (usesBuckets(input)) {
     const { url: bucketsUrl } = await ensureDaemon('buckets', daemonEntry('buckets'));
