@@ -147,7 +147,7 @@ What deploy requires is also provenance-independent, and already follows from
 the path and build rules:
 
 - **Built runnables must exist** at each service descriptor's
-  `dirname(module)`-relative `entry` when `prisma-composer deploy` runs (ADR-0005).
+  `dirname(module)`-relative `entry` when `prisma deploy` runs (ADR-0005).
   Who built them is the consumer's arrangement with the module: an app importing
   module source builds it like the rest of its code; a prebuilt package ships its
   runnables and satisfies the requirement at publish time (ADR-0004 makes the

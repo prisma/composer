@@ -1,4 +1,4 @@
-# Local dev (`prisma-composer dev`)
+# Local dev (`prisma dev`)
 
 The local dev loop: one command brings up the whole topology from the root
 module, credential-free, with deploy parity everywhere above the Alchemy
@@ -11,29 +11,30 @@ this doc is the mechanics.
 
 ## Scope
 
-Two commands:
+One command and one operation:
 
-- **`prisma-composer dev <entry>`** — bring up the application whose root node
+- **`prisma dev <entry>`** — bring up the application whose root node
   is `entry`'s default export, entirely on the local machine, and keep it up:
   watch built output, restart changed services, until interrupted. It does
   **not** stream service logs — once it is supervising several processes,
   streaming them all inline drowns the front door and the rebuild notices; it
   prints a one-line pointer to `log` instead.
-- **`prisma-composer log <entry> [address]`** — tail the merged logs of that
-  already-running app: every service, or one named by its dotted `address`
-  (`catalog.service`). Follows live; `--tail <n>` sets how much recent history
-  to show first (default 20, `0` for live-only). It only reads the running
+- **`log`**, an operation on `@prisma/composer/control` with no command
+  (ADR-0050) — tail the merged logs of that already-running app: every
+  service, or one named by its dotted `address` (`catalog.service`). Follows
+  live until the caller aborts; a `tail` count sets how much recent history
+  to return first (default 20, `0` for live-only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
 
 Flags: `dev` takes `--fresh` (destroy the dev stack and wipe the dev state
 directory before starting). Stages do not apply — a working directory has
 exactly one dev instance; parallel instances are parallel checkouts.
 
-**Naming.** goals.md calls the local emulator "`prisma dev`". That name is
-owned today by the ORM CLI's local-Postgres command — which this harness itself
-shells out to. The command is therefore `prisma-composer dev`; convergence on a
-shorter name is a CLI-distribution question (Composer joining a unified
-`prisma` CLI), not a design question here.
+**Naming.** The `prisma` CLI mounts this as `prisma dev <entry>`
+([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
+Below, "ORM `prisma dev`" means the ORM's local-Postgres server, which this
+harness starts for each database; it is a different thing from Composer's
+`prisma dev <entry>`.
 
 ## The pipeline, relative to deploy
 
@@ -66,7 +67,7 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C stops
    the app's service instances through the attachment and exits; emulators and
-   data persist. Logs are not streamed here — `prisma-composer log` reads the
+   data persist. Logs are not streamed here — the `log` operation reads the
    same attachment's merged-log view on demand, so `dev`'s own output stays
    the front door plus lifecycle and rebuild notices.
 
@@ -94,7 +95,7 @@ emulator, which owns the processes:
   crash-backoff respawn keeps the run's crash trail, but past sessions and
   past deployments are gone. A follow starts at the current end by default
   (`?tail=<n>` includes the last `n` lines as backlog first);
-  `prisma-composer log`'s `--tail` maps straight onto it. A live follower is
+  the `log` operation's `tail` count maps straight onto it. A live follower is
   reset to the new start when the log is cleared under it (the daemon tracks a
   per-log clear generation, so a follower never reads stale bytes).
 - **Instance deleted** (service removed from the topology, `--fresh`) → stop
@@ -112,7 +113,7 @@ emulator, which owns the processes:
   unchanged from its last recorded apply. A Ctrl-C stop is invisible to that
   diff: nothing about the resource's *props* changed, only the process's
   live status, which Alchemy's state file does not track. So a second
-  `prisma-composer dev` after a plain Ctrl-C can converge with everything
+  `prisma dev` after a plain Ctrl-C can converge with everything
   reported "noop" and leave every previously-stopped service `stopped` —
   the CLI still prints `[dev] ready:` with each service's URL, but nothing
   is listening on them. Confirmed against the open-chat proving port (the
@@ -159,7 +160,7 @@ the scoping changes restart behavior only.
    checkout stops that.
 3. **The dev session owns no processes at all** — it is a view (`attach`):
    endpoints, the stop control, and the watch loop. That same view's merged
-   logs back the separate `prisma-composer log` command.
+   logs back the separate `log` operation.
 
 The emulator daemon bookkeeping (registry, stable ports, readiness,
 version-skew restart) is framework-owned and minimal; Postgres reuses the
@@ -305,7 +306,7 @@ Restart latency is measured — see Known limitations.)
 The design's founding claim was proven against open-chat — a real,
 pre-existing Composer app in its own repo (chat service, Postgres, streams
 and storage modules), written before local dev existed. With no cloud
-credentials of any kind in the shell, `prisma-composer dev module.ts`
+credentials of any kind in the shell, `prisma dev module.ts`
 brought it up: sign-in worked, chat history loaded, and the live-tail
 stream delivered events. Chat generation failed at exactly one place — the
 outbound OpenRouter call — because the local run minted a placeholder for

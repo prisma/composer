@@ -6,8 +6,8 @@ architecture/design phase that comes *after* the high-level model is settled.
 - [`core-model.md`](core-model.md) — the complete class/data-structure design of
   `@prisma/composer` and the target-pack contract, with `@prisma/composer-prisma-cloud` as
   the worked instance.
-- [`deploy-cli.md`](deploy-cli.md) — Prisma Composer's own deploy
-  entrypoint (`prisma-composer deploy` / `prisma-composer destroy`): the pipeline,
+- [`deploy-cli.md`](deploy-cli.md) — Prisma Composer's deploy entrypoint
+  (`prisma deploy`, and the `destroy` operation): the pipeline,
   stages and container (Project/Branch) resolution, the pack CLI seam and
   per-kind assembly contracts, and the error surface. Rests on ADR-0003 …
   ADR-0006, ADR-0023, ADR-0024.
@@ -18,7 +18,7 @@ architecture/design phase that comes *after* the high-level model is settled.
   (a caller-owned schema), carried through deploy, serialized to platform
   storage by the target (over key/value string pairs), and read back at boot.
   Rests on ADR-0018 and ADR-0019.
-- [`local-dev.md`](local-dev.md) — the local dev loop (`prisma-composer dev`):
+- [`local-dev.md`](local-dev.md) — the local dev loop (`prisma dev`):
   the pipeline deltas vs deploy, the process table and supervisor, per-resource
   stand-ins, value sourcing, and the dev error surface. Rests on ADR-0041.
 

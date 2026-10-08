@@ -105,14 +105,14 @@ Who imports what, end to end:
   bundles this file (their bundler, or `next build`) — the framework never touches it;
 - the **deploy entry is the app module itself**: everything about the
   *application* is still derived from the root node (ADR-0003).
-  `prisma-composer deploy <entry>` imports it and calls
+  `prisma deploy <entry>` imports it and calls
   `@prisma/composer/deploy`'s `lower()` internally;
 - the **`prisma-composer.config.ts`** at the app root carries the two things the
   graph cannot yield — the **extension list** and the **state store** (ADR-0017).
   The CLI finds it by walking up from the deploy entry and loads it with c12. It
   is the only importer of the `/control` entries where heavy code lives, and app
   code never imports it, which is what keeps that code out of the artifact. The
-  app author still writes no *stack* file — `prisma-composer deploy` generates one
+  app author still writes no *stack* file — `prisma deploy` generates one
   at `.prisma-composer/alchemy.run.ts` per run and drives it; see
   [`deploy-cli.md`](deploy-cli.md).
 
@@ -638,7 +638,7 @@ interface DeploymentResult {
 
 interface LowerOptions {
   readonly name: string                                  // stack name (+ Load's root id override)
-  // `prisma-composer deploy` runs each service's build-adapter assembler and writes
+  // `prisma deploy` runs each service's build-adapter assembler and writes
   // the resulting bundle dirs here, into the generated stack file it hands to
   // `lower()` — one bundle per provision id (the deploy root is always a
   // module). A hand-composed / mixed-stack caller (the escape hatch — see
@@ -1210,7 +1210,7 @@ Bun.serve({ port, hostname: "0.0.0.0",
 
 // The app builds itself first (its own bundler produces dist/server.js), then:
 //
-//   prisma-composer deploy src/module.ts
+//   prisma deploy src/module.ts
 //
 // The application is derived from the module root (ADR-0003); the extension list
 // and state store come from prisma-composer.config.ts at the app root (ADR-0017),
@@ -1278,7 +1278,7 @@ export default module("storefront-auth", (h) => {
 })
 
 // No deploy config file (ADR-0003): build both apps, then
-//   prisma-composer deploy app.ts
+//   prisma deploy app.ts
 ```
 
 At deploy, core sequences: the db resource (lowered once) → auth provision →

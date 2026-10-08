@@ -1,7 +1,7 @@
-# The deploy CLI (`prisma-composer`)
+# The deploy commands (`prisma deploy`, `prisma dev`)
 
-Prisma Composer's own deploy entrypoint: what the `prisma-composer`
-command does, the contracts it introduces, and what stays out of its scope.
+Prisma Composer's deploy entrypoint: what the `prisma deploy` and `prisma dev`
+commands do, the contracts it introduces, and what stays out of its scope.
 The decisions it
 rests on are recorded in
 [ADR-0003](../90-decisions/ADR-0003-deploy-derives-everything-from-the-root-node.md)
@@ -17,33 +17,39 @@ root's name names the application),
 [ADR-0008](../90-decisions/ADR-0008-wrapper-inlines-everything-except-runtime-builtins.md)
 (wrapper inlining), and
 [ADR-0017](../90-decisions/ADR-0017-control-plane-loads-through-the-app-config.md)
-(control plane loads through `prisma-composer.config.ts`).
+(control plane loads through the app's config, the `composer` section of
+`prisma.config.ts` per
+[ADR-0049](../90-decisions/ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)),
+and
+[ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)
+(the command surface: two commands in the `prisma` CLI, no Composer binary).
 
 ## Scope
 
-Three commands:
+Two commands, mounted by the `prisma` CLI from `@prisma/composer-cli`'s
+command family, plus one operation with no command:
 
-- **`prisma-composer deploy <entry>`** — deploy the application whose root node is
+- **`prisma deploy <entry>`** — deploy the application whose root node is
   `entry`'s default export, to a stage (default: production).
-- **`prisma-composer destroy <entry>`** — tear a stage down (same derivation,
-  Alchemy destroy); the target stage is always explicit (see § Stages and
-  containers).
-- **`prisma-composer dev <entry>`** — bring up the application whose root node
+- **`destroy`**, an operation on `@prisma/composer/control` with no command —
+  tear a stage down (same derivation, Alchemy destroy); the target is always
+  explicit (see § Stages and containers). Users call it from a script.
+- **`prisma dev <entry>`** — bring up the application whose root node
   is `entry`'s default export, entirely on this machine, credential-free —
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
   design; flags: `--name` (same override semantics as deploy), `--fresh`
   (tear down and reprovision every local instance before starting).
 
-Deploy/destroy flags: `--name` (override the root's name — per-run ephemeral
+`deploy` flags: `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--stage <name>` (target a named, isolated
-environment instead of production), `--production` (destroy-only —
-explicitly target the production environment). `--stage`/`--production` do
-not exist on `dev` (clipanion rejects them as unknown flags). `prisma-composer
-build` and topology emission are out of scope (see § Out of scope).
+environment instead of production). The `destroy` operation takes the same
+`name` and a required `target`, `{ kind: 'stage', stage }` or
+`{ kind: 'production' }`. `--stage` does not exist on `dev`. A build command
+and topology emission are out of scope (see § Out of scope).
 
-**Runtime.** The bin is runtime-agnostic — no bun-only APIs anywhere in the
-CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
+**Runtime.** The command family is runtime-agnostic — no bun-only APIs
+anywhere in the CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
 type stripping imports the user's `.ts` entry natively). Under node, the CLI
 also registers a synchronous resolve hook (`node:module` `registerHooks`) so
 that relative imports inside the entry graph may use `./x.js` or extensionless
@@ -68,7 +74,7 @@ user can rerun it by hand (ADR-0007).
 
 ## The pipeline
 
-`prisma-composer deploy` is one pass from a module path to a driven Alchemy stack:
+`prisma deploy` is one pass from a module path to a driven Alchemy stack:
 
 1. **Import the entry module.** Its default export must be a node (service or
    Module). No marked root exists in the model — whatever you point the CLI at
@@ -79,10 +85,9 @@ user can rerun it by hand (ADR-0007).
    composing Module. The deploy root must be a Module — a bare service is not
    independently deployable; the CLI errors naming the fix (wrap it:
    `module('name', ({ provision }) => { provision(...); })`).
-3. **Load the config + validate coverage.** `prisma-composer.config.ts` (or its
-   `.mts`/`.mjs`/`.js` spelling; `.ts` wins when several sit in one directory) —
-   found by walking up from the deploy entry, loaded with c12, never imported
-   by app code — supplies the extension registries and the deploy's one state store
+3. **Load the config + validate coverage.** The `composer` section of
+   `prisma.config.ts` — loaded by the Prisma CLI engine (ADR-0049), never
+   imported by app code — supplies the extension registries and the deploy's one state store
    (ADR-0017). Every node's and build descriptor's `(extension, type)` must
    have a registry entry; a gap errors naming the extension to add to the
    config. Extension factories validate their own environment during config
@@ -129,7 +134,7 @@ file, and consumed in one motion.
 ## Stages and containers
 
 An app deploys to a named **stage** — a deploy-time environment, never
-authored in the topology (ADR-0024). `prisma-composer deploy` with no `--stage`
+authored in the topology (ADR-0024). `prisma deploy` with no `--stage`
 targets **production**; `--stage <name>` targets a **named stage**.
 
 - **Containers.** Any extension whose platform has platform-side containers —
@@ -149,14 +154,14 @@ targets **production**; `--stage <name>` targets a **named stage**.
   extension; core hands that extension's own resolved container to
   `state.create()`, so the state layer is built from it rather than from the
   environment.
-- **Destroy is explicit.** `prisma-composer destroy` requires `--stage <name>` or `--production`; a bare `destroy` is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
+- **Destroy is explicit.** The `destroy` operation requires a `target`, `{ kind: 'stage', stage }` or `{ kind: 'production' }`; a call without one is an error, so an omitted or mistyped stage can never silently tear down production. `destroy` resolves find-only (no container is ever created); after `alchemy destroy` succeeds and after every extension's `teardown` has run, the CLI removes each resolved container. That two-loop order — every teardown, then every removal — is what guarantees every extension's teardown runs against a still-live container.
 
 **Prisma Cloud's own containers** are its app's **Project** and, for a named stage, that stage's **Branch** — found by name, created if absent on deploy, never created on destroy; each stage's deploy state lives behind the platform state API, scoped to its Branch (production's to the Project's implicit default Branch). See [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md) (App = one Project, Stage = Branch), [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md) (stage resolution mechanics), and [ADR-0045](../90-decisions/ADR-0045-deploy-state-lives-behind-the-platform-state-api.md) (deploy state behind the platform state API, per Branch).
 
 ## Build ownership
 
 Per ADR-0005, the CLI initiates no user builds. The contract is that built
-output exists first — `turbo run build && prisma-composer deploy`, or whatever the
+output exists first — `turbo run build && prisma deploy`, or whatever the
 user's tooling does. Assembly *consumes* that output and applies the
 framework's envelope:
 
@@ -174,7 +179,7 @@ current model.
 ## Contracts this introduces
 
 One seam, uniform for every node kind — the **extension seam** (ADR-0017):
-the app's `prisma-composer.config.ts` statically imports each extension's control
+the `composer` section of the app's `prisma.config.ts` statically imports each extension's control
 descriptor, and deploy tooling looks up control-plane behavior by the data
 every node already carries:
 
@@ -218,19 +223,16 @@ them:
 | Default export isn't a node | what the entry module must export |
 | Deploy root isn't a Module | to wrap the service in a Module |
 | Unwired dependency slot | which input, and to deploy the composing Module |
-| Missing `prisma-composer.config.ts` | the expected filename, where the walk-up looked, and what it must export |
-| Node `(extension, type)` not covered | the extension to add to `prisma-composer.config.ts` |
+| Missing `composer` section in `prisma.config.ts` | what the section must contain (ADR-0049) |
+| Node `(extension, type)` not covered | the extension to add to the `composer` section |
 | Missing extension env | the exact variable(s) the extension factory needed |
 | Built output missing | the expected path, and "run your build" |
 
 ## Out of scope (designed around)
 
-- **`prisma-composer build`** — and with it any build-command convention or override.
+- **A build command** — and with it any build-command convention or override.
 - **Topology emission** — the serialized-topology artifact for agents/tooling;
   when it lands it must strip the machine-specific `build.module` (ADR-0004).
-- **Config-file escape hatch** — a `prisma-composer.config.ts` may exist one day as
-  the *optional* override for multi-target or heavily parameterized setups;
-  never the standard path.
 - **Freshness checks** — detecting stale (not just missing) built output.
 - **Entry discovery** — the entry path is required; bare invocation errors
   with usage. A discovery convention (e.g. a `package.json` field) would be
@@ -258,7 +260,7 @@ them:
 
 ## Known limitations
 
-- **`destroy` requires built artifacts.** `prisma-composer destroy` evaluates the
+- **`destroy` requires built artifacts.** The `destroy` operation evaluates the
   same stack program as deploy, and the pack's `package()` reads the
   assembled bundle — so the app must build before it can be torn down. The
   destroy-path error says exactly that. Whether Alchemy's destroy can run
