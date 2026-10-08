@@ -355,7 +355,7 @@ another stage's resources is kept. Destroy never creates anything:
 destroying a
 never-deployed stage fails rather than standing one up.
 
-**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
+**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.81 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 Composer runs the alchemy package installed beside the app's
 `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs
@@ -381,9 +381,8 @@ needed.
 3. Destroy evaluates the same stack program as deploy, and evaluating it
    packages the assembled bundles, so **an app must be built before it can
    be torn down**.
-4. alchemy is why the `effect` pin exists: it resolves the `effect`
-   constellation, and a hoisted newer `effect` halts every command (failure
-   mode 1 below).
+4. alchemy is why Composer depends on `effect` 4.x: alchemy runs on it, and a
+   hoisted `effect` outside 4.x halts every command (failure mode 1 below).
 
 **The deploy report** ends with the app's own topology: authored names, the
 platform resource each became, and public URLs. Read ids out of it rather
@@ -533,14 +532,13 @@ today the blocks above plus your own Modules are the whole set, so verify a
    `effect` version conflict** (`prisma.config.ts could not be evaluated:`
    followed by a module error from inside alchemy, such as
    `Schema.TaggedError is not a function`). The extensions in the `composer`
-   section import alchemy, and the app, or one of its dependencies, pins a
-   different `effect` that the package manager hoisted over Composer's pin. Match the app's own
-   `effect` to `@prisma/composer`'s exact pin, or force it, then reinstall:
-   npm: `"overrides": { "effect": "<pin>" }` in `package.json`; pnpm 11+:
-   an `overrides:` block in `pnpm-workspace.yaml`; pnpm 10 and earlier:
-   `pnpm.overrides` in `package.json`; Yarn: `resolutions` in `package.json`. A plain Composer
-   app never hits this: the public packages pin every `effect`-family
-   package alchemy would float.
+   section import alchemy, and the app, or one of its dependencies, requires
+   an `effect` outside 4.x that the package manager hoisted where alchemy
+   resolves it. Change the app's own `effect` to `^4.0.0`, or force it, then
+   reinstall: npm: `"overrides": { "effect": "^4.0.0" }` in `package.json`;
+   pnpm 11+: an `overrides:` block in `pnpm-workspace.yaml`; pnpm 10 and
+   earlier: `pnpm.overrides` in `package.json`; Yarn: `resolutions` in
+   `package.json`. A plain Composer app never hits this.
 2. **A deployed `/rpc/<method>` returns `401` to anything but a wired
    peer.** Not a broken deploy; see Contracts above.
 3. **Scale-to-zero closes idle database connections.** A persistent client
