@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 // Regression check for TML-3158: a standalone `npm install` of the public
-// packages must resolve exactly ONE `effect`, and alchemy's position in the
-// tree must resolve that copy.
+// packages must resolve exactly ONE `effect` — the version the packages pin —
+// and alchemy's position in the tree must resolve that copy.
 //
-// Why: when two `effect` copies end up in the tree, npm can hoist the one we
-// did not ask for where alchemy resolves it, and the first `prisma deploy` dies
-// inside a provider with a `TypeError` naming a combinator that version lacks.
-// The public packages declare `effect` with alchemy's own range, so a healthy
-// install dedupes to one copy. pnpm in this workspace only warns, so a break is
-// invisible in-repo; this check installs the real tarballs with real npm
-// against the real registry.
+// Why: alchemy declares floating ranges on the effect ecosystem
+// (`@effect/vitest`, optional platform peers, `effect` itself). Without exact,
+// mutually consistent pins of the whole constellation in the public packages,
+// npm installs a second `effect` and hoists it where alchemy resolves it — the
+// first `prisma deploy` then dies inside a provider it never asked
+// for, with a `TypeError` naming a combinator that version removed. pnpm in
+// this workspace only warns, so the break is invisible in-repo; this check
+// installs the real tarballs with real npm against the real registry.
 //
-// A third, adversarial shape puts an `effect` outside our range where alchemy
+// A third, adversarial shape puts an `effect` we did not pin where alchemy
 // resolves it. In the field (0.6.0) that happened by hoisting: an app
-// dependency with its own `effect` peer dragged a different version to the
-// root, with only a warning. This shape builds the same end state with an npm
-// `override`, so it does not depend on what the registry publishes. Nothing we declare can stop a consumer's
+// dependency whose own `effect` peer sat above our pin dragged its version to
+// the root over our exact pins, with only a warning — empirically verified,
+// and a peerDependency does not prevent it either. This shape builds the same
+// end state with an npm `override` instead, because the hoisting route only
+// reproduces while a suitable release exists relative to our pin, which made
+// the check hostage to the registry. Nothing we declare can stop a consumer's
 // tree going wrong, and Composer no longer checks the tree itself: a broken
 // tree fails when `prisma.config.ts` is evaluated, because its `composer`
 // section imports alchemy's providers. So every shape asserts on the thing
@@ -61,12 +65,23 @@ const prismaCloudDir = join(repoRoot, 'packages/9-public/composer-prisma-cloud')
 /** Scratch dir holding the packed tarballs and the shape installs. */
 let work;
 
-// The healthy shapes install bare — no overrides — because that is how the
-// unified `prisma` CLI and anyone who follows the guide installs us. They run
-// under a timeout: when an `effect`-family package's newest release names an
-// `effect` peer no published version satisfies, npm does not fail, it
-// backtracks for hours (2026-09-11, `@effect/*@4.0.0-rc.114` with `effect`
-// still at rc.113 stalled every install of @prisma/cli).
+const pinnedEffect = JSON.parse(readFileSync(join(composerDir, 'package.json'), 'utf-8'))
+  .dependencies.effect;
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pinnedEffect)) {
+  fail(`@prisma/composer's effect dependency must be an exact version, got "${pinnedEffect}"`);
+}
+
+// alchemy's own `effect`-family ranges float (`@effect/sql-d1`,
+// `@effect/sql-sqlite-do`, `@effect/vitest` as dependencies, the platform
+// adapters as optional peers, all `>=4.0.0-rc.110 || >=4.0.0`). The public
+// packages pin every one of them exactly in `dependencies`, so a consumer's
+// npm resolves our copy instead of the newest on the registry. The healthy
+// shapes below install bare — no overrides — because that is how the unified
+// `prisma` CLI and anyone who follows the guide installs us. They run under a
+// timeout: when a floater's newest release names an `effect` peer no published
+// version satisfies, npm does not fail, it backtracks for hours (2026-09-11,
+// `@effect/*@4.0.0-rc.114` with `effect` still at rc.113 stalled every install
+// of @prisma/cli until @effect/vitest was pinned).
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 // `process.exit` skips the normal-path cleanup, so a failure deliberately
@@ -250,8 +265,12 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   if (timedOut) {
     fail(
       `[${label}] npm install did not finish within ${INSTALL_TIMEOUT_MS / 1000}s. npm is ` +
-        'backtracking over an effect-family package: a dependency in the tree resolves to a ' +
-        'version whose `effect` peer no published `effect` satisfies.',
+        'backtracking over an effect-family package alchemy declares with a floating range: ' +
+        'a dependency alchemy pulls in resolves to a version whose `effect` peer no published ' +
+        '`effect` satisfies. Pin that package exactly where Composer pins its siblings: ' +
+        "alchemy's regular dependencies in @prisma/composer's `dependencies` (next to " +
+        '@effect/sql-d1), the optional platform peers (@effect/platform-*) in ' +
+        "@prisma/composer-prisma-cloud's `dependencies`. See skills-contrib/upgrade-alchemy-effect.",
     );
   }
   if (installStatus !== 0) {
@@ -267,18 +286,17 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   );
   const versions = collectEffectVersions(tree);
   process.stderr.write(`[${label}] effect versions in tree: ${[...versions.keys()].join(', ')}\n`);
-  if (versions.size !== 1) {
+  if (versions.size !== 1 || !versions.has(pinnedEffect)) {
     fail(
-      `[${label}] expected exactly one effect in the npm tree, ` +
+      `[${label}] expected exactly one effect@${pinnedEffect} in the npm tree, ` +
         `got: ${[...versions.keys()].join(', ') || '(none)'}`,
     );
   }
-  const [installedEffect] = versions.keys();
 
   const { version: resolvedVersion, entry: effectEntry } = effectSeenByAlchemy(label, appDir);
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion} (${effectEntry})\n`);
-  if (resolvedVersion !== installedEffect) {
-    fail(`[${label}] alchemy resolves effect@${resolvedVersion}, expected ${installedEffect}`);
+  if (resolvedVersion !== pinnedEffect) {
+    fail(`[${label}] alchemy resolves effect@${resolvedVersion}, expected ${pinnedEffect}`);
   }
 
   // Proof the resolved effect actually satisfies alchemy, not just that the
@@ -292,14 +310,19 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
   assertFamilyImports(label, appDir, 'a healthy tree');
 
   process.stderr.write(
-    `[${label}] OK — single effect@${installedEffect}, resolved by alchemy, alchemy imports, the family imports\n`,
+    `[${label}] OK — single effect@${pinnedEffect}, resolved by alchemy, alchemy imports, the family imports\n`,
   );
 }
 
 /**
- * A published `effect` outside the range alchemy and the public packages
- * accept. When alchemy resolves it, importing alchemy must fail and the family
- * must still import.
+ * A published `effect` that is NOT our pin. In the field the wrong copy arrived
+ * by hoisting — an app dependency whose own `effect` peer differed from ours
+ * dragged its version to the root. That mechanism only reproduces while a
+ * suitable release exists relative to wherever our pin sits, which made the
+ * test hostage to the registry. This shape builds the same end state directly,
+ * with an override, so it keeps proving the thing that matters: when alchemy
+ * resolves an `effect` we did not pin, importing alchemy fails, and the family
+ * still imports.
  */
 const WRONG_EFFECT = '4.0.0-beta.93';
 
@@ -319,10 +342,11 @@ async function checkAdversarialShape(tarballs) {
 
   const { version: resolvedVersion } = effectSeenByAlchemy(label, appDir);
   process.stderr.write(`[${label}] alchemy resolves effect@${resolvedVersion}\n`);
-  if (resolvedVersion !== WRONG_EFFECT) {
+  if (resolvedVersion === pinnedEffect) {
     fail(
-      `[${label}] the override did not take: alchemy resolves effect@${resolvedVersion}, ` +
-        `not ${WRONG_EFFECT}, so this shape proves nothing.`,
+      `[${label}] the override did not take: alchemy still resolves our pinned ` +
+        `effect@${pinnedEffect}, so this shape proves nothing. Point WRONG_EFFECT at a ` +
+        'published version other than the pin.',
     );
   }
 
@@ -373,7 +397,7 @@ try {
   await checkAdversarialShape([composerTgz, composerCliTgz, prismaCloudTgz]);
 
   process.stderr.write(
-    '\nOK — a bare npm install dedupes to a single effect in the healthy shapes, and ' +
+    `\nOK — a bare npm install dedupes to a single effect@${pinnedEffect} in the healthy shapes, and ` +
       'alchemy fails to import in the adversarial tree.\n',
   );
 } finally {

@@ -8,10 +8,10 @@ import type { Database as ApiDatabase } from 'alchemy/Prisma/Types';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
-import * as HttpClient from 'effect/http/HttpClient';
-import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import * as HttpClient from 'effect/unstable/http/HttpClient';
+import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
 
 const PROJECT_ID = 'proj_1';
 const DEFAULT_BRANCH_ID = 'br_default';

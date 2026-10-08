@@ -1,9 +1,9 @@
 import * as os from 'node:os';
 import type * as Duration from 'effect/Duration';
 import * as Effect from 'effect/Effect';
-import * as Headers from 'effect/http/Headers';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
+import * as Headers from 'effect/unstable/http/Headers';
 import type { ManagementApiClient } from '../client.ts';
 import { PrismaApiError } from '../http.ts';
 

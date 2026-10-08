@@ -331,8 +331,8 @@ declares.
 
 ## When prisma.config.ts fails on an effect version conflict
 
-alchemy, the deploy engine Composer drives, needs an `effect` 4.x release, the
-same range `@prisma/composer` declares. The extensions in your `composer` section import
+alchemy, the deploy engine Composer drives, needs the exact `effect` version
+`@prisma/composer` pins. The extensions in your `composer` section import
 alchemy, so when your installed tree gives alchemy a different `effect`,
 evaluating `prisma.config.ts` fails before any command runs:
 
@@ -343,18 +343,22 @@ Schema.TaggedError is not a function
 
 The message after the colon is the module error from inside alchemy, and it
 varies with the versions involved. This happens when your app, or another
-dependency of it, requires an `effect` outside 4.x and your package manager
-hoists that copy where alchemy resolves it. npm allows this with only a
-warning. A plain Composer app never hits it: a fresh install resolves a single
-`effect` 4.x.
+dependency of it, pins a different `effect` than `@prisma/composer` does and
+your package manager hoists that copy where alchemy resolves it. npm allows
+this with only a warning. A plain Composer app never hits it:
+`@prisma/composer` and `@prisma/composer-prisma-cloud` pin every
+`effect`-family package alchemy would otherwise float, so a fresh install
+resolves a single `effect`.
 
-The fix is to use an `effect` 4.x release. Change your own `effect`
-dependency to `^4.0.0`, or, when a dependency you cannot change requires
-another version, force one. With npm, in your app's `package.json`:
+The fix is to use the same `effect` as Composer. Match your own `effect`
+dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
+or, when a dependency you cannot change pins another version, force
+Composer's. `<pin>` below stands for that exact version (`4.0.0-rc.115` in
+Composer 0.29.1). With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
-  "effect": "^4.0.0"
+  "effect": "<pin>"
 }
 ```
 
@@ -363,7 +367,7 @@ With pnpm 11 and later, in `pnpm-workspace.yaml` (pnpm 11 ignores the
 
 ```yaml
 overrides:
-  effect: ^4.0.0
+  effect: <pin>
 ```
 
 With pnpm 10 and earlier, nest the npm block under

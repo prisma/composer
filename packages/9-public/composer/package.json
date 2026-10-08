@@ -1,6 +1,6 @@
 {
   "name": "@prisma/composer",
-  "version": "0.29.0",
+  "version": "0.29.1",
   "type": "module",
   "description": "Prisma Composer — build a Prisma App by composing Modules. Core authoring, deploy pipeline, and the service-rpc/node/nextjs authoring surfaces. The command family the `prisma` CLI mounts lives in @prisma/composer-cli.",
   "exports": {
@@ -33,24 +33,27 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/sql-d1": "4.0.0-rc.115",
+    "@effect/sql-sqlite-do": "4.0.0-rc.115",
+    "@effect/vitest": "4.0.0-rc.115",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.81",
+    "alchemy": "2.0.0-beta.78",
     "arktype": "^2.2.3",
     "cross-spawn": "^7.0.6",
-    "effect": "^4.0.0",
+    "effect": "4.0.0-rc.115",
     "esbuild": "^0.28.1",
     "@prisma/management-api-sdk": "^1.80.0"
   },
   "devDependencies": {
-    "@internal/assemble": "workspace:0.29.0",
-    "@internal/cli": "workspace:0.29.0",
-    "@internal/core": "workspace:0.29.0",
-    "@internal/foundation": "workspace:0.29.0",
-    "@internal/lowering": "workspace:0.29.0",
-    "@internal/nextjs": "workspace:0.29.0",
-    "@internal/node": "workspace:0.29.0",
-    "@internal/service-rpc": "workspace:0.29.0",
-    "@internal/tsdown-config": "workspace:0.29.0",
+    "@internal/assemble": "workspace:0.29.1",
+    "@internal/cli": "workspace:0.29.1",
+    "@internal/core": "workspace:0.29.1",
+    "@internal/foundation": "workspace:0.29.1",
+    "@internal/lowering": "workspace:0.29.1",
+    "@internal/nextjs": "workspace:0.29.1",
+    "@internal/node": "workspace:0.29.1",
+    "@internal/service-rpc": "workspace:0.29.1",
+    "@internal/tsdown-config": "workspace:0.29.1",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3"
