@@ -92,6 +92,8 @@ has no support yet (buckets) or no Management API exists behind them.
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
 | `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 
+The props above are the ones Composer passes today. The `logicalId` each node's row must carry is in [§ Platform identity](#platform-identity-logicalid).
+
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
 auto-promotes; rollback is unexpressed), and non-default **Databases** with
@@ -101,21 +103,34 @@ only as a container id carried in providers' `branchId` props; it is never an
 Alchemy resource itself, since its lifecycle lives outside Alchemy
 (ADR-0024).
 
+## Platform identity: `logicalId`
+
+A node that has a platform row has exactly one row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
+
+| Node | Row that carries the `logicalId` | Written by |
+| --- | --- | --- |
+| the root | Project | container resolution, before Alchemy runs: `POST /v1/projects` with `logicalId`, and later deploys find the Project by it |
+| compute service | App (the platform's Service table) | ``Prisma.App(`${address}-svc`, { …, logicalId: address })`` |
+| postgres resource | Database | ``Prisma.Database(`${address}-db`, { …, logicalId: address })`` |
+| bucket | Bucket | ``Prisma.Bucket(`${address}-bucket`, { …, logicalId: address })`` |
+| module | none | — |
+
+Rules:
+
+- The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their fully qualified resource ID (`catalog-db` for Composer), so the lowering always passes it explicitly.
+- For App, Database and Bucket, the resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
+- Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `S3Credentials`) create no platform row.
+- Branchless local dev creates no platform rows and writes none.
+
+Status:
+
+- The Project carries its `logicalId` when Composer created it. Projects created before that are found by display name and have none.
+- App, Database and Bucket need the `logicalId` prop that upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849). Until Composer upgrades to a release that includes it, those rows have no `logicalId` and match no topology node. The upgrade must pass `logicalId: address` in the same change: an upgrade alone would write the Alchemy resource ID (`catalog-db`) onto every existing row.
+- With `prisma deploy --name`, the Project's `logicalId` is the `--name` value, but the topology's root node is still submitted under the module's own name, so the two don't match. The CLI loads the graph it reports without the override. This is a defect.
+
 ## Stages and container resolution
 
-`@internal/lowering` also hosts the **container-resolution client**
-(`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the
-generated stack, not through an Alchemy resource: `resolveContainer`
-finds-or-creates the app's Project (oldest name match adopted) and, for a
-named stage, its Branch (found by `gitName`, created if absent); `ensure:
-false` makes it find-only, for `destroy`. It reuses the same Management API
-client and the same adopt-oldest / tolerate-a-racing-409 idiom the state
-store's own bootstrap uses
-([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md))
-— the two resolve different things (deploy containers vs. the stage's state
-database) through the same client and idiom. Once `destroy` has removed a
-stage's members, the CLI removes the stage's state database
-(ownership-verified) and `deleteBranch` then soft-deletes its Branch.
+`@internal/lowering` also hosts the **container-resolution client** (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the generated stack, not through an Alchemy resource: `resolveContainer` finds-or-creates the app's Project (by `logicalId`, the app name; when no Project has it, by display name, oldest first) and, for a named stage, its Branch (found by `gitName`, created if absent); `ensure: false` makes it find-only, for `destroy`. It reuses the same Management API client and the same adopt-oldest / tolerate-a-racing-409 idiom the state store's own bootstrap uses ([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)) — the two resolve different things (deploy containers vs. the stage's state database) through the same client and idiom. Once `destroy` has removed a stage's members, the CLI removes the stage's state database (ownership-verified) and `deleteBranch` then soft-deletes its Branch.
 
 Deploy state keeps its existing shape — keyed per Alchemy `--stage`
 (ADR-0034) — unchanged by this: under stage-as-branch, **the Project is the
@@ -233,3 +248,4 @@ author and no app author ever hand-wires them.
 - [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
   / [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
   — the decisions this section documents.
+- [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md) — a node's address is its `logicalId` on the platform.
