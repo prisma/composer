@@ -770,9 +770,9 @@ the printed bootstrap — so unchanged services hash identically and noop, once 
 app's build is itself deterministic (the Next standalone case is a named
 follow-up). Because the same Load walk feeds both `serialize`'s env keys and the
 bootstrap's address (and the pack derives config keys from that address on both
-sides), the config writer and the boot-time reader cannot drift. An address changes
-only when the graph position changes (e.g. a rename), which correctly cascades: new
-keys, new bootstrap, new version.
+sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, or a move into another module), which correctly cascades: new keys, new bootstrap, new version.
+
+The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, so a changed address is a different entity there too ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)).
 
 Notes:
 

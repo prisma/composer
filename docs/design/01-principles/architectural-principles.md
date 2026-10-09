@@ -71,6 +71,10 @@ Control-plane code (inferring, emitting, provisioning) and execution-plane code
 (running your app) live behind separate imports, so build-time machinery never
 lands in your application bundle. You ship only what runs.
 
+## A node's address is its identity, everywhere
+
+A node's address (`auth.api`, the path of provision IDs from the root) is its one identity. Everything that needs to say "this node" is derived from it: config keys and the boot address inside the deploy, and, verbatim, the topology the platform stores and the platform rows a target creates for the node. On Prisma Cloud it is the `logicalId` of the node's row, which is how the platform matches a topology node to its row and one node across branches. Internal names, such as the deploy engine's resource IDs (`catalog-db`), display names and platform-generated IDs, are never used as identity. Changing an address makes a different entity; changing a display name changes nothing. See [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md).
+
 ## The framework has no knowledge of specific deployment targets
 
 The core deals only in the abstract model — Modules, inputs, outputs, resources — and

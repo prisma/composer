@@ -138,6 +138,10 @@ whole graph be recreated in a fresh environment and reproduced in the local
 emulator (see the [goals](../00-purpose/goals.md)). Anything without a lifecycle is
 Configuration, not a node.
 
+### Address and logical ID
+
+A node's **address** is its identity: the path of provision IDs from the root, assigned by Load (`auth.api`). The root's direct children have bare addresses, and the root's address is the application's name. On Prisma Cloud the address is the node's **logical ID** (`logicalId`): Composer writes it, byte for byte, on the node's topology entry and on the node's one platform row (Project, App, Database or Bucket). The same node on two branches has the same logical ID and different platform `id`s. A **display name** is a label only; renaming it changes nothing. An **Alchemy resource ID** (`catalog-db`, `web-svc`) is Composer's internal naming for the resources a node lowers to, and is never an identity. See [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md).
+
 ## Connections
 
 A **connection** is an edge that wires one node's **Output** to another node's

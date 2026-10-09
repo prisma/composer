@@ -101,6 +101,27 @@ only as a container id carried in providers' `branchId` props; it is never an
 Alchemy resource itself, since its lifecycle lives outside Alchemy
 (ADR-0024).
 
+## Platform identity: `logicalId`
+
+Each node has exactly one platform row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
+
+| Node | Row that carries the `logicalId` | Written by |
+| --- | --- | --- |
+| the root | Project | container resolution, before Alchemy runs (`POST /v1/projects` with `logicalId`; the Project is then found by it) |
+| compute service | App | `Prisma.App(\`${address}-svc\`, { …, logicalId: address })` |
+| postgres resource | Database | `Prisma.Database(\`${address}-db\`, { …, logicalId: address })` |
+| bucket | Bucket | `Prisma.Bucket(\`${address}-bucket\`, { …, logicalId: address })` |
+| module | none | — |
+
+Rules:
+
+- The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their own resource ID (`catalog-db`), so the lowering always passes it explicitly.
+- The resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
+- Supporting resources (`Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `ServiceKey`, `PgWarm`) carry no `logicalId`. They are not topology nodes.
+- Branchless local dev creates no platform rows and writes none.
+
+Status: the Project carries its `logicalId` today. App, Database and Bucket need the `logicalId` prop that upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849); until Composer upgrades to a release that includes it, those rows have no `logicalId` and match no topology node.
+
 ## Stages and container resolution
 
 `@internal/lowering` also hosts the **container-resolution client**
@@ -233,3 +254,4 @@ author and no app author ever hand-wires them.
 - [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
   / [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md)
   — the decisions this section documents.
+- [ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md) — a node's address is its `logicalId` on the platform.
