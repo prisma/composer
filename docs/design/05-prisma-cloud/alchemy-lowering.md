@@ -92,6 +92,8 @@ has no support yet (buckets) or no Management API exists behind them.
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
 | `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
 
+The props above are the ones Composer passes today. The `logicalId` each node's row must carry is in [§ Platform identity](#platform-identity-logicalid).
+
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
 auto-promotes; rollback is unexpressed), and non-default **Databases** with
@@ -103,7 +105,7 @@ Alchemy resource itself, since its lifecycle lives outside Alchemy
 
 ## Platform identity: `logicalId`
 
-Each node has exactly one platform row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
+A node that has a platform row has exactly one row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
 
 | Node | Row that carries the `logicalId` | Written by |
 | --- | --- | --- |
@@ -128,19 +130,7 @@ Status:
 
 ## Stages and container resolution
 
-`@internal/lowering` also hosts the **container-resolution client**
-(`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the
-generated stack, not through an Alchemy resource: `resolveContainer`
-finds-or-creates the app's Project (by `logicalId`, the app name; Projects without one by display name, oldest first) and, for a
-named stage, its Branch (found by `gitName`, created if absent); `ensure:
-false` makes it find-only, for `destroy`. It reuses the same Management API
-client and the same adopt-oldest / tolerate-a-racing-409 idiom the state
-store's own bootstrap uses
-([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md))
-— the two resolve different things (deploy containers vs. the stage's state
-database) through the same client and idiom. Once `destroy` has removed a
-stage's members, the CLI removes the stage's state database
-(ownership-verified) and `deleteBranch` then soft-deletes its Branch.
+`@internal/lowering` also hosts the **container-resolution client** (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the generated stack, not through an Alchemy resource: `resolveContainer` finds-or-creates the app's Project (by `logicalId`, the app name; when no Project has it, by display name, oldest first) and, for a named stage, its Branch (found by `gitName`, created if absent); `ensure: false` makes it find-only, for `destroy`. It reuses the same Management API client and the same adopt-oldest / tolerate-a-racing-409 idiom the state store's own bootstrap uses ([ADR-0034](../90-decisions/ADR-0034-deploy-state-lives-in-the-stage-branch.md)) — the two resolve different things (deploy containers vs. the stage's state database) through the same client and idiom. Once `destroy` has removed a stage's members, the CLI removes the stage's state database (ownership-verified) and `deleteBranch` then soft-deletes its Branch.
 
 Deploy state keeps its existing shape — keyed per Alchemy `--stage`
 (ADR-0034) — unchanged by this: under stage-as-branch, **the Project is the

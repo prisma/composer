@@ -117,5 +117,6 @@ This section predates the API shipping. The stack merged, the API is in producti
 
 - With `prisma deploy --name`, the Project's `logicalId` is the `--name` value, but the topology root node is submitted under the module's own name: `pipeline.ts` calls `Load(entryModule.root)` without the override, while the deploy child uses `Load(root, { id: opts.name })`. Fix: load the reported graph with the same id.
 - Slice 3 itself: upgrade alchemy to a release containing alchemy-run/alchemy#1849 and pass `logicalId: id` on `Prisma.App`, `Prisma.Database` and `Prisma.Bucket`, in one change. Supersedes prisma/composer#344.
-- Projects created before they carried a `logicalId` are found by display name and never backfilled.
-- The pdp-control-plane branch-topology spec's worked example uses `catalog-db` as a node `logicalId`. Composer can't produce that address (provision IDs are letters and digits only), and it reads like an Alchemy resource ID. Ask pdp to rename the example.
+- Projects created before they carried a `logicalId` are found by display name and never backfilled. The fallback in `resolveProject` (`container.ts`) also matches a Project that already has a different `logicalId`; it should only consider Projects with no `logicalId`.
+- After slice 3: document how to recover when a deploy that lost its state hits a duplicate-`logicalId` 409 (Composer never adopts the existing row), and check that the local-target providers accept and ignore the new `logicalId` prop.
+- The pdp-control-plane branch-topology spec's worked example uses `catalog-db` as a node `logicalId`. Composer can't produce that address (provision IDs are letters and digits only), and it reads like an Alchemy resource ID. Ask pdp to change the example node's `logicalId` to `catalog`.
