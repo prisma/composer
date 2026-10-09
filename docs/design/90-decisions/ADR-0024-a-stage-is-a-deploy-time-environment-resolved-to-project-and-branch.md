@@ -2,6 +2,8 @@
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): deploys run as `prisma deploy <entry> [--stage <name>]`. Teardown is the `destroy` operation on `@prisma/composer/control`, whose required `target` is `{ kind: 'stage', stage }` or `{ kind: 'production' }`; there is no destroy command. The `prisma-composer` binary is retired. Stage resolution below is unchanged.
 
+Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): the CLI finds the Project by its `logicalId`, which is the app name, and creates new Projects with it. Matching by display name, oldest first, remains only as a fallback for Projects created before they carried a `logicalId`.
+
 ## Decision
 
 An app is deployed to a named **stage** — an environment. The topology is

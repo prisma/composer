@@ -63,13 +63,13 @@ Edge semantics, with the properties that matter to us:
 
 ## Identity: `id`, `logicalId`, `displayName`
 
-Project, App, Database and Bucket rows each carry three identifiers:
+Project, App (the platform's Service table), Database and Bucket rows each carry three identifiers:
 
 | Identifier | Set by | Identifies | Unique within |
 | --- | --- | --- | --- |
 | `id` | the platform | one physical row | everywhere |
 | `logicalId` | the configuration | the declared entity, on every branch | its Branch (a Project: its workspace) |
-| `displayName` | the user | nothing; it is a label | nothing |
+| `displayName` | Composer or the platform; Console can change it | nothing; it is a label | nothing |
 
 Each Branch can also store an **application topology**: the declared graph of nodes, ports and edges, every node named by `logicalId` and none by `id` (`PUT /v1/projects/{projectId}/branches/{branchId}/application-topology`). The platform matches topology nodes to rows by string equality on `logicalId`. Composer writes a node's address into both ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The platform's design is the pdp-control-plane [branch topology spec](https://github.com/prisma/pdp-control-plane/blob/main/projects/branch-topology/spec.md).
 

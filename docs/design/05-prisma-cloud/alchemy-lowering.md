@@ -107,27 +107,31 @@ Each node has exactly one platform row that represents it, and that row's `logic
 
 | Node | Row that carries the `logicalId` | Written by |
 | --- | --- | --- |
-| the root | Project | container resolution, before Alchemy runs (`POST /v1/projects` with `logicalId`; the Project is then found by it) |
-| compute service | App | `Prisma.App(\`${address}-svc\`, { …, logicalId: address })` |
-| postgres resource | Database | `Prisma.Database(\`${address}-db\`, { …, logicalId: address })` |
-| bucket | Bucket | `Prisma.Bucket(\`${address}-bucket\`, { …, logicalId: address })` |
+| the root | Project | container resolution, before Alchemy runs: `POST /v1/projects` with `logicalId`, and later deploys find the Project by it |
+| compute service | App (the platform's Service table) | ``Prisma.App(`${address}-svc`, { …, logicalId: address })`` |
+| postgres resource | Database | ``Prisma.Database(`${address}-db`, { …, logicalId: address })`` |
+| bucket | Bucket | ``Prisma.Bucket(`${address}-bucket`, { …, logicalId: address })`` |
 | module | none | — |
 
 Rules:
 
-- The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their own resource ID (`catalog-db`), so the lowering always passes it explicitly.
-- The resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
-- Supporting resources (`Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `ServiceKey`, `PgWarm`) carry no `logicalId`. They are not topology nodes.
+- The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their fully qualified resource ID (`catalog-db` for Composer), so the lowering always passes it explicitly.
+- For App, Database and Bucket, the resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
+- Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `S3Credentials`) create no platform row.
 - Branchless local dev creates no platform rows and writes none.
 
-Status: the Project carries its `logicalId` today. App, Database and Bucket need the `logicalId` prop that upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849); until Composer upgrades to a release that includes it, those rows have no `logicalId` and match no topology node.
+Status:
+
+- The Project carries its `logicalId` when Composer created it. Projects created before that are found by display name and have none.
+- App, Database and Bucket need the `logicalId` prop that upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849). Until Composer upgrades to a release that includes it, those rows have no `logicalId` and match no topology node. The upgrade must pass `logicalId: address` in the same change: an upgrade alone would write the Alchemy resource ID (`catalog-db`) onto every existing row.
+- With `prisma deploy --name`, the Project's `logicalId` is the `--name` value, but the topology's root node is still submitted under the module's own name, so the two don't match. The CLI loads the graph it reports without the override. This is a defect.
 
 ## Stages and container resolution
 
 `@internal/lowering` also hosts the **container-resolution client**
 (`resolveContainer` / `deleteBranch`) the deploy CLI runs *before* the
 generated stack, not through an Alchemy resource: `resolveContainer`
-finds-or-creates the app's Project (oldest name match adopted) and, for a
+finds-or-creates the app's Project (by `logicalId`, the app name; Projects without one by display name, oldest first) and, for a
 named stage, its Branch (found by `gitName`, created if absent); `ensure:
 false` makes it find-only, for `destroy`. It reuses the same Management API
 client and the same adopt-oldest / tolerate-a-racing-409 idiom the state

@@ -2,6 +2,8 @@
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the override is `prisma deploy --name`; the `prisma-composer` binary is retired. The naming rules below are unchanged.
 
+Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): a node's name is its provision ID unless `provision()` sets an `id`, so by default every node's name is part of its address, and the address is its identity on the platform (`logicalId`). Changing any node's name therefore changes its identity, not just the root's; for a database or bucket that deletes its data. Where this ADR says "renaming" a node, it means changing that identity, not changing a display name.
+
 ## Decision
 
 Every node — module, service, or resource — carries an explicit,

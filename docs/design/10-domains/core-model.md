@@ -739,17 +739,7 @@ recreated for), tracked as an upstream follow-up.
 Secrets are platform-sourced and rotate through the platform, not this edge (see
 the [config/secret glossary](../03-domain-model/glossary.md#configuration--config-and-secrets)).
 
-**Deployment identity — address, bootstrap, and why.** A node's identity is its
-**address**: the path of provision ids from the app root, assigned by Load from
-graph position — never user-invented, so registry modules with common internal
-names (`db`, `service`) cannot collide; the address qualifies them. Identity
-cannot travel through the environment: every App in a Project boots a
-byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at
-version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)),
-so any "who am I" variable is one shared key, last write wins. The only
-per-service channel is the artifact itself. Hence the bootstrap: the artifact's
-entrypoint takes identity as a parameter, and deploy is the caller. The Compute
-artifact the pack assembles:
+**Deployment identity — address, bootstrap, and why.** A node's identity is its **address**: the path of provision ids from the app root, assigned by Load from graph position. A provision id is the node's name unless `provision()` sets an `id`, and the path qualifies it, so registry modules with common internal names (`db`, `service`) cannot collide. Identity cannot travel through the environment: every App in a Project boots a byte-identical env (ConfigVariables are project+branch-scoped and snapshotted at version create — see the [PDP data model](../05-prisma-cloud/pdp-data-model.md)), so any "who am I" variable is one shared key, last write wins. The only per-service channel is the artifact itself. Hence the bootstrap: the artifact's entrypoint takes identity as a parameter, and deploy is the caller. The Compute artifact the pack assembles:
 
 ```
 server.js              ← the app's OWN built entry (Hono bundle / Next standalone). Calls service.load().
@@ -758,19 +748,7 @@ bootstrap.js           ← pack-printed: `import main from "./main.js"; await ma
 compute.manifest.json  ← pack-written envelope; entrypoint = bootstrap.js
 ```
 
-The node carries its own runner: the pack's service node has `run(address, boot)`
-and `load()` (§ Runtime), so the wrapper already contains the boot loop — the
-bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the
-app's entry, and the artifact holds a single copy of core. There is **no import
-cycle**: the app's entry imports the service module (for `load()`), and the
-bootstrap imports the wrapper and dynamically imports the entry — nothing imports
-the bootstrap, and the serve code lives in the app's entry, never in the service
-module. Every byte is deterministic — the app's built entry, the framework's wrapper,
-the printed bootstrap — so unchanged services hash identically and noop, once the
-app's build is itself deterministic (the Next standalone case is a named
-follow-up). Because the same Load walk feeds both `serialize`'s env keys and the
-bootstrap's address (and the pack derives config keys from that address on both
-sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, or a move into another module), which correctly cascades: new keys, new bootstrap, new version.
+The node carries its own runner: the pack's service node has `run(address, boot)` and `load()` (§ Runtime), so the wrapper already contains the boot loop — the bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the app's entry, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the bootstrap's address (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, or a move into another module), which correctly cascades: new keys, new bootstrap, new version.
 
 The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, so a changed address is a different entity there too ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)).
 
