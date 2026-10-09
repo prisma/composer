@@ -125,6 +125,24 @@ describe('nodeExecutable()', () => {
       ).toThrow(expect.objectContaining({ code: 'DEPLOY.NODE_MISSING' }));
     });
   }
+
+  test('names the supported Node.js range in the DEPLOY.NODE_MISSING fix', () => {
+    expect(() =>
+      nodeExecutable({
+        bun: true,
+        execPath: '/opt/bun/bin/bun',
+        env: { PATH: '/usr/bin' },
+        platform: 'linux',
+        exists: () => false,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        fix:
+          'Install Node.js 22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 ' +
+          'or newer, and put it on PATH, or run `prisma` under Node.',
+      }),
+    );
+  });
 });
 
 describe('alchemyInvocation()', () => {
