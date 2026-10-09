@@ -10,22 +10,17 @@ databases, schedules, secrets — compose them into a **Prisma App**, and
 `prisma deploy` provisions all of it. There is no infrastructure
 configuration to write or maintain.
 
-## You need Node 22.18 or newer
+## You need a supported Node.js release
+
+Composer supports Node.js 22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer, each with the npm that Node release ships (npm 10 on Node 22). Check yours first:
 
 ```sh
 node --version
 ```
 
-**On anything older, Composer cannot load your app at all.** Your entry file is
-TypeScript and `prisma` hands it straight to Node — the framework
-never bundles or transforms your code. Node runs `.ts` files directly only from
-**22.18.0**, the release that turns type stripping on by default. Before that,
-`prisma deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own
-entry file, which reads as a broken file rather than a Node that is too old.
+**On an older Node, Composer cannot load your app at all.** Your entry file is TypeScript and `prisma` hands it straight to Node — the framework never bundles or transforms your code. Node runs `.ts` files directly only from **22.18.0**, the release that turns type stripping on by default. Before that, `prisma deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming your own entry file, which reads as a broken file rather than a Node that is too old.
 
-22.17 is not close enough, and Node 20 never gets it: the default changed in
-22.18.0 exactly. The `streams` module's local stand-in additionally needs
-Node's built-in `node:sqlite`, unflagged since 22.13 — so 22.18 covers both.
+22.17 is not close enough, and Node 20 never gets it: the default changed in 22.18.0 exactly. The `streams` module's local stand-in additionally needs Node's built-in `node:sqlite`, unflagged since 22.13, so 22.18 covers both. On the 24 line, 24.11 is the first long-term-support release. Every Prisma 8 tool supports this same range.
 
 ## Start with the skill
 

@@ -579,6 +579,7 @@ today the blocks above plus your own Modules are the whole set, so verify a
     `admin.createUser` from a service wired to the `admin` port. A deployed
     stack's rpc ports are reachable only from inside its graph, so the app
     exposes its own operator route that makes that call.
+11. **`prisma deploy` stops at `ERR_UNKNOWN_FILE_EXTENSION` naming the app's own `.ts` entry.** Node is too old to strip TypeScript types. Composer supports Node.js 22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer, with the npm that Node release ships (npm 10 on Node 22); its packages declare `engines.node` as `^22.18.0 || ^24.11.0 || >=26.0.0`. Upgrade Node.
 
 ## What Composer doesn't do yet
 
