@@ -51,8 +51,7 @@ already created). The `destroy` operation takes the same
 and topology emission are out of scope (see § Out of scope).
 
 **Runtime.** The command family is runtime-agnostic — no bun-only APIs
-anywhere in the CLI or assembly code — so it runs under both bun and node (≥ 22.18, where
-type stripping imports the user's `.ts` entry natively). Under node, the CLI
+anywhere in the CLI or assembly code — so it runs under both bun and node (Node.js 22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer; type stripping imports the user's `.ts` entry natively from 22.18). Under node, the CLI
 also registers a synchronous resolve hook (`node:module` `registerHooks`) so
 that relative imports inside the entry graph may use `./x.js` or extensionless
 `./x` specifiers for `.ts` source files without requiring
