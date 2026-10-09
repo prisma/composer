@@ -25,14 +25,6 @@ import { runDevEmulators } from './emulators.ts';
 import { runDevPreflight } from './preflight.ts';
 import { runDevTeardown } from './teardown.ts';
 
-/** `localTargetProviders()`'s `ProviderCollection` doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime — mirrors `control/extension.ts`'s own `asProvidersLayer`, duplicated rather than shared so this module imports nothing from `./control`. */
-function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<never> {
-  return blindCast<
-    Layer.Layer<never>,
-    "the merged local providers layer satisfies Alchemy's ProviderCollection shape at runtime; only the structural type doesn't unify, mirroring control/extension.ts's own asProvidersLayer"
-  >(layer);
-}
-
 /**
  * The extension's local-target descriptor — self-contained, no
  * deploy-factory options: it is credential-free by design, so this takes
@@ -42,7 +34,10 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
   return {
     container: devContainerDescriptor(),
     providers: (input) =>
-      asProvidersLayer(
+      blindCast<
+        Layer.Layer<never>,
+        "the merged local providers layer satisfies Alchemy's ProviderCollection at runtime; its structural type does not unify"
+      >(
         Layer.mergeAll(
           localTargetProviders(input),
           PgWarmProvider(),

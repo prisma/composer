@@ -157,6 +157,13 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
+Managed Postgres databases carry the authored resource name as their logical
+identity on each Branch. Console uses that identity to match the database in
+the topology with its counterpart on main. Deploy binds the identity after
+attaching the database to its Branch and before creating its connection; a
+conflicting identity fails the deploy rather than selecting another database.
+Existing environments receive the binding on their next deploy.
+
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
 deployment, including updates to an existing input document. Later variable

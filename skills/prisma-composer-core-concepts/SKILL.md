@@ -319,6 +319,11 @@ Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
 Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
 shell runs `prisma` under Bun with Alchemy on Node.
 
+Managed Postgres databases bind their authored resource name to their Branch.
+Console uses that identity to open the matching database from topology and
+compare it with main. Existing environments receive it on their next deploy;
+a conflicting binding fails deploy before creating the connection.
+
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 (`Deployed <app> to <stage> in 5m 25s.`). Steps: load config and app, one
