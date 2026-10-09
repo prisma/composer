@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, it } from 'node:test';
@@ -99,7 +107,7 @@ describe('checkHost', () => {
 
   it('fails when the family cannot be resolved from the host, naming the override and the root link', () => {
     healthyTree();
-    rmSync(join(root, 'node_modules/@prisma/composer-cli'));
+    unlinkSync(join(root, 'node_modules/@prisma/composer-cli'));
 
     const [failure, ...rest] = run();
 

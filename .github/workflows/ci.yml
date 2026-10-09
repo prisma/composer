@@ -163,16 +163,26 @@ jobs:
         run: pnpm --dir test/integration exec bun test
 
   node-floor:
-    name: Node 22.18 floor
-    # The published packages declare `engines.node: >=22.18.0`, but every suite
-    # above runs under bun, which ignores `engines.node` entirely, and
-    # `.tool-versions` pins node 24.16.0 — so nothing else here ever executes
-    # the floor version. This job does. It covers what a Node user hits first:
-    # the two runtime features the floor rests on, `node --test` over the
-    # repo's TypeScript scripts, and every published entrypoint of
-    # @prisma/composer and @prisma/composer-cli. It deliberately does NOT re-run the bun suites under
-    # node — bun is the runner there, so doing so would prove nothing about
-    # node.
+    name: Node ${{ matrix.line }} floor
+    # The published packages declare `engines.node: ^22.18.0 || ^24.11.0 || >=26.0.0`,
+    # but every suite above runs under bun, which ignores `engines.node`
+    # entirely, and `.tool-versions` pins node 24.16.0 — so nothing else here
+    # ever executes the oldest release of each supported line. This job does.
+    # It covers what a Node user hits first: the two runtime features the
+    # floor rests on, `node --test` over the repo's TypeScript scripts, and
+    # every published entrypoint of @prisma/composer and @prisma/composer-cli.
+    # It deliberately does NOT re-run the bun suites under node — bun is the
+    # runner there, so doing so would prove nothing about node.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - line: '22.18'
+            node: 22.18.0
+          - line: '24.11'
+            node: 24.11.0
+          - line: '26.0'
+            node: 26.0.0
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -183,27 +193,32 @@ jobs:
         run: pnpm install --frozen-lockfile
       # Built on the toolchain `.tool-versions` pins (node 24.16.0) — the same
       # toolchain publish.yml builds the tarballs with. The floor is a claim
-      # about CONSUMING that output, so node drops to 22.18.0 only after this.
+      # about CONSUMING that output, so node drops to the floor only after this.
       - name: Build packages
         run: pnpm build
       # mise is how this repo pins tools; there is no `actions/setup-node`
       # anywhere in .github. `.tool-versions` stays on 24.16.0 — this prepends
-      # 22.18.0 to PATH for the steps below only.
-      - name: Put node 22.18.0 first on PATH
+      # the floor version to PATH for the steps below only.
+      - name: Put the floor node first on PATH
+        env:
+          FLOOR_NODE: ${{ matrix.node }}
         run: |
-          mise install node@22.18.0
-          echo "$(mise where node@22.18.0)/bin" >> "$GITHUB_PATH"
+          mise install "node@$FLOOR_NODE"
+          echo "$(mise where "node@$FLOOR_NODE")/bin" >> "$GITHUB_PATH"
       # If that PATH order ever flips back to mise's 24.16.0, every step below
       # would quietly re-test the version CI already covers. Fail loudly here.
       - name: Confirm node is exactly the floor version
+        env:
+          FLOOR_NODE: ${{ matrix.node }}
         run: |
           echo "node --version -> $(node --version)"
-          test "$(node --version)" = "v22.18.0"
-      # The two runtime features `>=22.18.0` rests on. Type stripping is what
-      # sets the floor: it is unflagged in 22.18.0 exactly, and it is how the
-      # CLI imports the user's `.ts` entry. `node:sqlite` (used by the streams
-      # module's local stand-in, via @prisma/streams-local's `DatabaseSync`)
-      # unflagged earlier, in 22.13.0, so the floor already covers it.
+          test "$(node --version)" = "v$FLOOR_NODE"
+      # The two runtime features the range rests on. Type stripping is what
+      # sets the 22.18.0 floor: it is unflagged in 22.18.0 exactly, and it is
+      # how the CLI imports the user's `.ts` entry. `node:sqlite` (used by the
+      # streams module's local stand-in, via @prisma/streams-local's
+      # `DatabaseSync`) unflagged earlier, in 22.13.0, so the floor already
+      # covers it. 24.11.0 is Node 24's first long-term-support release.
       - name: Check the runtime features the floor claims
         run: |
           printf 'const greeting: string = "type stripping works"\nconsole.log(greeting)\n' > "$RUNNER_TEMP/floor-check.mts"
