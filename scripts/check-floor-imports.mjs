@@ -20,8 +20,8 @@
 //
 // Requires both packages to be built (`pnpm turbo run build
 // --filter=@prisma/composer --filter=@prisma/composer-cli`). Uses whichever
-// `node` is running it, which is what lets the node-floor job aim it at
-// 22.18.0.
+// `node` is running it, which is what lets the node-floor job aim it at the
+// oldest release of each supported Node.js line.
 //
 // Usage: node scripts/check-floor-imports.mjs
 

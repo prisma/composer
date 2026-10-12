@@ -30,7 +30,7 @@ let registered = false;
  */
 export function registerEntryResolution(): void {
   if (registered || typeof process.versions.bun === 'string') return;
-  // registerHooks landed in Node 22.15; the engine floor is 22.18.
+  // registerHooks landed in Node 22.15; the oldest supported Node.js is 22.18.
   // Guard here covers any non-standard environment.
   if (typeof mod.registerHooks !== 'function') return;
   registered = true;

@@ -267,8 +267,7 @@ if (!result.ok) {
 ```
 
 Run it with the two variables under [Credentials](#credentials) set, for
-example `bun destroy-staging.ts`, or `node destroy-staging.ts` on Node 22.18
-or newer. A `prisma auth login` session is not used.
+example `bun destroy-staging.ts`, or `node destroy-staging.ts` on a supported Node.js release (22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer). A `prisma auth login` session is not used.
 
 The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 

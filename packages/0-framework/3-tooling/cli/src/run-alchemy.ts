@@ -74,7 +74,11 @@ export function nodeExecutable(runtime: HostRuntime = currentRuntime()): string 
   throw new CliStructuredError(
     'DEPLOY.NODE_MISSING',
     'Composer starts Alchemy with Node, and no `node` was found on PATH.',
-    { fix: 'Install Node 22.18 or newer and put it on PATH, or run `prisma` under Node.' },
+    {
+      fix:
+        'Install Node.js 22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 ' +
+        'or newer, and put it on PATH, or run `prisma` under Node.',
+    },
   );
 }
 
