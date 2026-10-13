@@ -126,9 +126,12 @@ When stdout is a terminal you see the URL. When it is piped, the CLI writes
 JSON frames, so a script picks the URL out with `jq`:
 
 ```bash
-curl "$(prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url')"
+url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"
 ```
 
+On failure the JSON result has no URL, so `jq -r` alone would print `null` and
+`curl` would run anyway; `-e` makes `jq` exit non-zero, and `&&` stops there.
+The failure's code is in `.envelope.error.code`.
 `--format human` prints the URL alone even when piped. `dev url` only reports
 a node that is running, so the URL it prints answers. Otherwise it fails with
 a code a script can branch on:
@@ -137,8 +140,10 @@ a code a script can branch on:
 - `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
   lists the ones it has.
 - `DEV.EMULATOR_UNREACHABLE`: the emulator the node runs on is not running.
-- `DEV.NOT_RUNNING`: the node exists but is stopped, usually because
-  `prisma dev` has ended.
+- `DEV.NOT_RUNNING`: the node exists but is not running. Usually `prisma dev`
+  has ended. A service that keeps crashing is reported this way too, with the
+  path of its log; and a node the emulator lost is created again, empty, by the
+  next `prisma dev`.
 
 `prisma dev stop` stops the app's service processes and database servers, as
 `Ctrl-C` does. Use it when `prisma dev` was killed without the chance to stop
@@ -146,7 +151,9 @@ them. Data and ports are kept, so the next `prisma dev` is still a warm start.
 
 `prisma emulator list` shows every local emulator on the machine, whether it
 is running, and every instance on it, with the directory, app and address it
-belongs to. It works from any directory. `prisma emulator start` and
+belongs to. It works from any directory. An emulator that is running but does
+not answer, or answers with an error, is shown with that error, and the
+others are still listed. `prisma emulator start` and
 `prisma emulator stop` are planned.
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this

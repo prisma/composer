@@ -37,12 +37,18 @@ command:
 - **`prisma dev stop`** — stop that app's service processes and database
   servers, as ending `prisma dev` does, for a `dev` that was killed without the
   chance. Data and ports stay. It is the `devStop` operation, returning
-  `{ app, stopped }`.
+  `{ app, stopped }`; `stopped` lists only the nodes whose emulator was
+  running.
 - **`prisma emulator list`** — every local emulator on this machine, whether it
-  runs, its admin URL, and its instances with id, kind, URL, state and labels.
-  It needs no project or configuration. The operation is `listEmulators` from
-  `@prisma/composer-prisma-cloud/local-target`. `prisma emulator start` and
-  `prisma emulator stop` are planned.
+  runs, its admin URL (`null` when it is not running), and its instances with
+  id, kind, URL, state and labels. An emulator that runs but cannot be listed
+  is reported in its own entry with an `error` of `{ code, message }`, and the
+  others are still listed. It needs no project or configuration, so it uses
+  the emulator client bundled into `@prisma/composer-cli` rather than the
+  project's `@prisma/composer-prisma-cloud`. The emulators' registry files and
+  instance-list routes are therefore read across Composer versions and must
+  stay backward compatible. `prisma emulator start` and `prisma emulator stop`
+  are planned.
 
 `dev url` and `dev stop` take no entry and build nothing. The configuration
 does not name the app, so they act on the app the directory's record names as
@@ -469,7 +475,8 @@ Deploy's rule holds: every failure names its fix.
 | `dev url` or `dev stop` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
 | `dev url` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
 | `dev url` for a node whose emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
-| `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state |
+| `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
+| the local target fails without a code (for example an emulator's error response) in `dev url` or `dev stop` | `DEV.EMULATOR_FAILED` |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)

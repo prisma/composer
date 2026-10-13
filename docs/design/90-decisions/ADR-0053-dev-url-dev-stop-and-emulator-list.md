@@ -8,14 +8,14 @@ Composer's command family ships three more commands, and `@prisma/composer/contr
 $ prisma dev module.ts        # terminal 1: runs the app
 $ prisma dev url gateway      # terminal 2: where a node of that app answers
 http://localhost:3001
-$ curl "$(prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url')"
+$ url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"
 $ prisma dev stop             # stops this directory's app: services and database servers; data stays
 $ prisma emulator list        # every local emulator on this machine and every instance on it
 ```
 
 - **`dev url <address>`** prints where a node of the app `prisma dev` runs from the current directory answers: a service's `http://localhost:<port>`, a database's connection string, or a bucket's S3 endpoint plus `/<bucket>`. Its JSON result is `{ address, kind, url, state }`. In human format the URL alone goes to stdout, so `$(prisma dev url gateway --format human)` is the URL. It is the `devUrl` operation.
 - **`dev stop`** stops that app's service processes and database servers, as ending `prisma dev` does, for a `prisma dev` that was killed without the chance. Data and ports stay. It is the `devStop` operation, and returns `{ app, stopped }`.
-- **`emulator list`** lists the local emulators — the programs `prisma dev` starts to run services, databases and buckets on this machine — whether each runs, its admin URL, and its instances with id, kind, URL, state and labels. It needs no project. Its JSON result is `{ emulators: [{ kind, running, url, instances: [{ id, kind, url, state, labels }] }] }`. The operation is `listEmulators`, exported from `@prisma/composer-prisma-cloud/local-target`.
+- **`emulator list`** lists the local emulators — the programs `prisma dev` starts to run services, databases and buckets on this machine — whether each runs, its admin URL, and its instances with id, kind, URL, state and labels. It needs no project. Its JSON result is `{ emulators: [{ kind, running, url, instances: [{ id, kind, url, state, labels }], error }] }`. `url` is `null` for an emulator that is not running. `error` is `null` unless the emulator runs but could not be listed; then it is `{ code, message }`, with `DEV.EMULATOR_UNREACHABLE` when the emulator did not answer and `DEV.EMULATOR_FAILED` when it answered with an error, and the other emulators are still listed. The command uses the emulator client bundled into `@prisma/composer-cli`, because it must work without a project.
 
 The family keys each command by the path it is meant to mount at (`dev url`, `dev stop`, `emulator list`); the `prisma` CLI decides where it mounts them. This amends [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md), under which the family was exactly `deploy` and `dev`, and [ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md), whose `control` subpath had four operations.
 
@@ -30,17 +30,19 @@ Docs, scripts and agents need to reach a locally running node without assuming i
 | No extension recorded an app in the directory | `DEV.NOT_STARTED_HERE` |
 | The app has no node at the address (the known ones are listed) | `DEV.ADDRESS_UNKNOWN` |
 | The emulator the node runs on is not running | `DEV.EMULATOR_UNREACHABLE` |
-| The node exists but is not running (its state is named) | `DEV.NOT_RUNNING` |
+| The node exists but is not running (its state is named; the reason and fix depend on it: a stopped node needs `prisma dev`, a crash-looping service needs its log read, a node its emulator lost is created again by `prisma dev`) | `DEV.NOT_RUNNING` |
+| The target fails without a code of its own | `DEV.EMULATOR_FAILED` |
 
 `dev url` reports a node only when it is running, so every URL it prints answers. That relies on a service being `running` only once its port accepts connections.
 
-`emulator list` is a question about the machine, not a project: it needs no `prisma.config.ts`, so it cannot go through the seam, which starts from the configuration. Its operation lives in the Prisma Cloud domain beside the emulator clients, and `@prisma/composer-cli`, a public package that may import both domains, adds the command to the family. Nothing running is a valid answer: every emulator is listed with `running: false`.
+`emulator list` is a question about the machine, not a project: it needs no `prisma.config.ts`, so it cannot go through the seam, which starts from the configuration, and it cannot load the project's `@prisma/composer-prisma-cloud`, because there may be no project. Its operation lives in the Prisma Cloud domain beside the emulator clients, and `@prisma/composer-cli`, a public package that may import both domains, adds the command to the family and bundles that client. Nothing running is a valid answer: every emulator is listed with `running: false`.
 
 ## Consequences
 
 - `@prisma/composer/control` has six operations: `deploy`, `destroy`, `dev`, `devUrl`, `devStop`, `log`.
 - `prisma dev` is both a command and a group. The CLI engine supports that from `@prisma/cli-engine` 0.8.0; the family itself is built against 0.7.0, because it only exports commands and does not mount paths. The `dev` command's description defines the terms its children rely on: an emulator, a node's address, and that the app is recorded in the directory.
 - `emulator list`'s JSON departs from the list convention (`{ context, items, count }` with `{ name, id, status }` items): it nests two levels, emulators and their instances, because an instance is meaningless without the emulator that holds it.
+- The emulators are started by the project's `@prisma/composer-prisma-cloud`, but `emulator list` reads them with the client bundled into the `prisma` CLI's `@prisma/composer-cli`, which can be a different Composer version. The emulators' registry files (`<emulators directory>/<name>.json`) and their instance-list routes (`GET /instances` on the Compute and Postgres emulators, `GET /_pcdev/instances` on the bucket emulator) are therefore a contract across Composer versions: a change to them must stay backward compatible.
 - Database URLs are connection strings with local credentials, printed on purpose; a bucket's access keys are never printed.
 - `prisma emulator start` and `prisma emulator stop`, and removing instances left by deleted directories, are planned and not part of this decision.
 

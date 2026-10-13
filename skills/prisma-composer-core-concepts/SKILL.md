@@ -450,13 +450,17 @@ that surprise:
    answers: a service's `http://localhost:<port>`, a database's connection
    string, a bucket's S3 endpoint plus `/<bucket>`. Piped stdout carries JSON
    frames, so scripts use
-   `curl "$(prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url')"`
-   or `--format human`. It fails with `DEV.NOT_STARTED_HERE` (no `dev` ran
-   here), `DEV.ADDRESS_UNKNOWN` (lists the known addresses),
-   `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the node is stopped).
+   `url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"`
+   or `--format human`. Keep `-e`: on failure there is no URL, `jq -r` alone
+   prints `null`, and the code is in `.envelope.error.code`. It fails with
+   `DEV.NOT_STARTED_HERE` (no `dev` ran here), `DEV.ADDRESS_UNKNOWN` (lists
+   the known addresses), `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the
+   node is stopped, a service is crash-looping and its log is named, or the
+   emulator lost the node and the next `dev` creates it again).
    `prisma dev stop` stops the app's services and database servers when `dev`
    was killed without doing it; data and ports stay. `prisma emulator list`
-   shows every local emulator and its instances, from any directory.
+   shows every local emulator and its instances, from any directory; one that
+   runs but cannot be listed carries an `error` in its own entry.
    `prisma emulator start` and `stop` are planned.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
