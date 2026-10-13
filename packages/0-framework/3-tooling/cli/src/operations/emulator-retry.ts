@@ -2,12 +2,13 @@ import { CliStructuredError } from '@internal/foundation/errors';
 
 /**
  * An emulator admin call right after a converge that just PUT dozens of
- * resources through the same daemon can hit a transient refused/reset
- * connection — a brief loopback hiccup under load, not a real failure.
- * Only that is retried: the emulator client reports it as
- * `DEV.EMULATOR_UNREACHABLE`. An answer from the emulator, such as a service
- * that failed to start, is final. Shared by the dev and log executors, which
- * talk to the same daemons (`startServices`, `endpoints`, `attach`).
+ * resources through the same daemon can fail to connect — a brief loopback
+ * hiccup under load, not a real failure. Only that is retried: the emulator
+ * client reports it as `DEV.EMULATOR_UNREACHABLE`. Anything else is final,
+ * including an error response (such as a service that failed to start) and a
+ * connection reset while a response body is read. Shared by the dev and log
+ * executors, which talk to the same daemons (`startServices`, `endpoints`,
+ * `attach`).
  */
 
 const EMULATOR_RETRY_ATTEMPTS = 5;
