@@ -83,8 +83,9 @@ async function locate(input: DevUrlInput, cwd: string): Promise<DevUrl> {
       },
     );
   }
-  if (location.condition !== 'running' || location.url === undefined) {
-    throw notRunning(input.address, location);
+  if (location.condition !== 'running') throw notRunning(input.address, location);
+  if (location.url === undefined) {
+    throw new InternalError(`the local target reports "${input.address}" running with no URL`);
   }
   return { address: input.address, kind: location.kind, url: location.url, state: location.state };
 }

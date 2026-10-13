@@ -246,6 +246,26 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
     expect(coded).toMatchObject({ ok: false, failure: { code: 'DEV.EMULATORS_DIR_INVALID' } });
   });
 
+  test('a target that reports a running node with no URL is a bug, not a failure with a code', async () => {
+    const promise = devUrl({
+      config: config(async () =>
+        recordedApp([
+          {
+            address: 'gateway',
+            kind: 'service',
+            emulator: 'running',
+            state: 'running',
+            condition: 'running',
+          },
+        ]),
+      ),
+      address: 'gateway',
+      cwd,
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(InternalError);
+  });
+
   test('a target that cannot locate an address it recorded is a bug, not a failure with a code', async () => {
     const promise = devUrl({
       config: config(async () => ({ ...recordedApp(running), locate: async () => undefined })),
