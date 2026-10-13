@@ -143,7 +143,7 @@ export function computeDescriptor(
     kind: 'service' as const,
     // The service as a PLACE inside the application's Project: the App,
     // identity-bearing only, no code runs.
-    provision: ({ id, application }) =>
+    provision: ({ id, address, application }) =>
       Effect.gen(function* () {
         validateName(id, 'service name (from provision id)');
         const projectId = projectIdOf(application);
@@ -153,7 +153,7 @@ export function computeDescriptor(
           displayName: serviceAppName(id),
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
-          ...(!branchless ? { logicalId: id } : {}),
+          ...(!branchless ? { logicalId: address } : {}),
         });
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),

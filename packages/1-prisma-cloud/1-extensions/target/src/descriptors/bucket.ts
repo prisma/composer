@@ -21,7 +21,7 @@ import {
  * secretAccessKey) become the four S3Config outputs consumers resolve by name.
  */
 export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ id, application }) =>
+  const lowering: Lowering = ({ id, address, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
       const { branchId, branchless } = cloudApplicationOf(application);
@@ -29,7 +29,7 @@ export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor
         project: projectIdOf(application),
         name: id,
         ...(branchId !== undefined ? { branchId } : {}),
-        ...(!branchless ? { logicalId: id } : {}),
+        ...(!branchless ? { logicalId: address } : {}),
       });
       // `name: id` matches what Composer's own resource always created, so a
       // migrated legacy row diffs clean instead of replacing the key (a

@@ -177,10 +177,12 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
  */
 export const stageDatabase = ({
   id,
+  address,
   application,
   region,
 }: {
   readonly id: string;
+  readonly address: string;
   readonly application: unknown;
   readonly region: ProjectRegion | undefined;
 }) =>
@@ -190,7 +192,7 @@ export const stageDatabase = ({
     const db = yield* Prisma.Database(`${id}-db`, {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId, logicalId: id } : { name: id }),
+      ...(branchId !== undefined ? { branchId, logicalId: address } : { name: id }),
     });
     const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
     const url = Output.map(conn.directConnectionString, (value) => {
