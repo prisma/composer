@@ -240,13 +240,16 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never a typed client. */
+/** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never the typed client. Finds the app's instances by the labels Composer gives them. */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${app}/services`);
-  if (!res.ok) throw new Error(`compute emulator listServices failed: ${res.status}`);
-  return (await res.json()) as ServiceInfo[];
+  const res = await fetch(`http://127.0.0.1:${entry.port}/instances`);
+  if (!res.ok) throw new Error(`compute emulator listInstances failed: ${res.status}`);
+  const instances = (await res.json()) as (ServiceInfo & { labels: Record<string, string> })[];
+  return instances
+    .filter((instance) => instance.labels['composer.app'] === app)
+    .map((instance) => ({ ...instance, address: instance.labels['composer.address'] ?? '' }));
 }
 
 interface PostgresDatabaseInfo {

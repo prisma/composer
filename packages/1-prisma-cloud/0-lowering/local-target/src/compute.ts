@@ -20,6 +20,7 @@ import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
+import { ensureServiceInstance, withServiceAddresses } from './compute-instances.ts';
 import { envStore, secretsStore } from './dev-store.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
@@ -148,20 +149,6 @@ function readManifestAddress(artifactDir: string): string {
   return parsed.address;
 }
 
-/**
- * A service address is dot-separated (`"orders.service"`) but the emulator's
- * `<id>` segment must match `/^[a-z0-9][a-z0-9-]*$/`: disallowed characters
- * become dashes, runs collapse. The real address still rides the deployment
- * body's `address` field untouched, so listings show it verbatim.
- */
-function slugServiceId(address: string): string {
-  const slug = address
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slug.length > 0 ? slug : 'svc';
-}
-
 async function materializeEnv(
   devDir: string,
   address: string,
@@ -177,11 +164,10 @@ async function materializeEnv(
 }
 
 /**
- * `Prisma.App` → the Compute emulator: reserves (or returns) the service's
- * stable port. The app id here IS the service's own address, which
- * `Deployment` slugs back into the emulator's id. `delete` is a no-op —
- * instance removal belongs to `teardown` (`DELETE /apps/<app>`), not
- * per-resource Alchemy deletes.
+ * `Prisma.App` → the Compute emulator: finds or creates the instance that
+ * runs the service, which holds the service's port. The app id here IS the
+ * service's own address. `delete` is a no-op — instance removal belongs to
+ * `teardown`, not per-resource Alchemy deletes.
  */
 export function LocalAppProvider(
   input: LocalTargetProvidersInput,
@@ -191,9 +177,9 @@ export function LocalAppProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const appName = appNameOf(input.container);
+          const scope = { devDir: input.devDir, app: appNameOf(input.container) };
           const name = news.displayName ?? id;
-          const { url } = await computeClient().ensureService(appName, slugServiceId(name));
+          const { url } = await ensureServiceInstance(scope, name);
           return {
             appId: name,
             name,
@@ -214,20 +200,21 @@ export function LocalAppProvider(
 }
 
 /**
- * Reserves each service's emulator port one at a time, in the order given,
- * before Alchemy applies the `App` resources concurrently. A new service gets
+ * Ensures each service's emulator instance one at a time, in the order given,
+ * before Alchemy applies the `App` resources concurrently. A new instance gets
  * the smallest free port, so on a fresh start the ports follow this order; a
- * service that already has a port keeps it. `serviceAppNames` are the
- * `App` resources' `displayName`s.
+ * service that already has an instance keeps its port. `serviceAppNames` are
+ * the `App` resources' `displayName`s.
  */
 export async function reserveServicePorts(
   container: ContainerInstance | undefined,
+  devDir: string,
   serviceAppNames: readonly string[],
 ): Promise<void> {
-  const appName = appNameOf(container);
+  const scope = { devDir, app: appNameOf(container) };
   for (const service of serviceAppNames) {
     try {
-      await computeClient().ensureService(appName, slugServiceId(service));
+      await ensureServiceInstance(scope, service);
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`reserving a local port for service "${service}" failed: ${reason}`, {
@@ -281,8 +268,8 @@ export function LocalEnvironmentVariableProvider(
 }
 
 /**
- * `Prisma.Deployment` → unpacks the artifact once per hash, fetches the
- * emulator's assigned port, materializes the child's full env (env store +
+ * `Prisma.Deployment` → unpacks the artifact once per hash, finds the
+ * service's emulator instance and its port, materializes the child's full env (env store +
  * secrets + the port override + `PATH`/`HOME`), and puts the deployment — the
  * emulator (re)starts the child only when the hash or env actually changed.
  * `portMapping` is ignored on purpose: the emulator owns port allocation, and
@@ -297,9 +284,8 @@ export function LocalDeploymentProvider(
     reconcile: ({ news }) =>
       Effect.tryPromise({
         try: async (): Promise<Deployment['Attributes']> => {
-          const app = appNameOf(input.container);
+          const scope = { devDir: input.devDir, app: appNameOf(input.container) };
           const appId = appIdOfInput(news.app);
-          const emulatorId = slugServiceId(appId);
           if (news.artifactPath === undefined) {
             throw new Error('local Deployment requires an artifactPath — nothing to run.');
           }
@@ -311,15 +297,14 @@ export function LocalDeploymentProvider(
           }
           const address = readManifestAddress(artifactDir);
 
-          const { port } = await computeClient().ensureService(app, emulatorId);
+          const instance = await ensureServiceInstance(scope, appId);
+          const { port } = instance;
           const env = await materializeEnv(input.devDir, address, port);
-          await computeClient().putDeployment(app, emulatorId, {
-            address,
-            artifactDir,
-            artifactHash,
-            env,
-            port,
-          });
+          try {
+            await computeClient().putDeployment(instance.id, { artifactDir, artifactHash, env });
+          } catch (error) {
+            throw withServiceAddresses(error, [instance]);
+          }
 
           const url = `http://localhost:${port}`;
           return {

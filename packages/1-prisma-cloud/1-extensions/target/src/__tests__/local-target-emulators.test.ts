@@ -21,6 +21,7 @@ mock.module('@internal/local-target', () => ({
   resolvePackageEntry: (specifier: string) => specifier,
   reserveServicePorts: async (
     container: ContainerInstance | undefined,
+    _devDir: string,
     addresses: readonly string[],
   ) => {
     events.push(`reserve ${container?.input.appName ?? '?'}: ${addresses.join(', ')}`);

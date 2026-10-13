@@ -2,6 +2,7 @@
 export * from '../app-name.ts';
 export * from '../bucket.ts';
 export * from '../compute.ts';
+export * from '../compute-instances.ts';
 export * from '../dev-store.ts';
 export * from '../postgres.ts';
 export * from '../providers.ts';

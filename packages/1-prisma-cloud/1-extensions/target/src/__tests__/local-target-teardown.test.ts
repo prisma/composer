@@ -18,12 +18,6 @@ mock.module('@internal/dev-emulators', () => ({
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
   },
-  computeClient: () => ({
-    deleteApp: async (app: string) => {
-      events.push(`delete compute ${app}`);
-      if (computeDeleteFails) throw new Error('compute delete failed');
-    },
-  }),
   postgresClient: unreachable('postgres'),
   bucketsClient: unreachable('buckets'),
 }));
@@ -31,6 +25,10 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
+  deleteAppServiceInstances: async ({ app }: { app: string }) => {
+    events.push(`delete compute ${app}`);
+    if (computeDeleteFails) throw new Error('compute delete failed');
+  },
   removeLocalPaths: () => {
     events.push('remove local paths');
   },
