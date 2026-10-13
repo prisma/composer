@@ -1,0 +1,4 @@
+# Deferred
+
+- **A start can join a crash-backoff restart that has already exited (prisma/composer#353).** When the fifth fast exit marks an instance `held`, the readiness probe only notices the exit after its current connection attempt. A start request arriving in that gap joins the dying start and gets its old failure, so nothing resumes. Seen once as an intermittent failure of "a held service resumes on start" in `compute-deployment.test.ts`; not reproduced in 10 runs under CPU load. Likely fix: a start must not join an in-flight start whose process has already exited. Belongs in #353, not this project.
+- **What a previous app's databases and buckets become when another app runs from the same directory.** Compute instances are deleted (S1a). Databases and buckets hold data; decide in S1b.
