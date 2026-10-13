@@ -18,13 +18,15 @@ mock.module('@internal/dev-emulators', () => ({
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
   },
-  postgresClient: unreachable('postgres'),
   bucketsClient: unreachable('buckets'),
 }));
 
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
+  deleteDatabaseInstances: async () => {
+    throw new Error('postgres emulator is not running');
+  },
   deleteRecordedInstances: async (devDir: string) => {
     events.push(`delete compute ${devDir.endsWith('/.prisma-composer/dev') ? 'recorded' : devDir}`);
     if (computeDeleteFails) throw new Error('compute delete failed');

@@ -8,8 +8,9 @@
 export type {
   BucketsClient,
   ComputeClient,
+  CreateDatabaseRequest,
   CreateInstanceRequest,
-  DatabaseInfo,
+  DatabaseInstanceInfo,
   DeploymentRequest,
   InstanceInfo,
   InstanceStatus,

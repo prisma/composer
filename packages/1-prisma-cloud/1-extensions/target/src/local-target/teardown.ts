@@ -18,8 +18,12 @@
 
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { bucketsClient, ensureDaemon, postgresClient } from '@internal/dev-emulators';
-import { deleteRecordedInstances, removeLocalPaths } from '@internal/local-target';
+import { bucketsClient, ensureDaemon } from '@internal/dev-emulators';
+import {
+  deleteDatabaseInstances,
+  deleteRecordedInstances,
+  removeLocalPaths,
+} from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
@@ -38,7 +42,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const cwd = process.cwd();
   const devDir = `${cwd}/${DEV_DIR}`;
 
-  await tolerateUnreachable(() => postgresClient().deleteApp(app));
+  await tolerateUnreachable(() => deleteDatabaseInstances({ devDir, app }));
   // Compute persists instances and their ports across restarts, so a stopped
   // daemon would hand the old ports back; start it so the delete always lands.
   try {

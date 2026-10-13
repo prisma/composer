@@ -66,7 +66,8 @@ function isEmulatorInstances(value: unknown): value is EmulatorInstances {
   );
 }
 
-function directoryOf(devDir: string): string {
+/** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
+export function directoryOf(devDir: string): string {
   const normalized = path.normalize(devDir);
   return normalized.endsWith(DEV_DIR) ? normalized.slice(0, -DEV_DIR.length - 1) : normalized;
 }

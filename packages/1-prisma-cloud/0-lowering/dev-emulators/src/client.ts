@@ -374,51 +374,60 @@ export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
   };
 }
 
-export interface DatabaseInfo {
+export interface DatabaseInstanceInfo {
   readonly id: string;
+  /** Stored and returned verbatim; the emulator never reads them. */
+  readonly labels: Readonly<Record<string, string>>;
+  readonly port: number;
   readonly url: string;
-  readonly instanceName: string;
-  readonly databasePort: number;
+  readonly status: 'running' | 'stopped';
 }
 
-function isDatabaseInfo(value: unknown): value is DatabaseInfo {
+export interface CreateDatabaseRequest {
+  readonly labels: Readonly<Record<string, string>>;
+  /** Used if no instance holds it and it is bindable; otherwise the emulator gives the lowest free port in its database range. */
+  readonly port?: number;
+  /** Where the caller resolved `@prisma/dev`; the emulator loads it from here. */
+  readonly prismaDevModulePath: string;
+}
+
+function isDatabaseInstanceInfo(value: unknown): value is DatabaseInstanceInfo {
   return (
     typeof value === 'object' &&
     value !== null &&
     'id' in value &&
     typeof value.id === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    'port' in value &&
+    typeof value.port === 'number' &&
     'url' in value &&
     typeof value.url === 'string' &&
-    'instanceName' in value &&
-    typeof value.instanceName === 'string' &&
-    'databasePort' in value &&
-    typeof value.databasePort === 'number'
+    'status' in value &&
+    (value.status === 'running' || value.status === 'stopped')
   );
 }
 
-function isDatabaseInfoArray(value: unknown): value is DatabaseInfo[] {
-  return Array.isArray(value) && value.every(isDatabaseInfo);
+function isDatabaseInstanceInfoArray(value: unknown): value is DatabaseInstanceInfo[] {
+  return Array.isArray(value) && value.every(isDatabaseInstanceInfo);
 }
 
-interface EnsuredDatabase {
-  readonly url: string;
-}
-
-function isEnsuredDatabase(value: unknown): value is EnsuredDatabase {
-  return (
-    typeof value === 'object' && value !== null && 'url' in value && typeof value.url === 'string'
-  );
-}
-
+/** Each database is an instance keyed by an id the emulator generates, served by its own `@prisma/dev` server. */
 export interface PostgresClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `PUT /apps/<app>/databases/<id>` — ensure a named, persistent `@prisma/dev` server. Idempotent. */
-  ensureDatabase(app: string, id: string, prismaDevModulePath: string): Promise<{ url: string }>;
-  /** `GET /apps/<app>/databases`. */
-  listDatabases(app: string): Promise<DatabaseInfo[]>;
-  /** `DELETE /apps/<app>` — closes the app's servers and deletes their persisted data. */
-  deleteApp(app: string): Promise<void>;
+  /** `POST /instances` — creates a database and starts its server; it holds its port until it is deleted. Never retried: a retry could create a second database. */
+  createInstance(request: CreateDatabaseRequest): Promise<DatabaseInstanceInfo>;
+  /** `GET /instances`. */
+  listInstances(): Promise<DatabaseInstanceInfo[]>;
+  /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
+  getInstance(id: string): Promise<DatabaseInstanceInfo | undefined>;
+  /** `POST /instances/start` — starts each listed database's server on its port, with its data. Fails naming any unknown id. */
+  startInstances(ids: readonly string[], prismaDevModulePath: string): Promise<void>;
+  /** `POST /instances/stop` — shuts the servers down and keeps their data and ports; an unknown id is skipped. */
+  stopInstances(ids: readonly string[]): Promise<void>;
+  /** `DELETE /instances/<id>` — stops the server and deletes its data. Deleting an unknown id succeeds. */
+  deleteInstance(id: string): Promise<void>;
 }
 
 export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
@@ -436,35 +445,48 @@ export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
       return body;
     },
 
-    async ensureDatabase(app, id, prismaDevModulePath) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/databases/${encodeSegment(id)}`;
+    async createInstance(request) {
       const res = await expectOk(
-        await adminFetch(url, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ prismaDevModulePath }),
-        }),
+        await adminFetch(`${baseUrl}/instances`, postJson(request), { retry: false }),
       );
       const body: unknown = await res.json();
-      if (!isEnsuredDatabase(body)) {
-        throw new Error('malformed database-ensure response from the postgres emulator');
+      if (!isDatabaseInstanceInfo(body)) {
+        throw new Error('malformed instance-create response from the postgres emulator');
       }
       return body;
     },
 
-    async listDatabases(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/databases`;
-      const res = await expectOk(await adminFetch(url));
+    async listInstances() {
+      const res = await expectOk(await adminFetch(`${baseUrl}/instances`));
       const body: unknown = await res.json();
-      if (!isDatabaseInfoArray(body)) {
-        throw new Error('malformed databases listing from the postgres emulator');
+      if (!isDatabaseInstanceInfoArray(body)) {
+        throw new Error('malformed instances listing from the postgres emulator');
       }
       return body;
     },
 
-    async deleteApp(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+    async getInstance(id) {
+      const res = await adminFetch(instancePath(baseUrl, id));
+      if (res.status === 404) return undefined;
+      const body: unknown = await (await expectOk(res)).json();
+      if (!isDatabaseInstanceInfo(body)) {
+        throw new Error('malformed instance response from the postgres emulator');
+      }
+      return body;
+    },
+
+    async startInstances(ids, prismaDevModulePath) {
+      await expectOk(
+        await adminFetch(`${baseUrl}/instances/start`, postJson({ ids, prismaDevModulePath })),
+      );
+    },
+
+    async stopInstances(ids) {
+      await expectOk(await adminFetch(`${baseUrl}/instances/stop`, postJson({ ids })));
+    },
+
+    async deleteInstance(id) {
+      await expectOk(await adminFetch(instancePath(baseUrl, id), { method: 'DELETE' }));
     },
   };
 }
