@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Load } from '@prisma/composer';
+import { Load, module } from '@prisma/composer';
 import type { ContainerInstance, LocalTargetDescriptor } from '@prisma/composer/config';
 import { DEV_DIR } from '@prisma/composer/config';
 import { devStop, devUrl } from '@prisma/composer/control';
@@ -28,6 +28,15 @@ const config = {
 };
 const SERVING_BOOTSTRAP =
   "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('hello from web') });\n";
+
+/**
+ * Where this file's services start. Other test files run their own Compute
+ * emulators at the same time, each giving ports from 3000, and a service
+ * that answers on a port proves nothing about whose process it is. Ports
+ * below this one go to placeholder instances, so this file's services never
+ * share a port with theirs.
+ */
+const FIRST_SERVICE_PORT = 3100;
 
 interface RecordedNode {
   readonly kind: string;
@@ -57,6 +66,10 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
   let container: ContainerInstance;
   let nodes: Readonly<Record<string, RecordedNode>>;
 
+  function readRegistryPort(name: string): number {
+    return JSON.parse(fs.readFileSync(path.join(emulatorsDir, `${name}.json`), 'utf8')).port;
+  }
+
   beforeAll(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'control-dev-current-'));
     cwd = path.join(root, 'app');
@@ -69,6 +82,25 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     target = await localTarget();
     container = await target.container.ensure({ appName: APP, stage: undefined });
     const devDir = path.join(cwd, DEV_DIR);
+
+    // An app with no nodes starts the Compute emulator, so the placeholders can
+    // take the ports below FIRST_SERVICE_PORT before the fixture's services are created.
+    const placeholderApp = module('portskip', () => {});
+    await target.emulators?.({
+      graph: Load(placeholderApp, { id: 'portskip' }),
+      container: await target.container.ensure({ appName: 'portskip', stage: undefined }),
+      devDir: path.join(root, 'placeholders', DEV_DIR),
+    });
+    const computeAdmin = `http://127.0.0.1:${readRegistryPort('compute')}`;
+    for (let port = 0; port < FIRST_SERVICE_PORT - 1; ) {
+      const created = await fetch(`${computeAdmin}/instances`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ labels: { purpose: 'port-skip' } }),
+      });
+      port = ((await created.json()) as { port: number }).port;
+    }
+
     await target.emulators?.({ graph: Load(appModule, { id: APP }), container, devDir });
 
     const record = JSON.parse(
@@ -81,19 +113,15 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     const artifactDir = path.join(root, 'web-artifact');
     fs.mkdirSync(artifactDir);
     fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), SERVING_BOOTSTRAP);
-    const compute = JSON.parse(fs.readFileSync(path.join(emulatorsDir, 'compute.json'), 'utf8'));
-    const deployed = await fetch(
-      `http://127.0.0.1:${compute.port}/instances/${web.id}/deployment`,
-      {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          artifactDir,
-          artifactHash: 'v1',
-          env: { PATH: process.env['PATH'] ?? '', PORT: String(web.port) },
-        }),
-      },
-    );
+    const deployed = await fetch(`${computeAdmin}/instances/${web.id}/deployment`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        artifactDir,
+        artifactHash: 'v1',
+        env: { PATH: process.env['PATH'] ?? '', PORT: String(web.port) },
+      }),
+    });
     if (!deployed.ok) throw new Error(`deploying web failed: ${await deployed.text()}`);
   }, 120_000);
 
@@ -121,6 +149,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
 
     if (!web.ok) throw new Error(web.failure.message);
     expect(web.value).toMatchObject({ address: 'web', kind: 'service', state: 'running' });
+    expect(Number(new URL(web.value.url).port)).toBeGreaterThanOrEqual(FIRST_SERVICE_PORT);
     expect(await (await fetch(web.value.url)).text()).toBe('hello from web');
     if (!appdb.ok) throw new Error(appdb.failure.message);
     expect(appdb.value.url).toStartWith('postgres');

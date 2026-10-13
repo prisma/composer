@@ -41,6 +41,21 @@ const DAEMONS: readonly DaemonName[] = ['compute', 'postgres', 'buckets'];
 const SERVING_BOOTSTRAP =
   "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('hello from gateway') });\n";
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
+/**
+ * Where this file's services start. Other test files run their own Compute
+ * emulators at the same time, each giving ports from 3000, and a service
+ * that answers on a port proves nothing about whose process it is. Ports
+ * below this one go to placeholder instances, so this file's services never
+ * share a port with theirs.
+ */
+const FIRST_SERVICE_PORT = 3050;
+
+async function reserveServicePortsBelow(port: number): Promise<void> {
+  const client = computeClient();
+  while ((await client.createInstance({ labels: { purpose: 'port-skip' } })).port < port - 1) {
+    // each placeholder takes the lowest free port
+  }
+}
 
 function acceptsConnection(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -67,8 +82,9 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       const entry = fileURLToPath(import.meta.resolve(`@internal/dev-emulators/${name}-main`));
       await ensureDaemon(name, entry, { registryRoot });
     }
+    await reserveServicePortsBelow(FIRST_SERVICE_PORT);
     directories = [];
-  });
+  }, 60_000);
 
   afterEach(async () => {
     for (const directory of directories) {
@@ -126,6 +142,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     expect([...current.addresses].sort()).toEqual(['catalog', 'gateway', 'uploads']);
 
     const service = await urlOf(current, 'gateway');
+    expect(Number(new URL(service).port)).toBeGreaterThanOrEqual(FIRST_SERVICE_PORT);
     expect(await (await fetch(service)).text()).toBe('hello from gateway');
 
     const database = new pg.Client({ connectionString: await urlOf(current, 'catalog') });
@@ -226,9 +243,10 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       ['bucket', true],
     ]);
     for (const emulator of emulators) {
-      const directoriesOf = emulator.instances.map((i) => i.labels['composer.directory']).sort();
+      const instances = emulator.instances.filter((i) => i.labels['purpose'] !== 'port-skip');
+      const directoriesOf = instances.map((i) => i.labels['composer.directory']).sort();
       expect(directoriesOf).toEqual([a.directory, b.directory].sort());
-      for (const instance of emulator.instances) {
+      for (const instance of instances) {
         expect(instance.kind).toBe(emulator.kind);
         expect(instance.labels['composer.app']).toBe(APP);
       }
