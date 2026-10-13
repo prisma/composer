@@ -164,7 +164,8 @@ jobs:
 
   node-floor:
     name: Node 22.18 floor
-    # The published packages declare `engines.node: >=22.18.0`, but every suite
+    # The published packages declare `engines.node: ^22.18.0 || ^24.11.0 || >=26.0.0`,
+    # and 22.18.0 is its oldest release, but every suite
     # above runs under bun, which ignores `engines.node` entirely, and
     # `.tool-versions` pins node 24.16.0 — so nothing else here ever executes
     # the floor version. This job does. It covers what a Node user hits first:

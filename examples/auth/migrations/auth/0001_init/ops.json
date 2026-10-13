@@ -58,7 +58,7 @@
     "execute": [
       {
         "description": "create table \"account\"",
-        "sql": "CREATE TABLE \"auth\".\"account\" (\n  \"accessToken\" text,\n  \"accessTokenExpiresAt\" \"timestamptz\",\n  \"accountId\" text NOT NULL,\n  \"createdAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"idToken\" text,\n  \"password\" text,\n  \"providerId\" text NOT NULL,\n  \"refreshToken\" text,\n  \"refreshTokenExpiresAt\" \"timestamptz\",\n  \"scope\" text,\n  \"updatedAt\" \"timestamptz\" NOT NULL,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"auth\".\"account\" (\n  \"accessToken\" text,\n  \"accessTokenExpiresAt\" timestamptz,\n  \"accountId\" text NOT NULL,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"id\" text NOT NULL,\n  \"idToken\" text,\n  \"password\" text,\n  \"providerId\" text NOT NULL,\n  \"refreshToken\" text,\n  \"refreshTokenExpiresAt\" timestamptz,\n  \"scope\" text,\n  \"updatedAt\" timestamptz NOT NULL,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],
@@ -97,7 +97,7 @@
     "execute": [
       {
         "description": "create table \"jwks\"",
-        "sql": "CREATE TABLE \"auth\".\"jwks\" (\n  \"createdAt\" \"timestamptz\" NOT NULL,\n  \"expiresAt\" \"timestamptz\",\n  \"id\" text NOT NULL,\n  \"privateKey\" text NOT NULL,\n  \"publicKey\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"auth\".\"jwks\" (\n  \"createdAt\" timestamptz NOT NULL,\n  \"expiresAt\" timestamptz,\n  \"id\" text NOT NULL,\n  \"privateKey\" text NOT NULL,\n  \"publicKey\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],
@@ -136,7 +136,7 @@
     "execute": [
       {
         "description": "create table \"session\"",
-        "sql": "CREATE TABLE \"auth\".\"session\" (\n  \"createdAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  \"expiresAt\" \"timestamptz\" NOT NULL,\n  \"id\" text NOT NULL,\n  \"impersonatedBy\" text,\n  \"ipAddress\" text,\n  \"token\" text NOT NULL,\n  \"updatedAt\" \"timestamptz\" NOT NULL,\n  \"userAgent\" text,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"auth\".\"session\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"expiresAt\" timestamptz NOT NULL,\n  \"id\" text NOT NULL,\n  \"impersonatedBy\" text,\n  \"ipAddress\" text,\n  \"token\" text NOT NULL,\n  \"updatedAt\" timestamptz NOT NULL,\n  \"userAgent\" text,\n  \"userId\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],
@@ -175,7 +175,7 @@
     "execute": [
       {
         "description": "create table \"user\"",
-        "sql": "CREATE TABLE \"auth\".\"user\" (\n  \"banExpires\" \"timestamptz\",\n  \"banReason\" text,\n  \"banned\" bool,\n  \"createdAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  \"email\" text NOT NULL,\n  \"emailVerified\" bool NOT NULL,\n  \"id\" text NOT NULL,\n  \"image\" text,\n  \"name\" text NOT NULL,\n  \"role\" text,\n  \"updatedAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"auth\".\"user\" (\n  \"banExpires\" timestamptz,\n  \"banReason\" text,\n  \"banned\" bool,\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"email\" text NOT NULL,\n  \"emailVerified\" bool NOT NULL,\n  \"id\" text NOT NULL,\n  \"image\" text,\n  \"name\" text NOT NULL,\n  \"role\" text,\n  \"updatedAt\" timestamptz DEFAULT (now()) NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],
@@ -214,7 +214,7 @@
     "execute": [
       {
         "description": "create table \"verification\"",
-        "sql": "CREATE TABLE \"auth\".\"verification\" (\n  \"createdAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  \"expiresAt\" \"timestamptz\" NOT NULL,\n  \"id\" text NOT NULL,\n  \"identifier\" text NOT NULL,\n  \"updatedAt\" \"timestamptz\" DEFAULT (now()) NOT NULL,\n  \"value\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
+        "sql": "CREATE TABLE \"auth\".\"verification\" (\n  \"createdAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"expiresAt\" timestamptz NOT NULL,\n  \"id\" text NOT NULL,\n  \"identifier\" text NOT NULL,\n  \"updatedAt\" timestamptz DEFAULT (now()) NOT NULL,\n  \"value\" text NOT NULL,\n  PRIMARY KEY (\"id\")\n)",
         "params": []
       }
     ],

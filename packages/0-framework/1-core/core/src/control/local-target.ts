@@ -1,5 +1,6 @@
 /** The local-target stack's own provider aggregation (ADR-0041; naming, operator 2026-07-23 — the seam is `localTarget`, "dev" names the user-facing feature only) — the local-target counterpart of `deploy.ts`'s `mergedProviders`, kept in its own module so `lower()` learns nothing about it (deploy.ts's REVISED — operator review of #162). */
 import { CliStructuredError } from '@internal/foundation/errors';
+import { localState } from 'alchemy/State/LocalState';
 import * as Layer from 'effect/Layer';
 import {
   type ContainerInstance,
@@ -7,6 +8,7 @@ import {
   type LocalTargetDescriptor,
   type PrismaAppConfig,
 } from './app-config.ts';
+import type { AlchemyStateLayer } from './deploy.ts';
 
 function noLocalTargetSupportError(id: string): CliStructuredError {
   return new CliStructuredError(
@@ -58,4 +60,9 @@ export function localTargetProviders(
   );
   const [first, ...rest] = layers;
   return first === undefined ? Layer.empty : Layer.mergeAll(first, ...rest);
+}
+
+/** The state store `prisma dev` converges against: Alchemy's file store in the app's working directory. */
+export function devState(): AlchemyStateLayer {
+  return localState();
 }

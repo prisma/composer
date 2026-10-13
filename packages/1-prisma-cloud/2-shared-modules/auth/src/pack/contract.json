@@ -676,6 +676,9 @@
               },
               "foreignKeys": [
                 {
+                  "index": {
+                    "name": "account_userId_idx"
+                  },
                   "onDelete": "cascade",
                   "source": {
                     "columns": [
@@ -805,6 +808,9 @@
               },
               "foreignKeys": [
                 {
+                  "index": {
+                    "name": "session_userId_idx"
+                  },
                   "onDelete": "cascade",
                   "source": {
                     "columns": [
@@ -1002,7 +1008,7 @@
         "kind": "postgres-schema"
       }
     },
-    "storageHash": "310f206db185446ac06c56b425d961c2ae7c9d3f4fd409a92c4832592b2d8839",
+    "storageHash": "0df0ef0989ec3dd95124dde6303fbe0572bbab08bebf00abff6a7955cadd786e",
     "types": {
       "Tstz": {
         "codecId": "pg/timestamptz-string@1",

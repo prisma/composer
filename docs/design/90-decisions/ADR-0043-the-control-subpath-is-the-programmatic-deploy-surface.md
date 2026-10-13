@@ -1,8 +1,10 @@
 # ADR-0043: `@prisma/composer/control` is the programmatic deploy surface
 
+Amended by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md): each operation takes a required `config: { value, file }`, and the effect-conflict diagnosis is retired. Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired; the `prisma` CLI renders two of the four operations, as `prisma deploy` and `prisma dev`, and `destroy` and `log` are called from scripts. The surface below is otherwise unchanged.
+
 ## Decision
 
-Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart.
+Composer's deploy pipeline is drivable in-process through one published subpath, **`@prisma/composer/control`**. It exposes four typed operations — `deploy`, `destroy`, `dev`, `log` — that take structured inputs and return structured results. They never parse argv and never call `process.exit`; the operations print nothing — the spawned alchemy child streams its own output to the terminal. The `prisma-composer` CLI is a thin renderer over these same operations, so the command-line surface and the programmatic surface cannot drift apart. *(Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the `prisma-composer` binary is retired. The `prisma` CLI renders two of the operations, as `prisma deploy` and `prisma dev`; `destroy` and `log` have no command and are called from scripts.)*
 
 A host — another CLI embedding Composer, a CI tool, a test — uses it like this:
 

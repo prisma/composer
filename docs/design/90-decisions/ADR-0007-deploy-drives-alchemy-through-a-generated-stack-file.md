@@ -1,5 +1,7 @@
 # ADR-0007: Deploy drives Alchemy through a generated stack file
 
+Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the commands that generate and drive the stack file are `prisma deploy` and `prisma dev`; teardown is the `destroy` operation on `@prisma/composer/control`, which drives `alchemy destroy` against the same generated file. The `prisma-composer` binary is retired. The generated-file mechanism below is unchanged.
+
 ## Decision
 
 `prisma-composer deploy` materializes its work as a small, human-readable stack
@@ -86,3 +88,17 @@ generated file carries no stage of its own.
 - [`ADR-0004`](ADR-0004-paths-resolve-relative-to-the-authoring-file.md) —
   where the file and Alchemy's state live.
 - [`../10-domains/deploy-cli.md`](../10-domains/deploy-cli.md)
+
+## Addendum: which `alchemy` runs, and the printed reproduce command
+
+The command a user reruns is no longer the bare `alchemy deploy
+.prisma-composer/alchemy.run.ts`. Under pnpm an app that does not depend on
+`alchemy` itself has no `alchemy` on PATH or in `node_modules/.bin`, so that
+command fails. Composer runs the `bin` of the `alchemy` that the app's
+`@prisma/composer` depends on, started with Node as
+[deploy-cli.md § Runtime](../10-domains/deploy-cli.md) describes. A failed
+deploy, destroy or dev converge prints the command line that was started
+(`<node> <alchemy bin> deploy <stack file> --yes --stage <stage>`) as its
+reproduce command, and the generated files' headers describe that form. The
+bisection property above holds with that command.
+

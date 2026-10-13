@@ -1,11 +1,15 @@
 # ADR-0006: Every node is named; the root's name names the application
 
+Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the override is `prisma deploy --name`; the `prisma-composer` binary is retired. The naming rules below are unchanged.
+
+Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): a node's name is its provision ID unless `provision()` sets an `id`, so by default every node's name is part of its address, and the address is its identity on the platform (`logicalId`). Changing any node's name therefore changes its identity, not just the root's; below the root, for a database or bucket, that deletes its data. Changing an identity is not a rename: a rename changes a display name and nothing else. Read this ADR's "renaming a root" as "changing the root's name", which points the deploy at a different application.
+
 ## Decision
 
 Every node — module, service, or resource — carries an explicit,
 human-readable name, given at authoring. When a node is deployed as the root,
 its name becomes the application's name (on Prisma Cloud: the Project name).
-`prisma-composer deploy --name` overrides it for a single run. Nothing derives a
+`prisma-composer deploy --name` overrides it for a single run. *(Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is now `prisma deploy --name`.)* Nothing derives a
 name from a `package.json` or a directory.
 
 ## Reasoning

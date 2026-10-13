@@ -39,12 +39,35 @@ you source at deploy time, or CI secrets).
 ## Runtime
 
 The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
-`module.ts` and every module it imports, so run the bin under the runtime
-those modules need. Node is the default. If they use Bun APIs (they import
-`bun`, or call `Bun.serve` when imported), run the bin under Bun instead:
-`bun node_modules/.bin/prisma deploy module.ts`. The examples in the
-prisma/composer repository run it under Bun, which is why their scripts
-start with `bun`.
+`module.ts` and every module it imports, so those modules decide the runtime
+`prisma` needs. Run it with your package manager by default:
+`pnpm prisma deploy module.ts` or `npx prisma deploy module.ts`.
+
+Composer starts Alchemy's launcher with Node: the Node `prisma` runs on, or
+the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
+if there is none). Alchemy's launcher then moves itself to Bun when the
+package-manager environment says Bun invoked it, which `bunx` and `bun run`
+do. So the invocation decides where each ends up:
+
+| Invocation | `prisma` runs under | Alchemy runs under |
+| --- | --- | --- |
+| `pnpm prisma …` or `npx prisma …` | Node | Node |
+| `bunx prisma …` | Node (the bin's `node` shebang) | Bun |
+| `bunx --bun prisma …` | Bun | Bun (Bun stands in for `node` on PATH) |
+| `bun node_modules/prisma/dist/prisma.js …` | Bun | Node |
+
+If your modules use Bun APIs (they import `bun`, or call `Bun.serve` when
+imported), `prisma` must run under Bun. To keep Alchemy on Node at the same
+time, run the bin's JavaScript entry with Bun from a shell, not from a
+`bun run` script:
+
+```sh
+bun node_modules/prisma/dist/prisma.js deploy module.ts
+```
+
+`bun node_modules/.bin/prisma` does not run with pnpm, where that file is a
+shell script. The examples in the prisma/composer repository run `prisma`
+under Bun, which is why their scripts start with `bun`.
 
 ## Configuration
 
@@ -89,9 +112,10 @@ longer read, and the commands refuse the old setup rather than ignore it:
 | `CONFIG.FILE_RETIRED` | A `prisma-composer.config.{ts,mts,mjs,js}` sits next to the `prisma.config.ts` that declares the section. |
 
 All three appear under the Prisma CLI's own `CLI.CONFIG_SECTION_INVALID`
-headline, and all three give the same fix: move the old file's `extensions` and
-`state` into `composer: composer({ ... })` in `prisma.config.ts`, then delete
-the old file. Nothing migrates it for you.
+headline. `SECTION_MISSING` is fixed by adding `composer: composer({ ... })` to
+`prisma.config.ts`. `FIELD_RETIRED` and `FILE_RETIRED` are fixed by moving the
+old file's `extensions` and `state` into that section, then removing
+`configPath` or deleting the old file. Nothing migrates it for you.
 
 If you mount Composer's commands into your own CLI through
 `@prisma/composer-cli/family`, note that the `ComposerSection` type is gone: the
@@ -99,10 +123,10 @@ section's value is `PrismaAppConfig`, exported from `@prisma/composer/config`.
 
 ## Build first
 
-Composer resolves Alchemy from the nearest `node_modules/.bin`, walking up
-for hoisted installations. On Windows it prefers `alchemy.exe`, then
-`alchemy.cmd`, then the extensionless shim; POSIX uses `alchemy`. An installed
-Windows shim must not be reported as a missing Alchemy dependency.
+Composer runs the `alchemy` that your app's `@prisma/composer` depends on: it
+finds that package beside `@prisma/composer` and starts its entry with Node ([Runtime](#runtime) says
+when Alchemy then moves to Bun). Your app does not need `alchemy` as a direct
+dependency, and no `node_modules/.bin/alchemy` link is needed on any platform.
 
 `prisma deploy` does not build for you — it assembles what your
 build produced:
@@ -173,11 +197,12 @@ web: https://uvw.ewr.prisma.build
 ✔ Deployed storefront-auth to production in 6m 5s.
 ```
 
-Assembling is one step per service. A Node service with `dir` set can take
-minutes here, because its runtime dependencies are traced and copied into
-the deploy artifact. Planning and applying run in one deploy engine process,
-so they are one step. The last line is the whole deploy, from start to
-finish.
+Assembling is one step per service. A Node service with
+`dependencies: 'external'` can take minutes here, because its runtime
+dependencies are traced and copied into the deploy artifact (see
+[Building an app § Builds](building-an-app.md#builds)).
+Planning and applying run in one deploy engine process, so they are one step.
+The last line is the whole deploy, from start to finish.
 
 With `--json`, or whenever stdout is not a terminal, each step is a
 `step-started` and a `step-finished` line on stdout, followed by an
@@ -249,8 +274,7 @@ if (!result.ok) {
 ```
 
 Run it with the two variables under [Credentials](#credentials) set, for
-example `bun destroy-staging.ts`, or `node destroy-staging.ts` on Node 22.18
-or newer. A `prisma auth login` session is not used.
+example `bun destroy-staging.ts`, or `node destroy-staging.ts` on a supported Node.js release (22.18 or newer on the 22 line, 24.11 or newer on the 24 line, or 26 or newer). A `prisma auth login` session is not used.
 
 The three teardown shapes differ in what happens to state. Destroying a **stage** removes its resources, then deletes its Branch — and the Branch takes the stage's deploy state with it. Destroying **production** removes the resources and empties production's deploy state as it goes, but the production Branch survives, so an emptied state scope remains until the Project itself is removed. Deleting the **Project** (below, or from the Console) removes every Branch and all state in one stroke. Destroy never creates: tearing down a stage that was never deployed fails with "nothing deployed" rather than provisioning one first.
 
@@ -335,16 +359,26 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's in your app's `package.json`:
+Composer's. `<pin>` below stands for that exact version (`4.0.0-rc.115` in
+Composer 0.29.1). With npm, in your app's `package.json`:
 
 ```json
 "overrides": {
-  "effect": "<required>"
+  "effect": "<pin>"
 }
 ```
 
-yarn spells the block `resolutions`, and pnpm nests it under
-`"pnpm": { "overrides": ... }`.
+With pnpm 11 and later, in `pnpm-workspace.yaml` (pnpm 11 ignores the
+`pnpm` field of `package.json`):
+
+```yaml
+overrides:
+  effect: <pin>
+```
+
+With pnpm 10 and earlier, nest the npm block under
+`"pnpm": { "overrides": ... }` in `package.json`. With Yarn, the
+`package.json` block is `resolutions`.
 
 Reinstall afterwards — the setting only takes effect when the tree is rebuilt.
 

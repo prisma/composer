@@ -24,6 +24,7 @@ import {
   paramEntries,
   serializeInput,
 } from '../serializer.ts';
+import { serviceAppName } from '../service-app.ts';
 import {
   cloudApplicationOf,
   projectIdOf,
@@ -149,7 +150,7 @@ export function computeDescriptor(
         const branchId = cloudApplicationOf(application).branchId;
         const svc = yield* Prisma.App(`${id}-svc`, {
           project: projectId,
-          displayName: id,
+          displayName: serviceAppName(id),
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
         });

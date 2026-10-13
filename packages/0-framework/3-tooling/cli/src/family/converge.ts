@@ -54,13 +54,14 @@ export interface ConvergeContext {
  *  terminal reaches alchemy natively and the engine owns signal policy. */
 export function convergeSpawn(ctx: ConvergeContext): RunAlchemy {
   return async (invocation) => {
-    const line = alchemyCommandLine(invocation);
-    return await ctx.spawn({
-      command: line.command,
-      args: line.args,
-      cwd: line.cwd,
-      env: line.env,
+    const commandLine = alchemyCommandLine(invocation);
+    const result = await ctx.spawn({
+      command: commandLine.command,
+      args: commandLine.args,
+      cwd: commandLine.cwd,
+      env: commandLine.env,
     });
+    return { ...result, commandLine };
   };
 }
 

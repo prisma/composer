@@ -147,13 +147,13 @@ What deploy requires is also provenance-independent, and already follows from
 the path and build rules:
 
 - **Built runnables must exist** at each service descriptor's
-  `dirname(module)`-relative `entry` when `prisma-composer deploy` runs (ADR-0005).
+  `dirname(module)`-relative `entry` when `prisma deploy` runs (ADR-0005).
   Who built them is the consumer's arrangement with the module: an app importing
   module source builds it like the rest of its code; a prebuilt package ships its
   runnables and satisfies the requirement at publish time (ADR-0004 makes the
   paths resolve correctly either way, including from inside `node_modules`).
 - **A service's build descriptor names its extension as data** (`extension` +
-  `type`), and the consuming app's `prisma-composer.config.ts` lists the extensions
+  `type`), and the `composer` section of the consuming app's `prisma.config.ts` lists the extensions
   its graph uses — including those a published module uses internally. The
   module documents them and can re-export a config fragment
   (`extensions: [...authModuleExtensions, prismaCloud()]`), keeping the cost to

@@ -129,6 +129,17 @@ test('deleting one app leaves the other app registered', async () => {
   expect(twoList).toHaveLength(1);
 });
 
+test('an app deleted and reserved again gets back the ports it freed', async () => {
+  const client = computeClient({ registryRoot });
+  const quotes = await client.ensureService('tenant-one', 'quotes');
+  const gateway = await client.ensureService('tenant-one', 'gateway');
+
+  await client.deleteApp('tenant-one');
+
+  expect((await client.ensureService('tenant-one', 'quotes')).port).toBe(quotes.port);
+  expect((await client.ensureService('tenant-one', 'gateway')).port).toBe(gateway.port);
+});
+
 describe('path-segment hygiene', () => {
   test('an app name with an uppercase letter is rejected with 400', async () => {
     const { url } = await ensureDaemon('compute', entryFor('compute'), { registryRoot });
