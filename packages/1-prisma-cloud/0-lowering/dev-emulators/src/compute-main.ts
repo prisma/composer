@@ -16,7 +16,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
-import { readOwnVersion } from './daemon.ts';
+import { readOwnVersion, SERVICE_READY_TIMEOUT_ENV } from './daemon.ts';
 import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
@@ -151,8 +151,14 @@ interface RuntimeInfo {
   backoffTimer: NodeJS.Timeout | undefined;
   expectedExit: boolean;
   log: ServiceLog | undefined;
-  /** The start in flight, until its child accepts connections or fails to. */
-  starting: Promise<SpawnResult> | undefined;
+  /** The start in flight, until its child accepts connections or fails to. A newer start or a stop replaces or clears it. */
+  start: InFlightStart | undefined;
+}
+
+interface InFlightStart {
+  readonly token: object;
+  readonly fresh: boolean;
+  readonly result: Promise<SpawnResult>;
 }
 
 interface SpawnResult {
@@ -318,7 +324,7 @@ function main(): void {
         backoffTimer: undefined,
         expectedExit: false,
         log: undefined,
-        starting: undefined,
+        start: undefined,
       };
       runtimes.set(key, rt);
     }
@@ -459,24 +465,48 @@ function main(): void {
     }, delayMs);
   }
 
+  /** Records `run` as the service's start in flight, replacing any earlier one. */
+  function beginStart(
+    rt: RuntimeInfo,
+    fresh: boolean,
+    run: (token: object) => Promise<SpawnResult>,
+  ): Promise<SpawnResult> {
+    const token = {};
+    const result = run(token).finally(() => {
+      if (rt.start?.token === token) rt.start = undefined;
+    });
+    rt.start = { token, fresh, result };
+    return result;
+  }
+
+  /** The outcome for a start that a newer start replaced (that start's), or that a stop ended. */
+  function supersededResult(svc: ServiceRecord, rt: RuntimeInfo): Promise<SpawnResult> {
+    return (
+      rt.start?.result ??
+      Promise.resolve({
+        ok: false,
+        message: `service "${svc.address}" was stopped before it accepted connections`,
+      })
+    );
+  }
+
   /**
    * Spawns the service's child and resolves once it accepts connections on
    * its port — only then is it `running`. A child that exits first, or never
-   * listens within the readiness timeout (it is then stopped), fails the
-   * start with a message naming the service and its log.
+   * listens within the readiness timeout, fails the start with a message
+   * naming the service and its log.
    */
   function spawnService(
     app: string,
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
+    /** A fresh start (a deployment or a session resume) begins a clean log; a crash-backoff respawn keeps the run's crash trail. */
     fresh: boolean,
   ): Promise<SpawnResult> {
-    const starting = spawnAndWaitUntilListening(app, id, svc, rt, fresh).finally(() => {
-      if (rt.starting === starting) rt.starting = undefined;
-    });
-    rt.starting = starting;
-    return starting;
+    return beginStart(rt, fresh, (token) =>
+      spawnAndWaitUntilListening(app, id, svc, rt, fresh, token),
+    );
   }
 
   async function spawnAndWaitUntilListening(
@@ -484,8 +514,8 @@ function main(): void {
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
-    /** A fresh start (a deployment or a session resume) begins a clean log; a crash-backoff respawn keeps the run's crash trail. */
     fresh: boolean,
+    token: object,
   ): Promise<SpawnResult> {
     const env = svc.env ?? {};
     const artifactDir = svc.artifactDir ?? '.';
@@ -521,9 +551,10 @@ function main(): void {
     if (child.pid !== undefined) svc.pid = child.pid;
     schedulePersist();
 
-    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs);
-    const service = `service "${svc.address}"`;
     const port = String(svc.port);
+    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs);
+    if (rt.start?.token !== token) return supersededResult(svc, rt);
+    const service = `service "${svc.address}"`;
     if (outcome.kind === 'exited') {
       const how =
         outcome.code !== null ? `code ${String(outcome.code)}` : (outcome.signal ?? 'no exit code');
@@ -532,19 +563,23 @@ function main(): void {
         message: `${service} exited (${how}) before it accepted connections on its port ${port}. Its log: ${svc.logPath}`,
       };
     }
-    if (rt.child !== child) {
-      return { ok: false, message: `${service} was replaced before it accepted connections` };
-    }
     if (outcome.kind === 'timed-out') {
       const seconds = String(readyTimeoutMs / 1000);
-      log.writeLine(
-        `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
-      );
-      await stopService(svc, rt);
-      return {
-        ok: false,
-        message: `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}`,
-      };
+      const message = `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator.`;
+      if (fresh) {
+        log.writeLine(
+          `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
+        );
+        await stopService(svc, rt);
+      } else {
+        log.writeLine(
+          `[emulator] restart did not accept connections on port ${port} within ${seconds}s — held; send a new deployment to resume`,
+        );
+        await stopService(svc, rt);
+        svc.status = 'held';
+        schedulePersist();
+      }
+      return { ok: false, message };
     }
     svc.status = 'running';
     schedulePersist();
@@ -552,6 +587,7 @@ function main(): void {
   }
 
   async function stopService(svc: ServiceRecord, rt: RuntimeInfo): Promise<void> {
+    rt.start = undefined;
     clearBackoffTimer(rt);
     clearStableTimer(rt);
     await killChild(rt, TERMINATE_GRACE_MS);
@@ -570,9 +606,9 @@ function main(): void {
    */
   async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
     if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
-    if (svc.status === 'running') return { ok: true }; // idempotent — already up
     const rt = getRuntime(app, id);
-    if (rt.starting) return rt.starting;
+    if (rt.start) return rt.start.result;
+    if (svc.status === 'running') return { ok: true }; // idempotent — already up
     clearBackoffTimer(rt);
     clearStableTimer(rt);
     rt.consecutiveFastExits = 0;
@@ -652,33 +688,34 @@ function main(): void {
 
     const changed = svc.artifactHash !== parsed.artifactHash || !envEquals(svc.env, parsed.env);
 
-    if (svc.status === 'running') {
-      if (!changed) {
-        // A true no-op: nothing about this service's persisted record
-        // changes, so nothing is mutated here either — nothing to persist.
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-      await killChild(rt, TERMINATE_GRACE_MS);
+    let result: SpawnResult;
+    if (!changed && rt.start?.fresh === true) {
+      // The same deployment is already starting: answer when it does.
+      result = await rt.start.result;
+    } else if (!changed && rt.start === undefined && svc.status === 'running') {
+      // A true no-op: nothing about this service's persisted record
+      // changes, so nothing is mutated here either — nothing to persist.
+      result = { ok: true };
     } else {
+      svc.address = parsed.address;
+      svc.port = parsed.port;
+      svc.artifactHash = parsed.artifactHash;
+      svc.env = parsed.env;
+      svc.artifactDir = parsed.artifactDir;
       clearBackoffTimer(rt);
-      // A start still waiting for its child to listen has a child to replace.
-      await killChild(rt, TERMINATE_GRACE_MS);
+      schedulePersist();
+      // A new or changed deployment, or a service that is not up: a fresh
+      // start with a clean log, once the old process (if any) has exited.
+      result = await beginStart(rt, true, async (token) => {
+        await killChild(rt, TERMINATE_GRACE_MS);
+        if (rt.start?.token !== token) return supersededResult(svc, rt);
+        svc.status = 'stopped';
+        delete svc.pid;
+        clearStableTimer(rt);
+        rt.consecutiveFastExits = 0;
+        return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+      });
     }
-
-    svc.address = parsed.address;
-    svc.port = parsed.port;
-    clearStableTimer(rt);
-    rt.consecutiveFastExits = 0;
-    svc.artifactHash = parsed.artifactHash;
-    svc.env = parsed.env;
-    svc.artifactDir = parsed.artifactDir;
-    schedulePersist();
-
-    // A deployment PUT that reaches here is a new or changed deployment (an
-    // unchanged running one returned 204 above) — a fresh start, clean log.
-    const result = await spawnService(app, id, svc, rt, true);
     if (!result.ok) {
       return text(res, 500, result.message ?? 'failed to start the service');
     }

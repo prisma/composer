@@ -60,10 +60,17 @@ export function servingBootstrapEnv(body: string): { FIXTURE_BODY: string } {
 /** Serves like `SERVING_BOOTSTRAP`, but only after `LISTEN_DELAY_MS` — a service that boots slowly. */
 export const DELAYED_SERVING_BOOTSTRAP =
   "const body = process.env['FIXTURE_BODY'] ?? '';\n" +
+  "console.log('booted pid ' + process.pid);\n" +
   "setTimeout(() => Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response(body) }), Number(process.env['LISTEN_DELAY_MS']));\n";
 
 /** Stays up without ever listening — a service bound to the wrong port, as far as the emulator can tell. */
 export const NEVER_LISTENING_BOOTSTRAP = 'setInterval(() => {}, 1000);\n';
+
+/** Crashes on its first run in an artifact directory, then stays up without listening — a crash whose restart never becomes ready. */
+export const CRASH_ONCE_THEN_SILENT_BOOTSTRAP =
+  "const fs = require('node:fs');\n" +
+  "if (!fs.existsSync('crashed-once')) { fs.writeFileSync('crashed-once', ''); process.exit(1); }\n" +
+  'setInterval(() => {}, 1000);\n';
 
 /** Exits immediately with a nonzero code — a fast-crashing service. */
 export const CRASHING_BOOTSTRAP = 'process.exit(1);\n';

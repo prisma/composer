@@ -90,7 +90,8 @@ emulator, which owns the processes:
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
-- **Readiness** → a service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The deployment PUT and the session-resume start return only then, so a converge, and the `[dev] ready:` line after it, finish only when every URL answers. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within 30 seconds is stopped, and the call fails with its address, port, and log path.
+- **Readiness** → a service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The deployment PUT and the session-resume start return only then, so a converge, and the `[dev] ready:` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
+- **Concurrent starts** → a service has at most one start in flight. A start request, or an identical deployment PUT, during a start waits for that start. A changed deployment PUT replaces it: the earlier caller gets the replacement's result. A stop ends it: the earlier caller fails with "was stopped before it accepted connections".
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
   crash-looping is a held state visible in the service listing and the logs,
@@ -278,8 +279,9 @@ Deploy's rule holds: every failure names its fix.
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
 | secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
-| a service exits before it listens, or does not listen within 30 seconds | the address, the port, the exit code if it exited, and the log path |
-| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL |
+| a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
+| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
+| `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)

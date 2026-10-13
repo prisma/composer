@@ -41,7 +41,13 @@ stands the app up and prints the **front door** — every service's local URL:
 [dev] orders.service    http://localhost:3003
 ```
 
-`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. A service must listen on the port Composer gives it. If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead, and the error names the service, its port, and its log file. `dev` fails at once on such an error; it retries only when it cannot connect to a local emulator, and fails with `DEV.EMULATOR_UNREACHABLE` if that lasts a few seconds.
+`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it.
+
+If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead of printing `ready`, and stops the app's other services. The message names the service, its port, and its log file. On a first start it appears in the deploy engine's output, above the `DEV.CONVERGE_FAILED` error; on a warm start it is the `DEV.SERVICE_START_FAILED` error itself.
+
+A service that needs longer to start, for example one that runs migrations first, can have more time: set `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` to the limit in milliseconds (the default is `30000`). A value that is not a positive whole number fails with `DEV.SERVICE_READY_TIMEOUT_INVALID`. The compute emulator reads the variable when it starts, and a running emulator keeps the value it started with; `--fresh` does not restart it. To apply a new value, end the compute emulator's process (its PID is in `compute.json` in the emulators directory, see below), which stops the services of every app that uses it. The next `prisma dev` starts it again with the new value.
+
+`dev` and the `log` operation retry a call to a local emulator only when they cannot connect to it. If that lasts a few seconds, they fail with `DEV.EMULATOR_UNREACHABLE`, which takes the place of `DEV.SERVICE_START_FAILED`, `DEV.ATTACH_FAILED` and `LOG.ATTACH_FAILED` for this case. An error the emulator returns, such as a service that failed to start, is not retried.
 
 From here `dev` keeps running: it watches your built output and, when a
 service's build changes, restarts just that service. It does **not** print
