@@ -409,8 +409,9 @@ authored the connection or an extension on one side.
 **Driving deploys from code.** A script imports only
 `@prisma/composer/control`; the extensions' `/control` entries are imported
 only by `prisma.config.ts` (ADR-0017). `@prisma/composer/control` exposes typed
-`deploy`, `destroy`, `dev`, and `log` returning structured results;
-`prisma deploy` and `prisma dev` render `deploy` and `dev`. Each takes
+`deploy`, `destroy`, `dev`, `devUrl`, `devStop`, and `log` returning structured
+results; `prisma deploy`, `prisma dev`, `prisma dev url` and `prisma dev stop`
+render `deploy`, `dev`, `devUrl` and `devStop`. Each takes
 a required `config: { value, file }` (`ComposerConfigSource`): the `composer`
 export of your `prisma.config.ts` and that file's path; a relative `file`
 resolves against `cwd`, so build it from `import.meta.url`. The operations
@@ -444,6 +445,19 @@ that surprise:
    const attached = await log({ entry: 'module.ts', config, tail: 20, signal });
    if (attached.ok) for await (const { service, line } of attached.value.lines) console.log(service, line);
    ```
+   Don't hard-code a local port; ports differ per directory. `prisma dev url
+   <address>` (run in the same directory as `dev`) prints where a running node
+   answers: a service's `http://localhost:<port>`, a database's connection
+   string, a bucket's S3 endpoint plus `/<bucket>`. Piped stdout carries JSON
+   frames, so scripts use
+   `curl "$(prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url')"`
+   or `--format human`. It fails with `DEV.NOT_STARTED_HERE` (no `dev` ran
+   here), `DEV.ADDRESS_UNKNOWN` (lists the known addresses),
+   `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the node is stopped).
+   `prisma dev stop` stops the app's services and database servers when `dev`
+   was killed without doing it; data and ports stay. `prisma emulator list`
+   shows every local emulator and its instances, from any directory.
+   `prisma emulator start` and `stop` are planned.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a

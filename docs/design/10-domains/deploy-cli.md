@@ -27,7 +27,10 @@ and
 ## Scope
 
 Two commands, mounted by the `prisma` CLI from `@prisma/composer-cli`'s
-command family, plus one operation with no command:
+command family, plus one operation with no command. The family also carries
+`dev url`, `dev stop` and `emulator list`, which act on the local app and the
+local emulators; [local-dev.md](local-dev.md) covers them
+([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 
 - **`prisma deploy <entry>`** — deploy the application whose root node is
   `entry`'s default export, to a stage (default: production).

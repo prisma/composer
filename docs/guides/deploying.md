@@ -473,10 +473,11 @@ With the graph empty, planning auto-baselines from the ref: it authors empty →
 
 ## Driving deploys from code
 
-`@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, and `log`
-operations that return structured results instead of printing and exiting.
-`prisma deploy` and `prisma dev` are thin renderers over the `deploy` and
-`dev` operations, so the two surfaces can't drift. `destroy` and `log` have
+`@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, `devUrl`,
+`devStop` and `log` operations that return structured results instead of
+printing and exiting. `prisma deploy`, `prisma dev`, `prisma dev url` and
+`prisma dev stop` are thin renderers over the `deploy`, `dev`, `devUrl` and
+`devStop` operations, so the two surfaces can't drift. `destroy` and `log` have
 no command; these operations are how you run them. They read their
 credentials from the environment (see [Credentials](#credentials)).
 
@@ -509,7 +510,7 @@ if (result.ok) {
 
 What to know before embedding it:
 
-- **You pass the config.** `deploy`, `destroy`, `dev` and `log` each take a
+- **You pass the config.** Each operation takes a
   required `config: { value, file }` (the `ComposerConfigSource` type): the
   `composer` section of your `prisma.config.ts` and the path of the file that
   declares it. A relative `file` resolves against `cwd`, not against your

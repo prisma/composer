@@ -72,7 +72,7 @@ vocabulary, not import edges.
 | `COMPOSE` | topology loading: entry, root node, graph shape, naming | pipeline.ts (load-entry.ts, core's graph modules) |
 | `ASSEMBLE` | assembling each service's deploy artifact | `@internal/assemble`'s assemble-services.ts |
 | `DEPLOY` | target selection, stage, containers, preflight, engine, teardown, stack write | operations/execute-deploy-destroy.ts (main.ts, validate-stage.ts, run-alchemy.ts) |
-| `DEV` | local dev pipeline and session | operations/execute-dev.ts (core/control/local-target.ts) |
+| `DEV` | local dev pipeline and session, and the commands on the app it recorded | operations/execute-dev.ts (core/control/local-target.ts, operations/execute-dev-current.ts, `@internal/dev-emulators`) |
 | `LOG` | log attach and tail | operations/execute-log.ts |
 | `DEPS` | the consumer's installed dependency tree | operations/shared.ts |
 
@@ -93,7 +93,7 @@ Closed subcode registry:
   BUILD_REQUIRED, ALCHEMY_BIN_MISSING, NODE_MISSING, STACK_WRITE_FAILED.
   `prisma dev` starts the Alchemy child the same way `deploy` does, so it
   raises ALCHEMY_BIN_MISSING and NODE_MISSING under `DEPLOY` too.
-- `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`.
+- `DEV` — PLATFORM_UNSUPPORTED, TARGET_UNSUPPORTED, CONTAINER_FAILED, TEARDOWN_FAILED, PREFLIGHT_FAILED, EMULATOR_FAILED, SERVICE_START_FAILED, CONVERGE_FAILED, ATTACH_FAILED, STACK_WRITE_FAILED, EMULATORS_DIR_INVALID, EMULATOR_UNREACHABLE, SERVICE_READY_TIMEOUT_INVALID, NOT_STARTED_HERE, ADDRESS_UNKNOWN, NOT_RUNNING. EMULATOR_UNREACHABLE is raised by the emulator client when it cannot connect, so `log` raises it under `DEV` too; for a connection failure it takes the place of SERVICE_START_FAILED, ATTACH_FAILED and `LOG.ATTACH_FAILED`. `devUrl` also raises it when the emulator a node runs on is not running. NOT_STARTED_HERE (no `prisma dev` has recorded an app in the directory), ADDRESS_UNKNOWN (the recorded app has no node at that address; the known addresses are listed) and NOT_RUNNING (the node exists but is not running; its state is named) are raised by `devUrl` and `devStop` ([ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md)); `emulator list` raises EMULATORS_DIR_INVALID and EMULATOR_UNREACHABLE and no code of its own.
 - `LOG` — PLATFORM_UNSUPPORTED, ATTACH_FAILED, ADDRESS_UNKNOWN
 - `DEPS` — EXECUTOR_UNLOADABLE *(EFFECT_VERSION_CONFLICT retired by [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
 

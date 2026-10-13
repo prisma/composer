@@ -108,6 +108,47 @@ A stopped service or database keeps its port reserved, and a database its
 data, so the instances of a checkout you delete keep theirs. There is no
 command to remove them yet.
 
+### Finding a running node, and stopping the app
+
+Ports differ from one directory to the next, so don't hard-code
+`localhost:3001`. From another terminal in the same directory, ask where a
+node of the running app answers, by its address:
+
+```bash
+prisma dev url gateway
+```
+
+A service gives `http://localhost:<port>`, a database its connection string
+(with its local credentials), and a bucket its S3 endpoint followed by
+`/<bucket>`. Nested nodes have dotted addresses, such as `catalog.database`.
+
+When stdout is a terminal you see the URL. When it is piped, the CLI writes
+JSON frames, so a script picks the URL out with `jq`:
+
+```bash
+curl "$(prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url')"
+```
+
+`--format human` prints the URL alone even when piped. `dev url` only reports
+a node that is running, so the URL it prints answers. Otherwise it fails with
+a code a script can branch on:
+
+- `DEV.NOT_STARTED_HERE`: `prisma dev` never ran in this directory.
+- `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
+  lists the ones it has.
+- `DEV.EMULATOR_UNREACHABLE`: the emulator the node runs on is not running.
+- `DEV.NOT_RUNNING`: the node exists but is stopped, usually because
+  `prisma dev` has ended.
+
+`prisma dev stop` stops the app's service processes and database servers, as
+`Ctrl-C` does. Use it when `prisma dev` was killed without the chance to stop
+them. Data and ports are kept, so the next `prisma dev` is still a warm start.
+
+`prisma emulator list` shows every local emulator on the machine, whether it
+is running, and every instance on it, with the directory, app and address it
+belongs to. It works from any directory. `prisma emulator start` and
+`prisma emulator stop` are planned.
+
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
 unregistered resource type (for example
