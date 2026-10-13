@@ -9,8 +9,8 @@ The local emulators know nothing about Composer. Each emulator holds instances u
   { "current": "shop",
     "apps": {
       "shop": { "nodes": {
-        "quotes":  { "kind": "compute",  "id": "svc_k3f9…", "port": 3000 },
-        "gateway": { "kind": "compute",  "id": "svc_81ad…", "port": 3001 },
+        "quotes":  { "kind": "service",  "id": "svc_k3f9…", "port": 3000 },
+        "gateway": { "kind": "service",  "id": "svc_81ad…", "port": 3001 },
         "catalog": { "kind": "database", "id": "db_02c4…",  "port": 51300 },
         "uploads": { "kind": "bucket",   "id": "bkt-77e1…" } } },
       "shop-v2": { "nodes": { … } } } }
@@ -34,7 +34,7 @@ The emulators should not have to know what a directory or an app is to avoid thi
 
 Labels make a listing readable. Composer writes `composer.directory`, `composer.app` and `composer.address` on every instance it creates, so a person looking at an emulator's list of instances can tell what started each one. Nothing reads them back as identity. If Composer found its instances by searching labels, the labels would be a second, unenforced key.
 
-Composer finds its instances through `emulator-instances.json` in the directory's dev state (`.prisma-composer/dev/`), which is already per directory. It records every app run from the directory and, per node address, the emulator kind, the instance id and, for a service or a database, its port; `current` names the app `prisma dev` last ran there. The emulators hook writes it before converge, in graph order: it reuses a recorded instance while the emulator still has it, starts a stopped database, and otherwise creates an instance and records it. Everything else reaches instances through the record: the local providers during converge, the dev session's endpoints, logs, start and stop, and `--fresh`. The record is readable from the directory alone, so a separate command can answer "where is this node running" without running the pipeline.
+Composer finds its instances through `emulator-instances.json` in the directory's dev state (`.prisma-composer/dev/`), which is already per directory. It records every app run from the directory and, per node address, the node's kind (`service`, `database` or `bucket`), the instance id and, for a service or a database, its port; `current` names the app `prisma dev` last ran there. The emulators hook writes it before converge, in graph order: it reuses a recorded instance while the emulator still has it, starts a stopped database, and otherwise creates an instance and records it. Everything else reaches instances through the record: the local providers during converge, the dev session's endpoints, logs, start and stop, and `--fresh`. The record is readable from the directory alone, so a separate command can answer "where is this node running" without running the pipeline.
 
 An instance keeps its port from creation until it is deleted, whether it is running or stopped. A port is baked into more than the process: a service's environment carries its own port (`COMPOSER_<ADDRESS>_PORT`), and its dependents' environments carry its URL or a database's connection string. A warm start does not redeploy, because nothing in the app changed and Alchemy, the deploy engine, sees nothing to update. An instance that received a different port on its next start would run, or be reached, through an environment built for the old one.
 

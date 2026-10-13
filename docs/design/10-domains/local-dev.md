@@ -232,8 +232,8 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
   "apps": {
     "shop": {
       "nodes": {
-        "quotes": { "kind": "compute", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
-        "gateway": { "kind": "compute", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
+        "quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+        "gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
         "catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
         "uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
       }
@@ -243,8 +243,11 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 ```
 
 `current` names the app `prisma dev` last ran from the directory. A record
-written by the previous version (`{ "app", "nodes" }`, one app) reads as that
-one app and is rewritten on the next write.
+written by the previous version (`{ "app", "nodes" }`, one app, whose
+services have kind `compute`) reads as that one app with `service` nodes and
+is rewritten on the next write. A database's and a bucket's key is its
+resource name, from the same helper the lowering uses; a local provider
+refuses a database or bucket resource without a name.
 
 The record is the only place Composer's names are mapped to instances. The
 emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,

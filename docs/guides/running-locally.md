@@ -81,13 +81,15 @@ which local instance backs each node in
 A service or a database keeps its port in its directory from one `dev` to the
 next, even while it is stopped. If a local instance is gone, for example
 because a Composer upgrade discarded an emulator's state, the next `dev`
-creates it again, empty, and asks for the port it had; a database's committed
-migrations then run again, as on a fresh start. When another directory has
-taken that port, the instance gets the lowest free one and `dev` prints one
-line:
+creates it again, empty, and asks for the port it had; a Prisma ORM
+database's (`postgres()`) committed migrations then run again, as on a fresh
+start, while a `rawPostgres()` database stays empty. When another directory
+has taken that port, the instance gets the lowest free one and `dev` prints
+one line, naming a service or a database:
 
 ```
 [dev] service "gateway" now uses port 3004: its previous port 3001 is in use
+[dev] database "catalog" now uses port 51302: its previous port 51300 is in use
 ```
 
 A directory keeps the local state of every app you run from it. If you run a
