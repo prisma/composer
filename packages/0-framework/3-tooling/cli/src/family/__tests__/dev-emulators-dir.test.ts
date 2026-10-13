@@ -17,6 +17,7 @@ import { createTestCli } from '@prisma/cli-engine/testing';
 import * as Layer from 'effect/Layer';
 import { devWithDeps } from '../../operations/dev.ts';
 import { createComposerFamily, realOperations } from '../family.ts';
+import { commandAt } from './command-at.ts';
 
 const coreIndex = path.resolve(import.meta.dir, '../../../../../1-core/core/src/exports/index.ts');
 
@@ -127,7 +128,7 @@ describe.skipIf(process.platform === 'win32')(
       });
       const cli = createTestCli({
         commandFamilies: [family],
-        commands: { ...family.commands },
+        commands: { dev: commandAt(family, 'dev') },
         config: { composer: configWhoseEmulatorsThrow() },
       });
 

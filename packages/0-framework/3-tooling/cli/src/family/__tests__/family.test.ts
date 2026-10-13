@@ -16,8 +16,21 @@ describe('createComposerFamily()', () => {
     expect(createComposerFamily().configSection).toBe(composerSection);
   });
 
-  test('the family mounts deploy and dev only — destroy and log are retired', () => {
-    expect(Object.keys(createComposerFamily().commands).sort()).toEqual(['deploy', 'dev']);
+  test('the family ships deploy, dev, dev url and dev stop — destroy and log are operations, not commands', () => {
+    expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
+      'deploy',
+      'dev',
+      'dev stop',
+      'dev url',
+    ]);
+  });
+
+  test('a host may add commands to the family', () => {
+    const extra = createComposerFamily().commands['dev url'];
+    if (extra === undefined) throw new Error('no dev url command');
+    expect(
+      Object.keys(createComposerFamily({ commands: { 'emulator list': extra } }).commands).sort(),
+    ).toEqual(['deploy', 'dev', 'dev stop', 'dev url', 'emulator list']);
   });
 
   test('the family ships no redirects for the retired spellings', () => {
@@ -27,6 +40,8 @@ describe('createComposerFamily()', () => {
   test('the operations seam defaults to the real control operations', () => {
     expect(realOperations.deploy).toBeInstanceOf(Function);
     expect(realOperations.dev).toBeInstanceOf(Function);
+    expect(realOperations.devUrl).toBeInstanceOf(Function);
+    expect(realOperations.devStop).toBeInstanceOf(Function);
   });
 
   test('a host may substitute the operations', () => {

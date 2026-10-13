@@ -1,6 +1,7 @@
 /**
- * The published operations double (`@prisma/composer-cli/testing`): the two
- * operations the command family calls, `deploy` and `dev`, with their real
+ * The published operations double (`@prisma/composer-cli/testing`): the
+ * operations the command family calls, `deploy`, `dev`, `devUrl` and
+ * `devStop`, with their real
  * signatures and Result shapes, backed by fixtures instead of alchemy,
  * containers, or a network. It does not cover `destroy` and `log`, which no
  * command calls.
@@ -21,6 +22,7 @@ import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
 import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
 import type { DevInput, DevSession } from '../operations/dev.ts';
+import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operations/dev-current.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
 
@@ -36,6 +38,10 @@ export interface OperationsDoubleFixtures {
   readonly dev?: Result<DevSession, CliStructuredError> | undefined;
   /** The session's front door; emitted as the initial 'ready' event, like the real operation's. */
   readonly devEndpoints?: readonly ServiceEndpoint[] | undefined;
+  /** Returned as-is. Default: the address as a running service at http://localhost:3000. */
+  readonly devUrl?: Result<DevUrl, CliStructuredError> | undefined;
+  /** Returned as-is. Default: an app named `app` with nothing to stop. */
+  readonly devStop?: Result<DevStopped, CliStructuredError> | undefined;
 }
 
 /**
@@ -53,6 +59,8 @@ export interface OperationsDoubleDeps {
 export interface OperationsDoubleCalls {
   readonly deploy: readonly DeployInput[];
   readonly dev: readonly DevInput[];
+  readonly devUrl: readonly DevUrlInput[];
+  readonly devStop: readonly DevStopInput[];
   readonly deps: OperationsDoubleDeps;
 }
 
@@ -154,7 +162,15 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
   const deployDeps: OperationDeps[] = [];
   const devDeps: OperationDeps[] = [];
   const deps = { deploy: deployDeps, dev: devDeps };
-  const calls = { deploy: deployCalls, dev: devCalls, deps };
+  const devUrlCalls: DevUrlInput[] = [];
+  const devStopCalls: DevStopInput[] = [];
+  const calls = {
+    deploy: deployCalls,
+    dev: devCalls,
+    devUrl: devUrlCalls,
+    devStop: devStopCalls,
+    deps,
+  };
 
   const operations: ComposerOperations = {
     deploy: async (input, operationDeps) => {
@@ -175,6 +191,22 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
       calls.dev.push(input);
       deps.dev.push(operationDeps);
       return fixtures.dev ?? ok(devSessionDouble(input, fixtures.devEndpoints ?? []));
+    },
+    devUrl: async (input) => {
+      devUrlCalls.push(input);
+      return (
+        fixtures.devUrl ??
+        ok({
+          address: input.address,
+          kind: 'service',
+          url: 'http://localhost:3000',
+          state: 'running',
+        })
+      );
+    },
+    devStop: async (input) => {
+      devStopCalls.push(input);
+      return fixtures.devStop ?? ok({ app: 'app', stopped: [] });
     },
   };
 

@@ -14,6 +14,7 @@ import type { EngineEvent } from '@prisma/cli-engine';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import { createOperationsDouble } from '../../testing/operations-double.ts';
 import { createComposerFamily } from '../family.ts';
+import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
 
 const AS_TTY = { isTty: { stdout: true, stderr: true } } as const;
@@ -26,7 +27,7 @@ describe('dev, interrupted', () => {
     const family = createComposerFamily({ operations: double.operations });
     const cli = createTestCli({
       commandFamilies: [family],
-      commands: { ...family.commands },
+      commands: { dev: commandAt(family, 'dev') },
       config: { composer: validComposerSection() },
     });
 
