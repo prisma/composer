@@ -12,7 +12,7 @@ import {
   type NodeKind,
   type PortChange,
 } from './emulator-instances.ts';
-import { resolvePrismaDevModulePath } from './postgres.ts';
+import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export interface AppNode {
   readonly address: string;

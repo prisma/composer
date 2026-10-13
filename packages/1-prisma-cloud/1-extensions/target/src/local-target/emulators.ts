@@ -29,7 +29,13 @@
  */
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { type AppNode, appNameOf, ensureAppInstances, selectApp } from '@internal/local-target';
+import {
+  type AppNode,
+  appNameOf,
+  ensureAppInstances,
+  selectApp,
+  stopAppInstances,
+} from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 import { resourceName, serviceAppName } from '../service-app.ts';
 import { daemonEntry } from './daemon-entry.ts';
@@ -78,7 +84,12 @@ export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise
       `[dev] stopped the local services of "${previous}", the app run here before; its data is kept`,
     );
   }
-  const portChanges = await ensureAppInstances(scope, nodes);
+  const portChanges = await ensureAppInstances(scope, nodes).catch(async (error: unknown) => {
+    // `dev` fails here without a session to end, so stop what this run
+    // started (databases come up in this loop), then report the failure.
+    await stopAppInstances(scope).catch(() => undefined);
+    throw error;
+  });
   for (const { kind, address, previous: before, given } of portChanges) {
     console.log(
       `[dev] ${kind} "${address}" now uses port ${String(given)}: its previous port ${String(before)} is in use`,

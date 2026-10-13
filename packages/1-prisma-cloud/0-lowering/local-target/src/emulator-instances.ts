@@ -16,6 +16,7 @@ import {
   type ServiceInstanceInfo,
 } from '@internal/dev-emulators';
 import { createStore, type DevStore } from './dev-store.ts';
+import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
 
@@ -234,8 +235,14 @@ function idsOf(nodes: Readonly<Record<string, NodeInstance>>, kind: NodeKind): s
 async function stopNodes(nodes: Readonly<Record<string, NodeInstance>>): Promise<void> {
   const services = idsOf(nodes, 'service');
   const databases = idsOf(nodes, 'database');
-  if (services.length > 0) await whenRunning(() => computeClient().stopInstances(services));
-  if (databases.length > 0) await whenRunning(() => postgresClient().stopInstances(databases));
+  // Both are attempted, so a failed service stop never leaves the database
+  // servers running; the first failure is reported after both.
+  const results = await Promise.allSettled([
+    services.length > 0 ? whenRunning(() => computeClient().stopInstances(services)) : undefined,
+    databases.length > 0 ? whenRunning(() => postgresClient().stopInstances(databases)) : undefined,
+  ]);
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure) throw failure.reason;
 }
 
 /** Runs `action` against an emulator, treating "the emulator is not running" as nothing to do. */
@@ -401,8 +408,11 @@ export async function recordedInstanceId(
 
 async function deleteInstance(instance: NodeInstance): Promise<void> {
   if (instance.kind === 'service') await computeClient().deleteInstance(instance.id);
-  else if (instance.kind === 'database') await postgresClient().deleteInstance(instance.id);
-  else await bucketsClient().deleteInstance(instance.id);
+  else if (instance.kind === 'database') {
+    // The caller's `@prisma/dev`: the one the database was created with may
+    // since have been removed by an upgrade.
+    await postgresClient().deleteInstance(instance.id, resolvePrismaDevModulePath());
+  } else await bucketsClient().deleteInstance(instance.id);
 }
 
 /** Deletes the instance recorded for `address` and forgets it. */

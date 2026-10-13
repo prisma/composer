@@ -2,32 +2,38 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import * as RealDevEmulators from '@internal/dev-emulators';
 import * as RealLocalTarget from '@internal/local-target';
 import { PrismaCloudContainer } from '../container.ts';
+import { scopedFakes } from './scoped-fakes.ts';
 
 const events: string[] = [];
 let deleteFails = false;
 
+const fake = scopedFakes();
+
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
-  ensureDaemon: async (name: string) => {
+  ensureDaemon: fake(RealDevEmulators.ensureDaemon, async (name: string) => {
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
-  },
+  }),
 }));
 
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
-  resolvePackageEntry: (specifier: string) => specifier,
-  recordedKinds: async () => new Set(['service', 'database']),
-  deleteAppInstances: async ({ app }: { app: string }) => {
+  resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
+  recordedKinds: fake(
+    RealLocalTarget.recordedKinds,
+    async () => new Set(['service', 'database'] as const),
+  ),
+  deleteAppInstances: fake(RealLocalTarget.deleteAppInstances, async ({ app }: { app: string }) => {
     events.push(`delete instances of ${app}`);
     if (deleteFails) throw new Error('delete failed');
-  },
-  removeAppDevState: (_devDir: string, app: string) => {
+  }),
+  removeAppDevState: fake(RealLocalTarget.removeAppDevState, (_devDir: string, app: string) => {
     events.push(`remove dev state of ${app}`);
-  },
-  removeLocalPaths: () => {
+  }),
+  removeLocalPaths: fake(RealLocalTarget.removeLocalPaths, () => {
     events.push('remove local paths');
-  },
+  }),
 }));
 
 const { runDevTeardown } = await import('../local-target/teardown.ts');

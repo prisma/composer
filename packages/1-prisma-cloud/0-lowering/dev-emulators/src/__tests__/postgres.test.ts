@@ -60,6 +60,22 @@ async function createDatabase(
   return instance;
 }
 
+/**
+ * `@prisma/dev`'s entry reached through a symlink under `under` — a module
+ * path that lives inside a directory the test chooses, and that disappears
+ * when that directory is removed, as an upgraded install's old copy does.
+ */
+function linkedPrismaDevModulePath(under: string): string {
+  const entry = fs.realpathSync(prismaDevModulePath());
+  let packageDir = path.dirname(entry);
+  while (!fs.existsSync(path.join(packageDir, 'package.json')))
+    packageDir = path.dirname(packageDir);
+  const linkParent = path.join(under, 'node_modules', '@prisma');
+  fs.mkdirSync(linkParent, { recursive: true });
+  fs.symlinkSync(packageDir, path.join(linkParent, 'dev'));
+  return path.join(linkParent, 'dev', path.relative(packageDir, entry));
+}
+
 async function query(url: string, sql: string, params: unknown[] = []): Promise<unknown[]> {
   const pg = new PgClient({ connectionString: url });
   await pg.connect();
@@ -198,6 +214,24 @@ describe('stop and start', () => {
     await client.stopInstances([db.id]);
 
     await client.deleteInstance(db.id);
+
+    expect(await client.getInstance(db.id)).toBeUndefined();
+    expect(await getServerStatus(`pcdev-${db.id}`)).toMatchObject({ status: 'no_such_server' });
+  }, 60_000);
+});
+
+describe('deleting with the caller’s @prisma/dev', () => {
+  test('deletes the data even when the module the database was created with is gone', async () => {
+    const client = await startedClient();
+    const oldInstall = tempDir('removed-install');
+    const db = await client.createInstance({
+      labels: {},
+      prismaDevModulePath: linkedPrismaDevModulePath(oldInstall),
+    });
+    created.push(db.id);
+    fs.rmSync(oldInstall, { recursive: true, force: true });
+
+    await client.deleteInstance(db.id, prismaDevModulePath());
 
     expect(await client.getInstance(db.id)).toBeUndefined();
     expect(await getServerStatus(`pcdev-${db.id}`)).toMatchObject({ status: 'no_such_server' });
@@ -453,6 +487,22 @@ describe('concurrent creates', () => {
 });
 
 describe('state written by an earlier version', () => {
+  function writeEarlierState(serverName: string): string {
+    const stateDir = daemonStateDir(registryRoot, 'postgres');
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(stateDir, 'apps.json'),
+      JSON.stringify({
+        'legacy-app': {
+          databases: {
+            db: { id: 'db', instanceName: serverName, databasePort: 51_300, url: 'postgres://x' },
+          },
+        },
+      }),
+    );
+    return stateDir;
+  }
+
   test("is removed on load, and its servers' data is deleted on the next create", async () => {
     const legacyName = `pcdev-pgtest-legacy-${String(process.pid)}`;
     const prismaDev = (await import(pathToFileURL(prismaDevModulePath()).href)) as {
@@ -466,18 +516,7 @@ describe('state written by an earlier version', () => {
       persistenceMode: 'stateful',
     });
     await legacy.close();
-    const stateDir = daemonStateDir(registryRoot, 'postgres');
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(stateDir, 'apps.json'),
-      JSON.stringify({
-        'legacy-app': {
-          databases: {
-            db: { id: 'db', instanceName: legacyName, databasePort: 51_300, url: 'postgres://x' },
-          },
-        },
-      }),
-    );
+    const stateDir = writeEarlierState(legacyName);
 
     try {
       const client = await startedClient();
@@ -491,6 +530,57 @@ describe('state written by an earlier version', () => {
       await deleteServer(legacyName).catch(() => undefined);
     }
   }, 60_000);
+
+  test('a server another live process still serves is left alone until that process ends', async () => {
+    // Under the old names, another emulators directory's daemon could be
+    // serving a server this state names. Its data must survive, and its
+    // process must not be signalled: that would end every server it hosts.
+    const legacyName = `pcdev-pgtest-legacy-live-${String(process.pid)}`;
+    const scriptPath = path.join(tempDir('legacy-host'), 'host.mjs');
+    fs.writeFileSync(
+      scriptPath,
+      `import { startPrismaDevServer } from ${JSON.stringify(pathToFileURL(prismaDevModulePath()).href)};
+const server = await startPrismaDevServer({ name: ${JSON.stringify(legacyName)}, persistenceMode: 'stateful' });
+console.log(server.database.connectionString);
+setInterval(() => {}, 1 << 30);
+`,
+    );
+    const host = spawn(process.execPath, [scriptPath], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const hostUrl = await new Promise<string>((resolve, reject) => {
+      let out = '';
+      host.stdout.on('data', (chunk: Buffer) => {
+        out += chunk.toString();
+        const line = out.split('\n')[0];
+        if (line !== undefined && out.includes('\n')) resolve(line.trim());
+      });
+      host.once('error', reject);
+      host.once('exit', (code) => reject(new Error(`host exited early (${String(code)})`)));
+    });
+    await query(hostUrl, "create table kept (v text); insert into kept values ('live')");
+    const stateDir = writeEarlierState(legacyName);
+
+    try {
+      const client = await startedClient();
+      await createDatabase(client);
+
+      expect(await getServerStatus(legacyName)).toMatchObject({ status: 'running' });
+      expect(await query(hostUrl, 'select v from kept')).toEqual([{ v: 'live' }]);
+      const state: unknown = JSON.parse(
+        fs.readFileSync(path.join(stateDir, 'instances.json'), 'utf8'),
+      );
+      expect(state).toMatchObject({ discardedServers: [legacyName] });
+
+      const exited = new Promise((resolve) => host.once('exit', resolve));
+      host.kill('SIGKILL');
+      await exited;
+      await createDatabase(client);
+
+      expect(await getServerStatus(legacyName)).toMatchObject({ status: 'no_such_server' });
+    } finally {
+      host.kill('SIGKILL');
+      await deleteServer(legacyName).catch(() => undefined);
+    }
+  }, 90_000);
 });
 
 /**
@@ -500,13 +590,18 @@ describe('state written by an earlier version', () => {
  */
 describe('the emulator never interprets Composer data', () => {
   test('labels and the module path are stored verbatim, and nothing else carries their values', async () => {
+    // The module path lies under the project in real use, so it carries the
+    // directory; it reaches the state only through its own field.
     const client = await startedClient();
+    const directory = path.join(tempDir('marker-project'), 'zzdirectorymarker');
+    const modulePath = linkedPrismaDevModulePath(directory);
     const labels = {
-      'composer.directory': '/work/zzdirectorymarker',
+      'composer.directory': directory,
       'composer.app': 'zzappmarker',
       'composer.address': 'zzaddressmarker',
     };
-    const db = await createDatabase(client, { labels });
+    const db = await client.createInstance({ labels, prismaDevModulePath: modulePath });
+    created.push(db.id);
 
     const stateDir = daemonStateDir(registryRoot, 'postgres');
     const statePath = path.join(stateDir, 'instances.json');
@@ -516,14 +611,12 @@ describe('the emulator never interprets Composer data', () => {
     );
     const state: unknown = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     const record: unknown = Reflect.get(Reflect.get(state as object, 'instances'), db.id);
-    expect(record).toMatchObject({ labels, prismaDevModulePath: prismaDevModulePath() });
+    expect(record).toMatchObject({ labels, prismaDevModulePath: modulePath });
 
-    const withoutLabels = JSON.stringify(state, (key, value: unknown) =>
-      key === 'labels' ? undefined : value,
-    );
-    const listed = JSON.stringify(await client.listInstances(), (key, value: unknown) =>
-      key === 'labels' ? undefined : value,
-    );
+    const opaque = (key: string, value: unknown) =>
+      key === 'labels' || key === 'prismaDevModulePath' ? undefined : value;
+    const withoutLabels = JSON.stringify(state, opaque);
+    const listed = JSON.stringify(await client.listInstances(), opaque);
     for (const marker of ['zzdirectorymarker', 'zzappmarker', 'zzaddressmarker']) {
       expect(withoutLabels).not.toContain(marker);
       expect(listed).not.toContain(marker);

@@ -470,8 +470,8 @@ export interface PostgresClient {
   startInstances(ids: readonly string[], prismaDevModulePath: string): Promise<void>;
   /** `POST /instances/stop` — shuts the servers down and keeps their data and ports; an unknown id is skipped. */
   stopInstances(ids: readonly string[]): Promise<void>;
-  /** `DELETE /instances/<id>` — stops the server and deletes its data. Deleting an unknown id succeeds. */
-  deleteInstance(id: string): Promise<void>;
+  /** `DELETE /instances/<id>` — stops the server and deletes its data, loading `@prisma/dev` from `prismaDevModulePath` when given (otherwise from where the database was last started). Deleting an unknown id succeeds. */
+  deleteInstance(id: string, prismaDevModulePath?: string): Promise<void>;
 }
 
 export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
@@ -529,8 +529,18 @@ export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
       await expectOk(await adminFetch(`${baseUrl}/instances/stop`, postJson({ ids })));
     },
 
-    async deleteInstance(id) {
-      await expectOk(await adminFetch(instancePath(baseUrl, id), { method: 'DELETE' }));
+    async deleteInstance(id, prismaDevModulePath) {
+      await expectOk(
+        await adminFetch(instancePath(baseUrl, id), {
+          method: 'DELETE',
+          ...(prismaDevModulePath !== undefined
+            ? {
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ prismaDevModulePath }),
+              }
+            : {}),
+        }),
+      );
     },
   };
 }

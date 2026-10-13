@@ -71,6 +71,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { containerEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
@@ -365,6 +366,17 @@ async function startDev(fresh: boolean): Promise<DevSession> {
  * that it survives composer's own signal wiring and reaches the shell is
  * provable only here.
  */
+function acceptsConnection(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
+
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -647,6 +659,15 @@ async function main(): Promise<void> {
     // ——— Ctrl-C ———
     await stopDev(session);
     console.log('[proving] session 1 stopped cleanly on SIGINT');
+    // Ending `prisma dev` stops the app's database servers too; their data
+    // and ports are kept for the warm start below.
+    const stoppedDb = (await listPostgresDatabases()).find((d) => d.address === 'catalog.database');
+    assert(stoppedDb?.status === 'stopped', 'catalog.database must be stopped after Ctrl-C');
+    const stoppedPort = new URL(stoppedDb.url).port;
+    assert(
+      !(await acceptsConnection(Number(stoppedPort))),
+      `catalog.database's port ${stoppedPort} must refuse connections after Ctrl-C`,
+    );
 
     // ——— Criterion 3 (warm read) + criterion 6 (same ports) ———
     session = await startDev(false);
@@ -700,9 +721,9 @@ async function main(): Promise<void> {
     session = await startDev(true);
     console.log(`[proving] session 3 (--fresh) ready: ${JSON.stringify(session.endpoints)}`);
     const freshDbUrl = await readCatalogDbUrl();
-    // --fresh removes the app's postgres-main-hosted servers and their
-    // persisted data (DELETE /apps/<app> on the daemon, runDevTeardown) and
-    // recreates them on next provision — migrations reapply as part of THIS
+    // --fresh deletes the app's recorded database instances, their
+    // persisted data with them (runDevTeardown), and the converge creates
+    // them again — migrations reapply as part of THIS
     // SAME converge (OrmMigration runs on every converge), so the "product"
     // table exists again by the time the front door prints; the proof is
     // that it's freshly migrated and EMPTY — the proving row from before

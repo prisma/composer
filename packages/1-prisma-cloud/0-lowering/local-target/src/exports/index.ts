@@ -7,6 +7,7 @@ export * from '../compute.ts';
 export * from '../dev-store.ts';
 export * from '../emulator-instances.ts';
 export * from '../postgres.ts';
+export * from '../prisma-dev-module.ts';
 export * from '../providers.ts';
 export * from '../resolve-package-entry.ts';
 export * from '../teardown.ts';

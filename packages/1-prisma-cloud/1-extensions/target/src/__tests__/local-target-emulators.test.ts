@@ -5,6 +5,7 @@ import type { ContainerInstance } from '@internal/core/config';
 import * as RealDevEmulators from '@internal/dev-emulators';
 import * as RealLocalTarget from '@internal/local-target';
 import { compute, rawPostgres } from '../exports/index.ts';
+import { scopedFakes } from './scoped-fakes.ts';
 
 const events: string[] = [];
 let portChanges: {
@@ -14,29 +15,36 @@ let portChanges: {
   given: number;
 }[] = [];
 let previousApp: string | undefined;
+let ensureFails = false;
+
+const fake = scopedFakes();
 
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
-  ensureDaemon: async (name: string) => {
+  ensureDaemon: fake(RealDevEmulators.ensureDaemon, async (name: string) => {
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
-  },
+  }),
 }));
 
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
-  resolvePackageEntry: (specifier: string) => specifier,
-  selectApp: async ({ app }: { app: string }) => {
+  resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
+  selectApp: fake(RealLocalTarget.selectApp, async ({ app }: { app: string }) => {
     events.push(`select ${app}`);
     return previousApp;
-  },
-  ensureAppInstances: async (
-    { app }: { app: string },
-    nodes: readonly { address: string; kind: string }[],
-  ) => {
-    events.push(`ensure ${app}: ${nodes.map((n) => `${n.kind} ${n.address}`).join(', ')}`);
-    return portChanges;
-  },
+  }),
+  ensureAppInstances: fake(
+    RealLocalTarget.ensureAppInstances,
+    async ({ app }: { app: string }, nodes: readonly { address: string; kind: string }[]) => {
+      events.push(`ensure ${app}: ${nodes.map((n) => `${n.kind} ${n.address}`).join(', ')}`);
+      if (ensureFails) throw new Error('the second database could not start');
+      return portChanges;
+    },
+  ),
+  stopAppInstances: fake(RealLocalTarget.stopAppInstances, async ({ app }: { app: string }) => {
+    events.push(`stop ${app}`);
+  }),
 }));
 
 const { runDevEmulators } = await import('../local-target/emulators.ts');
@@ -75,6 +83,7 @@ beforeEach(() => {
   logged.length = 0;
   portChanges = [];
   previousApp = undefined;
+  ensureFails = false;
 });
 
 afterEach(() => {
@@ -153,4 +162,19 @@ test("prints one line when the directory's previous app's local services were st
   expect(logged.filter((line) => line.includes('stopped'))).toEqual([
     '[dev] stopped the local services of "old-app", the app run here before; its data is kept',
   ]);
+});
+
+test('a failure ensuring the instances stops what the run started, then reports the failure', async () => {
+  ensureFails = true;
+  const graph = Load(
+    module('my-app', ({ provision }) => {
+      provision(rawPostgres({ name: 'one' }), { id: 'one' });
+      provision(rawPostgres({ name: 'two' }), { id: 'two' });
+    }),
+  );
+
+  await expect(runDevEmulators({ graph, container, devDir: '/dev/null/unused' })).rejects.toThrow(
+    'the second database could not start',
+  );
+  expect(events.slice(-2)).toEqual(['ensure my-app: database one, database two', 'stop my-app']);
 });

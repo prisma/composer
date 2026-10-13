@@ -773,7 +773,10 @@ function main(): void {
     if (started.server) runtimes.set(id, started.server);
     else adopted.add(id);
     state.instances[id] = record;
-    schedulePersist();
+    // Written before the create is acknowledged: an id the caller records
+    // must survive the daemon dying right after, or its data would be left
+    // under a name no state lists.
+    await stateFile.write(state);
     return record;
   }
 
@@ -839,8 +842,13 @@ function main(): void {
     return exclusive(db.id, () => closeServer(db));
   }
 
-  function deleteInstance(db: DatabaseRecord): Promise<void> {
+  /** `prismaDevModulePath` is the caller's: the one the database was last started with may since have been removed. */
+  function deleteInstance(
+    db: DatabaseRecord,
+    prismaDevModulePath: string | undefined,
+  ): Promise<void> {
     return exclusive(db.id, async () => {
+      if (prismaDevModulePath !== undefined) db.prismaDevModulePath = prismaDevModulePath;
       await closeServer(db);
       const internalState = await importPrismaDevInternalState(db.prismaDevModulePath);
       // `deleteServer`'s kill path targets the pid in the server's persisted
@@ -857,7 +865,9 @@ function main(): void {
         );
       }
       delete state.instances[db.id];
-      schedulePersist();
+      // Written before the delete is acknowledged, so a daemon that dies
+      // right after never brings the database back.
+      await stateFile.write(state);
       // get-port holds every port it returns for up to 30 seconds; the freed
       // port must be free again for a database created right after.
       clearLockedPorts();
@@ -971,7 +981,9 @@ function main(): void {
     const db = id === undefined ? undefined : state.instances[id];
 
     if (method === 'DELETE' && segments.length === 2) {
-      if (db) await deleteInstance(db);
+      const body = await readJsonBody(req);
+      const modulePath = isStringKeyedRecord(body) ? body['prismaDevModulePath'] : undefined;
+      if (db) await deleteInstance(db, typeof modulePath === 'string' ? modulePath : undefined);
       return noContent(res);
     }
     if (!db) return unknownInstances(res, id === undefined ? [] : [id]);
