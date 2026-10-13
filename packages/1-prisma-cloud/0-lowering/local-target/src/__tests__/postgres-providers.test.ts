@@ -3,7 +3,7 @@
  * emulator in a temporary emulators directory: a Database is a database
  * instance, and its Connection resolves the same instance by its id.
  */
-import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -30,27 +30,6 @@ let root: string;
 let registryRoot: string;
 let input: LocalTargetProvidersInput;
 
-beforeEach(async () => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-pg-providers-'));
-  registryRoot = path.join(root, 'emulators');
-  process.env[EMULATORS_DIR_ENV] = registryRoot;
-  const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/postgres-main'));
-  await ensureDaemon('postgres', entry, { registryRoot });
-  const container: ContainerInstance = {
-    input: { appName: APP, stage: undefined },
-    serialize: () => 'x',
-  };
-  input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev') };
-});
-
-afterEach(async () => {
-  await deleteDatabaseInstances({ devDir: input.devDir, app: APP }).catch(() => undefined);
-  await stopDaemon('postgres', { registryRoot }).catch(() => undefined);
-  fs.rmSync(root, { recursive: true, force: true });
-  if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
-  else process.env[EMULATORS_DIR_ENV] = savedEmulatorsDir;
-});
-
 const reconcileInput = (id: string, news: Record<string, unknown>) =>
   ({
     id,
@@ -72,30 +51,54 @@ async function reconcileDatabase(name: string): Promise<Database['Attributes']> 
   );
 }
 
-test('a Database creates a database instance, and its Connection resolves the same one', async () => {
-  const database = await reconcileDatabase('catalog.database');
+// Local dev is not supported on Windows, where the emulators cannot run.
+describe.skipIf(process.platform === 'win32')('the local Database and Connection providers', () => {
+  beforeEach(async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-pg-providers-'));
+    registryRoot = path.join(root, 'emulators');
+    process.env[EMULATORS_DIR_ENV] = registryRoot;
+    const entry = fileURLToPath(import.meta.resolve('@internal/dev-emulators/postgres-main'));
+    await ensureDaemon('postgres', entry, { registryRoot });
+    const container: ContainerInstance = {
+      input: { appName: APP, stage: undefined },
+      serialize: () => 'x',
+    };
+    input = { container, devDir: path.join(root, 'project', '.prisma-composer', 'dev') };
+  });
 
-  const service = await Effect.runPromise(
-    Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
-  );
-  const connection: Connection['Attributes'] = await Effect.runPromise(
-    service.reconcile(reconcileInput('conn', { database, name: 'conn' })),
-  );
+  afterEach(async () => {
+    await deleteDatabaseInstances({ devDir: input.devDir, app: APP }).catch(() => undefined);
+    await stopDaemon('postgres', { registryRoot }).catch(() => undefined);
+    fs.rmSync(root, { recursive: true, force: true });
+    if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
+    else process.env[EMULATORS_DIR_ENV] = savedEmulatorsDir;
+  });
 
-  const instance = await postgresClient().getInstance(database.databaseId);
-  expect(instance?.labels['composer.address']).toBe('catalog.database');
-  expect(connection.databaseId).toBe(database.databaseId);
-  const direct = connection.directConnectionString;
-  if (direct === undefined) throw new Error('expected a direct connection string');
-  expect(Redacted.value(direct)).toBe(instance?.url ?? '');
-}, 60_000);
+  test('a Database creates a database instance, and its Connection resolves the same one', async () => {
+    const database = await reconcileDatabase('catalog.database');
 
-test('reconciling a Database again reuses its instance, starting it when stopped', async () => {
-  const first = await reconcileDatabase('orders');
-  await postgresClient().stopInstances([first.databaseId]);
+    const service = await Effect.runPromise(
+      Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
+    );
+    const connection: Connection['Attributes'] = await Effect.runPromise(
+      service.reconcile(reconcileInput('conn', { database, name: 'conn' })),
+    );
 
-  const second = await reconcileDatabase('orders');
+    const instance = await postgresClient().getInstance(database.databaseId);
+    expect(instance?.labels['composer.address']).toBe('catalog.database');
+    expect(connection.databaseId).toBe(database.databaseId);
+    const direct = connection.directConnectionString;
+    if (direct === undefined) throw new Error('expected a direct connection string');
+    expect(Redacted.value(direct)).toBe(instance?.url ?? '');
+  }, 60_000);
 
-  expect(second.databaseId).toBe(first.databaseId);
-  expect((await postgresClient().getInstance(first.databaseId))?.status).toBe('running');
-}, 60_000);
+  test('reconciling a Database again reuses its instance, starting it when stopped', async () => {
+    const first = await reconcileDatabase('orders');
+    await postgresClient().stopInstances([first.databaseId]);
+
+    const second = await reconcileDatabase('orders');
+
+    expect(second.databaseId).toBe(first.databaseId);
+    expect((await postgresClient().getInstance(first.databaseId))?.status).toBe('running');
+  }, 60_000);
+});

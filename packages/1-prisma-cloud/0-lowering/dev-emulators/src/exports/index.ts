@@ -6,8 +6,10 @@
  */
 
 export type {
+  BucketInstanceInfo,
   BucketsClient,
   ComputeClient,
+  CreateBucketRequest,
   CreateDatabaseRequest,
   CreateInstanceRequest,
   DatabaseInstanceInfo,
@@ -30,4 +32,3 @@ export {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
-export { instanceNameFor, slug } from '../instance-name.ts';

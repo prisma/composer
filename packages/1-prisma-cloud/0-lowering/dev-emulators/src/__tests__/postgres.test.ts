@@ -19,7 +19,6 @@ import getPort, { portNumbers } from 'get-port';
 import { Client as PgClient } from 'pg';
 import { type PostgresClient, postgresClient } from '../client.ts';
 import { daemonStateDir, ensureDaemon, stopDaemon } from '../daemon.ts';
-import { instanceNameFor } from '../instance-name.ts';
 import { type RegistryScanHost, registryClaimedPorts } from '../prisma-dev-registry.ts';
 import { ensureFreshDaemon, entryFor, prismaDevModulePath, tempDir, waitFor } from './helpers.ts';
 
@@ -269,19 +268,6 @@ describe('a bogus prismaDevModulePath', () => {
     expect([...new Set(pathsInMessage)]).toEqual([bogusPath]);
     expect(await client.listInstances()).toEqual([]);
   }, 15_000);
-});
-
-describe('instance name derivation is linear, not polynomial', () => {
-  test('a pathological run of separators slugs correctly and stays fast', () => {
-    const pathological = `a${'-'.repeat(10_000)}b`;
-
-    const start = performance.now();
-    const name = instanceNameFor(pathological, pathological);
-    const elapsedMs = performance.now() - start;
-
-    expect(name).toBe('pcdev-a-b-a-b');
-    expect(elapsedMs).toBeLessThan(100);
-  });
 });
 
 describe("a server another process holds under an instance's name", () => {

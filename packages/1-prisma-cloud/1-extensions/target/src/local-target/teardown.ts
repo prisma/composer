@@ -18,8 +18,9 @@
 
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { bucketsClient, ensureDaemon } from '@internal/dev-emulators';
+import { ensureDaemon } from '@internal/dev-emulators';
 import {
+  deleteBucketInstances,
   deleteDatabaseInstances,
   deleteRecordedInstances,
   removeLocalPaths,
@@ -49,7 +50,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
     await ensureDaemon('compute', daemonEntry('compute'));
     await deleteRecordedInstances(devDir);
   } finally {
-    await tolerateUnreachable(() => bucketsClient().deleteApp(app));
+    await tolerateUnreachable(() => deleteBucketInstances({ devDir, app }));
     removeLocalPaths([devDir, `${cwd}/.alchemy/state/${app}/dev`]);
   }
 }

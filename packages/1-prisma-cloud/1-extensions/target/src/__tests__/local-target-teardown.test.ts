@@ -6,24 +6,20 @@ import { PrismaCloudContainer } from '../container.ts';
 const events: string[] = [];
 let computeDeleteFails = false;
 
-const unreachable = (name: string) => () => ({
-  deleteApp: async () => {
-    throw new Error(`${name} emulator is not running`);
-  },
-});
-
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
   ensureDaemon: async (name: string) => {
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
   },
-  bucketsClient: unreachable('buckets'),
 }));
 
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
+  deleteBucketInstances: async () => {
+    throw new Error('buckets emulator is not running');
+  },
   deleteDatabaseInstances: async () => {
     throw new Error('postgres emulator is not running');
   },

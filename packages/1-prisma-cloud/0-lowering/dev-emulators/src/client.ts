@@ -13,7 +13,6 @@ import {
   isPidAlive,
   registryFilePath,
 } from './daemon.ts';
-import { isValidSegment } from './segments.ts';
 
 function notRunningError(name: DaemonName): Error {
   return new Error(
@@ -57,13 +56,6 @@ function resolveBaseUrl(name: DaemonName, opts: DaemonRootOptions): string {
     throw notRunningError(name);
   }
   return `http://127.0.0.1:${parsed.port}`;
-}
-
-function encodeSegment(segment: string): string {
-  if (!isValidSegment(segment)) {
-    throw new Error(`invalid path segment "${segment}"`);
-  }
-  return encodeURIComponent(segment);
 }
 
 const ADMIN_FETCH_ATTEMPTS = 3;
@@ -319,19 +311,56 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
   };
 }
 
+export interface BucketInstanceInfo {
+  /** Also the bucket's name on the S3 wire. */
+  readonly id: string;
+  /** Stored and returned verbatim; the emulator never reads them. */
+  readonly labels: Readonly<Record<string, string>>;
+  /** Where the bucket's objects live, as its creator registered it. */
+  readonly dir: string;
+}
+
+export interface CreateBucketRequest {
+  readonly labels: Readonly<Record<string, string>>;
+  readonly dir: string;
+}
+
+function isBucketInstanceInfo(value: unknown): value is BucketInstanceInfo {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    'dir' in value &&
+    typeof value.dir === 'string'
+  );
+}
+
+function isBucketInstanceInfoArray(value: unknown): value is BucketInstanceInfo[] {
+  return Array.isArray(value) && value.every(isBucketInstanceInfo);
+}
+
+/** Each bucket is an instance keyed by an id the emulator generates, which is also its name on the S3 wire at `baseUrl`. */
 export interface BucketsClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `PUT /_pcdev/apps/<app>/buckets/<name>`. */
-  putBucket(app: string, name: string, dir: string): Promise<void>;
-  /** `PUT /_pcdev/apps/<app>/credentials`. */
-  putCredentials(app: string, accessKeyId: string, secretAccessKey: string): Promise<void>;
-  /** `DELETE /_pcdev/apps/<app>`. */
-  deleteApp(app: string): Promise<void>;
+  /** `POST /_pcdev/instances` — creates the bucket and its data root. Never retried: a retry could create a second bucket. */
+  createInstance(request: CreateBucketRequest): Promise<BucketInstanceInfo>;
+  /** `GET /_pcdev/instances`. */
+  listInstances(): Promise<BucketInstanceInfo[]>;
+  /** `GET /_pcdev/instances/<id>`; undefined when the emulator has no such instance. */
+  getInstance(id: string): Promise<BucketInstanceInfo | undefined>;
+  /** `PUT /_pcdev/instances/<id>/credentials` — accepts this key pair for this bucket. A key registered for another bucket is refused. */
+  putCredentials(id: string, accessKeyId: string, secretAccessKey: string): Promise<void>;
+  /** `DELETE /_pcdev/instances/<id>` — forgets the bucket and its credentials; its objects stay in its data root. Deleting an unknown id succeeds. */
+  deleteInstance(id: string): Promise<void>;
 }
 
 export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
   const baseUrl = resolveBaseUrl('buckets', opts);
+  const adminUrl = `${baseUrl}/_pcdev/instances`;
 
   return {
     baseUrl,
@@ -345,21 +374,37 @@ export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
       return body;
     },
 
-    async putBucket(app, name, dir) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}/buckets/${encodeSegment(name)}`;
-      await expectOk(
-        await adminFetch(url, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ dir }),
-        }),
-      );
+    async createInstance(request) {
+      const res = await expectOk(await adminFetch(adminUrl, postJson(request), { retry: false }));
+      const body: unknown = await res.json();
+      if (!isBucketInstanceInfo(body)) {
+        throw new Error('malformed instance-create response from the buckets emulator');
+      }
+      return body;
     },
 
-    async putCredentials(app, accessKeyId, secretAccessKey) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}/credentials`;
+    async listInstances() {
+      const res = await expectOk(await adminFetch(adminUrl));
+      const body: unknown = await res.json();
+      if (!isBucketInstanceInfoArray(body)) {
+        throw new Error('malformed instances listing from the buckets emulator');
+      }
+      return body;
+    },
+
+    async getInstance(id) {
+      const res = await adminFetch(instancePath(`${baseUrl}/_pcdev`, id));
+      if (res.status === 404) return undefined;
+      const body: unknown = await (await expectOk(res)).json();
+      if (!isBucketInstanceInfo(body)) {
+        throw new Error('malformed instance response from the buckets emulator');
+      }
+      return body;
+    },
+
+    async putCredentials(id, accessKeyId, secretAccessKey) {
       await expectOk(
-        await adminFetch(url, {
+        await adminFetch(`${instancePath(`${baseUrl}/_pcdev`, id)}/credentials`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ accessKeyId, secretAccessKey }),
@@ -367,9 +412,8 @@ export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
       );
     },
 
-    async deleteApp(app) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+    async deleteInstance(id) {
+      await expectOk(await adminFetch(instancePath(`${baseUrl}/_pcdev`, id), { method: 'DELETE' }));
     },
   };
 }
