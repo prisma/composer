@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { type ComputeClient, computeClient } from '../client.ts';
-import { ensureDaemon, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
+import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
   CRASHING_BOOTSTRAP,
@@ -291,6 +291,44 @@ describe('a start that is replaced, stopped or joined', () => {
     const res = await fetch(`http://localhost:${String(reserved.port)}`);
     expect(await res.text()).toBe('second');
   }, 20_000);
+
+  test('a start during a stop waits for the stop, so one process runs and nothing outlives the emulator', async () => {
+    const artifactDir = writeBootstrap(
+      `process.on('SIGTERM', () => {});\n${DELAYED_SERVING_BOOTSTRAP}`,
+    );
+    const reserved = await client.ensureService('app-stop-start', 'web');
+
+    const deployed = client
+      .putDeployment(
+        'app-stop-start',
+        'web',
+        delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
+      )
+      .catch(() => undefined);
+    await Bun.sleep(300);
+    const [first] = await client.listServices('app-stop-start');
+    const firstPid = first?.pid;
+    expect(firstPid).toBeDefined();
+    const stopped = client.stopApp('app-stop-start');
+    await Bun.sleep(200);
+
+    await client.startApp('app-stop-start');
+    await stopped;
+    await deployed;
+
+    const [svc] = await client.listServices('app-stop-start');
+    expect(svc?.status).toBe('running');
+    expect(svc?.pid).not.toBe(firstPid);
+    expect(isPidAlive(firstPid ?? 0)).toBe(false);
+    const log = await (
+      await fetch(`${client.baseUrl}/apps/app-stop-start/services/web/logs`)
+    ).text();
+    expect(log).not.toContain('[emulator] exited');
+    expect(log.match(/booted pid/g)?.length).toBe(1);
+
+    await stopDaemon('compute', { registryRoot });
+    await waitFor(() => !isPidAlive(svc?.pid ?? 0), 10_000, 100);
+  }, 30_000);
 
   test('a deployment stopped during its start fails saying it was stopped', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);

@@ -153,6 +153,8 @@ interface RuntimeInfo {
   log: ServiceLog | undefined;
   /** The start in flight, until its child accepts connections or fails to. A newer start or a stop replaces or clears it. */
   start: InFlightStart | undefined;
+  /** A stop still waiting for its child to exit. A start waits for it, so it never spawns beside a dying child. */
+  stopping: Promise<void> | undefined;
 }
 
 interface InFlightStart {
@@ -325,6 +327,7 @@ function main(): void {
         expectedExit: false,
         log: undefined,
         start: undefined,
+        stopping: undefined,
       };
       runtimes.set(key, rt);
     }
@@ -425,8 +428,10 @@ function main(): void {
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
+    child: ChildProcess,
     code: number | null,
   ): void {
+    if (child !== rt.child) return;
     clearStableTimer(rt);
     rt.child = undefined;
     delete svc.pid;
@@ -547,7 +552,7 @@ function main(): void {
 
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
-    child.on('exit', (code) => handleChildExit(app, id, svc, rt, code));
+    child.on('exit', (code) => handleChildExit(app, id, svc, rt, child, code));
     if (child.pid !== undefined) svc.pid = child.pid;
     schedulePersist();
 
@@ -575,9 +580,7 @@ function main(): void {
         log.writeLine(
           `[emulator] restart did not accept connections on port ${port} within ${seconds}s — held; send a new deployment to resume`,
         );
-        await stopService(svc, rt);
-        svc.status = 'held';
-        schedulePersist();
+        await stopService(svc, rt, 'held');
       }
       return { ok: false, message };
     }
@@ -586,14 +589,29 @@ function main(): void {
     return { ok: true };
   }
 
-  async function stopService(svc: ServiceRecord, rt: RuntimeInfo): Promise<void> {
+  async function stopService(
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    finalStatus: 'stopped' | 'held' = 'stopped',
+  ): Promise<void> {
     rt.start = undefined;
     clearBackoffTimer(rt);
     clearStableTimer(rt);
-    await killChild(rt, TERMINATE_GRACE_MS);
-    svc.status = 'stopped';
-    delete svc.pid;
-    schedulePersist();
+    const stopping = killChild(rt, TERMINATE_GRACE_MS).then(() => {
+      svc.status = finalStatus;
+      delete svc.pid;
+      schedulePersist();
+    });
+    rt.stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (rt.stopping === stopping) rt.stopping = undefined;
+    }
+  }
+
+  async function stopsFinished(rt: RuntimeInfo): Promise<void> {
+    while (rt.stopping) await rt.stopping;
   }
 
   /**
@@ -607,6 +625,7 @@ function main(): void {
   async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
     if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(app, id);
+    await stopsFinished(rt);
     if (rt.start) return rt.start.result;
     if (svc.status === 'running') return { ok: true }; // idempotent — already up
     clearBackoffTimer(rt);
@@ -707,6 +726,7 @@ function main(): void {
       // A new or changed deployment, or a service that is not up: a fresh
       // start with a clean log, once the old process (if any) has exited.
       result = await beginStart(rt, true, async (token) => {
+        await stopsFinished(rt);
         await killChild(rt, TERMINATE_GRACE_MS);
         if (rt.start?.token !== token) return supersededResult(svc, rt);
         svc.status = 'stopped';
