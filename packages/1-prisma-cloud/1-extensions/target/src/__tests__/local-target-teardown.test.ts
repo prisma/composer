@@ -25,7 +25,7 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
-  deleteAppServiceInstances: async ({ app }: { app: string }) => {
+  deleteComputeInstances: async ({ app }: { app: string }) => {
     events.push(`delete compute ${app}`);
     if (computeDeleteFails) throw new Error('compute delete failed');
   },

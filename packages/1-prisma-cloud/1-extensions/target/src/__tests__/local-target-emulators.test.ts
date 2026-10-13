@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test';
 import type { Contract } from '@internal/core';
 import { dependency, Load, module, string } from '@internal/core';
 import type { ContainerInstance } from '@internal/core/config';
@@ -7,6 +7,7 @@ import * as RealLocalTarget from '@internal/local-target';
 import { compute, rawPostgres } from '../exports/index.ts';
 
 const events: string[] = [];
+let portChanges: { address: string; previous: number; given: number }[] = [];
 
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
@@ -25,6 +26,7 @@ mock.module('@internal/local-target', () => ({
     addresses: readonly string[],
   ) => {
     events.push(`reserve ${container?.input.appName ?? '?'}: ${addresses.join(', ')}`);
+    return portChanges;
   },
 }));
 
@@ -54,8 +56,19 @@ const container: ContainerInstance = {
   serialize: () => 'x',
 };
 
+const logged: string[] = [];
+const consoleLog = spyOn(console, 'log').mockImplementation((line: unknown) => {
+  logged.push(String(line));
+});
+
 beforeEach(() => {
   events.length = 0;
+  logged.length = 0;
+  portChanges = [];
+});
+
+afterEach(() => {
+  consoleLog.mockClear();
 });
 
 test('reserves the getting-started services in dependency order once the compute emulator is up', async () => {
@@ -87,4 +100,19 @@ test('reserves only services, in declaration order when nothing orders them', as
   await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
 
   expect(events).toEqual(['daemon compute', 'reserve my-app: web, admin', 'daemon postgres']);
+});
+
+test('prints one line for each service that could not get its remembered port back', async () => {
+  portChanges = [{ address: 'gateway', previous: 3001, given: 3004 }];
+  const graph = Load(
+    module('my-app', ({ provision }) => {
+      provision(compute({ name: 'gateway', deps: {}, build }));
+    }),
+  );
+
+  await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
+
+  expect(logged.filter((line) => line.includes('port'))).toEqual([
+    '[dev] service "gateway" now uses port 3004: its previous port 3001 is in use',
+  ]);
 });

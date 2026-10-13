@@ -6,12 +6,7 @@
  */
 import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
-import {
-  appServiceInstances,
-  type ServiceInstanceScope,
-  serviceAddressOf,
-  withServiceAddresses,
-} from '@internal/local-target';
+import { type AppScope, computeNodeInstances, withServiceAddresses } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
 const RELIST_INTERVAL_MS = 2000;
@@ -29,7 +24,7 @@ interface LogLine {
  * dead session).
  */
 async function* mergedLogs(
-  scope: ServiceInstanceScope,
+  scope: AppScope,
   signal: AbortSignal,
   tail: number,
 ): AsyncIterable<LogLine> {
@@ -77,8 +72,8 @@ async function* mergedLogs(
     // Log lines are labelled with the service's address — the identity the
     // front door prints, so a service's endpoint line and its log lines name
     // it identically.
-    for (const instance of await appServiceInstances(scope)) {
-      follow(instance.id, serviceAddressOf(instance));
+    for (const { address, instance } of await computeNodeInstances(scope)) {
+      follow(instance.id, address);
     }
   };
 
@@ -115,24 +110,24 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
 
   return {
     startServices: async () => {
-      const instances = await appServiceInstances(scope);
+      const nodes = await computeNodeInstances(scope);
       try {
-        await client.startInstances(instances.map((instance) => instance.id));
+        await client.startInstances(nodes.map(({ instance }) => instance.id));
       } catch (error) {
-        throw withServiceAddresses(error, instances);
+        throw withServiceAddresses(error, nodes);
       }
     },
     endpoints: async () => {
-      const instances = await appServiceInstances(scope);
-      return instances.map((instance) => ({
-        address: serviceAddressOf(instance),
-        url: instance.url,
+      const nodes = await computeNodeInstances(scope);
+      return nodes.map(({ address, instance }) => ({
+        address,
+        url: `http://localhost:${String(instance.port)}`,
       }));
     },
     logs: (signal, opts) => mergedLogs(scope, signal, opts?.tail ?? 0),
     stopServices: async () => {
-      const instances = await appServiceInstances(scope);
-      await client.stopInstances(instances.map((instance) => instance.id));
+      const nodes = await computeNodeInstances(scope);
+      await client.stopInstances(nodes.map(({ instance }) => instance.id));
     },
   };
 }

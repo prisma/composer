@@ -80,7 +80,7 @@ export interface DevStore<T> {
   update(mutate: (current: T) => T): Promise<T>;
 }
 
-function createStore<T>(
+export function createStore<T>(
   filePath: string,
   isValid: (value: unknown) => value is T,
   empty: T,

@@ -50,7 +50,16 @@ function serviceAppNames(input: LocalTargetEmulatorsInput): string[] {
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
-  await reserveServicePorts(input.container, input.devDir, serviceAppNames(input));
+  const portChanges = await reserveServicePorts(
+    input.container,
+    input.devDir,
+    serviceAppNames(input),
+  );
+  for (const { address, previous, given } of portChanges) {
+    console.log(
+      `[dev] service "${address}" now uses port ${String(given)}: its previous port ${String(previous)} is in use`,
+    );
+  }
 
   if (usesBuckets(input)) {
     const { url: bucketsUrl } = await ensureDaemon('buckets', daemonEntry('buckets'));

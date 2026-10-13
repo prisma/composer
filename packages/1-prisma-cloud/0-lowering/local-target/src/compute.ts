@@ -20,8 +20,15 @@ import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
 import { extractComputeArtifact } from './artifact-extract.ts';
-import { ensureServiceInstance, withServiceAddresses } from './compute-instances.ts';
 import { envStore, secretsStore } from './dev-store.ts';
+import {
+  type AppScope,
+  deleteComputeInstance,
+  ensureComputeInstance,
+  liveComputeInstance,
+  type PortChange,
+  withServiceAddresses,
+} from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads an app id from upstream's `app` input: a plain string or a resolved `Prisma.App` attributes record. */
@@ -163,11 +170,20 @@ async function materializeEnv(
   return env;
 }
 
+function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  return { devDir: input.devDir, app: appNameOf(input.container) };
+}
+
+function localUrl(port: number): string {
+  return `http://localhost:${String(port)}`;
+}
+
 /**
  * `Prisma.App` → the Compute emulator: finds or creates the instance that
  * runs the service, which holds the service's port. The app id here IS the
- * service's own address. `delete` is a no-op — instance removal belongs to
- * `teardown`, not per-resource Alchemy deletes.
+ * service's own address. An App whose instance was re-created on another
+ * port is updated, so its dependents get the new URL. Deleting an App (its
+ * service was removed) deletes its instance.
  */
 export function LocalAppProvider(
   input: LocalTargetProvidersInput,
@@ -177,9 +193,9 @@ export function LocalAppProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const scope = { devDir: input.devDir, app: appNameOf(input.container) };
           const name = news.displayName ?? id;
-          const { url } = await ensureServiceInstance(scope, name);
+          const { instance } = await ensureComputeInstance(appScopeOf(input), name);
+          const url = localUrl(instance.port);
           return {
             appId: name,
             name,
@@ -193,7 +209,21 @@ export function LocalAppProvider(
         },
         catch: (cause) => cause,
       }),
-    delete: () => Effect.void,
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined) return undefined;
+          const live = await liveComputeInstance(appScopeOf(input), output.name);
+          if (live?.url === output.appEndpointDomain) return undefined;
+          return { action: 'update' as const };
+        },
+        catch: (cause) => cause,
+      }),
+    delete: ({ output }) =>
+      Effect.tryPromise({
+        try: () => deleteComputeInstance(appScopeOf(input), output.name),
+        catch: (cause) => cause,
+      }),
     read: ({ output }) => Effect.succeed(output),
   };
   return Provider.effect(App, Effect.succeed(service));
@@ -204,17 +234,20 @@ export function LocalAppProvider(
  * before Alchemy applies the `App` resources concurrently. A new instance gets
  * the smallest free port, so on a fresh start the ports follow this order; a
  * service that already has an instance keeps its port. `serviceAppNames` are
- * the `App` resources' `displayName`s.
+ * the `App` resources' `displayName`s. Returns the services whose instance had
+ * to be re-created and could not get its remembered port back.
  */
 export async function reserveServicePorts(
   container: ContainerInstance | undefined,
   devDir: string,
   serviceAppNames: readonly string[],
-): Promise<void> {
+): Promise<PortChange[]> {
   const scope = { devDir, app: appNameOf(container) };
+  const changes: PortChange[] = [];
   for (const service of serviceAppNames) {
     try {
-      await ensureServiceInstance(scope, service);
+      const { portChange } = await ensureComputeInstance(scope, service);
+      if (portChange) changes.push(portChange);
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
       throw new Error(`reserving a local port for service "${service}" failed: ${reason}`, {
@@ -222,6 +255,7 @@ export async function reserveServicePorts(
       });
     }
   }
+  return changes;
 }
 
 /** `Prisma.EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Upstream's value is `Redacted`; env.json holds the plain string the child process is given. */
@@ -284,7 +318,6 @@ export function LocalDeploymentProvider(
     reconcile: ({ news }) =>
       Effect.tryPromise({
         try: async (): Promise<Deployment['Attributes']> => {
-          const scope = { devDir: input.devDir, app: appNameOf(input.container) };
           const appId = appIdOfInput(news.app);
           if (news.artifactPath === undefined) {
             throw new Error('local Deployment requires an artifactPath — nothing to run.');
@@ -297,16 +330,15 @@ export function LocalDeploymentProvider(
           }
           const address = readManifestAddress(artifactDir);
 
-          const instance = await ensureServiceInstance(scope, appId);
-          const { port } = instance;
-          const env = await materializeEnv(input.devDir, address, port);
+          const { instance } = await ensureComputeInstance(appScopeOf(input), appId);
+          const env = await materializeEnv(input.devDir, address, instance.port);
           try {
             await computeClient().putDeployment(instance.id, { artifactDir, artifactHash, env });
           } catch (error) {
-            throw withServiceAddresses(error, [instance]);
+            throw withServiceAddresses(error, [{ address, instance }]);
           }
 
-          const url = `http://localhost:${port}`;
+          const url = localUrl(instance.port);
           return {
             deploymentId: artifactHash,
             appId,
@@ -323,8 +355,21 @@ export function LocalDeploymentProvider(
         },
         catch: (cause) => cause,
       }),
+    // An instance that no longer runs this deployment — re-created after the
+    // emulator lost it, or never deployed — needs the deployment again, even
+    // when nothing in the app changed.
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined) return undefined;
+          const live = await liveComputeInstance(appScopeOf(input), output.appId);
+          if (live?.artifactHash === output.artifactHash) return undefined;
+          return { action: 'update' as const };
+        },
+        catch: (cause) => cause,
+      }),
     // Content-addressed, cheap to leave unpacked; `--fresh` removes the whole
-    // dev dir and `teardown` removes the emulator's instance.
+    // dev dir, and deleting the App deletes the emulator's instance.
     delete: () => Effect.void,
   };
   return Provider.effect(Deployment, Effect.succeed(service));

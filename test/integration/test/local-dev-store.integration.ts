@@ -240,16 +240,22 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never the typed client. Finds the app's instances by the labels Composer gives them. */
+/** The services `prisma dev` recorded in storeDir's `.prisma-composer/dev/emulator-instances.json`, as the Compute emulator reports them (plain fetch, never the typed client). */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/instances`);
-  if (!res.ok) throw new Error(`compute emulator listInstances failed: ${res.status}`);
-  const instances = (await res.json()) as (ServiceInfo & { labels: Record<string, string> })[];
-  return instances
-    .filter((instance) => instance.labels['composer.app'] === app)
-    .map((instance) => ({ ...instance, address: instance.labels['composer.address'] ?? '' }));
+  const mapping = readJson(
+    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+  ) as { app: string; nodes: Record<string, { id: string }> } | undefined;
+  if (mapping === undefined || mapping.app !== app) return [];
+  const services: ServiceInfo[] = [];
+  for (const [address, node] of Object.entries(mapping.nodes)) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
+    services.push({ ...((await res.json()) as ServiceInfo), address });
+  }
+  return services;
 }
 
 interface PostgresDatabaseInfo {
