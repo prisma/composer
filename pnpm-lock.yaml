@@ -1375,12 +1375,21 @@ importers:
       '@internal/cli':
         specifier: workspace:0.29.1
         version: link:../../0-framework/3-tooling/cli
+      '@internal/dev-emulators':
+        specifier: workspace:0.29.1
+        version: link:../../1-prisma-cloud/0-lowering/dev-emulators
+      '@internal/foundation':
+        specifier: workspace:0.29.1
+        version: link:../../0-framework/0-foundation/foundation
       '@internal/tsdown-config':
         specifier: workspace:0.29.1
         version: link:../../0-framework/0-foundation/tsdown-config
       '@prisma/cli-engine':
         specifier: 0.7.0
         version: 0.7.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.5)
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
       '@types/node':
         specifier: ^26.0.1
         version: 26.1.1
