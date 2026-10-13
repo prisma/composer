@@ -1032,6 +1032,9 @@ importers:
         specifier: 8.22.0
         version: 8.22.0
     devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1085.0
+        version: 3.1087.0
       '@distilled.cloud/prisma':
         specifier: 1.0.0-rc.12
         version: 1.0.0-rc.12(effect@4.0.0-rc.115)

@@ -32,3 +32,10 @@ export {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
+export type {
+  EmulatorInstance,
+  EmulatorKind,
+  EmulatorList,
+  EmulatorListing,
+} from '../emulator-list.ts';
+export { EMULATOR_KINDS, isEmulatorRunning, listEmulators } from '../emulator-list.ts';

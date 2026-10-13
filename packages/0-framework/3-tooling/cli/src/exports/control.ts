@@ -1,6 +1,6 @@
 /**
  * Public surface (the `./control` subpath): the programmatic
- * deploy/destroy/dev/log operations. Implementation lives in ../operations/.
+ * deploy/destroy/dev/devUrl/devStop/log operations. Implementation lives in ../operations/.
  * Importing it executes nothing — the heavy pipeline loads lazily inside
  * each operation. Distinct from an EXTENSION's `/control`
  * entry (ADR-0017's control-plane descriptors, importable only from
@@ -33,6 +33,8 @@ export type {
 export { destroy } from '../operations/destroy.ts';
 export type { DevEvent, DevInput, DevSession } from '../operations/dev.ts';
 export { dev } from '../operations/dev.ts';
+export type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operations/dev-current.ts';
+export { devStop, devUrl } from '../operations/dev-current.ts';
 export type { LogAttached, LogEvent, LogInput, LogLine } from '../operations/log.ts';
 export { log } from '../operations/log.ts';
 export type { ExecutionDiagnostics, ServiceEndpoint } from '../operations/shared.ts';

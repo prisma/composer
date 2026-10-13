@@ -253,6 +253,52 @@ export interface LocalTargetDescriptor {
   attach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment>;
   /** `--fresh`: remove every local trace of the dev instance — emulator instances, state, data. */
   teardown?(input: TeardownInput): Promise<void>;
+  /**
+   * The app `prisma dev` last ran from a directory, read from its dev state
+   * directory alone — no entry, no graph, no container — so a command can
+   * find or stop a running app without running the pipeline. Undefined when
+   * this extension recorded nothing there.
+   */
+  current?(input: LocalTargetCurrentInput): Promise<LocalTargetCurrentApp | undefined>;
+}
+
+export interface LocalTargetCurrentInput {
+  /** Absolute path of the dev state directory (`<cwd>/.prisma-composer/dev`). */
+  readonly devDir: string;
+}
+
+/** The app `prisma dev` last ran from a directory, as one extension recorded it. */
+export interface LocalTargetCurrentApp {
+  readonly app: string;
+  /** Every node address recorded for the app. */
+  readonly addresses: readonly string[];
+  /** Where the node at `address` runs locally; undefined for an address not recorded. */
+  locate(address: string): Promise<LocalNodeLocation | undefined>;
+  /** Stops everything the target runs for the app (emulators and data persist); returns what was recorded as running locally. */
+  stop(): Promise<readonly LocalNodeStopped[]>;
+}
+
+/** A node's local whereabouts. `kind` is the target's word for the node (for Prisma Cloud: `service`, `database` or `bucket`). */
+export type LocalNodeLocation =
+  | {
+      readonly address: string;
+      readonly kind: string;
+      readonly emulator: 'running';
+      /** Absent when the emulator no longer has the node's instance. */
+      readonly url?: string;
+      /** `running` when the node answers at `url`; otherwise the target's word for its state. */
+      readonly state: string;
+    }
+  | {
+      readonly address: string;
+      readonly kind: string;
+      /** The emulator that runs the node is not running, so it has no URL or state to report. */
+      readonly emulator: 'not-running';
+    };
+
+export interface LocalNodeStopped {
+  readonly address: string;
+  readonly kind: string;
 }
 
 export interface LocalTargetProvidersInput {
