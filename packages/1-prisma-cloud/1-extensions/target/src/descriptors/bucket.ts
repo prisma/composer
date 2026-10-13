@@ -24,11 +24,12 @@ export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor
   const lowering: Lowering = ({ id, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      const branchId = cloudApplicationOf(application).branchId;
+      const { branchId, branchless } = cloudApplicationOf(application);
       const bkt = yield* Prisma.Bucket(`${id}-bucket`, {
         project: projectIdOf(application),
         name: id,
         ...(branchId !== undefined ? { branchId } : {}),
+        ...(!branchless ? { logicalId: id } : {}),
       });
       // `name: id` matches what Composer's own resource always created, so a
       // migrated legacy row diffs clean instead of replacing the key (a

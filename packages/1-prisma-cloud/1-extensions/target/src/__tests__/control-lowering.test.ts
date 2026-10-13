@@ -20,7 +20,6 @@ import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
-import * as RealDatabaseIdentity from '../database-identity-resource.ts';
 import type { ComputeProvisioned, ComputeSerialized } from '../descriptors/compute.ts';
 import { computeDescriptor } from '../descriptors/compute.ts';
 import type { S3StoreSerialized } from '../descriptors/s3-store.ts';
@@ -58,7 +57,6 @@ const recorded: {
   generated: Array<[string, unknown]>;
   pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
-  identities: Array<[string, { databaseId: string; logicalId: string }]>;
 } = {
   envVar: [],
   envVarProps: [],
@@ -75,7 +73,6 @@ const recorded: {
   generated: [],
   pnMigrate: [],
   databaseUrlClaims: [],
-  identities: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -153,14 +150,6 @@ mock.module('alchemy/Prisma', () => ({
       connectionId: `${id}#cloud-id`,
       directConnectionString: Redacted.make(`postgres://${id}`),
     });
-  },
-}));
-
-mock.module('../database-identity-resource.ts', () => ({
-  ...RealDatabaseIdentity,
-  DatabaseIdentity: (id: string, props: { databaseId: string; logicalId: string }) => {
-    recorded.identities.push([id, props]);
-    return Effect.succeed(props);
   },
 }));
 
@@ -523,17 +512,19 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
       expect(recorded.db).toEqual([
         [
           'data-db',
-          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
+          {
+            project: 'shop-project#cloud-id',
+            region: 'inherit',
+            branchId: 'br_default',
+            logicalId: 'data',
+          },
         ],
-      ]);
-      expect(recorded.identities).toEqual([
-        ['data-identity', { databaseId: 'data-db#cloud-id', logicalId: 'data' }],
       ]);
       expect(recorded.conn).toEqual([
         [
           'data-conn',
           {
-            database: 'data-db#cloud-id',
+            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
             name: 'data',
           },
         ],
@@ -566,6 +557,7 @@ describe("prismaCloud().nodes['raw-postgres'] — the resource descriptor", () =
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'branch_1',
+            logicalId: 'data2',
           },
         ],
       ]);
@@ -651,7 +643,12 @@ describe("prismaCloud().nodes['postgres'] — the resource descriptor", () => {
       expect(recorded.db.slice(before.db)).toEqual([
         [
           'pndata-db',
-          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
+          {
+            project: 'shop-project#cloud-id',
+            region: 'inherit',
+            branchId: 'br_default',
+            logicalId: 'pndata',
+          },
         ],
       ]);
       const [migrateId, migrateProps] = recorded.pnMigrate[before.migrate] ?? ['', {}];
@@ -755,7 +752,7 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       // No credentials on the entity: secret material must never reach an entity.
       expect(result.entities).toEqual([{ kind: 'bucket', id: 'files-bucket#cloud-id' }]);
       expect(recorded.bucket.slice(before.bucket)).toEqual([
-        ['files-bucket', { project: 'shop-project#cloud-id', name: 'files' }],
+        ['files-bucket', { project: 'shop-project#cloud-id', name: 'files', logicalId: 'files' }],
       ]);
       expect(recorded.bucketKey.slice(before.bucketKey)).toEqual([
         ['files-key', { bucket: 'files-bucket#cloud-id', name: 'files', role: 'read_write' }],
@@ -782,7 +779,12 @@ describe("prismaCloud().nodes['s3'] — the real-bucket resource descriptor", ()
       expect(recorded.bucket.slice(before)).toEqual([
         [
           'assets-bucket',
-          { project: 'shop-project#cloud-id', name: 'assets', branchId: 'branch_1' },
+          {
+            project: 'shop-project#cloud-id',
+            name: 'assets',
+            branchId: 'branch_1',
+            logicalId: 'assets',
+          },
         ],
       ]);
     });
@@ -811,7 +813,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
         endpointDomain: 'https://auth-svc.example',
       });
       expect(recorded.svc).toEqual([
-        ['auth-svc', { project: 'shop-project#cloud-id', displayName: 'auth' }],
+        ['auth-svc', { project: 'shop-project#cloud-id', displayName: 'auth', logicalId: 'auth' }],
       ]);
     });
   });
@@ -839,6 +841,7 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
             project: 'shop-project#cloud-id',
             displayName: 'auth2',
             branchId: 'branch_1',
+            logicalId: 'auth2',
           },
         ],
       ]);
@@ -2000,14 +2003,19 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       expect(recorded.db.slice(before.db)).toEqual([
         [
           'data-db',
-          { project: 'shop-project#cloud-id', region: 'inherit', branchId: 'br_default' },
+          {
+            project: 'shop-project#cloud-id',
+            region: 'inherit',
+            branchId: 'br_default',
+            logicalId: 'data',
+          },
         ],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([
         [
           'data-conn',
           {
-            database: 'data-db#cloud-id',
+            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
             name: 'data',
           },
         ],
@@ -2572,4 +2580,55 @@ describe('name validation — fail fast on Prisma name constraints, before creat
       expect(recorded.db.length).toBe(before + 1);
     });
   });
+});
+
+describe('topology identities on platform resources', () => {
+  test.each([
+    { stage: 'main', branchId: undefined, defaultBranchId: 'br_default', branchless: false },
+    { stage: 'preview', branchId: 'br_preview', defaultBranchId: undefined, branchless: false },
+    { stage: 'local dev', branchId: undefined, defaultBranchId: undefined, branchless: true },
+  ])(
+    '$stage preserves nested node addresses and skips identity binding in local dev',
+    ({ branchId, defaultBranchId, branchless }) => {
+      const target = prismaCloud({ workspaceId: 'ws_1' });
+      const application = {
+        projectId: 'shop-project#cloud-id',
+        branchId,
+        defaultBranchId,
+        branchless,
+      };
+
+      run<LoweredResult>(
+        resourceDescriptorOf(
+          target,
+          'raw-postgres',
+        )({ id: 'auth.data', application } as unknown as LowerContext),
+      );
+      run<MockedProvisioned>(
+        serviceDescriptorOf(target, 'compute').provision({
+          id: 'auth.api',
+          application,
+        } as unknown as LowerContext),
+      );
+      run<LoweredResult>(
+        resourceDescriptorOf(
+          target,
+          's3',
+        )({ id: 'auth.files', application } as unknown as LowerContext),
+      );
+
+      const database = recorded.db.at(-1)?.[1];
+      const service = recorded.svc.at(-1)?.[1];
+      const bucket = recorded.bucket.at(-1)?.[1];
+      if (branchless) {
+        expect(database).not.toHaveProperty('logicalId');
+        expect(service).not.toHaveProperty('logicalId');
+        expect(bucket).not.toHaveProperty('logicalId');
+      } else {
+        expect(database).toHaveProperty('logicalId', 'auth.data');
+        expect(service).toHaveProperty('logicalId', 'auth.api');
+        expect(bucket).toHaveProperty('logicalId', 'auth.files');
+      }
+    },
+  );
 });

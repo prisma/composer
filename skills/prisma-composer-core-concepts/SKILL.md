@@ -319,10 +319,11 @@ Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
 Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
 shell runs `prisma` under Bun with Alchemy on Node.
 
-Managed Postgres databases bind their authored resource name to their Branch.
-Console uses that identity to open the matching database from topology and
-compare it with main. Existing environments receive it on their next deploy;
-a conflicting binding fails deploy before creating the connection.
+Services, managed Postgres databases and buckets record their node address as
+`logicalId` on their Branch. Console uses that address to match topology nodes
+to resources and compare them with main. Existing environments receive the
+identity on their next deploy; a conflicting identity fails deploy. Local dev
+creates no platform rows.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
@@ -360,7 +361,7 @@ another stage's resources is kept. Destroy never creates anything:
 destroying a
 never-deployed stage fails rather than standing one up.
 
-**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.78 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
+**The engine underneath is alchemy.** Convergence is executed by [alchemy](https://alchemy.run), a third-party infrastructure-as-code engine that arrives as an ordinary, exactly-pinned npm dependency of `@prisma/composer` (2.0.0-beta.83 at this library version). Your code never imports or configures it; consult alchemy's own docs for the engine itself. What matters operationally:
 
 Composer runs the alchemy package installed beside the app's
 `@prisma/composer` and starts it with Node (the first `node` on PATH when `prisma` runs

@@ -1,6 +1,6 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy. */
 
-import { isParamSource, type ServiceNode } from '@internal/core';
+import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
   ARTIFACT_CONTENT_TYPE,
@@ -147,12 +147,13 @@ export function computeDescriptor(
       Effect.gen(function* () {
         validateName(id, 'service name (from provision id)');
         const projectId = projectIdOf(application);
-        const branchId = cloudApplicationOf(application).branchId;
+        const { branchId, branchless } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(`${id}-svc`, {
           project: projectId,
           displayName: serviceAppName(id),
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
+          ...(!branchless ? { logicalId: id } : {}),
         });
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
@@ -169,7 +170,10 @@ export function computeDescriptor(
         const cls = branchId ? ('preview' as const) : ('production' as const);
         const branch = branchId !== undefined ? { branchId } : {};
         const projectId = provisioned.projectId;
-        const svc = node as ServiceNode;
+        if (node.kind !== 'service') {
+          throw new Error(`prisma-cloud: cannot serialize non-service node "${address}".`);
+        }
+        const svc = node;
         const rows: EnvRow[] = [];
 
         for (const d of paramEntries(svc)) {

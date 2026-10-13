@@ -157,12 +157,12 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
-Managed Postgres databases carry the authored resource name as their logical
-identity on each Branch. Console uses that identity to match the database in
-the topology with its counterpart on main. Deploy binds the identity after
-attaching the database to its Branch and before creating its connection; a
-conflicting identity fails the deploy rather than selecting another database.
-Existing environments receive the binding on their next deploy.
+Services, managed Postgres databases and buckets record their node address as
+`logicalId` on their Branch. Console uses the same address in the topology to
+find each resource and its counterpart on main. The upstream Alchemy resource
+owns the identity; a conflicting identity fails the deploy. Existing environments
+receive it on their next deploy, without replacing the resource. Local dev
+creates no platform rows.
 
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
@@ -359,7 +359,7 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's. `<pin>` below stands for that exact version (`4.0.0-rc.115` in
+Composer's. `<pin>` below stands for that exact version (`4.0.3` in
 Composer 0.29.1). With npm, in your app's `package.json`:
 
 ```json
