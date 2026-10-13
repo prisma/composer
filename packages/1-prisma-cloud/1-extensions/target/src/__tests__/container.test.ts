@@ -33,6 +33,8 @@ interface FakeState {
   deleteProjectCalls: string[];
   /** Overrides the DELETE response status — defaults to a 204 success. */
   deleteProjectResponseStatus?: number;
+  repositories?: Record<string, Array<{ repoId: number; repoFullName: string; status: 'active' }>>;
+  branchReadCalls: string[];
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -43,6 +45,7 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   branchCreateCalls: 0,
   deleteBranchCalls: [],
   deleteProjectCalls: [],
+  branchReadCalls: [],
   ...overrides,
 });
 
@@ -58,7 +61,7 @@ const errorResponse = (status: number) => ({
   response: new Response(null, { status }),
 });
 
-/** A stubbed `ManagementApiClient` covering only `/v1/projects` and `/v1/projects/{projectId}/branches` — everything `resolveContainer` calls. */
+/** A stubbed `ManagementApiClient` covering the container resolver's project, connection and branch reads. */
 const fakeClient = (state: FakeState): ManagementApiClient => {
   const GET = (
     path: string,
@@ -71,11 +74,21 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
     }
     if (path === '/v1/projects/{projectId}/branches') {
       const projectId = init.params?.path?.['projectId'] ?? '';
+      state.branchReadCalls.push(projectId);
       const gitName = init.params?.query?.['gitName'];
       const all = state.branches[projectId] ?? [];
       const data = gitName === undefined ? all : all.filter((b) => b.gitName === gitName);
       return Promise.resolve(
         okResponse({ data, pagination: { nextCursor: null, hasMore: false } }),
+      );
+    }
+    if (path === '/v1/source-repositories') {
+      const projectId = init.params?.query?.['projectId'] ?? '';
+      return Promise.resolve(
+        okResponse({
+          data: state.repositories?.[projectId] ?? [],
+          pagination: { nextCursor: null, hasMore: false },
+        }),
       );
     }
     throw new Error(`fakeClient: unexpected GET ${path}`);
@@ -151,8 +164,9 @@ async function withEnv<T>(
   values: Record<string, string | undefined>,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const previous = new Map(Object.keys(values).map((k) => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(values)) {
+  const environment = { GITHUB_ACTIONS: undefined, GITHUB_REPOSITORY_ID: undefined, ...values };
+  const previous = new Map(Object.keys(environment).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(environment)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   }
@@ -167,6 +181,55 @@ async function withEnv<T>(
 }
 
 const baseEnv = { PRISMA_WORKSPACE_ID: 'ws-1', PRISMA_SERVICE_TOKEN: 'tok' };
+
+describe('containerDescriptor — GitHub destination guard', () => {
+  test.each(['ensure', 'locate'] as const)(
+    '%s threads repository identity even with an injected authenticated client',
+    async (operation) => {
+      const state = newFakeState({
+        projects: ['own', 'other'].map((name) => ({
+          id: `proj-${name}`,
+          name,
+          createdAt: new Date(1).toISOString(),
+          workspace: { id: 'ws-1' },
+        })),
+        repositories: {
+          'proj-own': [{ repoId: 101, repoFullName: 'acme/own', status: 'active' }],
+        },
+      });
+      await withEnv(
+        { ...baseEnv, GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY_ID: '101' },
+        async () => {
+          const descriptor = containerDescriptor();
+          await expect(
+            descriptor[operation](
+              { appName: 'other', stage: 'preview' },
+              {
+                workspaceId: 'ws-1',
+                client: fakeClient(state),
+              },
+            ),
+          ).rejects.toThrow('is connected to Project "own"');
+        },
+      );
+      expect(state.projectCreateCalls).toBe(0);
+      expect(state.branchReadCalls).toEqual([]);
+    },
+  );
+
+  test('a missing GitHub repository id refuses before creating a Project', async () => {
+    const state = newFakeState();
+    await withEnv({ ...baseEnv, GITHUB_ACTIONS: 'true' }, async () => {
+      await expect(
+        containerDescriptor({ client: fakeClient(state) }).ensure({
+          appName: 'new-project',
+          stage: undefined,
+        }),
+      ).rejects.toThrow('GITHUB_REPOSITORY_ID');
+    });
+    expect(state.projectCreateCalls).toBe(0);
+  });
+});
 
 describe('containerDescriptor().ensure()', () => {
   test('missing PRISMA_WORKSPACE_ID throws naming the variable', async () => {

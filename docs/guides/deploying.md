@@ -277,11 +277,30 @@ the Project still holds another stage's resources, it's left in place.
 
 ## CI
 
-Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
+Set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
 as CI secrets, build, and run the same commands. The per-PR environment
 pattern: on push, run `prisma deploy module.ts --stage "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Destroying](#destroying) whose
 target is that stage, `{ kind: 'stage', stage: 'pr-42' }` for PR 42.
+
+In GitHub Actions, Composer checks the Project selected by the root module's
+name (or `--name`) against the repository's **active** connection in Console.
+It uses GitHub's numeric `GITHUB_REPOSITORY_ID`, so renaming the repository
+does not change the check. Changing the root name to another app's name,
+or to a new name while the repository has an active Project connection,
+fails before any Project or Branch is created and before Alchemy runs.
+Restore the name for the connected Project, or update the repository connection
+in Console if you intend to change the destination. The same check applies
+to a destroy script running in GitHub Actions.
+
+The Management API's source-repository listing exposes active connections
+only. A first deploy from a pending setup PR can still find or create its
+Project, but it cannot adopt a Project actively connected to another repository.
+Pending connections alone do not constrain name selection. Failed connection
+lookups stop the deploy; a missing or invalid `GITHUB_REPOSITORY_ID` also stops
+it when `GITHUB_ACTIONS=true`. Outside GitHub Actions, project selection keeps
+its existing behavior. This is a destination safety check; credentials retain
+their platform-defined permissions, including workspace-wide CI tokens.
 
 One extra: if your app binds input fields with `envSecret` or `envParam`
 (see [Building an app § Service input](building-an-app.md#service-input)),

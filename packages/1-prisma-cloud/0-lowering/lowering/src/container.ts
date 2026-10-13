@@ -25,6 +25,8 @@ export interface ResolveContainerOptions {
    * the Project already exists — the platform's stored default region is used then.
    */
   readonly region?: ProjectRegion;
+  /** Numeric GitHub repository id for a CI run; active source connections constrain its Project. */
+  readonly repositoryId?: number;
 }
 
 /** Raised with `ensure: false` when the app's Project (or a named stage's Branch) doesn't exist. */
@@ -76,8 +78,8 @@ const bareWorkspaceId = (id: string): string =>
  * display-name match (oldest-wins fallback for projects without a logical id).
  * Creates one if none match, unless `ensure` is `false` (find-only —
  * `destroy`), in which case an absent Project fails with
- * `ContainerNotFoundError`. No ownership marker and no `--project` override
- * (both deferred — see ADR-0019).
+ * `ContainerNotFoundError`. In GitHub Actions, an active repository connection
+ * must agree with the selected Project before any containers are created.
  */
 const resolveProject = (
   client: ManagementApiClient,
@@ -85,6 +87,7 @@ const resolveProject = (
   appName: string,
   ensure: boolean,
   region: ProjectRegion | undefined,
+  repositoryId: number | undefined,
 ): Effect.Effect<string, PrismaApiError | ContainerNotFoundError> =>
   Effect.gen(function* () {
     const projects = yield* listAllProjects(client);
@@ -95,12 +98,63 @@ const resolveProject = (
     const logicalIdMatch = workspaceProjects.find(
       (p) => p.logicalId != null && p.logicalId === appName,
     );
-    if (logicalIdMatch !== undefined) return logicalIdMatch.id;
-
     const nameMatch = workspaceProjects
       .filter((p) => p.name === appName)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
-    if (nameMatch !== undefined) return nameMatch.id;
+    const selected = logicalIdMatch ?? nameMatch;
+
+    if (repositoryId !== undefined) {
+      let selectedRepository:
+        | { readonly repoId: number; readonly repoFullName: string }
+        | undefined;
+      for (const project of workspaceProjects) {
+        const repositories = yield* collectPages(
+          `source repositories of project ${project.id}`,
+          (cursor) =>
+            call(() =>
+              client.GET('/v1/source-repositories', {
+                params: {
+                  query: { projectId: project.id, ...(cursor !== undefined ? { cursor } : {}) },
+                },
+              }),
+            ),
+        );
+        const active = repositories.filter((repository) => repository.status === 'active');
+        const connected = active.find((repository) => repository.repoId === repositoryId);
+        if (connected !== undefined) {
+          if (selected?.id !== project.id) {
+            return yield* Effect.fail(
+              new PrismaApiError({
+                status: 0,
+                message:
+                  `GitHub repository "${connected.repoFullName}" (${repositoryId}) is connected to ` +
+                  `Project "${project.name}" (${project.id}), but the app name "${appName}" ` +
+                  (selected === undefined
+                    ? 'selects no existing Project. '
+                    : `selects Project "${selected.name}" (${selected.id}). `) +
+                  'Restore the root module name or --name override for the connected Project, ' +
+                  'or update the repository connection in Console before deploying.',
+              }),
+            );
+          }
+          return project.id;
+        }
+        if (project.id === selected?.id) selectedRepository = active[0];
+      }
+      if (selected !== undefined && selectedRepository !== undefined) {
+        return yield* Effect.fail(
+          new PrismaApiError({
+            status: 0,
+            message:
+              `Project "${selected.name}" (${selected.id}) is connected to GitHub repository ` +
+              `"${selectedRepository.repoFullName}" (${selectedRepository.repoId}), ` +
+              `but this run is from repository ${repositoryId}. ` +
+              'Restore the root module name or --name override, or update the repository connection in Console before deploying.',
+          }),
+        );
+      }
+    }
+    if (selected !== undefined) return selected.id;
 
     if (!ensure) return yield* Effect.fail(new ContainerNotFoundError({ appName }));
 
@@ -249,6 +303,7 @@ export const resolveContainer = (
       opts.appName,
       ensure,
       opts.region,
+      opts.repositoryId,
     );
     if (opts.stage === undefined) {
       const defaultBranchId = yield* resolveDefaultBranchId(client, projectId);

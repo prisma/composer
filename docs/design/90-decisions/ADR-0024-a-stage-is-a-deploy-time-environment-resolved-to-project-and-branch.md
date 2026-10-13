@@ -4,6 +4,8 @@ Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)
 
 Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): the CLI finds the Project by its `logicalId`, which is the app name, and creates new Projects with it. When no Project has that `logicalId`, the CLI falls back to matching by display name, oldest first; this exists for Projects created before they carried a `logicalId`.
 
+Amended by [ADR-0052](ADR-0052-github-project-selection-checks-active-repository-connections.md): in GitHub Actions, name selection must agree with the repository's active Project connection before any container mutation.
+
 ## Decision
 
 An app is deployed to a named **stage** — an environment. The topology is

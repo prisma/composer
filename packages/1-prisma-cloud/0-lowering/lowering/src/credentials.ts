@@ -76,6 +76,21 @@ export const deploySourceHeaders = (): Record<string, string> => ({
   'x-prisma-client-version': pkg.version,
 });
 
+/** GitHub's numeric repository identity, independent of repository names and build-report metadata. */
+export function githubRepositoryId(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number | undefined {
+  if (env['GITHUB_ACTIONS'] !== 'true') return undefined;
+  const value = env['GITHUB_REPOSITORY_ID'];
+  const id = value === undefined ? Number.NaN : Number(value);
+  if (value === undefined || !/^[0-9]+$/.test(value) || !Number.isSafeInteger(id) || id <= 0) {
+    throw new Error(
+      'GITHUB_REPOSITORY_ID must be a positive numeric repository id in GitHub Actions.',
+    );
+  }
+  return id;
+}
+
 /**
  * The Management API origin every Prisma-Cloud client in this package uses —
  * Composer's own SDK client AND upstream alchemy's postgres providers resolve

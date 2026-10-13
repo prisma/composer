@@ -17,6 +17,7 @@ import {
   deleteBranch,
   deleteProject,
   fromEnv,
+  githubRepositoryId,
   type ManagementApiClient,
   ManagementClient,
   managementClientLayer,
@@ -214,11 +215,13 @@ async function ensureContainer(
   // All typed failures are caught and carried as a failure *value*, so
   // runPromise only rejects on a genuine defect.
   const region = deps?.region?.();
+  const repositoryId = githubRepositoryId();
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
     ...(region !== undefined ? { region } : {}),
+    ...(repositoryId !== undefined ? { repositoryId } : {}),
     ensure: true,
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
@@ -249,11 +252,13 @@ async function locateContainer(
   const client = clientFor(credentials, deps);
   requireTokenUnlessInjected(client);
 
+  const repositoryId = githubRepositoryId();
   const program = resolveContainer({
     workspaceId,
     appName: input.appName,
     ...(input.stage !== undefined ? { stage: input.stage } : {}),
     ensure: false,
+    ...(repositoryId !== undefined ? { repositoryId } : {}),
   }).pipe(
     Effect.map((c) => ({ ok: true as const, container: c })),
     Effect.catchTag('ContainerNotFoundError', () => Effect.succeed({ ok: false as const })),
