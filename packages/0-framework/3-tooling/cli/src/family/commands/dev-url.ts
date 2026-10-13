@@ -13,21 +13,22 @@ export const createDevUrlCommand = (operations: ComposerOperations) =>
   defineCommand({
     help: {
       summary:
-        'Print the local URL of a node of the app `prisma dev` runs from this directory: a ' +
-        "service's HTTP URL, a database's connection string, or a bucket's S3 address.",
+        'Print the local URL of a node (a service, database or bucket in your app) that ' +
+        "`prisma dev` runs from this directory: a service's HTTP URL, a database's connection " +
+        "string, or a bucket's S3 address.",
       description:
         'Reads what the last `prisma dev` in this directory recorded and starts nothing, so ' +
         'run it while `prisma dev` is running; a node that is not running is an error. With ' +
         '--format human the URL alone goes to stdout. In a script, the JSON result holds it: ' +
-        `prisma dev url gateway | jq -r 'select(.kind=="result").envelope.result.url'.`,
+        `prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url'.`,
       examples: ['{bin} dev url gateway', '{bin} dev url catalog.database --json'],
     },
     args: {
       positionals: {
         address: positional.string({
           brief:
-            "The node's address: its name in the app, dotted for a node inside a module, such " +
-            'as catalog.database.',
+            "The node's address: its name in the app, with dots for a nested node, such as " +
+            'catalog.database.',
           placeholder: 'address',
         }),
       },

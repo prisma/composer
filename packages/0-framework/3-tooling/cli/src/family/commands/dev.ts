@@ -184,11 +184,12 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
-        'Each node of the app runs on a local emulator: a program on this machine that stands ' +
-        'in for Prisma Cloud and runs services, databases or S3-compatible buckets. ' +
-        "A node's address is its name in the app, dotted for a node inside a module " +
-        '(catalog.database). The app and where each node runs are recorded in this directory, ' +
-        'so the commands beneath work from here while `prisma dev` runs, and after it ends. ' +
+        'A node is one service, database or bucket in the app. Each node runs on a local ' +
+        'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
+        "services, databases or S3-compatible buckets. A node's address is its name in the " +
+        'app, with dots for a nested node (catalog.database). The app and where each node ' +
+        'runs are recorded in this directory: `prisma dev url` works from here while ' +
+        '`prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was killed. ' +
         'Ending `prisma dev` stops its services and database servers; data and ports are kept.',
       examples: ['{bin} dev module.ts', '{bin} dev module.ts --fresh'],
     },
