@@ -92,9 +92,15 @@ It holds **instances**, each a slot for one service process. A client creates
 an instance with free-form labels and an optional requested port; the
 emulator generates the id (`svc_<16 hex digits>`), stores the labels verbatim
 and never reads them. Every later call names the id: put a deployment, start
-or stop a list of instances, delete one, read or follow its log, get one, or
-list them all. The emulator's routes and state hold no app name, node address
-or directory outside a label, and a test fails if one appears.
+or stop a list of instances (a stop skips ids it does not have, since they run
+nothing; a start fails naming them), delete one, read or follow its log, get
+one, or list them all. Creating an instance is the one call the client never
+retries, because a retry after a lost response would create a second
+instance. The emulator never interprets Composer's data: an app name, a
+node address or a directory reaches it only as a label value or inside the
+deployment payload (the artifact directory and the env), which it stores
+verbatim and hands to the process. No route, state key, file name or field the
+emulator generates carries one, and a test fails if one does.
 
 **Ports.** An instance gets its port when it is created and keeps it until it
 is deleted, running or stopped. A requested port is used when no instance
