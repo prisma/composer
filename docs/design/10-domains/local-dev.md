@@ -279,6 +279,7 @@ Deploy's rule holds: every failure names its fix.
 | secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
 | a service exits before it listens, or does not listen within 30 seconds | the address, the port, the exit code if it exited, and the log path |
+| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)

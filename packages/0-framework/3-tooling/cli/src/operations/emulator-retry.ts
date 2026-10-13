@@ -1,13 +1,21 @@
+import { CliStructuredError } from '@internal/foundation/errors';
+
 /**
  * An emulator admin call right after a converge that just PUT dozens of
  * resources through the same daemon can hit a transient refused/reset
  * connection — a brief loopback hiccup under load, not a real failure.
- * Retried before giving up. Shared by the dev and log executors, which talk
- * to the same daemons (`startServices`, `endpoints`, `attach`).
+ * Only that is retried: the emulator client reports it as
+ * `DEV.EMULATOR_UNREACHABLE`. An answer from the emulator, such as a service
+ * that failed to start, is final. Shared by the dev and log executors, which
+ * talk to the same daemons (`startServices`, `endpoints`, `attach`).
  */
 
 const EMULATOR_RETRY_ATTEMPTS = 5;
 const EMULATOR_RETRY_DELAY_MS = 500;
+
+function isUnreachable(error: unknown): boolean {
+  return CliStructuredError.is(error) && error.code === 'DEV.EMULATOR_UNREACHABLE';
+}
 
 export async function withEmulatorRetry<T>(call: () => Promise<T>): Promise<T> {
   let lastError: unknown;
@@ -15,6 +23,7 @@ export async function withEmulatorRetry<T>(call: () => Promise<T>): Promise<T> {
     try {
       return await call();
     } catch (error) {
+      if (!isUnreachable(error)) throw error;
       lastError = error;
       if (attempt < EMULATOR_RETRY_ATTEMPTS) {
         await new Promise((resolve) => setTimeout(resolve, EMULATOR_RETRY_DELAY_MS));

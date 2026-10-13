@@ -5,6 +5,7 @@
  * implementations, which never learn an emulator's HTTP API directly.
  */
 import * as fs from 'node:fs';
+import { CliStructuredError } from '@internal/foundation/errors';
 import {
   type DaemonName,
   type DaemonRootOptions,
@@ -74,7 +75,8 @@ const ADMIN_FETCH_RETRY_DELAY_MS = 150;
  * daemon's HTTP server just closed idle — surfaces as "fetch failed" /
  * "other side closed") or a briefly overloaded daemon. Every admin call is
  * idempotent by design, so a short blind retry is safe. A caller-driven
- * abort is never retried.
+ * abort is never retried. When every attempt fails to connect, it throws
+ * `DEV.EMULATOR_UNREACHABLE`; callers retry that code and nothing else.
  */
 async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
   let lastError: unknown;
@@ -89,7 +91,16 @@ async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  throw new CliStructuredError(
+    'DEV.EMULATOR_UNREACHABLE',
+    `Could not connect to the local dev emulator at ${new URL(url).origin}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+    {
+      why: 'The emulator is registered and its process is alive, but it did not accept the connection.',
+      fix: "Run the command again. If it keeps failing, end the emulator's process; the next `prisma dev` starts a new one.",
+      meta: { url },
+      cause: lastError,
+    },
+  );
 }
 
 async function expectOk(res: Response): Promise<Response> {

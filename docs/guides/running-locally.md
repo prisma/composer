@@ -41,7 +41,7 @@ stands the app up and prints the **front door** — every service's local URL:
 [dev] orders.service    http://localhost:3003
 ```
 
-`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. A service must listen on the port Composer gives it. If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead, and the error names the service, its port, and its log file.
+`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. A service must listen on the port Composer gives it. If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead, and the error names the service, its port, and its log file. `dev` fails at once on such an error; it retries only when it cannot connect to a local emulator, and fails with `DEV.EMULATOR_UNREACHABLE` if that lasts a few seconds.
 
 From here `dev` keeps running: it watches your built output and, when a
 service's build changes, restarts just that service. It does **not** print

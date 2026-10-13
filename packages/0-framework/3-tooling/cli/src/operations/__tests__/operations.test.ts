@@ -21,6 +21,7 @@ import type {
   RunOutcome,
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import {
@@ -1918,7 +1919,11 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
       stopServices: () => Promise.resolve(),
       endpoints: () => {
         attempts += 1;
-        if (attempts === 1) return Promise.reject(new Error('ECONNREFUSED'));
+        if (attempts === 1) {
+          return Promise.reject(
+            new CliStructuredError('DEV.EMULATOR_UNREACHABLE', 'connect ECONNREFUSED'),
+          );
+        }
         return Promise.resolve([{ address: 'a', url: 'http://a' }]);
       },
       logs: async function* () {},
