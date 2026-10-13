@@ -7,8 +7,20 @@ import type { ContainerInstance } from '@internal/core/config';
 import { EMULATORS_DIR_ENV, ensureDaemon, stopDaemon } from '@internal/dev-emulators';
 import { App } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
-import { ensureServiceInstances, LocalAppProvider } from '../compute.ts';
-import { computeNodeInstances, ensureComputeInstance } from '../emulator-instances.ts';
+import { ensureAppInstances } from '../app-instances.ts';
+import { LocalAppProvider } from '../compute.ts';
+import { ensureComputeInstance, nodeInstancesOf } from '../emulator-instances.ts';
+
+function ensureServiceInstances(
+  forContainer: ContainerInstance,
+  devDir: string,
+  addresses: readonly string[],
+) {
+  return ensureAppInstances(
+    { devDir, app: forContainer.input.appName },
+    addresses.map((address) => ({ address, kind: 'compute' as const })),
+  );
+}
 
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 let registryRoot: string;
@@ -58,7 +70,7 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
 }
 
 async function reservedPorts(app: string): Promise<Record<string, number>> {
-  const nodes = await computeNodeInstances({ devDir, app });
+  const nodes = await nodeInstancesOf({ devDir, app }, 'compute');
   return Object.fromEntries(nodes.map(({ address, instance }) => [address, instance.port]));
 }
 
@@ -105,7 +117,7 @@ test('a dotted service address reserves the same emulator instance the App provi
   const container = fakeContainer('port-order-nested');
   await ensureServiceInstances(container, devDir, ['shop.quotes']);
 
-  const listed = (await computeNodeInstances({ devDir, app: 'port-order-nested' })).map(
+  const listed = (await nodeInstancesOf({ devDir, app: 'port-order-nested' }, 'compute')).map(
     (node) => node.instance,
   );
   expect(await reconcileApp(container, 'shop.quotes')).toBe(listed[0]?.port ?? -1);

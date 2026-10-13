@@ -285,7 +285,7 @@ export interface LocalTargetAttachment {
     signal: AbortSignal,
     opts?: { readonly tail?: number },
   ): AsyncIterable<{ readonly service: string; readonly line: string }>;
-  /** Stop the app's service instances (emulators and data persist). */
+  /** Stop everything the target runs for the app, such as its service processes and database servers (emulators and data persist). */
   stopServices(): Promise<void>;
 }
 

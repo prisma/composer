@@ -886,6 +886,9 @@ importers:
         specifier: ^7.5.21
         version: 7.5.21
     devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1085.0
+        version: 3.1087.0
       '@internal/foundation':
         specifier: workspace:0.29.1
         version: link:../../../0-framework/0-foundation/foundation
@@ -898,6 +901,12 @@ importers:
       '@types/node':
         specifier: ^26.0.1
         version: 26.1.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.4
+      pg:
+        specifier: ^8.22.0
+        version: 8.22.0
       tsdown:
         specifier: ^0.22.7
         version: 0.22.12(typescript@6.0.3)

@@ -1,14 +1,13 @@
 /**
  * `--fresh` teardown (local-dev spec § 5, ADR-0041 D12, REVISED — operator
  * review of #162): wholesale LOCAL deletion — never an `alchemy destroy`.
- * Removes this app's records on the three machine-global emulator daemons
- * (never stops the daemons — other apps may be using them; postgres's
- * `DELETE /apps/<app>` closes its servers and deletes their persisted data),
- * the dev state directory, and the dev stage's `localState()` directory.
- * Compute is started first if it is down, and its delete must succeed,
- * because it persists port allocations; Postgres and buckets are skipped
- * when unreachable. The local directories are removed even when the
- * Compute step fails, and the failure is then reported.
+ * Deletes the app's emulator instances of every kind through the
+ * directory's record (a database's delete removes its data) and the app's
+ * entry in it, the app's part of the dev state directory, and the dev
+ * stage's `localState()` directory. Other apps run from the directory keep
+ * their entries and their buckets' objects. The daemons are never stopped —
+ * other directories may be using them. The local directories are removed
+ * even when a delete fails, and the failure is then reported.
  *
  * Every actual filesystem operation is delegated to `@internal/local-target`
  * (this extension's own source stays free of `node:`/`bun:` imports —
@@ -18,39 +17,39 @@
 
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { ensureDaemon } from '@internal/dev-emulators';
+import { type DaemonName, ensureDaemon } from '@internal/dev-emulators';
 import {
-  deleteBucketInstances,
-  deleteDatabaseInstances,
-  deleteRecordedInstances,
+  deleteAppInstances,
+  type NodeKind,
+  recordedKinds,
+  removeAppDevState,
   removeLocalPaths,
 } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
-async function tolerateUnreachable(action: () => Promise<void>): Promise<void> {
-  try {
-    await action();
-  } catch {
-    // Unreachable or absent daemon — the daemon itself is never stopped by
-    // `--fresh` (other apps may be using it), and there is nothing left to
-    // remove on it if it isn't running at all.
-  }
-}
+const DAEMON_OF: Record<NodeKind, DaemonName> = {
+  compute: 'compute',
+  database: 'postgres',
+  bucket: 'buckets',
+};
 
 export async function runDevTeardown(input: TeardownInput): Promise<void> {
   const app = prismaCloudContainerOf(input.container).input.appName;
   const cwd = process.cwd();
   const devDir = `${cwd}/${DEV_DIR}`;
+  const scope = { devDir, app };
 
-  await tolerateUnreachable(() => deleteDatabaseInstances({ devDir, app }));
-  // Compute persists instances and their ports across restarts, so a stopped
-  // daemon would hand the old ports back; start it so the delete always lands.
   try {
-    await ensureDaemon('compute', daemonEntry('compute'));
-    await deleteRecordedInstances(devDir);
+    // Every emulator holding one of the app's instances is started so the
+    // delete lands: a stopped emulator keeps its instances, their ports and
+    // a database's data.
+    for (const kind of await recordedKinds(scope)) {
+      await ensureDaemon(DAEMON_OF[kind], daemonEntry(DAEMON_OF[kind]));
+    }
+    await deleteAppInstances(scope);
   } finally {
-    await tolerateUnreachable(() => deleteBucketInstances({ devDir, app }));
-    removeLocalPaths([devDir, `${cwd}/.alchemy/state/${app}/dev`]);
+    removeAppDevState(devDir, app);
+    removeLocalPaths([`${cwd}/.alchemy/state/${app}/dev`]);
   }
 }

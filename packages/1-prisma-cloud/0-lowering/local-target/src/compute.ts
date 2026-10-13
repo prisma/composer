@@ -10,7 +10,7 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { ContainerInstance, LocalTargetProvidersInput } from '@internal/core/config';
+import type { LocalTargetProvidersInput } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
 import { App, Deployment, EnvironmentVariable, Project } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -23,10 +23,9 @@ import { extractComputeArtifact } from './artifact-extract.ts';
 import { envStore, secretsStore } from './dev-store.ts';
 import {
   type AppScope,
-  deleteComputeInstance,
+  deleteNodeInstance,
   ensureComputeInstance,
   liveComputeInstance,
-  type PortChange,
   withServiceAddresses,
 } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
@@ -221,41 +220,12 @@ export function LocalAppProvider(
       }),
     delete: ({ output }) =>
       Effect.tryPromise({
-        try: () => deleteComputeInstance(appScopeOf(input), output.name),
+        try: () => deleteNodeInstance(appScopeOf(input), output.name),
         catch: (cause) => cause,
       }),
     read: ({ output }) => Effect.succeed(output),
   };
   return Provider.effect(App, Effect.succeed(service));
-}
-
-/**
- * Ensures each service's emulator instance one at a time, in the order given,
- * before Alchemy applies the `App` resources concurrently. A new instance gets
- * the smallest free port, so on a fresh start the ports follow this order; a
- * service that already has an instance keeps its port. `serviceAppNames` are
- * the `App` resources' `displayName`s. Returns the services whose instance had
- * to be re-created and could not get its remembered port back.
- */
-export async function ensureServiceInstances(
-  container: ContainerInstance | undefined,
-  devDir: string,
-  serviceAppNames: readonly string[],
-): Promise<PortChange[]> {
-  const scope = { devDir, app: appNameOf(container) };
-  const changes: PortChange[] = [];
-  for (const service of serviceAppNames) {
-    try {
-      const { portChange } = await ensureComputeInstance(scope, service);
-      if (portChange) changes.push(portChange);
-    } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`ensuring the local service for service "${service}" failed: ${reason}`, {
-        cause,
-      });
-    }
-  }
-  return changes;
 }
 
 /** `Prisma.EnvironmentVariable` → a key/value row in `<devDir>/env.json`. Upstream's value is `Redacted`; env.json holds the plain string the child process is given. */

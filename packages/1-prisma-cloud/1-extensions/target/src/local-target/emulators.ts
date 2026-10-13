@@ -6,9 +6,14 @@
  * `postgres` resource kind (REVISED — Postgres is a first-class daemon
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
- * Once Compute is up, every service's instance is ensured in graph order, so a
- * fresh start numbers ports dependencies first; Alchemy's concurrent `App`
- * applies would otherwise pick them in arrival order.
+ * Once the daemons are up, the app becomes the directory's current app (a
+ * different app run here before has its services and databases stopped,
+ * data kept), and every node's instance is ensured through the directory's
+ * record in graph order: services, databases and buckets. A fresh start thus
+ * numbers ports dependencies first, which Alchemy's concurrent applies would
+ * otherwise do in arrival order, and a recorded database stopped by the last
+ * session is started before converge, which on a warm start may never call
+ * the Database provider at all.
  *
  * Idempotent: `ensureDaemon` itself adopts an already-healthy daemon, so
  * repeated `prisma dev` sessions are cheap.
@@ -24,57 +29,61 @@
  */
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { appNameOf, ensureServiceInstances, retirePreviousApp } from '@internal/local-target';
+import { type AppNode, appNameOf, ensureAppInstances, selectApp } from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 import { serviceAppName } from '../service-app.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
-function usesBuckets(input: LocalTargetEmulatorsInput): boolean {
-  return input.graph.nodes.some((n) => n.node.kind === 'resource' && n.node.type === 's3');
+const DATABASE_TYPES = new Set(['raw-postgres', 'postgres']);
+const BUCKET_TYPE = 's3';
+
+/**
+ * This extension's nodes that run on an emulator, in `graph.nodes` order —
+ * dependencies first, ties in declaration order — keyed by the name their
+ * resource is given: a service by its `App` name, a database and a bucket by
+ * their node id.
+ */
+function appNodes(input: LocalTargetEmulatorsInput): AppNode[] {
+  return input.graph.nodes.flatMap((n): AppNode[] => {
+    if (n.node.kind === 'service' && n.node.extension === PRISMA_CLOUD_EXTENSION_ID) {
+      return [{ address: serviceAppName(n.id), kind: 'compute' }];
+    }
+    if (n.node.kind === 'resource' && DATABASE_TYPES.has(n.node.type)) {
+      return [{ address: n.id, kind: 'database' }];
+    }
+    if (n.node.kind === 'resource' && n.node.type === BUCKET_TYPE) {
+      return [{ address: n.id, kind: 'bucket' }];
+    }
+    return [];
+  });
 }
 
-function usesPostgres(input: LocalTargetEmulatorsInput): boolean {
-  return input.graph.nodes.some(
-    (n) =>
-      n.node.kind === 'resource' && (n.node.type === 'raw-postgres' || n.node.type === 'postgres'),
-  );
-}
-
-/** The `App` name of each of this extension's services, in `graph.nodes` order: dependencies first, ties in declaration order. */
-function serviceAppNames(input: LocalTargetEmulatorsInput): string[] {
-  return input.graph.nodes
-    .filter((n) => n.node.kind === 'service' && n.node.extension === PRISMA_CLOUD_EXTENSION_ID)
-    .map((n) => serviceAppName(n.id));
-}
+const PORT_CHANGE_NOUN = { compute: 'service', database: 'database' } as const;
 
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
+  const nodes = appNodes(input);
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
-  const retired = await retirePreviousApp({
-    devDir: input.devDir,
-    app: appNameOf(input.container),
-  });
-  if (retired !== undefined) {
-    console.log(`[dev] removed the local services of "${retired}", the app run here before`);
-  }
-  const portChanges = await ensureServiceInstances(
-    input.container,
-    input.devDir,
-    serviceAppNames(input),
-  );
-  for (const { address, previous, given } of portChanges) {
-    console.log(
-      `[dev] service "${address}" now uses port ${String(given)}: its previous port ${String(previous)} is in use`,
-    );
-  }
-
-  if (usesBuckets(input)) {
+  if (nodes.some((node) => node.kind === 'bucket')) {
     const { url: bucketsUrl } = await ensureDaemon('buckets', daemonEntry('buckets'));
     console.log(`[dev] buckets emulator ready at ${bucketsUrl}`);
   }
-
-  if (usesPostgres(input)) {
+  if (nodes.some((node) => node.kind === 'database')) {
     const { url: postgresUrl } = await ensureDaemon('postgres', daemonEntry('postgres'));
     console.log(`[dev] postgres emulator ready at ${postgresUrl}`);
+  }
+
+  const scope = { devDir: input.devDir, app: appNameOf(input.container) };
+  const previous = await selectApp(scope);
+  if (previous !== undefined) {
+    console.log(
+      `[dev] stopped the local services of "${previous}", the app run here before; its data is kept`,
+    );
+  }
+  const portChanges = await ensureAppInstances(scope, nodes);
+  for (const { kind, address, previous: before, given } of portChanges) {
+    console.log(
+      `[dev] ${PORT_CHANGE_NOUN[kind]} "${address}" now uses port ${String(given)}: its previous port ${String(before)} is in use`,
+    );
   }
 }

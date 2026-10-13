@@ -232,6 +232,16 @@ describe('ports', () => {
     expect(db.port).toBe(requested);
   }, 60_000);
 
+  test("a deleted database's port can be requested again at once", async () => {
+    const client = await startedClient();
+    const db = await createDatabase(client);
+    await client.deleteInstance(db.id);
+
+    const again = await createDatabase(client, { port: db.port });
+
+    expect(again.port).toBe(db.port);
+  }, 60_000);
+
   test('a bind failure on a fresh allocation moves to the next free port', async () => {
     const client = await startedClient();
     // Occupy the FIRST candidate database port a fresh allocation would

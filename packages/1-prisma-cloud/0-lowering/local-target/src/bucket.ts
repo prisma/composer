@@ -6,7 +6,7 @@
  */
 import * as path from 'node:path';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
-import { type BucketInstanceInfo, bucketsClient } from '@internal/dev-emulators';
+import { bucketsClient } from '@internal/dev-emulators';
 import { mintKeyPair } from '@internal/s3-protocol';
 import { Bucket, BucketAccessKey } from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
@@ -15,7 +15,7 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import { type AppScope, directoryOf } from './emulator-instances.ts';
+import { type AppScope, ensureBucketInstance, recordedInstanceId } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Upstream lets `name` default to the resource's logical ID; locally a bucket must have a concrete name to register under. */
@@ -31,47 +31,24 @@ function bucketIdOfInput(value: unknown): string {
   return 'local';
 }
 
-function labelsFor(scope: AppScope, address: string): Record<string, string> {
-  return {
-    'composer.directory': directoryOf(scope.devDir),
-    'composer.app': scope.app,
-    'composer.address': address,
-  };
+export const BUCKETS_DIR = 'buckets';
+
+/** Where a bucket's objects live: in the project's dev directory, under its app, so `--fresh` removes them with the app. */
+export function bucketDataDir(scope: AppScope, name: string): string {
+  return path.join(scope.devDir, BUCKETS_DIR, scope.app, name);
+}
+
+function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  return { devDir: input.devDir, app: appNameOf(input.container) };
 }
 
 /**
- * Temporary: finds the bucket instance for `address` by the labels written
- * when it was created, and creates one when there is none. The directory's
- * record replaces this lookup.
+ * `Bucket` → the bucket instance the directory's record names for the
+ * resource, created when there is none, over an in-project data root. Its
+ * `bucketId` is the instance id, which is also its S3 bucket name. A Bucket
+ * whose recorded instance changed is updated, so its access key is
+ * registered on the new instance.
  */
-async function ensureBucketInstance(
-  scope: AppScope,
-  address: string,
-  dir: string,
-): Promise<BucketInstanceInfo> {
-  const client = bucketsClient();
-  const labels = labelsFor(scope, address);
-  const existing = (await client.listInstances()).find((instance) =>
-    Object.entries(labels).every(([key, value]) => instance.labels[key] === value),
-  );
-  return existing ?? client.createInstance({ labels, dir });
-}
-
-/** Temporary: deletes the bucket instances labelled with this directory and app. Their objects stay. */
-export async function deleteBucketInstances(scope: AppScope): Promise<void> {
-  const client = bucketsClient();
-  const directory = directoryOf(scope.devDir);
-  for (const instance of await client.listInstances()) {
-    if (
-      instance.labels['composer.directory'] === directory &&
-      instance.labels['composer.app'] === scope.app
-    ) {
-      await client.deleteInstance(instance.id);
-    }
-  }
-}
-
-/** `Bucket` → a bucket instance on the bucket emulator, backed by an in-project data root. Its `bucketId` is the instance id, which is also its S3 bucket name. */
 export function LocalBucketProvider(
   input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<Bucket>> {
@@ -81,11 +58,10 @@ export function LocalBucketProvider(
       Effect.tryPromise({
         try: async () => {
           const name = bucketNameOf(news, id);
-          const dir = path.join(input.devDir, 'buckets', name);
           const bucket = await ensureBucketInstance(
-            { devDir: input.devDir, app: appNameOf(input.container) },
+            appScopeOf(input),
             name,
-            dir,
+            bucketDataDir(appScopeOf(input), name),
           );
           return {
             bucketId: bucket.id,
@@ -93,6 +69,15 @@ export function LocalBucketProvider(
             projectId: projectIdOfInput(news.project),
             createdAt: DEV_TIMESTAMP,
           };
+        },
+        catch: (cause) => cause,
+      }),
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined) return undefined;
+          const recorded = await recordedInstanceId(appScopeOf(input), output.name);
+          return recorded === output.bucketId ? undefined : { action: 'update' as const };
         },
         catch: (cause) => cause,
       }),

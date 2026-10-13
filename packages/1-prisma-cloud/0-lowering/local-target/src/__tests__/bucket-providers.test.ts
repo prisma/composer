@@ -74,7 +74,7 @@ describe.skipIf(process.platform === 'win32')('the local Bucket providers', () =
 
     expect(again.bucketId).toBe(first.bucketId);
     const instance = await bucketsClient().getInstance(first.bucketId);
-    expect(instance?.dir).toBe(path.join(input.devDir, 'buckets', 'uploads'));
+    expect(instance?.dir).toBe(path.join(input.devDir, 'buckets', APP, 'uploads'));
     expect(instance?.labels['composer.address']).toBe('uploads');
   });
 

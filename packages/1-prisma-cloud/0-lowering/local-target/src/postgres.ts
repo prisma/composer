@@ -10,7 +10,7 @@
  */
 import { createRequire } from 'node:module';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
-import { type DatabaseInstanceInfo, postgresClient } from '@internal/dev-emulators';
+import { postgresClient } from '@internal/dev-emulators';
 import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -18,7 +18,7 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import { type AppScope, directoryOf } from './emulator-instances.ts';
+import { type AppScope, ensureDatabaseInstance, recordedInstanceId } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads a database id from upstream's `database` input: a plain string or a resolved `Prisma.Database` attributes record. */
@@ -53,47 +53,11 @@ export function resolvePrismaDevModulePath(): string {
 }
 
 /**
- * Temporary: finds the database instance for `address` by the labels written
- * when it was created, starting it if it is stopped, and creates one when
- * there is none. The directory's record replaces this lookup.
- */
-async function ensureDatabaseInstance(
-  scope: AppScope,
-  address: string,
-): Promise<DatabaseInstanceInfo> {
-  const client = postgresClient();
-  const prismaDevModulePath = resolvePrismaDevModulePath();
-  const labels = {
-    'composer.directory': directoryOf(scope.devDir),
-    'composer.app': scope.app,
-    'composer.address': address,
-  };
-  const existing = (await client.listInstances()).find((instance) =>
-    Object.entries(labels).every(([key, value]) => instance.labels[key] === value),
-  );
-  if (!existing) return client.createInstance({ labels, prismaDevModulePath });
-  if (existing.status === 'running') return existing;
-  await client.startInstances([existing.id], prismaDevModulePath);
-  return (await client.getInstance(existing.id)) ?? existing;
-}
-
-/** Temporary: deletes the database instances labelled with this directory and app. */
-export async function deleteDatabaseInstances(scope: AppScope): Promise<void> {
-  const client = postgresClient();
-  const directory = directoryOf(scope.devDir);
-  for (const instance of await client.listInstances()) {
-    if (
-      instance.labels['composer.directory'] === directory &&
-      instance.labels['composer.app'] === scope.app
-    ) {
-      await client.deleteInstance(instance.id);
-    }
-  }
-}
-
-/**
- * `Prisma.Database` → a database instance on the `postgres-main` emulator, one per resource.
- * Stores the daemon's returned url as the `directConnectionString` attribute.
+ * `Prisma.Database` → the database instance the directory's record names for
+ * the resource, started if it is stopped and created when there is none.
+ * Stores its url as the `directConnectionString` attribute. A Database whose
+ * recorded instance changed (re-created after the emulator lost it) is
+ * updated, so its Connection and dependents get the new instance's URL.
  */
 export function LocalDatabaseProvider(
   input: LocalTargetProvidersInput,
@@ -108,9 +72,10 @@ export function LocalDatabaseProvider(
           // `news.name` is normally present — the resource's logical id is
           // only a defensive fallback.
           const name = news.name ?? id;
-          const instance = await ensureDatabaseInstance(
-            { devDir: input.devDir, app: appNameOf(input.container) },
+          const { instance } = await ensureDatabaseInstance(
+            appScopeOf(input),
             name,
+            resolvePrismaDevModulePath(),
           );
           const direct = Redacted.make(instance.url);
           return {
@@ -133,9 +98,22 @@ export function LocalDatabaseProvider(
         },
         catch: (cause) => cause,
       }),
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined || output.databaseName === undefined) return undefined;
+          const recorded = await recordedInstanceId(appScopeOf(input), output.databaseName);
+          return recorded === output.databaseId ? undefined : { action: 'update' as const };
+        },
+        catch: (cause) => cause,
+      }),
     delete: () => Effect.void,
   };
   return Provider.effect(Prisma.Database, Effect.succeed(service));
+}
+
+function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  return { devDir: input.devDir, app: appNameOf(input.container) };
 }
 
 function noRecordedInstanceError(databaseId: string): Error {

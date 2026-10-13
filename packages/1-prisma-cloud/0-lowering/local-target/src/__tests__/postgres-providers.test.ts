@@ -18,11 +18,8 @@ import {
 import { Connection, Database } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import {
-  deleteDatabaseInstances,
-  LocalConnectionProvider,
-  LocalDatabaseProvider,
-} from '../postgres.ts';
+import { deleteAppInstances, readEmulatorInstances } from '../emulator-instances.ts';
+import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
 
 const APP = 'pg-providers-app';
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
@@ -67,7 +64,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   });
 
   afterEach(async () => {
-    await deleteDatabaseInstances({ devDir: input.devDir, app: APP }).catch(() => undefined);
+    await deleteAppInstances({ devDir: input.devDir, app: APP }).catch(() => undefined);
     await stopDaemon('postgres', { registryRoot }).catch(() => undefined);
     fs.rmSync(root, { recursive: true, force: true });
     if (savedEmulatorsDir === undefined) delete process.env[EMULATORS_DIR_ENV];
@@ -101,4 +98,26 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
     expect(second.databaseId).toBe(first.databaseId);
     expect((await postgresClient().getInstance(first.databaseId))?.status).toBe('running');
   }, 60_000);
+
+  async function databaseDiff(output: Database['Attributes']): Promise<unknown> {
+    const service = await Effect.runPromise(
+      Database.Provider.pipe(Effect.provide(LocalDatabaseProvider(input))),
+    );
+    const diff = service.diff;
+    if (!diff) throw new Error('the local Database provider has no diff');
+    return Effect.runPromise(diff({ output } as never));
+  }
+
+  test('a Database whose recorded instance was re-created asks for an update', async () => {
+    const database = await reconcileDatabase('orders');
+    expect(await databaseDiff(database)).toBeUndefined();
+
+    await postgresClient().deleteInstance(database.databaseId);
+    const again = await reconcileDatabase('orders');
+
+    expect(again.databaseId).not.toBe(database.databaseId);
+    expect(await databaseDiff(database)).toEqual({ action: 'update' });
+    const recorded = (await readEmulatorInstances(path.join(root, 'project')))?.apps[APP];
+    expect(recorded?.nodes['orders']).toMatchObject({ kind: 'database', id: again.databaseId });
+  }, 90_000);
 });

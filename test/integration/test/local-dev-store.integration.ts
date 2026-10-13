@@ -240,16 +240,12 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The services `prisma dev` recorded in storeDir's `.prisma-composer/dev/emulator-instances.json`, as the Compute emulator reports them (plain fetch, never the typed client). */
+/** The services `prisma dev` recorded for the app, as the Compute emulator reports them (plain fetch, never the typed client). */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const mapping = readJson(
-    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
-  ) as { app: string; nodes: Record<string, { id: string }> } | undefined;
-  if (mapping === undefined || mapping.app !== app) return [];
   const services: ServiceInfo[] = [];
-  for (const [address, node] of Object.entries(mapping.nodes)) {
+  for (const [address, node] of Object.entries(recordedNodes(app, 'compute'))) {
     const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
     if (res.status === 404) continue;
     if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
@@ -258,18 +254,36 @@ async function listComputeServices(app: string): Promise<readonly ServiceInfo[]>
   return services;
 }
 
-interface PostgresDatabaseInfo {
-  readonly instanceName: string;
-  readonly url: string;
+/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/emulator-instances.json`. */
+function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
+  const record = readJson(
+    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+  ) as
+    | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
+    | undefined;
+  const nodes = record?.apps[app]?.nodes ?? {};
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => node.kind === kind));
 }
 
-/** The documented postgres-emulator wire protocol (spec § 4, REVISED — operator review of #162: the daemon owns instance state, there is no dev-store postgres.json) — plain fetch, never the typed client. */
+interface PostgresDatabaseInfo {
+  readonly address: string;
+  readonly id: string;
+  readonly url: string;
+  readonly status: string;
+}
+
+/** The databases `prisma dev` recorded for the app, as the postgres emulator reports them (plain fetch, never the typed client). */
 async function listPostgresDatabases(): Promise<readonly PostgresDatabaseInfo[]> {
   const entry = readEmulatorEntry('postgres');
   if (entry === undefined) throw new Error('postgres emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/databases`);
-  if (!res.ok) throw new Error(`postgres emulator listDatabases failed: ${res.status}`);
-  return (await res.json()) as PostgresDatabaseInfo[];
+  const databases: PostgresDatabaseInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'database'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`postgres emulator getInstance failed: ${res.status}`);
+    databases.push({ ...((await res.json()) as PostgresDatabaseInfo), address });
+  }
+  return databases;
 }
 
 /** Every address's pid, keyed by address — undefined for a stopped/absent service. */
@@ -380,11 +394,8 @@ function readJson(file: string): unknown {
 
 async function readCatalogDbUrl(): Promise<string> {
   const databases = await listPostgresDatabases();
-  const entry = databases.find((d) => d.instanceName === 'pcdev-store-catalog-database');
-  assert(
-    entry?.url !== undefined,
-    'the postgres-main listing must carry a pcdev-store-catalog-database entry',
-  );
+  const entry = databases.find((d) => d.address === 'catalog.database');
+  assert(entry?.url !== undefined, 'the record must name a running catalog.database database');
   return entry.url;
 }
 

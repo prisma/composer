@@ -23,7 +23,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import getPort, { portNumbers } from 'get-port';
+import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { isPidAlive, readOwnVersion } from './daemon.ts';
 import {
   isStringKeyedRecord,
@@ -858,6 +858,9 @@ function main(): void {
       }
       delete state.instances[db.id];
       schedulePersist();
+      // get-port holds every port it returns for up to 30 seconds; the freed
+      // port must be free again for a database created right after.
+      clearLockedPorts();
     });
   }
 
