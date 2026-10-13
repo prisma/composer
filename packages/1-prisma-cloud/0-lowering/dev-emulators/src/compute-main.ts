@@ -13,6 +13,7 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { readOwnVersion } from './daemon.ts';
@@ -27,6 +28,9 @@ const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_CONSECUTIVE_FAST_EXITS = 5;
 const LOG_POLL_INTERVAL_MS = 100;
+const DEFAULT_READY_TIMEOUT_MS = 30_000;
+const READY_POLL_INTERVAL_MS = 50;
+const READY_PROBE_TIMEOUT_MS = 1000;
 const APPS_STATE_MODE = 0o600;
 
 const BUN_NOT_FOUND_MESSAGE =
@@ -147,7 +151,19 @@ interface RuntimeInfo {
   backoffTimer: NodeJS.Timeout | undefined;
   expectedExit: boolean;
   log: ServiceLog | undefined;
+  /** The start in flight, until its child accepts connections or fails to. */
+  starting: Promise<SpawnResult> | undefined;
 }
+
+interface SpawnResult {
+  readonly ok: boolean;
+  readonly message?: string;
+}
+
+type ReadyOutcome =
+  | { readonly kind: 'listening' }
+  | { readonly kind: 'exited'; readonly code: number | null; readonly signal: string | null }
+  | { readonly kind: 'timed-out' };
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -188,12 +204,18 @@ class ServiceLog {
   }
 }
 
-function parseArgs(argv: readonly string[]): { readonly port: number; readonly stateDir: string } {
+function parseArgs(argv: readonly string[]): {
+  readonly port: number;
+  readonly stateDir: string;
+  readonly readyTimeoutMs: number;
+} {
   let port: number | undefined;
   let stateDir: string | undefined;
+  let readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port') port = Number(argv[i + 1]);
     else if (argv[i] === '--state-dir') stateDir = argv[i + 1];
+    else if (argv[i] === '--ready-timeout-ms') readyTimeoutMs = Number(argv[i + 1]);
   }
   if (port === undefined || Number.isNaN(port)) {
     throw new Error('compute-main: --port <n> is required');
@@ -201,7 +223,52 @@ function parseArgs(argv: readonly string[]): { readonly port: number; readonly s
   if (stateDir === undefined) {
     throw new Error('compute-main: --state-dir <dir> is required');
   }
-  return { port, stateDir };
+  if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) {
+    throw new Error('compute-main: --ready-timeout-ms must be a positive number');
+  }
+  return { port, stateDir, readyTimeoutMs };
+}
+
+function acceptsConnection(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host });
+    socket.setTimeout(READY_PROBE_TIMEOUT_MS);
+    const settle = (accepted: boolean): void => {
+      socket.destroy();
+      resolve(accepted);
+    };
+    socket.once('connect', () => settle(true));
+    socket.once('error', () => settle(false));
+    socket.once('timeout', () => settle(false));
+  });
+}
+
+/** Both loopback families: a service may bind IPv4 only, IPv6 only, or both, and `localhost` in its URL reaches either. */
+async function acceptsLoopbackConnection(port: number): Promise<boolean> {
+  const [v4, v6] = await Promise.all([
+    acceptsConnection(port, '127.0.0.1'),
+    acceptsConnection(port, '::1'),
+  ]);
+  return v4 || v6;
+}
+
+/** Polls `port` until it accepts a connection, the child exits, or `timeoutMs` passes. */
+async function waitUntilListening(
+  child: ChildProcess,
+  port: number,
+  timeoutMs: number,
+): Promise<ReadyOutcome> {
+  let exit: ReadyOutcome | undefined;
+  child.once('exit', (code, signal) => {
+    exit = { kind: 'exited', code, signal };
+  });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (exit) return exit;
+    if (await acceptsLoopbackConnection(port)) return exit ?? { kind: 'listening' };
+    if (Date.now() >= deadline) return exit ?? { kind: 'timed-out' };
+    await sleep(READY_POLL_INTERVAL_MS);
+  }
 }
 
 /** Resolves `bun` from THIS request's env PATH — never the daemon's own. POSIX-only (Windows is out of scope). */
@@ -222,7 +289,7 @@ function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undef
 }
 
 function main(): void {
-  const { port, stateDir } = parseArgs(process.argv.slice(2));
+  const { port, stateDir, readyTimeoutMs } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
   const appsJsonPath = path.join(stateDir, 'apps.json');
   const stateFile = new StateFile<AppsState>(appsJsonPath, APPS_STATE_MODE);
@@ -251,6 +318,7 @@ function main(): void {
         backoffTimer: undefined,
         expectedExit: false,
         log: undefined,
+        starting: undefined,
       };
       runtimes.set(key, rt);
     }
@@ -391,12 +459,27 @@ function main(): void {
     }, delayMs);
   }
 
-  interface SpawnResult {
-    readonly ok: boolean;
-    readonly message?: string;
+  /**
+   * Spawns the service's child and resolves once it accepts connections on
+   * its port — only then is it `running`. A child that exits first, or never
+   * listens within the readiness timeout (it is then stopped), fails the
+   * start with a message naming the service and its log.
+   */
+  function spawnService(
+    app: string,
+    id: string,
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    fresh: boolean,
+  ): Promise<SpawnResult> {
+    const starting = spawnAndWaitUntilListening(app, id, svc, rt, fresh).finally(() => {
+      if (rt.starting === starting) rt.starting = undefined;
+    });
+    rt.starting = starting;
+    return starting;
   }
 
-  async function spawnService(
+  async function spawnAndWaitUntilListening(
     app: string,
     id: string,
     svc: ServiceRecord,
@@ -435,9 +518,35 @@ function main(): void {
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.on('exit', (code) => handleChildExit(app, id, svc, rt, code));
-
-    svc.status = 'running';
     if (child.pid !== undefined) svc.pid = child.pid;
+    schedulePersist();
+
+    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs);
+    const service = `service "${svc.address}"`;
+    const port = String(svc.port);
+    if (outcome.kind === 'exited') {
+      const how =
+        outcome.code !== null ? `code ${String(outcome.code)}` : (outcome.signal ?? 'no exit code');
+      return {
+        ok: false,
+        message: `${service} exited (${how}) before it accepted connections on its port ${port}. Its log: ${svc.logPath}`,
+      };
+    }
+    if (rt.child !== child) {
+      return { ok: false, message: `${service} was replaced before it accepted connections` };
+    }
+    if (outcome.kind === 'timed-out') {
+      const seconds = String(readyTimeoutMs / 1000);
+      log.writeLine(
+        `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
+      );
+      await stopService(svc, rt);
+      return {
+        ok: false,
+        message: `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}`,
+      };
+    }
+    svc.status = 'running';
     schedulePersist();
     return { ok: true };
   }
@@ -459,15 +568,16 @@ function main(): void {
    * the same way a deployment PUT does — but from the service's already
    * STORED deployment spec, since no new one arrives with a start.
    */
-  async function startService(app: string, id: string, svc: ServiceRecord): Promise<void> {
-    if (svc.artifactHash === undefined) return; // never deployed — nothing to start
-    if (svc.status === 'running') return; // idempotent — already up
+  async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
+    if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
+    if (svc.status === 'running') return { ok: true }; // idempotent — already up
     const rt = getRuntime(app, id);
+    if (rt.starting) return rt.starting;
     clearBackoffTimer(rt);
     clearStableTimer(rt);
     rt.consecutiveFastExits = 0;
     // A session resume is a fresh start — begin a clean log.
-    await spawnService(app, id, svc, rt, true);
+    return spawnService(app, id, svc, rt, true);
   }
 
   // ——— HTTP plumbing ———
@@ -553,6 +663,8 @@ function main(): void {
       await killChild(rt, TERMINATE_GRACE_MS);
     } else {
       clearBackoffTimer(rt);
+      // A start still waiting for its child to listen has a child to replace.
+      await killChild(rt, TERMINATE_GRACE_MS);
     }
 
     svc.address = parsed.address;
@@ -732,11 +844,13 @@ function main(): void {
 
       if (method === 'POST' && segments.length === 3 && segments[2] === 'start') {
         const appRec = state[app];
-        if (appRec) {
-          await Promise.all(
-            Object.entries(appRec.services).map(([id, svc]) => startService(app, id, svc)),
-          );
-        }
+        const results = appRec
+          ? await Promise.all(
+              Object.entries(appRec.services).map(([id, svc]) => startService(app, id, svc)),
+            )
+          : [];
+        const failures = results.flatMap((r) => (r.ok ? [] : [r.message ?? 'failed to start']));
+        if (failures.length > 0) return text(res, 500, failures.join('\n'));
         res.writeHead(204);
         res.end();
         return;
