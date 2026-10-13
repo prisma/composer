@@ -74,7 +74,7 @@ The shared emulator daemons themselves keep running; other directories may be us
 - [ ] Two directories running the same app at once get separate instances, and `prisma dev url gateway` in each returns that directory's own service.
 - [ ] After Ctrl-C of `prisma dev`, or `prisma dev stop` following a `kill -9`, no process of that directory's app is running; the next `prisma dev` gets the same ports.
 - [ ] `prisma emulator list` shows the services, databases and buckets of both, each labelled with the directory and address that started it.
-- [ ] No emulator source or state file contains an app name, address or directory outside a label value.
+- [ ] No emulator route, state key, file name or emulator-generated field carries an app name, address or directory. Composer data reaches an emulator only as label values and inside the deployment payload, stored verbatim and never interpreted.
 - [ ] Composer ADRs record the emulator model (amending ADR-0041) and the new commands (amending ADR-0050). ADR-0044 lists the new codes.
 - [ ] `docs/design/10-domains/local-dev.md`, the running-locally guide and the core-concepts skill describe both commands and the model.
 - [ ] prisma-cli mounts both commands, with `EXCLUSIONS` entries in the e2e coverage test (local only, no management API).

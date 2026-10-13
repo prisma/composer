@@ -72,7 +72,7 @@ Deliberately out:
 ## Slice-specific done conditions
 
 - [ ] Two temporary directories run the same fixture app at once. Each has its own Compute instances, and neither directory's services restart when the other deploys. This is proven by a test against a real Compute emulator in a temporary `PRISMA_COMPOSER_EMULATORS_DIR`.
-- [ ] A test fails if the Compute emulator's source or state stores an app name, address or directory anywhere except label values.
+- [ ] A test fails if the Compute emulator's routes, state keys, file names or generated fields carry an app name, address or directory, or if it alters label values or the deployment payload.
 
 ## References
 
