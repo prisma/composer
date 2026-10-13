@@ -179,6 +179,18 @@ export async function executeDev(
     return { outcome, stackPath };
   };
 
+  // A failed first converge can leave some services started; the session never began, so stop them.
+  const stopStartedServices = async (): Promise<void> => {
+    for (const [id, dev] of resolved) {
+      try {
+        const attachment = await dev.attach({ container: containers.get(id), devDir });
+        await attachment.stopServices();
+      } catch {
+        // Best effort: the converge failure is the error to report.
+      }
+    }
+  };
+
   // Write the dev stack file and converge. Inside the try: a stray
   // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
   // back as a failure result, not a rejection out of dev().
@@ -186,11 +198,13 @@ export async function executeDev(
   try {
     first = await converge();
   } catch (error) {
+    await stopStartedServices();
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
   const firstStatus = first.outcome.signal !== null ? null : (first.outcome.exitCode ?? 1);
   if (firstStatus !== 0) {
+    await stopStartedServices();
     return notOk(
       new CliStructuredError(
         'DEV.CONVERGE_FAILED',

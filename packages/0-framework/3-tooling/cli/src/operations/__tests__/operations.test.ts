@@ -1342,6 +1342,74 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(stops).toBe(1);
   }, 15_000);
 
+  test('a failed first converge stops the services it started before returning DEV.CONVERGE_FAILED', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 1, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('a converge that cannot be spawned still stops the app services', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopServices: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            throw new Error('spawn failed');
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+    expect(stops).toBe(1);
+  }, 15_000);
+
   test('a startServices that throws mid-start is rolled back: the partially-started attachment is stopped again', async () => {
     const app = makeAppDir('hello-dev');
     let stops = 0;
