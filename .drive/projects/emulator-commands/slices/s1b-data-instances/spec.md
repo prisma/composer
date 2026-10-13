@@ -11,9 +11,9 @@ After S1a, only the Compute emulator follows ADR-0052. This slice moves the Post
   { "current": "shop",
     "apps": {
       "shop": { "nodes": {
-        "quotes":  { "kind": "compute",  "id": "svc_k3f9…", "port": 3000 },
+        "quotes":  { "kind": "service",  "id": "svc_k3f9…", "port": 3000 },
         "catalog": { "kind": "database", "id": "db_02c4…" },
-        "uploads": { "kind": "bucket",   "id": "bkt_77e1…" } } },
+        "uploads": { "kind": "bucket",   "id": "bkt-77e1…" } } },
       "shop-v2": { "nodes": { … } } } }
 ```
 
@@ -29,7 +29,7 @@ Two checkouts of one app no longer share a local database or a bucket.
 
 **Bucket emulator.**
 - A bucket is an instance with an emulator-generated id and labels. Its name on the S3 wire is that id, replacing `<app>--<bucket>`.
-- Its data root is still the in-project directory Composer registers (`.prisma-composer/dev/buckets/<bucket>/`). The emulator stores that path verbatim and never interprets it.
+- Its data root is the in-project directory Composer registers, `.prisma-composer/dev/buckets/<app>/<bucket>/` (the app is in the path so two apps in one directory don't share a bucket's files). The emulator stores that path verbatim and never interprets it.
 - Credentials are registered per instance. A route lists all instances.
 - A bucket has no process, so stop and start don't apply.
 

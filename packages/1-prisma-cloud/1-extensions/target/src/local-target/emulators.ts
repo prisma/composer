@@ -85,8 +85,9 @@ export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise
     );
   }
   const portChanges = await ensureAppInstances(scope, nodes).catch(async (error: unknown) => {
-    // `dev` fails here without a session to end, so stop what this run
-    // started (databases come up in this loop), then report the failure.
+    // `dev` fails here without a session to end, so stop the app's whole
+    // recorded set, as Ctrl-C would, then report the failure. One directory
+    // runs one `dev` session at a time.
     await stopAppInstances(scope).catch(() => undefined);
     throw error;
   });
