@@ -39,7 +39,7 @@ describe('identityMismatches', () => {
     );
     assert.deepEqual(identityMismatches(nodes, rows, BRANCH), [
       'resource node "auth.database" should match exactly one database row on branch br_main; found 0',
-      'database db_1 on branch br_main has logicalId "auth.database-db", which names no database-backed node in the topology',
+      'database db_1 on branch br_main has logicalId "auth.database-db", but no topology node with that logicalId lowers to a database',
     ]);
   });
 
@@ -59,7 +59,7 @@ describe('identityMismatches', () => {
       { kind: 'bucket' as const, id: 'bkt_2', branchId: BRANCH, logicalId: 'auth.service' },
     ];
     assert.deepEqual(identityMismatches(nodes, rows, BRANCH), [
-      'bucket bkt_2 on branch br_main has logicalId "auth.service", which names no bucket-backed node in the topology',
+      'bucket bkt_2 on branch br_main has logicalId "auth.service", but no topology node with that logicalId lowers to a bucket',
     ]);
   });
 

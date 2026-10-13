@@ -148,6 +148,14 @@ export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
 
+/** The `logicalId` prop of a node's App, Database or Bucket: its address on every platform deploy, none in branchless dev (ADR-0051). */
+export function logicalIdProp(
+  application: unknown,
+  address: string,
+): { readonly logicalId?: string } {
+  return cloudApplicationOf(application).branchless ? {} : { logicalId: address };
+}
+
 /**
  * The Branch a database attaches to. Upstream treats an omitted branch as
  * desired-unassigned (`branchId` PATCHed back to `null` on reconcile), so a
@@ -192,7 +200,8 @@ export const stageDatabase = ({
     const db = yield* Prisma.Database(`${id}-db`, {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId, logicalId: address } : { name: id }),
+      ...(branchId !== undefined ? { branchId } : { name: id }),
+      ...logicalIdProp(application, address),
     });
     const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
     const url = Output.map(conn.directConnectionString, (value) => {

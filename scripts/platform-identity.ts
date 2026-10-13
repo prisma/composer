@@ -5,13 +5,11 @@
  * `e2e-verify-identity.ts` feeds it from the Management API.
  */
 
+import type { ApplicationTopologyNodeBody } from '../packages/1-prisma-cloud/0-lowering/lowering/src/builds/application-topology.ts';
+
 export type RowKind = 'app' | 'database' | 'bucket';
 
-export interface TopologyNode {
-  readonly logicalId: string;
-  readonly kind: 'module' | 'service' | 'resource';
-  readonly type?: string;
-}
+export type TopologyNode = Pick<ApplicationTopologyNodeBody, 'logicalId' | 'kind' | 'type'>;
 
 export interface PlatformRow {
   readonly kind: RowKind;
@@ -60,7 +58,7 @@ export function identityMismatches(
       problems.push(`${row.kind} ${row.id} on branch ${branchId} has no logicalId`);
     } else if (expected.get(row.logicalId) !== row.kind) {
       problems.push(
-        `${row.kind} ${row.id} on branch ${branchId} has logicalId "${row.logicalId}", which names no ${row.kind}-backed node in the topology`,
+        `${row.kind} ${row.id} on branch ${branchId} has logicalId "${row.logicalId}", but no topology node with that logicalId lowers to a ${row.kind}`,
       );
     }
   }

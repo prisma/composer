@@ -17,7 +17,7 @@ import {
 } from '../packages/1-prisma-cloud/0-lowering/lowering/src/client.ts';
 import { resolveContainer } from '../packages/1-prisma-cloud/0-lowering/lowering/src/container.ts';
 import { fromEnv } from '../packages/1-prisma-cloud/0-lowering/lowering/src/credentials.ts';
-import { call } from '../packages/1-prisma-cloud/0-lowering/lowering/src/http.ts';
+import { call, callOptional } from '../packages/1-prisma-cloud/0-lowering/lowering/src/http.ts';
 import { collectPages } from '../packages/1-prisma-cloud/0-lowering/lowering/src/pagination.ts';
 import { identityMismatches, type PlatformRow, type RowKind } from './platform-identity.ts';
 
@@ -43,11 +43,18 @@ const program = Effect.gen(function* () {
   }
   const client = yield* ManagementClient;
 
-  const topology = yield* call(() =>
+  const topology = yield* callOptional(() =>
     client.GET('/v1/projects/{projectId}/branches/{branchId}/application-topology', {
       params: { path: { projectId, branchId } },
     }),
   );
+  if (topology === undefined || topology.data.nodes.length === 0) {
+    return yield* Effect.fail(
+      new Error(
+        `branch ${branchId} has no application topology: the deploy did not submit one (its log shows a warning about failing to "record this deploy's application topology")`,
+      ),
+    );
+  }
 
   type ListedRow = Omit<PlatformRow, 'kind'>;
   const query = (cursor: string | undefined) =>

@@ -81,8 +81,8 @@ and manual cleanup).
 
 Each row is a resource type the lowering binds. The `Prisma.*` families are
 upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
-provider collection and defines resources only where the upstream provider
-has no support yet (buckets) or no Management API exists behind them.
+provider collection and defines resources only where no Management API exists
+behind them.
 
 | Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
@@ -92,8 +92,9 @@ has no support yet (buckets) or no Management API exists behind them.
 | `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
 | `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
+| `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
-`Prisma.Bucket` (props: project, name, branchId?, logicalId?) and `Prisma.BucketAccessKey` are upstream's too. `logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
+`logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
 
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider

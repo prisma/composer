@@ -2609,6 +2609,11 @@ describe('topology identities on platform resources', () => {
         defaultBranchId,
         branchless,
       };
+      const before = {
+        db: recorded.db.length,
+        svc: recorded.svc.length,
+        bucket: recorded.bucket.length,
+      };
 
       run<LoweredResult>(
         resourceDescriptorOf(
@@ -2630,9 +2635,10 @@ describe('topology identities on platform resources', () => {
         )({ id: 'auth.files', address: 'auth.files', application } as unknown as LowerContext),
       );
 
-      const database = recorded.db.at(-1)?.[1];
-      const service = recorded.svc.at(-1)?.[1];
-      const bucket = recorded.bucket.at(-1)?.[1];
+      const [database] = recorded.db.slice(before.db).map(([, props]) => props);
+      const [service] = recorded.svc.slice(before.svc).map(([, props]) => props);
+      const [bucket] = recorded.bucket.slice(before.bucket).map(([, props]) => props);
+      expect([database, service, bucket]).not.toContain(undefined);
       if (branchless) {
         expect(database).not.toHaveProperty('logicalId');
         expect(service).not.toHaveProperty('logicalId');
@@ -2681,20 +2687,28 @@ describe('platform identity: each row carries its topology node logicalId — th
         }),
       );
 
-      const rowLogicalIds = [
-        ...recorded.svc.slice(before.svc),
-        ...recorded.db.slice(before.db),
-        ...recorded.bucket.slice(before.bucket),
-      ]
-        .map(([, props]) => (props as { logicalId?: string }).logicalId)
-        .sort();
-      const nodeLogicalIds = composeApplicationTopology(Load(root))
+      const logicalIdOf = ([, props]: [string, unknown]) =>
+        (props as { logicalId?: string }).logicalId;
+      const rows = [
+        ...recorded.svc.slice(before.svc).map((row) => `app ${logicalIdOf(row)}`),
+        ...recorded.db.slice(before.db).map((row) => `database ${logicalIdOf(row)}`),
+        ...recorded.bucket.slice(before.bucket).map((row) => `bucket ${logicalIdOf(row)}`),
+      ].sort();
+      const rowKindOfNode: Record<string, string> = {
+        service: 'app',
+        'raw-postgres': 'database',
+        s3: 'bucket',
+      };
+      const nodes = composeApplicationTopology(Load(root))
         .nodes.filter((node) => node.kind !== 'module')
-        .map((node) => node.logicalId)
+        .map(
+          (node) =>
+            `${rowKindOfNode[node.kind === 'service' ? 'service' : (node.type ?? '')]} ${node.logicalId}`,
+        )
         .sort();
 
-      expect(nodeLogicalIds).toEqual(['auth.database', 'auth.service', 'files']);
-      expect(rowLogicalIds).toEqual(nodeLogicalIds);
+      expect(nodes).toEqual(['app auth.service', 'bucket files', 'database auth.database']);
+      expect(rows).toEqual(nodes);
     });
   });
 });

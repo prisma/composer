@@ -27,6 +27,7 @@ import {
 import { serviceAppName } from '../service-app.ts';
 import {
   cloudApplicationOf,
+  logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
   validateName,
@@ -147,13 +148,13 @@ export function computeDescriptor(
       Effect.gen(function* () {
         validateName(id, 'service name (from provision id)');
         const projectId = projectIdOf(application);
-        const { branchId, branchless } = cloudApplicationOf(application);
+        const { branchId } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(`${id}-svc`, {
           project: projectId,
           displayName: serviceAppName(id),
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
-          ...(!branchless ? { logicalId: address } : {}),
+          ...logicalIdProp(application, address),
         });
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
