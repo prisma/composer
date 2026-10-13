@@ -15,12 +15,13 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import { type AppScope, ensureBucketInstance, recordedInstanceId } from './emulator-instances.ts';
+import {
+  type AppScope,
+  ensureBucketInstance,
+  recordedInstanceId,
+  recordKeyOf,
+} from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
-
-/** Upstream lets `name` default to the resource's logical ID; locally a bucket must have a concrete name to register under. */
-const bucketNameOf = (news: { readonly name?: string | undefined }, id: string): string =>
-  news.name ?? id;
 
 /** Reads a bucket id from upstream's `bucket` input: a plain string or a resolved `Prisma.Bucket` attributes record. */
 function bucketIdOfInput(value: unknown): string {
@@ -57,7 +58,7 @@ export function LocalBucketProvider(
     reconcile: ({ news, id }) =>
       Effect.tryPromise({
         try: async () => {
-          const name = bucketNameOf(news, id);
+          const name = recordKeyOf('bucket', id, news.name);
           const bucket = await ensureBucketInstance(
             appScopeOf(input),
             name,

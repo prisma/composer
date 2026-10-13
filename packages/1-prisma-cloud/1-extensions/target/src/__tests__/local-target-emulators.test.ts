@@ -8,7 +8,7 @@ import { compute, rawPostgres } from '../exports/index.ts';
 
 const events: string[] = [];
 let portChanges: {
-  kind: 'compute' | 'database';
+  kind: 'service' | 'database';
   address: string;
   previous: number;
   given: number;
@@ -98,7 +98,7 @@ test('ensures the getting-started services in dependency order once the compute 
   expect(events).toEqual([
     'daemon compute',
     'select my-app',
-    'ensure my-app: compute quotes, compute gateway',
+    'ensure my-app: service quotes, service gateway',
   ]);
 });
 
@@ -117,13 +117,13 @@ test('ensures services and databases in declaration order when nothing orders th
     'daemon compute',
     'daemon postgres',
     'select my-app',
-    'ensure my-app: compute web, database db, compute admin',
+    'ensure my-app: service web, database db, service admin',
   ]);
 });
 
 test('prints one line for each service that could not get its remembered port back', async () => {
   portChanges = [
-    { kind: 'compute', address: 'gateway', previous: 3001, given: 3004 },
+    { kind: 'service', address: 'gateway', previous: 3001, given: 3004 },
     { kind: 'database', address: 'db', previous: 51300, given: 51301 },
   ];
   const graph = Load(

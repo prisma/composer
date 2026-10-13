@@ -24,8 +24,8 @@ import { envStore, secretsStore } from './dev-store.ts';
 import {
   type AppScope,
   deleteNodeInstance,
-  ensureComputeInstance,
-  liveComputeInstance,
+  ensureServiceInstance,
+  liveServiceInstance,
   withServiceAddresses,
 } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
@@ -193,7 +193,7 @@ export function LocalAppProvider(
       Effect.tryPromise({
         try: async () => {
           const name = news.displayName ?? id;
-          const { instance } = await ensureComputeInstance(appScopeOf(input), name);
+          const { instance } = await ensureServiceInstance(appScopeOf(input), name);
           const url = localUrl(instance.port);
           return {
             appId: name,
@@ -212,7 +212,7 @@ export function LocalAppProvider(
       Effect.tryPromise({
         try: async () => {
           if (output === undefined) return undefined;
-          const live = await liveComputeInstance(appScopeOf(input), output.name);
+          const live = await liveServiceInstance(appScopeOf(input), output.name);
           if (live?.url === output.appEndpointDomain) return undefined;
           return { action: 'update' as const };
         },
@@ -300,7 +300,7 @@ export function LocalDeploymentProvider(
           }
           const address = readManifestAddress(artifactDir);
 
-          const { instance } = await ensureComputeInstance(appScopeOf(input), appId);
+          const { instance } = await ensureServiceInstance(appScopeOf(input), appId);
           const env = await materializeEnv(input.devDir, address, instance.port);
           try {
             await computeClient().putDeployment(instance.id, { artifactDir, artifactHash, env });
@@ -332,7 +332,7 @@ export function LocalDeploymentProvider(
       Effect.tryPromise({
         try: async () => {
           if (output === undefined) return undefined;
-          const live = await liveComputeInstance(appScopeOf(input), output.appId);
+          const live = await liveServiceInstance(appScopeOf(input), output.appId);
           if (live?.artifactHash === output.artifactHash) return undefined;
           return { action: 'update' as const };
         },

@@ -1199,7 +1199,7 @@ function fakeAttachment(
 ): LocalTargetAttachment {
   return {
     startServices: () => Promise.resolve(),
-    stopServices: () => Promise.resolve(),
+    stopApp: () => Promise.resolve(),
     endpoints: () => Promise.resolve(endpoints),
     logs,
   };
@@ -1313,7 +1313,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let stops = 0;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1347,7 +1347,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let stops = 0;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1380,7 +1380,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let stops = 0;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1418,7 +1418,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       // the rollback must stop this attachment even though startServices
       // never returned.
       startServices: () => Promise.reject(new Error('service two failed to bind its port')),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1458,7 +1458,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(buildOutput, 'v1');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1519,7 +1519,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1585,7 +1585,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   describe('the prisma.config.ts watch', () => {
     const quietAttachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1700,7 +1700,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.reject(new Error('service pid 123 will not die')),
+      stopApp: () => Promise.reject(new Error('service pid 123 will not die')),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1733,7 +1733,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([{ address: 'app', url: 'http://localhost:3000' }]),
       logs: async function* () {},
     };
@@ -1782,7 +1782,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1816,7 +1816,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1984,7 +1984,7 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     let attempts = 0;
     const flaky: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => {
         attempts += 1;
         if (attempts === 1) {

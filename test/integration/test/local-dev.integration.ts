@@ -320,7 +320,7 @@ async function listComputeServices(): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
   const services: ServiceInfo[] = [];
-  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'compute'))) {
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'service'))) {
     const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
     if (res.status === 404) continue;
     if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
@@ -650,7 +650,7 @@ async function main(): Promise<void> {
     console.log('PASS: local dev (S4) integration proof');
   } finally {
     process.chdir(originalCwd);
-    await attachment?.stopServices().catch(() => undefined);
+    await attachment?.stopApp().catch(() => undefined);
 
     // App-scoped teardown through the extension's own public
     // localTarget.teardown — never stops the daemons themselves (D4/D12),

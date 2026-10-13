@@ -110,22 +110,22 @@ async function expectOk(res: Response): Promise<Response> {
   return res;
 }
 
-export type InstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
+export type ServiceInstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
 
-export interface InstanceInfo {
+export interface ServiceInstanceInfo {
   readonly id: string;
   /** Stored and returned verbatim; the emulator never reads them. */
   readonly labels: Readonly<Record<string, string>>;
   readonly port: number;
   readonly url: string;
-  readonly status: InstanceStatus;
+  readonly status: ServiceInstanceStatus;
   readonly pid?: number;
   readonly lastExitCode?: number;
   readonly artifactHash?: string;
   readonly logPath: string;
 }
 
-export interface CreateInstanceRequest {
+export interface CreateServiceRequest {
   readonly labels: Readonly<Record<string, string>>;
   /** Used if no instance holds it and it is bindable; otherwise the emulator gives the lowest free port from 3000. */
   readonly port?: number;
@@ -147,7 +147,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   );
 }
 
-function isInstanceInfo(value: unknown): value is InstanceInfo {
+function isServiceInstanceInfo(value: unknown): value is ServiceInstanceInfo {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -167,8 +167,8 @@ function isInstanceInfo(value: unknown): value is InstanceInfo {
   );
 }
 
-function isInstanceInfoArray(value: unknown): value is InstanceInfo[] {
-  return Array.isArray(value) && value.every(isInstanceInfo);
+function isServiceInstanceInfoArray(value: unknown): value is ServiceInstanceInfo[] {
+  return Array.isArray(value) && value.every(isServiceInstanceInfo);
 }
 
 interface HealthBody {
@@ -189,11 +189,11 @@ export interface ComputeClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
   /** `POST /instances` — creates a stopped instance holding a port until it is deleted. Never retried: a retry could create a second instance. */
-  createInstance(request: CreateInstanceRequest): Promise<InstanceInfo>;
+  createInstance(request: CreateServiceRequest): Promise<ServiceInstanceInfo>;
   /** `GET /instances`. */
-  listInstances(): Promise<InstanceInfo[]>;
+  listInstances(): Promise<ServiceInstanceInfo[]>;
   /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
-  getInstance(id: string): Promise<InstanceInfo | undefined>;
+  getInstance(id: string): Promise<ServiceInstanceInfo | undefined>;
   /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port. */
   putDeployment(id: string, deployment: DeploymentRequest): Promise<void>;
   /** `GET /instances/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
@@ -242,7 +242,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
         await adminFetch(`${baseUrl}/instances`, postJson(request), { retry: false }),
       );
       const body: unknown = await res.json();
-      if (!isInstanceInfo(body)) {
+      if (!isServiceInstanceInfo(body)) {
         throw new Error('malformed instance-create response from the compute emulator');
       }
       return body;
@@ -251,7 +251,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
     async listInstances() {
       const res = await expectOk(await adminFetch(`${baseUrl}/instances`));
       const body: unknown = await res.json();
-      if (!isInstanceInfoArray(body)) {
+      if (!isServiceInstanceInfoArray(body)) {
         throw new Error('malformed instances listing from the compute emulator');
       }
       return body;
@@ -261,7 +261,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       const res = await adminFetch(instancePath(baseUrl, id));
       if (res.status === 404) return undefined;
       const body: unknown = await (await expectOk(res)).json();
-      if (!isInstanceInfo(body)) {
+      if (!isServiceInstanceInfo(body)) {
         throw new Error('malformed instance response from the compute emulator');
       }
       return body;

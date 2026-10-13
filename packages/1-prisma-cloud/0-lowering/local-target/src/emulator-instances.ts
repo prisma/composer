@@ -12,15 +12,15 @@ import {
   bucketsClient,
   computeClient,
   type DatabaseInstanceInfo,
-  type InstanceInfo,
   postgresClient,
+  type ServiceInstanceInfo,
 } from '@internal/dev-emulators';
 import { createStore, type DevStore } from './dev-store.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
 
-export interface ComputeNodeInstance {
-  readonly kind: 'compute';
+export interface ServiceNodeInstance {
+  readonly kind: 'service';
   readonly id: string;
   /** The port the instance was given, requested again if the instance has to be re-created. */
   readonly port: number;
@@ -38,7 +38,7 @@ export interface BucketNodeInstance {
   readonly id: string;
 }
 
-export type NodeInstance = ComputeNodeInstance | DatabaseNodeInstance | BucketNodeInstance;
+export type NodeInstance = ServiceNodeInstance | DatabaseNodeInstance | BucketNodeInstance;
 export type NodeKind = NodeInstance['kind'];
 
 export interface AppInstances {
@@ -61,7 +61,7 @@ export interface AppScope {
 
 /** A node whose remembered port another instance or process now holds. */
 export interface PortChange {
-  readonly kind: 'compute' | 'database';
+  readonly kind: 'service' | 'database';
   readonly address: string;
   readonly previous: number;
   readonly given: number;
@@ -72,7 +72,7 @@ function isNodeInstance(value: unknown): value is NodeInstance {
   if (!('id' in value) || typeof value.id !== 'string' || !('kind' in value)) return false;
   if (value.kind === 'bucket') return true;
   return (
-    (value.kind === 'compute' || value.kind === 'database') &&
+    (value.kind === 'service' || value.kind === 'database') &&
     'port' in value &&
     typeof value.port === 'number'
   );
@@ -99,10 +99,23 @@ function isEmulatorInstances(value: unknown): value is EmulatorInstances {
   );
 }
 
-/** The single-app record an earlier version wrote: one app and its nodes. */
+/** The single-app record an earlier version wrote: one app and its services, whose kind it called `compute`. */
 interface SingleAppRecord {
   readonly app: string;
-  readonly nodes: Readonly<Record<string, NodeInstance>>;
+  readonly nodes: Readonly<Record<string, { readonly id: string; readonly port: number }>>;
+}
+
+function isEarlierServiceNode(value: unknown): value is { id: string; port: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'kind' in value &&
+    value.kind === 'compute' &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'port' in value &&
+    typeof value.port === 'number'
+  );
 }
 
 function isSingleAppRecord(value: unknown): value is SingleAppRecord {
@@ -112,7 +125,9 @@ function isSingleAppRecord(value: unknown): value is SingleAppRecord {
     'app' in value &&
     typeof value.app === 'string' &&
     'nodes' in value &&
-    isNodes(value.nodes)
+    typeof value.nodes === 'object' &&
+    value.nodes !== null &&
+    Object.values(value.nodes).every(isEarlierServiceNode)
   );
 }
 
@@ -125,7 +140,32 @@ function isStoredRecord(value: unknown): value is StoredRecord {
 /** A single-app record reads as a record holding that one app; the next write rewrites it. */
 function normalized(stored: StoredRecord | undefined): EmulatorInstances | undefined {
   if (stored === undefined || isEmulatorInstances(stored)) return stored;
-  return { current: stored.app, apps: { [stored.app]: { nodes: stored.nodes } } };
+  const nodes = Object.fromEntries(
+    Object.entries(stored.nodes).map(([address, { id, port }]) => [
+      address,
+      { kind: 'service' as const, id, port },
+    ]),
+  );
+  return { current: stored.app, apps: { [stored.app]: { nodes } } };
+}
+
+/**
+ * A database's or bucket's key in the record: its resource `name`, which the
+ * lowering sets from the same helper the emulators hook keys it by. A
+ * resource without a name cannot be matched to the instance the hook
+ * recorded, so it is refused rather than recorded under another key.
+ */
+export function recordKeyOf(
+  kind: 'database' | 'bucket',
+  resourceId: string,
+  name: string | undefined,
+): string {
+  if (name === undefined) {
+    throw new Error(
+      `local dev: the ${kind} resource "${resourceId}" has no name, so its emulator instance cannot be found in the directory's record.`,
+    );
+  }
+  return name;
 }
 
 /** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
@@ -192,7 +232,7 @@ function idsOf(nodes: Readonly<Record<string, NodeInstance>>, kind: NodeKind): s
  * running to stop.
  */
 async function stopNodes(nodes: Readonly<Record<string, NodeInstance>>): Promise<void> {
-  const services = idsOf(nodes, 'compute');
+  const services = idsOf(nodes, 'service');
   const databases = idsOf(nodes, 'database');
   if (services.length > 0) await whenRunning(() => computeClient().stopInstances(services));
   if (databases.length > 0) await whenRunning(() => postgresClient().stopInstances(databases));
@@ -260,23 +300,23 @@ async function recordedInstance<K extends NodeKind>(
  * reused while the Compute emulator still has it. Otherwise a new one is
  * created, requesting the recorded port, and recorded.
  */
-export async function ensureComputeInstance(
+export async function ensureServiceInstance(
   scope: AppScope,
   address: string,
-): Promise<{ readonly instance: ComputeNodeInstance; readonly portChange?: PortChange }> {
+): Promise<{ readonly instance: ServiceNodeInstance; readonly portChange?: PortChange }> {
   const client = computeClient();
-  const recorded = await recordedInstance(scope, address, 'compute');
+  const recorded = await recordedInstance(scope, address, 'service');
   if (recorded && (await client.getInstance(recorded.id))) return { instance: recorded };
 
   const created = await client.createInstance({
     labels: labelsFor(scope, address),
     ...(recorded ? { port: recorded.port } : {}),
   });
-  const instance: ComputeNodeInstance = { kind: 'compute', id: created.id, port: created.port };
+  const instance: ServiceNodeInstance = { kind: 'service', id: created.id, port: created.port };
   await updateNodes(scope, (nodes) => {
     nodes[address] = instance;
   });
-  return { instance, ...portChangeOf('compute', address, recorded?.port, created.port) };
+  return { instance, ...portChangeOf('service', address, recorded?.port, created.port) };
 }
 
 function portChangeOf(
@@ -343,11 +383,11 @@ export async function ensureBucketInstance(
 }
 
 /** The Compute emulator's view of the instance recorded for `address`; undefined when either is missing. */
-export async function liveComputeInstance(
+export async function liveServiceInstance(
   scope: AppScope,
   address: string,
-): Promise<InstanceInfo | undefined> {
-  const recorded = await recordedInstance(scope, address, 'compute');
+): Promise<ServiceInstanceInfo | undefined> {
+  const recorded = await recordedInstance(scope, address, 'service');
   return recorded ? computeClient().getInstance(recorded.id) : undefined;
 }
 
@@ -360,7 +400,7 @@ export async function recordedInstanceId(
 }
 
 async function deleteInstance(instance: NodeInstance): Promise<void> {
-  if (instance.kind === 'compute') await computeClient().deleteInstance(instance.id);
+  if (instance.kind === 'service') await computeClient().deleteInstance(instance.id);
   else if (instance.kind === 'database') await postgresClient().deleteInstance(instance.id);
   else await bucketsClient().deleteInstance(instance.id);
 }

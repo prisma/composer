@@ -7,8 +7,8 @@ import { bucketDataDir } from './bucket.ts';
 import {
   type AppScope,
   ensureBucketInstance,
-  ensureComputeInstance,
   ensureDatabaseInstance,
+  ensureServiceInstance,
   type NodeKind,
   type PortChange,
 } from './emulator-instances.ts';
@@ -18,12 +18,6 @@ export interface AppNode {
   readonly address: string;
   readonly kind: NodeKind;
 }
-
-const KIND_NOUN: Record<NodeKind, string> = {
-  compute: 'service',
-  database: 'database',
-  bucket: 'bucket',
-};
 
 /**
  * Ensures each node's instance, in the order given: a recorded instance is
@@ -44,10 +38,9 @@ export async function ensureAppInstances(
       if (portChange) changes.push(portChange);
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(
-        `ensuring the local instance for ${KIND_NOUN[kind]} "${address}" failed: ${reason}`,
-        { cause },
-      );
+      throw new Error(`ensuring the local instance for ${kind} "${address}" failed: ${reason}`, {
+        cause,
+      });
     }
   }
   return changes;
@@ -58,7 +51,7 @@ async function ensureNodeInstance(
   address: string,
   kind: NodeKind,
 ): Promise<{ readonly portChange?: PortChange }> {
-  if (kind === 'compute') return ensureComputeInstance(scope, address);
+  if (kind === 'service') return ensureServiceInstance(scope, address);
   if (kind === 'database') {
     return ensureDatabaseInstance(scope, address, resolvePrismaDevModulePath());
   }

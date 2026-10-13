@@ -29,7 +29,7 @@ import { prismaCloudContainerOf } from '../container.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
 const DAEMON_OF: Record<NodeKind, DaemonName> = {
-  compute: 'compute',
+  service: 'compute',
   database: 'postgres',
   bucket: 'buckets',
 };

@@ -18,7 +18,12 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import { type AppScope, ensureDatabaseInstance, recordedInstanceId } from './emulator-instances.ts';
+import {
+  type AppScope,
+  ensureDatabaseInstance,
+  recordedInstanceId,
+  recordKeyOf,
+} from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads a database id from upstream's `database` input: a plain string or a resolved `Prisma.Database` attributes record. */
@@ -67,11 +72,8 @@ export function LocalDatabaseProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          // Hosted branch-stage deploys omit the display name (see
-          // descriptors/postgres.ts); local dev never has a branch, so
-          // `news.name` is normally present — the resource's logical id is
-          // only a defensive fallback.
-          const name = news.name ?? id;
+          // Hosted branch-stage deploys omit the name; local dev has no branch.
+          const name = recordKeyOf('database', id, news.name);
           const { instance } = await ensureDatabaseInstance(
             appScopeOf(input),
             name,

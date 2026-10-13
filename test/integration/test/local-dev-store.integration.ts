@@ -245,7 +245,7 @@ async function listComputeServices(app: string): Promise<readonly ServiceInfo[]>
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
   const services: ServiceInfo[] = [];
-  for (const [address, node] of Object.entries(recordedNodes(app, 'compute'))) {
+  for (const [address, node] of Object.entries(recordedNodes(app, 'service'))) {
     const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
     if (res.status === 404) continue;
     if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);

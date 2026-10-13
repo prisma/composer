@@ -9,7 +9,7 @@ import { App } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider } from '../compute.ts';
-import { ensureComputeInstance, nodeInstancesOf } from '../emulator-instances.ts';
+import { ensureServiceInstance, nodeInstancesOf } from '../emulator-instances.ts';
 
 function ensureServiceInstances(
   forContainer: ContainerInstance,
@@ -18,7 +18,7 @@ function ensureServiceInstances(
 ) {
   return ensureAppInstances(
     { devDir, app: forContainer.input.appName },
-    addresses.map((address) => ({ address, kind: 'compute' as const })),
+    addresses.map((address) => ({ address, kind: 'service' as const })),
   );
 }
 
@@ -70,7 +70,7 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
 }
 
 async function reservedPorts(app: string): Promise<Record<string, number>> {
-  const nodes = await nodeInstancesOf({ devDir, app }, 'compute');
+  const nodes = await nodeInstancesOf({ devDir, app }, 'service');
   return Object.fromEntries(nodes.map(({ address, instance }) => [address, instance.port]));
 }
 
@@ -104,8 +104,8 @@ test('a failed reservation names the service', async () => {
 test('reserving the services of an app that already has ports keeps those ports', async () => {
   const container = fakeContainer('port-order-warm');
   const scope = { devDir, app: 'port-order-warm' };
-  const { instance: gateway } = await ensureComputeInstance(scope, 'gateway');
-  const { instance: quotes } = await ensureComputeInstance(scope, 'quotes');
+  const { instance: gateway } = await ensureServiceInstance(scope, 'gateway');
+  const { instance: quotes } = await ensureServiceInstance(scope, 'quotes');
 
   await ensureServiceInstances(container, devDir, ['quotes', 'gateway']);
 
@@ -117,7 +117,7 @@ test('a dotted service address reserves the same emulator instance the App provi
   const container = fakeContainer('port-order-nested');
   await ensureServiceInstances(container, devDir, ['shop.quotes']);
 
-  const listed = (await nodeInstancesOf({ devDir, app: 'port-order-nested' }, 'compute')).map(
+  const listed = (await nodeInstancesOf({ devDir, app: 'port-order-nested' }, 'service')).map(
     (node) => node.instance,
   );
   expect(await reconcileApp(container, 'shop.quotes')).toBe(listed[0]?.port ?? -1);

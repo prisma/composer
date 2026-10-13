@@ -35,7 +35,7 @@ const APP = 'data-app';
 const NODES: readonly AppNode[] = [
   { address: 'catalog', kind: 'database' },
   { address: 'uploads', kind: 'bucket' },
-  { address: 'web', kind: 'compute' },
+  { address: 'web', kind: 'service' },
 ];
 const DAEMONS: readonly DaemonName[] = ['compute', 'postgres', 'buckets'];
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];

@@ -76,7 +76,7 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
    door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
    SIGTERM or a failure stops the app's service processes and database
-   servers through the attachment's `stopServices` and exits; emulators and
+   servers through the attachment's `stopApp` and exits; emulators and
    data persist. Logs are not streamed here — the `log` operation reads the
    same attachment's merged-log view on demand, so `dev`'s own output stays
    the front door plus lifecycle and rebuild notices.
@@ -282,7 +282,7 @@ can be read from the directory alone, without running the pipeline.
 - **A removed service.** Deleting its `App` resource deletes its instance and
   its entry.
 - **When `prisma dev` ends** (Ctrl-C, SIGTERM, a failure), the attachment's
-  `stopServices` stops the app's service processes and database servers.
+  `stopApp` stops the app's service processes and database servers.
   Their data and ports are kept, and the next start brings them back.
 - **Another app in the same directory.** Running a different app from the
   directory (another entry, another `--name`) stops the previous app's

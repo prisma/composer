@@ -17,7 +17,7 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
-  recordedKinds: async () => new Set(['compute', 'database']),
+  recordedKinds: async () => new Set(['service', 'database']),
   deleteAppInstances: async ({ app }: { app: string }) => {
     events.push(`delete instances of ${app}`);
     if (deleteFails) throw new Error('delete failed');

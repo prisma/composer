@@ -1,7 +1,7 @@
 /**
  * The dev session's view of the running app (local-dev spec § 5, ADR-0041 D5)
  * — a Compute-emulator client scoped to this app. Core renders `endpoints()`/
- * `logs()`/`stopServices()` and never learns the emulator's HTTP API
+ * `logs()`/`stopApp()` and never learns the emulator's HTTP API
  * (ADR-0038's opacity pattern).
  */
 import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/core/config';
@@ -77,7 +77,7 @@ async function* mergedLogs(
     // Log lines are labelled with the service's address — the identity the
     // front door prints, so a service's endpoint line and its log lines name
     // it identically.
-    for (const { address, instance } of await nodeInstancesOf(scope, 'compute')) {
+    for (const { address, instance } of await nodeInstancesOf(scope, 'service')) {
       follow(instance.id, address);
     }
   };
@@ -115,7 +115,7 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
 
   return {
     startServices: async () => {
-      const nodes = await nodeInstancesOf(scope, 'compute');
+      const nodes = await nodeInstancesOf(scope, 'service');
       try {
         await client.startInstances(nodes.map(({ instance }) => instance.id));
       } catch (error) {
@@ -123,15 +123,14 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
       }
     },
     endpoints: async () => {
-      const nodes = await nodeInstancesOf(scope, 'compute');
+      const nodes = await nodeInstancesOf(scope, 'service');
       return nodes.map(({ address, instance }) => ({
         address,
         url: `http://localhost:${String(instance.port)}`,
       }));
     },
     logs: (signal, opts) => mergedLogs(scope, signal, opts?.tail ?? 0),
-    // Stops the databases too: when `prisma dev` ends, none of the app's
-    // Postgres servers keeps running. Their data and ports are kept.
-    stopServices: () => stopAppInstances(scope),
+    // Service processes and database servers; their data and ports are kept.
+    stopApp: () => stopAppInstances(scope),
   };
 }

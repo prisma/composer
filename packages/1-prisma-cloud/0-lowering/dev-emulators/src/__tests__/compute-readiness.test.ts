@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as net from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { type ComputeClient, computeClient, type InstanceInfo } from '../client.ts';
+import { type ComputeClient, computeClient, type ServiceInstanceInfo } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
@@ -59,7 +59,7 @@ async function startDaemon(entry?: string): Promise<ComputeClient> {
   return client;
 }
 
-async function instanceOf(client: ComputeClient, id: string): Promise<InstanceInfo> {
+async function instanceOf(client: ComputeClient, id: string): Promise<ServiceInstanceInfo> {
   const instance = await client.getInstance(id);
   if (!instance) throw new Error(`instance "${id}" not found`);
   return instance;

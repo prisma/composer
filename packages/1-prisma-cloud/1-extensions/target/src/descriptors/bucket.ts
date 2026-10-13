@@ -6,6 +6,7 @@ import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { resourceName } from '../service-app.ts';
 import {
   cloudApplicationOf,
   projectIdOf,
@@ -27,7 +28,7 @@ export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor
       const branchId = cloudApplicationOf(application).branchId;
       const bkt = yield* Prisma.Bucket(`${id}-bucket`, {
         project: projectIdOf(application),
-        name: id,
+        name: resourceName(id),
         ...(branchId !== undefined ? { branchId } : {}),
       });
       // `name: id` matches what Composer's own resource always created, so a

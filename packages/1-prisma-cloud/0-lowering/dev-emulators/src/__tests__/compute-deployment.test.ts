@@ -6,7 +6,7 @@
  * started.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { computeClient, type InstanceInfo } from '../client.ts';
+import { computeClient, type ServiceInstanceInfo } from '../client.ts';
 import { isPidAlive, stopDaemon } from '../daemon.ts';
 import {
   CRASHING_BOOTSTRAP,
@@ -46,7 +46,7 @@ function baseEnv(extra: Record<string, string> = {}): Record<string, string> {
   return { PATH: path, ...extra };
 }
 
-async function deployedService(id: string): Promise<InstanceInfo> {
+async function deployedService(id: string): Promise<ServiceInstanceInfo> {
   const instance = await computeClient({ registryRoot }).getInstance(id);
   if (!instance) throw new Error(`instance "${id}" not found`);
   return instance;

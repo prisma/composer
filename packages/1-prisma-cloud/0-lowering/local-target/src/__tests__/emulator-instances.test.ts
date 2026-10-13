@@ -22,10 +22,10 @@ import { ensureAppInstances } from '../app-instances.ts';
 import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
 import {
   type AppInstances,
-  type ComputeNodeInstance,
   deleteAppInstances,
   EMULATOR_INSTANCES_FILE,
   readEmulatorInstances,
+  type ServiceNodeInstance,
   selectApp,
   withServiceAddresses,
 } from '../emulator-instances.ts';
@@ -126,7 +126,7 @@ function ensureServiceInstances(
 ) {
   return ensureAppInstances(
     { devDir, app: forContainer.input.appName },
-    addresses.map((address) => ({ address, kind: 'compute' as const })),
+    addresses.map((address) => ({ address, kind: 'service' as const })),
   );
 }
 
@@ -136,17 +136,17 @@ async function mappingOf(directory: string, app = APP): Promise<AppInstances | u
 
 async function nodeOf(directory: string, address: string) {
   const node = (await mappingOf(directory))?.nodes[address];
-  if (node?.kind !== 'compute') {
+  if (node?.kind !== 'service') {
     throw new Error(`no service instance recorded for "${address}" in ${directory}`);
   }
   return node;
 }
 
-async function serviceNodes(directory: string): Promise<Record<string, ComputeNodeInstance>> {
+async function serviceNodes(directory: string): Promise<Record<string, ServiceNodeInstance>> {
   const nodes = (await mappingOf(directory))?.nodes ?? {};
   return Object.fromEntries(
     Object.entries(nodes).flatMap(([address, node]) =>
-      node.kind === 'compute' ? [[address, node]] : [],
+      node.kind === 'service' ? [[address, node]] : [],
     ),
   );
 }
@@ -265,7 +265,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       const after = await nodeOf(directory, 'quotes');
       expect(after.port).not.toBe(before.port);
       expect(changes).toEqual([
-        { kind: 'compute', address: 'quotes', previous: before.port, given: after.port },
+        { kind: 'service', address: 'quotes', previous: before.port, given: after.port },
       ]);
     });
 
@@ -329,18 +329,18 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     expect(await readEmulatorInstances(path.join(root, 'never-ran'))).toBeUndefined();
   });
 
-  test('a single-app record written by an earlier version reads as that one app', async () => {
+  test('a single-app record written by an earlier version reads as that one app, its compute nodes as services', async () => {
     const { directory, devDir } = projectDir('legacy');
     fs.mkdirSync(devDir, { recursive: true });
-    const quotes = { kind: 'compute' as const, id: 'svc_0123456789abcdef', port: 3999 };
+    const quotes = { id: 'svc_0123456789abcdef', port: 3999 };
     fs.writeFileSync(
       path.join(devDir, EMULATOR_INSTANCES_FILE),
-      JSON.stringify({ app: APP, nodes: { quotes } }),
+      JSON.stringify({ app: APP, nodes: { quotes: { kind: 'compute', ...quotes } } }),
     );
 
     expect(await readEmulatorInstances(directory)).toEqual({
       current: APP,
-      apps: { [APP]: { nodes: { quotes } } },
+      apps: { [APP]: { nodes: { quotes: { kind: 'service', ...quotes } } } },
     });
   });
 
