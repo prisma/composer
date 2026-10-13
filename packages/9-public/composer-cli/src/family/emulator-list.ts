@@ -6,7 +6,7 @@
  */
 
 import { toEngineError } from '@internal/cli/family';
-import type { EmulatorList } from '@internal/dev-emulators';
+import type { EmulatorList, EmulatorListing } from '@internal/dev-emulators';
 import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
 import type { Result } from '@internal/foundation/result';
 import { defineCommand } from '@prisma/cli-engine';
@@ -32,6 +32,20 @@ function startedBy(labels: Readonly<Record<string, string>>): string | undefined
   return directory === undefined ? address : `${address} in ${directory}`;
 }
 
+function labelOf(emulator: EmulatorListing, dim: (text: string) => string): string {
+  const name = EMULATOR_NAMES[emulator.kind];
+  if (!emulator.running || emulator.url === null) return `${name} ${dim('(not running)')}`;
+  if (emulator.error !== null) {
+    return `${name} at ${emulator.url}: could not list its instances (${emulator.error.code}: ${emulator.error.message})`;
+  }
+  return `${name} at ${emulator.url}`;
+}
+
+function statusOf(emulator: EmulatorListing): 'ok' | 'info' | 'error' {
+  if (emulator.error !== null) return 'error';
+  return emulator.running ? 'ok' : 'info';
+}
+
 export const createEmulatorListCommand = (list: ListEmulators) =>
   defineCommand({
     help: {
@@ -41,7 +55,8 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
         'instance each one holds.',
       description:
         'Needs no project: it shows every directory’s instances. An emulator that is not ' +
-        'running is listed with no instances. Each instance’s labels say which directory, ' +
+        'running is listed with no instances, and one that runs but cannot be listed is ' +
+        'shown with the error. Each instance’s labels say which directory, ' +
         'app and node started it. A stopped instance keeps its port and data until it is ' +
         'deleted.',
       examples: ['{bin} emulator list', '{bin} emulator list --json'],
@@ -59,10 +74,8 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
               {
                 kind: 'tree',
                 roots: emulators.map((emulator) => ({
-                  label: emulator.running
-                    ? `${EMULATOR_NAMES[emulator.kind]} at ${emulator.url ?? ''}`
-                    : `${EMULATOR_NAMES[emulator.kind]} ${ui.dim('(not running)')}`,
-                  status: emulator.running ? ('ok' as const) : ('info' as const),
+                  label: labelOf(emulator, ui.dim),
+                  status: statusOf(emulator),
                   children: emulator.instances.map((instance) => {
                     const by = startedBy(instance.labels);
                     return {

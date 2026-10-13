@@ -25,9 +25,16 @@ const listing: EmulatorList = {
           },
         },
       ],
+      error: null,
     },
-    { kind: 'database', running: false, instances: [] },
-    { kind: 'bucket', running: false, instances: [] },
+    { kind: 'database', running: false, url: null, instances: [], error: null },
+    {
+      kind: 'bucket',
+      running: true,
+      url: 'http://127.0.0.1:4301',
+      instances: [],
+      error: { code: 'DEV.EMULATOR_UNREACHABLE', message: 'connection refused' },
+    },
   ],
 };
 
@@ -74,6 +81,9 @@ describe('emulator list', () => {
     expect(result.stderr).toContain('gateway in /work/shop');
     expect(result.stderr).toContain('Database emulator');
     expect(result.stderr).toContain('not running');
+    expect(result.stderr).toContain(
+      'Bucket emulator at http://127.0.0.1:4301: could not list its instances (DEV.EMULATOR_UNREACHABLE: connection refused)',
+    );
   });
 
   test('a failure keeps its code', async () => {
