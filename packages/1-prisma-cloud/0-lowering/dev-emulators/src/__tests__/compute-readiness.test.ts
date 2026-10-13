@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as net from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { type ComputeClient, computeClient } from '../client.ts';
+import { type ComputeClient, computeClient, type InstanceInfo } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
@@ -59,10 +59,14 @@ async function startDaemon(entry?: string): Promise<ComputeClient> {
   return client;
 }
 
-async function statusOf(client: ComputeClient, app: string, id: string): Promise<string> {
-  const svc = (await client.listServices(app)).find((s) => s.id === id);
-  if (!svc) throw new Error(`service "${id}" not found in app "${app}"`);
-  return svc.status;
+async function instanceOf(client: ComputeClient, id: string): Promise<InstanceInfo> {
+  const instance = await client.getInstance(id);
+  if (!instance) throw new Error(`instance "${id}" not found`);
+  return instance;
+}
+
+async function statusOf(client: ComputeClient, id: string): Promise<string> {
+  return (await instanceOf(client, id)).status;
 }
 
 describe('with the default readiness timeout', () => {
@@ -74,10 +78,9 @@ describe('with the default readiness timeout', () => {
 
   test('a deployment returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-slow', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
-    const deployed = client.putDeployment('app-slow', 'web', {
-      address: 'slow.web',
+    const deployed = client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
       env: baseEnv({
@@ -85,24 +88,22 @@ describe('with the default readiness timeout', () => {
         LISTEN_DELAY_MS: String(LISTEN_DELAY_MS),
         ...servingBootstrapEnv('slow but ready'),
       }),
-      port: reserved.port,
     });
     await Bun.sleep(LISTEN_DELAY_MS / 2);
-    expect(await statusOf(client, 'app-slow', 'web')).not.toBe('running');
+    expect(await statusOf(client, reserved.id)).not.toBe('running');
 
     await deployed;
 
     expect(await acceptsConnection(reserved.port)).toBe(true);
-    expect(await statusOf(client, 'app-slow', 'web')).toBe('running');
+    expect(await statusOf(client, reserved.id)).toBe('running');
     const res = await fetch(`http://localhost:${String(reserved.port)}`);
     expect(await res.text()).toBe('slow but ready');
   }, 15_000);
 
   test('a session-resume start returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-resume', 'web');
-    await client.putDeployment('app-resume', 'web', {
-      address: 'resume.web',
+    const reserved = await client.createInstance({ labels: {} });
+    await client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
       env: baseEnv({
@@ -110,50 +111,47 @@ describe('with the default readiness timeout', () => {
         LISTEN_DELAY_MS: String(LISTEN_DELAY_MS),
         ...servingBootstrapEnv('resumed'),
       }),
-      port: reserved.port,
     });
-    await client.stopApp('app-resume');
+    await client.stopInstances([reserved.id]);
     expect(await acceptsConnection(reserved.port)).toBe(false);
 
-    await client.startApp('app-resume');
+    await client.startInstances([reserved.id]);
 
     expect(await acceptsConnection(reserved.port)).toBe(true);
-    expect(await statusOf(client, 'app-resume', 'web')).toBe('running');
+    expect(await statusOf(client, reserved.id)).toBe('running');
   }, 20_000);
 
   test('a service that exits before it listens fails the deployment, naming the service and its log', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-crash', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
-    const deployed = client.putDeployment('app-crash', 'web', {
-      address: 'crash.web',
+    const deployed = client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
       env: baseEnv(),
-      port: reserved.port,
     });
 
     await expect(deployed).rejects.toThrow(
-      /service "crash\.web" exited \(code 1\) before it accepted connections on its port \d+\. Its log: .*web\.log/,
+      new RegExp(
+        `instance "${reserved.id}" exited \\(code 1\\) before it accepted connections on its port ${String(reserved.port)}\\. Its log: .*${reserved.id}\\.log`,
+      ),
     );
   }, 15_000);
 
   test('a session-resume start of a service that exits before it listens fails, naming the service', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-crash-resume', 'web');
+    const reserved = await client.createInstance({ labels: {} });
     await client
-      .putDeployment('app-crash-resume', 'web', {
-        address: 'crash-resume.web',
+      .putDeployment(reserved.id, {
         artifactDir,
         artifactHash: 'h',
         env: baseEnv(),
-        port: reserved.port,
       })
       .catch(() => undefined);
-    await client.stopApp('app-crash-resume');
+    await client.stopInstances([reserved.id]);
 
-    await expect(client.startApp('app-crash-resume')).rejects.toThrow(
-      /service "crash-resume\.web" exited \(code 1\) before it accepted connections/,
+    await expect(client.startInstances([reserved.id])).rejects.toThrow(
+      `instance "${reserved.id}" exited (code 1) before it accepted connections`,
     );
   }, 15_000);
 });
@@ -167,7 +165,6 @@ describe('a start that is replaced, stopped or joined', () => {
 
   function delayedDeployment(port: number, hash: string, body: string, artifactDir: string) {
     return {
-      address: 'slow.web',
       artifactDir,
       artifactHash: hash,
       env: baseEnv({
@@ -175,52 +172,46 @@ describe('a start that is replaced, stopped or joined', () => {
         LISTEN_DELAY_MS: String(LISTEN_DELAY_MS),
         ...servingBootstrapEnv(body),
       }),
-      port,
     };
   }
 
   test('a redeploy of a running service is not running until the new process listens', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-redeploy', 'web');
+    const reserved = await client.createInstance({ labels: {} });
     await client.putDeployment(
-      'app-redeploy',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
     );
 
     const redeployed = client.putDeployment(
-      'app-redeploy',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v2', 'second', artifactDir),
     );
     await Bun.sleep(LISTEN_DELAY_MS / 2);
-    expect(await statusOf(client, 'app-redeploy', 'web')).not.toBe('running');
+    expect(await statusOf(client, reserved.id)).not.toBe('running');
 
     await redeployed;
 
-    expect(await statusOf(client, 'app-redeploy', 'web')).toBe('running');
+    expect(await statusOf(client, reserved.id)).toBe('running');
     const res = await fetch(`http://localhost:${String(reserved.port)}`);
     expect(await res.text()).toBe('second');
   }, 20_000);
 
   test('a repeated identical deployment during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-repeat', 'web');
+    const reserved = await client.createInstance({ labels: {} });
     await client.putDeployment(
-      'app-repeat',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
     );
 
     const redeployed = client.putDeployment(
-      'app-repeat',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v2', 'second', artifactDir),
     );
     await Bun.sleep(300);
     await client.putDeployment(
-      'app-repeat',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v2', 'second', artifactDir),
     );
 
@@ -232,20 +223,18 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a session-resume start during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-resume-redeploy', 'web');
+    const reserved = await client.createInstance({ labels: {} });
     await client.putDeployment(
-      'app-resume-redeploy',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
     );
 
     const redeployed = client.putDeployment(
-      'app-resume-redeploy',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v2', 'second', artifactDir),
     );
     await Bun.sleep(300);
-    await client.startApp('app-resume-redeploy');
+    await client.startInstances([reserved.id]);
 
     const res = await fetch(`http://localhost:${String(reserved.port)}`);
     expect(await res.text()).toBe('second');
@@ -254,36 +243,33 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('two concurrent session-resume starts share one process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-twice', 'web');
+    const reserved = await client.createInstance({ labels: {} });
     await client.putDeployment(
-      'app-twice',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'once', artifactDir),
     );
-    await client.stopApp('app-twice');
+    await client.stopInstances([reserved.id]);
 
-    await Promise.all([client.startApp('app-twice'), client.startApp('app-twice')]);
+    await Promise.all([client.startInstances([reserved.id]), client.startInstances([reserved.id])]);
 
-    const log = await (await fetch(`${client.baseUrl}/apps/app-twice/services/web/logs`)).text();
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
     expect(log.match(/booted pid/g)?.length).toBe(1);
-    const [svc] = await client.listServices('app-twice');
+    const svc = await instanceOf(client, reserved.id);
     expect(svc?.status).toBe('running');
     expect(log).toContain(`booted pid ${String(svc?.pid)}`);
   }, 20_000);
 
   test('a deployment replaced during its start waits for the replacement instead of failing', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-replaced', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
     const first = client.putDeployment(
-      'app-replaced',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
     );
     await Bun.sleep(300);
     const second = client.putDeployment(
-      'app-replaced',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v2', 'second', artifactDir),
     );
 
@@ -296,33 +282,27 @@ describe('a start that is replaced, stopped or joined', () => {
     const artifactDir = writeBootstrap(
       `process.on('SIGTERM', () => {});\n${DELAYED_SERVING_BOOTSTRAP}`,
     );
-    const reserved = await client.ensureService('app-stop-start', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
     const deployed = client
-      .putDeployment(
-        'app-stop-start',
-        'web',
-        delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
-      )
+      .putDeployment(reserved.id, delayedDeployment(reserved.port, 'v1', 'first', artifactDir))
       .catch(() => undefined);
     await Bun.sleep(300);
-    const [first] = await client.listServices('app-stop-start');
+    const first = await instanceOf(client, reserved.id);
     const firstPid = first?.pid;
     expect(firstPid).toBeDefined();
-    const stopped = client.stopApp('app-stop-start');
+    const stopped = client.stopInstances([reserved.id]);
     await Bun.sleep(200);
 
-    await client.startApp('app-stop-start');
+    await client.startInstances([reserved.id]);
     await stopped;
     await deployed;
 
-    const [svc] = await client.listServices('app-stop-start');
+    const svc = await instanceOf(client, reserved.id);
     expect(svc?.status).toBe('running');
     expect(svc?.pid).not.toBe(firstPid);
     expect(isPidAlive(firstPid ?? 0)).toBe(false);
-    const log = await (
-      await fetch(`${client.baseUrl}/apps/app-stop-start/services/web/logs`)
-    ).text();
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
     expect(log).not.toContain('[emulator] exited');
     expect(log.match(/booted pid/g)?.length).toBe(1);
 
@@ -334,55 +314,53 @@ describe('a start that is replaced, stopped or joined', () => {
 
   function quickDeployment(port: number, artifactDir: string) {
     return {
-      address: 'quick.web',
       artifactDir,
       artifactHash: 'v1',
       env: baseEnv({ PORT: String(port), LISTEN_DELAY_MS: '300', ...servingBootstrapEnv('x') }),
-      port,
     };
   }
 
   test('stop, start, stop: a stop during a waiting start cancels it', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-sss', 'web');
-    await client.putDeployment('app-sss', 'web', quickDeployment(reserved.port, artifactDir));
+    const reserved = await client.createInstance({ labels: {} });
+    await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
-    const firstStop = client.stopApp('app-sss');
+    const firstStop = client.stopInstances([reserved.id]);
     await Bun.sleep(200);
-    const start = client.startApp('app-sss').catch((e: unknown) => String(e));
+    const start = client.startInstances([reserved.id]).catch((e: unknown) => String(e));
     await Bun.sleep(200);
-    const secondStop = client.stopApp('app-sss');
+    const secondStop = client.stopInstances([reserved.id]);
     await Promise.all([firstStop, start, secondStop]);
 
-    expect(await statusOf(client, 'app-sss', 'web')).toBe('stopped');
+    expect(await statusOf(client, reserved.id)).toBe('stopped');
     expect(await start).toContain('was stopped before it accepted connections');
     expect(await acceptsConnection(reserved.port)).toBe(false);
   }, 30_000);
 
   test('an identical deployment during a stop waits for the stop and starts the service again', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-same-put', 'web');
-    await client.putDeployment('app-same-put', 'web', quickDeployment(reserved.port, artifactDir));
+    const reserved = await client.createInstance({ labels: {} });
+    await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
-    const stopped = client.stopApp('app-same-put');
+    const stopped = client.stopInstances([reserved.id]);
     await Bun.sleep(200);
-    await client.putDeployment('app-same-put', 'web', quickDeployment(reserved.port, artifactDir));
+    await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
     await stopped;
 
-    expect(await statusOf(client, 'app-same-put', 'web')).toBe('running');
+    expect(await statusOf(client, reserved.id)).toBe('running');
     expect(await acceptsConnection(reserved.port)).toBe(true);
-    const [svc] = await client.listServices('app-same-put');
+    const svc = await instanceOf(client, reserved.id);
     if (svc?.pid !== undefined) process.kill(svc.pid, 'SIGKILL');
   }, 30_000);
 
   test('a start during a delete of the app leaves no process behind', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-del-start', 'web');
-    await client.putDeployment('app-del-start', 'web', quickDeployment(reserved.port, artifactDir));
+    const reserved = await client.createInstance({ labels: {} });
+    await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
-    const deleted = client.deleteApp('app-del-start');
+    const deleted = client.deleteInstance(reserved.id);
     await Bun.sleep(200);
-    const start = await client.startApp('app-del-start').then(
+    const start = await client.startInstances([reserved.id]).then(
       () => 'ok',
       (e: unknown) => String(e),
     );
@@ -401,25 +379,24 @@ describe('a start that is replaced, stopped or joined', () => {
     for (const pid of leakedPids.split('\n').filter(Boolean)) process.kill(Number(pid), 'SIGKILL');
     expect(await leaked).toBe(false);
     expect(start).toContain('was stopped before it accepted connections');
-    expect(await client.listServices('app-del-start')).toEqual([]);
+    expect(await client.getInstance(reserved.id)).toBeUndefined();
   }, 30_000);
 
   test('a deployment stopped during its start fails saying it was stopped', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-stopped', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
     const deployed = client.putDeployment(
-      'app-stopped',
-      'web',
+      reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
     );
     await Bun.sleep(300);
-    await client.stopApp('app-stopped');
+    await client.stopInstances([reserved.id]);
 
     await expect(deployed).rejects.toThrow(
-      'service "slow.web" was stopped before it accepted connections',
+      `instance "${reserved.id}" was stopped before it accepted connections`,
     );
-    expect(await statusOf(client, 'app-stopped', 'web')).toBe('stopped');
+    expect(await statusOf(client, reserved.id)).toBe('stopped');
   }, 20_000);
 });
 
@@ -429,23 +406,23 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-silent', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
-    const deployed = client.putDeployment('app-silent', 'web', {
-      address: 'silent.web',
+    const deployed = client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
       env: baseEnv(),
-      port: reserved.port,
     });
 
     await expect(deployed).rejects.toThrow(
-      /service "silent\.web" did not accept connections on its port \d+ within 1s\. Its log: .*web\.log/,
+      new RegExp(
+        `instance "${reserved.id}" did not accept connections on its port ${String(reserved.port)} within 1s\\. Its log: .*${reserved.id}\\.log`,
+      ),
     );
-    const [svc] = await client.listServices('app-silent');
+    const svc = await instanceOf(client, reserved.id);
     expect(svc?.status).toBe('stopped');
     expect(svc?.pid).toBeUndefined();
-    const log = await (await fetch(`${client.baseUrl}/apps/app-silent/services/web/logs`)).text();
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
     expect(log).toContain('[emulator] did not accept connections on port');
   }, 15_000);
 
@@ -454,28 +431,20 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(CRASH_ONCE_THEN_SILENT_BOOTSTRAP);
-    const reserved = await client.ensureService('app-restart-silent', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
     await expect(
-      client.putDeployment('app-restart-silent', 'web', {
-        address: 'restart-silent.web',
+      client.putDeployment(reserved.id, {
         artifactDir,
         artifactHash: 'h',
         env: baseEnv(),
-        port: reserved.port,
       }),
     ).rejects.toThrow('exited (code 1)');
 
-    await waitFor(
-      async () => (await statusOf(client, 'app-restart-silent', 'web')) === 'held',
-      8000,
-      100,
-    );
-    const [svc] = await client.listServices('app-restart-silent');
+    await waitFor(async () => (await statusOf(client, reserved.id)) === 'held', 8000, 100);
+    const svc = await instanceOf(client, reserved.id);
     expect(svc?.pid).toBeUndefined();
-    const log = await (
-      await fetch(`${client.baseUrl}/apps/app-restart-silent/services/web/logs`)
-    ).text();
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
     expect(log).toContain('did not accept connections on port');
     expect(log).toContain('held');
   }, 20_000);
@@ -493,24 +462,20 @@ describe(`with ${SERVICE_READY_TIMEOUT_ENV}`, () => {
     process.env[SERVICE_READY_TIMEOUT_ENV] = '1000';
     const client = await startDaemon();
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-env-timeout', 'web');
+    const reserved = await client.createInstance({ labels: {} });
 
-    const deployed = client.putDeployment('app-env-timeout', 'web', {
-      address: 'env-timeout.web',
+    const deployed = client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
       env: baseEnv(),
-      port: reserved.port,
     });
 
     await expect(deployed).rejects.toThrow('within 1s. Its log: ');
     await expect(
-      client.putDeployment('app-env-timeout', 'web', {
-        address: 'env-timeout.web',
+      client.putDeployment(reserved.id, {
         artifactDir,
         artifactHash: 'h2',
         env: baseEnv(),
-        port: reserved.port,
       }),
     ).rejects.toThrow(SERVICE_READY_TIMEOUT_ENV);
   }, 15_000);

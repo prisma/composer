@@ -111,50 +111,65 @@ async function expectOk(res: Response): Promise<Response> {
   return res;
 }
 
-export interface ServiceInfo {
+export type InstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
+
+export interface InstanceInfo {
   readonly id: string;
-  readonly address: string;
+  /** Stored and returned verbatim; the emulator never reads them. */
+  readonly labels: Readonly<Record<string, string>>;
   readonly port: number;
   readonly url: string;
-  readonly status: 'running' | 'backoff' | 'held' | 'stopped';
+  readonly status: InstanceStatus;
   readonly pid?: number;
   readonly lastExitCode?: number;
   readonly artifactHash?: string;
   readonly logPath: string;
 }
 
+export interface CreateInstanceRequest {
+  readonly labels: Readonly<Record<string, string>>;
+  /** Used if no instance holds it and it is bindable; otherwise the emulator gives the lowest free port from 3000. */
+  readonly port?: number;
+}
+
 export interface DeploymentRequest {
-  readonly address: string;
   readonly artifactDir: string;
   readonly artifactHash: string;
   readonly env: Readonly<Record<string, string>>;
-  readonly port: number;
 }
 
-const SERVICE_STATUSES = new Set(['running', 'backoff', 'held', 'stopped']);
+const INSTANCE_STATUSES = new Set(['running', 'backoff', 'held', 'stopped']);
 
-function isServiceInfo(value: unknown): value is ServiceInfo {
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every((v) => typeof v === 'string')
+  );
+}
+
+function isInstanceInfo(value: unknown): value is InstanceInfo {
   return (
     typeof value === 'object' &&
     value !== null &&
     'id' in value &&
     typeof value.id === 'string' &&
-    'address' in value &&
-    typeof value.address === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
     'port' in value &&
     typeof value.port === 'number' &&
     'url' in value &&
     typeof value.url === 'string' &&
     'status' in value &&
     typeof value.status === 'string' &&
-    SERVICE_STATUSES.has(value.status) &&
+    INSTANCE_STATUSES.has(value.status) &&
     'logPath' in value &&
     typeof value.logPath === 'string'
   );
 }
 
-function isServiceInfoArray(value: unknown): value is ServiceInfo[] {
-  return Array.isArray(value) && value.every(isServiceInfo);
+function isInstanceInfoArray(value: unknown): value is InstanceInfo[] {
+  return Array.isArray(value) && value.every(isInstanceInfo);
 }
 
 interface HealthBody {
@@ -170,44 +185,42 @@ function isHealthBody(value: unknown): value is HealthBody {
   );
 }
 
-interface ServiceReservation {
-  readonly port: number;
-  readonly url: string;
-}
-
-function isServiceReservation(value: unknown): value is ServiceReservation {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'port' in value &&
-    typeof value.port === 'number' &&
-    'url' in value &&
-    typeof value.url === 'string'
-  );
-}
-
+/** Each compute instance is keyed by an id the emulator generates when it creates the instance. */
 export interface ComputeClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `PUT /apps/<app>/services/<id>` — reserves (or returns) the service's stable port. Idempotent. */
-  ensureService(app: string, id: string): Promise<{ port: number; url: string }>;
-  /** `PUT /apps/<app>/services/<id>/deployment`. */
-  putDeployment(app: string, id: string, deployment: DeploymentRequest): Promise<void>;
-  /** `GET /apps/<app>/services`. */
-  listServices(app: string): Promise<ServiceInfo[]>;
-  /** `GET /apps/<app>/services/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
+  /** `POST /instances` — creates a stopped instance holding a port until it is deleted. */
+  createInstance(request: CreateInstanceRequest): Promise<InstanceInfo>;
+  /** `GET /instances`. */
+  listInstances(): Promise<InstanceInfo[]>;
+  /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
+  getInstance(id: string): Promise<InstanceInfo | undefined>;
+  /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port. */
+  putDeployment(id: string, deployment: DeploymentRequest): Promise<void>;
+  /** `GET /instances/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
   followLogs(
-    app: string,
     id: string,
     signal?: AbortSignal,
     opts?: { readonly tail?: number },
   ): AsyncIterable<string>;
-  /** `POST /apps/<app>/stop`. */
-  stopApp(app: string): Promise<void>;
-  /** `POST /apps/<app>/start` — the session-resume signal; starts every service with a stored deployment that isn't already running. */
-  startApp(app: string): Promise<void>;
-  /** `DELETE /apps/<app>`. */
-  deleteApp(app: string): Promise<void>;
+  /** `POST /instances/start` — the session-resume signal; starts each listed instance with a stored deployment that isn't already running. */
+  startInstances(ids: readonly string[]): Promise<void>;
+  /** `POST /instances/stop`. The instances keep their ports. */
+  stopInstances(ids: readonly string[]): Promise<void>;
+  /** `DELETE /instances/<id>` — stops the instance and frees its port. Deleting an unknown id succeeds. */
+  deleteInstance(id: string): Promise<void>;
+}
+
+function instancePath(baseUrl: string, id: string): string {
+  return `${baseUrl}/instances/${encodeURIComponent(id)}`;
+}
+
+function postJson(body: unknown): RequestInit {
+  return {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
 export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
@@ -225,20 +238,37 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       return body;
     },
 
-    async ensureService(app, id) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/services/${encodeSegment(id)}`;
-      const res = await expectOk(await adminFetch(url, { method: 'PUT' }));
+    async createInstance(request) {
+      const res = await expectOk(await adminFetch(`${baseUrl}/instances`, postJson(request)));
       const body: unknown = await res.json();
-      if (!isServiceReservation(body)) {
-        throw new Error('malformed service-reservation response from the compute emulator');
+      if (!isInstanceInfo(body)) {
+        throw new Error('malformed instance-create response from the compute emulator');
       }
       return body;
     },
 
-    async putDeployment(app, id, deployment) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/services/${encodeSegment(id)}/deployment`;
+    async listInstances() {
+      const res = await expectOk(await adminFetch(`${baseUrl}/instances`));
+      const body: unknown = await res.json();
+      if (!isInstanceInfoArray(body)) {
+        throw new Error('malformed instances listing from the compute emulator');
+      }
+      return body;
+    },
+
+    async getInstance(id) {
+      const res = await adminFetch(instancePath(baseUrl, id));
+      if (res.status === 404) return undefined;
+      const body: unknown = await (await expectOk(res)).json();
+      if (!isInstanceInfo(body)) {
+        throw new Error('malformed instance response from the compute emulator');
+      }
+      return body;
+    },
+
+    async putDeployment(id, deployment) {
       await expectOk(
-        await adminFetch(url, {
+        await adminFetch(`${instancePath(baseUrl, id)}/deployment`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(deployment),
@@ -246,20 +276,10 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       );
     },
 
-    async listServices(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/services`;
-      const res = await expectOk(await adminFetch(url));
-      const body: unknown = await res.json();
-      if (!isServiceInfoArray(body)) {
-        throw new Error('malformed services listing from the compute emulator');
-      }
-      return body;
-    },
-
-    async *followLogs(app, id, signal, opts) {
+    async *followLogs(id, signal, opts) {
       const tail =
         opts?.tail !== undefined ? `&tail=${String(Math.max(0, Math.trunc(opts.tail)))}` : '';
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/services/${encodeSegment(id)}/logs?follow=1${tail}`;
+      const url = `${instancePath(baseUrl, id)}/logs?follow=1${tail}`;
       const res = await expectOk(await adminFetch(url, signal ? { signal } : undefined));
       const body = res.body;
       if (!body) return;
@@ -276,19 +296,16 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       }
     },
 
-    async stopApp(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/stop`;
-      await expectOk(await adminFetch(url, { method: 'POST' }));
+    async startInstances(ids) {
+      await expectOk(await adminFetch(`${baseUrl}/instances/start`, postJson({ ids })));
     },
 
-    async startApp(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/start`;
-      await expectOk(await adminFetch(url, { method: 'POST' }));
+    async stopInstances(ids) {
+      await expectOk(await adminFetch(`${baseUrl}/instances/stop`, postJson({ ids })));
     },
 
-    async deleteApp(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+    async deleteInstance(id) {
+      await expectOk(await adminFetch(instancePath(baseUrl, id), { method: 'DELETE' }));
     },
   };
 }

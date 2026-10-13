@@ -154,20 +154,19 @@ export async function skipContendedDaemonPorts(registryRoot: string): Promise<vo
 const DEFAULT_MIN_SERVICE_PORT = 3000;
 
 /**
- * Reserves dummy services on a fresh Compute daemon to push every REAL
- * service this test reserves afterward past any port near the default
- * service range already bound by a process outside this test's control —
- * unlike the daemon-registry case, a service's port is only chosen (never
- * verified against the real OS) at reservation time, so a service that
- * lands on a contended port fails to bind only once something actually
- * tries to `Bun.serve()` there.
+ * Creates dummy instances on a fresh Compute daemon to push every REAL
+ * instance this test creates afterward past any port near the default
+ * service range already bound by a process outside this test's control.
+ * The emulator checks that a port is bindable when it creates an instance,
+ * but a process outside this test can still bind it before the instance's
+ * service does.
  */
 export async function skipContendedServicePorts(
-  client: Pick<ComputeClient, 'ensureService'>,
+  client: Pick<ComputeClient, 'createInstance'>,
   minPort: number = DEFAULT_MIN_SERVICE_PORT,
 ): Promise<void> {
   const freePort = await getPort({ port: portNumbers(minPort, minPort + 200) });
   for (let i = 0; i < freePort - minPort; i++) {
-    await client.ensureService('port-skip', `dummy-${String(i)}`);
+    await client.createInstance({ labels: { purpose: 'port-skip' } });
   }
 }
