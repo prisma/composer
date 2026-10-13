@@ -32,7 +32,9 @@ Decisions taken while shaping, with the reasoning. Will's rulings are marked; th
 
 ## Ports (Will, 2026-10-13: agents in many worktrees start and stop environments)
 
-A stopped instance holds no port. Composer remembers each node's last port in the directory's mapping and requests it on the next start. A requested port is a preference: if another instance or process holds it, the emulator gives the lowest free port from 3000 and `prisma dev` prints one line saying the port changed. Failing instead would break an agent's `prisma dev` whenever another worktree happened to take the port. On a first start, ports still go in dependency order (prisma/composer#350).
+An instance keeps its port from creation until it is deleted, running or stopped. A deployment carries its port inside the service's environment (`COMPOSER_<ADDRESS>_PORT`) and in its dependents' URLs, and Alchemy's no-op reconcile on a warm start never redeploys, so a port that could change between sessions would leave services built for the old port. Releasing ports on stop was considered and dropped for that reason (implementer finding, S1a dispatch 1). The cost: instances left behind by deleted worktrees keep their ports until the later remove command deletes them.
+
+Composer remembers each node's port in the directory's mapping and requests it only when it has to create the instance again, for example after the emulator lost its state. A requested port is a preference: if another instance or process holds it, the emulator gives the lowest free port from 3000 and `prisma dev` prints one line saying the port changed. Failing instead would break an agent's `prisma dev` whenever another worktree happened to take the port. On a first start, ports still go in dependency order (prisma/composer#350).
 
 ## Labels Composer writes
 

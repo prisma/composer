@@ -30,7 +30,7 @@ On that model, two commands:
 
 - **`prisma dev stop`** stops every instance this directory's app has on the emulators: service processes and Postgres servers. Data stays. An agent runs it before deleting its worktree, or after a `prisma dev` that was killed without a chance to clean up.
 
-When `prisma dev` ends (Ctrl-C, SIGTERM, or a failure), it does the same stop. Today it stops only the service processes and leaves Postgres servers running. A stopped instance holds no port. Composer remembers each node's port in the directory's mapping and asks the emulator for that port on the next start, so ports stay stable within a directory without the emulator reserving them.
+When `prisma dev` ends (Ctrl-C, SIGTERM, or a failure), it does the same stop. Today it stops only the service processes and leaves Postgres servers running. An instance keeps its port from creation until it is deleted, whether it is running or stopped, so a directory's ports never change. When an instance has to be re-created (its emulator lost its state), Composer requests the port remembered in the directory's mapping.
 
 The shared emulator daemons themselves keep running; other directories may be using them.
 
@@ -38,7 +38,7 @@ The shared emulator daemons themselves keep running; other directories may be us
 
 # Non-goals
 
-- **Removing instances and their data.** A worktree that is deleted leaves its stopped instances' records and Postgres data on disk. They hold no process and no port. A remove command comes with the later emulator start/stop project.
+- **Removing instances and their data.** A worktree that is deleted leaves its stopped instances' records and Postgres data on disk. They hold no process, but they do keep their ports reserved. A remove command comes with the later emulator start/stop project.
 - **`prisma emulator start` and `stop`.** Planned; they change what runs on the shared emulators and get their own design.
 - **Printing a bare value when stdout is a pipe.** The CLI keeps its rule that a piped stdout gets JSON frames. Docs use `jq`. No output-format change to the CLI engine.
 - **`url` for things Composer didn't start.** `prisma dev url` takes a Composer node address only, never an emulator instance id.
@@ -72,7 +72,7 @@ The shared emulator daemons themselves keep running; other directories may be us
 
 - [ ] On a machine with nothing running, the getting-started app's `prisma dev module.ts` followed by the documented `curl "$(npx prisma dev url gateway | jq …)"` returns a quote, run from the published `prisma` binary.
 - [ ] Two directories running the same app at once get separate instances, and `prisma dev url gateway` in each returns that directory's own service.
-- [ ] After Ctrl-C of `prisma dev`, or `prisma dev stop` following a `kill -9`, no process of that directory's app is running and none of its ports is held; the next `prisma dev` gets the same ports.
+- [ ] After Ctrl-C of `prisma dev`, or `prisma dev stop` following a `kill -9`, no process of that directory's app is running; the next `prisma dev` gets the same ports.
 - [ ] `prisma emulator list` shows the services, databases and buckets of both, each labelled with the directory and address that started it.
 - [ ] No emulator source or state file contains an app name, address or directory outside a label value.
 - [ ] Composer ADRs record the emulator model (amending ADR-0041) and the new commands (amending ADR-0050). ADR-0044 lists the new codes.

@@ -27,7 +27,8 @@ Two directories running the same app get separate instances. `prisma dev` otherw
 - Instances are created by the emulator and get an id it generates. Create accepts `labels: Record<string, string>` and an optional requested port.
 - Every instance operation is by id: deploy, start, stop, delete, logs, get. There is no app grouping. Bulk start and stop take a list of ids.
 - `GET` for all instances returns id, port, url, status and labels.
-- Ports: a stopped instance holds no port. A requested port is used if it is free; otherwise the emulator gives the lowest free port from 3000 and reports the port it chose. With no request, it gives the lowest free port from 3000.
+- Ports: an instance gets its port at creation and keeps it until deleted, running or stopped (a deployment's env and its dependents' URLs contain the port, and a warm start does not redeploy). Create takes an optional requested port: used if free, otherwise the lowest free port from 3000; the response reports the port given. No request → lowest free from 3000.
+- The deployment body carries no Composer address. Emulator messages name the instance id; Composer adds the service's address when it rethrows, so what `prisma dev` prints is unchanged.
 - State written in the old app-keyed format is discarded on load. Local dev state is never migrated across versions (running-locally guide).
 - #353's readiness behaviour (a service is `running` only once its port accepts connections), the start and stop concurrency rules, crash supervision and the version-skew restart all carry over unchanged, keyed by instance instead of `(app, id)`.
 
@@ -81,6 +82,6 @@ Deliberately out:
 
 ## Dispatch plan
 
-1. **Emulator and client.** The Compute emulator and `computeClient` move to instance ids, labels, requested ports, list-all and bulk start and stop, with ports released on stop. The emulator's own tests are migrated and extended. *Hands to 2:* a Compute client keyed by instance id.
+1. **Emulator and client.** The Compute emulator and `computeClient` move to instance ids, labels, requested ports, list-all and bulk start and stop. The emulator's own tests are migrated and extended. *Hands to 2:* a Compute client keyed by instance id.
 2. **Composer's mapping.** The mapping module, the emulators hook, the providers, attach and teardown move to the mapping, including the change-of-port notice and the two-directory test. *Hands to 3:* `prisma dev` working end to end on instance ids.
 3. **Docs.** The ADR, local-dev.md, the guide and the skill. *Hands to:* the PR.
