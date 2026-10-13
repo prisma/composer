@@ -91,7 +91,7 @@ emulator, which owns the processes:
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
 - **Readiness** → a service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The deployment PUT and the session-resume start return only then, so a converge, and the `[dev] ready:` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
-- **Concurrent starts and stops** → a service has at most one process and at most one start in flight. A start request, or an identical deployment PUT, during a start waits for that start. A changed deployment PUT replaces it: the earlier caller gets the replacement's result. A stop ends it: the earlier caller fails with "was stopped before it accepted connections", unless a new start has begun by then, in which case it gets that start's result. A start or deployment during a stop waits until the stopped process has exited before it spawns a new one. The emulator ignores the exit of a process it no longer tracks, so a replaced process's exit never counts as a crash.
+- **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
   crash-looping is a held state visible in the service listing and the logs,
@@ -132,6 +132,36 @@ emulator, which owns the processes:
   on every attachment after each converge, before printing the front door
   (`run-dev.ts`) — so a warm start restarts what a previous session's
   Ctrl-C stopped even when the converge is all-noop.
+
+### Concurrent starts and stops
+
+Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited.
+
+| Request | Service state | What happens |
+| --- | --- | --- |
+| Session-resume start | Never deployed | Succeeds at once; nothing starts |
+| Session-resume start | A start in flight | Waits for that start and returns its result |
+| Session-resume start | `running`, no stop in progress | Succeeds at once |
+| Session-resume start | Anything else | Becomes the start in flight: waits for any stop to finish, then spawns |
+| Deployment PUT, identical | A deployment or resume start in flight | Waits for that start and returns its result |
+| Deployment PUT, identical | `running`, no start or stop in progress | Succeeds at once |
+| Deployment PUT | Anything else | Stores the deployment and becomes the start in flight, replacing any earlier one: waits for any stop to finish, stops the current process, then spawns |
+| Stop | Any | Ends the start in flight and any crash-backoff restart, stops the process, and sets `stopped` once it has exited |
+| App delete | Any | Marks each service deleted, stops it, and removes it; no start on a deleted service spawns |
+| Crash-backoff restart | After an unexpected exit | Becomes the start in flight and spawns at once |
+
+A start in flight ends with the first of these that applies:
+
+| Condition | Result |
+| --- | --- |
+| A newer start replaced it | The newer start's result |
+| `bun` is not on the deployment's `PATH` | Fails with how to install bun; the service is `stopped` |
+| A stop or an app delete ended it | Fails: "was stopped before it accepted connections" |
+| Its process exited | Fails with the exit code and the log path; crash supervision handles the exit |
+| The readiness timeout passed | Fails with the port, the log path and the timeout variable; the process is stopped and the service ends `stopped`, or `held` for a crash-backoff restart |
+| The port accepted a connection | Succeeds; the service is `running` |
+
+The exit of a process the emulator no longer tracks is ignored.
 
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables

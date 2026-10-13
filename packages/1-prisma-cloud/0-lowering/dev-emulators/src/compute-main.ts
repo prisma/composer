@@ -155,6 +155,8 @@ interface RuntimeInfo {
   start: InFlightStart | undefined;
   /** A stop still waiting for its child to exit. A start waits for it, so it never spawns beside a dying child. */
   stopping: Promise<void> | undefined;
+  /** Set when the app is being deleted: no start may spawn on this runtime again. */
+  deleted: boolean;
 }
 
 interface InFlightStart {
@@ -328,6 +330,7 @@ function main(): void {
         log: undefined,
         start: undefined,
         stopping: undefined,
+        deleted: false,
       };
       runtimes.set(key, rt);
     }
@@ -484,15 +487,18 @@ function main(): void {
     return result;
   }
 
-  /** The outcome for a start that a newer start replaced (that start's), or that a stop ended. */
-  function supersededResult(svc: ServiceRecord, rt: RuntimeInfo): Promise<SpawnResult> {
-    return (
-      rt.start?.result ??
-      Promise.resolve({
-        ok: false,
-        message: `service "${svc.address}" was stopped before it accepted connections`,
-      })
-    );
+  /** Undefined while `token` is still the service's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or an app delete. */
+  function supersededOutcome(
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    token: object,
+  ): Promise<SpawnResult> | undefined {
+    if (!rt.deleted && rt.start?.token === token) return undefined;
+    if (!rt.deleted && rt.start) return rt.start.result;
+    return Promise.resolve({
+      ok: false,
+      message: `service "${svc.address}" was stopped before it accepted connections`,
+    });
   }
 
   /**
@@ -558,7 +564,8 @@ function main(): void {
 
     const port = String(svc.port);
     const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs);
-    if (rt.start?.token !== token) return supersededResult(svc, rt);
+    const superseded = supersededOutcome(svc, rt, token);
+    if (superseded) return superseded;
     const service = `service "${svc.address}"`;
     if (outcome.kind === 'exited') {
       const how =
@@ -625,14 +632,18 @@ function main(): void {
   async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
     if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(app, id);
-    await stopsFinished(rt);
     if (rt.start) return rt.start.result;
-    if (svc.status === 'running') return { ok: true }; // idempotent — already up
-    clearBackoffTimer(rt);
-    clearStableTimer(rt);
-    rt.consecutiveFastExits = 0;
+    if (svc.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
     // A session resume is a fresh start — begin a clean log.
-    return spawnService(app, id, svc, rt, true);
+    return beginStart(rt, true, async (token) => {
+      clearBackoffTimer(rt);
+      await stopsFinished(rt);
+      const superseded = supersededOutcome(svc, rt, token);
+      if (superseded) return superseded;
+      clearStableTimer(rt);
+      rt.consecutiveFastExits = 0;
+      return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+    });
   }
 
   // ——— HTTP plumbing ———
@@ -711,7 +722,12 @@ function main(): void {
     if (!changed && rt.start?.fresh === true) {
       // The same deployment is already starting: answer when it does.
       result = await rt.start.result;
-    } else if (!changed && rt.start === undefined && svc.status === 'running') {
+    } else if (
+      !changed &&
+      rt.start === undefined &&
+      rt.stopping === undefined &&
+      svc.status === 'running'
+    ) {
       // A true no-op: nothing about this service's persisted record
       // changes, so nothing is mutated here either — nothing to persist.
       result = { ok: true };
@@ -728,7 +744,8 @@ function main(): void {
       result = await beginStart(rt, true, async (token) => {
         await stopsFinished(rt);
         await killChild(rt, TERMINATE_GRACE_MS);
-        if (rt.start?.token !== token) return supersededResult(svc, rt);
+        const superseded = supersededOutcome(svc, rt, token);
+        if (superseded) return superseded;
         svc.status = 'stopped';
         delete svc.pid;
         clearStableTimer(rt);
@@ -916,6 +933,7 @@ function main(): void {
       if (method === 'DELETE' && segments.length === 2) {
         const appRec = state[app];
         if (appRec) {
+          for (const id of Object.keys(appRec.services)) getRuntime(app, id).deleted = true;
           await Promise.all(
             Object.entries(appRec.services).map(([id, svc]) =>
               stopService(svc, getRuntime(app, id)),

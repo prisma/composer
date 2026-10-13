@@ -330,6 +330,80 @@ describe('a start that is replaced, stopped or joined', () => {
     await waitFor(() => !isPidAlive(svc?.pid ?? 0), 10_000, 100);
   }, 30_000);
 
+  const IGNORES_SIGTERM = `process.on('SIGTERM', () => {});\n${DELAYED_SERVING_BOOTSTRAP}`;
+
+  function quickDeployment(port: number, artifactDir: string) {
+    return {
+      address: 'quick.web',
+      artifactDir,
+      artifactHash: 'v1',
+      env: baseEnv({ PORT: String(port), LISTEN_DELAY_MS: '300', ...servingBootstrapEnv('x') }),
+      port,
+    };
+  }
+
+  test('stop, start, stop: a stop during a waiting start cancels it', async () => {
+    const artifactDir = writeBootstrap(IGNORES_SIGTERM);
+    const reserved = await client.ensureService('app-sss', 'web');
+    await client.putDeployment('app-sss', 'web', quickDeployment(reserved.port, artifactDir));
+
+    const firstStop = client.stopApp('app-sss');
+    await Bun.sleep(200);
+    const start = client.startApp('app-sss').catch((e: unknown) => String(e));
+    await Bun.sleep(200);
+    const secondStop = client.stopApp('app-sss');
+    await Promise.all([firstStop, start, secondStop]);
+
+    expect(await statusOf(client, 'app-sss', 'web')).toBe('stopped');
+    expect(await start).toContain('was stopped before it accepted connections');
+    expect(await acceptsConnection(reserved.port)).toBe(false);
+  }, 30_000);
+
+  test('an identical deployment during a stop waits for the stop and starts the service again', async () => {
+    const artifactDir = writeBootstrap(IGNORES_SIGTERM);
+    const reserved = await client.ensureService('app-same-put', 'web');
+    await client.putDeployment('app-same-put', 'web', quickDeployment(reserved.port, artifactDir));
+
+    const stopped = client.stopApp('app-same-put');
+    await Bun.sleep(200);
+    await client.putDeployment('app-same-put', 'web', quickDeployment(reserved.port, artifactDir));
+    await stopped;
+
+    expect(await statusOf(client, 'app-same-put', 'web')).toBe('running');
+    expect(await acceptsConnection(reserved.port)).toBe(true);
+    const [svc] = await client.listServices('app-same-put');
+    if (svc?.pid !== undefined) process.kill(svc.pid, 'SIGKILL');
+  }, 30_000);
+
+  test('a start during a delete of the app leaves no process behind', async () => {
+    const artifactDir = writeBootstrap(IGNORES_SIGTERM);
+    const reserved = await client.ensureService('app-del-start', 'web');
+    await client.putDeployment('app-del-start', 'web', quickDeployment(reserved.port, artifactDir));
+
+    const deleted = client.deleteApp('app-del-start');
+    await Bun.sleep(200);
+    const start = await client.startApp('app-del-start').then(
+      () => 'ok',
+      (e: unknown) => String(e),
+    );
+    await deleted;
+    await Bun.sleep(1000);
+
+    const leaked = acceptsConnection(reserved.port);
+    const leakedPids = Bun.spawnSync([
+      'lsof',
+      '-ti',
+      `tcp:${String(reserved.port)}`,
+      '-sTCP:LISTEN',
+    ])
+      .stdout.toString()
+      .trim();
+    for (const pid of leakedPids.split('\n').filter(Boolean)) process.kill(Number(pid), 'SIGKILL');
+    expect(await leaked).toBe(false);
+    expect(start).toContain('was stopped before it accepted connections');
+    expect(await client.listServices('app-del-start')).toEqual([]);
+  }, 30_000);
+
   test('a deployment stopped during its start fails saying it was stopped', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
     const reserved = await client.ensureService('app-stopped', 'web');
