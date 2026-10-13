@@ -14,15 +14,18 @@ import {
   ensureDaemon,
   stopDaemon,
 } from '@internal/dev-emulators';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { packageComputeArtifact } from '@internal/lowering/compute';
 import { App, Deployment } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
-import { LocalAppProvider, LocalDeploymentProvider, reserveServicePorts } from '../compute.ts';
+import { ensureServiceInstances, LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
 import {
+  deleteRecordedInstances,
   EMULATOR_INSTANCES_FILE,
   type EmulatorInstances,
   readEmulatorInstances,
   retirePreviousApp,
+  withServiceAddresses,
 } from '../emulator-instances.ts';
 
 const APP = 'shared-app';
@@ -71,6 +74,17 @@ function artifactFor(address: string, version: string): string {
   return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
 }
 
+/** A packaged artifact whose service exits before it listens. */
+function crashingArtifactFor(address: string): string {
+  const bundleDir = fs.mkdtempSync(path.join(root, `bundle-${address}-`));
+  fs.writeFileSync(
+    path.join(bundleDir, 'main.js'),
+    'export default { run: async () => { process.exit(1); } };\n',
+  );
+  fs.writeFileSync(path.join(bundleDir, 'server.js'), '');
+  return packageComputeArtifact({ id: address, bundleDir, appEntry: 'server.js', address }).path;
+}
+
 const reconcileInput = (id: string, news: Record<string, unknown>) =>
   ({
     id,
@@ -87,6 +101,7 @@ async function deploy(
   devDir: string,
   address: string,
   version: string,
+  artifactPath: string = artifactFor(address, version),
 ): Promise<Deployment['Attributes']> {
   const provider = await Effect.runPromise(
     Deployment.Provider.pipe(Effect.provide(LocalDeploymentProvider({ container, devDir }))),
@@ -95,7 +110,7 @@ async function deploy(
     provider.reconcile(
       reconcileInput(`${address}-deployment`, {
         app: address,
-        artifactPath: artifactFor(address, version),
+        artifactPath,
       }),
     ),
   );
@@ -135,8 +150,8 @@ describe('two directories running the same app', () => {
     const a = projectDir('a');
     const b = projectDir('b');
     await Promise.all([
-      reserveServicePorts(container, a.devDir, ADDRESSES),
-      reserveServicePorts(container, b.devDir, ADDRESSES),
+      ensureServiceInstances(container, a.devDir, ADDRESSES),
+      ensureServiceInstances(container, b.devDir, ADDRESSES),
     ]);
     await Promise.all(
       [a, b].flatMap(({ devDir }) => ADDRESSES.map((address) => deploy(devDir, address, 'v1'))),
@@ -170,11 +185,11 @@ describe('two directories running the same app', () => {
 describe('reusing the recorded instances', () => {
   test('a recorded instance the emulator no longer has is re-created on its remembered port', async () => {
     const { directory, devDir } = projectDir('lost');
-    await reserveServicePorts(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, ['quotes']);
     const before = await nodeOf(directory, 'quotes');
     await computeClient().deleteInstance(before.id);
 
-    const changes = await reserveServicePorts(container, devDir, ['quotes']);
+    const changes = await ensureServiceInstances(container, devDir, ['quotes']);
 
     const after = await nodeOf(directory, 'quotes');
     expect(after.id).not.toBe(before.id);
@@ -184,12 +199,12 @@ describe('reusing the recorded instances', () => {
 
   test('a remembered port another instance now holds gives a new port, reported as a change', async () => {
     const { directory, devDir } = projectDir('moved');
-    await reserveServicePorts(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, ['quotes']);
     const before = await nodeOf(directory, 'quotes');
     await computeClient().deleteInstance(before.id);
     await computeClient().createInstance({ labels: {}, port: before.port });
 
-    const changes = await reserveServicePorts(container, devDir, ['quotes']);
+    const changes = await ensureServiceInstances(container, devDir, ['quotes']);
 
     const after = await nodeOf(directory, 'quotes');
     expect(after.port).not.toBe(before.port);
@@ -198,13 +213,13 @@ describe('reusing the recorded instances', () => {
 
   test('a warm restart after a stop reuses the same instances and ports', async () => {
     const { directory, devDir } = projectDir('warm');
-    await reserveServicePorts(container, devDir, ADDRESSES);
+    await ensureServiceInstances(container, devDir, ADDRESSES);
     for (const address of ADDRESSES) await deploy(devDir, address, 'v1');
     const before = (await mappingOf(directory))?.nodes;
     const ids = Object.values(before ?? {}).map((n) => n.id);
     await computeClient().stopInstances(ids);
 
-    const changes = await reserveServicePorts(container, devDir, ADDRESSES);
+    const changes = await ensureServiceInstances(container, devDir, ADDRESSES);
     await computeClient().startInstances(ids);
 
     expect(changes).toEqual([]);
@@ -216,19 +231,19 @@ describe('reusing the recorded instances', () => {
 
   test('a deployment whose instance was re-created is deployed again even when nothing changed', async () => {
     const { directory, devDir } = projectDir('redeploy');
-    await reserveServicePorts(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, ['quotes']);
     const deployed = await deploy(devDir, 'quotes', 'v1');
     expect(await deploymentDiff(devDir, deployed)).toBeUndefined();
 
     await computeClient().deleteInstance((await nodeOf(directory, 'quotes')).id);
-    await reserveServicePorts(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, ['quotes']);
 
     expect(await deploymentDiff(devDir, deployed)).toEqual({ action: 'update' });
   }, 30_000);
 
   test("deleting a removed service's App deletes its instance and forgets it", async () => {
     const { directory, devDir } = projectDir('removed');
-    await reserveServicePorts(container, devDir, ADDRESSES);
+    await ensureServiceInstances(container, devDir, ADDRESSES);
     const quotes = await nodeOf(directory, 'quotes');
     const provider = await appProvider(devDir);
 
@@ -241,20 +256,25 @@ describe('reusing the recorded instances', () => {
 
 test('the record is one JSON file in the dev directory, readable from the directory alone', async () => {
   const { directory, devDir } = projectDir('file');
-  await reserveServicePorts(container, devDir, ['quotes']);
+  await ensureServiceInstances(container, devDir, ['quotes']);
 
   const onDisk: unknown = JSON.parse(
     fs.readFileSync(path.join(devDir, EMULATOR_INSTANCES_FILE), 'utf8'),
   );
   const node = await nodeOf(directory, 'quotes');
   expect(onDisk).toEqual({ app: APP, nodes: { quotes: node } });
+  expect((await computeClient().getInstance(node.id))?.labels).toEqual({
+    'composer.directory': directory,
+    'composer.app': APP,
+    'composer.address': 'quotes',
+  });
   expect(await readEmulatorInstances(path.join(root, 'never-ran'))).toBeUndefined();
 });
 
 describe('switching apps in a directory', () => {
   test("running another app deletes the previous app's compute instances and starts a new record", async () => {
     const { directory, devDir } = projectDir('switch');
-    await reserveServicePorts(container, devDir, ADDRESSES);
+    await ensureServiceInstances(container, devDir, ADDRESSES);
     const previous = Object.values((await mappingOf(directory))?.nodes ?? {});
 
     const retired = await retirePreviousApp({ devDir, app: 'another-app' });
@@ -266,10 +286,130 @@ describe('switching apps in a directory', () => {
 
   test('running the same app again retires nothing', async () => {
     const { directory, devDir } = projectDir('same');
-    await reserveServicePorts(container, devDir, ['quotes']);
+    await ensureServiceInstances(container, devDir, ['quotes']);
     const quotes = await nodeOf(directory, 'quotes');
 
     expect(await retirePreviousApp({ devDir, app: APP })).toBeUndefined();
     expect(await computeClient().getInstance(quotes.id)).toBeDefined();
   });
+});
+
+describe('--fresh', () => {
+  const otherApp: ContainerInstance = {
+    input: { appName: 'other-app', stage: undefined },
+    serialize: () => 'x',
+  };
+
+  async function liveIds(ids: readonly string[]): Promise<string[]> {
+    const live = await Promise.all(ids.map((id) => computeClient().getInstance(id)));
+    return live.flatMap((instance) => (instance ? [instance.id] : []));
+  }
+
+  test('deletes the recorded instances even when the record names the app run here before', async () => {
+    const { directory, devDir } = projectDir('fresh-previous');
+    await ensureServiceInstances(container, devDir, ADDRESSES);
+    const ids = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
+
+    await deleteRecordedInstances(devDir);
+
+    expect(await liveIds(ids)).toEqual([]);
+    expect((await mappingOf(directory))?.nodes).toEqual({});
+  });
+
+  test('after switching apps, leaves no instance of either app', async () => {
+    const { directory, devDir } = projectDir('fresh-switch');
+    await ensureServiceInstances(container, devDir, ADDRESSES);
+    const first = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
+    await retirePreviousApp({ devDir, app: 'other-app' });
+    await ensureServiceInstances(otherApp, devDir, ['web']);
+    const second = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
+
+    await deleteRecordedInstances(devDir);
+
+    expect(await liveIds([...first, ...second])).toEqual([]);
+  });
+});
+
+describe("the App provider's diff", () => {
+  async function reconcileApp(devDir: string, address: string): Promise<App['Attributes']> {
+    const provider = await appProvider(devDir);
+    return Effect.runPromise(
+      provider.reconcile(
+        reconcileInput(`${address}-svc`, { project: 'local', displayName: address }),
+      ),
+    );
+  }
+
+  async function appDiff(devDir: string, output: App['Attributes']): Promise<unknown> {
+    const diff = (await appProvider(devDir)).diff;
+    if (!diff) throw new Error('the local App provider has no diff');
+    return Effect.runPromise(diff({ output } as never));
+  }
+
+  test('asks for an update when the re-created instance got another port', async () => {
+    const { directory, devDir } = projectDir('app-moved');
+    await ensureServiceInstances(container, devDir, ['quotes']);
+    const before = await reconcileApp(devDir, 'quotes');
+    const recorded = await nodeOf(directory, 'quotes');
+    await computeClient().deleteInstance(recorded.id);
+    await computeClient().createInstance({ labels: {}, port: recorded.port });
+    await ensureServiceInstances(container, devDir, ['quotes']);
+
+    expect(await appDiff(devDir, before)).toEqual({ action: 'update' });
+    const after = await reconcileApp(devDir, 'quotes');
+    expect(after.appEndpointDomain).toBe(
+      `http://localhost:${String((await nodeOf(directory, 'quotes')).port)}`,
+    );
+    expect(after.appEndpointDomain).not.toBe(before.appEndpointDomain);
+  });
+
+  test('asks for nothing when the re-created instance kept its port', async () => {
+    const { directory, devDir } = projectDir('app-kept');
+    await ensureServiceInstances(container, devDir, ['quotes']);
+    const before = await reconcileApp(devDir, 'quotes');
+    await computeClient().deleteInstance((await nodeOf(directory, 'quotes')).id);
+    await ensureServiceInstances(container, devDir, ['quotes']);
+
+    expect(await appDiff(devDir, before)).toBeUndefined();
+  });
+});
+
+describe('errors name services by address', () => {
+  const nodes = [{ address: 'shop.quotes', instance: { id: 'svc_0123456789abcdef' } }];
+
+  test('an instance id in a plain error becomes the service address, keeping the original as cause', () => {
+    const original = new Error(
+      'request failed (500): instance "svc_0123456789abcdef" exited (code 1) before it accepted connections',
+    );
+
+    const rewritten = withServiceAddresses(original, nodes);
+
+    expect(rewritten).toBeInstanceOf(Error);
+    expect((rewritten as Error).message).toBe(
+      'request failed (500): service "shop.quotes" exited (code 1) before it accepted connections',
+    );
+    expect((rewritten as Error).cause).toBe(original);
+  });
+
+  test('a structured error is left untouched', () => {
+    const structured = new CliStructuredError(
+      'DEV.EMULATOR_UNREACHABLE',
+      'instance "svc_0123456789abcdef" unreachable',
+    );
+
+    expect(withServiceAddresses(structured, nodes)).toBe(structured);
+  });
+
+  test('a deployed service that exits before it listens fails naming its address', async () => {
+    const { devDir } = projectDir('crash');
+    await ensureServiceInstances(container, devDir, ['quotes']);
+
+    const failure = await deploy(devDir, 'quotes', 'v1', crashingArtifactFor('quotes')).then(
+      () => undefined,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+    expect(failure).toContain('service "quotes" exited (code 1) before it accepted connections');
+    expect(failure).not.toContain('instance "svc_');
+  }, 30_000);
 });

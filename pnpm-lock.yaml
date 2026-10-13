@@ -886,6 +886,9 @@ importers:
         specifier: ^7.5.21
         version: 7.5.21
     devDependencies:
+      '@internal/foundation':
+        specifier: workspace:0.29.1
+        version: link:../../../0-framework/0-foundation/foundation
       '@internal/tsdown-config':
         specifier: workspace:0.29.1
         version: link:../../../0-framework/0-foundation/tsdown-config

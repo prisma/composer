@@ -237,7 +237,7 @@ export function LocalAppProvider(
  * the `App` resources' `displayName`s. Returns the services whose instance had
  * to be re-created and could not get its remembered port back.
  */
-export async function reserveServicePorts(
+export async function ensureServiceInstances(
   container: ContainerInstance | undefined,
   devDir: string,
   serviceAppNames: readonly string[],
@@ -250,7 +250,7 @@ export async function reserveServicePorts(
       if (portChange) changes.push(portChange);
     } catch (cause) {
       const reason = cause instanceof Error ? cause.message : String(cause);
-      throw new Error(`reserving a local port for service "${service}" failed: ${reason}`, {
+      throw new Error(`ensuring the local service for service "${service}" failed: ${reason}`, {
         cause,
       });
     }

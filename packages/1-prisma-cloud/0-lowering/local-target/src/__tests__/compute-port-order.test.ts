@@ -7,7 +7,7 @@ import type { ContainerInstance } from '@internal/core/config';
 import { EMULATORS_DIR_ENV, ensureDaemon, stopDaemon } from '@internal/dev-emulators';
 import { App } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
-import { LocalAppProvider, reserveServicePorts } from '../compute.ts';
+import { ensureServiceInstances, LocalAppProvider } from '../compute.ts';
 import { computeNodeInstances, ensureComputeInstance } from '../emulator-instances.ts';
 
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
@@ -66,7 +66,7 @@ test('each App provider returns the port reserved for its service, even when the
   for (let run = 0; run < 10; run++) {
     const appName = `port-order-${String(run)}`;
     const container = fakeContainer(appName);
-    await reserveServicePorts(container, devDir, ['quotes', 'gateway']);
+    await ensureServiceInstances(container, devDir, ['quotes', 'gateway']);
     const reserved = await reservedPorts(appName);
 
     const [gateway, quotes] = await Promise.all([
@@ -85,7 +85,7 @@ test('a failed reservation names the service', async () => {
   await stopDaemon('compute', { registryRoot });
 
   await expect(
-    reserveServicePorts(fakeContainer('port-order-down'), devDir, ['quotes']),
+    ensureServiceInstances(fakeContainer('port-order-down'), devDir, ['quotes']),
   ).rejects.toThrow('service "quotes"');
 });
 
@@ -95,7 +95,7 @@ test('reserving the services of an app that already has ports keeps those ports'
   const { instance: gateway } = await ensureComputeInstance(scope, 'gateway');
   const { instance: quotes } = await ensureComputeInstance(scope, 'quotes');
 
-  await reserveServicePorts(container, devDir, ['quotes', 'gateway']);
+  await ensureServiceInstances(container, devDir, ['quotes', 'gateway']);
 
   expect(await reconcileApp(container, 'quotes')).toBe(quotes.port);
   expect(await reconcileApp(container, 'gateway')).toBe(gateway.port);
@@ -103,7 +103,7 @@ test('reserving the services of an app that already has ports keeps those ports'
 
 test('a dotted service address reserves the same emulator instance the App provider uses', async () => {
   const container = fakeContainer('port-order-nested');
-  await reserveServicePorts(container, devDir, ['shop.quotes']);
+  await ensureServiceInstances(container, devDir, ['shop.quotes']);
 
   const listed = (await computeNodeInstances({ devDir, app: 'port-order-nested' })).map(
     (node) => node.instance,

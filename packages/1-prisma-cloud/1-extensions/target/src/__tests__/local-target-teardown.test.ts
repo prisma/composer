@@ -25,8 +25,8 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
-  deleteComputeInstances: async ({ app }: { app: string }) => {
-    events.push(`delete compute ${app}`);
+  deleteRecordedInstances: async (devDir: string) => {
+    events.push(`delete compute ${devDir.endsWith('/.prisma-composer/dev') ? 'recorded' : devDir}`);
     if (computeDeleteFails) throw new Error('compute delete failed');
   },
   removeLocalPaths: () => {
@@ -49,10 +49,10 @@ beforeEach(() => {
   computeDeleteFails = false;
 });
 
-test('starts the compute emulator before deleting the app from it, so a stopped emulator still forgets the old ports', async () => {
+test('starts the compute emulator before deleting the recorded instances, so a stopped emulator still forgets the recorded instances', async () => {
   await runDevTeardown({ container, stage: undefined });
 
-  expect(events).toEqual(['daemon compute', 'delete compute my-app', 'remove local paths']);
+  expect(events).toEqual(['daemon compute', 'delete compute recorded', 'remove local paths']);
 });
 
 test('a failed compute delete still removes the local state, then fails the teardown', async () => {
@@ -61,5 +61,5 @@ test('a failed compute delete still removes the local state, then fails the tear
   await expect(runDevTeardown({ container, stage: undefined })).rejects.toThrow(
     'compute delete failed',
   );
-  expect(events).toEqual(['daemon compute', 'delete compute my-app', 'remove local paths']);
+  expect(events).toEqual(['daemon compute', 'delete compute recorded', 'remove local paths']);
 });

@@ -19,7 +19,7 @@
 import type { TeardownInput } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
 import { bucketsClient, ensureDaemon, postgresClient } from '@internal/dev-emulators';
-import { deleteComputeInstances, removeLocalPaths } from '@internal/local-target';
+import { deleteRecordedInstances, removeLocalPaths } from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
@@ -43,7 +43,7 @@ export async function runDevTeardown(input: TeardownInput): Promise<void> {
   // daemon would hand the old ports back; start it so the delete always lands.
   try {
     await ensureDaemon('compute', daemonEntry('compute'));
-    await deleteComputeInstances({ devDir, app });
+    await deleteRecordedInstances(devDir);
   } finally {
     await tolerateUnreachable(() => bucketsClient().deleteApp(app));
     removeLocalPaths([devDir, `${cwd}/.alchemy/state/${app}/dev`]);

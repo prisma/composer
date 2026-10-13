@@ -22,12 +22,12 @@ mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
   retirePreviousApp: async () => retiredApp,
-  reserveServicePorts: async (
+  ensureServiceInstances: async (
     container: ContainerInstance | undefined,
     _devDir: string,
     addresses: readonly string[],
   ) => {
-    events.push(`reserve ${container?.input.appName ?? '?'}: ${addresses.join(', ')}`);
+    events.push(`ensure ${container?.input.appName ?? '?'}: ${addresses.join(', ')}`);
     return portChanges;
   },
 }));
@@ -74,7 +74,7 @@ afterEach(() => {
   consoleLog.mockClear();
 });
 
-test('reserves the getting-started services in dependency order once the compute emulator is up', async () => {
+test('ensures the getting-started services in dependency order once the compute emulator is up', async () => {
   const graph = Load(
     module('my-app', ({ provision }) => {
       const quotes = provision(
@@ -88,10 +88,10 @@ test('reserves the getting-started services in dependency order once the compute
 
   await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
 
-  expect(events).toEqual(['daemon compute', 'reserve my-app: quotes, gateway']);
+  expect(events).toEqual(['daemon compute', 'ensure my-app: quotes, gateway']);
 });
 
-test('reserves only services, in declaration order when nothing orders them', async () => {
+test('ensures only services, in declaration order when nothing orders them', async () => {
   const graph = Load(
     module('my-app', ({ provision }) => {
       provision(compute({ name: 'web', deps: {}, build }));
@@ -102,7 +102,7 @@ test('reserves only services, in declaration order when nothing orders them', as
 
   await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
 
-  expect(events).toEqual(['daemon compute', 'reserve my-app: web, admin', 'daemon postgres']);
+  expect(events).toEqual(['daemon compute', 'ensure my-app: web, admin', 'daemon postgres']);
 });
 
 test('prints one line for each service that could not get its remembered port back', async () => {

@@ -179,11 +179,17 @@ export async function deleteComputeInstance(scope: AppScope, address: string): P
   });
 }
 
-/** Deletes every compute instance recorded for the app and forgets them. */
-export async function deleteComputeInstances(scope: AppScope): Promise<void> {
-  for (const { address } of await computeNodeInstances(scope)) {
-    await deleteComputeInstance(scope, address);
-  }
+/**
+ * `--fresh`: deletes every instance the directory's record names, whichever
+ * app wrote it, then empties the record. Teardown runs before the emulators
+ * hook, so the record may still name the app run here before.
+ */
+export async function deleteRecordedInstances(devDir: string): Promise<void> {
+  const current = await store(devDir).read();
+  if (current === undefined) return;
+  const client = computeClient();
+  for (const instance of Object.values(current.nodes)) await client.deleteInstance(instance.id);
+  await store(devDir).update(() => ({ app: current.app, nodes: {} }));
 }
 
 /**
