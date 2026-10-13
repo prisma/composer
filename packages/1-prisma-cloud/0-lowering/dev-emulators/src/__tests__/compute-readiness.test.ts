@@ -353,7 +353,7 @@ describe('a start that is replaced, stopped or joined', () => {
     if (svc?.pid !== undefined) process.kill(svc.pid, 'SIGKILL');
   }, 30_000);
 
-  test('a start during a delete of the app leaves no process behind', async () => {
+  test('a start during an instance delete leaves no process behind', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
     const reserved = await client.createInstance({ labels: {} });
     await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));

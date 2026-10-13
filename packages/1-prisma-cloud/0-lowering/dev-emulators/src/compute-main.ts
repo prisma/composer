@@ -877,12 +877,14 @@ function main(): void {
   ): Promise<void> {
     const body = await readJsonBody(req);
     if (!isIdsBody(body)) return text(res, 400, 'malformed body: expected { "ids": string[] }');
-    const selected = instancesByIds(body.ids);
-    if ('unknown' in selected) return unknownInstances(res, selected.unknown);
     if (action === 'stop') {
-      await Promise.all(selected.found.map((inst) => stopInstance(inst, getRuntime(inst.id))));
+      // An unknown instance runs nothing, so stopping it is already done.
+      const known = body.ids.flatMap((id) => state.instances[id] ?? []);
+      await Promise.all(known.map((inst) => stopInstance(inst, getRuntime(inst.id))));
       return noContent(res);
     }
+    const selected = instancesByIds(body.ids);
+    if ('unknown' in selected) return unknownInstances(res, selected.unknown);
     const results = await Promise.all(selected.found.map(startInstance));
     const failures = results.flatMap((r) => (r.ok ? [] : [r.message ?? 'failed to start']));
     if (failures.length > 0) return text(res, 500, failures.join('\n'));

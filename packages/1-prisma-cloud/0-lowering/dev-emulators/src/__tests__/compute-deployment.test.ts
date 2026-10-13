@@ -368,7 +368,7 @@ describe('session resume (POST /instances/start)', () => {
     await waitFor(async () => (await deployedService(reserved.id)).status !== 'held', 2000, 50);
   }, 30_000);
 
-  test('start on an already-running app is a no-op — pids unchanged', async () => {
+  test('start on running instances is a no-op — pids unchanged', async () => {
     const client = computeClient({ registryRoot });
     const dir = writeBootstrap(SERVING_BOOTSTRAP);
     const reserved = await client.createInstance({ labels: {} });

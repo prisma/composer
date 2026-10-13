@@ -75,13 +75,25 @@ describe('creating and listing instances', () => {
     expect(await client.getInstance('svc_0000000000000000')).toBeUndefined();
   });
 
-  test('a start or stop naming an unknown instance fails and names it', async () => {
+  test('a start naming an unknown instance fails, names it, and starts nothing', async () => {
     const known = await client.createInstance({ labels: {} });
+    await deployServing(known.id, known.port, 'known');
+    await client.stopInstances([known.id]);
+
     await expect(client.startInstances([known.id, 'svc_0000000000000000'])).rejects.toThrow(
       '"svc_0000000000000000"',
     );
-    await expect(client.stopInstances(['svc_0000000000000000'])).rejects.toThrow('(404)');
-  });
+    expect(await statusOf(known.id)).toBe('stopped');
+  }, 15_000);
+
+  test('a stop skips an unknown instance and stops the others', async () => {
+    const known = await client.createInstance({ labels: {} });
+    await deployServing(known.id, known.port, 'known');
+
+    await client.stopInstances([known.id, 'svc_0000000000000000']);
+
+    expect(await statusOf(known.id)).toBe('stopped');
+  }, 15_000);
 
   test('a malformed instance id is rejected with 400', async () => {
     const res = await fetch(`${client.baseUrl}/instances/web`);
@@ -243,27 +255,53 @@ describe('persisted state', () => {
 });
 
 /**
- * The emulator knows nothing about Composer: an app name, a node address or
- * a project directory may reach it only as label values. These checks fail
- * when the emulator's code names one of those concepts, or when one of them
- * ends up in its state or files anywhere other than inside labels.
+ * The emulator never interprets Composer's data. An app name, a node address
+ * or a project directory reaches it only as label values and inside the
+ * opaque deployment payload (the artifact directory and the env), which it
+ * stores verbatim. These checks fail when the emulator's code names one of
+ * those concepts, or when one of them shows up anywhere else: a route, a
+ * state key, a file name or a field the emulator generates.
  */
-describe('the emulator stores Composer names only in labels', () => {
-  const markers = {
-    'composer.app': 'zz-app-marker',
-    'composer.address': 'zz-address-marker',
-    'composer.directory': '/zz-directory-marker/project',
+describe('the emulator never interprets Composer data', () => {
+  const app = 'zzappmarker';
+  const address = 'zzaddressmarker';
+  const directory = path.join(tempDir('marker-project'), 'zzdirectorymarker');
+  const markers = [app, address, 'zzdirectorymarker'];
+  const labels = {
+    'composer.directory': directory,
+    'composer.app': app,
+    'composer.address': address,
   };
-  const markerValues = Object.values(markers);
 
-  function withoutLabels(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(withoutLabels);
+  /** A deployment shaped like Composer's: its artifact unpacked under the project's dev directory, env keys named after the address. */
+  function composerShapedDeployment(port: number) {
+    const artifactDir = path.join(directory, '.prisma-composer', 'dev', 'artifacts', 'abc123');
+    fs.mkdirSync(artifactDir, { recursive: true });
+    fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), SERVING_BOOTSTRAP);
+    const env = baseEnv({
+      PORT: String(port),
+      [`COMPOSER_${address.toUpperCase()}_PORT`]: String(port),
+      [`COMPOSER_${address.toUpperCase()}_INPUT`]: '{}',
+      COMPOSER_GATEWAY_QUOTES_URL: 'http://localhost:3001',
+      ...servingBootstrapEnv('marker test'),
+    });
+    return { artifactDir, artifactHash: 'abc123', env };
+  }
+
+  function without(value: unknown, keys: readonly string[]): unknown {
+    if (Array.isArray(value)) return value.map((item) => without(item, keys));
     if (typeof value !== 'object' || value === null) return value;
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => key !== 'labels')
-        .map(([key, field]) => [key, withoutLabels(field)]),
+        .filter(([key]) => !keys.includes(key))
+        .map(([key, field]) => [key, without(field, keys)]),
     );
+  }
+
+  function keysOf(value: unknown): string[] {
+    if (Array.isArray(value)) return value.flatMap(keysOf);
+    if (typeof value !== 'object' || value === null) return [];
+    return Object.entries(value).flatMap(([key, field]) => [key, ...keysOf(field)]);
   }
 
   function filesUnder(dir: string): string[] {
@@ -272,22 +310,38 @@ describe('the emulator stores Composer names only in labels', () => {
       .map((entry) => path.join(entry.parentPath, entry.name));
   }
 
-  test('state, file names and listings hold the label values only inside labels', async () => {
-    const created = await client.createInstance({ labels: markers });
-    await deployServing(created.id, created.port, 'marker test');
+  function mentions(text: string, marker: string): boolean {
+    return text.toLowerCase().includes(marker);
+  }
+
+  test('labels and the deployment payload are stored verbatim, and nothing else carries their values', async () => {
+    const created = await client.createInstance({ labels });
+    const deployment = composerShapedDeployment(created.port);
+    await client.putDeployment(created.id, deployment);
     await client.stopInstances([created.id]);
 
     const stateDir = daemonStateDir(registryRoot, 'compute');
     const state: unknown = JSON.parse(
       fs.readFileSync(path.join(stateDir, 'instances.json'), 'utf8'),
     );
-    const listed: unknown = await (await fetch(`${client.baseUrl}/instances`)).json();
+    const record: unknown = Reflect.get(Reflect.get(state as object, 'instances'), created.id);
+    expect(record).toMatchObject({
+      labels,
+      artifactDir: deployment.artifactDir,
+      artifactHash: deployment.artifactHash,
+      env: deployment.env,
+    });
 
-    for (const marker of markerValues) {
-      expect(JSON.stringify(state)).toContain(marker);
-      expect(JSON.stringify(withoutLabels(state))).not.toContain(marker);
-      expect(JSON.stringify(withoutLabels(listed))).not.toContain(marker);
-      for (const file of filesUnder(stateDir)) expect(file).not.toContain(marker);
+    const opaque = ['labels', 'artifactDir', 'env'];
+    const stateKeys = keysOf(without(state, ['labels', 'env'])).join('\n');
+    const listed: unknown = await (await fetch(`${client.baseUrl}/instances`)).json();
+    const own: unknown = await (await fetch(`${client.baseUrl}/instances/${created.id}`)).json();
+    for (const marker of markers) {
+      expect(mentions(JSON.stringify(without(state, opaque)), marker)).toBe(false);
+      expect(mentions(stateKeys, marker)).toBe(false);
+      expect(mentions(JSON.stringify(without(listed, ['labels'])), marker)).toBe(false);
+      expect(mentions(JSON.stringify(without(own, ['labels'])), marker)).toBe(false);
+      for (const file of filesUnder(stateDir)) expect(mentions(file, marker)).toBe(false);
     }
   }, 15_000);
 

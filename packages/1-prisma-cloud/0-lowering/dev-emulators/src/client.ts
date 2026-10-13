@@ -73,20 +73,27 @@ const ADMIN_FETCH_RETRY_DELAY_MS = 150;
  * `fetch` for the loopback admin calls, retried on transient socket errors:
  * a keep-alive reuse race (the runtime re-uses a pooled connection the
  * daemon's HTTP server just closed idle — surfaces as "fetch failed" /
- * "other side closed") or a briefly overloaded daemon. Every admin call is
- * idempotent by design, so a short blind retry is safe. A caller-driven
- * abort is never retried. When every attempt fails to connect, it throws
- * `DEV.EMULATOR_UNREACHABLE`; callers retry that code and nothing else.
+ * "other side closed") or a briefly overloaded daemon. A short blind retry is
+ * safe only for an idempotent call; a call that is not, such as creating an
+ * instance, passes `retry: false`, because the emulator may have handled the
+ * first attempt. A caller-driven abort is never retried. When every attempt
+ * fails to connect, it throws `DEV.EMULATOR_UNREACHABLE`; callers retry that
+ * code and nothing else.
  */
-async function adminFetch(url: string, init?: RequestInit): Promise<Response> {
+async function adminFetch(
+  url: string,
+  init?: RequestInit,
+  opts: { readonly retry?: boolean } = {},
+): Promise<Response> {
+  const attempts = opts.retry === false ? 1 : ADMIN_FETCH_ATTEMPTS;
   let lastError: unknown;
-  for (let attempt = 1; attempt <= ADMIN_FETCH_ATTEMPTS; attempt += 1) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await fetch(url, init);
     } catch (error) {
       if (init?.signal?.aborted === true) throw error;
       lastError = error;
-      if (attempt < ADMIN_FETCH_ATTEMPTS) {
+      if (attempt < attempts) {
         await new Promise((resolve) => setTimeout(resolve, ADMIN_FETCH_RETRY_DELAY_MS));
       }
     }
@@ -189,7 +196,7 @@ function isHealthBody(value: unknown): value is HealthBody {
 export interface ComputeClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `POST /instances` — creates a stopped instance holding a port until it is deleted. */
+  /** `POST /instances` — creates a stopped instance holding a port until it is deleted. Never retried: a retry could create a second instance. */
   createInstance(request: CreateInstanceRequest): Promise<InstanceInfo>;
   /** `GET /instances`. */
   listInstances(): Promise<InstanceInfo[]>;
@@ -205,7 +212,7 @@ export interface ComputeClient {
   ): AsyncIterable<string>;
   /** `POST /instances/start` — the session-resume signal; starts each listed instance with a stored deployment that isn't already running. */
   startInstances(ids: readonly string[]): Promise<void>;
-  /** `POST /instances/stop`. The instances keep their ports. */
+  /** `POST /instances/stop`. The instances keep their ports; an unknown id is skipped. */
   stopInstances(ids: readonly string[]): Promise<void>;
   /** `DELETE /instances/<id>` — stops the instance and frees its port. Deleting an unknown id succeeds. */
   deleteInstance(id: string): Promise<void>;
@@ -239,7 +246,9 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
     },
 
     async createInstance(request) {
-      const res = await expectOk(await adminFetch(`${baseUrl}/instances`, postJson(request)));
+      const res = await expectOk(
+        await adminFetch(`${baseUrl}/instances`, postJson(request), { retry: false }),
+      );
       const body: unknown = await res.json();
       if (!isInstanceInfo(body)) {
         throw new Error('malformed instance-create response from the compute emulator');
