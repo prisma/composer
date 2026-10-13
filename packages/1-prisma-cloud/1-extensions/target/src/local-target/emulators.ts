@@ -24,7 +24,7 @@
  */
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { reserveServicePorts } from '@internal/local-target';
+import { appNameOf, reserveServicePorts, retirePreviousApp } from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 import { serviceAppName } from '../service-app.ts';
 import { daemonEntry } from './daemon-entry.ts';
@@ -50,6 +50,13 @@ function serviceAppNames(input: LocalTargetEmulatorsInput): string[] {
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
+  const retired = await retirePreviousApp({
+    devDir: input.devDir,
+    app: appNameOf(input.container),
+  });
+  if (retired !== undefined) {
+    console.log(`[dev] removed the local services of "${retired}", the app run here before`);
+  }
   const portChanges = await reserveServicePorts(
     input.container,
     input.devDir,

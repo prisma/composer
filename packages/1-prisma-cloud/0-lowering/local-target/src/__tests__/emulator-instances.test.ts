@@ -22,6 +22,7 @@ import {
   EMULATOR_INSTANCES_FILE,
   type EmulatorInstances,
   readEmulatorInstances,
+  retirePreviousApp,
 } from '../emulator-instances.ts';
 
 const APP = 'shared-app';
@@ -248,4 +249,27 @@ test('the record is one JSON file in the dev directory, readable from the direct
   const node = await nodeOf(directory, 'quotes');
   expect(onDisk).toEqual({ app: APP, nodes: { quotes: node } });
   expect(await readEmulatorInstances(path.join(root, 'never-ran'))).toBeUndefined();
+});
+
+describe('switching apps in a directory', () => {
+  test("running another app deletes the previous app's compute instances and starts a new record", async () => {
+    const { directory, devDir } = projectDir('switch');
+    await reserveServicePorts(container, devDir, ADDRESSES);
+    const previous = Object.values((await mappingOf(directory))?.nodes ?? {});
+
+    const retired = await retirePreviousApp({ devDir, app: 'another-app' });
+
+    expect(retired).toBe(APP);
+    for (const node of previous) expect(await computeClient().getInstance(node.id)).toBeUndefined();
+    expect(await mappingOf(directory)).toEqual({ app: 'another-app', nodes: {} });
+  });
+
+  test('running the same app again retires nothing', async () => {
+    const { directory, devDir } = projectDir('same');
+    await reserveServicePorts(container, devDir, ['quotes']);
+    const quotes = await nodeOf(directory, 'quotes');
+
+    expect(await retirePreviousApp({ devDir, app: APP })).toBeUndefined();
+    expect(await computeClient().getInstance(quotes.id)).toBeDefined();
+  });
 });

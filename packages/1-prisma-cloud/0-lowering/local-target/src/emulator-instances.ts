@@ -97,6 +97,20 @@ async function updateNodes(
   });
 }
 
+/**
+ * A directory has one dev instance. When the record names another app, that
+ * app's compute instances are deleted and the record starts over for this
+ * one. Returns the previous app's name when it was retired.
+ */
+export async function retirePreviousApp(scope: AppScope): Promise<string | undefined> {
+  const current = await store(scope.devDir).read();
+  if (current === undefined || current.app === scope.app) return undefined;
+  const client = computeClient();
+  for (const instance of Object.values(current.nodes)) await client.deleteInstance(instance.id);
+  await store(scope.devDir).update(() => ({ app: scope.app, nodes: {} }));
+  return current.app;
+}
+
 /** Each compute node of the app, with the instance that backs it. */
 export async function computeNodeInstances(
   scope: AppScope,

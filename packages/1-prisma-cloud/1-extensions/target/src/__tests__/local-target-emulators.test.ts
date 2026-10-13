@@ -8,6 +8,7 @@ import { compute, rawPostgres } from '../exports/index.ts';
 
 const events: string[] = [];
 let portChanges: { address: string; previous: number; given: number }[] = [];
+let retiredApp: string | undefined;
 
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
@@ -20,6 +21,7 @@ mock.module('@internal/dev-emulators', () => ({
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
   resolvePackageEntry: (specifier: string) => specifier,
+  retirePreviousApp: async () => retiredApp,
   reserveServicePorts: async (
     container: ContainerInstance | undefined,
     _devDir: string,
@@ -65,6 +67,7 @@ beforeEach(() => {
   events.length = 0;
   logged.length = 0;
   portChanges = [];
+  retiredApp = undefined;
 });
 
 afterEach(() => {
@@ -114,5 +117,20 @@ test('prints one line for each service that could not get its remembered port ba
 
   expect(logged.filter((line) => line.includes('port'))).toEqual([
     '[dev] service "gateway" now uses port 3004: its previous port 3001 is in use',
+  ]);
+});
+
+test("prints one line when the directory's previous app's local services were removed", async () => {
+  retiredApp = 'old-app';
+  const graph = Load(
+    module('my-app', ({ provision }) => {
+      provision(compute({ name: 'web', deps: {}, build }));
+    }),
+  );
+
+  await runDevEmulators({ graph, container, devDir: '/dev/null/unused' });
+
+  expect(logged.filter((line) => line.includes('removed'))).toEqual([
+    '[dev] removed the local services of "old-app", the app run here before',
   ]);
 });
