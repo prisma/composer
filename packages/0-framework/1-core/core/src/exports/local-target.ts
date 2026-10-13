@@ -9,6 +9,7 @@
 
 export {
   DEV_DIR,
+  type LocalNodeCondition,
   type LocalNodeLocation,
   type LocalNodeStopped,
   type LocalTargetAttachInput,

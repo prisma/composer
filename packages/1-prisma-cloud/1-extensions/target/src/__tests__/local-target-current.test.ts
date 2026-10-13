@@ -114,7 +114,7 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     if (location?.emulator !== 'running' || location.url === undefined) {
       throw new Error(`"${address}" is not running`);
     }
-    expect(location.state).toBe('running');
+    expect(location).toMatchObject({ state: 'running', condition: 'running' });
     return location.url;
   }
 
@@ -168,7 +168,31 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     expect(await postgresClient().getInstance(catalog.id)).toMatchObject({ status: 'stopped' });
     expect(await acceptsConnection(gateway.port)).toBe(false);
     expect(await acceptsConnection(catalog.port)).toBe(false);
-    expect(await current.locate('catalog')).toMatchObject({ state: 'stopped' });
+    expect(await current.locate('catalog')).toMatchObject({
+      state: 'stopped',
+      condition: 'stopped',
+    });
+  }, 90_000);
+
+  test('stopping reports only the nodes whose emulator was running', async () => {
+    const { devDir } = await runApp('a');
+    await stopDaemon('compute', { registryRoot });
+
+    const stopped = await (await currentOf(devDir)).stop();
+
+    expect(stopped).toEqual([{ address: 'catalog', kind: 'database' }]);
+  }, 90_000);
+
+  test('stopping with an emulators directory that is not absolute fails with its code, and stops nothing', async () => {
+    const { devDir } = await runApp('a');
+    const current = await currentOf(devDir);
+    process.env[EMULATORS_DIR_ENV] = 'relative/emulators';
+
+    const stopping = current.stop();
+
+    await expect(stopping).rejects.toMatchObject({ code: 'DEV.EMULATORS_DIR_INVALID' });
+    process.env[EMULATORS_DIR_ENV] = registryRoot;
+    expect(await current.locate('gateway')).toMatchObject({ state: 'running' });
   }, 90_000);
 
   test('a directory where `prisma dev` never ran has no current app', async () => {

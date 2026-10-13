@@ -4,6 +4,7 @@
  * `prisma dev url` and `prisma dev stop`.
  */
 import type {
+  LocalNodeCondition,
   LocalNodeLocation,
   LocalNodeStopped,
   LocalTargetCurrentApp,
@@ -14,6 +15,7 @@ import {
   type EmulatorKind,
   isEmulatorRunning,
   postgresClient,
+  type ServiceInstanceStatus,
 } from '@internal/dev-emulators';
 import {
   directoryOf,
@@ -22,29 +24,56 @@ import {
   stopAppInstances,
 } from './emulator-instances.ts';
 
-/** A node's state when its emulator no longer has the instance the record names. */
-const MISSING = 'missing';
+const CONDITION_OF: Record<ServiceInstanceStatus, LocalNodeCondition> = {
+  running: 'running',
+  stopped: 'stopped',
+  backoff: 'crashing',
+  held: 'crashing',
+};
+
+/** A node whose emulator no longer has the instance the record names. */
+function missing(address: string, kind: EmulatorKind): LocalNodeLocation {
+  return { address, kind, emulator: 'running', state: 'missing', condition: 'missing' };
+}
 
 async function locate(address: string, node: NodeInstance): Promise<LocalNodeLocation> {
   const kind: EmulatorKind = node.kind;
   if (!(await isEmulatorRunning(kind))) return { address, kind, emulator: 'not-running' };
   if (node.kind === 'service') {
     const instance = await computeClient().getInstance(node.id);
-    return instance
-      ? { address, kind, emulator: 'running', url: instance.url, state: instance.status }
-      : { address, kind, emulator: 'running', state: MISSING };
+    if (instance === undefined) return missing(address, kind);
+    return {
+      address,
+      kind,
+      emulator: 'running',
+      url: instance.url,
+      state: instance.status,
+      condition: CONDITION_OF[instance.status],
+      logPath: instance.logPath,
+    };
   }
   if (node.kind === 'database') {
     const instance = await postgresClient().getInstance(node.id);
-    return instance
-      ? { address, kind, emulator: 'running', url: instance.url, state: instance.status }
-      : { address, kind, emulator: 'running', state: MISSING };
+    if (instance === undefined) return missing(address, kind);
+    return {
+      address,
+      kind,
+      emulator: 'running',
+      url: instance.url,
+      state: instance.status,
+      condition: instance.status,
+    };
   }
   const client = bucketsClient();
-  const instance = await client.getInstance(node.id);
-  return instance
-    ? { address, kind, emulator: 'running', url: `${client.baseUrl}/${node.id}`, state: 'running' }
-    : { address, kind, emulator: 'running', state: MISSING };
+  if ((await client.getInstance(node.id)) === undefined) return missing(address, kind);
+  return {
+    address,
+    kind,
+    emulator: 'running',
+    url: `${client.baseUrl}/${node.id}`,
+    state: 'running',
+    condition: 'running',
+  };
 }
 
 /** The directory's current app; undefined when `prisma dev` never ran there. */
@@ -60,11 +89,6 @@ export async function currentApp(devDir: string): Promise<LocalTargetCurrentApp 
       const node = nodes[address];
       return node === undefined ? undefined : locate(address, node);
     },
-    stop: async (): Promise<readonly LocalNodeStopped[]> => {
-      await stopAppInstances({ devDir, app });
-      return Object.entries(nodes).flatMap(([address, node]) =>
-        node.kind === 'bucket' ? [] : [{ address, kind: node.kind }],
-      );
-    },
+    stop: (): Promise<readonly LocalNodeStopped[]> => stopAppInstances({ devDir, app }),
   };
 }

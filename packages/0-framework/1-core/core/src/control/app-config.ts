@@ -274,7 +274,7 @@ export interface LocalTargetCurrentApp {
   readonly addresses: readonly string[];
   /** Where the node at `address` runs locally; undefined for an address not recorded. */
   locate(address: string): Promise<LocalNodeLocation | undefined>;
-  /** Stops everything the target runs for the app (emulators and data persist); returns what was recorded as running locally. */
+  /** Stops everything the target runs for the app (emulators and data persist); returns the nodes it stopped. */
   stop(): Promise<readonly LocalNodeStopped[]>;
 }
 
@@ -286,8 +286,11 @@ export type LocalNodeLocation =
       readonly emulator: 'running';
       /** Absent when the emulator no longer has the node's instance. */
       readonly url?: string;
-      /** `running` when the node answers at `url`; otherwise the target's word for its state. */
+      /** The target's word for the node's state, shown to the user. */
       readonly state: string;
+      readonly condition: LocalNodeCondition;
+      /** Where the node's own output is written, when the target keeps it in a file. */
+      readonly logPath?: string;
     }
   | {
       readonly address: string;
@@ -295,6 +298,14 @@ export type LocalNodeLocation =
       /** The emulator that runs the node is not running, so it has no URL or state to report. */
       readonly emulator: 'not-running';
     };
+
+/**
+ * What a node's state means for reaching it: `running` answers at its URL;
+ * `stopped` was stopped and starts with the next `prisma dev`; `crashing`
+ * exited and is being restarted or was held after repeated crashes;
+ * `missing` is recorded but its emulator no longer has it.
+ */
+export type LocalNodeCondition = 'running' | 'stopped' | 'crashing' | 'missing';
 
 export interface LocalNodeStopped {
   readonly address: string;

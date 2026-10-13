@@ -5,9 +5,9 @@
  * descriptors, whose graphs reach alchemy's provider tree.
  */
 import * as path from 'node:path';
-import type { LocalTargetCurrentApp } from '@internal/core/local-target';
+import type { LocalNodeLocation, LocalTargetCurrentApp } from '@internal/core/local-target';
 import { DEV_DIR, resolveLocalTargets } from '@internal/core/local-target';
-import { CliStructuredError } from '@internal/foundation/errors';
+import { CliStructuredError, InternalError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import { checkConfigSource } from '../pipeline.ts';
 import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from './dev-current.ts';
@@ -22,6 +22,15 @@ function platformUnsupported(): CliStructuredError {
   );
 }
 
+/** A call into an extension's local target; its failures that carry no code are the emulator's. */
+async function fromTarget<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    throw toStructured('DEV.EMULATOR_FAILED', error);
+  }
+}
+
 /** Every extension's record of the app `prisma dev` last ran from `cwd`; fails when none recorded one. */
 async function currentApps(
   input: { readonly config: DevUrlInput['config'] },
@@ -31,7 +40,7 @@ async function currentApps(
   const devDir = path.join(cwd, DEV_DIR);
   const apps: LocalTargetCurrentApp[] = [];
   for (const target of (await resolveLocalTargets(value)).values()) {
-    const current = await target.current?.({ devDir });
+    const current = await fromTarget(async () => target.current?.({ devDir }));
     if (current !== undefined) apps.push(current);
   }
   if (apps.length === 0) {
@@ -54,14 +63,15 @@ async function locate(input: DevUrlInput, cwd: string): Promise<DevUrl> {
       `"${apps.map((a) => a.app).join('", "')}" has no node at "${input.address}".`,
       {
         why: `The addresses recorded for the app \`prisma dev\` last ran here are: ${known.join(', ')}.`,
-        fix: 'Pass one of those addresses. A node in a nested module has a dotted address, such as `catalog.database`.',
+        fix: 'Pass one of those addresses. A nested node has a dotted address, such as `catalog.database`.',
         meta: { address: input.address, known },
       },
     );
   }
-  const location = await app.locate(input.address);
-  if (location === undefined)
-    throw new Error(`no location for recorded address "${input.address}"`);
+  const location = await fromTarget(() => app.locate(input.address));
+  if (location === undefined) {
+    throw new InternalError(`the local target recorded "${input.address}" but cannot locate it`);
+  }
   if (location.emulator === 'not-running') {
     throw new CliStructuredError(
       'DEV.EMULATOR_UNREACHABLE',
@@ -73,18 +83,41 @@ async function locate(input: DevUrlInput, cwd: string): Promise<DevUrl> {
       },
     );
   }
-  if (location.state !== 'running' || location.url === undefined) {
-    throw new CliStructuredError(
-      'DEV.NOT_RUNNING',
-      `The ${location.kind} "${input.address}" is not running (${location.state}).`,
-      {
-        why: '`prisma dev` stops the app when it ends, and a stopped node has no URL that answers.',
-        fix: RUN_DEV,
-        meta: { address: input.address, kind: location.kind, state: location.state },
-      },
-    );
+  if (location.condition !== 'running' || location.url === undefined) {
+    throw notRunning(input.address, location);
   }
   return { address: input.address, kind: location.kind, url: location.url, state: location.state };
+}
+
+function notRunning(
+  address: string,
+  location: Extract<LocalNodeLocation, { emulator: 'running' }>,
+): CliStructuredError {
+  const { kind, state, condition, logPath } = location;
+  const meta = { address, kind, state, ...(logPath === undefined ? {} : { logPath }) };
+  const message = `The ${kind} "${address}" is not running (${state}).`;
+  if (condition === 'crashing') {
+    return new CliStructuredError('DEV.NOT_RUNNING', message, {
+      why: 'It exited after it started, and it is being restarted or was held after repeated crashes.',
+      fix:
+        logPath === undefined
+          ? 'Read its output in the `prisma dev` terminal, fix the cause, and rebuild.'
+          : `Read its log at ${logPath}, fix the cause, and rebuild.`,
+      meta,
+    });
+  }
+  if (condition === 'missing') {
+    return new CliStructuredError('DEV.NOT_RUNNING', message, {
+      why: 'The local emulator no longer has it, for example because a Composer upgrade discarded the emulator’s state.',
+      fix: `${RUN_DEV} It creates the ${kind} again, empty.`,
+      meta,
+    });
+  }
+  return new CliStructuredError('DEV.NOT_RUNNING', message, {
+    why: '`prisma dev` stops the app when it ends, and a stopped node has no URL that answers.',
+    fix: RUN_DEV,
+    meta,
+  });
 }
 
 export async function executeDevUrl(
@@ -95,9 +128,8 @@ export async function executeDevUrl(
   try {
     return ok(await locate(input, cwd));
   } catch (error) {
-    // An emulator's own failure (not "unreachable", which arrives
-    // structured) reaches here plain.
-    return notOk(toStructured('DEV.EMULATOR_FAILED', error));
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 }
 
@@ -109,9 +141,10 @@ export async function executeDevStop(
   try {
     const apps = await currentApps(input, cwd);
     const stopped = [];
-    for (const app of apps) stopped.push(...(await app.stop()));
+    for (const app of apps) stopped.push(...(await fromTarget(() => app.stop())));
     return ok({ app: apps.map((a) => a.app).join(', '), stopped });
   } catch (error) {
-    return notOk(toStructured('DEV.EMULATOR_FAILED', error));
+    if (CliStructuredError.is(error)) return notOk(error);
+    throw error;
   }
 }
