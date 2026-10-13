@@ -323,7 +323,9 @@ Services, managed Postgres databases and buckets record their node address as
 `logicalId` on their Branch. Console uses that address to match topology nodes
 to resources and compare them with main. Existing environments receive the
 identity on their next deploy; a conflicting identity fails deploy. Local dev
-creates no platform rows.
+creates no platform rows. Changing a node's address (its name without an
+explicit `id`, its `id`, or its module) makes a new entity: the next deploy
+deletes the old rows, and a database's or bucket's data with them.
 
 **Progress.** `prisma deploy` prints each step as it starts and finishes, with
 its duration (`✔ assemble web (3m 42s)`), and ends with the real total
