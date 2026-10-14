@@ -474,7 +474,10 @@ export function withServiceAddresses(
   nodes: readonly { readonly address: string; readonly instance: { readonly id: string } }[],
 ): unknown {
   if (!(error instanceof Error) || error.constructor !== Error) return error;
-  let message = error.message;
+  let message = error.message.replace(
+    'deploy it with listens: false',
+    'declare it with compute({ listens: false })',
+  );
   for (const { address, instance } of nodes) {
     message = message.replaceAll(`instance "${instance.id}"`, `service "${address}"`);
   }
