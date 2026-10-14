@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import * as zlib from 'node:zlib';
 import { packageComputeArtifact } from '@internal/lowering/compute';
 import { extractComputeArtifact } from '../artifact-extract.ts';
+import { readComputeManifest } from '../compute.ts';
 
 function makeBundle(files: Record<string, string>): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-extract-test-'));
@@ -173,5 +174,36 @@ describe('extractComputeArtifact', () => {
       '// real',
     );
     expect(fs.readFileSync(path.join(destDir, longPath), 'utf8')).toBe('long-path asset');
+  });
+});
+
+describe('readComputeManifest', () => {
+  function extracted(listens: boolean | undefined): string {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+    const artifact = packageComputeArtifact({
+      id: 'clock',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'cron.scheduler',
+      ...(listens !== undefined ? { listens } : {}),
+    });
+    const destDir = fs.mkdtempSync(path.join(os.tmpdir(), 'artifact-manifest-dest-'));
+    fs.rmSync(destDir, { recursive: true, force: true });
+    extractComputeArtifact(artifact.path, destDir);
+    return destDir;
+  }
+
+  test('reads the address and listens: false from a packaged artifact', () => {
+    expect(readComputeManifest(extracted(false))).toEqual({
+      address: 'cron.scheduler',
+      listens: false,
+    });
+  });
+
+  test('a manifest without listens means the service listens', () => {
+    expect(readComputeManifest(extracted(undefined))).toEqual({
+      address: 'cron.scheduler',
+      listens: true,
+    });
   });
 });

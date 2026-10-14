@@ -32,6 +32,11 @@ import {
   validateName,
 } from './shared.ts';
 
+/** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
+function declaresNoListening(node: unknown): boolean {
+  return typeof node === 'object' && node !== null && 'listens' in node && node.listens === false;
+}
+
 /**
  * compute's provision → serialize/deploy handoff. `serviceId` is an
  * `Output<string>`, not a `string`: the whole stack effect runs before Alchemy
@@ -352,13 +357,14 @@ export function computeDescriptor(
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
     // identically; the fs/tar work itself lives in @internal/lowering.
-    package: ({ id }, { assembled, address }) =>
+    package: ({ id, node }, { assembled, address }) =>
       Effect.try(() =>
         packageComputeArtifact({
           id,
           bundleDir: assembled.dir,
           appEntry: assembled.entry,
           address,
+          ...(declaresNoListening(node) ? { listens: false } : {}),
         }),
       ),
 

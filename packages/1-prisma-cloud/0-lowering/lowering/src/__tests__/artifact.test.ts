@@ -177,6 +177,26 @@ describe('packageComputeArtifact', () => {
     });
   });
 
+  test('records listens: false in the manifest for a service that does not listen on its port', () => {
+    const bundleDir = makeBundle({ 'main.js': 'export default {};' });
+
+    const artifact = packageComputeArtifact({
+      id: 'scheduler',
+      bundleDir,
+      appEntry: 'server.js',
+      address: 'cron.scheduler',
+      listens: false,
+    });
+    const { read } = readTar(fs.readFileSync(artifact.path));
+
+    expect(JSON.parse(read('compute.manifest.json'))).toEqual({
+      manifestVersion: '1',
+      entrypoint: 'bootstrap.js',
+      address: 'cron.scheduler',
+      listens: false,
+    });
+  });
+
   test('auto-detects main.mjs when main.js is absent', () => {
     const bundleDir = makeBundle({ 'main.mjs': 'export default {};' });
 

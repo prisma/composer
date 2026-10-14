@@ -70,14 +70,17 @@ export class ComputeService<
   declare readonly inputSchema: I;
   declare readonly build: BuildAdapter;
   declare readonly expose: E | undefined;
+  /** Whether the service listens on its port. `prisma dev` waits for the port only when it does. */
+  readonly listens: boolean;
 
   #resolved: Config | undefined;
   #loadedDeps: HydratedDeps<D> | undefined;
   #loadedInput: InputValueOf<I> | undefined;
   #origin: string | undefined;
 
-  constructor(node: ServiceNode<D, ReservedParams, E, I>) {
+  constructor(node: ServiceNode<D, ReservedParams, E, I>, listens: boolean) {
     Object.assign(this, node);
+    this.listens = listens;
   }
 
   #processConfig(): Config {
@@ -164,6 +167,8 @@ export const compute = <
   input?: I;
   build: BuildAdapter;
   expose?: E;
+  /** `false` for a service that never listens on its port, such as a scheduler. Defaults to `true`. */
+  listens?: boolean;
 }): ComputeService<D, I, E> => {
   // A dependency whose name collides with the reserved `port` param would
   // share its config-key prefix; fail at authoring instead.
@@ -186,7 +191,7 @@ export const compute = <
     ...(def.expose !== undefined ? { expose: def.expose } : {}),
   });
 
-  const instance = new ComputeService<D, I, E>(node);
+  const instance = new ComputeService<D, I, E>(node, def.listens ?? true);
   Object.freeze(instance);
   return instance;
 };

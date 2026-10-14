@@ -52,6 +52,8 @@ interface InstanceRecord {
   artifactHash?: string;
   artifactDir?: string;
   env?: Record<string, string>;
+  /** `false` when the service does not listen on its port: it is `running` once spawned. */
+  listens?: boolean;
   readonly logPath: string;
 }
 
@@ -100,7 +102,8 @@ function isInstanceRecord(value: unknown): value is InstanceRecord {
     isOptional(value, 'lastExitCode', (v) => typeof v === 'number') &&
     isOptional(value, 'artifactHash', (v) => typeof v === 'string') &&
     isOptional(value, 'artifactDir', (v) => typeof v === 'string') &&
-    isOptional(value, 'env', isStringRecord)
+    isOptional(value, 'env', isStringRecord) &&
+    isOptional(value, 'listens', (v) => typeof v === 'boolean')
   );
 }
 
@@ -134,6 +137,7 @@ interface DeploymentBody {
   readonly artifactDir: string;
   readonly artifactHash: string;
   readonly env: Record<string, string>;
+  readonly listens?: boolean;
 }
 
 function isDeploymentBody(value: unknown): value is DeploymentBody {
@@ -145,7 +149,8 @@ function isDeploymentBody(value: unknown): value is DeploymentBody {
     'artifactHash' in value &&
     typeof value.artifactHash === 'string' &&
     'env' in value &&
-    isStringRecord(value.env)
+    isStringRecord(value.env) &&
+    (!('listens' in value) || value.listens === undefined || typeof value.listens === 'boolean')
   );
 }
 
@@ -557,6 +562,11 @@ function main(): void {
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.on('exit', (code) => handleChildExit(inst, rt, child, code));
     if (child.pid !== undefined) inst.pid = child.pid;
+    if (inst.listens === false) {
+      inst.status = 'running';
+      schedulePersist();
+      return { ok: true };
+    }
     schedulePersist();
 
     const port = String(inst.port);
@@ -574,7 +584,7 @@ function main(): void {
     }
     if (outcome.kind === 'timed-out') {
       const seconds = String(readyTimeoutMs / 1000);
-      const message = `${instance} did not accept connections on its port ${port} within ${seconds}s. Its log: ${inst.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator.`;
+      const message = `${instance} did not accept connections on its port ${port} within ${seconds}s. Its log: ${inst.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on its port, deploy it with listens: false.`;
       if (fresh) {
         log.writeLine(
           `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
@@ -725,7 +735,11 @@ function main(): void {
     if (!isDeploymentBody(body)) return text(res, 400, 'malformed deployment body');
 
     const rt = getRuntime(inst.id);
-    const changed = inst.artifactHash !== body.artifactHash || !envEquals(inst.env, body.env);
+    const listens = body.listens ?? true;
+    const changed =
+      inst.artifactHash !== body.artifactHash ||
+      !envEquals(inst.env, body.env) ||
+      (inst.listens ?? true) !== listens;
 
     let result: SpawnResult;
     if (!changed && rt.start?.fresh === true) {
@@ -744,6 +758,7 @@ function main(): void {
       inst.artifactHash = body.artifactHash;
       inst.env = body.env;
       inst.artifactDir = body.artifactDir;
+      inst.listens = listens;
       clearBackoffTimer(rt);
       schedulePersist();
       // A new or changed deployment, or an instance that is not up: a fresh
