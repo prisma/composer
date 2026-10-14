@@ -158,6 +158,36 @@ describe('with the default readiness timeout', () => {
   }, 15_000);
 });
 
+describe('a service that does not listen on its port', () => {
+  let client: ComputeClient;
+
+  beforeEach(async () => {
+    client = await startDaemon();
+  });
+
+  test('is running once spawned, without waiting for its port', async () => {
+    const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
+    const reserved = await client.ensureService('app-clock', 'scheduler');
+    const started = Date.now();
+
+    await client.putDeployment('app-clock', 'scheduler', {
+      address: 'cron.scheduler',
+      artifactDir,
+      artifactHash: 'h',
+      env: baseEnv(),
+      port: reserved.port,
+      listens: false,
+    });
+
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(await statusOf(client, 'app-clock', 'scheduler')).toBe('running');
+
+    await client.stopApp('app-clock');
+    await client.startApp('app-clock');
+    expect(await statusOf(client, 'app-clock', 'scheduler')).toBe('running');
+  }, 20_000);
+});
+
 describe('a start that is replaced, stopped or joined', () => {
   let client: ComputeClient;
 

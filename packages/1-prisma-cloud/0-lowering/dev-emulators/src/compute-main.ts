@@ -48,6 +48,8 @@ interface ServiceRecord {
   artifactHash?: string;
   artifactDir?: string;
   env?: Record<string, string>;
+  /** `false` when the service does not listen on its port: it is `running` once spawned. */
+  listens?: boolean;
   readonly logPath: string;
 }
 
@@ -99,6 +101,9 @@ function isServiceRecord(value: unknown): value is ServiceRecord {
     return false;
   }
   if ('env' in value && value.env !== undefined && !isStringRecord(value.env)) return false;
+  if ('listens' in value && value.listens !== undefined && typeof value.listens !== 'boolean') {
+    return false;
+  }
   return true;
 }
 
@@ -123,6 +128,7 @@ interface DeploymentBody {
   readonly artifactHash: string;
   readonly env: Record<string, string>;
   readonly port: number;
+  readonly listens?: boolean;
 }
 
 function isDeploymentBody(value: unknown): value is DeploymentBody {
@@ -138,7 +144,8 @@ function isDeploymentBody(value: unknown): value is DeploymentBody {
     'env' in value &&
     isStringRecord(value.env) &&
     'port' in value &&
-    typeof value.port === 'number'
+    typeof value.port === 'number' &&
+    (!('listens' in value) || value.listens === undefined || typeof value.listens === 'boolean')
   );
 }
 
@@ -560,6 +567,11 @@ function main(): void {
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.on('exit', (code) => handleChildExit(app, id, svc, rt, child, code));
     if (child.pid !== undefined) svc.pid = child.pid;
+    if (svc.listens === false) {
+      svc.status = 'running';
+      schedulePersist();
+      return { ok: true };
+    }
     schedulePersist();
 
     const port = String(svc.port);
@@ -577,7 +589,7 @@ function main(): void {
     }
     if (outcome.kind === 'timed-out') {
       const seconds = String(readyTimeoutMs / 1000);
-      const message = `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator.`;
+      const message = `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on a port, declare it with compute({ listens: false }).`;
       if (fresh) {
         log.writeLine(
           `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
@@ -716,7 +728,11 @@ function main(): void {
     const svc = await getOrCreateService(app, id);
     const rt = getRuntime(app, id);
 
-    const changed = svc.artifactHash !== parsed.artifactHash || !envEquals(svc.env, parsed.env);
+    const listens = parsed.listens ?? true;
+    const changed =
+      svc.artifactHash !== parsed.artifactHash ||
+      !envEquals(svc.env, parsed.env) ||
+      (svc.listens ?? true) !== listens;
 
     let result: SpawnResult;
     if (!changed && rt.start?.fresh === true) {
@@ -737,6 +753,7 @@ function main(): void {
       svc.artifactHash = parsed.artifactHash;
       svc.env = parsed.env;
       svc.artifactDir = parsed.artifactDir;
+      svc.listens = listens;
       clearBackoffTimer(rt);
       schedulePersist();
       // A new or changed deployment, or a service that is not up: a fresh

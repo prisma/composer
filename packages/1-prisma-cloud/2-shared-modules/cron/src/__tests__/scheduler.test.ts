@@ -11,6 +11,12 @@ function fakeSetTimer(): { setTimer: (fn: () => void, ms: number) => void; timer
   return { setTimer: (fn, ms) => timers.push({ fn, ms }), timers };
 }
 
+describe('cronScheduler()', () => {
+  test('declares that it does not listen on its port', () => {
+    expect(cronScheduler().listens).toBe(false);
+  });
+});
+
 describe('runScheduler()', () => {
   test("registers one timer per job, at each job's parsed interval", () => {
     const { setTimer, timers } = fakeSetTimer();

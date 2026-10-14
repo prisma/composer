@@ -30,6 +30,8 @@ export interface PackageComputeArtifactOptions {
   readonly appEntry: string;
   /** The node's deployment address — recorded as intrinsic artifact metadata. */
   readonly address: string;
+  /** `false` for a service that does not listen on its port — recorded in the manifest only then, so other artifacts are unchanged. */
+  readonly listens?: boolean;
 }
 
 export interface ComputeArtifact {
@@ -317,9 +319,16 @@ await main.run(boot.address, () => import(boot.appEntrypoint));
   // twice: bootstrap data drives the boot path, while the manifest serves a
   // reader that needs the address WITHOUT executing the artifact (the local
   // Deployment provider, which learns nothing else about dev — local-dev
-  // spec § 4). The platform still reads only `entrypoint` from the manifest.
+  // spec § 4). `listens: false` is the same kind of metadata, for the local
+  // Compute emulator's readiness check. The platform still reads only
+  // `entrypoint` from the manifest.
   const manifest = `${JSON.stringify(
-    { manifestVersion: MANIFEST_VERSION, entrypoint: 'bootstrap.js', address: opts.address },
+    {
+      manifestVersion: MANIFEST_VERSION,
+      entrypoint: 'bootstrap.js',
+      address: opts.address,
+      ...(opts.listens === false ? { listens: false } : {}),
+    },
     null,
     2,
   )}\n`;
