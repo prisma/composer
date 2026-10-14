@@ -35,6 +35,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
+- [A default-export Bun server never starts on Compute — call `Bun.serve()` explicitly](#a-default-export-bun-server-never-starts-on-compute--call-bunserve-explicitly)
 - [In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency](#in-this-repository-the-published-prisma-host-runs-the-workspace-family-only-through-a-pnpm-override-plus-a-root-devdependency)
 
 ---
@@ -71,7 +72,7 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 - Upstream: [PRO-200](https://linear.app/prisma-company/issue/PRO-200/compute-services-create-returns-a-placeholder-region)
 - Workaround source: [`packages/prisma-alchemy/src/compute/Deployment.ts`](packages/prisma-alchemy/src/compute/Deployment.ts)
-- Related: [`.drive/projects/mvp-example-app/design-notes.md`](.drive/projects/mvp-example-app/design-notes.md) — "Validated end-to-end (Compute)"
+- Related: [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md) — "The resource inventory", `Prisma.Deployment` row
 
 ---
 
@@ -100,7 +101,6 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 - Upstream: [PRO-201](https://linear.app/prisma-company/issue/PRO-201/app-build-build-type-nextjs-yields-a-boot-crashing-standalone-for-pnpm)
 - Workaround source: [`packages/app-nextjs/src/assemble.ts`](packages/app-nextjs/src/assemble.ts), [`.npmrc`](.npmrc)
-- Related: [`.drive/projects/mvp-example-app/design-notes.md`](.drive/projects/mvp-example-app/design-notes.md) — "Compute skill findings"
 
 ---
 
@@ -522,7 +522,7 @@ The Management API is no help: the project and database both read `status: "read
 
 **References.**
 
-- Design record: [`.drive/projects/email-module/spec.md`](.drive/projects/email-module/spec.md) — D8, "the delivery credential secret is unconditionally required, junk allowed when mode is none"
+- Design record: [`docs/design/10-domains/email-module.md`](docs/design/10-domains/email-module.md) — "The delivery credential is always required"
 - Module README: [`packages/1-prisma-cloud/2-shared-modules/email/README.md`](packages/1-prisma-cloud/2-shared-modules/email/README.md) — "Platform env vars (per stage)"
 
 ---
@@ -549,7 +549,6 @@ The Management API is no help: the project and database both read `status: "read
 
 **References.**
 
-- Design record: [`.drive/projects/email-module/spec.md`](.drive/projects/email-module/spec.md) — "Module factory" pinned consequences, "`deliveryUrl` is a factory option, static per app"
 - Core's param-forwarding rejection: [`packages/0-framework/1-core/core/src/__tests__/params.test.ts`](packages/0-framework/1-core/core/src/__tests__/params.test.ts)
 
 ---
@@ -570,6 +569,8 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 
 **Update, later dispatch.** The CLI now catches this specific failure at its `loadEntry` import site and rethrows a `CliError` naming the offending file, the cause, and this same precompile fix — a user hits an actionable message instead of node's raw `Unknown file extension` error and the trek to this entry (`packages/0-framework/3-tooling/cli/src/jsx-load-error.ts`).
 
+**Why the framework does not transform JSX itself.** Adding a JSX transform to the loader would make the framework compile user code: it would pick JSX semantics on the user's behalf and produce a second compilation of the same file beside the user's own build. That is what ADR-0005 rules out (users build their code; the framework only assembles it). The options for a real fix are each an ADR-sized decision: evaluate the graph under Bun when it is installed (deploys would then behave differently per machine), a JSX loader hook (the quick `tsx` loader broke Alchemy's process handling, as above), or a structural split that keeps application code out of the topology's import graph entirely.
+
 **Workaround.** Kept the JSX-authored `templates.tsx`/`emails/welcome.tsx` as the real source (so the example still demonstrates react-email authoring), but added a build step (`examples/email/scripts/build.ts`) that precompiles `templates.tsx` to plain, JSX-free JS via `bun build --target=node` (all real npm packages passed as `--external`, so nothing from `node_modules` gets inlined — this is a JSX transform, not a bundle) before `service.ts` imports it. `service.ts` imports the compiled `dist/mailer/templates.generated.ts`, not the raw `.tsx`; the runtime server bundle imports the same compiled file, so there's one wired-up template set, not two paths that could drift.
 
 **Reproduction.**
@@ -581,7 +582,6 @@ Setting `NODE_OPTIONS=--import=tsx` globally around the deploy command does make
 **References.**
 
 - Surfaced through: [`examples/email/scripts/build.ts`](examples/email/scripts/build.ts), [`examples/email/src/mailer/service.ts`](examples/email/src/mailer/service.ts)
-- Design record: [`.drive/projects/email-module/spec.md`](.drive/projects/email-module/spec.md) — 2026-07-22 amendment, "Template definitions" (react-email demo)
 ## prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version
 
 **Filed upstream:** [TML-3098](https://linear.app/prisma-company/issue/TML-3098/prisma-dev-fails-at-startup-freshly-published-prismacli-dev01623) — _"prisma dev fails at startup — freshly published @prisma/cli-dev@0.16.23 errors with 'Dynamic require of "assert" is not supported'"_
@@ -640,6 +640,20 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 1. `startPrismaDevServer({ name, persistenceMode: 'stateless' })`, then take `database.connectionString`.
 2. `new SQL({ url, max: 1 })`, run `create table if not exists t (id int)`, then close it.
 3. Open a second `new SQL({ url, max: 1 })` and run the same statement → 42P05. With `prepare: false` both succeed.
+
+---
+
+## A default-export Bun server never starts on Compute — call `Bun.serve()` explicitly
+
+**Filed upstream:** not filed — Bun's documented behaviour, not a product bug.
+**Product:** Prisma Compute (Bun runtime)
+**First hit:** `examples/smoke` — the first Compute service deployed through Composer's own provider
+
+**Symptom.** The deploy is green and the version reports `running`, but the service never listens: every request to its URL fails.
+
+**Cause.** Bun starts a server from `export default { port, fetch }` only when that module is the process's entrypoint. On Compute the entrypoint is Composer's boot wrapper (`main.mjs`), which then loads the app's own built entry. The app's module is not the entrypoint, so Bun ignores its default export.
+
+**Workaround.** Call `Bun.serve({ port, hostname: '0.0.0.0', fetch })` in the app's entry, with the port from the service's config.
 
 ---
 

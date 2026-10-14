@@ -45,6 +45,6 @@ Rule of thumb during design discussions:
 7. `docs/design/03-domain-model/glossary.md`
 8. `docs/design/03-domain-model/authoring-surface.md`
 9. `docs/design/04-inspirations/` (modules we’re learning from)
-10. `docs/design/05-prisma-cloud/` (the hosting target: PDP data model, Alchemy lowering)
+10. `docs/design/05-prisma-cloud/` (the hosting target: PDP data model, Alchemy lowering, build reporting)
 11. `docs/design/10-domains/` (deep dives)
 12. `docs/design/90-decisions/` (ADRs)
