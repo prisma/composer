@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * Fails on any tracked text file that contains a control character other than
- * tab, newline and carriage return (Unicode category Cc: 0x00–0x1F, 0x7F–0x9F).
- * See .agents/rules/no-control-bytes-in-source.mdc.
+ * Fails on any tracked text file that, read as UTF-8, contains a control
+ * character other than tab, newline and carriage return (Unicode category Cc).
+ * Bytes 0x00–0x1F and 0x7F are found in any encoding; C1 controls (U+0080–U+009F)
+ * only when UTF-8 encoded. See .agents/rules/no-control-bytes-in-source.mdc.
  *
  * Exits 1 (printing `file:line: <bytes>`) on any finding; else 0. An optional
  * CLI arg overrides the scanned repo root (used by the tests).
@@ -29,8 +30,9 @@ export function findControlBytes(root) {
     let text;
     try {
       text = readFileSync(join(root, file), 'utf8');
-    } catch {
-      continue;
+    } catch (error) {
+      if (error.code === 'ENOENT') continue;
+      throw error;
     }
     text.split('\n').forEach((line, index) => {
       const bytes = line.match(CONTROL_BYTE);

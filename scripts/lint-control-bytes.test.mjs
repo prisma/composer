@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execPath } from 'node:process';
@@ -43,6 +43,21 @@ describe('findControlBytes', () => {
     track('logo.png', '\0\x01\x02');
     writeFileSync(join(base, 'untracked.ts'), '\0');
     assert.deepEqual(findControlBytes(base), []);
+  });
+
+  it('skips a tracked file deleted from the working tree', () => {
+    track('gone.ts', 'x');
+    rmSync(join(base, 'gone.ts'));
+    assert.deepEqual(findControlBytes(base), []);
+  });
+
+  it('fails on a tracked file it cannot read', () => {
+    mkdirSync(join(base, 'dir.ts'));
+    writeFileSync(join(base, 'dir.ts', 'inner'), 'x');
+    execFileSync('git', ['add', 'dir.ts/inner'], { cwd: base });
+    rmSync(join(base, 'dir.ts'), { recursive: true });
+    writeFileSync(join(base, 'dir.ts'), 'x');
+    assert.throws(() => findControlBytes(base), { code: 'ENOTDIR' });
   });
 
   it('exits 1 naming the file when run as a script', () => {
