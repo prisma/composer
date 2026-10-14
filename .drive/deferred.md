@@ -1,5 +1,12 @@
 # Deploy CLI MVP — Deferred items
 
+- **Destroy without a build.** The programmatic `destroy` operation
+  (`cli/src/operations/execute-deploy-destroy.ts`) evaluates the same stack
+  program as deploy, so it refuses to run until the app is built. Investigate
+  whether `alchemy destroy` can run the generated stack with placeholder
+  bundles (does destroy-time evaluation invoke the pack's `package()`?).
+  Needs live credentials. Origin: S3 review finding #1; MVP documents the
+  build-first requirement instead.
 - **Assemble-time native-addon detection.** The catch-all wrapper inlining
   ships a `.node`-bearing dep's JS without its binary → boot failure. Detect
   and fail loudly at assemble, or keep known-native packages external and copy
@@ -64,8 +71,10 @@ registry). What we deliberately didn't do:
   and have local/test runs opt out explicitly, then design the mock-bindings
   slice against that. Related: the variable's name is spelled separately in
   two packages (`RPC_ACCEPTED_KEYS_ENV` in service-rpc, `RPC_ACCEPTED_KEYS`
-  through `configKey` in the target's `service-keys.ts`), so a rename on one
-  side would also fail open. Share the constant or add a cross-package test.
+  through `configKey` in the target's `service-keys.ts`). A rename on one
+  side already fails the cross-package test that pins the two spellings
+  together (`target/src/__tests__/extension.test.ts`, "writer and reader
+  cannot drift"); sharing the constant would still remove the duplication.
   Origin: forcing-function-apps streams-binding audit, 2026-07.
 - **Wired egress: mount an rpc port only if something is wired to it.**
   Today `serve()` mounts every rpc port of a service under one flat
@@ -75,9 +84,23 @@ registry). What we deliberately didn't do:
   network only when a consumer is wired to it, it accepts only those edges'
   keys, and public exposure becomes an explicit binding the root supplies.
   The platform gives a Compute version one port and one public URL, so v1
-  would be per-port path prefixes on the one listener. Design record:
-  the `wired-egress` Drive project on branch `claude/wired-egress-project`.
-  Rationale in `docs/design/10-domains/auth-module.md`.
+  would be per-port path prefixes on the one listener. The design as settled:
+  - An unwired port is not key-protected; it is absent (404).
+  - Lowering mints a mount table per service: for each wired port, a path
+    prefix from the port name (`/session`, `/admin`) and that port's edge
+    keys. The provider reads the table from config. The consumer's `url`
+    connection param is minted with the prefix already in it, so consumers
+    never change.
+  - `serve()` splits into a protocol-blind router that matches the prefix,
+    checks the mount's keys and hands the request to that port's server.
+    rpc is one kind of port server; Better Auth's HTTP API is another.
+  - Public exposure is the only new authoring: a binding the root supplies
+    at `provision()`, like `envSecret`. A surface with no binding, public or
+    in-graph, is not served. For auth, the recommended wiring gives the auth
+    service no public surface at all; the storefront proxies to it.
+  Rationale in `docs/design/10-domains/auth-module.md`. The full design
+  record (spec, rejected alternatives) is on branch
+  `claude/wired-egress-project` under `.drive/projects/wired-egress/`.
 
 # Prisma ORM data contract — deferred at project close (2026-07-12)
 
