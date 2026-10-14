@@ -76,7 +76,7 @@ registry). What we deliberately didn't do:
   keys, and public exposure becomes an explicit binding the root supplies.
   The platform gives a Compute version one port and one public URL, so v1
   would be per-port path prefixes on the one listener. Design record:
-  `.drive/projects/wired-egress/` on branch `claude/wired-egress-project`.
+  the `wired-egress` Drive project on branch `claude/wired-egress-project`.
   Rationale in `docs/design/10-domains/auth-module.md`.
 
 # Prisma ORM data contract — deferred at project close (2026-07-12)
