@@ -62,7 +62,11 @@ registry). What we deliberately didn't do:
   Mock/in-memory bindings rely on the same pass-through today, because a mock
   binding has no edge and no minted key. Fix: make enforcement the default
   and have local/test runs opt out explicitly, then design the mock-bindings
-  slice against that. Origin: forcing-function-apps audit, 2026-07.
+  slice against that. Related: the variable's name is spelled separately in
+  two packages (`RPC_ACCEPTED_KEYS_ENV` in service-rpc, `RPC_ACCEPTED_KEYS`
+  through `configKey` in the target's `service-keys.ts`), so a rename on one
+  side would also fail open. Share the constant or add a cross-package test.
+  Origin: forcing-function-apps streams-binding audit, 2026-07.
 - **Wired egress: mount an rpc port only if something is wired to it.**
   Today `serve()` mounts every rpc port of a service under one flat
   `/rpc/<method>` route, with one accepted key set for the whole service, so
