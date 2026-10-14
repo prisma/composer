@@ -19,6 +19,12 @@ interface FakeProject {
   logicalId?: string | null;
 }
 
+interface FakeRepository {
+  repoId: number;
+  repoFullName: string;
+  status: 'active' | 'archived';
+}
+
 interface FakeBranch {
   id: string;
   gitName: string;
@@ -51,6 +57,12 @@ interface FakeState {
   projectsCursorMissing?: boolean;
   /** When set, POST /v1/projects responds with a 409 (name already in use). */
   projectCreateConflict?: boolean;
+  repositories: Record<string, FakeRepository[]>;
+  repositoryQueries: string[];
+  repositoryPageSize?: number;
+  repositoryResponseStatus?: number;
+  repositoryCursorMissing?: boolean;
+  branchReadCalls: string[];
 }
 
 const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
@@ -62,6 +74,9 @@ const newFakeState = (overrides: Partial<FakeState> = {}): FakeState => ({
   raced: false,
   deleteBranchCalls: [],
   deleteProjectCalls: [],
+  repositories: {},
+  repositoryQueries: [],
+  branchReadCalls: [],
   ...overrides,
 });
 
@@ -78,8 +93,8 @@ const errorResponse = (status: number) => ({
 });
 
 /**
- * A stubbed `ManagementApiClient` covering only `/v1/projects` and
- * `/v1/projects/{projectId}/branches` — everything `resolveContainer`
+ * A stubbed `ManagementApiClient` covering projects, source repositories and
+ * branches — everything `resolveContainer`
  * calls. `as ManagementApiClient` is acceptable here (test file — exempt
  * from the no-bare-cast rule): this fake's shape already guarantees the
  * safety a hand-written openapi-fetch generic signature would.
@@ -120,11 +135,35 @@ const fakeClient = (state: FakeState): ManagementApiClient => {
     }
     if (path === '/v1/projects/{projectId}/branches') {
       const projectId = init.params?.path?.['projectId'] ?? '';
+      state.branchReadCalls.push(projectId);
       const gitName = init.params?.query?.['gitName'];
       const all = state.branches[projectId] ?? [];
       const data = gitName === undefined ? all : all.filter((b) => b.gitName === gitName);
       return Promise.resolve(
         okResponse({ data, pagination: { nextCursor: null, hasMore: false } }),
+      );
+    }
+    if (path === '/v1/source-repositories') {
+      const projectId = init.params?.query?.['projectId'] ?? '';
+      state.repositoryQueries.push(projectId);
+      if (state.repositoryResponseStatus !== undefined) {
+        return Promise.resolve(errorResponse(state.repositoryResponseStatus));
+      }
+      const offset = Number(init.params?.query?.['cursor'] ?? 0);
+      const repositories = state.repositories[projectId] ?? [];
+      const pageSize = state.repositoryPageSize ?? repositories.length;
+      const data = repositories.slice(offset, offset + pageSize);
+      const nextOffset = offset + data.length;
+      const hasMore = state.repositoryCursorMissing === true || nextOffset < repositories.length;
+      return Promise.resolve(
+        okResponse({
+          data,
+          pagination: {
+            nextCursor:
+              hasMore && state.repositoryCursorMissing !== true ? String(nextOffset) : null,
+            hasMore,
+          },
+        }),
       );
     }
     throw new Error(`fakeClient: unexpected GET ${path}`);
@@ -220,6 +259,7 @@ const run = (
     stage?: string;
     ensure?: boolean;
     region?: ProjectRegion;
+    repositoryId?: number;
   },
 ) =>
   Effect.runPromise(
@@ -511,6 +551,163 @@ describe('resolveContainer — Project resolution', () => {
     expect((error as PrismaApiError).status).toBe(409);
     expect((error as PrismaApiError).message).toContain('already exists');
     expect((error as PrismaApiError).message).toContain('free the name');
+  });
+});
+
+describe('resolveContainer — GitHub repository connection', () => {
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = newFakeState({
+      projects: ['own', 'other'].map((name) => ({
+        id: `proj-${name}`,
+        name,
+        logicalId: name,
+        createdAt: new Date(1).toISOString(),
+        workspace: { id: 'ws-1' },
+      })),
+      branches: {
+        'proj-own': [
+          { id: 'br-own', gitName: 'main', isDefault: true, createdAt: new Date(1).toISOString() },
+        ],
+        'proj-other': [
+          {
+            id: 'br-other',
+            gitName: 'main',
+            isDefault: true,
+            createdAt: new Date(1).toISOString(),
+          },
+        ],
+      },
+      repositories: {
+        'proj-own': [{ repoId: 101, repoFullName: 'acme/own', status: 'active' }],
+        'proj-other': [{ repoId: 202, repoFullName: 'acme/other', status: 'active' }],
+      },
+    });
+  });
+
+  test.each([undefined, 'preview'])(
+    'a renamed root cannot select another connected Project (stage %s)',
+    async (stage) => {
+      await expect(
+        run(state, {
+          workspaceId: 'ws-1',
+          appName: 'other',
+          repositoryId: 101,
+          ...(stage !== undefined ? { stage } : {}),
+        }),
+      ).rejects.toThrow('is connected to Project "own" (proj-own)');
+      expect(state.projectCreateCalls).toBe(0);
+      expect(state.branchCreateCalls).toBe(0);
+      expect(state.branchReadCalls).toEqual([]);
+    },
+  );
+
+  test('the same refusal covers legacy display-name matching', async () => {
+    delete state.projects[1]!.logicalId;
+    await expect(
+      run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 }),
+    ).rejects.toThrow('selects Project "other" (proj-other)');
+    expect(state.branchReadCalls).toEqual([]);
+  });
+
+  test('a connected repository cannot create a new Project by changing the app name', async () => {
+    await expect(
+      run(state, {
+        workspaceId: 'ws-1',
+        appName: 'new-name',
+        repositoryId: 101,
+        region: 'us-east-1',
+      }),
+    ).rejects.toThrow('selects no existing Project');
+    expect(state.projectCreateCalls).toBe(0);
+    expect(state.branchReadCalls).toEqual([]);
+  });
+
+  test("a repository with no visible active connection cannot adopt another repository's Project", async () => {
+    state.repositories['proj-own'] = [];
+    await expect(
+      run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 }),
+    ).rejects.toThrow('but this run is from repository 101');
+    expect(state.branchReadCalls).toEqual([]);
+  });
+
+  test('destroy cannot resolve a different connected Project either', async () => {
+    await expect(
+      run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101, ensure: false }),
+    ).rejects.toThrow('is connected to Project "own"');
+    expect(state.branchReadCalls).toEqual([]);
+  });
+
+  test('a matching connection resolves normally using numeric identity after a repository rename', async () => {
+    state.repositories['proj-own']![0]!.repoFullName = 'acme/renamed';
+    expect(await run(state, { workspaceId: 'ws-1', appName: 'own', repositoryId: 101 })).toEqual({
+      projectId: 'proj-own',
+      defaultBranchId: 'br-own',
+    });
+  });
+
+  test('the guard pages source connections instead of adopting a possibly incomplete listing', async () => {
+    state.repositoryPageSize = 1;
+    state.repositories['proj-own']!.unshift({
+      repoId: 303,
+      repoFullName: 'acme/archived',
+      status: 'archived',
+    });
+    await expect(
+      run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 }),
+    ).rejects.toThrow('is connected to Project "own"');
+    expect(state.repositoryQueries).toEqual(['proj-own', 'proj-own']);
+  });
+
+  test.each([401, 404, 500])(
+    'a failed connection lookup (HTTP %s) refuses before mutations',
+    async (status) => {
+      state.repositoryResponseStatus = status;
+      await expect(
+        run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 }),
+      ).rejects.toThrow();
+      expect(state.projectCreateCalls).toBe(0);
+      expect(state.branchReadCalls).toEqual([]);
+    },
+  );
+
+  test('broken source pagination fails rather than skipping the guard', async () => {
+    state.repositoryCursorMissing = true;
+    await expect(
+      run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 }),
+    ).rejects.toThrow('reported more pages but returned no cursor');
+    expect(state.branchReadCalls).toEqual([]);
+  });
+
+  test('connections outside the configured workspace do not constrain the deploy', async () => {
+    state.projects[0]!.workspace.id = 'ws-other';
+    state.repositories['proj-other'] = [];
+    state.branches['proj-other'] = state.branches['proj-own']!;
+    expect(
+      (await run(state, { workspaceId: 'ws-1', appName: 'other', repositoryId: 101 })).projectId,
+    ).toBe('proj-other');
+    expect(state.repositoryQueries).toEqual(['proj-other']);
+  });
+
+  test('first deploy can create its Project while no active source connection is visible', async () => {
+    state.projects = [];
+    expect(
+      (
+        await run(state, {
+          workspaceId: 'ws-1',
+          appName: 'own',
+          repositoryId: 101,
+          region: 'us-east-1',
+        })
+      ).projectId,
+    ).toBe('proj-1');
+    expect(state.projectCreateCalls).toBe(1);
+  });
+
+  test('outside GitHub Actions the resolver makes no source-repository requests', async () => {
+    expect((await run(state, { workspaceId: 'ws-1', appName: 'own' })).projectId).toBe('proj-own');
+    expect(state.repositoryQueries).toEqual([]);
   });
 });
 

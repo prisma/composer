@@ -347,6 +347,18 @@ stage is a Branch of it, with its own running services, its own empty
 database, its own configuration. A stage name must be a valid git ref name;
 an invalid name is a hard error.
 
+**GitHub destination check.** In GitHub Actions, the root module name (or
+`--name`) must select the Project of the repository's active Console connection.
+A mismatch, including a new name that would create a second Project, fails
+before container mutations or Alchemy. Restore the connected Project's name
+or change the repository connection in Console deliberately. The check uses
+numeric `GITHUB_REPOSITORY_ID` and applies to destroy too; missing or malformed
+identity and failed connection lookups fail the run. The API exposes active
+links only, so pending setup links alone do not constrain name selection;
+first deploy can still create a Project but cannot adopt one actively linked
+to a different repository. Outside GitHub Actions selection is unchanged.
+This guard does not narrow workspace-wide token permissions.
+
 **Destroy** is the `destroy` operation, and its `target` is required:
 `{ kind: 'stage', stage }` or `{ kind: 'production' }`, never a default:
 
