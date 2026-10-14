@@ -105,6 +105,21 @@ only as a container id carried in providers' `branchId` props; it is never an
 Alchemy resource itself, since its lifecycle lives outside Alchemy
 (ADR-0024).
 
+### Deleting an App gives up after about four seconds of conflicts
+
+Upstream's `destroyApp` (`alchemy/src/Prisma/ComputeLifecycle.ts`) retries the
+platform's 409 ("did not reach a delete-safe state") five times, sleeping
+250 ms, 500 ms, 1 s and 2 s between attempts: about 3.75 seconds of waiting in
+all. It does not wait for the App's deployments to drain first; it deletes the
+App and relies on the platform's cascade. Composer's own provider, before the
+upstream adoption, retried for up to 5 minutes.
+
+Alchemy does delete a tracked `Prisma.Deployment` before the App that owns it,
+because the resource graph orders them. A deployment still winding down can
+still make the App delete 409 past that budget. The case to watch is
+destroying a stage that served traffic seconds earlier. The upstream ask is in
+[`.drive/deferred.md`](../../../.drive/deferred.md).
+
 ## Platform identity: `logicalId`
 
 A node that has a platform row has exactly one row that represents it, and that row's `logicalId` is the node's address, byte for byte ([ADR-0051](../90-decisions/ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md)). The application topology submitted on each deploy uses the same string for the node, so the platform can match the two.
