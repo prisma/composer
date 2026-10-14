@@ -240,6 +240,7 @@ author and no app author ever hand-wires them.
 ## Related
 
 - [`pdp-data-model.md`](pdp-data-model.md) — the platform model these resources manage.
+- [`build-reporting.md`](build-reporting.md) — how a deploy reports itself and the resources it touched as a Build.
 - [`../10-domains/core-model.md`](../10-domains/core-model.md) — the SPI that
   drives this lowering (three execution paths, phased service SPI).
 - [`../10-domains/deploy-cli.md`](../10-domains/deploy-cli.md) § Stages and
