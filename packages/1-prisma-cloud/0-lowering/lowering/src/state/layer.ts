@@ -8,10 +8,10 @@ import {
   type StateService,
 } from 'alchemy/State';
 import * as Effect from 'effect/Effect';
+import * as FetchHttpClient from 'effect/http/FetchHttpClient';
+import * as HttpClientRequest from 'effect/http/HttpClientRequest';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as FetchHttpClient from 'effect/unstable/http/FetchHttpClient';
-import * as HttpClientRequest from 'effect/unstable/http/HttpClientRequest';
 import { buildsApi } from '../builds/api.ts';
 import { BUILD_ID_ENV } from '../builds/resources.ts';
 import { withResourceReporting } from '../builds/state-store.ts';

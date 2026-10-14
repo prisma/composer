@@ -16,7 +16,7 @@
   "dependencies": {
     "@prisma/composer": "workspace:0.29.1",
     "@prisma/composer-prisma-cloud": "workspace:0.29.1",
-    "alchemy": "2.0.0-beta.78"
+    "alchemy": "2.0.0-beta.83"
   },
   "devDependencies": {
     "@prisma/composer": "workspace:0.29.1",

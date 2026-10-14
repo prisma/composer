@@ -307,6 +307,17 @@ async function checkShape(label, tarballs, npm = CURRENT_NPM) {
     fail(`[${label}] alchemy's provider tree did not import in a healthy tree:\n${probe.output}`);
   }
 
+  if (label === 'composer-cli-and-prisma-cloud') {
+    const providers = importAlchemy(
+      label,
+      appDir,
+      "await import('alchemy/Prisma'); await import('@prisma/composer-prisma-cloud/control');",
+    );
+    if (providers.status !== 0) {
+      fail(`[${label}] Prisma Cloud providers did not import:\n${providers.output}`);
+    }
+  }
+
   assertFamilyImports(label, appDir, 'a healthy tree');
 
   process.stderr.write(

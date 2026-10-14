@@ -5,11 +5,12 @@ The Alchemy resource types Composer lowers to over the
 lowering graphs — including the correction that makes deploy ordering a property
 of the dependency graph rather than luck.
 
-The postgres family (`Project`, `Database`, `Connection`) and the compute
-family (`App`, `Deployment`, `EnvironmentVariable`) are **upstream alchemy's**
-(`alchemy/Prisma`), not ours: Composer registers their providers and binds their
-props. What `@internal/lowering` still owns is the artifact packager, the
-buckets, `ServiceKey`, and the hosted state store.
+The postgres family (`Project`, `Database`, `Connection`), the compute
+family (`App`, `Deployment`, `EnvironmentVariable`) and the bucket family
+(`Bucket`, `BucketAccessKey`) are **upstream alchemy's** (`alchemy/Prisma`), not
+ours: Composer registers their providers and binds their props. What
+`@internal/lowering` still owns is the artifact packager, `ServiceKey`, and the
+hosted state store.
 
 ## Placement: one Project per application, one Branch per stage
 
@@ -80,19 +81,20 @@ and manual cleanup).
 
 Each row is a resource type the lowering binds. The `Prisma.*` families are
 upstream `alchemy/Prisma` classes (ADR-0048) — Composer registers them in its
-provider collection and defines resources only where the upstream provider
-has no support yet (buckets) or no Management API exists behind them.
+provider collection and defines resources only where no Management API exists
+behind them.
 
 | Resource (upstream `alchemy/Prisma`) | PDP entity it manages | Props (in) | Outputs (out) | Notes |
 | --- | --- | --- | --- | --- |
 | `Prisma.Project` | Project | name | projectId | **one per Prisma Composer application**; resolved by the CLI before Alchemy runs, so no lowering yields one |
-| `Prisma.Database` | Database | project, name?, region, branchId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
+| `Prisma.Database` | Database | project, name?, region, branchId?, logicalId? | databaseId, connection strings | one per Module-provisioned postgres resource; never the project default; a branch-attached database is created with `branchId` and no display name (upstream refuses the combination — see [deploying.md](../../guides/deploying.md)) |
 | `Prisma.Connection` | database connection info | database, name | connectionId, directConnectionString | Composer binds the DIRECT string explicitly; upstream's `databaseUrl` is pooled-first |
-| `Prisma.App` | App | project, displayName, regionId, branchId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
+| `Prisma.App` | App | project, displayName, regionId, branchId?, logicalId? | appId, appEndpointDomain | `branchId` targets a named stage's Branch; omitted, upstream attaches the App to the project's default (production) Branch. `appEndpointDomain` is available at provision — that is what a service's own origin is read from |
 | `Prisma.EnvironmentVariable` | ConfigVariable | project, class, key, value (Redacted), branchId? | environmentVariableId | production-class with no `branchId` on the default stage; preview-class with `branchId` on a named stage. Values are write-only, so upstream re-applies the desired one on every deploy |
 | `Prisma.Deployment` | Deployment (ComputeVersion) + Promotion | app, artifactPath, artifactContentType, portMapping, triggers, start, promote | deploymentId, appEndpointDomain | provider reconcile: create → upload tar.gz → start → poll until running → promote; `appEndpointDomain` read **post-promote** (create-time domain is a placeholder — PRO-200). It is replaced, not updated, when its artifact fingerprint or its `triggers` fingerprint moves |
+| `Prisma.Bucket` | Bucket | project, name, branchId?, logicalId? | bucketId, name | one per bucket resource; `Prisma.BucketAccessKey` mints its read-write S3 credentials, which become the node's outputs |
 
-The props above are the ones Composer passes today. The `logicalId` each node's row must carry is in [§ Platform identity](#platform-identity-logicalid).
+`logicalId` is set on every deploy except branchless local dev; [§ Platform identity](#platform-identity-logicalid) says what it carries.
 
 What we deliberately do **not** model yet, and where it will bite:
 **Promotion** as a standalone resource (the Deployment provider
@@ -125,7 +127,7 @@ Rules:
 Status:
 
 - The Project carries its `logicalId` when Composer created it. Projects created before that are found by display name and have none.
-- App, Database and Bucket need the `logicalId` prop that upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849). Until Composer upgrades to a release that includes it, those rows have no `logicalId` and match no topology node. The upgrade must pass `logicalId: address` in the same change: an upgrade alone would write the Alchemy resource ID (`catalog-db`) onto every existing row.
+- App, Database and Bucket rows carry the address as `logicalId` on every stage, through the prop upstream alchemy added in [alchemy-run/alchemy#1849](https://github.com/alchemy-run/alchemy/pull/1849) (first in `2.0.0-beta.83`). Rows created before that gain it on their next deploy, as an in-place update. The `deploy-verify-destroy` CI action checks after each real deploy that every service, database and bucket node matches exactly one row on the stage's Branch (`scripts/e2e-verify-identity.ts`).
 - With `prisma deploy --name`, the Project's `logicalId` is the `--name` value, but the topology's root node is still submitted under the module's own name, so the two don't match. The CLI loads the graph it reports without the override. This is a defect.
 
 ## Stages and container resolution

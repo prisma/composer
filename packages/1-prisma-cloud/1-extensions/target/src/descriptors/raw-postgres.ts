@@ -12,10 +12,10 @@ import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared
  * exactly once.
  */
 export function rawPostgresDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ id, application }) =>
+  const lowering: Lowering = ({ id, address, application }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      const { db, url } = yield* stageDatabase({ id, application, region: o().region });
+      const { db, url } = yield* stageDatabase({ id, address, application, region: o().region });
       // Warm the DB so a consumer's first connect doesn't eat PPG's cold-start
       // (FT-5226). `warm.url` is the same url, so consumers depend on the warm.
       const warm = yield* PgWarm(`${id}-warm`, { url });
