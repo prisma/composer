@@ -29,6 +29,8 @@ jobs:
         run: pnpm lint:deps
       - name: Lint (docs, examples, workflows and package messages never name the retired binary)
         run: pnpm lint:retired-binary-name
+      - name: Lint (no control bytes in tracked files)
+        run: pnpm lint:control-bytes
 
   typecheck:
     name: Type Check
