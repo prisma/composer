@@ -9,7 +9,7 @@ export type { BucketConfig } from '../bucket.ts';
 export { bucket, bucketContract } from '../bucket.ts';
 export { ComputeService, compute } from '../compute.ts';
 export type { HttpClient } from '../http.ts';
-export { http } from '../http.ts';
+export { http, httpContract } from '../http.ts';
 export type { GeneratedParamOptions } from '../param.ts';
 export {
   envParam,

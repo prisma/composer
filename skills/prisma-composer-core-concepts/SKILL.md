@@ -193,6 +193,25 @@ be reimplemented:
    provisioned, so `serve()` passes every call through: never supply a key
    in test inputs.
 
+## Ordinary HTTP connections
+
+For reverse proxies and existing HTTP servers, import `http` and `httpContract`
+from `@prisma/composer-prisma-cloud`. The provider declares
+`expose: { http: httpContract }`; the caller declares `deps: { site: http() }`;
+the Module wires `provision(gateway, { deps: { site: siteRef.http } })`.
+`gateway.load().site` is a typed `{ url, fetch(path, init) }` client. Pass `url`
+to the application's proxy or use `fetch` directly. No RPC handler is needed.
+
+HTTP connections survive Module forwarding and export as request/response
+communication edges, so Console can show Internet → gateway → upstreams.
+They represent declared calls, not access restrictions or measured traffic.
+`serviceOrigin()` in input supplies configuration and creates no connection;
+use HTTP dependencies for proxy upstreams, and keep canonical link origins in
+input. `http()` requires an exposed HTTP port at both type-check and Load.
+The original `http({ name })` overload stays untyped for compatibility; use
+the no-argument form for new declarations. HTTP ports do not inherit RPC's
+service-key, retry or idempotency behaviour.
+
 ## Builds are yours
 
 You build, the framework assembles. For a plain server process, `entry`

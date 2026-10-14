@@ -34,7 +34,7 @@ values.
 
 ## Contracts
 
-A **contract** is a service's API written as schemas, and it types both ends
+An **RPC contract** is a service's API written as schemas, and it types both ends
 of the edge: the producer's handlers and the consumer's client. Define it
 once, in the package of the service that owns it:
 
@@ -66,8 +66,8 @@ On the consumer, declare `deps: { auth: rpc(authContract) }` and
 like a local function. Inputs and outputs are also validated at runtime, at
 the boundary, against the same schemas.
 
-The only contract kind today is RPC over HTTP — no gRPC, WebSockets, or
-streaming contracts yet.
+Composer also supports [ordinary HTTP ports](#http-connections-and-reverse-proxies).
+There are no gRPC, WebSocket or streaming contracts yet.
 
 ### Calls are authenticated for you
 
@@ -118,6 +118,55 @@ Two limits worth knowing:
 - **Each dependency gets its own key**, so one leaking never exposes the
   others. Keys stay the same across redeploys; to replace one, remove the
   dependency (or destroy the stack) and deploy again.
+
+## HTTP connections and reverse proxies
+
+A reverse proxy, Next.js app or static file server already speaks HTTP. Expose
+`httpContract` on the provider and declare `http()` in its caller's `deps`:
+
+```ts
+import { module } from '@prisma/composer';
+import node from '@prisma/composer/node';
+import { compute, http, httpContract } from '@prisma/composer-prisma-cloud';
+
+const site = compute({
+  name: 'site', deps: {}, expose: { http: httpContract },
+  build: node({ module: import.meta.url, dir: './dist/site', entry: 'server.js' }),
+});
+const docs = compute({
+  name: 'docs', deps: {}, expose: { http: httpContract },
+  build: node({ module: import.meta.url, dir: './dist/docs', entry: 'server.js' }),
+});
+const gateway = compute({
+  name: 'gateway', deps: { site: http(), docs: http() },
+  build: node({ module: import.meta.url, dir: './dist/gateway', entry: 'server.js' }),
+});
+
+export default module('web', ({ provision }) => {
+  const siteRef = provision(site);
+  const docsRef = provision(docs);
+  provision(gateway, { deps: { site: siteRef.http, docs: docsRef.http } });
+});
+```
+
+The gateway reads its upstreams with `gateway.load()`. Each binding has a `url`
+for the application's proxy library and `fetch(path, init)` for ordinary HTTP
+requests. Composer resolves those origins for local development and each
+deployed stage. Providers continue serving their existing HTTP handlers;
+exposing the port adds no RPC endpoint or authentication middleware.
+
+These wires are actual communication edges in the Console topology, including
+through exposed Module ports. Console can present Internet → gateway →
+site/docs, with HTTP edges styled as request/response. This describes declared
+calls; it does not measure traffic or make upstream Compute URLs private.
+`serviceOrigin()` in `input` is still useful for a canonical URL in generated
+links, but a configuration reference does not declare that one service calls
+another. Use dependencies for proxy upstreams.
+
+The original `http({ name })` overload remains an untyped compatibility escape
+hatch. New code should use `http()` and wire an exposed `httpContract` port:
+TypeScript and Load then reject a bare service ref or an incompatible contract,
+and the exported topology retains the named connection.
 
 ## Databases
 
