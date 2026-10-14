@@ -35,6 +35,7 @@ The capture workflow is the Ignite `product-record-gotcha` skill.
 - [Module-boundary param slots admit only sources, never a literal — a static-per-app value forces a platform env var or a factory option](#module-boundary-param-slots-admit-only-sources-never-a-literal--a-static-per-app-value-forces-a-platform-env-var-or-a-factory-option)
 - [prisma dev fetches its implementation at run time — a broken @prisma/cli-dev publish fails every cold-cache invocation, regardless of the pinned CLI version](#prisma-dev-fetches-its-implementation-at-run-time--a-broken-prismacli-dev-publish-fails-every-cold-cache-invocation-regardless-of-the-pinned-cli-version)
 - [prisma dev shares one Postgres session across all connections — a restarted Bun.SQL client crash-loops on 42P05](#prisma-dev-shares-one-postgres-session-across-all-connections--a-restarted-bunsql-client-crash-loops-on-42p05)
+- [A default-export Bun server never starts on Compute — call `Bun.serve()` explicitly](#a-default-export-bun-server-never-starts-on-compute--call-bunserve-explicitly)
 - [In this repository the published prisma host runs the workspace family only through a pnpm override plus a root devDependency](#in-this-repository-the-published-prisma-host-runs-the-workspace-family-only-through-a-pnpm-override-plus-a-root-devdependency)
 
 ---
@@ -71,7 +72,7 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 - Upstream: [PRO-200](https://linear.app/prisma-company/issue/PRO-200/compute-services-create-returns-a-placeholder-region)
 - Workaround source: [`packages/prisma-alchemy/src/compute/Deployment.ts`](packages/prisma-alchemy/src/compute/Deployment.ts)
-- Related: [`.drive/projects/mvp-example-app/design-notes.md`](.drive/projects/mvp-example-app/design-notes.md) — "Validated end-to-end (Compute)"
+- Related: [`docs/design/05-prisma-cloud/alchemy-lowering.md`](docs/design/05-prisma-cloud/alchemy-lowering.md) — "The resource inventory", `Prisma.Deployment` row
 
 ---
 
@@ -100,7 +101,6 @@ Same service id (created explicitly in `us-east-1`), different region subdomain 
 
 - Upstream: [PRO-201](https://linear.app/prisma-company/issue/PRO-201/app-build-build-type-nextjs-yields-a-boot-crashing-standalone-for-pnpm)
 - Workaround source: [`packages/app-nextjs/src/assemble.ts`](packages/app-nextjs/src/assemble.ts), [`.npmrc`](.npmrc)
-- Related: [`.drive/projects/mvp-example-app/design-notes.md`](.drive/projects/mvp-example-app/design-notes.md) — "Compute skill findings"
 
 ---
 
@@ -640,6 +640,20 @@ Consumers then see `Unable to connect` / `ConnectionRefused` on the service's RP
 1. `startPrismaDevServer({ name, persistenceMode: 'stateless' })`, then take `database.connectionString`.
 2. `new SQL({ url, max: 1 })`, run `create table if not exists t (id int)`, then close it.
 3. Open a second `new SQL({ url, max: 1 })` and run the same statement → 42P05. With `prepare: false` both succeed.
+
+---
+
+## A default-export Bun server never starts on Compute — call `Bun.serve()` explicitly
+
+**Filed upstream:** not filed — Bun's documented behaviour, not a product bug.
+**Product:** Prisma Compute (Bun runtime)
+**First hit:** `examples/smoke` — the first Compute service deployed through Composer's own provider
+
+**Symptom.** The deploy is green and the version reports `running`, but the service never listens: every request to its URL fails.
+
+**Cause.** Bun starts a server from `export default { port, fetch }` only when that module is the process's entrypoint. On Compute the entrypoint is Composer's boot wrapper (`main.mjs`), which then loads the app's own built entry. The app's module is not the entrypoint, so Bun ignores its default export.
+
+**Workaround.** Call `Bun.serve({ port, hostname: '0.0.0.0', fetch })` in the app's entry, with the port from the service's config.
 
 ---
 
