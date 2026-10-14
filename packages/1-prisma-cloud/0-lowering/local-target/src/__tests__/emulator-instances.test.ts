@@ -147,6 +147,18 @@ describe('errors name services by address', () => {
     expect((rewritten as Error).cause).toBe(original);
   });
 
+  test("the emulator's listens hint becomes the compute() option, alongside the address", () => {
+    const original = new Error(
+      'request failed (500): instance "svc_0123456789abcdef" did not accept connections on its port 3001 within 30s. If it never listens on its port, deploy it with listens: false.',
+    );
+
+    const rewritten = withServiceAddresses(original, nodes);
+
+    expect((rewritten as Error).message).toBe(
+      'request failed (500): service "shop.quotes" did not accept connections on its port 3001 within 30s. If it never listens on its port, declare it with compute({ listens: false }).',
+    );
+  });
+
   test('a structured error is left untouched', () => {
     const structured = new CliStructuredError(
       'DEV.EMULATOR_UNREACHABLE',
