@@ -27,7 +27,7 @@ export function s3StoreService<
   E extends Expose = Record<never, never>,
 >(def: Parameters<typeof compute<D, I, E>>[0]): ReturnType<typeof compute<D, I, E>> {
   const node = compute<D, I, E>(def);
-  const instance = new ComputeService<D, I, E>({ ...node, type: 's3-store' });
+  const instance = new ComputeService<D, I, E>({ ...node, type: 's3-store' }, node.listens);
   Object.freeze(instance);
   return instance;
 }

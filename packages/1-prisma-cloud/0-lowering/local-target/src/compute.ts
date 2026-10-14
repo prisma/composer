@@ -122,6 +122,7 @@ interface ComputeManifest {
   readonly manifestVersion: string;
   readonly entrypoint: string;
   readonly address?: string;
+  readonly listens?: boolean;
 }
 
 function isComputeManifest(value: unknown): value is ComputeManifest {
@@ -131,18 +132,23 @@ function isComputeManifest(value: unknown): value is ComputeManifest {
     'manifestVersion' in value &&
     typeof value.manifestVersion === 'string' &&
     'entrypoint' in value &&
-    typeof value.entrypoint === 'string'
+    typeof value.entrypoint === 'string' &&
+    (!('address' in value) || typeof value.address === 'string') &&
+    (!('listens' in value) || typeof value.listens === 'boolean')
   );
 }
 
 /**
- * Reads the address the artifact was packaged for out of its own
- * `compute.manifest.json` — intrinsic artifact metadata (the SAME manifest
- * `bootstrap.js` was baked from), never dev config threaded through the
- * platform's `Deployment` primitive (local-dev spec § 4, REVERTED —
- * operator review of #162).
+ * Reads the address the artifact was packaged for, and whether the service
+ * listens on its port, out of its own `compute.manifest.json` — intrinsic
+ * artifact metadata (the SAME manifest `bootstrap.js` was baked from), never
+ * dev config threaded through the platform's `Deployment` primitive
+ * (local-dev spec § 4, REVERTED — operator review of #162).
  */
-function readManifestAddress(artifactDir: string): string {
+export function readComputeManifest(artifactDir: string): {
+  readonly address: string;
+  readonly listens: boolean;
+} {
   const manifestPath = path.join(artifactDir, 'compute.manifest.json');
   let parsed: unknown;
   try {
@@ -153,7 +159,7 @@ function readManifestAddress(artifactDir: string): string {
   if (!isComputeManifest(parsed) || parsed.address === undefined) {
     throw manifestMissingAddressError();
   }
-  return parsed.address;
+  return { address: parsed.address, listens: parsed.listens !== false };
 }
 
 async function materializeEnv(
@@ -328,12 +334,17 @@ export function LocalDeploymentProvider(
           if (!fs.existsSync(artifactDir)) {
             extractComputeArtifact(news.artifactPath, artifactDir);
           }
-          const address = readManifestAddress(artifactDir);
+          const { address, listens } = readComputeManifest(artifactDir);
 
           const { instance } = await ensureComputeInstance(appScopeOf(input), appId);
           const env = await materializeEnv(input.devDir, address, instance.port);
           try {
-            await computeClient().putDeployment(instance.id, { artifactDir, artifactHash, env });
+            await computeClient().putDeployment(instance.id, {
+              artifactDir,
+              artifactHash,
+              env,
+              listens,
+            });
           } catch (error) {
             throw withServiceAddresses(error, [{ address, instance }]);
           }

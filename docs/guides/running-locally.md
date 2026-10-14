@@ -41,7 +41,7 @@ catalog.service: http://localhost:3000
 orders.service: http://localhost:3003
 ```
 
-`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it.
+`dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it, unless it is declared with `compute({ ..., listens: false })`: such a service, like the cron module's scheduler, is running as soon as its process starts.
 
 If a service exits before it listens, or does not listen within 30 seconds, `dev` fails instead of printing `ready`, and stops the app's other services. The message names the service, its port, and its log file, for example `service "gateway" exited (code 1) before it accepted connections on its port 3001. Its log: …/gateway.log`. On a first start it appears in the deploy engine's output, followed by `prisma dev`'s own error that the deploy engine exited with code 1 (`DEV.CONVERGE_FAILED` from the `dev` operation in `@prisma/composer/control`). On a warm start it is the message of the `DEV.SERVICE_START_FAILED` error.
 

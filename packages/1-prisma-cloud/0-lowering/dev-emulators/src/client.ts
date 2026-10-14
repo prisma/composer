@@ -143,6 +143,8 @@ export interface DeploymentRequest {
   readonly artifactDir: string;
   readonly artifactHash: string;
   readonly env: Readonly<Record<string, string>>;
+  /** `false` when the service does not listen on its port: it is `running` once spawned. Defaults to `true`. */
+  readonly listens?: boolean;
 }
 
 const INSTANCE_STATUSES = new Set(['running', 'backoff', 'held', 'stopped']);
