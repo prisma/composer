@@ -9,7 +9,8 @@
  *
  * Criterion 4 (bucket round-trip): PUT an object through the app's own
  * `/blobs/:key` route, confirm it lands as a plain file under
- * `.prisma-composer/dev/buckets/files/<key>`; drop a file directly into
+ * `.prisma-composer/dev/buckets/<app>/files/<key>`, where `<app>` is the app
+ * the directory's `emulator-instances.json` records as current; drop a file directly into
  * that directory and GET it back through the app.
  *
  * Criterion 5 (value sourcing): with `LOCALDEV_FIXTURE_API_KEY` unset, the
@@ -29,6 +30,21 @@ import { prismaBinDir } from './spawn-prisma.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
+}
+
+/** The app `dev` records as current in the directory's `emulator-instances.json`; its buckets' objects live under `buckets/<app>/`. */
+function currentApp(): string {
+  const record: unknown = JSON.parse(
+    fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
+  );
+  assert(
+    typeof record === 'object' &&
+      record !== null &&
+      'current' in record &&
+      typeof record.current === 'string',
+    'emulator-instances.json names the current app',
+  );
+  return record.current;
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
@@ -281,7 +297,8 @@ async function main(): Promise<void> {
     );
     assertEqual(putRes.status, 201, 'PUT /blobs/proving-key.txt through the app');
 
-    const objectPath = path.join(devDir, 'buckets', 'files', 'proving-key.txt');
+    const bucketDir = path.join(devDir, 'buckets', currentApp(), 'files');
+    const objectPath = path.join(bucketDir, 'proving-key.txt');
     const onDisk = await waitForAsync(
       async () => (fs.existsSync(objectPath) ? fs.readFileSync(objectPath, 'utf8') : undefined),
       5_000,
@@ -291,7 +308,7 @@ async function main(): Promise<void> {
     console.log(`[proving] PASS criterion 4 (write direction): ${objectPath}`);
 
     // Drop a file directly into the bucket directory, read it back through the app.
-    const droppedPath = path.join(devDir, 'buckets', 'files', 'dropped-key.txt');
+    const droppedPath = path.join(bucketDir, 'dropped-key.txt');
     fs.writeFileSync(droppedPath, 'dropped straight onto disk');
     const getRes = await waitForAsync(
       () =>
