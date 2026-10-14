@@ -1,41 +1,11 @@
 # Deploy CLI MVP — Deferred items
 
-- **Destroy without a build.** Investigate whether `alchemy destroy` can run
-  the generated stack with placeholder bundles (does destroy-time evaluation
-  invoke the pack's `package()`?). Needs live credentials. Origin: S3 review
-  finding #1; MVP documents the build-first requirement instead.
 - **Assemble-time native-addon detection.** The catch-all wrapper inlining
   ships a `.node`-bearing dep's JS without its binary → boot failure. Detect
   and fail loudly at assemble, or keep known-native packages external and copy
   their binaries. Origin: S3 review finding #3.
-- **"Built output missing" error not covered by CLI-package tests — closed by
-  S5.** `test/integration/test/cli.entry-anchored-resolution.test.ts` now
-  drives the real CLI binary against a real, unbuilt fixture app and asserts
-  on the real "no built entry at" message from `@prisma/composer-node`'s assembler.
-  Origin: S3 review.
-- **CLI publishability — closed by S5.** The CLI no longer depends on any
-  target/adapter pack; resolution is anchored at the app's entry package via
-  `createRequire` (see `packages/app-cli/src/resolve-from-entry.ts`).
-  Origin: S3 review finding #8.
 
 # Authoring layer — deferred at project close (2026-07-09)
-
-## Platform asks — DRAFTED, NOT YET FILED on Linear (operator action)
-
-1. **Workspace-scoped Alchemy state API** — implement alchemy's HTTP `StateApi`
-   v5 (bearer → workspace RBAC, `/version` probe) as a Management API surface.
-   When it lands, deployers switch to the stock `httpStateStore` and the
-   client-side store (ADR-0009) shrinks to a client or dies. Requirements
-   sketch: storage keyed `(stack, stage, fqn)` + `(stack, stage)` outputs;
-   per-(stack, stage) lease semantics (409-on-concurrent-apply acceptable v1);
-   encryption at rest.
-2. **Reserved/unique project names** — PDP allows duplicate project names
-   (verified 2026-07-09), so name-based discovery of control-plane projects
-   (`prisma-composer-state`) is ambiguous and squattable; the client-side ownership
-   marker (bootstrap.ts `verifyOwnership`) is a workaround. Ask: unique names
-   per workspace, or atomic create-if-absent, or a system-project concept.
-   Related: workspace ids circulate in two shapes (`wksp_`-prefixed in API
-   responses, bare in tokens/config) — normalize or document.
 
 ## Capability backlog (later projects — from the authoring-layer roadmap)
 
@@ -43,71 +13,14 @@
   slot to a co-located handler or test mock instead of a network client —
   tests + local dev without deploy. Design pass first (where the binding
   decision lives in wiring).
-- **Dev-mode e2e** (operator ask, PR #10 review): CI boots both storefront-auth
-  services locally against a Postgres, asserts the round trip.
-- **System composition / boundary ports / nesting**; **DIP swap** (replace a
-  dependency by interface); **Data Contract** for data dependencies
-  (migrations open); **streams**; **structural `satisfies`**; **gRPC/WS
-  contract kinds**; **PDL authoring**; **contract errors**;
-  **distributed spec compare**.
-- **Environment-edge propagation** (provenance-based): a changed producer
-  value doesn't redeploy the consumer today (env-var resource exposes only
-  `{id, key}`); fix = consumer depends on the source node's version, never
-  the value. Narrow in practice (promoted endpoints are stable).
+- **DIP swap** (replace a dependency by interface); **structural
+  `satisfies`**; **gRPC/WS contract kinds**; **PDL authoring**; **contract
+  errors**; **distributed spec compare**.
 - **Platform-sourced secrets wired to DI**; **provisioned credentials →
   transient platform secret** (avoid credentials in state — ADR-0009 notes
   the standing concern).
 - **Deterministic Next-standalone artifact** (BUILD_ID non-determinism →
   Next services re-version on unchanged redeploys).
-- **`@prisma/composer-node` rename** (descriptor kind means "plain server process",
-  not Node.js runtime — needs operator naming call).
-- **Interval-lease follow-ups from R8/R9 reviews**: `--wait` affordance on
-  lock contention; connection-cap telemetry for the state store.
-- **CI workspace sweep** (operator/token): ~17 duplicate `prisma-composer-state`
-  projects accumulated in the CI workspace during the id-shape bug; deploys
-  are stable (deterministic oldest-first adoption) but they're quota noise.
-- **core-model.md R6 absorption**: the doc's type sketches (Nodes, factories,
-  Graph, SystemBuilder) predate R6 — `expose`, `ConnectionEnd.required`,
-  ref-ports, the two-overload `provision()`, and required `name`/`pack` are
-  shipped but absent from the sketches. The false "not yet built" claims and
-  the missing `@prisma/composer-rpc` entry-map row were fixed at close-out; absorbing
-  the full mechanism into the sketches is a docs slice of its own
-  (connection-contracts.md is the accurate record meanwhile).
-
-# Stage-as-branch — deferred (2026-07-12)
-
-- **Route container resolution through the extension, not the CLI.** Today
-  `@prisma/composer-cli` hard-codes the Prisma Cloud specifics of stage resolution:
-  it imports `@prisma/composer-alchemy`'s `resolveContainer`/`deleteBranch` directly and
-  sets the target-specific `PRISMA_PROJECT_ID`/`PRISMA_BRANCH_ID` env vars on
-  the alchemy child (`run-alchemy.ts`). That is Prisma Cloud config leaking
-  into the otherwise target-agnostic CLI — accepted for the first
-  stage-as-branch slice (ADR-0024 pins that the CLI ensures containers), but
-  the durable shape is a deploy-plane hook on the extension descriptor
-  (ADR-0017's config already loads extensions): the extension resolves its own
-  containers and supplies the env for the child; the CLI stays generic. Origin:
-  operator review of PR #42 (`run-alchemy.ts` comment).
-
-# Auth — deferred (2026-07-12)
-
-- **Adopt the `@prisma/cli` credential mechanism; stop rolling our own auth.**
-  `@prisma/composer` authenticates the Management API with a static
-  `PRISMA_SERVICE_TOKEN` read from the env and sent as a raw `Bearer` header
-  (`@prisma/composer-alchemy` `credentials.ts` `fromEnv()` → `client.ts`
-  `createManagementApiClient({ token })`) — no login, no refresh, no stored
-  credential; a long-lived plaintext token in `.env`. `@prisma/cli` already
-  solves this: interactive `prisma auth login` (PKCE OAuth against
-  `auth.prisma.io`), a persisted + auto-refreshed credential, with
-  `PRISMA_SERVICE_TOKEN` as the CI/non-interactive fallback. The same SDK ships
-  the machinery we're not using (`@prisma/management-api-sdk`:
-  `createManagementApiSdk` + `createTokenRefreshingFetch`). Ask: reuse the
-  prisma CLI's credential resolution in `@prisma/composer` — ideally its own loader,
-  so we don't reimplement the store/refresh — so `prisma-composer deploy`
-  authenticates exactly like the rest of the CLI and we maintain no auth of our
-  own. Touches `credentials.ts`, `client.ts`, `app-cli/ensure-containers.ts`,
-  and the token-based state-store bootstrap (`state/bootstrap.ts`). Origin: auth
-  review 2026-07-12 (during stage-as-branch); operator directive not to roll our
-  own auth.
 
 # RPC service keys — deferred at project close (2026-07-16)
 
@@ -139,12 +52,28 @@ registry). What we deliberately didn't do:
   kinds and targets can use ADR-0031's mechanism. This is *consistent* with
   secrets — `secretSource` is equally internal — so it's not a regression; if
   third-party extensions ever land, both SPIs publish together.
-- **Mock/in-memory contract bindings must assume enforcement is on.** A mock
-  binding has no edge and therefore no minted key; it works because an
-  *unprovisioned* service passes through, which is now a deliberate distinction
-  (absent var = local/test → pass; `"[]"` = deployed with zero peers → deny).
-  Design the mock-bindings slice against that distinction rather than relying on
-  it accidentally.
+- **Security: a service with no accepted-keys variable accepts every caller.**
+  `serve()` reads `COMPOSER_RPC_ACCEPTED_KEYS` straight from the environment
+  (`packages/0-framework/2-authoring/service-rpc/src/serve.ts`,
+  `acceptedKeys()`). Absent or empty means "unprovisioned: local or test", and
+  every request passes; `"[]"` means "deployed with no wired callers", and
+  every request is refused. So a target that forgets to set the variable
+  ships a service that accepts anyone, instead of one that refuses everyone.
+  Mock/in-memory bindings rely on the same pass-through today, because a mock
+  binding has no edge and no minted key. Fix: make enforcement the default
+  and have local/test runs opt out explicitly, then design the mock-bindings
+  slice against that. Origin: forcing-function-apps audit, 2026-07.
+- **Wired egress: mount an rpc port only if something is wired to it.**
+  Today `serve()` mounts every rpc port of a service under one flat
+  `/rpc/<method>` route, with one accepted key set for the whole service, so
+  method names must be unique across ports and a key for one port reaches
+  every port. The settled direction (Will, 2026-07-23): a port exists on the
+  network only when a consumer is wired to it, it accepts only those edges'
+  keys, and public exposure becomes an explicit binding the root supplies.
+  The platform gives a Compute version one port and one public URL, so v1
+  would be per-port path prefixes on the one listener. Design record:
+  `.drive/projects/wired-egress/` on branch `claude/wired-egress-project`.
+  Rationale in `docs/design/10-domains/auth-module.md`.
 
 # Prisma ORM data contract — deferred at project close (2026-07-12)
 
@@ -152,47 +81,82 @@ registry). What we deliberately didn't do:
   ADR-0022 §Alternatives ("Deferred, not rejected"). Prerequisite spike before
   pickup: confirm Prisma ORM handles multiple peer app-authored spaces in one database
   end-to-end (Prisma ORM ADR 212's monorepo-aggregator case).
-- **Dev-time story** — resolved by ADR-0041: the "lowering unchanged" half of
-  the parked sketch survives, but substitution happens at the Alchemy provider
-  boundary (local providers for the same resource types), not by serving a
-  local copy of the Management API — see
-  `docs/design/90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md`
-  and `docs/design/10-domains/local-dev.md`.
-- **Factory name** — resolved 2026-08-26: the product name landed as Prisma ORM
-  (v8), and the factory was renamed `pnPostgres` → `postgres` (entrypoint
-  `./prisma-next` → `./orm`, kind `'prisma-next'` → `'postgres'`).
 
-# Standalone effect-resolution slice — deferred (2026-08-03, TML-3158)
+# Config params — deferred (2026-07, PR #41 review)
 
-- **Align the examples' `@effect/platform-bun` pin** — `examples/cron`,
-  `examples/store`, and `examples/storefront-auth` still pin
-  `@effect/platform-bun: 4.0.0-beta.97` next to `effect: 4.0.0-beta.93`, so the
-  lockfile retains an alchemy entry resolved against `effect@4.0.0-beta.97`.
-  Harmless in-workspace (pnpm tolerates the peer mismatch) and pre-existing on
-  main, but it contradicts the beta.93 constellation the public packages now
-  pin; align to 4.0.0-beta.93.
-- **Upstream: alchemy's loose effect peer range** — `alchemy@2.0.0-beta.59`
-  declares `effect: ">=4.0.0-beta.84 || >=4.0.0"` and
-  `@effect/vitest: ">=4.0.0-beta.84 || >=4.0.0"` (hard dep), which is what let
-  npm float to an incompatible beta in the first place. Worth an upstream issue
-  asking alchemy to tighten to the betas it actually works with.
+- **HTTP ingress should be a declared capability, not a reserved `port`
+  param.** `compute()` reserves a `port` config param (default 3000) that the
+  service reads to bind its server and deploy reads for `portMapping.http`
+  (`packages/1-prisma-cloud/1-extensions/target/src/compute.ts`). The listen
+  port is a platform runtime binding, not user configuration. Instead: the
+  service declares that it serves HTTP, the platform supplies the bind
+  address at runtime, and deploy derives `portMapping` from the declaration.
+  Not a `deps` entry, since nothing in the graph is on the other end. Likely
+  its own ADR.
 
-## Remove the composer-demo CI USER workaround (after TML-3157 ships)
+# Composition — deferred (2026-07, PR #39 review)
 
-`prisma/composer-demo-composer`'s GitHub Actions workflow pins
-`USER: composer-demo-ci` to dodge the $USER-scoped deploy state bug fixed in
-prisma/composer#195. Once a release containing that PR is out and the demo
-upgrades to it, delete the pin — users should never need to know about it.
-Origin: TML-3157 close-out, 2026-08-03.
+- **One `ControlClient` for `(extension, type)` lookups.** Three places look
+  up an extension descriptor by `(extension, node type)` on their own:
+  `core/src/control/deploy.ts`, `cli/src/validate-coverage.ts` and
+  `assemble/src/assemble-services.ts`. Replace them with one in-memory client
+  that performs control-plane operations, not a state map. Open design.
 
-## Convert the remaining Management API listing loops to drivePages
+# Upstream alchemy — asks (2026-08, provider adoption)
 
-prisma/composer#195 added a bounded page driver
-(`packages/1-prisma-cloud/0-lowering/lowering/src/pagination.ts`) and converted
-the three listing loops that PR touched. Three more hand-rolled, unbounded
-loops remain on the deploy path: `listAllProjects` (`lowering/src/container.ts`),
-`listAllConnections` (`lowering/src/state/bootstrap.ts`), and the env-var
-listing in `target/src/preflight.ts`. Straightforward conversion now the driver
-exists. Origin: reviewer observation, PR #195 round 8, 2026-08-03. DONE in this
-PR (`fix/bound-remaining-pagination`): all three converted; preflight got a
-Promise-based `drivePagesAsync` twin.
+- **Raise or make configurable `destroyApp`'s 409 retry budget, or drain the
+  App's deployments before deleting it.** It retries for about 3.75 seconds in
+  total; Composer's old provider retried for up to 5 minutes. See
+  `docs/design/05-prisma-cloud/alchemy-lowering.md`.
+- **Export `PrismaUploadClient` / open `alchemy/Prisma/Internal/*`.** The
+  package export is `null`, so an outside stack cannot compose the scoped
+  upload client; the only alternative is overriding the ambient
+  `HttpClient`.
+
+# Build reporting — deferred (2026-10, ADR-0051 follow-ups)
+
+- **The display-name fallback can adopt another app's Project.**
+  `resolveProject` in `packages/1-prisma-cloud/0-lowering/lowering/src/container.ts`
+  falls back to matching Projects by display name when none has the app's
+  `logicalId`. That fallback also matches a Project that already carries a
+  different `logicalId`. It should only consider Projects with no
+  `logicalId`.
+- **Document recovery from a duplicate-`logicalId` 409.** A deploy that lost
+  its state hits a 409 when it recreates an App, Database or Bucket whose
+  `logicalId` already exists; Composer never adopts the existing row. No doc
+  says what to do.
+- **Ask pdp to change the branch-topology spec's example.** Its worked example
+  uses `catalog-db` as a node `logicalId`. Composer cannot produce that
+  address (below the root, addresses contain only letters, digits and dots),
+  and it reads like an Alchemy resource ID. Ask for `catalog` instead.
+
+# Auth module — deferred (2026-07/09)
+
+- **The embedded export never shipped.** `createEmbeddedAuth()` (`./embedded`),
+  which runs Better Auth in the consumer's own service with the same
+  `buildAuthOptions()`, was the auth project's slice S4 and was not built.
+  The package README still says "Arrives with slice S4". Design in
+  `docs/design/10-domains/auth-module.md`.
+- **`composeServiceFetch` matches the public prefix as a plain string.**
+  `/api/auth` also matches `/api/authorize`. Match on a path-segment boundary
+  (`packages/0-framework/2-authoring/service-rpc/src/compose-fetch.ts`).
+
+# Forcing-function apps — deferred at shelving (2026-07)
+
+- **Upstream the open-chat `@prisma/streams-server@0.1.11` performance
+  patch.** open-chat patches the server for parallel bootstrap of segment
+  heads (`STREAMS_BOOTSTRAP_HEAD_CONCURRENCY`) and an AbortController that
+  honours `DS_OBJECTSTORE_TIMEOUT_MS` in the R2 client. Composer's streams
+  module pins 0.1.11 unpatched: correct, but cold-start bootstrap is
+  sequential. Make it a minimal PR to prisma/streams, not a vendored copy.
+  Same PR: `withTimeout` in the server's `src/util/retry.ts` never clears its
+  losing timer, so the process lingers up to `DS_OBJECTSTORE_TIMEOUT_MS`
+  after SIGTERM.
+- **Streams wiring checks only the kind.** `streamsContract.satisfies` is
+  `required.kind === 'streams'`. Two consumers with conflicting typed stream
+  definitions are not caught at wiring, only when one reads the other's
+  events.
+- **The datahub live deploy and cutover never happened.** The datahub port
+  (branch `claude/prisma-app-port` in prisma/datahub) was proven by a graph
+  test and a local boot, but never refreshed to the current packages,
+  deployed with real credentials, or cut over. Needs operator credentials.
