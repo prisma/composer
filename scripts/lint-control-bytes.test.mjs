@@ -52,12 +52,10 @@ describe('findControlBytes', () => {
   });
 
   it('fails on a tracked file it cannot read', () => {
-    mkdirSync(join(base, 'dir.ts'));
-    writeFileSync(join(base, 'dir.ts', 'inner'), 'x');
-    execFileSync('git', ['add', 'dir.ts/inner'], { cwd: base });
-    rmSync(join(base, 'dir.ts'), { recursive: true });
-    writeFileSync(join(base, 'dir.ts'), 'x');
-    assert.throws(() => findControlBytes(base), { code: 'ENOTDIR' });
+    track('now-a-dir.ts', 'x');
+    rmSync(join(base, 'now-a-dir.ts'));
+    mkdirSync(join(base, 'now-a-dir.ts'));
+    assert.throws(() => findControlBytes(base), { code: 'EISDIR' });
   });
 
   it('exits 1 naming the file when run as a script', () => {
