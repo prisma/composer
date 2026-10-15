@@ -90,7 +90,19 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
                 })),
               },
             ],
-            stdout: () => [],
+            stdout: () =>
+              emulators.flatMap((emulator) =>
+                emulator.instances.map((instance) =>
+                  [
+                    emulator.kind,
+                    instance.id,
+                    instance.url,
+                    instance.state,
+                    instance.labels['composer.address'] ?? '',
+                    instance.labels['composer.directory'] ?? '',
+                  ].join('\t'),
+                ),
+              ),
             json: () => result.value,
             next: () => [],
           },
