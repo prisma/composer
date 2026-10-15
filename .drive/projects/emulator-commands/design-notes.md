@@ -61,3 +61,8 @@ Composer remembers each node's port in the directory's mapping and requests it o
 - **Make the local identity "app name + directory hash" and keep app-aware emulators.** Fixes collisions but keeps Composer concepts inside the emulators, which is the opposite of the model.
 - **`emulator list` through the core seam.** Requires a project and config for a machine-level command.
 - **Print a bare URL even when piped.** An engine output change Will deferred.
+
+## Rulings (Will, 2026-10-15)
+
+- `prisma dev` stays in the foreground, watching, and Ctrl-C stops the app. `prisma dev --detach` waits until every service answers, prints the URLs, exits 0 and leaves the app running for `prisma dev stop`. Prior art (Docker Compose, .NET Aspire, Sail, and Prisma ORM's own `prisma dev`) defaults to foreground with an opt-in detach. Slice S6.
+- A piped stdout gets the command's plain data lines, and JSON requires `--json`. No CLI surveyed (gh, aws, kubectl, gcloud, az, docker, supabase) switches to JSON when piped. This supersedes "Piped output stays JSON; docs use `jq`" above. Slice S7.
