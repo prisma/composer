@@ -1778,6 +1778,50 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
   }, 15_000);
 
+  test('a detached session is ready, watches nothing, is already closed, and stopping it stops nothing', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([{ address: 'app', url: 'http://localhost:3000' }]),
+      logs: async function* () {},
+    };
+    const events: string[] = [];
+    let watches = 0;
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          detach: true,
+          onEvent: (event) => void events.push(event.kind),
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+          watch: () => {
+            watches += 1;
+            throw new Error('a detached session must not watch');
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      expect(start.value.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
+      await start.value.closed;
+      await start.value.stop();
+    });
+
+    expect(watches).toBe(0);
+    expect(stops).toBe(0);
+    expect(events).toEqual(['ready']);
+  }, 15_000);
+
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {

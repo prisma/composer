@@ -66,6 +66,24 @@ so do the ports, so the next `prisma dev` is a warm start — same ports, same
 data. `--fresh` is what wipes this app's local instances and data before
 starting.
 
+### Run it in the background
+
+`prisma dev --detach` does everything `prisma dev` does up to `ready`, prints
+the front door, and exits 0, leaving the app running. It does not watch for
+changes, and nothing stops the app until you run `prisma dev stop`:
+
+```sh
+prisma dev module.ts --detach
+curl "$(prisma dev url gateway --format human)"
+prisma dev stop
+```
+
+This is the form for agents, scripts and CI, which then have no long-running
+process to manage. It combines with `--fresh` and `--name`. If it fails before
+`ready`, it stops the whole app, including one an earlier `--detach` left running, and exits non-zero, as `prisma dev` does. A failed redeploy has already replaced that service's old process, so the previous app cannot be kept. Fix the build and run `prisma dev --detach` again. To
+pick up a rebuild, run `prisma dev --detach` again, or run `prisma dev` in the
+foreground: it takes over the running app, watches, and `Ctrl-C` stops it.
+
 On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service gets its port before the services that call it, and services with no dependency between them go in the order you provisioned them. A warm start keeps the ports services already have.
 
 ### Each directory runs its own services, databases and buckets
@@ -146,8 +164,8 @@ a code a script can branch on:
   next `prisma dev`.
 
 `prisma dev stop` stops the app's service processes and database servers, as
-`Ctrl-C` does. Use it when `prisma dev` was killed without the chance to stop
-them. Data and ports are kept, so the next `prisma dev` is still a warm start.
+`Ctrl-C` does. Use it to stop an app started with `--detach`, or when
+`prisma dev` was killed without the chance to stop it. Data and ports are kept, so the next `prisma dev` is still a warm start.
 
 `prisma emulator list` shows every local emulator on the machine, whether it
 is running, and every instance on it, with the directory, app and address it

@@ -1,8 +1,8 @@
-# ADR-0053: `prisma dev url`, `prisma dev stop` and `prisma emulator list`
+# ADR-0053: `prisma dev url`, `prisma dev stop`, `prisma dev --detach` and `prisma emulator list`
 
 ## Decision
 
-Composer's command family ships three more commands, and `@prisma/composer/control` two more operations behind them:
+Composer's command family ships three more commands and a `--detach` flag on `prisma dev`, and `@prisma/composer/control` two more operations and a `detach` option behind them:
 
 ```bash
 $ prisma dev module.ts        # terminal 1: runs the app
@@ -11,11 +11,14 @@ http://localhost:3001
 $ url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"
 $ prisma dev stop             # stops this directory's app: services and database servers; data stays
 $ prisma emulator list        # every local emulator on this machine and every instance on it
+$ prisma dev module.ts --detach   # returns once every service answers; the app keeps running
+$ prisma dev stop                 # the only thing that stops a detached app
 ```
 
 - **`dev url <address>`** prints where a node of the app `prisma dev` runs from the current directory answers: a service's `http://localhost:<port>`, a database's connection string, or a bucket's S3 endpoint plus `/<bucket>`. Its JSON result is `{ address, kind, url, state }`. In human format the URL alone goes to stdout, so `$(prisma dev url gateway --format human)` is the URL. It is the `devUrl` operation.
 - **`dev stop`** stops that app's service processes and database servers, as ending `prisma dev` does, for a `prisma dev` that was killed without the chance. Data and ports stay. It is the `devStop` operation, and returns `{ app, stopped }`.
 - **`emulator list`** lists the local emulators — the programs `prisma dev` starts to run services, databases and buckets on this machine — whether each runs, its admin URL, and its instances with id, kind, URL, state and labels. It needs no project. Its JSON result is `{ emulators: [{ kind, running, url, instances: [{ id, kind, url, state, labels }], error }] }`. `url` is `null` for an emulator that is not running. `error` is `null` unless the emulator runs but could not be listed; then it is `{ code, message }`, with `DEV.EMULATOR_UNREACHABLE` when the emulator did not answer and `DEV.EMULATOR_FAILED` when it answered with an error, and the other emulators are still listed. The command uses the emulator client bundled into `@prisma/composer-cli`, because it must work without a project.
+- **`dev --detach`** runs `prisma dev` up to `ready`: it converges, waits until every service accepts connections, prints the front door and exits 0. It starts no watch loop and installs no stop on exit, so the app keeps running until `prisma dev stop` or the next `prisma dev` in the directory, which reconverges as usual. A failure before ready stops the whole app, including one an earlier `--detach` left running, and exits non-zero, as the foreground run does: a failed redeploy has already replaced that service's old process, so the previous app cannot be kept, and the fix is to repair the build and run `prisma dev --detach` again; a Ctrl-C before ready stops the app. It combines with `--fresh` and `--name`. It is the `dev` operation's `detach` option, whose session is already closed and whose `stop()` stops nothing. A foreground `prisma dev` started while the app runs detached takes it over: it converges, which changes nothing, watches, and its Ctrl-C stops the app.
 
 The family keys each command by the path it is meant to mount at (`dev url`, `dev stop`, `emulator list`); the `prisma` CLI decides where it mounts them. This amends [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md), under which the family was exactly `deploy` and `dev`, and [ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md), whose `control` subpath had four operations.
 
@@ -37,6 +40,8 @@ Docs, scripts and agents need to reach a locally running node without assuming i
 
 `emulator list` is a question about the machine, not a project: it needs no `prisma.config.ts`, so it cannot go through the seam, which starts from the configuration, and it cannot load the project's `@prisma/composer-prisma-cloud`, because there may be no project. Its operation lives in the Prisma Cloud domain beside the emulator clients, and `@prisma/composer-cli`, a public package that may import both domains, adds the command to the family and bundles that client. Nothing running is a valid answer: every emulator is listed with `running: false`.
 
+`prisma dev` stays in the foreground by default, watching, with Ctrl-C stopping the app, because a developer at a terminal wants rebuilds picked up and one key to end the session. Agents, scripts and CI want the opposite: no long-running process to manage, and an app that answers once the command returns. `--detach` gives them that, and `dev url` and `dev stop` already give them the rest. The tools developers already use have the same split: Docker Compose (`up` and `up -d --wait`), .NET Aspire (`run` and `run --detach`), Laravel Sail (`up` and `up -d`) and Prisma ORM's own `prisma dev` (`--detach`) all default to the foreground with detach as an opt-in.
+
 ## Consequences
 
 - `@prisma/composer/control` has six operations: `deploy`, `destroy`, `dev`, `devUrl`, `devStop`, `log`.
@@ -54,6 +59,9 @@ Docs, scripts and agents need to reach a locally running node without assuming i
 - **Naming the app on the command line (`url my-app gateway`) or with `--app`.** Addresses are relative to the directory's app, and app names collide across directories.
 - **`emulator list` through the core seam.** Would require a project and a configuration for a question about the machine.
 - **Printing a bare URL even when stdout is piped.** Would change the CLI's rule that a piped stdout carries JSON frames; scripts use `jq` or `--format human` instead.
+
+- **Detached by default, with a `--watch` or `--attach` flag for the foreground.** Matches what agents need, but differs from every tool above and from what `prisma dev` does today, and leaves an app running after a developer closes the terminal.
+- **A run-then-stop mode (`--exec "<cmd>"`, like Firebase `emulators:exec`).** Useful for CI, and compatible with `--detach`; not part of this decision.
 
 ## Related
 

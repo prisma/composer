@@ -279,6 +279,10 @@ export async function executeDev(
       throw toStructured('DEV.ATTACH_FAILED', error);
     }
     emit({ kind: 'ready', endpoints });
+    if (input.detach === true) {
+      const closed = Promise.resolve();
+      return ok({ endpoints, stop: () => closed, closed });
+    }
 
     // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.

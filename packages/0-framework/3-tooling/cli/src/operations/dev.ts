@@ -41,6 +41,12 @@ export interface DevInput {
   readonly entry: string;
   readonly name?: string | undefined;
   readonly fresh?: boolean | undefined;
+  /**
+   * Return once every service answers and leave the app running, with no
+   * watch loop: the session is already closed and stopping it stops nothing.
+   * `devStop` stops the app later.
+   */
+  readonly detach?: boolean | undefined;
   readonly cwd?: string | undefined;
   readonly onEvent?: ((event: DevEvent) => void) | undefined;
 }
@@ -52,9 +58,9 @@ export interface DevSession {
   /** The initial front door, already merged across attachments. */
   readonly endpoints: readonly ServiceEndpoint[];
   /** Stop the watch loop and the app's services (emulators and data stay up).
-   * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. */
+   * Idempotent; emits 'stopping'/'stopped'; resolves `closed`. A no-op for a detached session. */
   stop(): Promise<void>;
-  /** Settles when the session has fully stopped (via stop()). */
+  /** Settles when the session has fully stopped (via stop()); already settled for a detached session. */
   readonly closed: Promise<void>;
 }
 

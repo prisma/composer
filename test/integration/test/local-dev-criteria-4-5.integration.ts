@@ -117,23 +117,11 @@ function dumpDiagnostics(): void {
   console.error('=== end diagnostics ===\n');
 }
 
+/** The front door, from the `--json` run's NDJSON frames: a `status` frame marks readiness and each service is an `endpoint` frame. */
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
-  const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
-  if (readyAt !== -1) {
-    const endpoints: Endpoint[] = [];
-    for (let i = readyAt + 1; i < lines.length; i += 1) {
-      const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
-      if (m === null) break;
-      endpoints.push({ address: m[1] as string, url: m[2] as string });
-    }
-    return endpoints.length > 0 ? endpoints : undefined;
-  }
-  // Engine 0.2.0 renders a non-TTY run as NDJSON frames instead: readiness
-  // is a `status` frame and each service is an `endpoint` frame.
   let ready = false;
   const endpoints: Endpoint[] = [];
-  for (const line of lines) {
+  for (const line of log.split('\n')) {
     if (!line.startsWith('{')) continue;
     try {
       const frame = JSON.parse(line) as {
@@ -147,7 +135,7 @@ function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
       }
       if (frame.kind === 'status' && frame.status === 'ready') ready = true;
     } catch {
-      // Child output interleaved with the frames; not every line is JSON.
+      // Converge output is interleaved with the frames; not every line is JSON.
     }
   }
   return ready && endpoints.length > 0 ? endpoints : undefined;
@@ -197,7 +185,7 @@ function startDevRaw(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', fixtureEntry, ...(opts.fresh === true ? ['--fresh'] : [])];
+  const args = ['dev', fixtureEntry, '--json', ...(opts.fresh === true ? ['--fresh'] : [])];
   const child = spawn(CLI_BIN, args, {
     cwd: integrationDir,
     env,
