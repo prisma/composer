@@ -652,6 +652,28 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/0-framework/2-authoring/http:
+    dependencies:
+      '@internal/core':
+        specifier: workspace:0.30.0
+        version: link:../../1-core/core
+    devDependencies:
+      '@internal/tsdown-config':
+        specifier: workspace:0.30.0
+        version: link:../../0-foundation/tsdown-config
+      '@types/bun':
+        specifier: ^1.3.13
+        version: 1.3.14
+      tsdown:
+        specifier: ^0.22.7
+        version: 0.22.12(typescript@6.0.3)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^5.0.4
+        version: 5.0.4(@types/node@26.1.2)(vite@8.1.2(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
   packages/0-framework/2-authoring/nextjs:
     dependencies:
       '@internal/bundle-paths':
@@ -1038,6 +1060,9 @@ importers:
       '@distilled.cloud/prisma':
         specifier: 1.0.0-rc.15
         version: 1.0.0-rc.15(effect@4.0.3)
+      '@internal/http':
+        specifier: workspace:0.30.0
+        version: link:../../../0-framework/2-authoring/http
       '@internal/tsdown-config':
         specifier: workspace:0.30.0
         version: link:../../../0-framework/0-foundation/tsdown-config
@@ -1329,6 +1354,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.30.0
         version: link:../../0-framework/0-foundation/foundation
+      '@internal/http':
+        specifier: workspace:0.30.0
+        version: link:../../0-framework/2-authoring/http
       '@internal/lowering':
         specifier: workspace:0.30.0
         version: link:../../1-prisma-cloud/0-lowering/lowering
@@ -1469,6 +1497,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.30.0
         version: link:../../0-framework/0-foundation/foundation
+      '@internal/http':
+        specifier: workspace:0.30.0
+        version: link:../../0-framework/2-authoring/http
       '@internal/local-target':
         specifier: workspace:0.30.0
         version: link:../../1-prisma-cloud/0-lowering/local-target

@@ -61,7 +61,7 @@ const wrongKind = wsContract({
   verify: rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) }),
 });
 
-// an untyped dependency end — http()'s shape (Req = unknown, the escape hatch).
+// an untyped dependency end (Req = unknown): no required contract to check.
 const legacyEnd = () =>
   dependency({
     type: 'fake/http',

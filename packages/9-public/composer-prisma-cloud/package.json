@@ -66,6 +66,7 @@
     "@internal/dev-emulators": "workspace:0.30.0",
     "@internal/email": "workspace:0.30.0",
     "@internal/foundation": "workspace:0.30.0",
+    "@internal/http": "workspace:0.30.0",
     "@internal/local-target": "workspace:0.30.0",
     "@internal/lowering": "workspace:0.30.0",
     "@internal/nextjs": "workspace:0.30.0",

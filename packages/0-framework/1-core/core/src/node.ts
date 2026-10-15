@@ -274,7 +274,7 @@ export interface RunnableServiceNode<
 /**
  * A service's dependency slot. At Load the enclosing module wires a
  * producer's ref into it; at run it hydrates a client via Connection. `Req`
- * is the required contract (`unknown` for an untyped end like `http()`).
+ * is the required contract (`unknown` for an untyped end).
  */
 export interface DependencyEnd<C = unknown, Req = unknown> {
   readonly [NODE]: true;
@@ -283,7 +283,7 @@ export interface DependencyEnd<C = unknown, Req = unknown> {
   readonly name: string;
   readonly type: string;
   readonly connection: Connection<Params, C>;
-  /** The required contract, or `undefined` for an untyped end (e.g. `http()`). */
+  /** The required contract, or `undefined` for an untyped end. */
   readonly required: Req | undefined;
 }
 
