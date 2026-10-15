@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.29.1"
+  library_version: "0.30.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
