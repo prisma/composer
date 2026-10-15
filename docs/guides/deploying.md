@@ -15,13 +15,6 @@ in your code.
 | Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
 | Tear down an environment | the `destroy` operation (see [Destroying](#destroying)) |
 
-When you pipe `prisma deploy`, its result on stdout is one line per deployed
-node: the node's address and, after a tab, its public URL, or nothing for a
-node without one. `--json` gives the full result instead. This needs the next
-`prisma` release after 8.0.0-rc.23; an earlier `prisma` writes JSON frames to a
-pipe. The deploy engine's own progress output goes to the same stdout, so a
-script that reads the data lines should filter for lines with a tab.
-
 ## Credentials
 
 The `prisma` commands and the operations you call from a script sign in

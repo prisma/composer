@@ -330,35 +330,6 @@ describe('what a successful run presents', () => {
     });
   });
 
-  test('writes one line per deployed node to stdout: its address and, tab-separated, its public URL or nothing', async () => {
-    const { cli } = composerCli({
-      fixtures: {
-        deploy: ok({
-          summary: {
-            app: 'shop',
-            nodes: [
-              {
-                address: 'console',
-                entities: [
-                  { kind: 'compute-service', id: 'cps_1', url: 'https://console.ewr.prisma.build' },
-                ],
-              },
-              { address: 'db', entities: [{ kind: 'postgres', id: 'db_1' }] },
-            ],
-          },
-          durationMs: 1000,
-        }),
-      },
-    });
-
-    const result = await cli.run(['deploy', 'src/service.ts', '--format', 'human'], {
-      cwd: CWD,
-    });
-
-    expect(result.exitCode).toBe(0);
-    expect(plain(result.stdout)).toBe('console\thttps://console.ewr.prisma.build\ndb\t\n');
-  });
-
   test('a deploy whose child wrote no report still reports success', async () => {
     const { cli } = composerCli({
       fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },
