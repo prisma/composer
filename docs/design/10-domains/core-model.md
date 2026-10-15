@@ -1203,7 +1203,8 @@ model promises. The config round-trip is proven separately at the pack level
 The storefront-auth shape: `auth` is a self-served Hono service shaped like the
 one above — its `db` is a `rawPostgres()` dependency whose binding is the config
 its own server builds a client from, while the composing module below owns and
-provisions the database; `storefront` is a **framework-hosted**
+provisions the database. `auth` also declares `expose: { http: rawHttpContract }`,
+so it offers a raw HTTP port. `storefront` is a **framework-hosted**
 Next.js service whose page pulls the `auth`
 client via `load()`. This replaces the hand-written mixed stack — the URL plumbing,
 the `requireStringOutput` guard, and the hand-named `EnvironmentVariable` all
@@ -1219,7 +1220,7 @@ export default compute({ name: "storefront",
   build: nextjs({ module: import.meta.url, appDir: "..", entry: "server.js" }) })
 
 // storefront/app/page.tsx — the app's own Next code; `next build` bundles it.
-// It pulls the typed auth client via load() — the SAME mechanism the Hono entry
+// It pulls the auth client via load() — the SAME mechanism the Hono entry
 // uses. force-dynamic keeps it out of build-time prerender (no run() then).
 import service from "../src/service"
 export const dynamic = "force-dynamic"
@@ -1240,7 +1241,7 @@ import storefrontService from "./modules/storefront/src/service"
 export default module("storefront-auth", (h) => {
   const db = h.provision("db", rawPostgres({ name: "db" }))
   const authRef = h.provision("auth", authService, { db })         // db→auth dependency edge
-  h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront edge; auth exposes { http: rawHttpContract }
+  h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront dependency edge
 })
 
 // No deploy config file (ADR-0003): build both apps, then

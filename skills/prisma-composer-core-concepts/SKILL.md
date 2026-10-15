@@ -202,6 +202,8 @@ from `@prisma/composer/http`. The provider declares
 `deps: { site: rawHttp() }`; the Module wires
 `provision(gateway, { deps: { site: siteRef.http } })`. `gateway.load().site`
 is `{ url, fetch(path, init) }`, where `fetch` resolves `path` against `url`.
+The client only reaches its provider's origin: `fetch` rejects a path that
+resolves to another host (`//other.example/x`, an absolute URL).
 
 Composer checks only that the provider declared an HTTP port: TypeScript and
 Load reject a bare service ref or a port of another kind. The caller is

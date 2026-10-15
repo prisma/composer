@@ -1,4 +1,4 @@
-# Connection contracts — typed service-to-service interfaces
+# Connection contracts — service-to-service interfaces
 
 A service-to-service dependency is described by a **Contract**: a value both the
 consumer and the provider import. A Contract is parametric over its **kind**. Two
@@ -254,13 +254,16 @@ comparison type** `Cmp`, and a runtime `satisfies()` method:
 interface Contract<Kind extends string, Cmp> {
   readonly kind: Kind                                    // "rpc" · "http" · … (the brand)
   readonly __cmp: Cmp                                    // opaque to the core
-  readonly style?: "request-response" | "stream"         // how calls communicate, if the kind guarantees it
+  readonly style?: "request-response" | "stream"         // how calls communicate, if this contract declares it
   satisfies(required: Contract<Kind, unknown>): boolean  // runtime mirror of the compile check
 }
 ```
 
-`style` is the one field the core reads, and only to copy it onto the graph's
-output ports. Service RPC declares `request-response`. Raw HTTP declares none,
+`style` is declared by the contract, and a connection's style is the style of
+the contract on its producing port. `request-response` and `stream` are styles,
+not kinds: a kind such as service RPC or raw HTTP may declare one or none. The
+core reads `style` only to copy it onto the graph's output ports. Service RPC
+declares `request-response`. Raw HTTP declares none,
 because an arbitrary HTTP server may answer a request or hold a stream open. A
 deploy target that reports the application topology labels each edge with the
 style its producing port's contract declares, so it never keeps a list of kind

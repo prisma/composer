@@ -163,11 +163,18 @@ served by Services and Modules; Data Outputs are served by Resources.
 
 ### Communication connection — style: request/response | stream
 
-A Module-to-Module connection — or, at the boundary, public **ingress**. Its **style** is
-a property of the connection:
+A Module-to-Module connection — or, at the boundary, public **ingress**. Its **style**
+is declared by its contract: a contract may declare `style`, and a connection's style
+is the style of the contract on the port that produces it. A contract may also
+declare none.
 
-- **request/response** — synchronous. Contract = the API/RPC signatures.
-- **stream** — asynchronous, durable events. Contract = the payload schema.
+- **request-response** — synchronous. Service RPC declares it.
+- **stream** — asynchronous, durable events.
+- **none** — raw HTTP declares no style, because an arbitrary HTTP server may do
+  either.
+
+The application topology labels each communication edge with its producer's
+declared style, and leaves the style off when there is none.
 
 The communication style is *not* mediated by a Resource; the underlying transport
 (durable stream infra, etc.) is a lowering detail, never a modeled node.
@@ -322,7 +329,7 @@ holds for both Services and Modules.
 ### Connection type
 
 A neutral, direction-agnostic value describing one end of a connection — its kind
-(`http`, `data`, `stream`) and its named interface — e.g. `Auth =
+(`rpc`, `http`, `data`) and its named interface — e.g. `Auth =
 http(AuthInterface)`. Not a raw TypeScript interface. Because either side may author
 it, the interface can be declared on the **consumer** side and the provider made to
 conform (dependency inversion).
