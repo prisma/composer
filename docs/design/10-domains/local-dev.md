@@ -60,11 +60,13 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    `localTarget.emulators` hook inspects the loaded graph and ensures one emulator
    daemon per node kind the topology uses (Compute always; buckets when
    bucket resources exist; Postgres when `postgres` or `raw-postgres`
-   resources exist). Once Compute is up, the hook ensures each service's
-   Compute instance, in `graph.nodes` order, through the directory's record
-   (see [Which instance backs a node](#which-instance-backs-a-node)). The
-   Postgres daemon starts no server here: the database provider asks it for
-   one `@prisma/dev` server per `Database` at provision.
+   resources exist). Once they are up, the app becomes the directory's
+   current app, and the hook ensures each node's instance — service,
+   database or bucket — in `graph.nodes` order, through the directory's
+   record (see [Which instance backs a node](#which-instance-backs-a-node)).
+   A recorded database the last session stopped is started here: on a warm
+   start the converge may change nothing and never call the Database
+   provider.
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
    `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
    `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`), always
@@ -72,8 +74,9 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
    service, a database, a bucket) by talking to the emulators; converge
    terminates as always, and the Compute emulator keeps serving.
 6. **Attach** — new, dev-only: through `localTarget.attach`, render the front
-   door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C stops
-   the app's service instances through the attachment and exits; emulators and
+   door (every service's endpoint) and watch for rebuilds, loop. Ctrl-C,
+   SIGTERM or a failure stops the app's service processes and database
+   servers through the attachment's `stopApp` and exits; emulators and
    data persist. Logs are not streamed here — the `log` operation reads the
    same attachment's merged-log view on demand, so `dev`'s own output stays
    the front door plus lifecycle and rebuild notices.
@@ -136,10 +139,10 @@ service's instance, and the emulator owns the processes:
   another app run from the same directory) → stop it, remove it and its log,
   and free its port.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
-  instances and detaches. Every emulator — Compute, Postgres instances, the
-  bucket emulator — stays up with its data; the next start reuses the
-  same instances (same ports, same data). `--fresh` is what removes
-  instances and data. (A detached mode where services keep serving with no
+  instances and its database servers, and detaches. Every emulator —
+  Compute, Postgres, buckets — stays up, and every instance keeps its data
+  and its port; the next start reuses the same instances (same ports, same
+  data). `--fresh` is what removes instances and data. (A detached mode where services keep serving with no
   session is a designed extension, not v1.)
 
   **Known gap (proving-pass finding, fixed in #164):** a service actually only restarts
@@ -206,6 +209,14 @@ snapshot diffs on bytes — which restart-amplified dependents on every
 first-after-cold converge. No sanctioned reader consumes sibling rows, so
 the scoping changes restart behavior only.
 
+The Postgres and bucket emulators follow the same model: a database is an
+instance with a generated id (`db_<16 hex digits>`), served by a
+`@prisma/dev` server named after it, and a bucket is an instance whose
+generated id (`bkt-<16 hex digits>`, as an S3 bucket name allows no
+underscore) is also its name on the S3 wire. Both lists all their instances,
+store labels verbatim, and keep a database's port until it is deleted; see
+[Postgres](#postgres) and [Buckets](#buckets-a-disk-backed-s3-emulator).
+
 The emulator's failure messages name the instance (`instance "svc_…" exited
 (code 1) before it accepted connections…`). The local providers and the
 attachment replace the id with the service's address before the message
@@ -214,54 +225,84 @@ reaches the user, so `prisma dev` says `service "gateway" …`.
 ### Which instance backs a node
 
 Composer records, per working directory, which emulator instance backs each
-node of the app run there, in `.prisma-composer/dev/emulator-instances.json`:
+node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 
 ```json
 {
-  "app": "shop",
-  "nodes": {
-    "quotes": { "kind": "compute", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
-    "gateway": { "kind": "compute", "id": "svc_81ad5c07e2f94b31", "port": 3001 }
+  "current": "shop",
+  "apps": {
+    "shop": {
+      "nodes": {
+        "quotes": { "kind": "service", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+        "gateway": { "kind": "service", "id": "svc_81ad5c07e2f94b31", "port": 3001 },
+        "catalog": { "kind": "database", "id": "db_02c4e81f6a9b3d70", "port": 51300 },
+        "uploads": { "kind": "bucket", "id": "bkt-77e1a4c90b2d5f36" }
+      }
+    }
   }
 }
 ```
 
+`current` names the app `prisma dev` last ran from the directory. A record
+written by the previous version (`{ "app", "nodes" }`, one app, whose
+services have kind `compute`) reads as that one app with `service` nodes and
+is rewritten on the next write. A database's and a bucket's key is its
+resource name, from the same helper the lowering uses; a local provider
+refuses a database or bucket resource without a name.
+
 The record is the only place Composer's names are mapped to instances. The
-emulators hook, the local `App` and `Deployment` providers, the attachment
-(endpoints, logs, start, stop) and `--fresh` all go through it; no Composer
-code finds an instance by its labels. The labels Composer writes on create —
+emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
+`Bucket` and `BucketAccessKey` providers, the attachment (endpoints, logs,
+start, stop) and `--fresh` all go through it; no Composer code finds an
+instance by its labels. The labels Composer writes on create —
 `composer.directory` (the absolute directory), `composer.app` and
 `composer.address` — are for people reading an emulator listing. The record
 can be read from the directory alone, without running the pipeline.
 
-- **Ensuring an instance.** The emulators hook goes through the services in
-  `graph.nodes` order (dependencies first, ties in declaration order). A
-  recorded instance the emulator still has is reused. Otherwise a new one is
-  created and recorded: on a first start, with no port requested, so ports
-  follow that order from 3000; after the emulator lost the instance, requesting
-  the recorded port. A service added by a rebuild during a session gets its
-  instance from the `App` provider the same way.
+- **Ensuring an instance.** The emulators hook goes through the app's nodes
+  in `graph.nodes` order (dependencies first, ties in declaration order):
+  services, databases (`postgres` and `raw-postgres` resources) and buckets
+  (`s3` resources). A recorded instance the emulator still has is reused, and
+  a stopped database is started. Otherwise a new one is created and recorded:
+  on a first start, with no port requested, so ports follow that order; after
+  the emulator lost the instance, requesting the recorded port. A node added
+  by a rebuild during a session gets its instance from its provider the same
+  way.
 - **A remembered port that is taken.** It is a preference: the emulator gives
   the lowest free port instead, and `prisma dev` prints
-  `[dev] service "<address>" now uses port <new>: its previous port <old> is in use`.
-- **Redeploying a re-created instance.** A re-created instance runs nothing,
+  `[dev] service "<address>" now uses port <new>: its previous port <old> is in use`
+  (`database "<address>"` for a database).
+- **Redeploying a re-created instance.** A re-created instance starts empty,
   and a warm start's converge changes nothing, so Alchemy would never call the
   providers. The `Deployment` provider's diff asks for an update when its
-  instance does not run the recorded artifact, and the `App` provider's diff
-  asks for one when its instance's URL changed, so dependents get the new URL.
+  instance does not run the recorded artifact, the `App` provider's when its
+  instance's URL changed, and the `Database` and `Bucket` providers' when the
+  recorded instance is not the one they created, so dependents and access
+  keys follow. A database created again keeps its URL when it gets its old
+  port, so the local `OrmMigration` provider's diff reads the database's
+  migration marker and asks for an update whenever it is not at the target;
+  the committed migrations then replay as on a fresh start. That read is one
+  connection per database per converge.
 - **A removed service.** Deleting its `App` resource deletes its instance and
   its entry.
-- **Another app in the same directory.** A directory has one dev instance.
-  When the record names a different app, the emulators hook deletes that app's
-  Compute instances, starts a new record, and prints
-  `[dev] removed the local services of "<app>", the app run here before`.
-- **`--fresh`** deletes the recorded Compute instances, then removes the dev
-  state directory with the record in it.
+- **When `prisma dev` ends** (Ctrl-C, SIGTERM, a failure), the attachment's
+  `stopApp` stops the app's service processes and database servers.
+  Their data and ports are kept, and the next start brings them back.
+- **Another app in the same directory.** Running a different app from the
+  directory (another entry, another `--name`) stops the previous app's
+  services and databases and keeps its entry, with their data and ports, and
+  prints `[dev] stopped the local services of "<app>", the app run here
+  before; its data is kept`. Running the previous app again resumes them.
+- **`--fresh`** deletes the current app's instances of every kind (a
+  database's data with it) and its entry, and removes the dev state directory
+  except the record and other apps' bucket objects. A bucket's objects live
+  under `.prisma-composer/dev/buckets/<app>/<bucket>/` for that reason.
 
 Two directories running the same app have separate records, so they get
-separate instances on separate ports, and neither restarts the other's
-services. State the Compute emulator wrote before instances had generated ids
-is discarded when it loads; local dev state is never migrated.
+separate services on separate ports, separate databases and separate
+buckets, and neither restarts or writes into the other's. State an emulator
+wrote before instances had generated ids is discarded when it loads; local
+dev state is never migrated.
 
 ### Process lifetimes
 
@@ -272,14 +313,11 @@ is discarded when it loads; local dev state is never migrated.
    multi-tenant, holding every long-lived process: the Compute emulator
    (service children), the Postgres emulator (one `@prisma/dev` server per
    `Database`, hosted in-process), and the bucket emulator. They survive dev
-   sessions; `--fresh` removes a directory's instances. The registry root is
+   sessions; `--fresh` removes the current app's instances. The registry root is
    `~/.prisma-composer/emulators` unless `PRISMA_COMPOSER_EMULATORS_DIR`
    names another absolute directory, so by default one machine shares one
-   set. Compute instances belong to a directory, so two checkouts of one app
-   never share a service. Postgres and buckets are still keyed by the app:
-   Postgres instance names come from the app and database, and bucket names
-   from the app and bucket, so two checkouts of one app still share a
-   database server and bucket names, whatever their roots. A daemon whose version
+   set. Instances belong to a directory, so two checkouts of one app never
+   share a service, a database or a bucket, whatever their roots. A daemon whose version
    differs from the caller's is replaced, so two Composer versions sharing a
    root replace each other's daemons back and forth; a separate root per
    checkout stops that.
@@ -301,17 +339,17 @@ semantics):
 | Resource | Dev behavior |
 | --- | --- |
 | `Project` | a local identity record; no platform |
-| `Database` | a database on a local `@prisma/dev` Postgres server, hosted by the Postgres emulator |
-| `Connection` | the local connection URL |
+| `Database` | the database instance the directory's record names for the resource, on its own `@prisma/dev` server hosted by the Postgres emulator; started if stopped, created when missing; `databaseId` is the instance id |
+| `Connection` | the URL of the database instance its `Database` names |
 | `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
 | `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
 | `EnvironmentVariable` | a key→value row in the dev state store |
-| `Bucket` | a directory under `.prisma-composer/dev/buckets/<bucket>/`, served by the bucket emulator |
-| `BucketKey` | credentials registered with the bucket emulator |
+| `Bucket` | the bucket instance the directory's record names for the resource, over a directory under `.prisma-composer/dev/buckets/<app>/<bucket>/`, served by the bucket emulator; `bucketId` is the instance id, also its S3 name |
+| `BucketKey` | credentials registered with the bucket emulator for its bucket |
 | `ServiceKey` | **unchanged** — mints locally, persists in state |
 | `S3Credentials` | **unchanged** — mints locally, persists in state |
 | `PgWarm` | **unchanged** — real `select 1` against the local URL |
-| `OrmMigration` | **unchanged** — real migrations against the local URL |
+| `OrmMigration` | real migrations against the local URL, as deployed; locally its diff also asks for an update whenever the database is not at the target by its marker, so a database created again empty is migrated |
 
 Because module-backed kinds (storage, streams, email) lower to compute services
 plus databases, they run their **real service code** locally against local
@@ -320,7 +358,7 @@ SQLite test server remains a testing utility, not part of the dev loop.
 
 ### Postgres
 
-The emulator is a daemon hosting `@prisma/dev` servers, **one named, persistent server per `Database` resource** — server names are derived from the app and database ids, so instances are isolated and survive across dev sessions for warm starts. Migrations are not special-cased: `OrmMigration` runs exactly as it does in a deploy, against the local URL — replay-only (ADR-0022 as revised), so it applies committed migrations and never synthesizes schema. At reconcile time it reloads the emitted `contract.json` identified by `prisma.config.ts`, attests its `storageHash` against the compact contract identity persisted in deploy state, and only then opens the database. Dev-loop schema iteration therefore happens through the ORM's own `prisma db update`, run directly against the emulator database: `db update` moves the database and its marker to the current contract, and the pipeline's migration step no-ops because the marker matches the target. A dev run against a database that was neither updated nor covered by a planned migration hits the same structured refusal a deploy would, naming both exits (`prisma db update` to iterate, `contract emit` + `migration plan` to author the path). `PgWarm` is near-instant locally and is kept (not stubbed) so the provider set stays uniform.
+The emulator is a daemon hosting `@prisma/dev` servers, **one named, persistent server per database instance**. Creating an instance starts its server; the instance's generated id names the server, and `@prisma/dev` keeps the server's data under that name in its own data directory (`~/Library/Application Support/prisma-dev-nodejs/` on macOS, `$XDG_DATA_HOME/prisma-dev-nodejs/` on Linux), outside the emulators directory. Stopping an instance shuts its server down and keeps its data and its port; starting it brings it back on the same port with the same data. Deleting it removes the data. A database keeps its port until it is deleted because its connection string is in its dependents' environments. The Postgres emulator's earlier, app-keyed state is removed when it loads, and the data of the servers it named is deleted on the next request that carries a `@prisma/dev` module, unless another live process still serves one. Migrations are not special-cased: `OrmMigration` runs exactly as it does in a deploy, against the local URL — replay-only (ADR-0022 as revised), so it applies committed migrations and never synthesizes schema. At reconcile time it reloads the emitted `contract.json` identified by `prisma.config.ts`, attests its `storageHash` against the compact contract identity persisted in deploy state, and only then opens the database. Dev-loop schema iteration therefore happens through the ORM's own `prisma db update`, run directly against the emulator database: `db update` moves the database and its marker to the current contract, and the pipeline's migration step no-ops because the marker matches the target. A dev run against a database that was neither updated nor covered by a planned migration hits the same structured refusal a deploy would, naming both exits (`prisma db update` to iterate, `contract emit` + `migration plan` to author the path). `PgWarm` is near-instant locally and is kept (not stubbed) so the provider set stays uniform.
 
 ### Buckets: a disk-backed S3 emulator
 
@@ -338,13 +376,15 @@ unchanged. The bucket emulator is then a third store implementation plus one
 machine-global daemonized server (plain `node:http`, which runs under both
 node and bun), multi-tenant across apps and administered through a loopback
 admin endpoint (`/_pcdev/…` — the underscore prefix cannot collide with a
-valid bucket name). Physical bucket names are prefixed `<app>--<name>` and
-carried on the binding's `bucketName`, so consumers follow the binding and
-names cannot collide across apps; each bucket's data root is registered as
-an in-project path:
+valid bucket name). A bucket is an instance whose generated id is its name
+on the S3 wire, carried on the binding's `bucketName`, so consumers follow
+the binding and names cannot collide. Credentials are registered per bucket,
+and a request is verified only against its target bucket's keys. Each
+bucket's data root is registered as an in-project path, which the emulator
+stores verbatim:
 
 - **Objects are plain files at their key paths** —
-  `.prisma-composer/dev/buckets/<bucket>/<key>`. Browse them, open them, drop a
+  `.prisma-composer/dev/buckets/<app>/<bucket>/<key>`. Browse them, open them, drop a
   file in and it exists in the bucket. This is a feature, not an
   implementation detail: inspectable state is half the value of local dev.
 - Object metadata (content type, user metadata) lives in a sidecar tree, so
@@ -423,7 +463,7 @@ Deploy's rule holds: every failure names its fix.
 (none outstanding from the design phase — see Known limitations below for
 gaps found during implementation.)
 
-(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook creates their Compute instances one at a time from `graph.nodes` before Alchemy applies the `App` resources concurrently — and a warm start keeps each service's port, because an instance holds its port until it is deleted (ADR-0052); port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
+(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook creates their instances one at a time from `graph.nodes` before Alchemy applies the resources concurrently — and a warm start keeps each service's and database's port, because an instance holds its port until it is deleted (ADR-0052); port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
 
 ## Proven against a real app
 

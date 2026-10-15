@@ -71,6 +71,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { containerEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
@@ -240,16 +241,12 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The services `prisma dev` recorded in storeDir's `.prisma-composer/dev/emulator-instances.json`, as the Compute emulator reports them (plain fetch, never the typed client). */
+/** The services `prisma dev` recorded for the app, as the Compute emulator reports them (plain fetch, never the typed client). */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const mapping = readJson(
-    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
-  ) as { app: string; nodes: Record<string, { id: string }> } | undefined;
-  if (mapping === undefined || mapping.app !== app) return [];
   const services: ServiceInfo[] = [];
-  for (const [address, node] of Object.entries(mapping.nodes)) {
+  for (const [address, node] of Object.entries(recordedNodes(app, 'service'))) {
     const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
     if (res.status === 404) continue;
     if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
@@ -258,18 +255,36 @@ async function listComputeServices(app: string): Promise<readonly ServiceInfo[]>
   return services;
 }
 
-interface PostgresDatabaseInfo {
-  readonly instanceName: string;
-  readonly url: string;
+/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/emulator-instances.json`. */
+function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
+  const record = readJson(
+    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+  ) as
+    | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
+    | undefined;
+  const nodes = record?.apps[app]?.nodes ?? {};
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => node.kind === kind));
 }
 
-/** The documented postgres-emulator wire protocol (spec § 4, REVISED — operator review of #162: the daemon owns instance state, there is no dev-store postgres.json) — plain fetch, never the typed client. */
+interface PostgresDatabaseInfo {
+  readonly address: string;
+  readonly id: string;
+  readonly url: string;
+  readonly status: string;
+}
+
+/** The databases `prisma dev` recorded for the app, as the postgres emulator reports them (plain fetch, never the typed client). */
 async function listPostgresDatabases(): Promise<readonly PostgresDatabaseInfo[]> {
   const entry = readEmulatorEntry('postgres');
   if (entry === undefined) throw new Error('postgres emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/databases`);
-  if (!res.ok) throw new Error(`postgres emulator listDatabases failed: ${res.status}`);
-  return (await res.json()) as PostgresDatabaseInfo[];
+  const databases: PostgresDatabaseInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'database'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`postgres emulator getInstance failed: ${res.status}`);
+    databases.push({ ...((await res.json()) as PostgresDatabaseInfo), address });
+  }
+  return databases;
 }
 
 /** Every address's pid, keyed by address — undefined for a stopped/absent service. */
@@ -351,6 +366,17 @@ async function startDev(fresh: boolean): Promise<DevSession> {
  * that it survives composer's own signal wiring and reaches the shell is
  * provable only here.
  */
+function acceptsConnection(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
+
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -380,11 +406,8 @@ function readJson(file: string): unknown {
 
 async function readCatalogDbUrl(): Promise<string> {
   const databases = await listPostgresDatabases();
-  const entry = databases.find((d) => d.instanceName === 'pcdev-store-catalog-database');
-  assert(
-    entry?.url !== undefined,
-    'the postgres-main listing must carry a pcdev-store-catalog-database entry',
-  );
+  const entry = databases.find((d) => d.address === 'catalog.database');
+  assert(entry?.url !== undefined, 'the record must name a running catalog.database database');
   return entry.url;
 }
 
@@ -636,6 +659,15 @@ async function main(): Promise<void> {
     // ——— Ctrl-C ———
     await stopDev(session);
     console.log('[proving] session 1 stopped cleanly on SIGINT');
+    // Ending `prisma dev` stops the app's database servers too; their data
+    // and ports are kept for the warm start below.
+    const stoppedDb = (await listPostgresDatabases()).find((d) => d.address === 'catalog.database');
+    assert(stoppedDb?.status === 'stopped', 'catalog.database must be stopped after Ctrl-C');
+    const stoppedPort = new URL(stoppedDb.url).port;
+    assert(
+      !(await acceptsConnection(Number(stoppedPort))),
+      `catalog.database's port ${stoppedPort} must refuse connections after Ctrl-C`,
+    );
 
     // ——— Criterion 3 (warm read) + criterion 6 (same ports) ———
     session = await startDev(false);
@@ -689,9 +721,9 @@ async function main(): Promise<void> {
     session = await startDev(true);
     console.log(`[proving] session 3 (--fresh) ready: ${JSON.stringify(session.endpoints)}`);
     const freshDbUrl = await readCatalogDbUrl();
-    // --fresh removes the app's postgres-main-hosted servers and their
-    // persisted data (DELETE /apps/<app> on the daemon, runDevTeardown) and
-    // recreates them on next provision — migrations reapply as part of THIS
+    // --fresh deletes the app's recorded database instances, their
+    // persisted data with them (runDevTeardown), and the converge creates
+    // them again — migrations reapply as part of THIS
     // SAME converge (OrmMigration runs on every converge), so the "product"
     // table exists again by the time the front door prints; the proof is
     // that it's freshly migrated and EMPTY — the proving row from before

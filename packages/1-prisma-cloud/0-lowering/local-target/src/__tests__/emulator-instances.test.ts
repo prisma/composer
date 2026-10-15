@@ -18,13 +18,15 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { packageComputeArtifact } from '@internal/lowering/compute';
 import { App, Deployment } from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
-import { ensureServiceInstances, LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
+import { ensureAppInstances } from '../app-instances.ts';
+import { LocalAppProvider, LocalDeploymentProvider } from '../compute.ts';
 import {
-  deleteRecordedInstances,
+  type AppInstances,
+  deleteAppInstances,
   EMULATOR_INSTANCES_FILE,
-  type EmulatorInstances,
   readEmulatorInstances,
-  retirePreviousApp,
+  type ServiceNodeInstance,
+  selectApp,
   withServiceAddresses,
 } from '../emulator-instances.ts';
 
@@ -116,14 +118,37 @@ async function appProvider(devDir: string) {
   );
 }
 
-function mappingOf(directory: string): Promise<EmulatorInstances | undefined> {
-  return readEmulatorInstances(directory);
+/** The services' instances, ensured through the record as the emulators hook ensures them. */
+function ensureServiceInstances(
+  forContainer: ContainerInstance,
+  devDir: string,
+  addresses: readonly string[],
+) {
+  return ensureAppInstances(
+    { devDir, app: forContainer.input.appName },
+    addresses.map((address) => ({ address, kind: 'service' as const })),
+  );
+}
+
+async function mappingOf(directory: string, app = APP): Promise<AppInstances | undefined> {
+  return (await readEmulatorInstances(directory))?.apps[app];
 }
 
 async function nodeOf(directory: string, address: string) {
   const node = (await mappingOf(directory))?.nodes[address];
-  if (!node) throw new Error(`no instance recorded for "${address}" in ${directory}`);
+  if (node?.kind !== 'service') {
+    throw new Error(`no service instance recorded for "${address}" in ${directory}`);
+  }
   return node;
+}
+
+async function serviceNodes(directory: string): Promise<Record<string, ServiceNodeInstance>> {
+  const nodes = (await mappingOf(directory))?.nodes ?? {};
+  return Object.fromEntries(
+    Object.entries(nodes).flatMap(([address, node]) =>
+      node.kind === 'service' ? [[address, node]] : [],
+    ),
+  );
 }
 
 async function pidOf(id: string): Promise<number | undefined> {
@@ -198,8 +223,8 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
         [a, b].flatMap(({ devDir }) => ADDRESSES.map((address) => deploy(devDir, address, 'v1'))),
       );
 
-      const nodesA = (await mappingOf(a.directory))?.nodes ?? {};
-      const nodesB = (await mappingOf(b.directory))?.nodes ?? {};
+      const nodesA = await serviceNodes(a.directory);
+      const nodesB = await serviceNodes(b.directory);
       const ids = [...Object.values(nodesA), ...Object.values(nodesB)].map((n) => n.id);
       const ports = [...Object.values(nodesA), ...Object.values(nodesB)].map((n) => n.port);
       expect(new Set(ids).size).toBe(4);
@@ -251,7 +276,9 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
 
       const after = await nodeOf(directory, 'quotes');
       expect(after.port).not.toBe(before.port);
-      expect(changes).toEqual([{ address: 'quotes', previous: before.port, given: after.port }]);
+      expect(changes).toEqual([
+        { kind: 'service', address: 'quotes', previous: before.port, given: after.port },
+      ]);
     });
 
     test('a warm restart after a stop reuses the same instances and ports', async () => {
@@ -305,7 +332,7 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       fs.readFileSync(path.join(devDir, EMULATOR_INSTANCES_FILE), 'utf8'),
     );
     const node = await nodeOf(directory, 'quotes');
-    expect(onDisk).toEqual({ app: APP, nodes: { quotes: node } });
+    expect(onDisk).toEqual({ current: APP, apps: { [APP]: { nodes: { quotes: node } } } });
     expect((await computeClient().getInstance(node.id))?.labels).toEqual({
       'composer.directory': directory,
       'composer.app': APP,
@@ -314,63 +341,89 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
     expect(await readEmulatorInstances(path.join(root, 'never-ran'))).toBeUndefined();
   });
 
+  test('a single-app record written by an earlier version reads as that one app, its compute nodes as services', async () => {
+    const { directory, devDir } = projectDir('legacy');
+    fs.mkdirSync(devDir, { recursive: true });
+    const quotes = { id: 'svc_0123456789abcdef', port: 3999 };
+    fs.writeFileSync(
+      path.join(devDir, EMULATOR_INSTANCES_FILE),
+      JSON.stringify({ app: APP, nodes: { quotes: { kind: 'compute', ...quotes } } }),
+    );
+
+    expect(await readEmulatorInstances(directory)).toEqual({
+      current: APP,
+      apps: { [APP]: { nodes: { quotes: { kind: 'service', ...quotes } } } },
+    });
+  });
+
+  const otherApp: ContainerInstance = {
+    input: { appName: 'other-app', stage: undefined },
+    serialize: () => 'x',
+  };
+
+  async function liveIds(ids: readonly string[]): Promise<string[]> {
+    const live = await Promise.all(ids.map((id) => computeClient().getInstance(id)));
+    return live.flatMap((instance) => (instance ? [instance.id] : []));
+  }
+
   describe('switching apps in a directory', () => {
-    test("running another app deletes the previous app's compute instances and starts a new record", async () => {
+    test("running another app stops the previous app's services and keeps its instances and ports", async () => {
       const { directory, devDir } = projectDir('switch');
+      await ensureServiceInstances(container, devDir, ['quotes']);
+      await deploy(devDir, 'quotes', 'v1');
+      const before = await mappingOf(directory);
+
+      const previous = await selectApp({ devDir, app: 'other-app' });
+
+      expect(previous).toBe(APP);
+      expect((await readEmulatorInstances(directory))?.current).toBe('other-app');
+      expect(await mappingOf(directory)).toEqual(before);
+      const quotes = await nodeOf(directory, 'quotes');
+      expect(await computeClient().getInstance(quotes.id)).toMatchObject({
+        status: 'stopped',
+        port: quotes.port,
+      });
+    }, 30_000);
+
+    test('switching back reuses the same instances and ports', async () => {
+      const { directory, devDir } = projectDir('switch-back');
       await ensureServiceInstances(container, devDir, ADDRESSES);
-      const previous = Object.values((await mappingOf(directory))?.nodes ?? {});
+      const before = await mappingOf(directory);
+      await selectApp({ devDir, app: 'other-app' });
+      await ensureServiceInstances(otherApp, devDir, ['web']);
 
-      const retired = await retirePreviousApp({ devDir, app: 'another-app' });
+      expect(await selectApp({ devDir, app: APP })).toBe('other-app');
+      const changes = await ensureServiceInstances(container, devDir, ADDRESSES);
 
-      expect(retired).toBe(APP);
-      for (const node of previous)
-        expect(await computeClient().getInstance(node.id)).toBeUndefined();
-      expect(await mappingOf(directory)).toEqual({ app: 'another-app', nodes: {} });
+      expect(changes).toEqual([]);
+      expect(await mappingOf(directory)).toEqual(before);
     });
 
-    test('running the same app again retires nothing', async () => {
-      const { directory, devDir } = projectDir('same');
+    test('running the same app again changes nothing', async () => {
+      const { devDir } = projectDir('same');
+      await selectApp({ devDir, app: APP });
       await ensureServiceInstances(container, devDir, ['quotes']);
-      const quotes = await nodeOf(directory, 'quotes');
 
-      expect(await retirePreviousApp({ devDir, app: APP })).toBeUndefined();
-      expect(await computeClient().getInstance(quotes.id)).toBeDefined();
+      expect(await selectApp({ devDir, app: APP })).toBeUndefined();
     });
   });
 
   describe('--fresh', () => {
-    const otherApp: ContainerInstance = {
-      input: { appName: 'other-app', stage: undefined },
-      serialize: () => 'x',
-    };
-
-    async function liveIds(ids: readonly string[]): Promise<string[]> {
-      const live = await Promise.all(ids.map((id) => computeClient().getInstance(id)));
-      return live.flatMap((instance) => (instance ? [instance.id] : []));
-    }
-
-    test('deletes the recorded instances even when the record names the app run here before', async () => {
-      const { directory, devDir } = projectDir('fresh-previous');
-      await ensureServiceInstances(container, devDir, ADDRESSES);
-      const ids = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
-
-      await deleteRecordedInstances(devDir);
-
-      expect(await liveIds(ids)).toEqual([]);
-      expect((await mappingOf(directory))?.nodes).toEqual({});
-    });
-
-    test('after switching apps, leaves no instance of either app', async () => {
-      const { directory, devDir } = projectDir('fresh-switch');
-      await ensureServiceInstances(container, devDir, ADDRESSES);
-      const first = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
-      await retirePreviousApp({ devDir, app: 'other-app' });
+    test("deletes the app's instances and entry, and leaves another app's alone", async () => {
+      const { directory, devDir } = projectDir('fresh');
       await ensureServiceInstances(otherApp, devDir, ['web']);
-      const second = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
+      await selectApp({ devDir, app: APP });
+      await ensureServiceInstances(container, devDir, ADDRESSES);
+      const mine = Object.values((await mappingOf(directory))?.nodes ?? {}).map((n) => n.id);
+      const theirs = await mappingOf(directory, 'other-app');
 
-      await deleteRecordedInstances(devDir);
+      await deleteAppInstances({ devDir, app: APP });
 
-      expect(await liveIds([...first, ...second])).toEqual([]);
+      expect(await liveIds(mine)).toEqual([]);
+      expect(await mappingOf(directory)).toBeUndefined();
+      expect(await mappingOf(directory, 'other-app')).toEqual(theirs);
+      const web = theirs?.nodes['web'];
+      expect(await liveIds(web ? [web.id] : [])).toEqual(web ? [web.id] : []);
     });
   });
 

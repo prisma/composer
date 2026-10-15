@@ -11,7 +11,7 @@ import * as net from 'node:net';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
-import { type ComputeClient, computeClient, type InstanceInfo } from '../client.ts';
+import { type ComputeClient, computeClient, type ServiceInstanceInfo } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
@@ -69,14 +69,14 @@ async function startDaemon(entry?: string): Promise<ComputeClient> {
  */
 const OWN_PORTS = portNumbers(3400, 3599);
 
-async function createInstanceOnOwnPort(client: ComputeClient): Promise<InstanceInfo> {
+async function createInstanceOnOwnPort(client: ComputeClient): Promise<ServiceInstanceInfo> {
   const port = await getPort({ port: OWN_PORTS });
   const instance = await client.createInstance({ labels: {}, port });
   expect(instance.port).toBe(port);
   return instance;
 }
 
-async function instanceOf(client: ComputeClient, id: string): Promise<InstanceInfo> {
+async function instanceOf(client: ComputeClient, id: string): Promise<ServiceInstanceInfo> {
   const instance = await client.getInstance(id);
   if (!instance) throw new Error(`instance "${id}" not found`);
   return instance;

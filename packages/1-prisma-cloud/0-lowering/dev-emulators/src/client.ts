@@ -13,7 +13,6 @@ import {
   isPidAlive,
   registryFilePath,
 } from './daemon.ts';
-import { isValidSegment } from './segments.ts';
 
 function notRunningError(name: DaemonName): Error {
   return new Error(
@@ -57,13 +56,6 @@ function resolveBaseUrl(name: DaemonName, opts: DaemonRootOptions): string {
     throw notRunningError(name);
   }
   return `http://127.0.0.1:${parsed.port}`;
-}
-
-function encodeSegment(segment: string): string {
-  if (!isValidSegment(segment)) {
-    throw new Error(`invalid path segment "${segment}"`);
-  }
-  return encodeURIComponent(segment);
 }
 
 const ADMIN_FETCH_ATTEMPTS = 3;
@@ -118,22 +110,22 @@ async function expectOk(res: Response): Promise<Response> {
   return res;
 }
 
-export type InstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
+export type ServiceInstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
 
-export interface InstanceInfo {
+export interface ServiceInstanceInfo {
   readonly id: string;
   /** Stored and returned verbatim; the emulator never reads them. */
   readonly labels: Readonly<Record<string, string>>;
   readonly port: number;
   readonly url: string;
-  readonly status: InstanceStatus;
+  readonly status: ServiceInstanceStatus;
   readonly pid?: number;
   readonly lastExitCode?: number;
   readonly artifactHash?: string;
   readonly logPath: string;
 }
 
-export interface CreateInstanceRequest {
+export interface CreateServiceRequest {
   readonly labels: Readonly<Record<string, string>>;
   /** Used if no instance holds it and it is bindable; otherwise the emulator gives the lowest free port from 3000. */
   readonly port?: number;
@@ -157,7 +149,7 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   );
 }
 
-function isInstanceInfo(value: unknown): value is InstanceInfo {
+function isServiceInstanceInfo(value: unknown): value is ServiceInstanceInfo {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -177,8 +169,8 @@ function isInstanceInfo(value: unknown): value is InstanceInfo {
   );
 }
 
-function isInstanceInfoArray(value: unknown): value is InstanceInfo[] {
-  return Array.isArray(value) && value.every(isInstanceInfo);
+function isServiceInstanceInfoArray(value: unknown): value is ServiceInstanceInfo[] {
+  return Array.isArray(value) && value.every(isServiceInstanceInfo);
 }
 
 interface HealthBody {
@@ -199,11 +191,11 @@ export interface ComputeClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
   /** `POST /instances` — creates a stopped instance holding a port until it is deleted. Never retried: a retry could create a second instance. */
-  createInstance(request: CreateInstanceRequest): Promise<InstanceInfo>;
+  createInstance(request: CreateServiceRequest): Promise<ServiceInstanceInfo>;
   /** `GET /instances`. */
-  listInstances(): Promise<InstanceInfo[]>;
+  listInstances(): Promise<ServiceInstanceInfo[]>;
   /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
-  getInstance(id: string): Promise<InstanceInfo | undefined>;
+  getInstance(id: string): Promise<ServiceInstanceInfo | undefined>;
   /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port. */
   putDeployment(id: string, deployment: DeploymentRequest): Promise<void>;
   /** `GET /instances/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
@@ -252,7 +244,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
         await adminFetch(`${baseUrl}/instances`, postJson(request), { retry: false }),
       );
       const body: unknown = await res.json();
-      if (!isInstanceInfo(body)) {
+      if (!isServiceInstanceInfo(body)) {
         throw new Error('malformed instance-create response from the compute emulator');
       }
       return body;
@@ -261,7 +253,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
     async listInstances() {
       const res = await expectOk(await adminFetch(`${baseUrl}/instances`));
       const body: unknown = await res.json();
-      if (!isInstanceInfoArray(body)) {
+      if (!isServiceInstanceInfoArray(body)) {
         throw new Error('malformed instances listing from the compute emulator');
       }
       return body;
@@ -271,7 +263,7 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
       const res = await adminFetch(instancePath(baseUrl, id));
       if (res.status === 404) return undefined;
       const body: unknown = await (await expectOk(res)).json();
-      if (!isInstanceInfo(body)) {
+      if (!isServiceInstanceInfo(body)) {
         throw new Error('malformed instance response from the compute emulator');
       }
       return body;
@@ -321,19 +313,56 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
   };
 }
 
+export interface BucketInstanceInfo {
+  /** Also the bucket's name on the S3 wire. */
+  readonly id: string;
+  /** Stored and returned verbatim; the emulator never reads them. */
+  readonly labels: Readonly<Record<string, string>>;
+  /** Where the bucket's objects live, as its creator registered it. */
+  readonly dir: string;
+}
+
+export interface CreateBucketRequest {
+  readonly labels: Readonly<Record<string, string>>;
+  readonly dir: string;
+}
+
+function isBucketInstanceInfo(value: unknown): value is BucketInstanceInfo {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    'dir' in value &&
+    typeof value.dir === 'string'
+  );
+}
+
+function isBucketInstanceInfoArray(value: unknown): value is BucketInstanceInfo[] {
+  return Array.isArray(value) && value.every(isBucketInstanceInfo);
+}
+
+/** Each bucket is an instance keyed by an id the emulator generates, which is also its name on the S3 wire at `baseUrl`. */
 export interface BucketsClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `PUT /_pcdev/apps/<app>/buckets/<name>`. */
-  putBucket(app: string, name: string, dir: string): Promise<void>;
-  /** `PUT /_pcdev/apps/<app>/credentials`. */
-  putCredentials(app: string, accessKeyId: string, secretAccessKey: string): Promise<void>;
-  /** `DELETE /_pcdev/apps/<app>`. */
-  deleteApp(app: string): Promise<void>;
+  /** `POST /_pcdev/instances` — creates the bucket and its data root. Never retried: a retry could create a second bucket. */
+  createInstance(request: CreateBucketRequest): Promise<BucketInstanceInfo>;
+  /** `GET /_pcdev/instances`. */
+  listInstances(): Promise<BucketInstanceInfo[]>;
+  /** `GET /_pcdev/instances/<id>`; undefined when the emulator has no such instance. */
+  getInstance(id: string): Promise<BucketInstanceInfo | undefined>;
+  /** `PUT /_pcdev/instances/<id>/credentials` — accepts this key pair for this bucket. A key registered for another bucket is refused. */
+  putCredentials(id: string, accessKeyId: string, secretAccessKey: string): Promise<void>;
+  /** `DELETE /_pcdev/instances/<id>` — forgets the bucket and its credentials; its objects stay in its data root. Deleting an unknown id succeeds. */
+  deleteInstance(id: string): Promise<void>;
 }
 
 export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
   const baseUrl = resolveBaseUrl('buckets', opts);
+  const adminUrl = `${baseUrl}/_pcdev/instances`;
 
   return {
     baseUrl,
@@ -347,21 +376,37 @@ export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
       return body;
     },
 
-    async putBucket(app, name, dir) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}/buckets/${encodeSegment(name)}`;
-      await expectOk(
-        await adminFetch(url, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ dir }),
-        }),
-      );
+    async createInstance(request) {
+      const res = await expectOk(await adminFetch(adminUrl, postJson(request), { retry: false }));
+      const body: unknown = await res.json();
+      if (!isBucketInstanceInfo(body)) {
+        throw new Error('malformed instance-create response from the buckets emulator');
+      }
+      return body;
     },
 
-    async putCredentials(app, accessKeyId, secretAccessKey) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}/credentials`;
+    async listInstances() {
+      const res = await expectOk(await adminFetch(adminUrl));
+      const body: unknown = await res.json();
+      if (!isBucketInstanceInfoArray(body)) {
+        throw new Error('malformed instances listing from the buckets emulator');
+      }
+      return body;
+    },
+
+    async getInstance(id) {
+      const res = await adminFetch(instancePath(`${baseUrl}/_pcdev`, id));
+      if (res.status === 404) return undefined;
+      const body: unknown = await (await expectOk(res)).json();
+      if (!isBucketInstanceInfo(body)) {
+        throw new Error('malformed instance response from the buckets emulator');
+      }
+      return body;
+    },
+
+    async putCredentials(id, accessKeyId, secretAccessKey) {
       await expectOk(
-        await adminFetch(url, {
+        await adminFetch(`${instancePath(`${baseUrl}/_pcdev`, id)}/credentials`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ accessKeyId, secretAccessKey }),
@@ -369,58 +414,66 @@ export function bucketsClient(opts: DaemonRootOptions = {}): BucketsClient {
       );
     },
 
-    async deleteApp(app) {
-      const url = `${baseUrl}/_pcdev/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+    async deleteInstance(id) {
+      await expectOk(await adminFetch(instancePath(`${baseUrl}/_pcdev`, id), { method: 'DELETE' }));
     },
   };
 }
 
-export interface DatabaseInfo {
+export interface DatabaseInstanceInfo {
   readonly id: string;
+  /** Stored and returned verbatim; the emulator never reads them. */
+  readonly labels: Readonly<Record<string, string>>;
+  readonly port: number;
   readonly url: string;
-  readonly instanceName: string;
-  readonly databasePort: number;
+  readonly status: 'running' | 'stopped';
 }
 
-function isDatabaseInfo(value: unknown): value is DatabaseInfo {
+export interface CreateDatabaseRequest {
+  readonly labels: Readonly<Record<string, string>>;
+  /** Used if no instance holds it and it is bindable; otherwise the emulator gives the lowest free port in its database range. */
+  readonly port?: number;
+  /** Where the caller resolved `@prisma/dev`; the emulator loads it from here. */
+  readonly prismaDevModulePath: string;
+}
+
+function isDatabaseInstanceInfo(value: unknown): value is DatabaseInstanceInfo {
   return (
     typeof value === 'object' &&
     value !== null &&
     'id' in value &&
     typeof value.id === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    'port' in value &&
+    typeof value.port === 'number' &&
     'url' in value &&
     typeof value.url === 'string' &&
-    'instanceName' in value &&
-    typeof value.instanceName === 'string' &&
-    'databasePort' in value &&
-    typeof value.databasePort === 'number'
+    'status' in value &&
+    (value.status === 'running' || value.status === 'stopped')
   );
 }
 
-function isDatabaseInfoArray(value: unknown): value is DatabaseInfo[] {
-  return Array.isArray(value) && value.every(isDatabaseInfo);
+function isDatabaseInstanceInfoArray(value: unknown): value is DatabaseInstanceInfo[] {
+  return Array.isArray(value) && value.every(isDatabaseInstanceInfo);
 }
 
-interface EnsuredDatabase {
-  readonly url: string;
-}
-
-function isEnsuredDatabase(value: unknown): value is EnsuredDatabase {
-  return (
-    typeof value === 'object' && value !== null && 'url' in value && typeof value.url === 'string'
-  );
-}
-
+/** Each database is an instance keyed by an id the emulator generates, served by its own `@prisma/dev` server. */
 export interface PostgresClient {
   readonly baseUrl: string;
   health(): Promise<{ version: string }>;
-  /** `PUT /apps/<app>/databases/<id>` — ensure a named, persistent `@prisma/dev` server. Idempotent. */
-  ensureDatabase(app: string, id: string, prismaDevModulePath: string): Promise<{ url: string }>;
-  /** `GET /apps/<app>/databases`. */
-  listDatabases(app: string): Promise<DatabaseInfo[]>;
-  /** `DELETE /apps/<app>` — closes the app's servers and deletes their persisted data. */
-  deleteApp(app: string): Promise<void>;
+  /** `POST /instances` — creates a database and starts its server; it holds its port until it is deleted. Never retried: a retry could create a second database. */
+  createInstance(request: CreateDatabaseRequest): Promise<DatabaseInstanceInfo>;
+  /** `GET /instances`. */
+  listInstances(): Promise<DatabaseInstanceInfo[]>;
+  /** `GET /instances/<id>`; undefined when the emulator has no such instance. */
+  getInstance(id: string): Promise<DatabaseInstanceInfo | undefined>;
+  /** `POST /instances/start` — starts each listed database's server on its port, with its data. Fails naming any unknown id. */
+  startInstances(ids: readonly string[], prismaDevModulePath: string): Promise<void>;
+  /** `POST /instances/stop` — shuts the servers down and keeps their data and ports; an unknown id is skipped. */
+  stopInstances(ids: readonly string[]): Promise<void>;
+  /** `DELETE /instances/<id>` — stops the server and deletes its data, loading `@prisma/dev` from `prismaDevModulePath` when given (otherwise from where the database was last started). Deleting an unknown id succeeds. */
+  deleteInstance(id: string, prismaDevModulePath?: string): Promise<void>;
 }
 
 export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
@@ -438,35 +491,58 @@ export function postgresClient(opts: DaemonRootOptions = {}): PostgresClient {
       return body;
     },
 
-    async ensureDatabase(app, id, prismaDevModulePath) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/databases/${encodeSegment(id)}`;
+    async createInstance(request) {
       const res = await expectOk(
-        await adminFetch(url, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ prismaDevModulePath }),
-        }),
+        await adminFetch(`${baseUrl}/instances`, postJson(request), { retry: false }),
       );
       const body: unknown = await res.json();
-      if (!isEnsuredDatabase(body)) {
-        throw new Error('malformed database-ensure response from the postgres emulator');
+      if (!isDatabaseInstanceInfo(body)) {
+        throw new Error('malformed instance-create response from the postgres emulator');
       }
       return body;
     },
 
-    async listDatabases(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}/databases`;
-      const res = await expectOk(await adminFetch(url));
+    async listInstances() {
+      const res = await expectOk(await adminFetch(`${baseUrl}/instances`));
       const body: unknown = await res.json();
-      if (!isDatabaseInfoArray(body)) {
-        throw new Error('malformed databases listing from the postgres emulator');
+      if (!isDatabaseInstanceInfoArray(body)) {
+        throw new Error('malformed instances listing from the postgres emulator');
       }
       return body;
     },
 
-    async deleteApp(app) {
-      const url = `${baseUrl}/apps/${encodeSegment(app)}`;
-      await expectOk(await adminFetch(url, { method: 'DELETE' }));
+    async getInstance(id) {
+      const res = await adminFetch(instancePath(baseUrl, id));
+      if (res.status === 404) return undefined;
+      const body: unknown = await (await expectOk(res)).json();
+      if (!isDatabaseInstanceInfo(body)) {
+        throw new Error('malformed instance response from the postgres emulator');
+      }
+      return body;
+    },
+
+    async startInstances(ids, prismaDevModulePath) {
+      await expectOk(
+        await adminFetch(`${baseUrl}/instances/start`, postJson({ ids, prismaDevModulePath })),
+      );
+    },
+
+    async stopInstances(ids) {
+      await expectOk(await adminFetch(`${baseUrl}/instances/stop`, postJson({ ids })));
+    },
+
+    async deleteInstance(id, prismaDevModulePath) {
+      await expectOk(
+        await adminFetch(instancePath(baseUrl, id), {
+          method: 'DELETE',
+          ...(prismaDevModulePath !== undefined
+            ? {
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ prismaDevModulePath }),
+              }
+            : {}),
+        }),
+      );
     },
   };
 }

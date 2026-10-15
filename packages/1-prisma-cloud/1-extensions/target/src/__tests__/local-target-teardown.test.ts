@@ -2,36 +2,38 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import * as RealDevEmulators from '@internal/dev-emulators';
 import * as RealLocalTarget from '@internal/local-target';
 import { PrismaCloudContainer } from '../container.ts';
+import { scopedFakes } from './scoped-fakes.ts';
 
 const events: string[] = [];
-let computeDeleteFails = false;
+let deleteFails = false;
 
-const unreachable = (name: string) => () => ({
-  deleteApp: async () => {
-    throw new Error(`${name} emulator is not running`);
-  },
-});
+const fake = scopedFakes();
 
 mock.module('@internal/dev-emulators', () => ({
   ...RealDevEmulators,
-  ensureDaemon: async (name: string) => {
+  ensureDaemon: fake(RealDevEmulators.ensureDaemon, async (name: string) => {
     events.push(`daemon ${name}`);
     return { url: `http://127.0.0.1/${name}` };
-  },
-  postgresClient: unreachable('postgres'),
-  bucketsClient: unreachable('buckets'),
+  }),
 }));
 
 mock.module('@internal/local-target', () => ({
   ...RealLocalTarget,
-  resolvePackageEntry: (specifier: string) => specifier,
-  deleteRecordedInstances: async (devDir: string) => {
-    events.push(`delete compute ${devDir.endsWith('/.prisma-composer/dev') ? 'recorded' : devDir}`);
-    if (computeDeleteFails) throw new Error('compute delete failed');
-  },
-  removeLocalPaths: () => {
+  resolvePackageEntry: fake(RealLocalTarget.resolvePackageEntry, (specifier: string) => specifier),
+  recordedKinds: fake(
+    RealLocalTarget.recordedKinds,
+    async () => new Set(['service', 'database'] as const),
+  ),
+  deleteAppInstances: fake(RealLocalTarget.deleteAppInstances, async ({ app }: { app: string }) => {
+    events.push(`delete instances of ${app}`);
+    if (deleteFails) throw new Error('delete failed');
+  }),
+  removeAppDevState: fake(RealLocalTarget.removeAppDevState, (_devDir: string, app: string) => {
+    events.push(`remove dev state of ${app}`);
+  }),
+  removeLocalPaths: fake(RealLocalTarget.removeLocalPaths, () => {
     events.push('remove local paths');
-  },
+  }),
 }));
 
 const { runDevTeardown } = await import('../local-target/teardown.ts');
@@ -46,20 +48,30 @@ const container = new PrismaCloudContainer(
 
 beforeEach(() => {
   events.length = 0;
-  computeDeleteFails = false;
+  deleteFails = false;
 });
 
-test('starts the compute emulator before deleting the recorded instances, so a stopped emulator still forgets the recorded instances', async () => {
+const removalEvents = ['remove dev state of my-app', 'remove local paths'];
+
+test("starts the emulators holding the app's instances before deleting them, so a stopped emulator still forgets them", async () => {
   await runDevTeardown({ container, stage: undefined });
 
-  expect(events).toEqual(['daemon compute', 'delete compute recorded', 'remove local paths']);
+  expect(events).toEqual([
+    'daemon compute',
+    'daemon postgres',
+    'delete instances of my-app',
+    ...removalEvents,
+  ]);
 });
 
-test('a failed compute delete still removes the local state, then fails the teardown', async () => {
-  computeDeleteFails = true;
+test('a failed delete still removes the local state, then fails the teardown', async () => {
+  deleteFails = true;
 
-  await expect(runDevTeardown({ container, stage: undefined })).rejects.toThrow(
-    'compute delete failed',
-  );
-  expect(events).toEqual(['daemon compute', 'delete compute recorded', 'remove local paths']);
+  await expect(runDevTeardown({ container, stage: undefined })).rejects.toThrow('delete failed');
+  expect(events).toEqual([
+    'daemon compute',
+    'daemon postgres',
+    'delete instances of my-app',
+    ...removalEvents,
+  ]);
 });

@@ -60,45 +60,53 @@ and watches the file. When the file changes, `dev` prints that it changed and
 must be restarted, and it stops rebuilding: until you stop `dev` and start it
 again, a build change only repeats that notice.
 
-`Ctrl-C` stops your app's service processes and exits. The local databases,
-buckets, and their data stay up, so the next `prisma dev` is a warm
-start — same ports, same data. `--fresh` is what wipes this app's local
-instances and data before starting.
+`Ctrl-C` stops your app's service processes and its local Postgres servers,
+and exits; so does `dev` ending on SIGTERM or a failure. The data stays, and
+so do the ports, so the next `prisma dev` is a warm start — same ports, same
+data. `--fresh` is what wipes this app's local instances and data before
+starting.
 
 On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service gets its port before the services that call it, and services with no dependency between them go in the order you provisioned them. A warm start keeps the ports services already have.
 
-### Each directory runs its own services
+### Each directory runs its own services, databases and buckets
 
-The services `dev` runs belong to the directory you run it in. Two checkouts
-of the same app, such as two git worktrees, run separate service processes on
-separate ports, and a rebuild in one never restarts the other's services.
-`dev` records which local service backs each of your services in
+The services, databases and buckets `dev` runs belong to the directory you
+run it in. Two checkouts of the same app, such as two git worktrees, run
+separate service processes on separate ports, with separate databases and
+separate buckets: a rebuild in one never restarts the other's services, and
+a row or an object written in one is not seen by the other. `dev` records
+which local instance backs each node in
 `.prisma-composer/dev/emulator-instances.json`.
 
-A service keeps its port in its directory from one `dev` to the next, even
-while it is stopped. If the local service is gone, for example because a
-Composer upgrade discarded the compute emulator's state, the next `dev`
-creates it again and asks for the port it had. When another directory has
-taken that port, the service gets the lowest free one and `dev` prints one
-line:
+A service or a database keeps its port in its directory from one `dev` to the
+next, even while it is stopped. If a local instance is gone, for example
+because a Composer upgrade discarded an emulator's state, the next `dev`
+creates it again, empty, and asks for the port it had; a Prisma ORM
+database's (`postgres()`) committed migrations then run again, as on a fresh
+start, while a `rawPostgres()` database stays empty. When another directory
+has taken that port, the instance gets the lowest free one and `dev` prints
+one line, naming a service or a database:
 
 ```
 [dev] service "gateway" now uses port 3004: its previous port 3001 is in use
+[dev] database "catalog" now uses port 51302: its previous port 51300 is in use
 ```
 
-A directory runs one app at a time. If you run a different app from the same
-directory, `dev` removes the previous app's local services first and says so:
+A directory keeps the local state of every app you run from it. If you run a
+different app from the same directory (another entry file, or another
+`--name`), `dev` stops the previous app's services and databases first, keeps
+their data and ports, and says so:
 
 ```
-[dev] removed the local services of "shop", the app run here before
+[dev] stopped the local services of "shop", the app run here before; its data is kept
 ```
 
-A stopped service keeps its port reserved, so the services of a checkout you
-delete keep their ports. There is no command to remove them yet.
+Running `shop` again resumes them. `--fresh` wipes only the app you start
+with it.
 
-Local databases and buckets are not separated this way yet: they are still
-keyed by the app's name, so two checkouts of one app share them (see
-[What's local vs. what's real](#whats-local-vs-whats-real)).
+A stopped service or database keeps its port reserved, and a database its
+data, so the instances of a checkout you delete keep theirs. There is no
+command to remove them yet.
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
@@ -173,23 +181,19 @@ token, workspace, or network is involved. Three consequences worth knowing:
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.
 - **`PRISMA_COMPOSER_EMULATORS_DIR` gives a checkout or a CI job its own
-  compute and buckets emulators.** By default every `dev` on the machine
-  shares one set of emulator daemons, registered under
-  `~/.prisma-composer/emulators`; each directory still gets its own services
-  on them. Set the variable to an absolute directory
-  and `dev` starts and finds its compute and buckets daemons, their registry
-  and their data there instead. Each picks free ports, so several can run side
-  by side. A relative path is refused with `DEV.EMULATORS_DIR_INVALID`; `~` is
-  not expanded. `emulatorRegistryRoot()` from
-  `@prisma/composer-prisma-cloud/local-target` returns the directory in
-  effect.
-
-  The variable does not isolate local Postgres. Local Postgres servers are
-  named after the app and the database, not the directory, so two checkouts
-  of the same app get the same server names. The second checkout's Postgres
-  emulator adopts the server the first one is running, and `--fresh` or a
-  teardown in either checkout stops that server and deletes its database for
-  both.
+  emulators.** By default every `dev` on the machine shares one set of
+  emulator daemons, registered under `~/.prisma-composer/emulators`; each
+  directory still gets its own services, databases and buckets on them. Set
+  the variable to an absolute directory and `dev` starts and finds its
+  compute, Postgres and buckets daemons, their registry and their state there
+  instead. Each picks free ports, so several can run side by side. A relative
+  path is refused with `DEV.EMULATORS_DIR_INVALID`; `~` is not expanded.
+  `emulatorRegistryRoot()` from `@prisma/composer-prisma-cloud/local-target`
+  returns the directory in effect. A local database's data is kept by
+  `@prisma/dev` in its own data directory
+  (`~/Library/Application Support/prisma-dev-nodejs/` on macOS,
+  `$XDG_DATA_HOME/prisma-dev-nodejs/` on Linux), under a name unique to the
+  database, whatever the variable says.
 - **The local Postgres is one shared session.** Every connection to a local
   database lands in the same Postgres session, which outlives your service
   processes. If you use Bun's `SQL`, pass `prepare: false`

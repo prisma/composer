@@ -285,8 +285,8 @@ export interface LocalTargetAttachment {
     signal: AbortSignal,
     opts?: { readonly tail?: number },
   ): AsyncIterable<{ readonly service: string; readonly line: string }>;
-  /** Stop the app's service instances (emulators and data persist). */
-  stopServices(): Promise<void>;
+  /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
+  stopApp(): Promise<void>;
 }
 
 /** `<cwd>/.prisma-composer/dev` — the dev instance's app-scoped state directory (ADR-0041, ADR-0004's tool-state rule). "dev" names the user-facing feature/dir (naming, operator 2026-07-23) — this constant's name and value are unchanged by the localTarget rename. */

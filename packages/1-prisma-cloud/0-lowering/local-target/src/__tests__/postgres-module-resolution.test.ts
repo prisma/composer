@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolvePrismaDevModulePath } from '../postgres.ts';
+import { resolvePrismaDevModulePath } from '../prisma-dev-module.ts';
 
 const localTargetDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 

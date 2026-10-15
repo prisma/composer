@@ -6,14 +6,17 @@
  */
 
 export type {
+  BucketInstanceInfo,
   BucketsClient,
   ComputeClient,
-  CreateInstanceRequest,
-  DatabaseInfo,
+  CreateBucketRequest,
+  CreateDatabaseRequest,
+  CreateServiceRequest,
+  DatabaseInstanceInfo,
   DeploymentRequest,
-  InstanceInfo,
-  InstanceStatus,
   PostgresClient,
+  ServiceInstanceInfo,
+  ServiceInstanceStatus,
 } from '../client.ts';
 export { bucketsClient, computeClient, postgresClient } from '../client.ts';
 export type { DaemonName, DaemonRootOptions, RegistryEntry } from '../daemon.ts';
@@ -29,4 +32,3 @@ export {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
-export { instanceNameFor, slug } from '../instance-name.ts';

@@ -184,7 +184,7 @@ export async function executeDev(
     for (const [id, dev] of resolved) {
       try {
         const attachment = await dev.attach({ container: containers.get(id), devDir });
-        await attachment.stopServices();
+        await attachment.stopApp();
       } catch {
         // Best effort: the converge failure is the error to report.
       }
@@ -263,7 +263,7 @@ export async function executeDev(
     for (const attachment of attachments) {
       // Recorded BEFORE the call: startServices can start some services and
       // then throw, and a partially-started attachment must be rolled back by
-      // the catch below too (stopServices failures are already swallowed
+      // the catch below too (stopApp failures are already swallowed
       // there, so stopping a never-started attachment is harmless).
       started.push(attachment);
       try {
@@ -384,7 +384,7 @@ export async function executeDev(
           // teardown continues, `stopped` still fires, `closed` still settles.
           for (const attachment of attachments) {
             try {
-              await attachment.stopServices();
+              await attachment.stopApp();
             } catch (error) {
               emit({ kind: 'stop-error', message: failureMessage(error) });
             }
@@ -403,7 +403,7 @@ export async function executeDev(
     // back as values — a non-structured escape is a bug and throws (rule 6).
     watch?.stop();
     configWatch?.stop();
-    await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
+    await Promise.all(started.map((a) => a.stopApp().catch(() => undefined)));
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
