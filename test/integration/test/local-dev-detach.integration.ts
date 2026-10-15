@@ -189,6 +189,11 @@ async function reserveServicePortsBelow(port: number): Promise<void> {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ labels: { purpose: 'port-skip' } }),
     });
+    if (!created.ok) {
+      throw new Error(
+        `creating a placeholder instance failed (${String(created.status)}): ${await created.text()}`,
+      );
+    }
     given = ((await created.json()) as { port: number }).port;
   }
 }
