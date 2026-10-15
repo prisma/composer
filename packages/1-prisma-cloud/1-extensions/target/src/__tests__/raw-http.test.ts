@@ -2,13 +2,16 @@
  * Raw HTTP connections on Prisma Cloud: a reverse proxy declaring each
  * upstream as a `rawHttp()` dependency exports one communication edge per
  * upstream, with no style, and its lowered config hydrates clients that send
- * real requests.
+ * real requests. A real service RPC contract, beside it, still exports as
+ * request-response.
  */
 import { describe, expect, test } from 'bun:test';
 import { type DependencyEnd, Load, module } from '@internal/core';
 import { buildConfig } from '@internal/core/deploy';
 import { type RawHttpClient, rawHttp, rawHttpContract } from '@internal/http';
 import { composeApplicationTopology } from '@internal/lowering/builds';
+import { contract, rpc } from '@internal/service-rpc';
+import { type } from 'arktype';
 import { compute } from '../compute.ts';
 import { bootstrapService } from '../testing.ts';
 
@@ -158,5 +161,45 @@ describe('raw HTTP connections', () => {
     } finally {
       upstream.stop(true);
     }
+  });
+});
+
+describe('service RPC beside raw HTTP', () => {
+  test('a real service RPC contract exports request-response edges through a module boundary', () => {
+    const verifyContract = contract({
+      verify: rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) }),
+    });
+    const identity = module(
+      'identity',
+      { expose: { verify: verifyContract } },
+      ({ provision }) => ({
+        verify: provision(
+          compute({ name: 'server', deps: {}, build, expose: { verify: verifyContract } }),
+        ).verify,
+      }),
+    );
+    const graph = Load(
+      module('web', ({ provision }) => {
+        const auth = provision(identity, { id: 'auth' });
+        provision(compute({ name: 'app', deps: { verify: rpc(verifyContract) }, build }), {
+          deps: { verify: auth.verify },
+        });
+      }),
+    );
+
+    expect(composeApplicationTopology(graph).edges).toEqual([
+      {
+        from: { logicalId: 'auth.server', direction: 'out', name: 'verify' },
+        to: { logicalId: 'auth', direction: 'out', name: 'verify' },
+        family: 'communication',
+        style: 'request-response',
+      },
+      {
+        from: { logicalId: 'auth', direction: 'out', name: 'verify' },
+        to: { logicalId: 'app', direction: 'in', name: 'verify' },
+        family: 'communication',
+        style: 'request-response',
+      },
+    ]);
   });
 });

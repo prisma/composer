@@ -41,6 +41,17 @@ describe('rawHttp()', () => {
       server.stop(true);
     }
   });
+
+  test("refuses a protocol-relative path or an absolute URL that leaves the provider's origin", async () => {
+    const client = await rawHttp().connection.hydrate({ url: 'https://docs.internal' });
+
+    await expect(client.fetch('//evil.example/x')).rejects.toThrow(
+      'rawHttp(): path "//evil.example/x" resolves to https://evil.example, not the provider\'s origin https://docs.internal.',
+    );
+    await expect(client.fetch('https://other.example/x')).rejects.toThrow(
+      "not the provider's origin https://docs.internal",
+    );
+  });
 });
 
 describe('Load', () => {
