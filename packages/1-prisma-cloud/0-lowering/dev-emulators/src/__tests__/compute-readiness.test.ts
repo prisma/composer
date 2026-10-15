@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import getPort, { portNumbers } from 'get-port';
 import { type ComputeClient, computeClient } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
@@ -20,7 +21,6 @@ import {
   ensureFreshDaemon,
   NEVER_LISTENING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   tempDir,
   waitFor,
   writeBootstrap,
@@ -57,9 +57,30 @@ function acceptsConnection(port: number): Promise<boolean> {
 async function startDaemon(entry?: string): Promise<ComputeClient> {
   registryRoot = tempDir('compute-readiness-registry');
   await ensureFreshDaemon('compute', registryRoot, entry);
-  const client = computeClient({ registryRoot });
-  await skipContendedServicePorts(client);
-  return client;
+  return computeClient({ registryRoot });
+}
+
+const OWN_PORT_MIN = 3400;
+const OWN_PORT_MAX = 3599;
+
+/**
+ * Reserves the service and picks its port, which the test then deploys it
+ * on. Other test files run their own Compute emulators at the same time and
+ * give ports from 3000, and several tests here assert that a stopped
+ * service's port refuses connections: a port another file's service holds
+ * would make that fail. So each service here takes a currently free port
+ * from a range only this file uses.
+ */
+async function ensureServiceOnOwnPort(
+  client: ComputeClient,
+  app: string,
+  id: string,
+): Promise<{ port: number }> {
+  await client.ensureService(app, id);
+  const port = await getPort({ port: portNumbers(OWN_PORT_MIN, OWN_PORT_MAX) });
+  expect(port).toBeGreaterThanOrEqual(OWN_PORT_MIN);
+  expect(port).toBeLessThanOrEqual(OWN_PORT_MAX);
+  return { port };
 }
 
 async function statusOf(client: ComputeClient, app: string, id: string): Promise<string> {
@@ -77,7 +98,7 @@ describe('with the default readiness timeout', () => {
 
   test('a deployment returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-slow', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-slow', 'web');
 
     const deployed = client.putDeployment('app-slow', 'web', {
       address: 'slow.web',
@@ -103,7 +124,7 @@ describe('with the default readiness timeout', () => {
 
   test('a session-resume start returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-resume', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-resume', 'web');
     await client.putDeployment('app-resume', 'web', {
       address: 'resume.web',
       artifactDir,
@@ -126,7 +147,7 @@ describe('with the default readiness timeout', () => {
 
   test('a service that exits before it listens fails the deployment, naming the service and its log', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-crash', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-crash', 'web');
 
     const deployed = client.putDeployment('app-crash', 'web', {
       address: 'crash.web',
@@ -143,7 +164,7 @@ describe('with the default readiness timeout', () => {
 
   test('a session-resume start of a service that exits before it listens fails, naming the service', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-crash-resume', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-crash-resume', 'web');
     await client
       .putDeployment('app-crash-resume', 'web', {
         address: 'crash-resume.web',
@@ -170,7 +191,7 @@ describe('a service that does not listen on its port', () => {
 
   test('is running once spawned, without waiting for its port', async () => {
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-clock', 'scheduler');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-clock', 'scheduler');
     const started = Date.now();
 
     await client.putDeployment('app-clock', 'scheduler', {
@@ -214,7 +235,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a redeploy of a running service is not running until the new process listens', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-redeploy', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-redeploy', 'web');
     await client.putDeployment(
       'app-redeploy',
       'web',
@@ -238,7 +259,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a repeated identical deployment during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-repeat', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-repeat', 'web');
     await client.putDeployment(
       'app-repeat',
       'web',
@@ -265,7 +286,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a session-resume start during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-resume-redeploy', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-resume-redeploy', 'web');
     await client.putDeployment(
       'app-resume-redeploy',
       'web',
@@ -287,7 +308,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('two concurrent session-resume starts share one process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-twice', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-twice', 'web');
     await client.putDeployment(
       'app-twice',
       'web',
@@ -306,7 +327,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a deployment replaced during its start waits for the replacement instead of failing', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-replaced', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-replaced', 'web');
 
     const first = client.putDeployment(
       'app-replaced',
@@ -329,7 +350,7 @@ describe('a start that is replaced, stopped or joined', () => {
     const artifactDir = writeBootstrap(
       `process.on('SIGTERM', () => {});\n${DELAYED_SERVING_BOOTSTRAP}`,
     );
-    const reserved = await client.ensureService('app-stop-start', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-stop-start', 'web');
 
     const deployed = client
       .putDeployment(
@@ -377,7 +398,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('stop, start, stop: a stop during a waiting start cancels it', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-sss', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-sss', 'web');
     await client.putDeployment('app-sss', 'web', quickDeployment(reserved.port, artifactDir));
 
     const firstStop = client.stopApp('app-sss');
@@ -394,7 +415,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('an identical deployment during a stop waits for the stop and starts the service again', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-same-put', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-same-put', 'web');
     await client.putDeployment('app-same-put', 'web', quickDeployment(reserved.port, artifactDir));
 
     const stopped = client.stopApp('app-same-put');
@@ -410,7 +431,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a start during a delete of the app leaves no process behind', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.ensureService('app-del-start', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-del-start', 'web');
     await client.putDeployment('app-del-start', 'web', quickDeployment(reserved.port, artifactDir));
 
     const deleted = client.deleteApp('app-del-start');
@@ -439,7 +460,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a deployment stopped during its start fails saying it was stopped', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-stopped', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-stopped', 'web');
 
     const deployed = client.putDeployment(
       'app-stopped',
@@ -462,7 +483,7 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-silent', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-silent', 'web');
 
     const deployed = client.putDeployment('app-silent', 'web', {
       address: 'silent.web',
@@ -487,7 +508,7 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(CRASH_ONCE_THEN_SILENT_BOOTSTRAP);
-    const reserved = await client.ensureService('app-restart-silent', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-restart-silent', 'web');
 
     await expect(
       client.putDeployment('app-restart-silent', 'web', {
@@ -537,7 +558,7 @@ describe('with a 3-second readiness poll', () => {
   test('a session-resume start just after a crash loop is held starts the service again', async () => {
     const client = await startDaemon(slowPoll);
     const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
-    const reserved = await client.ensureService('app-held-resume', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-held-resume', 'web');
 
     await expect(
       client.putDeployment(
@@ -562,7 +583,7 @@ describe('with a 3-second readiness poll', () => {
   test('an identical deployment just after the deployed process exits starts it again', async () => {
     const client = await startDaemon(slowPoll);
     const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
-    const reserved = await client.ensureService('app-crash-redeploy', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-crash-redeploy', 'web');
     const deployment = crashingDeployment(artifactDir, reserved.port);
 
     const first = client.putDeployment('app-crash-redeploy', 'web', deployment);
@@ -598,7 +619,7 @@ describe(`with ${SERVICE_READY_TIMEOUT_ENV}`, () => {
     process.env[SERVICE_READY_TIMEOUT_ENV] = '1000';
     const client = await startDaemon();
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.ensureService('app-env-timeout', 'web');
+    const reserved = await ensureServiceOnOwnPort(client, 'app-env-timeout', 'web');
 
     const deployed = client.putDeployment('app-env-timeout', 'web', {
       address: 'env-timeout.web',
