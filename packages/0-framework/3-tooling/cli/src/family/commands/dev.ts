@@ -235,8 +235,8 @@ export const createDevCommand = (operations: ComposerOperations) =>
         }),
         detach: flag.boolean({
           brief:
-            'Return once every service answers and leave the app running in the background, ' +
-            'without watching for changes. `prisma dev stop` stops it.',
+            'Return once every service answers and leave the app running without watching for ' +
+            'changes. Use it in scripts, agents and CI. `prisma dev stop` stops the app.',
         }),
       },
     },

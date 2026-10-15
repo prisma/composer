@@ -118,7 +118,7 @@ every attachment after each converge, before printing the front door — so
 a warm start restarts stopped services independent of Alchemy's props
 diff. Details in [local-dev.md](../10-domains/local-dev.md). A detached
 mode (services keep serving with no session, full platform parity) is a
-designed extension, not v1.
+designed extension, not v1. *(Amended by ADR-0053: `prisma dev --detach`.)*
 
 **Rebuilds stay the user's** (ADR-0005). Dev watches the *built* output that
 assembly consumes, never sources; the user's own watcher (`next dev` is not

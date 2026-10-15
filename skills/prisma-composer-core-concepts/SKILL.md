@@ -466,8 +466,10 @@ that surprise:
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until
    `prisma dev stop`. Use it, then `prisma dev stop`, instead of keeping a
-   foreground `prisma dev` alive. A failure before ready stops what it
-   started and exits non-zero.
+   foreground `prisma dev` alive. A failure before ready stops the whole
+   app, including one an earlier `--detach` left running (a failed redeploy
+   has already replaced that service's process), and exits non-zero: fix the
+   build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a
