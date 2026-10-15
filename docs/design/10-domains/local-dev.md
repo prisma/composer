@@ -11,7 +11,8 @@ this doc is the mechanics.
 
 ## Scope
 
-One command and one operation:
+Three commands about the app, one about the machine, and one operation with no
+command:
 
 - **`prisma dev <entry>`** — bring up the application whose root node
   is `entry`'s default export, entirely on the local machine, and keep it up:
@@ -26,6 +27,37 @@ One command and one operation:
   live until the caller aborts; a `tail` count sets how many recent lines to
   return first (default 0, which returns live output only). It only reads the running
   app's logs — it neither builds, provisions, starts, nor stops anything.
+
+- **`prisma dev url <address>`** — where a node of the app `prisma dev` last
+  ran from this directory answers: a service's `http://localhost:<port>`, a
+  database's connection string (local credentials included), or a bucket's S3
+  endpoint plus `/<bucket>`. JSON result `{ address, kind, url, state }`; in
+  human format the URL alone goes to stdout. It is the `devUrl` operation
+  ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
+- **`prisma dev stop`** — stop that app's service processes and database
+  servers, as ending `prisma dev` does, for a `dev` that was killed without the
+  chance. Data and ports stay. It is the `devStop` operation, returning
+  `{ app, stopped }`; `stopped` lists only the nodes whose emulator was
+  running.
+- **`prisma emulator list`** — every local emulator on this machine, whether it
+  runs, its admin URL (`null` when it is not running), and its instances with
+  id, kind, URL, state and labels. An emulator that runs but cannot be listed
+  is reported in its own entry with an `error` of `{ code, message }`, and the
+  others are still listed. It needs no project or configuration, so it uses
+  the emulator client bundled into `@prisma/composer-cli` rather than the
+  project's `@prisma/composer-prisma-cloud`. The emulators' registry files and
+  instance-list routes are therefore read across Composer versions and must
+  stay backward compatible. `prisma emulator start` and `prisma emulator stop`
+  are planned.
+
+`dev url` and `dev stop` take no entry and build nothing. The configuration
+does not name the app, so they act on the app the directory's record names as
+current. Core reaches it through the local-target seam: a
+`LocalTargetDescriptor` may implement `current({ devDir })`, returning the
+recorded app's name, its addresses, `locate(address)` and `stop()`. The Prisma
+Cloud target implements it from `emulator-instances.json`; core never reads the
+record. `dev url` reports a node only while it is running, so every URL it
+prints answers.
 
 Flags: `dev` takes `--name` (override the root's name, as on deploy) and
 `--fresh` (destroy the dev stack and wipe the dev state directory before
@@ -441,6 +473,11 @@ Deploy's rule holds: every failure names its fix.
 | a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
 | an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
 | `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
+| `dev url` or `dev stop` in a directory where no extension recorded an app | `DEV.NOT_STARTED_HERE`: run `prisma dev` here first |
+| `dev url` with an address the app does not have | `DEV.ADDRESS_UNKNOWN`, listing the addresses it has |
+| `dev url` for a node whose emulator is not running | `DEV.EMULATOR_UNREACHABLE` |
+| `dev url` for a node that exists but is not running | `DEV.NOT_RUNNING`, naming its state; for a stopped node the fix is `prisma dev`, for a crash-looping service it is the service's log, for a node its emulator lost it is `prisma dev`, which creates it again |
+| the local target fails without a code (for example an emulator's error response) in `dev url` or `dev stop` | `DEV.EMULATOR_FAILED` |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)

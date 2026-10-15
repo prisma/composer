@@ -44,6 +44,7 @@ mock.module('@internal/local-target', () => ({
   ),
   stopAppInstances: fake(RealLocalTarget.stopAppInstances, async ({ app }: { app: string }) => {
     events.push(`stop ${app}`);
+    return [];
   }),
 }));
 

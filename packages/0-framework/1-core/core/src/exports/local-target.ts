@@ -9,8 +9,13 @@
 
 export {
   DEV_DIR,
+  type LocalNodeCondition,
+  type LocalNodeLocation,
+  type LocalNodeStopped,
   type LocalTargetAttachInput,
   type LocalTargetAttachment,
+  type LocalTargetCurrentApp,
+  type LocalTargetCurrentInput,
   type LocalTargetDescriptor,
   type LocalTargetEmulatorsInput,
   type LocalTargetProvidersInput,

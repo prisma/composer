@@ -38,6 +38,7 @@
     "pg": "8.22.0"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1085.0",
     "@distilled.cloud/prisma": "1.0.0-rc.15",
     "@internal/tsdown-config": "workspace:0.30.0",
     "@prisma/cli-engine": "0.7.0",

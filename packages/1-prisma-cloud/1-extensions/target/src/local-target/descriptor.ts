@@ -12,7 +12,7 @@
  */
 import type { LocalTargetDescriptor } from '@internal/core/config';
 import { blindCast } from '@internal/foundation/casts';
-import { localTargetProviders } from '@internal/local-target';
+import { currentApp, localTargetProviders } from '@internal/local-target';
 import * as Prisma from '@internal/lowering';
 import * as Layer from 'effect/Layer';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
@@ -56,5 +56,6 @@ export function localTargetDescriptor(): LocalTargetDescriptor {
     emulators: (input) => runDevEmulators(input),
     attach: (input) => devAttach(input),
     teardown: (input) => runDevTeardown(input),
+    current: (input) => currentApp(input.devDir),
   };
 }

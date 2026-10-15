@@ -131,6 +131,8 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
     },
     logs: (signal, opts) => mergedLogs(scope, signal, opts?.tail ?? 0),
     // Service processes and database servers; their data and ports are kept.
-    stopApp: () => stopAppInstances(scope),
+    stopApp: async () => {
+      await stopAppInstances(scope);
+    },
   };
 }

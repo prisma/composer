@@ -6,3 +6,5 @@
 - **A deployment that arrives while its instance is being deleted can start a process the emulator no longer tracks.** Same race as #353's app delete.
 - **`env.json` and `secrets.json` in `.prisma-composer/dev/` are shared by every app run from a directory, and `--fresh` wipes them.** One app's `--fresh` can drop rows another app in the same directory needs on its next redeploy. Pre-existing. Making them per app, like bucket objects (S1b moved those to `buckets/<app>/<bucket>/`), would fix it.
 - **A service that never listens fails `prisma dev` under prisma/composer#353** (the cron scheduler; `examples/store`). Raised with Will; the fix belongs in #353.
+- **`prisma dev url` doesn't retry an emulator that is briefly unreachable.** Retry policy is #353's (`withEmulatorRetry`); apply it here once that settles.
+- **`prisma dev url` loads the config's extensions, and so Alchemy, to read one JSON file.** It only matters when a script calls it in a loop.
