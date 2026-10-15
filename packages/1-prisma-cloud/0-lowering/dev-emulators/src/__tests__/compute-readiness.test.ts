@@ -6,18 +6,21 @@
  * request right after the URLs must connect.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import getPort, { portNumbers } from 'get-port';
 import { type ComputeClient, computeClient, type ServiceInstanceInfo } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
+  CRASH_UNTIL_ALLOWED_BOOTSTRAP,
   CRASHING_BOOTSTRAP,
   DELAYED_SERVING_BOOTSTRAP,
   ensureFreshDaemon,
   NEVER_LISTENING_BOOTSTRAP,
   servingBootstrapEnv,
-  skipContendedServicePorts,
   tempDir,
   waitFor,
   writeBootstrap,
@@ -54,9 +57,23 @@ function acceptsConnection(port: number): Promise<boolean> {
 async function startDaemon(entry?: string): Promise<ComputeClient> {
   registryRoot = tempDir('compute-readiness-registry');
   await ensureFreshDaemon('compute', registryRoot, entry);
-  const client = computeClient({ registryRoot });
-  await skipContendedServicePorts(client);
-  return client;
+  return computeClient({ registryRoot });
+}
+
+/**
+ * This file's ports. Other test files run their own Compute emulators at the
+ * same time and give ports from 3000, and several tests here assert that a
+ * stopped instance's port refuses connections: a port another file's service
+ * holds would make that fail. So each instance here asks for a currently free
+ * port from a range only this file uses.
+ */
+const OWN_PORTS = portNumbers(3400, 3599);
+
+async function createInstanceOnOwnPort(client: ComputeClient): Promise<ServiceInstanceInfo> {
+  const port = await getPort({ port: OWN_PORTS });
+  const instance = await client.createInstance({ labels: {}, port });
+  expect(instance.port).toBe(port);
+  return instance;
 }
 
 async function instanceOf(client: ComputeClient, id: string): Promise<ServiceInstanceInfo> {
@@ -78,7 +95,7 @@ describe('with the default readiness timeout', () => {
 
   test('a deployment returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client.putDeployment(reserved.id, {
       artifactDir,
@@ -102,7 +119,7 @@ describe('with the default readiness timeout', () => {
 
   test('a session-resume start returns only once a slow-booting service accepts connections', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(reserved.id, {
       artifactDir,
       artifactHash: 'h',
@@ -123,7 +140,7 @@ describe('with the default readiness timeout', () => {
 
   test('a service that exits before it listens fails the deployment, naming the service and its log', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client.putDeployment(reserved.id, {
       artifactDir,
@@ -140,7 +157,7 @@ describe('with the default readiness timeout', () => {
 
   test('a session-resume start of a service that exits before it listens fails, naming the service', async () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client
       .putDeployment(reserved.id, {
         artifactDir,
@@ -165,7 +182,7 @@ describe('a service that does not listen on its port', () => {
 
   test('is running once spawned, without waiting for its port', async () => {
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     const started = Date.now();
 
     await client.putDeployment(reserved.id, {
@@ -205,7 +222,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a redeploy of a running service is not running until the new process listens', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(
       reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
@@ -227,7 +244,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a repeated identical deployment during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(
       reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
@@ -251,7 +268,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a session-resume start during a redeploy waits for the new process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(
       reserved.id,
       delayedDeployment(reserved.port, 'v1', 'first', artifactDir),
@@ -271,7 +288,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('two concurrent session-resume starts share one process', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(
       reserved.id,
       delayedDeployment(reserved.port, 'v1', 'once', artifactDir),
@@ -289,7 +306,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a deployment replaced during its start waits for the replacement instead of failing', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const first = client.putDeployment(
       reserved.id,
@@ -310,7 +327,7 @@ describe('a start that is replaced, stopped or joined', () => {
     const artifactDir = writeBootstrap(
       `process.on('SIGTERM', () => {});\n${DELAYED_SERVING_BOOTSTRAP}`,
     );
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client
       .putDeployment(reserved.id, delayedDeployment(reserved.port, 'v1', 'first', artifactDir))
@@ -350,7 +367,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('stop, start, stop: a stop during a waiting start cancels it', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
     const firstStop = client.stopInstances([reserved.id]);
@@ -367,7 +384,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('an identical deployment during a stop waits for the stop and starts the service again', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
     const stopped = client.stopInstances([reserved.id]);
@@ -383,7 +400,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a start during an instance delete leaves no process behind', async () => {
     const artifactDir = writeBootstrap(IGNORES_SIGTERM);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
     await client.putDeployment(reserved.id, quickDeployment(reserved.port, artifactDir));
 
     const deleted = client.deleteInstance(reserved.id);
@@ -412,7 +429,7 @@ describe('a start that is replaced, stopped or joined', () => {
 
   test('a deployment stopped during its start fails saying it was stopped', async () => {
     const artifactDir = writeBootstrap(DELAYED_SERVING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client.putDeployment(
       reserved.id,
@@ -434,7 +451,7 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client.putDeployment(reserved.id, {
       artifactDir,
@@ -459,7 +476,7 @@ describe('with a 1-second readiness timeout', () => {
       fileURLToPath(new URL('./fixtures/short-ready-timeout.ts', import.meta.url)),
     );
     const artifactDir = writeBootstrap(CRASH_ONCE_THEN_SILENT_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     await expect(
       client.putDeployment(reserved.id, {
@@ -478,6 +495,64 @@ describe('with a 1-second readiness timeout', () => {
   }, 20_000);
 });
 
+// A start notices its process has exited only at its next poll. With polls
+// 3 seconds apart, a request can arrive after the exit but before the start
+// fails; it must start the service again rather than wait for that failure.
+describe('with a 3-second readiness poll', () => {
+  const slowPoll = fileURLToPath(new URL('./fixtures/slow-ready-poll.ts', import.meta.url));
+
+  function crashingDeployment(artifactDir: string, port: number) {
+    return { artifactDir, artifactHash: 'h', env: baseEnv({ PORT: String(port) }) };
+  }
+
+  function allowServing(artifactDir: string): void {
+    fs.writeFileSync(path.join(artifactDir, 'allow-serving'), '');
+  }
+
+  test('a session-resume start just after a crash loop is held starts the service again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await createInstanceOnOwnPort(client);
+
+    // Not awaited: it settles only when the start in flight at `held` notices
+    // its process exited, which is the moment the resume below must not wait for.
+    const first = client
+      .putDeployment(reserved.id, crashingDeployment(artifactDir, reserved.port))
+      .then(
+        () => 'succeeded',
+        (error: unknown) => String(error),
+      );
+    await waitFor(async () => (await statusOf(client, reserved.id)) === 'held', 25_000, 20);
+    allowServing(artifactDir);
+
+    await client.startInstances([reserved.id]);
+
+    expect(await statusOf(client, reserved.id)).toBe('running');
+    expect(await acceptsConnection(reserved.port)).toBe(true);
+    expect(await first).toContain('exited (code 1)');
+  }, 45_000);
+
+  test('an identical deployment just after the deployed process exits starts it again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await createInstanceOnOwnPort(client);
+    const deployment = crashingDeployment(artifactDir, reserved.port);
+
+    const first = client.putDeployment(reserved.id, deployment);
+    await waitFor(async () => (await statusOf(client, reserved.id)) === 'backoff', 5000, 20);
+    allowServing(artifactDir);
+
+    await client.putDeployment(reserved.id, deployment);
+
+    expect(await statusOf(client, reserved.id)).toBe('running');
+    // A start that waited for the first deployment would leave the crash
+    // trail in the log; a fresh start begins a clean one.
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
+    expect(log).not.toContain('restarting in');
+    await first;
+  }, 20_000);
+});
+
 describe(`with ${SERVICE_READY_TIMEOUT_ENV}`, () => {
   const saved = process.env[SERVICE_READY_TIMEOUT_ENV];
 
@@ -490,7 +565,7 @@ describe(`with ${SERVICE_READY_TIMEOUT_ENV}`, () => {
     process.env[SERVICE_READY_TIMEOUT_ENV] = '1000';
     const client = await startDaemon();
     const artifactDir = writeBootstrap(NEVER_LISTENING_BOOTSTRAP);
-    const reserved = await client.createInstance({ labels: {} });
+    const reserved = await createInstanceOnOwnPort(client);
 
     const deployed = client.putDeployment(reserved.id, {
       artifactDir,

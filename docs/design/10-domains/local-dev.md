@@ -153,7 +153,7 @@ service's instance, and the emulator owns the processes:
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
-- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
+- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
 - **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
@@ -199,15 +199,15 @@ service's instance, and the emulator owns the processes:
 
 ### Concurrent starts and stops
 
-Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited.
+Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited. A start whose process has exited is about to fail, so no other start waits for it: a resume or redeploy that arrives in that moment starts the service again.
 
 | Request | Service state | What happens |
 | --- | --- | --- |
 | Session-resume start | Never deployed | Succeeds at once; nothing starts |
-| Session-resume start | A start in flight | Waits for that start and returns its result |
+| Session-resume start | A start in flight whose process has not exited | Waits for that start and returns its result |
 | Session-resume start | `running`, no stop in progress | Succeeds at once |
 | Session-resume start | Anything else | Becomes the start in flight: waits for any stop to finish, then spawns |
-| Deployment PUT, identical | A deployment or resume start in flight | Waits for that start and returns its result |
+| Deployment PUT, identical | A deployment or resume start in flight whose process has not exited | Waits for that start and returns its result |
 | Deployment PUT, identical | `running`, no start or stop in progress | Succeeds at once |
 | Deployment PUT | Anything else | Stores the deployment and becomes the start in flight, replacing any earlier one: waits for any stop to finish, stops the current process, then spawns |
 | Stop | Any | Ends the start in flight and any crash-backoff restart, stops the process, and sets `stopped` once it has exited |
