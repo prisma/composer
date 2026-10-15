@@ -10,5 +10,18 @@
 export interface Contract<Kind extends string, Cmp> {
   readonly kind: Kind;
   readonly __cmp: Cmp;
+  /** How calls over this contract communicate, when the kind guarantees one. Core only carries it onto the graph's ports. */
+  readonly style?: ContractStyle;
   satisfies(required: Contract<Kind, unknown>): boolean;
+}
+
+/** The communication style a contract kind guarantees. */
+export type ContractStyle = 'request-response' | 'stream';
+
+/** The declared style of an untrusted contract value, or `undefined` when it declares none. */
+export function contractStyleOf(contract: unknown): ContractStyle | undefined {
+  if (typeof contract !== 'object' || contract === null || !('style' in contract)) return undefined;
+  return contract.style === 'request-response' || contract.style === 'stream'
+    ? contract.style
+    : undefined;
 }

@@ -557,6 +557,7 @@ function flatten(
         direction: 'out',
         name: RESOURCE_OUT_PORT,
         contractKind: child.provides.kind,
+        style: child.provides.style,
       });
       return refForResource(fullAddress, child);
     }
