@@ -12,6 +12,9 @@
  *    readiness timeout, so the first service fails after the converge has
  *    started the app's databases.
  *
+ * The fixture's services are pushed to ports from 3200 up, so a process
+ * binding a busy port such as 3000 cannot make a closed-port check fail.
+ *
  * A standalone script, not a `bun test` file, for the reason given in
  * local-dev.integration.ts: output of processes started under the deploy
  * engine is lost when the root process is `bun test`.
@@ -22,6 +25,8 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { Load, module } from '@prisma/composer';
+import { DEV_DIR } from '@prisma/composer/config';
 import { devStop } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import prismaConfig from '../prisma.config.ts';
@@ -44,6 +49,14 @@ const config = {
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-dev-detach-'));
 const emulatorsDir = path.join(tempRoot, 'emulators');
 const APP = 'localdevs4fixture';
+/**
+ * Where the fixture's services start. Port 3000 and the ports just above it
+ * are the busiest on a development machine, and a port another process binds
+ * after a stop would read as a service that was not stopped. Ports below this
+ * one go to placeholder instances, which the Compute emulator keeps across
+ * its restart in part 3.
+ */
+const FIRST_SERVICE_PORT = 3200;
 let runCount = 0;
 
 interface Endpoint {
@@ -137,6 +150,13 @@ function recordedPorts(): readonly { readonly kind: string; readonly port: numbe
 /** Asserts the record holds a service and a database port, and that none of them accepts connections. */
 async function assertNothingListens(when: string): Promise<void> {
   const ports = recordedPorts();
+  for (const { kind, port } of ports) {
+    if (kind !== 'service') continue;
+    assert(
+      port >= FIRST_SERVICE_PORT,
+      `service port ${String(port)} is at or above ${String(FIRST_SERVICE_PORT)} ${when}`,
+    );
+  }
   const kinds = new Set(ports.map((p) => p.kind));
   assert(
     kinds.has('service') && kinds.has('database'),
@@ -147,13 +167,41 @@ async function assertNothingListens(when: string): Promise<void> {
   }
 }
 
+/** Starts the Compute emulator with an app that has no nodes, then fills every port below `port` with a placeholder instance. */
+async function reserveServicePortsBelow(port: number): Promise<void> {
+  const localTarget = prismaCloud().localTarget;
+  assert(localTarget !== undefined, 'prismaCloud() has a local target');
+  const target = await localTarget();
+  await target.emulators?.({
+    graph: Load(
+      module('portskip', () => {}),
+      { id: 'portskip' },
+    ),
+    container: await target.container.ensure({ appName: 'portskip', stage: undefined }),
+    devDir: path.join(tempRoot, 'placeholders', DEV_DIR),
+  });
+  const { port: adminPort } = JSON.parse(
+    fs.readFileSync(path.join(emulatorsDir, 'compute.json'), 'utf8'),
+  ) as { port: number };
+  for (let given = 0; given < port - 1; ) {
+    const created = await fetch(`http://127.0.0.1:${String(adminPort)}/instances`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ labels: { purpose: 'port-skip' } }),
+    });
+    given = ((await created.json()) as { port: number }).port;
+  }
+}
+
 async function main(): Promise<void> {
   console.log('local dev: prisma dev --detach against the local-dev fixture');
   fs.rmSync(path.join(integrationDir, '.prisma-composer'), { recursive: true, force: true });
   fs.rmSync(path.join(integrationDir, '.alchemy'), { recursive: true, force: true });
 
-  // ——— 1. Ready, exit 0, still answering afterwards ———
   process.env['PRISMA_COMPOSER_EMULATORS_DIR'] = emulatorsDir;
+  await reserveServicePortsBelow(FIRST_SERVICE_PORT);
+
+  // ——— 1. Ready, exit 0, still answering afterwards ———
   const detached = await runDetached(env());
   assert(detached.code === 0, `prisma dev --detach exits 0 (got ${String(detached.code)})`);
   const endpoints = frontDoor(detached.log);
