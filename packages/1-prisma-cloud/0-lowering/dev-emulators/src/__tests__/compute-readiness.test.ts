@@ -530,7 +530,6 @@ describe('with a 3-second readiness poll', () => {
     expect(await statusOf(client, reserved.id)).toBe('running');
     expect(await acceptsConnection(reserved.port)).toBe(true);
     expect(await first).toContain('exited (code 1)');
-    expect(await first).toContain('exited (code 1)');
   }, 45_000);
 
   test('an identical deployment just after the deployed process exits starts it again', async () => {
