@@ -153,7 +153,12 @@ export const createDeployCommand = (operations: ComposerOperations) =>
                       ]),
                     },
                   ],
-            stdout: () => [],
+            stdout: () =>
+              (summary?.nodes ?? []).map((node) =>
+                [node.address, node.entities.find((e) => e.url !== undefined)?.url ?? ''].join(
+                  '\t',
+                ),
+              ),
             json: () => ({ summary: summary ?? null, durationMs }),
             next: () => [],
           },

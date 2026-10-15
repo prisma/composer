@@ -75,7 +75,6 @@ describe('emulator list', () => {
     const result = await cli.run(['emulator', 'list', '--format', 'human']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe('');
     expect(result.stderr).toContain('Service emulator at http://127.0.0.1:4300');
     expect(result.stderr).toContain('svc_0123456789abcdef');
     expect(result.stderr).toContain('gateway in /work/shop');
@@ -84,6 +83,54 @@ describe('emulator list', () => {
     expect(result.stderr).toContain(
       'Bucket emulator at http://127.0.0.1:4301: could not list its instances (DEV.EMULATOR_UNREACHABLE: connection refused)',
     );
+  });
+
+  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL and state', async () => {
+    const cli = cliWith({
+      listEmulators: async () =>
+        ok({
+          emulators: [
+            ...listing.emulators,
+            {
+              kind: 'database',
+              running: true,
+              url: 'http://127.0.0.1:4302',
+              instances: [
+                {
+                  id: 'db_0123456789abcdef',
+                  kind: 'database',
+                  url: '',
+                  state: 'stopped',
+                  labels: {},
+                },
+              ],
+              error: null,
+            },
+          ],
+        }),
+    });
+
+    const result = await cli.run(['emulator', 'list', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(
+      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\n' +
+        'database\tdb_0123456789abcdef\t\tstopped\n',
+    );
+  });
+
+  test('writes nothing to stdout when no instance exists', async () => {
+    const cli = cliWith({
+      listEmulators: async () =>
+        ok({
+          emulators: listing.emulators.map((emulator) => ({ ...emulator, instances: [] })),
+        }),
+    });
+
+    const result = await cli.run(['emulator', 'list', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
   });
 
   test('a failure keeps its code', async () => {

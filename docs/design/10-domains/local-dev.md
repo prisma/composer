@@ -34,8 +34,8 @@ command:
 - **`prisma dev url <address>`** — where a node of the app `prisma dev` last
   ran from this directory answers: a service's `http://localhost:<port>`, a
   database's connection string (local credentials included), or a bucket's S3
-  endpoint plus `/<bucket>`. JSON result `{ address, kind, url, state }`; in
-  human format the URL alone goes to stdout. It is the `devUrl` operation
+  endpoint plus `/<bucket>`. JSON result `{ address, kind, url, state }`
+  with `--json`; otherwise the URL alone goes to stdout, a terminal or a pipe. It is the `devUrl` operation
   ([ADR-0053](../90-decisions/ADR-0053-dev-url-dev-stop-and-emulator-list.md)).
 - **`prisma dev stop`** — stop that app's service processes and database
   servers, as ending `prisma dev` does, for a `dev` that was killed without the

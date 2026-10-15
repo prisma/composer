@@ -1,7 +1,7 @@
 /**
  * `dev url <address>` — where a node of the app `prisma dev` runs from this
  * directory answers locally. A data command: the URL is its stdout line, so
- * `$(prisma dev url gateway --format human)` is the URL alone.
+ * `$(prisma dev url gateway)` is the URL alone.
  */
 import { defineCommand, positional } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
@@ -18,9 +18,9 @@ export const createDevUrlCommand = (operations: ComposerOperations) =>
         "string, or a bucket's S3 address.",
       description:
         'Reads what the last `prisma dev` in this directory recorded and starts nothing, so ' +
-        'run it while `prisma dev` is running; a node that is not running is an error. With ' +
-        '--format human the URL alone goes to stdout. In a script, the JSON result holds it: ' +
-        `prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url'.`,
+        'run it while `prisma dev` is running; a node that is not running is an error. ' +
+        'The URL alone goes to stdout, so a script can use it directly: ' +
+        'curl "$(prisma dev url gateway)". With --json, stdout carries the full result instead.',
       examples: ['{bin} dev url gateway', '{bin} dev url catalog.database --json'],
     },
     args: {

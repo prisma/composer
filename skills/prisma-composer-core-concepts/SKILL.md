@@ -456,11 +456,10 @@ that surprise:
    Don't hard-code a local port; ports differ per directory. `prisma dev url
    <address>` (run in the same directory as `dev`) prints where a running node
    answers: a service's `http://localhost:<port>`, a database's connection
-   string, a bucket's S3 endpoint plus `/<bucket>`. Piped stdout carries JSON
-   frames, so scripts use
-   `url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"`
-   or `--format human`. Keep `-e`: on failure there is no URL, `jq -r` alone
-   prints `null`, and the code is in `.envelope.error.code`. It fails with
+   string, a bucket's S3 endpoint plus `/<bucket>`. The URL alone goes to
+   stdout, piped or not, so scripts use `url=$(prisma dev url gateway) && curl "$url"`
+   (with the next `prisma` release after 8.0.0-rc.23; an earlier `prisma` needs `--format human` when piped).
+   `--json` gives the full result or the error with its code. It fails with
    `DEV.NOT_STARTED_HERE` (no `dev` ran here), `DEV.ADDRESS_UNKNOWN` (lists
    the known addresses), `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the
    node is stopped, a service is crash-looping and its log is named, or the
