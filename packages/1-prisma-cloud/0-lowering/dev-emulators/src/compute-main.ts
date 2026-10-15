@@ -32,7 +32,7 @@ const MAX_BACKOFF_MS = 30_000;
 const MAX_CONSECUTIVE_FAST_EXITS = 5;
 const LOG_POLL_INTERVAL_MS = 100;
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
-const READY_POLL_INTERVAL_MS = 50;
+const DEFAULT_READY_POLL_MS = 50;
 const READY_PROBE_TIMEOUT_MS = 1000;
 const STATE_MODE = 0o600;
 
@@ -186,9 +186,14 @@ interface RuntimeInfo {
 }
 
 interface InFlightStart {
-  readonly token: object;
+  readonly token: StartToken;
   readonly fresh: boolean;
   readonly result: Promise<SpawnResult>;
+}
+
+interface StartToken {
+  /** Set when the process this start spawned exits. The start is about to fail, so no other start may wait for it. */
+  processExited: boolean;
 }
 
 interface SpawnResult {
@@ -244,14 +249,17 @@ function parseArgs(argv: readonly string[]): {
   readonly port: number;
   readonly stateDir: string;
   readonly readyTimeoutMs: number;
+  readonly readyPollMs: number;
 } {
   let port: number | undefined;
   let stateDir: string | undefined;
   let readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS;
+  let readyPollMs = DEFAULT_READY_POLL_MS;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port') port = Number(argv[i + 1]);
     else if (argv[i] === '--state-dir') stateDir = argv[i + 1];
     else if (argv[i] === '--ready-timeout-ms') readyTimeoutMs = Number(argv[i + 1]);
+    else if (argv[i] === '--ready-poll-ms') readyPollMs = Number(argv[i + 1]);
   }
   if (port === undefined || Number.isNaN(port)) {
     throw new Error('compute-main: --port <n> is required');
@@ -262,7 +270,10 @@ function parseArgs(argv: readonly string[]): {
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) {
     throw new Error('compute-main: --ready-timeout-ms must be a positive number');
   }
-  return { port, stateDir, readyTimeoutMs };
+  if (!Number.isFinite(readyPollMs) || readyPollMs <= 0) {
+    throw new Error('compute-main: --ready-poll-ms must be a positive number');
+  }
+  return { port, stateDir, readyTimeoutMs, readyPollMs };
 }
 
 function acceptsConnection(port: number, host: string): Promise<boolean> {
@@ -288,11 +299,12 @@ async function acceptsLoopbackConnection(port: number): Promise<boolean> {
   return v4 || v6;
 }
 
-/** Polls `port` until it accepts a connection, the child exits, or `timeoutMs` passes. */
+/** Polls `port` every `pollMs` until it accepts a connection, the child exits, or `timeoutMs` passes. */
 async function waitUntilListening(
   child: ChildProcess,
   port: number,
   timeoutMs: number,
+  pollMs: number,
 ): Promise<ReadyOutcome> {
   let exit: ReadyOutcome | undefined;
   child.once('exit', (code, signal) => {
@@ -303,7 +315,7 @@ async function waitUntilListening(
     if (exit) return exit;
     if (await acceptsLoopbackConnection(port)) return exit ?? { kind: 'listening' };
     if (Date.now() >= deadline) return exit ?? { kind: 'timed-out' };
-    await sleep(READY_POLL_INTERVAL_MS);
+    await sleep(pollMs);
   }
 }
 
@@ -325,7 +337,7 @@ function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undef
 }
 
 function main(): void {
-  const { port, stateDir, readyTimeoutMs } = parseArgs(process.argv.slice(2));
+  const { port, stateDir, readyTimeoutMs, readyPollMs } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
   const statePath = path.join(stateDir, 'instances.json');
   const stateFile = new StateFile<InstancesState>(statePath, STATE_MODE);
@@ -485,9 +497,9 @@ function main(): void {
   function beginStart(
     rt: RuntimeInfo,
     fresh: boolean,
-    run: (token: object) => Promise<SpawnResult>,
+    run: (token: StartToken) => Promise<SpawnResult>,
   ): Promise<SpawnResult> {
-    const token = {};
+    const token: StartToken = { processExited: false };
     const result = run(token).finally(() => {
       if (rt.start?.token === token) rt.start = undefined;
     });
@@ -495,11 +507,16 @@ function main(): void {
     return result;
   }
 
+  /** The start in flight, unless its process has already exited. */
+  function joinableStart(rt: RuntimeInfo): InFlightStart | undefined {
+    return rt.start?.token.processExited === false ? rt.start : undefined;
+  }
+
   /** Undefined while `token` is still the instance's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or a delete. */
   function supersededOutcome(
     inst: InstanceRecord,
     rt: RuntimeInfo,
-    token: object,
+    token: StartToken,
   ): Promise<SpawnResult> | undefined {
     if (!rt.deleted && rt.start?.token === token) return undefined;
     if (!rt.deleted && rt.start) return rt.start.result;
@@ -528,7 +545,7 @@ function main(): void {
     inst: InstanceRecord,
     rt: RuntimeInfo,
     fresh: boolean,
-    token: object,
+    token: StartToken,
   ): Promise<SpawnResult> {
     const env = inst.env ?? {};
     const artifactDir = inst.artifactDir ?? '.';
@@ -561,6 +578,9 @@ function main(): void {
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.on('exit', (code) => handleChildExit(inst, rt, child, code));
+    child.once('exit', () => {
+      token.processExited = true;
+    });
     if (child.pid !== undefined) inst.pid = child.pid;
     if (inst.listens === false) {
       inst.status = 'running';
@@ -570,7 +590,7 @@ function main(): void {
     schedulePersist();
 
     const port = String(inst.port);
-    const outcome = await waitUntilListening(child, inst.port, readyTimeoutMs);
+    const outcome = await waitUntilListening(child, inst.port, readyTimeoutMs, readyPollMs);
     const superseded = supersededOutcome(inst, rt, token);
     if (superseded) return superseded;
     const instance = `instance "${inst.id}"`;
@@ -639,7 +659,8 @@ function main(): void {
   async function startInstance(inst: InstanceRecord): Promise<SpawnResult> {
     if (inst.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(inst.id);
-    if (rt.start) return rt.start.result;
+    const inFlight = joinableStart(rt);
+    if (inFlight) return inFlight.result;
     if (inst.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
     // A session resume is a fresh start — begin a clean log.
     return beginStart(rt, true, async (token) => {
@@ -742,9 +763,10 @@ function main(): void {
       (inst.listens ?? true) !== listens;
 
     let result: SpawnResult;
-    if (!changed && rt.start?.fresh === true) {
+    const inFlight = joinableStart(rt);
+    if (!changed && inFlight?.fresh === true) {
       // The same deployment is already starting: answer when it does.
-      result = await rt.start.result;
+      result = await inFlight.result;
     } else if (
       !changed &&
       rt.start === undefined &&

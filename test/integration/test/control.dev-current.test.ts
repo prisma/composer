@@ -98,6 +98,11 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ labels: { purpose: 'port-skip' } }),
       });
+      if (!created.ok) {
+        throw new Error(
+          `creating a placeholder instance failed (${String(created.status)}): ${await created.text()}`,
+        );
+      }
       port = ((await created.json()) as { port: number }).port;
     }
 

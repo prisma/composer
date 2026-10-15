@@ -49,7 +49,7 @@ fix. Reach for workarounds only after that check says otherwise.
 That caret is a range, not an exact pin: it accepts `4.0.0-rc.112` and stable
 `4.x`, but nothing below `4.0.0-rc.111`. So an `effect` **older** than any
 companion in the tree is unsatisfiable, and npm resolves that by installing a
-*second* `effect`. Pinning every package in this repo to the same beta is the
+*second* `effect`. Pinning every package in this repo to the same release is the
 simple way to stay above every floor at once. Treat them as one constellation,
 never as individual bumps.
 
@@ -84,14 +84,14 @@ install never gets there.
 
 ## Steps
 
-1. **Pick the target.** Read alchemy's latest peer range, then choose the newest beta where *every* companion publishes a matching version:
+1. **Pick the target.** Read alchemy's latest peer range, then choose the newest release where *every* companion publishes a matching version:
 
    ```bash
    npm view alchemy dist-tags
    npm view alchemy@<version> peerDependencies
    for p in effect @effect/platform-node @effect/platform-bun \
             @effect/platform-node-shared @effect/vitest; do
-     echo "$p $(npm view $p dist-tags.beta)"
+     echo "$p $(npm view $p version)"
    done
    ```
 
@@ -143,6 +143,9 @@ When alchemy adds a floating `effect`-family dependency, add its pin next to the
   (intersection/union) disappeared at beta.97. `Schedule.both(spaced(x),
   during(y))` becomes `Schedule.spaced(x).pipe(Schedule.upTo({ duration: y }))`;
   `Schedule.max`/`Schedule.min` are the general replacements.
+- **Stable Effect HTTP imports.** Effect 4 uses `effect/http/*`, replacing `effect/unstable/http/*`.
+- **Alchemy lifecycle identity.** Since beta.82, provider fixtures supply `ResourceContext` (`logicalId`, `fqn`, `instanceId`, `type`) instead of `InstanceId`. Local Database, App and Bucket attributes also need `logicalId`; use `null` because local dev creates no platform rows.
+- **Vitest 5 type tests.** Stable `@effect/vitest` requires Vitest 5. Type-only files need a registered test; keep ambient declarations outside its callback or use definite-assignment fixtures inside it.
 - **New required fields on alchemy's resource-handler context** (e.g. `fqn`).
   These surface only in the test fixtures that build the context by hand.
 - **`exactOptionalPropertyTypes` vs alchemy's types.** See the patch section.

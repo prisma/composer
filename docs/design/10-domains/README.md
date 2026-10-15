@@ -22,6 +22,12 @@ architecture/design phase that comes *after* the high-level model is settled.
   the pipeline deltas vs deploy, the process table and supervisor, per-resource
   stand-ins, value sourcing, and the dev error surface. Rests on ADR-0041 and
   ADR-0050.
+- [`email-module.md`](email-module.md) — why the `email` module is a
+  separate service with consumer-side templates and separate `send`/`outbox`
+  ports.
+- [`auth-module.md`](auth-module.md) — why the `auth` module ships its schema
+  as a Prisma ORM extension pack, checks it at deploy time, proxies browsers
+  through the app's origin, and uses stateless JWTs.
 
 The settled high-level model is recorded in:
 
