@@ -65,7 +65,7 @@ function env(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return result;
 }
 
-/** Runs `prisma dev <fixture> --detach --fresh` to completion; returns its exit code and output. */
+/** Runs `prisma dev <fixture> --detach --fresh --json` to completion; returns its exit code and output. */
 async function runDetached(
   runEnv: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; log: string }> {
@@ -73,7 +73,7 @@ async function runDetached(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `run-${String(runCount)}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const child = spawn(CLI_BIN, ['dev', fixtureEntry, '--detach', '--fresh'], {
+  const child = spawn(CLI_BIN, ['dev', fixtureEntry, '--detach', '--fresh', '--json'], {
     cwd: integrationDir,
     env: runEnv,
     stdio: ['ignore', logFd, logFd],
@@ -92,7 +92,7 @@ async function runDetached(
   return { code, log: fs.readFileSync(logPath, 'utf8') };
 }
 
-/** The front door, from the human lines or, for a piped stdout, the NDJSON frames. */
+/** The front door, from the `--json` run's `endpoint` frames. */
 function frontDoor(log: string): readonly Endpoint[] {
   const endpoints: Endpoint[] = [];
   for (const line of log.split('\n')) {
