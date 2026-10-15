@@ -148,12 +148,12 @@ uses it directly. Check the exit status first, so a failure does not run
 url=$(prisma dev url gateway) && curl "$url"
 ```
 
-This needs the next `prisma` release after 8.0.0-rc.23, which writes a command's plain data to a
-piped stdout. An earlier `prisma` writes JSON frames to a pipe; add
-`--format human` to get the URL alone there. `--json` gives the full result,
+`prisma dev url`, `prisma dev stop` and `prisma emulator list` first ship in
+the `prisma` release after 8.0.0-rc.23, which already writes a command's plain
+data to a piped stdout. `--json` gives the full result,
 `{ address, kind, url, state }`, or on failure the error with its code.
-`dev url` only reports
-a node that is running, so the URL it prints answers. Otherwise it fails with
+
+`dev url` only reports a node that is running, so the URL it prints answers. Otherwise it fails with
 a code a script can branch on:
 
 - `DEV.NOT_STARTED_HERE`: `prisma dev` never ran in this directory.
@@ -172,8 +172,10 @@ a code a script can branch on:
 `prisma emulator list` shows every local emulator on the machine, whether it
 is running, and every instance on it, with the directory, app and address it
 belongs to. It works from any directory. Piped, it writes one line per
-instance with four tab-separated fields: the emulator's kind (`service`,
-`database` or `bucket`), the instance id, its URL and its state. An emulator that is running but does
+instance with six tab-separated fields: the emulator's kind (`service`,
+`database` or `bucket`), the instance id, its URL, its state, the address of
+the node it runs and the directory `prisma dev` ran from. The last two are
+empty for an instance Composer did not label. An emulator that is running but does
 not answer, or answers with an error, is shown with that error, and the
 others are still listed. `prisma emulator start` and
 `prisma emulator stop` are planned.

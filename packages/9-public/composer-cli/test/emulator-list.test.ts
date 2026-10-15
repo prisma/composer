@@ -85,12 +85,12 @@ describe('emulator list', () => {
     );
   });
 
-  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL and state', async () => {
+  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL, state, node address and directory', async () => {
     const cli = cliWith({
       listEmulators: async () =>
         ok({
           emulators: [
-            ...listing.emulators,
+            ...listing.emulators.slice(0, 1),
             {
               kind: 'database',
               running: true,
@@ -99,8 +99,27 @@ describe('emulator list', () => {
                 {
                   id: 'db_0123456789abcdef',
                   kind: 'database',
-                  url: '',
+                  url: 'postgres://postgres:postgres@localhost:51300/template1?sslmode=disable',
                   state: 'stopped',
+                  labels: {
+                    'composer.directory': '/work/shop',
+                    'composer.app': 'shop',
+                    'composer.address': 'catalog',
+                  },
+                },
+              ],
+              error: null,
+            },
+            {
+              kind: 'bucket',
+              running: true,
+              url: 'http://127.0.0.1:4301',
+              instances: [
+                {
+                  id: 'bkt-0123456789abcdef',
+                  kind: 'bucket',
+                  url: 'http://127.0.0.1:4301/bkt-0123456789abcdef',
+                  state: 'running',
                   labels: {},
                 },
               ],
@@ -114,8 +133,9 @@ describe('emulator list', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\n' +
-        'database\tdb_0123456789abcdef\t\tstopped\n',
+      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\tgateway\t/work/shop\n' +
+        'database\tdb_0123456789abcdef\tpostgres://postgres:postgres@localhost:51300/template1?sslmode=disable\tstopped\tcatalog\t/work/shop\n' +
+        'bucket\tbkt-0123456789abcdef\thttp://127.0.0.1:4301/bkt-0123456789abcdef\trunning\t\t\n',
     );
   });
 
