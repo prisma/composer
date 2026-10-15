@@ -167,9 +167,14 @@ interface RuntimeInfo {
 }
 
 interface InFlightStart {
-  readonly token: object;
+  readonly token: StartToken;
   readonly fresh: boolean;
   readonly result: Promise<SpawnResult>;
+}
+
+interface StartToken {
+  /** Set when the process this start spawned exits. The start is about to fail, so no other start may wait for it. */
+  processExited: boolean;
 }
 
 interface SpawnResult {
@@ -484,9 +489,9 @@ function main(): void {
   function beginStart(
     rt: RuntimeInfo,
     fresh: boolean,
-    run: (token: object) => Promise<SpawnResult>,
+    run: (token: StartToken) => Promise<SpawnResult>,
   ): Promise<SpawnResult> {
-    const token = {};
+    const token: StartToken = { processExited: false };
     const result = run(token).finally(() => {
       if (rt.start?.token === token) rt.start = undefined;
     });
@@ -494,11 +499,16 @@ function main(): void {
     return result;
   }
 
+  /** The start in flight, unless its process has already exited. */
+  function joinableStart(rt: RuntimeInfo): InFlightStart | undefined {
+    return rt.start?.token.processExited === false ? rt.start : undefined;
+  }
+
   /** Undefined while `token` is still the service's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or an app delete. */
   function supersededOutcome(
     svc: ServiceRecord,
     rt: RuntimeInfo,
-    token: object,
+    token: StartToken,
   ): Promise<SpawnResult> | undefined {
     if (!rt.deleted && rt.start?.token === token) return undefined;
     if (!rt.deleted && rt.start) return rt.start.result;
@@ -533,7 +543,7 @@ function main(): void {
     svc: ServiceRecord,
     rt: RuntimeInfo,
     fresh: boolean,
-    token: object,
+    token: StartToken,
   ): Promise<SpawnResult> {
     const env = svc.env ?? {};
     const artifactDir = svc.artifactDir ?? '.';
@@ -566,6 +576,9 @@ function main(): void {
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.on('exit', (code) => handleChildExit(app, id, svc, rt, child, code));
+    child.once('exit', () => {
+      token.processExited = true;
+    });
     if (child.pid !== undefined) svc.pid = child.pid;
     if (svc.listens === false) {
       svc.status = 'running';
@@ -644,7 +657,8 @@ function main(): void {
   async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
     if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(app, id);
-    if (rt.start) return rt.start.result;
+    const inFlight = joinableStart(rt);
+    if (inFlight) return inFlight.result;
     if (svc.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
     // A session resume is a fresh start — begin a clean log.
     return beginStart(rt, true, async (token) => {
@@ -735,9 +749,10 @@ function main(): void {
       (svc.listens ?? true) !== listens;
 
     let result: SpawnResult;
-    if (!changed && rt.start?.fresh === true) {
+    const inFlight = joinableStart(rt);
+    if (!changed && inFlight?.fresh === true) {
       // The same deployment is already starting: answer when it does.
-      result = await rt.start.result;
+      result = await inFlight.result;
     } else if (
       !changed &&
       rt.start === undefined &&
