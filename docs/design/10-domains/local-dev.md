@@ -55,13 +55,16 @@ Dev re-runs [deploy's pipeline](deploy-cli.md#the-pipeline) with these deltas:
 3. **Assemble** — identical. Dev consumes the user's built output through the
    same adapters and produces the same bundles; missing output produces the
    same "run your build" error.
-4. **Containers + emulators** — the `localTarget.container` descriptor resolves a
-   stable local identity from the app name with no platform calls. Then the
+4. **Containers + emulators** — the `localTarget.container` descriptor resolves
+   the app's local identity, its name, with no platform calls. Then the
    `localTarget.emulators` hook inspects the loaded graph and ensures one emulator
    daemon per node kind the topology uses (Compute always; buckets when
    bucket resources exist; Postgres when `postgres` or `raw-postgres`
-   resources exist). The Postgres daemon starts no server here: the database
-   provider asks it for one `@prisma/dev` server per `Database` at provision.
+   resources exist). Once Compute is up, the hook ensures each service's
+   Compute instance, in `graph.nodes` order, through the directory's record
+   (see [Which instance backs a node](#which-instance-backs-a-node)). The
+   Postgres daemon starts no server here: the database provider asks it for
+   one `@prisma/dev` server per `Database` at provision.
 5. **Lower + converge** — a dev-generated stack file (ADR-0007's pattern, at
    `.prisma-composer/dev/alchemy.run.ts`), driven with the extension's
    `localTarget.providers()` layer and `devState()` (Alchemy's built-in file store, exported by `@prisma/composer/local-target`), always
@@ -81,16 +84,41 @@ The seam between converge (terminating) and serving (long-running). One
 emulator daemon per node kind runs machine-scoped and multi-tenant — the
 Compute emulator is the one the framework builds in full: a small local
 counterpart of the platform's compute service, with a loopback admin
-endpoint. The local `Deployment` provider does not spawn processes; it
+endpoint.
+
+The Compute emulator knows nothing about Composer
+([ADR-0052](../90-decisions/ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md)).
+It holds **instances**, each a slot for one service process. A client creates
+an instance with free-form labels and an optional requested port; the
+emulator generates the id (`svc_<16 hex digits>`), stores the labels verbatim
+and never reads them. Every later call names the id: put a deployment, start
+or stop a list of instances (a stop skips ids it does not have, since they run
+nothing; a start fails naming them), delete one, read or follow its log, get
+one, or list them all. Creating an instance is the one call the client never
+retries, because a retry after a lost response would create a second
+instance. The emulator never interprets Composer's data: an app name, a
+node address or a directory reaches it only as a label value or inside the
+deployment payload (the artifact directory and the env), which it stores
+verbatim and hands to the process. No route, state key, file name or field the
+emulator generates carries one, and a test fails if one does.
+
+**Ports.** An instance gets its port when it is created and keeps it until it
+is deleted, running or stopped. A requested port is used when no instance
+holds it and it can be bound; otherwise the instance gets the lowest such port
+from 3000. The port is in the deployment's env (`COMPOSER_<ADDRESS>_PORT`) and
+in its dependents' URLs, and a warm start does not redeploy, so a port that
+changed between sessions would leave services built for the old one.
+
+The local `Deployment` provider does not spawn processes; it
 unpacks the artifact into `.prisma-composer/dev/artifacts/<hash>/`,
 materializes the complete child env, and puts the deployment at the
-emulator, which owns the processes:
+service's instance, and the emulator owns the processes:
 
 - **New or changed deployment** (artifact hash or env changed) → stop the
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
-- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the service. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `[dev] ready:` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
+- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the instance; it is a property of the deployment, not of an app or address. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `ready` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
 - **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
@@ -104,11 +132,12 @@ emulator, which owns the processes:
   the `log` operation's `tail` count maps straight onto it. A live follower is
   reset to the new start when the log is cleared under it (the daemon tracks a
   per-log clear generation, so a follower never reads stale bytes).
-- **Instance deleted** (service removed from the topology, `--fresh`) → stop
-  and remove.
+- **Instance deleted** (service removed from the topology, `--fresh`, or
+  another app run from the same directory) → stop it, remove it and its log,
+  and free its port.
 - **Ctrl-C on the dev command** → the attachment stops the app's service
   instances and detaches. Every emulator — Compute, Postgres instances, the
-  bucket emulator — stays up with its data; the next start reprovisions the
+  bucket emulator — stays up with its data; the next start reuses the
   same instances (same ports, same data). `--fresh` is what removes
   instances and data. (A detached mode where services keep serving with no
   session is a designed extension, not v1.)
@@ -121,7 +150,7 @@ emulator, which owns the processes:
   live status, which Alchemy's state file does not track. So a second
   `prisma dev` after a plain Ctrl-C can converge with everything
   reported "noop" and leave every previously-stopped service `stopped` —
-  the CLI still prints `[dev] ready:` with each service's URL, but nothing
+  the CLI still prints `ready` with each service's URL, but nothing
   is listening on them. Confirmed against the open-chat proving port (the
   warm-restart-noop finding); the existing store proving script's own
   criterion-6 check doesn't catch it because it asserts port *stability*
@@ -147,7 +176,7 @@ Each service has at most one process and at most one start in flight. A stop in 
 | Deployment PUT, identical | `running`, no start or stop in progress | Succeeds at once |
 | Deployment PUT | Anything else | Stores the deployment and becomes the start in flight, replacing any earlier one: waits for any stop to finish, stops the current process, then spawns |
 | Stop | Any | Ends the start in flight and any crash-backoff restart, stops the process, and sets `stopped` once it has exited |
-| App delete | Any | Marks each service deleted, stops it, and removes it; no start on a deleted service spawns |
+| Instance delete | Any | Marks the instance deleted, stops it, and removes it; no start on a deleted instance spawns |
 | Crash-backoff restart | After an unexpected exit | Becomes the start in flight and spawns at once |
 
 A start in flight ends with the first of these that applies:
@@ -157,7 +186,7 @@ A start in flight ends with the first of these that applies:
 | A newer start replaced it | The newer start's result |
 | `bun` is not on the deployment's `PATH` | Fails with how to install bun; the service is `stopped` |
 | The service was deployed with `listens: false` | Succeeds as soon as the process is spawned; the service is `running` |
-| A stop or an app delete ended it | Fails: "was stopped before it accepted connections" |
+| A stop or an instance delete ended it | Fails: "was stopped before it accepted connections" |
 | Its process exited | Fails with the exit code and the log path; crash supervision handles the exit |
 | The readiness timeout passed | Fails with the port, the log path and the timeout variable; the process is stopped and the service ends `stopped`, or `held` for a crash-backoff restart |
 | The port accepted a connection | Succeeds; the service is `running` |
@@ -177,6 +206,63 @@ snapshot diffs on bytes — which restart-amplified dependents on every
 first-after-cold converge. No sanctioned reader consumes sibling rows, so
 the scoping changes restart behavior only.
 
+The emulator's failure messages name the instance (`instance "svc_…" exited
+(code 1) before it accepted connections…`). The local providers and the
+attachment replace the id with the service's address before the message
+reaches the user, so `prisma dev` says `service "gateway" …`.
+
+### Which instance backs a node
+
+Composer records, per working directory, which emulator instance backs each
+node of the app run there, in `.prisma-composer/dev/emulator-instances.json`:
+
+```json
+{
+  "app": "shop",
+  "nodes": {
+    "quotes": { "kind": "compute", "id": "svc_0b6e2f4a91c3d758", "port": 3000 },
+    "gateway": { "kind": "compute", "id": "svc_81ad5c07e2f94b31", "port": 3001 }
+  }
+}
+```
+
+The record is the only place Composer's names are mapped to instances. The
+emulators hook, the local `App` and `Deployment` providers, the attachment
+(endpoints, logs, start, stop) and `--fresh` all go through it; no Composer
+code finds an instance by its labels. The labels Composer writes on create —
+`composer.directory` (the absolute directory), `composer.app` and
+`composer.address` — are for people reading an emulator listing. The record
+can be read from the directory alone, without running the pipeline.
+
+- **Ensuring an instance.** The emulators hook goes through the services in
+  `graph.nodes` order (dependencies first, ties in declaration order). A
+  recorded instance the emulator still has is reused. Otherwise a new one is
+  created and recorded: on a first start, with no port requested, so ports
+  follow that order from 3000; after the emulator lost the instance, requesting
+  the recorded port. A service added by a rebuild during a session gets its
+  instance from the `App` provider the same way.
+- **A remembered port that is taken.** It is a preference: the emulator gives
+  the lowest free port instead, and `prisma dev` prints
+  `[dev] service "<address>" now uses port <new>: its previous port <old> is in use`.
+- **Redeploying a re-created instance.** A re-created instance runs nothing,
+  and a warm start's converge changes nothing, so Alchemy would never call the
+  providers. The `Deployment` provider's diff asks for an update when its
+  instance does not run the recorded artifact, and the `App` provider's diff
+  asks for one when its instance's URL changed, so dependents get the new URL.
+- **A removed service.** Deleting its `App` resource deletes its instance and
+  its entry.
+- **Another app in the same directory.** A directory has one dev instance.
+  When the record names a different app, the emulators hook deletes that app's
+  Compute instances, starts a new record, and prints
+  `[dev] removed the local services of "<app>", the app run here before`.
+- **`--fresh`** deletes the recorded Compute instances, then removes the dev
+  state directory with the record in it.
+
+Two directories running the same app have separate records, so they get
+separate instances on separate ports, and neither restarts the other's
+services. State the Compute emulator wrote before instances had generated ids
+is discarded when it loads; local dev state is never migrated.
+
 ### Process lifetimes
 
 1. **Converge-scoped** — the Alchemy child (ADR-0007), started as
@@ -186,12 +272,14 @@ the scoping changes restart behavior only.
    multi-tenant, holding every long-lived process: the Compute emulator
    (service children), the Postgres emulator (one `@prisma/dev` server per
    `Database`, hosted in-process), and the bucket emulator. They survive dev
-   sessions; `--fresh` removes an app's instances. The registry root is
+   sessions; `--fresh` removes a directory's instances. The registry root is
    `~/.prisma-composer/emulators` unless `PRISMA_COMPOSER_EMULATORS_DIR`
    names another absolute directory, so by default one machine shares one
-   set. A root isolates the compute and buckets daemons and their registry,
-   not Postgres: Postgres instance names come from the app and database, so
-   two checkouts of one app still share a server. A daemon whose version
+   set. Compute instances belong to a directory, so two checkouts of one app
+   never share a service. Postgres and buckets are still keyed by the app:
+   Postgres instance names come from the app and database, and bucket names
+   from the app and bucket, so two checkouts of one app still share a
+   database server and bucket names, whatever their roots. A daemon whose version
    differs from the caller's is replaced, so two Composer versions sharing a
    root replace each other's daemons back and forth; a separate root per
    checkout stops that.
@@ -215,8 +303,8 @@ semantics):
 | `Project` | a local identity record; no platform |
 | `Database` | a database on a local `@prisma/dev` Postgres server, hosted by the Postgres emulator |
 | `Connection` | the local connection URL |
-| `App` | registers the service with the Compute emulator, which allocates its stable port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged |
-| `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the Compute emulator, which (re)starts the child |
+| `App` | finds the service's Compute instance through the directory's record, creating it when there is none; the instance holds the service's port; `appEndpointDomain = http://localhost:<port>` — which makes origin (ADR-0039) work unchanged. Deleting it deletes the instance |
+| `Deployment` | unpacks the artifact once per hash, materializes the env, and puts the deployment at the service's Compute instance, which (re)starts the child; updated when its instance does not run the recorded artifact |
 | `EnvironmentVariable` | a key→value row in the dev state store |
 | `Bucket` | a directory under `.prisma-composer/dev/buckets/<bucket>/`, served by the bucket emulator |
 | `BucketKey` | credentials registered with the bucket emulator |
@@ -335,7 +423,7 @@ Deploy's rule holds: every failure names its fix.
 (none outstanding from the design phase — see Known limitations below for
 gaps found during implementation.)
 
-(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook reserves them one at a time from `graph.nodes` before Alchemy applies the `App` resources concurrently — and a warm start keeps each service's saved port; port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
+(Settled since the first draft: Postgres runs one named `@prisma/dev` server per `Database` resource; the front door prints every service URL ordered by address depth then name, shallowest first; on a fresh start, services get their ports in dependency order, ties in declaration order — the emulators hook creates their Compute instances one at a time from `graph.nodes` before Alchemy applies the `App` resources concurrently — and a warm start keeps each service's port, because an instance holds its port until it is deleted (ADR-0052); port allocation and the remaining mechanics are described in this document and [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md). Restart latency is measured — see Known limitations.)
 
 ## Proven against a real app
 
@@ -379,6 +467,9 @@ replaces.
 
 - [ADR-0041](../90-decisions/ADR-0041-local-dev-runs-the-deploy-pipeline-against-local-providers.md)
   — the decision this doc details.
+- [ADR-0052](../90-decisions/ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md)
+  — the emulators know nothing about Composer; the per-directory record of
+  which instance backs each node.
 - [deploy-cli.md](deploy-cli.md) — the pipeline dev re-runs and the error-surface
   convention it extends.
 - [alchemy-lowering.md](../05-prisma-cloud/alchemy-lowering.md) — the resource

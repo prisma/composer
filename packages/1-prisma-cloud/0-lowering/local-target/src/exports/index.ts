@@ -3,6 +3,7 @@ export * from '../app-name.ts';
 export * from '../bucket.ts';
 export * from '../compute.ts';
 export * from '../dev-store.ts';
+export * from '../emulator-instances.ts';
 export * from '../postgres.ts';
 export * from '../providers.ts';
 export * from '../resolve-package-entry.ts';

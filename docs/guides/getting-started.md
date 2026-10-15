@@ -290,9 +290,9 @@ It runs the same pipeline a deploy runs, against local stand-ins for Prisma
 Cloud, and prints the front door — each service's local URL:
 
 ```
-[dev] ready:
-[dev] gateway   http://localhost:3001
-[dev] quotes    http://localhost:3000
+dev: ready
+gateway: http://localhost:3001
+quotes: http://localhost:3000
 
 curl localhost:3001
 # Make it work, make it right, make it fast.

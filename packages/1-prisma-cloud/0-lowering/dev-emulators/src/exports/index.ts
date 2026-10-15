@@ -8,10 +8,12 @@
 export type {
   BucketsClient,
   ComputeClient,
+  CreateInstanceRequest,
   DatabaseInfo,
   DeploymentRequest,
+  InstanceInfo,
+  InstanceStatus,
   PostgresClient,
-  ServiceInfo,
 } from '../client.ts';
 export { bucketsClient, computeClient, postgresClient } from '../client.ts';
 export type { DaemonName, DaemonRootOptions, RegistryEntry } from '../daemon.ts';

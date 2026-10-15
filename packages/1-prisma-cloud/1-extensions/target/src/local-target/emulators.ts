@@ -6,7 +6,7 @@
  * `postgres` resource kind (REVISED — Postgres is a first-class daemon
  * since the programmatic `@prisma/dev` adoption, operator review of #162).
  *
- * Once Compute is up, every service's port is reserved in graph order, so a
+ * Once Compute is up, every service's instance is ensured in graph order, so a
  * fresh start numbers ports dependencies first; Alchemy's concurrent `App`
  * applies would otherwise pick them in arrival order.
  *
@@ -24,7 +24,7 @@
  */
 import type { LocalTargetEmulatorsInput } from '@internal/core/config';
 import { ensureDaemon } from '@internal/dev-emulators';
-import { reserveServicePorts } from '@internal/local-target';
+import { appNameOf, ensureServiceInstances, retirePreviousApp } from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
 import { serviceAppName } from '../service-app.ts';
 import { daemonEntry } from './daemon-entry.ts';
@@ -50,7 +50,23 @@ function serviceAppNames(input: LocalTargetEmulatorsInput): string[] {
 export async function runDevEmulators(input: LocalTargetEmulatorsInput): Promise<void> {
   const { url: computeUrl } = await ensureDaemon('compute', daemonEntry('compute'));
   console.log(`[dev] compute emulator ready at ${computeUrl}`);
-  await reserveServicePorts(input.container, serviceAppNames(input));
+  const retired = await retirePreviousApp({
+    devDir: input.devDir,
+    app: appNameOf(input.container),
+  });
+  if (retired !== undefined) {
+    console.log(`[dev] removed the local services of "${retired}", the app run here before`);
+  }
+  const portChanges = await ensureServiceInstances(
+    input.container,
+    input.devDir,
+    serviceAppNames(input),
+  );
+  for (const { address, previous, given } of portChanges) {
+    console.log(
+      `[dev] service "${address}" now uses port ${String(given)}: its previous port ${String(previous)} is in use`,
+    );
+  }
 
   if (usesBuckets(input)) {
     const { url: bucketsUrl } = await ensureDaemon('buckets', daemonEntry('buckets'));

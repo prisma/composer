@@ -35,10 +35,10 @@ It builds nothing for you (bring your own built output, same as deploy), then
 stands the app up and prints the **front door** — every service's local URL:
 
 ```
-[dev] ready:
-[dev] storefront        http://localhost:3004
-[dev] catalog.service   http://localhost:3000
-[dev] orders.service    http://localhost:3003
+dev: ready
+storefront: http://localhost:3004
+catalog.service: http://localhost:3000
+orders.service: http://localhost:3003
 ```
 
 `dev` prints `ready` only once every service accepts connections on its port, so a request to a printed URL right away connects. After a rebuild, `dev` waits the same way before it prints the URLs again. A service must listen on the port Composer gives it, unless it is declared with `compute({ ..., listens: false })`: such a service, like the cron module's scheduler, is running as soon as its process starts.
@@ -66,6 +66,39 @@ start — same ports, same data. `--fresh` is what wipes this app's local
 instances and data before starting.
 
 On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service gets its port before the services that call it, and services with no dependency between them go in the order you provisioned them. A warm start keeps the ports services already have.
+
+### Each directory runs its own services
+
+The services `dev` runs belong to the directory you run it in. Two checkouts
+of the same app, such as two git worktrees, run separate service processes on
+separate ports, and a rebuild in one never restarts the other's services.
+`dev` records which local service backs each of your services in
+`.prisma-composer/dev/emulator-instances.json`.
+
+A service keeps its port in its directory from one `dev` to the next, even
+while it is stopped. If the local service is gone, for example because a
+Composer upgrade discarded the compute emulator's state, the next `dev`
+creates it again and asks for the port it had. When another directory has
+taken that port, the service gets the lowest free one and `dev` prints one
+line:
+
+```
+[dev] service "gateway" now uses port 3004: its previous port 3001 is in use
+```
+
+A directory runs one app at a time. If you run a different app from the same
+directory, `dev` removes the previous app's local services first and says so:
+
+```
+[dev] removed the local services of "shop", the app run here before
+```
+
+A stopped service keeps its port reserved, so the services of a checkout you
+delete keep their ports. There is no command to remove them yet.
+
+Local databases and buckets are not separated this way yet: they are still
+keyed by the app's name, so two checkouts of one app share them (see
+[What's local vs. what's real](#whats-local-vs-whats-real)).
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
@@ -142,7 +175,8 @@ token, workspace, or network is involved. Three consequences worth knowing:
 - **`PRISMA_COMPOSER_EMULATORS_DIR` gives a checkout or a CI job its own
   compute and buckets emulators.** By default every `dev` on the machine
   shares one set of emulator daemons, registered under
-  `~/.prisma-composer/emulators`. Set the variable to an absolute directory
+  `~/.prisma-composer/emulators`; each directory still gets its own services
+  on them. Set the variable to an absolute directory
   and `dev` starts and finds its compute and buckets daemons, their registry
   and their data there instead. Each picks free ports, so several can run side
   by side. A relative path is refused with `DEV.EMULATORS_DIR_INVALID`; `~` is

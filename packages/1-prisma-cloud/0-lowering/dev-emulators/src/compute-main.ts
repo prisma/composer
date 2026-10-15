@@ -1,9 +1,12 @@
 /**
  * The Compute emulator daemon (local-dev spec § 2 `compute-main.ts`): a small
- * local counterpart of the platform's compute service. Owns service child
- * processes (spawned `bun bootstrap.js` from a real packaged artifact),
- * supervises them (crash backoff, held after repeated fast crashes), and
- * serves a loopback JSON admin API plus per-service log streaming.
+ * local counterpart of the platform's compute service. Holds service
+ * instances under ids it generates, owns their child processes (spawned
+ * `bun bootstrap.js` from a real packaged artifact), supervises them (crash
+ * backoff, held after repeated fast crashes), and serves a loopback JSON
+ * admin API plus per-instance log streaming. An instance's labels are its
+ * creator's to read: they are stored and returned verbatim, never
+ * interpreted.
  *
  * Runs as its own OS process, started by `daemon.ts`'s `ensureDaemon` via
  * `process.execPath <this file> --port <n> --state-dir <dir>`. Everything it
@@ -11,13 +14,13 @@
  * environment variable of its own.
  */
 import { type ChildProcess, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
 import * as path from 'node:path';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
 import { readOwnVersion, SERVICE_READY_TIMEOUT_ENV } from './daemon.ts';
-import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
 const MIN_SERVICE_PORT = 3000;
@@ -31,18 +34,19 @@ const LOG_POLL_INTERVAL_MS = 100;
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_POLL_MS = 50;
 const READY_PROBE_TIMEOUT_MS = 1000;
-const APPS_STATE_MODE = 0o600;
+const STATE_MODE = 0o600;
 
 const BUN_NOT_FOUND_MESSAGE =
   'local dev runs services under bun — the Prisma Compute runtime — and `bun` was not found on PATH. Install it: https://bun.sh.';
 
-type ServiceStatus = 'running' | 'backoff' | 'held' | 'stopped';
+type InstanceStatus = 'running' | 'backoff' | 'held' | 'stopped';
 
-interface ServiceRecord {
-  id: string;
-  address: string;
-  port: number;
-  status: ServiceStatus;
+interface InstanceRecord {
+  readonly id: string;
+  readonly labels: Record<string, string>;
+  /** Held from creation until the instance is deleted, running or stopped: a deployment's env carries it. */
+  readonly port: number;
+  status: InstanceStatus;
   pid?: number;
   lastExitCode?: number;
   artifactHash?: string;
@@ -53,13 +57,17 @@ interface ServiceRecord {
   readonly logPath: string;
 }
 
-interface AppRecord {
-  services: Record<string, ServiceRecord>;
+interface InstancesState {
+  instances: Record<string, InstanceRecord>;
 }
 
-type AppsState = Record<string, AppRecord>;
+const INSTANCE_ID_RE = /^svc_[0-9a-f]{16}$/;
 
-function isServiceStatus(value: unknown): value is ServiceStatus {
+function newInstanceId(): string {
+  return `svc_${randomBytes(8).toString('hex')}`;
+}
+
+function isInstanceStatus(value: unknown): value is InstanceStatus {
   return value === 'running' || value === 'backoff' || value === 'held' || value === 'stopped';
 }
 
@@ -67,67 +75,68 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return (
     typeof value === 'object' &&
     value !== null &&
+    !Array.isArray(value) &&
     Object.values(value).every((v) => typeof v === 'string')
   );
 }
 
-function isServiceRecord(value: unknown): value is ServiceRecord {
-  if (typeof value !== 'object' || value === null) return false;
-  if (!('id' in value) || typeof value.id !== 'string') return false;
-  if (!('address' in value) || typeof value.address !== 'string') return false;
-  if (!('port' in value) || typeof value.port !== 'number') return false;
-  if (!('status' in value) || !isServiceStatus(value.status)) return false;
-  if (!('logPath' in value) || typeof value.logPath !== 'string') return false;
-  if ('pid' in value && value.pid !== undefined && typeof value.pid !== 'number') return false;
-  if (
-    'lastExitCode' in value &&
-    value.lastExitCode !== undefined &&
-    typeof value.lastExitCode !== 'number'
-  ) {
-    return false;
-  }
-  if (
-    'artifactHash' in value &&
-    value.artifactHash !== undefined &&
-    typeof value.artifactHash !== 'string'
-  ) {
-    return false;
-  }
-  if (
-    'artifactDir' in value &&
-    value.artifactDir !== undefined &&
-    typeof value.artifactDir !== 'string'
-  ) {
-    return false;
-  }
-  if ('env' in value && value.env !== undefined && !isStringRecord(value.env)) return false;
-  if ('listens' in value && value.listens !== undefined && typeof value.listens !== 'boolean') {
-    return false;
-  }
-  return true;
-}
-
-function isAppRecord(value: unknown): value is AppRecord {
+function isPort(value: unknown): value is number {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    'services' in value &&
-    typeof value.services === 'object' &&
-    value.services !== null &&
-    Object.values(value.services).every(isServiceRecord)
+    typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_SERVICE_PORT
   );
 }
 
-function isAppsState(value: unknown): value is AppsState {
-  return typeof value === 'object' && value !== null && Object.values(value).every(isAppRecord);
+function isOptional(value: object, key: string, check: (field: unknown) => boolean): boolean {
+  return !(key in value) || Reflect.get(value, key) === undefined || check(Reflect.get(value, key));
+}
+
+function isInstanceRecord(value: unknown): value is InstanceRecord {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('id' in value) || typeof value.id !== 'string') return false;
+  if (!('labels' in value) || !isStringRecord(value.labels)) return false;
+  if (!('port' in value) || !isPort(value.port)) return false;
+  if (!('status' in value) || !isInstanceStatus(value.status)) return false;
+  if (!('logPath' in value) || typeof value.logPath !== 'string') return false;
+  return (
+    isOptional(value, 'pid', (v) => typeof v === 'number') &&
+    isOptional(value, 'lastExitCode', (v) => typeof v === 'number') &&
+    isOptional(value, 'artifactHash', (v) => typeof v === 'string') &&
+    isOptional(value, 'artifactDir', (v) => typeof v === 'string') &&
+    isOptional(value, 'env', isStringRecord) &&
+    isOptional(value, 'listens', (v) => typeof v === 'boolean')
+  );
+}
+
+function isInstancesState(value: unknown): value is InstancesState {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'instances' in value &&
+    typeof value.instances === 'object' &&
+    value.instances !== null &&
+    Object.values(value.instances).every(isInstanceRecord)
+  );
+}
+
+interface CreateBody {
+  readonly labels: Record<string, string>;
+  readonly port?: number;
+}
+
+function isCreateBody(value: unknown): value is CreateBody {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    isOptional(value, 'port', isPort)
+  );
 }
 
 interface DeploymentBody {
-  readonly address: string;
   readonly artifactDir: string;
   readonly artifactHash: string;
   readonly env: Record<string, string>;
-  readonly port: number;
   readonly listens?: boolean;
 }
 
@@ -135,21 +144,31 @@ function isDeploymentBody(value: unknown): value is DeploymentBody {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'address' in value &&
-    typeof value.address === 'string' &&
     'artifactDir' in value &&
     typeof value.artifactDir === 'string' &&
     'artifactHash' in value &&
     typeof value.artifactHash === 'string' &&
     'env' in value &&
     isStringRecord(value.env) &&
-    'port' in value &&
-    typeof value.port === 'number' &&
     (!('listens' in value) || value.listens === undefined || typeof value.listens === 'boolean')
   );
 }
 
-/** Live, non-persisted bookkeeping for one service — the child handle and its supervision counters. */
+interface IdsBody {
+  readonly ids: readonly string[];
+}
+
+function isIdsBody(value: unknown): value is IdsBody {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'ids' in value &&
+    Array.isArray(value.ids) &&
+    value.ids.every((id) => typeof id === 'string')
+  );
+}
+
+/** Live, non-persisted bookkeeping for one instance — the child handle and its supervision counters. */
 interface RuntimeInfo {
   child: ChildProcess | undefined;
   consecutiveFastExits: number;
@@ -157,12 +176,12 @@ interface RuntimeInfo {
   stableTimer: NodeJS.Timeout | undefined;
   backoffTimer: NodeJS.Timeout | undefined;
   expectedExit: boolean;
-  log: ServiceLog | undefined;
+  log: InstanceLog | undefined;
   /** The start in flight, until its child accepts connections or fails to. A newer start or a stop replaces or clears it. */
   start: InFlightStart | undefined;
   /** A stop still waiting for its child to exit. A start waits for it, so it never spawns beside a dying child. */
   stopping: Promise<void> | undefined;
-  /** Set when the app is being deleted: no start may spawn on this runtime again. */
+  /** Set when the instance is being deleted: no start may spawn on this runtime again. */
   deleted: boolean;
 }
 
@@ -191,8 +210,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Append-only per-service log file — child stdout/stderr plus `[emulator]` supervision lines. No rotation in v1. */
-class ServiceLog {
+/** Append-only per-instance log file — child stdout/stderr plus `[emulator]` supervision lines. No rotation in v1. */
+class InstanceLog {
   private fd: number | undefined;
 
   constructor(private readonly filePath: string) {}
@@ -213,7 +232,7 @@ class ServiceLog {
     fs.writeSync(this.ensureOpen(), `${line}\n`);
   }
 
-  /** Empties the file — a fresh service start begins a clean log; past sessions' and past deployments' output is not kept. */
+  /** Empties the file — a fresh start begins a clean log; past sessions' and past deployments' output is not kept. */
   clear(): void {
     fs.ftruncateSync(this.ensureOpen(), 0);
   }
@@ -320,24 +339,20 @@ function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undef
 function main(): void {
   const { port, stateDir, readyTimeoutMs, readyPollMs } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
-  const appsJsonPath = path.join(stateDir, 'apps.json');
-  const stateFile = new StateFile<AppsState>(appsJsonPath, APPS_STATE_MODE);
+  const statePath = path.join(stateDir, 'instances.json');
+  const stateFile = new StateFile<InstancesState>(statePath, STATE_MODE);
+  const logsDir = path.join(stateDir, 'logs');
 
-  let state: AppsState = {};
+  let state: InstancesState = { instances: {} };
   const runtimes = new Map<string, RuntimeInfo>();
-  // Bumped every time a log file is cleared (a fresh service start). A live
+  // Bumped every time a log file is cleared (a fresh start). A live
   // follower watches this rather than the file size, so it resets to the new
   // start reliably — even when the clear and the first new write both land
   // between two of its polls, which a size comparison alone would miss.
   const logGeneration = new Map<string, number>();
 
-  function runtimeKey(app: string, id: string): string {
-    return `${app}/${id}`;
-  }
-
-  function getRuntime(app: string, id: string): RuntimeInfo {
-    const key = runtimeKey(app, id);
-    let rt = runtimes.get(key);
+  function getRuntime(id: string): RuntimeInfo {
+    let rt = runtimes.get(id);
     if (!rt) {
       rt = {
         child: undefined,
@@ -351,18 +366,14 @@ function main(): void {
         stopping: undefined,
         deleted: false,
       };
-      runtimes.set(key, rt);
+      runtimes.set(id, rt);
     }
     return rt;
   }
 
-  function serviceLogPath(app: string, id: string): string {
-    return path.join(stateDir, 'logs', app, `${id}.log`);
-  }
-
-  function getLog(app: string, id: string, logPath: string): ServiceLog {
-    const rt = getRuntime(app, id);
-    if (!rt.log) rt.log = new ServiceLog(logPath);
+  function getLog(inst: InstanceRecord): InstanceLog {
+    const rt = getRuntime(inst.id);
+    if (!rt.log) rt.log = new InstanceLog(inst.logPath);
     return rt.log;
   }
 
@@ -380,45 +391,37 @@ function main(): void {
     rt.backoffTimer = undefined;
   }
 
-  function usedServicePorts(): Set<number> {
-    const ports = new Set<number>();
-    for (const app of Object.values(state)) {
-      for (const svc of Object.values(app.services)) ports.add(svc.port);
-    }
-    return ports;
+  function heldPorts(): Set<number> {
+    return new Set(Object.values(state.instances).map((inst) => inst.port));
   }
 
   /**
-   * The smallest genuinely free port at or above `MIN_SERVICE_PORT`,
-   * excluding this daemon's own persisted allocations — persistence and
-   * the range policy stay ours; whether a candidate is actually bindable
-   * is `get-port`'s (spec § 2's dependency razor).
+   * The requested port when no instance holds it and it is bindable,
+   * otherwise the smallest such port at or above `MIN_SERVICE_PORT`. Which
+   * ports instances hold is ours; whether a candidate is actually bindable is
+   * `get-port`'s (spec § 2's dependency razor).
    */
-  async function smallestUnusedServicePort(): Promise<number> {
-    return getPort({
-      port: portNumbers(MIN_SERVICE_PORT, MAX_SERVICE_PORT),
-      exclude: usedServicePorts(),
-    });
+  async function allocatePort(requested: number | undefined): Promise<number> {
+    const exclude = heldPorts();
+    if (requested !== undefined && !exclude.has(requested)) {
+      const given = await getPort({ port: requested, exclude });
+      if (given === requested) return given;
+    }
+    return getPort({ port: portNumbers(MIN_SERVICE_PORT, MAX_SERVICE_PORT), exclude });
   }
 
-  async function getOrCreateService(app: string, id: string): Promise<ServiceRecord> {
-    let appRec = state[app];
-    if (!appRec) {
-      appRec = { services: {} };
-      state[app] = appRec;
-    }
-    let svc = appRec.services[id];
-    if (svc) return svc;
-    svc = {
+  async function createInstance(body: CreateBody): Promise<InstanceRecord> {
+    const id = newInstanceId();
+    const inst: InstanceRecord = {
       id,
-      address: id,
-      port: await smallestUnusedServicePort(),
+      labels: { ...body.labels },
+      port: await allocatePort(body.port),
       status: 'stopped',
-      logPath: serviceLogPath(app, id),
+      logPath: path.join(logsDir, `${id}.log`),
     };
-    appRec.services[id] = svc;
+    state.instances[id] = inst;
     schedulePersist();
-    return svc;
+    return inst;
   }
 
   function waitForExit(child: ChildProcess): Promise<void> {
@@ -446,9 +449,7 @@ function main(): void {
   }
 
   function handleChildExit(
-    app: string,
-    id: string,
-    svc: ServiceRecord,
+    inst: InstanceRecord,
     rt: RuntimeInfo,
     child: ChildProcess,
     code: number | null,
@@ -456,8 +457,8 @@ function main(): void {
     if (child !== rt.child) return;
     clearStableTimer(rt);
     rt.child = undefined;
-    delete svc.pid;
-    if (code !== null) svc.lastExitCode = code;
+    delete inst.pid;
+    if (code !== null) inst.lastExitCode = code;
 
     if (rt.expectedExit) {
       rt.expectedExit = false;
@@ -471,28 +472,28 @@ function main(): void {
     if (uptime < STABLE_UPTIME_MS) rt.consecutiveFastExits += 1;
 
     if (rt.consecutiveFastExits >= MAX_CONSECUTIVE_FAST_EXITS) {
-      svc.status = 'held';
+      inst.status = 'held';
       schedulePersist();
-      getLog(app, id, svc.logPath).writeLine(
+      getLog(inst).writeLine(
         `[emulator] held after ${String(MAX_CONSECUTIVE_FAST_EXITS)} consecutive fast exits — send a new deployment to resume`,
       );
       return;
     }
 
     const delayMs = Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** attemptNumber);
-    svc.status = 'backoff';
+    inst.status = 'backoff';
     schedulePersist();
-    getLog(app, id, svc.logPath).writeLine(
+    getLog(inst).writeLine(
       `[emulator] exited (code ${code === null ? 'null' : String(code)}) — restarting in ${String(delayMs / 1000)}s`,
     );
     rt.backoffTimer = setTimeout(() => {
       rt.backoffTimer = undefined;
       // A crash-backoff respawn — keep the crash trail this run has written.
-      void spawnService(app, id, svc, rt, false);
+      void spawnInstance(inst, rt, false);
     }, delayMs);
   }
 
-  /** Records `run` as the service's start in flight, replacing any earlier one. */
+  /** Records `run` as the instance's start in flight, replacing any earlier one. */
   function beginStart(
     rt: RuntimeInfo,
     fresh: boolean,
@@ -511,9 +512,9 @@ function main(): void {
     return rt.start?.token.processExited === false ? rt.start : undefined;
   }
 
-  /** Undefined while `token` is still the service's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or an app delete. */
+  /** Undefined while `token` is still the instance's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or a delete. */
   function supersededOutcome(
-    svc: ServiceRecord,
+    inst: InstanceRecord,
     rt: RuntimeInfo,
     token: StartToken,
   ): Promise<SpawnResult> | undefined {
@@ -521,51 +522,45 @@ function main(): void {
     if (!rt.deleted && rt.start) return rt.start.result;
     return Promise.resolve({
       ok: false,
-      message: `service "${svc.address}" was stopped before it accepted connections`,
+      message: `instance "${inst.id}" was stopped before it accepted connections`,
     });
   }
 
   /**
-   * Spawns the service's child and resolves once it accepts connections on
+   * Spawns the instance's child and resolves once it accepts connections on
    * its port — only then is it `running`. A child that exits first, or never
    * listens within the readiness timeout, fails the start with a message
-   * naming the service and its log.
+   * naming the instance and its log.
    */
-  function spawnService(
-    app: string,
-    id: string,
-    svc: ServiceRecord,
+  function spawnInstance(
+    inst: InstanceRecord,
     rt: RuntimeInfo,
     /** A fresh start (a deployment or a session resume) begins a clean log; a crash-backoff respawn keeps the run's crash trail. */
     fresh: boolean,
   ): Promise<SpawnResult> {
-    return beginStart(rt, fresh, (token) =>
-      spawnAndWaitUntilListening(app, id, svc, rt, fresh, token),
-    );
+    return beginStart(rt, fresh, (token) => spawnAndWaitUntilListening(inst, rt, fresh, token));
   }
 
   async function spawnAndWaitUntilListening(
-    app: string,
-    id: string,
-    svc: ServiceRecord,
+    inst: InstanceRecord,
     rt: RuntimeInfo,
     fresh: boolean,
     token: StartToken,
   ): Promise<SpawnResult> {
-    const env = svc.env ?? {};
-    const artifactDir = svc.artifactDir ?? '.';
+    const env = inst.env ?? {};
+    const artifactDir = inst.artifactDir ?? '.';
     const bunPath = resolveBunOnPath(env);
     if (!bunPath) {
-      svc.status = 'stopped';
-      delete svc.pid;
+      inst.status = 'stopped';
+      delete inst.pid;
       schedulePersist();
       return { ok: false, message: BUN_NOT_FOUND_MESSAGE };
     }
 
-    const log = getLog(app, id, svc.logPath);
+    const log = getLog(inst);
     if (fresh) {
       log.clear();
-      logGeneration.set(svc.logPath, (logGeneration.get(svc.logPath) ?? 0) + 1);
+      logGeneration.set(inst.logPath, (logGeneration.get(inst.logPath) ?? 0) + 1);
     }
     const child = spawn(bunPath, ['bootstrap.js'], {
       cwd: artifactDir,
@@ -582,54 +577,54 @@ function main(): void {
 
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
-    child.on('exit', (code) => handleChildExit(app, id, svc, rt, child, code));
+    child.on('exit', (code) => handleChildExit(inst, rt, child, code));
     child.once('exit', () => {
       token.processExited = true;
     });
-    if (child.pid !== undefined) svc.pid = child.pid;
-    if (svc.listens === false) {
-      svc.status = 'running';
+    if (child.pid !== undefined) inst.pid = child.pid;
+    if (inst.listens === false) {
+      inst.status = 'running';
       schedulePersist();
       return { ok: true };
     }
     schedulePersist();
 
-    const port = String(svc.port);
-    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs, readyPollMs);
-    const superseded = supersededOutcome(svc, rt, token);
+    const port = String(inst.port);
+    const outcome = await waitUntilListening(child, inst.port, readyTimeoutMs, readyPollMs);
+    const superseded = supersededOutcome(inst, rt, token);
     if (superseded) return superseded;
-    const service = `service "${svc.address}"`;
+    const instance = `instance "${inst.id}"`;
     if (outcome.kind === 'exited') {
       const how =
         outcome.code !== null ? `code ${String(outcome.code)}` : (outcome.signal ?? 'no exit code');
       return {
         ok: false,
-        message: `${service} exited (${how}) before it accepted connections on its port ${port}. Its log: ${svc.logPath}`,
+        message: `${instance} exited (${how}) before it accepted connections on its port ${port}. Its log: ${inst.logPath}`,
       };
     }
     if (outcome.kind === 'timed-out') {
       const seconds = String(readyTimeoutMs / 1000);
-      const message = `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on a port, declare it with compute({ listens: false }).`;
+      const message = `${instance} did not accept connections on its port ${port} within ${seconds}s. Its log: ${inst.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on its port, deploy it with listens: false.`;
       if (fresh) {
         log.writeLine(
           `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
         );
-        await stopService(svc, rt);
+        await stopInstance(inst, rt);
       } else {
         log.writeLine(
           `[emulator] restart did not accept connections on port ${port} within ${seconds}s — held; send a new deployment to resume`,
         );
-        await stopService(svc, rt, 'held');
+        await stopInstance(inst, rt, 'held');
       }
       return { ok: false, message };
     }
-    svc.status = 'running';
+    inst.status = 'running';
     schedulePersist();
     return { ok: true };
   }
 
-  async function stopService(
-    svc: ServiceRecord,
+  async function stopInstance(
+    inst: InstanceRecord,
     rt: RuntimeInfo,
     finalStatus: 'stopped' | 'held' = 'stopped',
   ): Promise<void> {
@@ -637,8 +632,8 @@ function main(): void {
     clearBackoffTimer(rt);
     clearStableTimer(rt);
     const stopping = killChild(rt, TERMINATE_GRACE_MS).then(() => {
-      svc.status = finalStatus;
-      delete svc.pid;
+      inst.status = finalStatus;
+      delete inst.pid;
       schedulePersist();
     });
     rt.stopping = stopping;
@@ -655,28 +650,43 @@ function main(): void {
 
   /**
    * The session-resume signal: Alchemy's no-op reconcile never fires a
-   * deployment PUT, so nothing else restarts a service a previous session
+   * deployment PUT, so nothing else restarts an instance a previous session
    * stopped. Reuses the exact deployment-PUT start rules — same spawn
    * path, same supervision reset, and an explicit resume clears `held`
-   * the same way a deployment PUT does — but from the service's already
-   * STORED deployment spec, since no new one arrives with a start.
+   * the same way a deployment PUT does — but from the instance's already
+   * STORED deployment, since no new one arrives with a start.
    */
-  async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
-    if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
-    const rt = getRuntime(app, id);
+  async function startInstance(inst: InstanceRecord): Promise<SpawnResult> {
+    if (inst.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
+    const rt = getRuntime(inst.id);
     const inFlight = joinableStart(rt);
     if (inFlight) return inFlight.result;
-    if (svc.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
+    if (inst.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
     // A session resume is a fresh start — begin a clean log.
     return beginStart(rt, true, async (token) => {
       clearBackoffTimer(rt);
       await stopsFinished(rt);
-      const superseded = supersededOutcome(svc, rt, token);
+      const superseded = supersededOutcome(inst, rt, token);
       if (superseded) return superseded;
       clearStableTimer(rt);
       rt.consecutiveFastExits = 0;
-      return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+      return spawnAndWaitUntilListening(inst, rt, true, token);
     });
+  }
+
+  async function deleteInstance(inst: InstanceRecord): Promise<void> {
+    const rt = getRuntime(inst.id);
+    rt.deleted = true;
+    await stopInstance(inst, rt);
+    rt.log?.close();
+    runtimes.delete(inst.id);
+    delete state.instances[inst.id];
+    schedulePersist();
+    // get-port holds every port it returns for up to 30 seconds; the freed
+    // port must be free again for an instance created right after.
+    // `heldPorts()` already keeps other instances' ports out.
+    clearLockedPorts();
+    await fs.promises.rm(inst.logPath, { force: true });
   }
 
   // ——— HTTP plumbing ———
@@ -692,12 +702,9 @@ function main(): void {
     res.end(body);
   }
 
-  function badSegment(res: http.ServerResponse, segment: string): void {
-    text(
-      res,
-      400,
-      `invalid path segment "${segment}": must match /^[a-z0-9][a-z0-9-]*$/ and be at most 63 characters`,
-    );
+  function noContent(res: http.ServerResponse): void {
+    res.writeHead(204);
+    res.end();
   }
 
   function readBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -709,17 +716,26 @@ function main(): void {
     });
   }
 
-  function serviceView(svc: ServiceRecord): unknown {
+  async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+    const raw = await readBody(req);
+    try {
+      return JSON.parse(raw.toString('utf8'));
+    } catch {
+      return undefined;
+    }
+  }
+
+  function instanceView(inst: InstanceRecord): unknown {
     return {
-      id: svc.id,
-      address: svc.address,
-      port: svc.port,
-      url: `http://localhost:${String(svc.port)}`,
-      status: svc.status,
-      ...(svc.pid !== undefined ? { pid: svc.pid } : {}),
-      ...(svc.lastExitCode !== undefined ? { lastExitCode: svc.lastExitCode } : {}),
-      ...(svc.artifactHash !== undefined ? { artifactHash: svc.artifactHash } : {}),
-      logPath: svc.logPath,
+      id: inst.id,
+      labels: inst.labels,
+      port: inst.port,
+      url: `http://localhost:${String(inst.port)}`,
+      status: inst.status,
+      ...(inst.pid !== undefined ? { pid: inst.pid } : {}),
+      ...(inst.lastExitCode !== undefined ? { lastExitCode: inst.lastExitCode } : {}),
+      ...(inst.artifactHash !== undefined ? { artifactHash: inst.artifactHash } : {}),
+      logPath: inst.logPath,
     };
   }
 
@@ -734,26 +750,17 @@ function main(): void {
   async function handleDeployment(
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    app: string,
-    id: string,
+    inst: InstanceRecord,
   ): Promise<void> {
-    const raw = await readBody(req);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString('utf8'));
-    } catch {
-      return text(res, 400, 'malformed JSON body');
-    }
-    if (!isDeploymentBody(parsed)) return text(res, 400, 'malformed deployment body');
+    const body = await readJsonBody(req);
+    if (!isDeploymentBody(body)) return text(res, 400, 'malformed deployment body');
 
-    const svc = await getOrCreateService(app, id);
-    const rt = getRuntime(app, id);
-
-    const listens = parsed.listens ?? true;
+    const rt = getRuntime(inst.id);
+    const listens = body.listens ?? true;
     const changed =
-      svc.artifactHash !== parsed.artifactHash ||
-      !envEquals(svc.env, parsed.env) ||
-      (svc.listens ?? true) !== listens;
+      inst.artifactHash !== body.artifactHash ||
+      !envEquals(inst.env, body.env) ||
+      (inst.listens ?? true) !== listens;
 
     let result: SpawnResult;
     const inFlight = joinableStart(rt);
@@ -764,39 +771,36 @@ function main(): void {
       !changed &&
       rt.start === undefined &&
       rt.stopping === undefined &&
-      svc.status === 'running'
+      inst.status === 'running'
     ) {
-      // A true no-op: nothing about this service's persisted record
+      // A true no-op: nothing about this instance's persisted record
       // changes, so nothing is mutated here either — nothing to persist.
       result = { ok: true };
     } else {
-      svc.address = parsed.address;
-      svc.port = parsed.port;
-      svc.artifactHash = parsed.artifactHash;
-      svc.env = parsed.env;
-      svc.artifactDir = parsed.artifactDir;
-      svc.listens = listens;
+      inst.artifactHash = body.artifactHash;
+      inst.env = body.env;
+      inst.artifactDir = body.artifactDir;
+      inst.listens = listens;
       clearBackoffTimer(rt);
       schedulePersist();
-      // A new or changed deployment, or a service that is not up: a fresh
+      // A new or changed deployment, or an instance that is not up: a fresh
       // start with a clean log, once the old process (if any) has exited.
       result = await beginStart(rt, true, async (token) => {
         await stopsFinished(rt);
         await killChild(rt, TERMINATE_GRACE_MS);
-        const superseded = supersededOutcome(svc, rt, token);
+        const superseded = supersededOutcome(inst, rt, token);
         if (superseded) return superseded;
-        svc.status = 'stopped';
-        delete svc.pid;
+        inst.status = 'stopped';
+        delete inst.pid;
         clearStableTimer(rt);
         rt.consecutiveFastExits = 0;
-        return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+        return spawnAndWaitUntilListening(inst, rt, true, token);
       });
     }
     if (!result.ok) {
-      return text(res, 500, result.message ?? 'failed to start the service');
+      return text(res, 500, result.message ?? 'failed to start the instance');
     }
-    res.writeHead(204);
-    res.end();
+    noContent(res);
   }
 
   /** Byte offset a follow should start at to show the last `tailLines` complete lines; `<= 0` (or an empty file) starts at the current end, no backlog. */
@@ -843,10 +847,10 @@ function main(): void {
 
     const tick = (): void => {
       if (stopped) return;
-      // A fresh service start cleared the file — resume from its new
-      // beginning. Watching the clear generation (not just a size decrease)
-      // catches it even when the clear and the first new write both land
-      // between two ticks.
+      // A fresh start cleared the file — resume from its new beginning.
+      // Watching the clear generation (not just a size decrease) catches it
+      // even when the clear and the first new write both land between two
+      // ticks.
       const currentGeneration = logGeneration.get(logPath) ?? 0;
       if (currentGeneration !== generation) {
         generation = currentGeneration;
@@ -878,6 +882,52 @@ function main(): void {
     res.on('close', stop);
   }
 
+  function handleLogs(url: URL, res: http.ServerResponse, inst: InstanceRecord): void {
+    if (url.searchParams.get('follow') === '1') {
+      const tailParam = url.searchParams.get('tail');
+      const tailLines = tailParam === null ? 0 : Math.max(0, Number.parseInt(tailParam, 10) || 0);
+      handleFollowLogs(res, inst.logPath, tailLines);
+      return;
+    }
+    const content = fs.existsSync(inst.logPath) ? fs.readFileSync(inst.logPath) : Buffer.alloc(0);
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end(content);
+  }
+
+  /** The instances `ids` name, or the ids no instance has. */
+  function instancesByIds(
+    ids: readonly string[],
+  ): { readonly found: InstanceRecord[] } | { readonly unknown: string[] } {
+    const unknown = ids.filter((id) => state.instances[id] === undefined);
+    if (unknown.length > 0) return { unknown };
+    return { found: ids.flatMap((id) => state.instances[id] ?? []) };
+  }
+
+  function unknownInstances(res: http.ServerResponse, ids: readonly string[]): void {
+    text(res, 404, `no such instance: ${ids.map((id) => `"${id}"`).join(', ')}`);
+  }
+
+  async function handleBulk(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    action: 'start' | 'stop',
+  ): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!isIdsBody(body)) return text(res, 400, 'malformed body: expected { "ids": string[] }');
+    if (action === 'stop') {
+      // An unknown instance runs nothing, so stopping it is already done.
+      const known = body.ids.flatMap((id) => state.instances[id] ?? []);
+      await Promise.all(known.map((inst) => stopInstance(inst, getRuntime(inst.id))));
+      return noContent(res);
+    }
+    const selected = instancesByIds(body.ids);
+    if ('unknown' in selected) return unknownInstances(res, selected.unknown);
+    const results = await Promise.all(selected.found.map(startInstance));
+    const failures = results.flatMap((r) => (r.ok ? [] : [r.message ?? 'failed to start']));
+    if (failures.length > 0) return text(res, 500, failures.join('\n'));
+    noContent(res);
+  }
+
   async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${String(port)}`);
     const method = req.method ?? 'GET';
@@ -890,111 +940,52 @@ function main(): void {
       return json(res, 200, { version: ownVersion });
     }
 
-    if (segments[0] === 'apps' && segments.length >= 2) {
-      const app = segments[1];
-      if (app === undefined || !isValidSegment(app)) return badSegment(res, app ?? '');
+    if (segments[0] !== 'instances') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
 
-      if (method === 'PUT' && segments.length === 4 && segments[2] === 'services') {
-        const id = segments[3];
-        if (id === undefined || !isValidSegment(id)) return badSegment(res, id ?? '');
-        const svc = await getOrCreateService(app, id);
-        return json(res, 200, { port: svc.port, url: `http://localhost:${String(svc.port)}` });
-      }
-
-      if (
-        method === 'PUT' &&
-        segments.length === 5 &&
-        segments[2] === 'services' &&
-        segments[4] === 'deployment'
-      ) {
-        const id = segments[3];
-        if (id === undefined || !isValidSegment(id)) return badSegment(res, id ?? '');
-        return handleDeployment(req, res, app, id);
-      }
-
-      if (method === 'GET' && segments.length === 3 && segments[2] === 'services') {
-        const appRec = state[app];
-        const list = appRec ? Object.values(appRec.services).map(serviceView) : [];
-        return json(res, 200, list);
-      }
-
-      if (
-        method === 'GET' &&
-        segments.length === 5 &&
-        segments[2] === 'services' &&
-        segments[4] === 'logs'
-      ) {
-        const id = segments[3];
-        if (id === undefined || !isValidSegment(id)) return badSegment(res, id ?? '');
-        const svc = state[app]?.services[id];
-        if (!svc) return text(res, 404, `no such service "${id}" in app "${app}"`);
-        if (url.searchParams.get('follow') === '1') {
-          const tailParam = url.searchParams.get('tail');
-          const tailLines =
-            tailParam === null ? 0 : Math.max(0, Number.parseInt(tailParam, 10) || 0);
-          handleFollowLogs(res, svc.logPath, tailLines);
-          return;
-        }
-        const content = fs.existsSync(svc.logPath) ? fs.readFileSync(svc.logPath) : Buffer.alloc(0);
-        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-        res.end(content);
-        return;
-      }
-
-      if (method === 'POST' && segments.length === 3 && segments[2] === 'stop') {
-        const appRec = state[app];
-        if (appRec) {
-          await Promise.all(
-            Object.entries(appRec.services).map(([id, svc]) =>
-              stopService(svc, getRuntime(app, id)),
-            ),
+    if (segments.length === 1) {
+      if (method === 'GET') return json(res, 200, Object.values(state.instances).map(instanceView));
+      if (method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!isCreateBody(body)) {
+          return text(
+            res,
+            400,
+            'malformed body: expected { "labels": Record<string, string>, "port"?: number }',
           );
         }
-        res.writeHead(204);
-        res.end();
-        return;
+        return json(res, 201, instanceView(await createInstance(body)));
       }
+    }
 
-      if (method === 'POST' && segments.length === 3 && segments[2] === 'start') {
-        const appRec = state[app];
-        const results = appRec
-          ? await Promise.all(
-              Object.entries(appRec.services).map(([id, svc]) => startService(app, id, svc)),
-            )
-          : [];
-        const failures = results.flatMap((r) => (r.ok ? [] : [r.message ?? 'failed to start']));
-        if (failures.length > 0) return text(res, 500, failures.join('\n'));
-        res.writeHead(204);
-        res.end();
-        return;
-      }
+    if (method === 'POST' && segments.length === 2 && segments[1] === 'start') {
+      return handleBulk(req, res, 'start');
+    }
+    if (method === 'POST' && segments.length === 2 && segments[1] === 'stop') {
+      return handleBulk(req, res, 'stop');
+    }
 
-      if (method === 'DELETE' && segments.length === 2) {
-        const appRec = state[app];
-        if (appRec) {
-          for (const id of Object.keys(appRec.services)) getRuntime(app, id).deleted = true;
-          await Promise.all(
-            Object.entries(appRec.services).map(([id, svc]) =>
-              stopService(svc, getRuntime(app, id)),
-            ),
-          );
-          for (const id of Object.keys(appRec.services)) {
-            const key = runtimeKey(app, id);
-            runtimes.get(key)?.log?.close();
-            runtimes.delete(key);
-          }
-          delete state[app];
-          schedulePersist();
-          // get-port holds every port it returns for up to 30 seconds; the
-          // freed ports must be free again for a `--fresh` restart.
-          // `usedServicePorts()` already keeps other apps' ports out.
-          clearLockedPorts();
-        }
-        await fs.promises.rm(path.join(stateDir, 'logs', app), { recursive: true, force: true });
-        res.writeHead(204);
-        res.end();
-        return;
-      }
+    const id = segments[1];
+    if (id !== undefined && !INSTANCE_ID_RE.test(id)) {
+      return text(res, 400, `invalid instance id "${id}"`);
+    }
+    const inst = id === undefined ? undefined : state.instances[id];
+
+    if (method === 'DELETE' && segments.length === 2) {
+      if (inst) await deleteInstance(inst);
+      return noContent(res);
+    }
+    if (!inst) return unknownInstances(res, id === undefined ? [] : [id]);
+
+    if (method === 'GET' && segments.length === 2) return json(res, 200, instanceView(inst));
+    if (method === 'PUT' && segments.length === 3 && segments[2] === 'deployment') {
+      return handleDeployment(req, res, inst);
+    }
+    if (method === 'GET' && segments.length === 3 && segments[2] === 'logs') {
+      return handleLogs(url, res, inst);
     }
 
     res.writeHead(404);
@@ -1029,19 +1020,18 @@ function main(): void {
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
 
-  readJsonFile(appsJsonPath, isAppsState)
+  discardStateFromEarlierVersions(stateDir, statePath, logsDir)
+    .then(() => readJsonFile(statePath, isInstancesState))
     .then((loaded) => {
       if (loaded) {
         // A fresh process has no live children to supervise. `held` is an
         // operator-visible signal and survives; `running`/`backoff` assumed a
         // child this process never spawned, so they reset to `stopped` — the
         // next deployment PUT always starts fresh (spec's "ALWAYS starts").
-        for (const appRec of Object.values(loaded)) {
-          for (const svc of Object.values(appRec.services)) {
-            if (svc.status === 'running' || svc.status === 'backoff') {
-              svc.status = 'stopped';
-              delete svc.pid;
-            }
+        for (const inst of Object.values(loaded.instances)) {
+          if (inst.status === 'running' || inst.status === 'backoff') {
+            inst.status = 'stopped';
+            delete inst.pid;
           }
         }
         state = loaded;
@@ -1059,6 +1049,32 @@ function main(): void {
       console.error('compute-main: failed to load state', err);
       process.exit(1);
     });
+}
+
+/**
+ * Removes state files this version does not write, and log directories: an
+ * earlier version kept its state in another JSON file and grouped its logs in
+ * directories. Local dev state is never migrated across versions; those
+ * instances are simply gone.
+ */
+async function discardStateFromEarlierVersions(
+  stateDir: string,
+  statePath: string,
+  logsDir: string,
+): Promise<void> {
+  const stateFiles = await fs.promises.readdir(stateDir).catch(() => []);
+  await Promise.all(
+    stateFiles
+      .map((name) => path.join(stateDir, name))
+      .filter((file) => file.endsWith('.json') && file !== statePath)
+      .map((file) => fs.promises.rm(file, { force: true })),
+  );
+  const logEntries = await fs.promises.readdir(logsDir, { withFileTypes: true }).catch(() => []);
+  await Promise.all(
+    logEntries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => fs.promises.rm(path.join(logsDir, entry.name), { recursive: true })),
+  );
 }
 
 main();
