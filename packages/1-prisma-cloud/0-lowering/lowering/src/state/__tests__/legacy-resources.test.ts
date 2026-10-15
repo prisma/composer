@@ -16,9 +16,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { InstanceId } from 'alchemy/InstanceId';
 import * as Prisma from 'alchemy/Prisma';
 import type * as Provider from 'alchemy/Provider';
+import { ResourceContext } from 'alchemy/ResourceContext';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import {
@@ -216,7 +216,7 @@ describe('upstream provider acceptance of migrated rows (fake Management API)', 
   const migratedDb = migrateLegacyResourceState(legacyDatabaseRow()) as MigratedRow;
   const migratedConn = migrateLegacyResourceState(legacyConnectionRow()) as MigratedRow;
 
-  test('Database: diff plans NO action, and read finds the database (no create)', async () => {
+  test('Database: diff updates its identity in place, and read finds the database', async () => {
     const service = await databaseService();
     if (service.diff === undefined || service.read === undefined) {
       throw new Error('upstream provider must expose diff and read');
@@ -228,14 +228,14 @@ describe('upstream provider acceptance of migrated rows (fake Management API)', 
           fqn: 'data-db',
           instanceId: 'inst-db',
           olds: migratedDb.props,
-          news: { project: 'proj-1', name: 'data', region: 'us-east-1' },
+          news: { project: 'proj-1', name: 'data', region: 'us-east-1', logicalId: 'data' },
           output: migratedDb.attr,
           session: undefined,
           bindings: [],
         } as never)
         .pipe(Effect.provide(databaseApi)),
     );
-    expect(diff).toBeUndefined();
+    expect(diff).toEqual({ action: 'update' });
 
     const read = await Effect.runPromise(
       service
@@ -345,10 +345,15 @@ describe('branch-stage migrated rows against upstream Database provider', () => 
         } as never)
         .pipe(
           // The omitted name makes upstream derive a generated physical name,
-          // which reads the engine's Stack/Stage/InstanceId context.
+          // which reads the engine's Stack/Stage/ResourceContext context.
           Effect.provideService(Stack, { name: 'app' } as never),
           Effect.provideService(Stage, 'stage1'),
-          Effect.provideService(InstanceId, 'abcd1234abcd1234abcd1234abcd1234'),
+          Effect.provideService(ResourceContext, {
+            logicalId: 'data-db',
+            fqn: 'data-db',
+            instanceId: 'abcd1234abcd1234abcd1234abcd1234',
+            type: 'Prisma.Database',
+          }),
         ),
     );
     expect(diff).toEqual({ action: 'update' });
@@ -526,7 +531,7 @@ describe('legacy compute-family rows against upstream providers', () => {
     expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
   });
 
-  test('App on a branch stage: diff plans NO action, read finds the app (no create)', async () => {
+  test('App on a branch stage: diff updates its identity in place, and read finds the app', async () => {
     const migrated = migrateLegacyResourceState(legacyAppRow('branch_1')) as MigratedRow;
     const service = await appService();
     if (service.diff === undefined || service.read === undefined) {
@@ -538,13 +543,13 @@ describe('legacy compute-family rows against upstream providers', () => {
         fqn: 'auth-svc',
         instanceId: 'inst-app',
         olds: migrated.props,
-        news: migrated.props,
+        news: { ...migrated.props, logicalId: 'auth' },
         output: migrated.attr,
         session: undefined,
         bindings: [],
       } as never),
     );
-    expect(diff).toBeUndefined();
+    expect(diff).toEqual({ action: 'update' });
 
     const read = await Effect.runPromise(
       service
@@ -966,7 +971,7 @@ describe('legacy bucket-family rows against upstream providers', () => {
     expect(migrateLegacyResourceState(migrated)).toEqual(migrated);
   });
 
-  test('Bucket: diff plans NO action, and read finds the bucket (no create)', async () => {
+  test('Bucket: diff updates its identity in place, and read finds the bucket', async () => {
     const migrated = migrateLegacyResourceState(legacyBucketRow()) as MigratedRow;
     const service = await bucketService();
     if (service.diff === undefined || service.read === undefined) {
@@ -978,13 +983,13 @@ describe('legacy bucket-family rows against upstream providers', () => {
         fqn: 'files-bucket',
         instanceId: 'inst-bucket',
         olds: migrated.props,
-        news: migrated.props,
+        news: { ...migrated.props, logicalId: 'files' },
         output: migrated.attr,
         session: undefined,
         bindings: [],
       } as never),
     );
-    expect(diff).toBeUndefined();
+    expect(diff).toEqual({ action: 'update' });
 
     const read = await Effect.runPromise(
       service

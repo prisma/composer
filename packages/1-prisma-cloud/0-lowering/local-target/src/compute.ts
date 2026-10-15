@@ -209,6 +209,7 @@ export function LocalAppProvider(
             latestDeploymentId: null,
             appEndpointDomain: url,
             createdAt: DEV_TIMESTAMP,
+            logicalId: null,
           } satisfies App['Attributes'];
         },
         catch: (cause) => cause,
