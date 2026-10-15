@@ -5,7 +5,7 @@
  * redirect flows (magic-link verify → callbackURL) land back on it.
  */
 
-/** What the proxy needs of the wired `authApi()` binding — just the origin. */
+/** What the proxy needs of the auth service's `api` port, wired as `rawHttp()` — just the origin. */
 export interface AuthProxyTarget {
   readonly url: string;
 }

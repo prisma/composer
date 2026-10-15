@@ -10,12 +10,13 @@
 import { describe, expect, test } from 'bun:test';
 import { isParamSource, isSecretSource, Load, module, paramSource } from '@internal/core';
 import { emailSendContract } from '@internal/email';
+import { rawHttp } from '@internal/http';
 import node from '@internal/node';
 import { compute, isGeneratedParamSource } from '@internal/prisma-cloud';
 import { dataContract, postgres } from '@internal/prisma-cloud/orm';
 import { rpc } from '@internal/service-rpc';
 import { auth } from '../auth-module.ts';
-import { authAdminContract, authApi, authSessionContract, jwtVerifier } from '../contract.ts';
+import { authAdminContract, authSessionContract, jwtVerifier } from '../contract.ts';
 import packContractJson from '../pack/contract.json' with { type: 'json' };
 
 const build = node({ module: import.meta.url, entry: '../dist/x.mjs' });
@@ -51,7 +52,7 @@ const mailProvider = () =>
   compute({ name: 'mailProvider', deps: {}, build, expose: { send: emailSendContract } });
 
 const apiConsumer = () =>
-  compute({ name: 'apiConsumer', deps: { authApi: authApi(), verifier: jwtVerifier() }, build });
+  compute({ name: 'apiConsumer', deps: { authApi: rawHttp(), verifier: jwtVerifier() }, build });
 const sessionConsumer = () =>
   compute({ name: 'sessionConsumer', deps: { session: rpc(authSessionContract) }, build });
 const opsConsumer = () =>

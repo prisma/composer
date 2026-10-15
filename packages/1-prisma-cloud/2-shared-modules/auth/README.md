@@ -10,13 +10,16 @@ instance secret is platform-minted.
 
 Three ports, one service behind them — least privilege is a WIRING choice:
 
-- **`api`** (kind `'auth-api'`) — the public Better Auth surface
+- **`api`** (a raw HTTP port, `rawHttpContract` from `@prisma/composer/http`)
+  — the public Better Auth surface
   (`/api/auth/*`): signup, login, logout, self-service account deletion,
   JWKS, token minting. Publicly reachable, with no service key (unlike the
   rpc ports) — it IS the authentication: Better Auth authenticates each
   request itself (logout and account deletion need a signed-in session)
-  and rate limits it. Two consumer factories bind to it:
-  - `authApi()` → `{ url, fetch }` — what `authProxy()` consumes.
+  and rate limits it. Two consumer dependencies bind to it:
+  - `rawHttp()` from `@prisma/composer/http` → `{ url, fetch }` — what
+    `authProxy()` consumes. Any raw HTTP slot accepts this port, so a test
+    double or another auth server can fill the same slot.
   - `jwtVerifier()` → `verify(token)` — stateless JWT verification over the
     instance's JWKS (jose remote JWKS, 30 s clock tolerance). Resolves
     `null` for ANY invalid token content; throws only on operational
@@ -70,6 +73,19 @@ export default module('app', ({ provision }) => {
     id: 'api',
     deps: { authApi: identity.api, verifier: identity.api, session: identity.session },
   });
+});
+```
+
+```ts
+// src/api/service.ts: the app service declares its three dependencies
+import { rawHttp } from '@prisma/composer/http';
+import { rpc } from '@prisma/composer/service-rpc';
+import { authSessionContract, jwtVerifier } from '@prisma/composer-prisma-cloud/auth';
+
+export default compute({
+  name: 'api',
+  deps: { authApi: rawHttp(), verifier: jwtVerifier(), session: rpc(authSessionContract) },
+  build: node({ module: import.meta.url, entry: 'server.js' }),
 });
 ```
 

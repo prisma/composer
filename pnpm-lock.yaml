@@ -1093,6 +1093,9 @@ importers:
       '@internal/foundation':
         specifier: workspace:0.30.0
         version: link:../../../0-framework/0-foundation/foundation
+      '@internal/http':
+        specifier: workspace:0.30.0
+        version: link:../../../0-framework/2-authoring/http
       '@internal/node':
         specifier: workspace:0.30.0
         version: link:../../../0-framework/2-authoring/node

@@ -1,61 +1,22 @@
 /**
- * The authoring surface's runtime shapes: the `auth-api` contract's
- * kind-only satisfies, the dependency factories' node shapes (what wires,
- * what hydrates), `authDb()`'s pack claim, and the wire record schemas.
+ * The authoring surface's runtime shapes: `jwtVerifier()`'s node shape
+ * (what wires, what hydrates), `authDb()`'s pack claim, and the wire record schemas.
  * jose's actual verification runs against a live server in the local-server
  * integration suite — here we only prove hydrate is pure construction (no fetch).
  */
 import { describe, expect, test } from 'bun:test';
-import type { Contract } from '@internal/core';
+import { rawHttpContract } from '@internal/http';
 import { requiredPackHeadOf } from '@internal/prisma-cloud';
 import { type } from 'arktype';
-import {
-  authAdminContract,
-  authApi,
-  authApiContract,
-  authDb,
-  jwtVerifier,
-  sessionRecord,
-  userRecord,
-} from '../contract.ts';
+import { authAdminContract, authDb, jwtVerifier, sessionRecord, userRecord } from '../contract.ts';
 import { AUTH_PACK_HEAD_HASH, AUTH_PACK_ID } from '../pack/constants.ts';
 
-describe('authApiContract', () => {
-  test('satisfies compares kind only', () => {
-    const other = {
-      kind: 'auth-api',
-      __cmp: undefined,
-      satisfies: () => false,
-    } as Contract<'auth-api', unknown>;
-    expect(authApiContract.satisfies(other)).toBe(true);
-  });
-
-  test('is frozen and carries the auth-api kind', () => {
-    expect(authApiContract.kind).toBe('auth-api');
-    expect(Object.isFrozen(authApiContract)).toBe(true);
-  });
-});
-
-describe('authApi()', () => {
-  test('yields an auth-api dependency binding a URL-anchored client', async () => {
-    const dep = authApi();
-    expect(dep.kind).toBe('dependency');
-    expect(dep.type).toBe('auth-api');
-    expect(dep.required).toBe(authApiContract);
-    expect(Object.keys(dep.connection.params)).toEqual(['url']);
-
-    const client = await dep.connection.hydrate({ url: 'https://auth.example' });
-    expect(client.url).toBe('https://auth.example');
-    expect(typeof client.fetch).toBe('function');
-  });
-});
-
 describe('jwtVerifier()', () => {
-  test('yields an auth-api dependency; hydrate constructs without network', async () => {
+  test('yields an http dependency requiring rawHttpContract; hydrate constructs without network', async () => {
     const dep = jwtVerifier();
     expect(dep.kind).toBe('dependency');
-    expect(dep.type).toBe('auth-api');
-    expect(dep.required).toBe(authApiContract);
+    expect(dep.type).toBe('http');
+    expect(dep.required).toBe(rawHttpContract);
     expect(Object.keys(dep.connection.params)).toEqual(['url']);
 
     // Construction is pure — the JWKS is fetched lazily at first verify().
