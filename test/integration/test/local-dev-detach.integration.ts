@@ -121,12 +121,30 @@ function acceptsConnection(port: number): Promise<boolean> {
 }
 
 /** The ports the directory's record holds for the current app's services and databases. */
-function recordedPorts(): readonly number[] {
+function recordedPorts(): readonly { readonly kind: string; readonly port: number }[] {
   const record = JSON.parse(
     fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
-  ) as { current: string; apps: Record<string, { nodes: Record<string, { port?: number }> }> };
+  ) as {
+    current: string;
+    apps: Record<string, { nodes: Record<string, { kind: string; port?: number }> }>;
+  };
   const nodes = record.apps[record.current]?.nodes ?? {};
-  return Object.values(nodes).flatMap((node) => (node.port === undefined ? [] : [node.port]));
+  return Object.values(nodes).flatMap(({ kind, port }) =>
+    port === undefined ? [] : [{ kind, port }],
+  );
+}
+
+/** Asserts the record holds a service and a database port, and that none of them accepts connections. */
+async function assertNothingListens(when: string): Promise<void> {
+  const ports = recordedPorts();
+  const kinds = new Set(ports.map((p) => p.kind));
+  assert(
+    kinds.has('service') && kinds.has('database'),
+    `the record holds service and database ports ${when} (got ${JSON.stringify(ports)})`,
+  );
+  for (const { kind, port } of ports) {
+    assert(!(await acceptsConnection(port)), `${kind} port ${String(port)} is closed ${when}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -153,38 +171,43 @@ async function main(): Promise<void> {
   console.log('[detach] PASS: exit 0 once ready, and every service answers after it exits');
 
   // ——— 2. Stopping the app stops them ———
-  const ports = recordedPorts();
   const stopped = await devStop({ config, cwd: integrationDir });
   assert(stopped.ok, `devStop succeeds (${stopped.ok ? '' : stopped.failure.message})`);
-  for (const port of ports) {
-    assert(!(await acceptsConnection(port)), `port ${String(port)} is closed after stopping`);
-  }
+  await assertNothingListens('after stopping');
   console.log('[detach] PASS: stopping the app closes every service and database port');
 
   // ——— 3. A failure before ready leaves nothing running ———
   // The Compute emulator reads the timeout when it starts, so end it first.
-  stopEmulator('compute');
+  await stopEmulator('compute');
   const failed = await runDetached(env({ PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS: '1' }));
   assert(failed.code !== 0, 'a detached run whose services never become ready exits non-zero');
-  for (const port of recordedPorts()) {
-    assert(
-      !(await acceptsConnection(port)),
-      `port ${String(port)} is closed after the failed detached run`,
-    );
-  }
+  await assertNothingListens('after the failed detached run');
   console.log('[detach] PASS: a detached run that fails before ready leaves nothing running');
 
   console.log('PASS: local dev --detach');
 }
 
-function stopEmulator(name: string): void {
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Ends an emulator and waits until its process has exited, so it writes nothing after this returns. */
+async function stopEmulator(name: string): Promise<void> {
   const file = path.join(emulatorsDir, `${name}.json`);
   if (!fs.existsSync(file)) return;
-  try {
-    process.kill((JSON.parse(fs.readFileSync(file, 'utf8')) as { pid: number }).pid, 'SIGTERM');
-  } catch {
-    // already gone
+  const { pid } = JSON.parse(fs.readFileSync(file, 'utf8')) as { pid: number };
+  if (isAlive(pid)) process.kill(pid, 'SIGTERM');
+  const deadline = Date.now() + 5_000;
+  while (isAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  if (isAlive(pid)) process.kill(pid, 'SIGKILL');
+  while (isAlive(pid)) await new Promise((resolve) => setTimeout(resolve, 50));
   fs.rmSync(file, { force: true });
 }
 
@@ -200,7 +223,7 @@ async function cleanUp(): Promise<void> {
       console.error(`teardown failed: ${String(error)}`);
     });
   }
-  for (const name of ['compute', 'buckets', 'postgres']) stopEmulator(name);
+  for (const name of ['compute', 'buckets', 'postgres']) await stopEmulator(name);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
