@@ -6,13 +6,16 @@
  * request right after the URLs must connect.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import getPort, { portNumbers } from 'get-port';
 import { type ComputeClient, computeClient, type InstanceInfo } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
+  CRASH_UNTIL_ALLOWED_BOOTSTRAP,
   CRASHING_BOOTSTRAP,
   DELAYED_SERVING_BOOTSTRAP,
   ensureFreshDaemon,
@@ -489,6 +492,65 @@ describe('with a 1-second readiness timeout', () => {
     const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
     expect(log).toContain('did not accept connections on port');
     expect(log).toContain('held');
+  }, 20_000);
+});
+
+// A start notices its process has exited only at its next poll. With polls
+// 3 seconds apart, a request can arrive after the exit but before the start
+// fails; it must start the service again rather than wait for that failure.
+describe('with a 3-second readiness poll', () => {
+  const slowPoll = fileURLToPath(new URL('./fixtures/slow-ready-poll.ts', import.meta.url));
+
+  function crashingDeployment(artifactDir: string, port: number) {
+    return { artifactDir, artifactHash: 'h', env: baseEnv({ PORT: String(port) }) };
+  }
+
+  function allowServing(artifactDir: string): void {
+    fs.writeFileSync(path.join(artifactDir, 'allow-serving'), '');
+  }
+
+  test('a session-resume start just after a crash loop is held starts the service again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await createInstanceOnOwnPort(client);
+
+    // Not awaited: it settles only when the start in flight at `held` notices
+    // its process exited, which is the moment the resume below must not wait for.
+    const first = client
+      .putDeployment(reserved.id, crashingDeployment(artifactDir, reserved.port))
+      .then(
+        () => 'succeeded',
+        (error: unknown) => String(error),
+      );
+    await waitFor(async () => (await statusOf(client, reserved.id)) === 'held', 25_000, 20);
+    allowServing(artifactDir);
+
+    await client.startInstances([reserved.id]);
+
+    expect(await statusOf(client, reserved.id)).toBe('running');
+    expect(await acceptsConnection(reserved.port)).toBe(true);
+    expect(await first).toContain('exited (code 1)');
+    expect(await first).toContain('exited (code 1)');
+  }, 45_000);
+
+  test('an identical deployment just after the deployed process exits starts it again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await createInstanceOnOwnPort(client);
+    const deployment = crashingDeployment(artifactDir, reserved.port);
+
+    const first = client.putDeployment(reserved.id, deployment);
+    await waitFor(async () => (await statusOf(client, reserved.id)) === 'backoff', 5000, 20);
+    allowServing(artifactDir);
+
+    await client.putDeployment(reserved.id, deployment);
+
+    expect(await statusOf(client, reserved.id)).toBe('running');
+    // A start that waited for the first deployment would leave the crash
+    // trail in the log; a fresh start begins a clean one.
+    const log = await (await fetch(`${client.baseUrl}/instances/${reserved.id}/logs`)).text();
+    expect(log).not.toContain('restarting in');
+    await first;
   }, 20_000);
 });
 
