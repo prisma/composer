@@ -72,6 +72,12 @@ export const CRASH_ONCE_THEN_SILENT_BOOTSTRAP =
   "if (!fs.existsSync('crashed-once')) { fs.writeFileSync('crashed-once', ''); process.exit(1); }\n" +
   'setInterval(() => {}, 1000);\n';
 
+/** Exits with code 1 until a file named `allow-serving` exists in its artifact directory, then serves like `LOGGING_BOOTSTRAP` — a crash loop the test can end. */
+export const CRASH_UNTIL_ALLOWED_BOOTSTRAP =
+  "const fs = require('node:fs');\n" +
+  "if (!fs.existsSync('allow-serving')) process.exit(1);\n" +
+  "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('ok') });\n";
+
 /** Exits immediately with a nonzero code — a fast-crashing service. */
 export const CRASHING_BOOTSTRAP = 'process.exit(1);\n';
 

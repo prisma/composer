@@ -6,12 +6,15 @@
  * request right after the URLs must connect.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type ComputeClient, computeClient } from '../client.ts';
 import { ensureDaemon, isPidAlive, SERVICE_READY_TIMEOUT_ENV, stopDaemon } from '../daemon.ts';
 import {
   CRASH_ONCE_THEN_SILENT_BOOTSTRAP,
+  CRASH_UNTIL_ALLOWED_BOOTSTRAP,
   CRASHING_BOOTSTRAP,
   DELAYED_SERVING_BOOTSTRAP,
   ensureFreshDaemon,
@@ -508,6 +511,78 @@ describe('with a 1-second readiness timeout', () => {
     ).text();
     expect(log).toContain('did not accept connections on port');
     expect(log).toContain('held');
+  }, 20_000);
+});
+
+// A start notices its process has exited only at its next poll. With polls
+// 3 seconds apart, a request can arrive after the exit but before the start
+// fails; it must start the service again rather than wait for that failure.
+describe('with a 3-second readiness poll', () => {
+  const slowPoll = fileURLToPath(new URL('./fixtures/slow-ready-poll.ts', import.meta.url));
+
+  function crashingDeployment(artifactDir: string, port: number) {
+    return {
+      address: 'crash-loop.web',
+      artifactDir,
+      artifactHash: 'h',
+      env: baseEnv({ PORT: String(port) }),
+      port,
+    };
+  }
+
+  function allowServing(artifactDir: string): void {
+    fs.writeFileSync(path.join(artifactDir, 'allow-serving'), '');
+  }
+
+  test('a session-resume start just after a crash loop is held starts the service again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await client.ensureService('app-held-resume', 'web');
+
+    await expect(
+      client.putDeployment(
+        'app-held-resume',
+        'web',
+        crashingDeployment(artifactDir, reserved.port),
+      ),
+    ).rejects.toThrow('exited (code 1)');
+    await waitFor(
+      async () => (await statusOf(client, 'app-held-resume', 'web')) === 'held',
+      25_000,
+      20,
+    );
+    allowServing(artifactDir);
+
+    await client.startApp('app-held-resume');
+
+    expect(await statusOf(client, 'app-held-resume', 'web')).toBe('running');
+    expect(await acceptsConnection(reserved.port)).toBe(true);
+  }, 45_000);
+
+  test('an identical deployment just after the deployed process exits starts it again', async () => {
+    const client = await startDaemon(slowPoll);
+    const artifactDir = writeBootstrap(CRASH_UNTIL_ALLOWED_BOOTSTRAP);
+    const reserved = await client.ensureService('app-crash-redeploy', 'web');
+    const deployment = crashingDeployment(artifactDir, reserved.port);
+
+    const first = client.putDeployment('app-crash-redeploy', 'web', deployment);
+    await waitFor(
+      async () => (await statusOf(client, 'app-crash-redeploy', 'web')) === 'backoff',
+      5000,
+      20,
+    );
+    allowServing(artifactDir);
+
+    await client.putDeployment('app-crash-redeploy', 'web', deployment);
+
+    expect(await statusOf(client, 'app-crash-redeploy', 'web')).toBe('running');
+    // A start that waited for the first deployment would leave the crash
+    // trail in the log; a fresh start begins a clean one.
+    const log = await (
+      await fetch(`${client.baseUrl}/apps/app-crash-redeploy/services/web/logs`)
+    ).text();
+    expect(log).not.toContain('restarting in');
+    await first;
   }, 20_000);
 });
 

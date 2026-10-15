@@ -29,7 +29,7 @@ const MAX_BACKOFF_MS = 30_000;
 const MAX_CONSECUTIVE_FAST_EXITS = 5;
 const LOG_POLL_INTERVAL_MS = 100;
 const DEFAULT_READY_TIMEOUT_MS = 30_000;
-const READY_POLL_INTERVAL_MS = 50;
+const DEFAULT_READY_POLL_MS = 50;
 const READY_PROBE_TIMEOUT_MS = 1000;
 const APPS_STATE_MODE = 0o600;
 
@@ -230,14 +230,17 @@ function parseArgs(argv: readonly string[]): {
   readonly port: number;
   readonly stateDir: string;
   readonly readyTimeoutMs: number;
+  readonly readyPollMs: number;
 } {
   let port: number | undefined;
   let stateDir: string | undefined;
   let readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS;
+  let readyPollMs = DEFAULT_READY_POLL_MS;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port') port = Number(argv[i + 1]);
     else if (argv[i] === '--state-dir') stateDir = argv[i + 1];
     else if (argv[i] === '--ready-timeout-ms') readyTimeoutMs = Number(argv[i + 1]);
+    else if (argv[i] === '--ready-poll-ms') readyPollMs = Number(argv[i + 1]);
   }
   if (port === undefined || Number.isNaN(port)) {
     throw new Error('compute-main: --port <n> is required');
@@ -248,7 +251,10 @@ function parseArgs(argv: readonly string[]): {
   if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) {
     throw new Error('compute-main: --ready-timeout-ms must be a positive number');
   }
-  return { port, stateDir, readyTimeoutMs };
+  if (!Number.isFinite(readyPollMs) || readyPollMs <= 0) {
+    throw new Error('compute-main: --ready-poll-ms must be a positive number');
+  }
+  return { port, stateDir, readyTimeoutMs, readyPollMs };
 }
 
 function acceptsConnection(port: number, host: string): Promise<boolean> {
@@ -274,11 +280,12 @@ async function acceptsLoopbackConnection(port: number): Promise<boolean> {
   return v4 || v6;
 }
 
-/** Polls `port` until it accepts a connection, the child exits, or `timeoutMs` passes. */
+/** Polls `port` every `pollMs` until it accepts a connection, the child exits, or `timeoutMs` passes. */
 async function waitUntilListening(
   child: ChildProcess,
   port: number,
   timeoutMs: number,
+  pollMs: number,
 ): Promise<ReadyOutcome> {
   let exit: ReadyOutcome | undefined;
   child.once('exit', (code, signal) => {
@@ -289,7 +296,7 @@ async function waitUntilListening(
     if (exit) return exit;
     if (await acceptsLoopbackConnection(port)) return exit ?? { kind: 'listening' };
     if (Date.now() >= deadline) return exit ?? { kind: 'timed-out' };
-    await sleep(READY_POLL_INTERVAL_MS);
+    await sleep(pollMs);
   }
 }
 
@@ -311,7 +318,7 @@ function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undef
 }
 
 function main(): void {
-  const { port, stateDir, readyTimeoutMs } = parseArgs(process.argv.slice(2));
+  const { port, stateDir, readyTimeoutMs, readyPollMs } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
   const appsJsonPath = path.join(stateDir, 'apps.json');
   const stateFile = new StateFile<AppsState>(appsJsonPath, APPS_STATE_MODE);
@@ -588,7 +595,7 @@ function main(): void {
     schedulePersist();
 
     const port = String(svc.port);
-    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs);
+    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs, readyPollMs);
     const superseded = supersededOutcome(svc, rt, token);
     if (superseded) return superseded;
     const service = `service "${svc.address}"`;
