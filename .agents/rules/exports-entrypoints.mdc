@@ -69,6 +69,16 @@ file per published subpath. Everything else under `src/` is internal. See
   `@prisma/composer-prisma-cloud`): the published API contract (bin field / 9-pass
   build). Keep the hand-maintained map and the multi-pass config.
 
+## Moving a file
+
+- Search all of `src/` for the old path, not only tests and other packages:
+  internal modules may import the moved file too.
+- Search string literals as well, including dynamic `import('...')` calls. A
+  `from '...'` search misses them, and they pass build and typecheck but fail
+  when the test loads.
+- Run the full `pnpm test`, not a package-scoped run. Some tests refer to
+  another package's files by filesystem path.
+
 ## Moving a file that backs a shared chunk
 
 Moving a service file (one both `index` and a sibling entry import) into

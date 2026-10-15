@@ -18,10 +18,10 @@ import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared
  * no-op, a contract or ref-invariant change re-migrates.
  */
 export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ id, node, application, graph }) =>
+  const lowering: Lowering = ({ id, address, node, application, graph }) =>
     Effect.gen(function* () {
       validateName(id, 'resource name (from provision id)');
-      const { db, url } = yield* stageDatabase({ id, application, region: o().region });
+      const { db, url } = yield* stageDatabase({ id, address, application, region: o().region });
 
       if (!isPostgresResourceNode(node)) {
         // The registry routes 'postgres'-typed resource nodes here, so this
