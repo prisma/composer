@@ -67,6 +67,7 @@ export function LocalDatabaseProvider(
             branchId: null,
             defaultConnectionId: null,
             createdAt: DEV_TIMESTAMP,
+            logicalId: null,
             directConnectionString: direct,
             pooledConnectionString: undefined,
             accelerateConnectionString: undefined,

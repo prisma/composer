@@ -167,15 +167,15 @@ service's instance, and the emulator owns the processes:
 
 ### Concurrent starts and stops
 
-Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited.
+Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited. A start whose process has exited is about to fail, so no other start waits for it: a resume or redeploy that arrives in that moment starts the service again.
 
 | Request | Service state | What happens |
 | --- | --- | --- |
 | Session-resume start | Never deployed | Succeeds at once; nothing starts |
-| Session-resume start | A start in flight | Waits for that start and returns its result |
+| Session-resume start | A start in flight whose process has not exited | Waits for that start and returns its result |
 | Session-resume start | `running`, no stop in progress | Succeeds at once |
 | Session-resume start | Anything else | Becomes the start in flight: waits for any stop to finish, then spawns |
-| Deployment PUT, identical | A deployment or resume start in flight | Waits for that start and returns its result |
+| Deployment PUT, identical | A deployment or resume start in flight whose process has not exited | Waits for that start and returns its result |
 | Deployment PUT, identical | `running`, no start or stop in progress | Succeeds at once |
 | Deployment PUT | Anything else | Stores the deployment and becomes the start in flight, replacing any earlier one: waits for any stop to finish, stops the current process, then spawns |
 | Stop | Any | Ends the start in flight and any crash-backoff restart, stops the process, and sets `stopped` once it has exited |

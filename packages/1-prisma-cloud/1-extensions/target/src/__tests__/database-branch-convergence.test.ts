@@ -1,23 +1,23 @@
 /** Pins the upstream `Prisma.Database` semantics the database descriptors depend on — real provider, fake Management client. */
 import { describe, expect, test } from 'bun:test';
 import { Credentials, Retry } from '@distilled.cloud/prisma';
-import { InstanceId } from 'alchemy/InstanceId';
 import type { PrismaManagementClient } from 'alchemy/Prisma/Client';
 import { Database, DatabaseProvider } from 'alchemy/Prisma/Database';
 import type { Database as ApiDatabase } from 'alchemy/Prisma/Types';
+import { ResourceContext } from 'alchemy/ResourceContext';
 import { Stack } from 'alchemy/Stack';
 import { Stage } from 'alchemy/Stage';
 import * as Effect from 'effect/Effect';
+import * as HttpClient from 'effect/http/HttpClient';
+import * as HttpClientResponse from 'effect/http/HttpClientResponse';
 import * as Layer from 'effect/Layer';
 import * as Redacted from 'effect/Redacted';
-import * as HttpClient from 'effect/unstable/http/HttpClient';
-import * as HttpClientResponse from 'effect/unstable/http/HttpClientResponse';
 
 const PROJECT_ID = 'proj_1';
 const DEFAULT_BRANCH_ID = 'br_default';
 const DIRECT_URL = 'postgres://user:secret@db.prisma.example:5432/postgres';
 
-const unassignedDb = (): ApiDatabase => ({
+const unassignedDb = (): ApiDatabase & { logicalId: string | null } => ({
   id: 'db_1',
   type: 'database',
   url: 'https://api.prisma.io/v1/databases/db_1',
@@ -31,9 +31,10 @@ const unassignedDb = (): ApiDatabase => ({
   region: { id: 'us-east-1', name: 'US East (N. Virginia)' },
   source: { type: 'empty' },
   branchId: null,
+  logicalId: null,
 });
 
-const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
+const persistedOutput = (db: ReturnType<typeof unassignedDb>): Database['Attributes'] => ({
   databaseId: db.id,
   databaseName: db.name,
   projectId: db.project.id,
@@ -41,6 +42,7 @@ const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   region: db.region?.id ?? null,
   isDefault: db.isDefault,
   branchId: db.branchId,
+  logicalId: db.logicalId ?? null,
   defaultConnectionId: db.defaultConnectionId,
   createdAt: db.createdAt,
   directConnectionString: Redacted.make(DIRECT_URL),
@@ -52,7 +54,7 @@ const persistedOutput = (db: ApiDatabase): Database['Attributes'] => ({
 });
 
 /** State attrs as `legacy-resources.ts`'s `migrateAttr` writes them: identity only, no connection secrets. */
-const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
+const legacyMigratedOutput = (db: ReturnType<typeof unassignedDb>): Database['Attributes'] => ({
   databaseId: db.id,
   databaseName: db.name,
   projectId: db.project.id,
@@ -60,6 +62,7 @@ const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
   region: db.region?.id ?? null,
   isDefault: false,
   branchId: db.branchId,
+  logicalId: db.logicalId ?? null,
   defaultConnectionId: null,
   createdAt: '1970-01-01T00:00:00.000Z',
   directConnectionString: undefined,
@@ -71,10 +74,15 @@ const legacyMigratedOutput = (db: ApiDatabase): Database['Attributes'] => ({
 });
 
 const oldProps = { project: PROJECT_ID, region: 'us-east-1', name: 'data' } as const;
-const newProps = { project: PROJECT_ID, region: 'us-east-1', branchId: DEFAULT_BRANCH_ID } as const;
+const newProps = {
+  project: PROJECT_ID,
+  region: 'us-east-1',
+  branchId: DEFAULT_BRANCH_ID,
+  logicalId: 'data',
+} as const;
 
 interface FakeClientCalls {
-  update: Array<[string, { name?: string; branchId?: string | null }]>;
+  update: Array<[string, { name?: string; branchId?: string | null; logicalId?: string | null }]>;
   rotate: string[];
   create: number;
   delete: number;
@@ -92,12 +100,16 @@ function fakeClient(): {
       id === current.id
         ? Effect.succeed(current)
         : Effect.die(new Error(`unexpected getDatabase(${id})`)),
-    updateDatabase: (id: string, patch: { name?: string; branchId?: string | null }) => {
+    updateDatabase: (
+      id: string,
+      patch: { name?: string; branchId?: string | null; logicalId?: string | null },
+    ) => {
       calls.update.push([id, patch]);
       current = {
         ...current,
         ...(patch.name !== undefined ? { name: patch.name } : {}),
         ...(patch.branchId !== undefined ? { branchId: patch.branchId } : {}),
+        ...(patch.logicalId !== undefined ? { logicalId: patch.logicalId } : {}),
       };
       return Effect.succeed(current);
     },
@@ -142,6 +154,10 @@ function fakeClient(): {
         typeof patch === 'object' && patch !== null && 'branchId' in patch
           ? patch.branchId
           : undefined;
+      const logicalId =
+        typeof patch === 'object' && patch !== null && 'logicalId' in patch
+          ? patch.logicalId
+          : undefined;
       const response = yield* Effect.gen(function* () {
         if (request.method === 'GET' && url.pathname === '/v1/databases/db_1') {
           return Response.json({ data: yield* client.getDatabase('db_1').pipe(Effect.orDie) });
@@ -152,6 +168,7 @@ function fakeClient(): {
               .updateDatabase('db_1', {
                 ...(typeof name === 'string' ? { name } : {}),
                 ...(typeof branchId === 'string' ? { branchId } : {}),
+                ...(typeof logicalId === 'string' || logicalId === null ? { logicalId } : {}),
               })
               .pipe(Effect.orDie),
           });
@@ -207,7 +224,12 @@ const provideLifecycle = <A>(
   eff.pipe(
     Effect.provideService(Stack, { name: 'shop' } as unknown as Stack['Service']),
     Effect.provideService(Stage, DEFAULT_BRANCH_ID),
-    Effect.provideService(InstanceId, '00112233445566778899aabbccddeeff'),
+    Effect.provideService(ResourceContext, {
+      logicalId: 'data-db',
+      fqn: 'data-db',
+      instanceId: '00112233445566778899aabbccddeeff',
+      type: 'Prisma.Database',
+    }),
     Effect.provide(api),
   ) as unknown as Effect.Effect<A>;
 
@@ -231,7 +253,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
     expect(decision).toEqual({ action: 'update' });
   });
 
-  test('reconcile PATCHes the existing database onto the default Branch — no create, no delete', async () => {
+  test('reconcile attaches and identifies the existing database without creating or deleting it', async () => {
     const { api, calls } = fakeClient();
     const handlers = handlersFor(api);
 
@@ -247,7 +269,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    expect(calls.update).toHaveLength(1);
+    expect(calls.update).toHaveLength(2);
     const [patchedId, patch] = calls.update[0] ?? ['', {}];
     expect(patchedId).toBe('db_1');
     expect(patch.branchId).toBe(DEFAULT_BRANCH_ID);
@@ -257,6 +279,8 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
     expect(calls.rotate).toEqual([]);
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
+    expect(attrs.logicalId).toBe('data');
+    expect(calls.update[1]).toEqual(['db_1', { logicalId: 'data' }]);
   });
 
   test('a legacy-migrated state row (no stored secrets) attaches in place and rotates the DEFAULT connection', async () => {
@@ -288,13 +312,15 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    expect(calls.update).toHaveLength(1);
+    expect(calls.update).toHaveLength(2);
     expect(calls.update[0]?.[1].branchId).toBe(DEFAULT_BRANCH_ID);
     expect(calls.create).toBe(0);
     expect(calls.delete).toBe(0);
     expect(calls.rotate).toEqual(['conn_1']);
     expect(attrs.databaseId).toBe('db_1');
     expect(attrs.branchId).toBe(DEFAULT_BRANCH_ID);
+    expect(attrs.logicalId).toBe('data');
+    expect(calls.update[1]).toEqual(['db_1', { logicalId: 'data' }]);
     expect(attrs.directConnectionString).toBeDefined();
   });
 
@@ -313,7 +339,7 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
         api,
       ),
     );
-    expect(calls.update).toHaveLength(1);
+    expect(calls.update).toHaveLength(2);
 
     const second = await Effect.runPromise(
       provideLifecycle(
@@ -327,8 +353,9 @@ describe('upstream Prisma.Database — converging an unassigned, explicitly name
       ),
     );
 
-    expect(calls.update).toHaveLength(1);
+    expect(calls.update).toHaveLength(2);
     expect(second.databaseId).toBe('db_1');
     expect(second.branchId).toBe(DEFAULT_BRANCH_ID);
+    expect(second.logicalId).toBe('data');
   });
 });

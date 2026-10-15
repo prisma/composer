@@ -1,6 +1,6 @@
 {
   "name": "@internal/prisma-cloud",
-  "version": "0.29.1",
+  "version": "0.30.0",
   "type": "module",
   "sideEffects": false,
   "exports": {
@@ -20,31 +20,31 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@internal/core": "workspace:0.29.1",
-    "@internal/dev-emulators": "workspace:0.29.1",
-    "@internal/foundation": "workspace:0.29.1",
-    "@internal/local-target": "workspace:0.29.1",
-    "@internal/lowering": "workspace:0.29.1",
-    "@internal/node": "workspace:0.29.1",
-    "@internal/s3-protocol": "workspace:0.29.1",
-    "@internal/service-rpc": "workspace:0.29.1",
-    "@prisma/orm-postgres": "8.0.0-rc.17",
-    "@prisma/orm-toolchain": "8.0.0-rc.17",
+    "@internal/core": "workspace:0.30.0",
+    "@internal/dev-emulators": "workspace:0.30.0",
+    "@internal/foundation": "workspace:0.30.0",
+    "@internal/local-target": "workspace:0.30.0",
+    "@internal/lowering": "workspace:0.30.0",
+    "@internal/node": "workspace:0.30.0",
+    "@internal/s3-protocol": "workspace:0.30.0",
+    "@internal/service-rpc": "workspace:0.30.0",
+    "@prisma/orm-postgres": "8.0.0-rc.18",
+    "@prisma/orm-toolchain": "8.0.0-rc.18",
     "@standard-schema/spec": "^1.1.0",
-    "alchemy": "2.0.0-beta.78",
+    "alchemy": "2.0.0-beta.83",
     "arktype": "^2.2.3",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.3",
     "pathe": "^2.0.3",
     "pg": "8.22.0"
   },
   "devDependencies": {
-    "@distilled.cloud/prisma": "1.0.0-rc.12",
-    "@internal/tsdown-config": "workspace:0.29.1",
+    "@distilled.cloud/prisma": "1.0.0-rc.15",
+    "@internal/tsdown-config": "workspace:0.30.0",
     "@prisma/cli-engine": "0.7.0",
     "@types/bun": "^1.3.13",
     "tsdown": "^0.22.7",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.4"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -69,6 +69,7 @@ export function LocalBucketProvider(
             name,
             projectId: projectIdOfInput(news.project),
             createdAt: DEV_TIMESTAMP,
+            logicalId: null,
           };
         },
         catch: (cause) => cause,
