@@ -8,3 +8,4 @@
 - **A service that never listens fails `prisma dev` under prisma/composer#353** (the cron scheduler; `examples/store`). Raised with Will; the fix belongs in #353.
 - **`prisma dev url` doesn't retry an emulator that is briefly unreachable.** Retry policy is #353's (`withEmulatorRetry`); apply it here once that settles.
 - **`prisma dev url` loads the config's extensions, and so Alchemy, to read one JSON file.** It only matters when a script calls it in a loop.
+- **A run-then-stop mode for CI: `prisma dev --exec "<cmd>"`, like Firebase `emulators:exec`.** It would bring the app up as `--detach` does, run the command, stop the app and exit with the command's code. Likely next step after S6.

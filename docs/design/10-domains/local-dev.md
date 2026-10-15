@@ -21,6 +21,9 @@ command:
   streaming them all inline drowns the front door and the rebuild notices. To
   read them, call the `log` operation from a script (see
   [docs/guides/running-locally.md](../../guides/running-locally.md)).
+  With `--detach` (the `dev` operation's `detach`), it returns once every
+  service answers and leaves the app running without watching; see
+  § Process lifetimes.
 - **`log`**, an operation on `@prisma/composer/control` with no command
   (ADR-0050) — tail the merged logs of that already-running app: every
   service, or one named by its dotted `address` (`catalog.service`). Follows
@@ -356,6 +359,18 @@ dev state is never migrated.
 3. **The dev session owns no processes at all** — it is a view (`attach`):
    endpoints, the stop control, and the watch loop. That same view's merged
    logs back the separate `log` operation.
+4. **The app's processes** — the service children and database servers the
+   emulators run for the app. In the foreground, `prisma dev` stops them when
+   it ends (Ctrl-C, SIGTERM or a failure). `prisma dev --detach` converges,
+   waits until every service accepts connections, prints the front door and
+   exits 0, starting no watch loop and no stop on exit, so they keep running
+   until `prisma dev stop` or the next `prisma dev` in the directory, which
+   reconverges as usual. A detached session handle is already closed and its
+   `stop()` stops nothing. A detached run that fails before ready stops what
+   it started, as the foreground run does, and a Ctrl-C before ready stops the
+   app through `devStop`. A foreground `prisma dev` started while the app runs
+   detached takes it over: its converge changes nothing, it watches, and its
+   Ctrl-C stops the app.
 
 The emulator daemon bookkeeping (registry, stable ports, readiness,
 version-skew restart) is framework-owned and minimal, and the Postgres

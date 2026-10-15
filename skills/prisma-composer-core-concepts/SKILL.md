@@ -462,6 +462,12 @@ that surprise:
    shows every local emulator and its instances, from any directory; one that
    runs but cannot be listed carries an `error` in its own entry.
    `prisma emulator start` and `stop` are planned.
+   For agents, scripts and CI, `prisma dev <entry> --detach` runs the app in
+   the background: it exits 0 once every service answers and prints the URLs,
+   does not watch for changes, and leaves the app running until
+   `prisma dev stop`. Use it, then `prisma dev stop`, instead of keeping a
+   foreground `prisma dev` alive. A failure before ready stops what it
+   started and exits non-zero.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a

@@ -66,6 +66,24 @@ so do the ports, so the next `prisma dev` is a warm start — same ports, same
 data. `--fresh` is what wipes this app's local instances and data before
 starting.
 
+### Run it in the background
+
+`prisma dev --detach` does everything `prisma dev` does up to `ready`, prints
+the front door, and exits 0, leaving the app running. It does not watch for
+changes, and nothing stops the app until you run `prisma dev stop`:
+
+```sh
+prisma dev module.ts --detach
+curl "$(prisma dev url gateway --format human)"
+prisma dev stop
+```
+
+This is the form for agents, scripts and CI, which then have no long-running
+process to manage. It combines with `--fresh` and `--name`. If it fails before
+`ready`, it stops what it started and exits non-zero, as `prisma dev` does. To
+pick up a rebuild, run `prisma dev --detach` again, or run `prisma dev` in the
+foreground: it takes over the running app, watches, and `Ctrl-C` stops it.
+
 On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service gets its port before the services that call it, and services with no dependency between them go in the order you provisioned them. A warm start keeps the ports services already have.
 
 ### Each directory runs its own services, databases and buckets
