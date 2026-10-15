@@ -74,7 +74,7 @@ changes, and nothing stops the app until you run `prisma dev stop`:
 
 ```sh
 prisma dev module.ts --detach
-curl "$(prisma dev url gateway --format human)"
+curl "$(prisma dev url gateway)"
 prisma dev stop
 ```
 
@@ -140,18 +140,20 @@ A service gives `http://localhost:<port>`, a database its connection string
 (with its local credentials), and a bucket its S3 endpoint followed by
 `/<bucket>`. Nested nodes have dotted addresses, such as `catalog.database`.
 
-When stdout is a terminal you see the URL. When it is piped, the CLI writes
-JSON frames, so a script picks the URL out with `jq`:
+The URL alone goes to stdout, whether it is a terminal or a pipe, so a script
+uses it directly. Check the exit status first, so a failure does not run
+`curl` with an empty URL:
 
 ```bash
-url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"
+url=$(prisma dev url gateway) && curl "$url"
 ```
 
-On failure the JSON result has no URL, so `jq -r` alone would print `null` and
-`curl` would run anyway; `-e` makes `jq` exit non-zero, and `&&` stops there.
-The failure's code is in `.envelope.error.code`.
-`--format human` prints the URL alone even when piped. `dev url` only reports
-a node that is running, so the URL it prints answers. Otherwise it fails with
+`prisma dev url`, `prisma dev stop` and `prisma emulator list` first ship in
+the `prisma` release after 8.0.0-rc.23, which already writes a command's plain
+data to a piped stdout. `--json` gives the full result,
+`{ address, kind, url, state }`, or on failure the error with its code.
+
+`dev url` only reports a node that is running, so the URL it prints answers. Otherwise it fails with
 a code a script can branch on:
 
 - `DEV.NOT_STARTED_HERE`: `prisma dev` never ran in this directory.
@@ -169,7 +171,11 @@ a code a script can branch on:
 
 `prisma emulator list` shows every local emulator on the machine, whether it
 is running, and every instance on it, with the directory, app and address it
-belongs to. It works from any directory. An emulator that is running but does
+belongs to. It works from any directory. Piped, it writes one line per
+instance with six tab-separated fields: the emulator's kind (`service`,
+`database` or `bucket`), the instance id, its URL, its state, the address of
+the node it runs and the directory `prisma dev` ran from. The last two are
+empty for an instance Composer did not label. An emulator that is running but does
 not answer, or answers with an error, is shown with that error, and the
 others are still listed. `prisma emulator start` and
 `prisma emulator stop` are planned.

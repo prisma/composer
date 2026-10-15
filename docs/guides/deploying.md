@@ -210,7 +210,7 @@ dependencies are traced and copied into the deploy artifact (see
 Planning and applying run in one deploy engine process, so they are one step.
 The last line is the whole deploy, from start to finish.
 
-With `--json`, or whenever stdout is not a terminal, each step is a
+With `--json`, each step is a
 `step-started` and a `step-finished` line on stdout, followed by an
 `endpoint` line per public URL and the `result` line. A `step-finished` line
 carries `data.durationMs`. An assemble step's `data` also holds whatever the
