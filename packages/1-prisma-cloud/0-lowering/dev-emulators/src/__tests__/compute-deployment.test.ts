@@ -191,13 +191,15 @@ describe('crash supervision', () => {
     const artifactDir = writeBootstrap(CRASHING_BOOTSTRAP);
     const reserved = await client.ensureService('app-f', 'crasher');
 
-    await client.putDeployment('app-f', 'crasher', {
-      address: 'app-f.crasher',
-      artifactDir,
-      artifactHash: 'h',
-      env: baseEnv(),
-      port: reserved.port,
-    });
+    await expect(
+      client.putDeployment('app-f', 'crasher', {
+        address: 'app-f.crasher',
+        artifactDir,
+        artifactHash: 'h',
+        env: baseEnv(),
+        port: reserved.port,
+      }),
+    ).rejects.toThrow('before it accepted connections');
 
     await waitFor(
       async () => (await deployedService('app-f', 'crasher')).status === 'backoff',
@@ -221,13 +223,15 @@ describe('crash supervision', () => {
     const crashingDir = writeBootstrap(CRASHING_BOOTSTRAP);
     const reserved = await client.ensureService('app-g', 'crasher');
 
-    await client.putDeployment('app-g', 'crasher', {
-      address: 'app-g.crasher',
-      artifactDir: crashingDir,
-      artifactHash: 'h',
-      env: baseEnv(),
-      port: reserved.port,
-    });
+    await expect(
+      client.putDeployment('app-g', 'crasher', {
+        address: 'app-g.crasher',
+        artifactDir: crashingDir,
+        artifactHash: 'h',
+        env: baseEnv(),
+        port: reserved.port,
+      }),
+    ).rejects.toThrow('before it accepted connections');
 
     await waitFor(
       async () => (await deployedService('app-g', 'crasher')).status === 'held',
@@ -398,20 +402,22 @@ describe('session resume (POST /apps/<app>/start)', () => {
     const crashingDir = writeBootstrap(CRASHING_BOOTSTRAP);
     const reserved = await client.ensureService('app-l', 'crasher');
 
-    await client.putDeployment('app-l', 'crasher', {
-      address: 'app-l.crasher',
-      artifactDir: crashingDir,
-      artifactHash: 'h',
-      env: baseEnv(),
-      port: reserved.port,
-    });
+    await expect(
+      client.putDeployment('app-l', 'crasher', {
+        address: 'app-l.crasher',
+        artifactDir: crashingDir,
+        artifactHash: 'h',
+        env: baseEnv(),
+        port: reserved.port,
+      }),
+    ).rejects.toThrow('before it accepted connections');
     await waitFor(
       async () => (await deployedService('app-l', 'crasher')).status === 'held',
       20_000,
       250,
     );
 
-    await client.startApp('app-l');
+    await expect(client.startApp('app-l')).rejects.toThrow('before it accepted connections');
 
     // The crashing artifact is still what's stored, so the resumed child
     // crashes again shortly — but it takes 5 fresh fast exits to re-enter
@@ -463,13 +469,15 @@ describe('log follow', () => {
       }
     })().catch(() => undefined);
 
-    await client.putDeployment('app-h', 'crasher', {
-      address: 'app-h.crasher',
-      artifactDir,
-      artifactHash: 'h',
-      env: baseEnv(),
-      port: reserved.port,
-    });
+    await expect(
+      client.putDeployment('app-h', 'crasher', {
+        address: 'app-h.crasher',
+        artifactDir,
+        artifactHash: 'h',
+        env: baseEnv(),
+        port: reserved.port,
+      }),
+    ).rejects.toThrow('before it accepted connections');
 
     await waitFor(() => chunks.join('').includes('[emulator] exited'), 5000, 100);
     controller.abort();

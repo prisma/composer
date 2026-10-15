@@ -13,9 +13,10 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import getPort, { clearLockedPorts, portNumbers } from 'get-port';
-import { readOwnVersion } from './daemon.ts';
+import { readOwnVersion, SERVICE_READY_TIMEOUT_ENV } from './daemon.ts';
 import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
@@ -27,6 +28,9 @@ const BASE_BACKOFF_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_CONSECUTIVE_FAST_EXITS = 5;
 const LOG_POLL_INTERVAL_MS = 100;
+const DEFAULT_READY_TIMEOUT_MS = 30_000;
+const DEFAULT_READY_POLL_MS = 50;
+const READY_PROBE_TIMEOUT_MS = 1000;
 const APPS_STATE_MODE = 0o600;
 
 const BUN_NOT_FOUND_MESSAGE =
@@ -44,6 +48,8 @@ interface ServiceRecord {
   artifactHash?: string;
   artifactDir?: string;
   env?: Record<string, string>;
+  /** `false` when the service does not listen on its port: it is `running` once spawned. */
+  listens?: boolean;
   readonly logPath: string;
 }
 
@@ -95,6 +101,9 @@ function isServiceRecord(value: unknown): value is ServiceRecord {
     return false;
   }
   if ('env' in value && value.env !== undefined && !isStringRecord(value.env)) return false;
+  if ('listens' in value && value.listens !== undefined && typeof value.listens !== 'boolean') {
+    return false;
+  }
   return true;
 }
 
@@ -119,6 +128,7 @@ interface DeploymentBody {
   readonly artifactHash: string;
   readonly env: Record<string, string>;
   readonly port: number;
+  readonly listens?: boolean;
 }
 
 function isDeploymentBody(value: unknown): value is DeploymentBody {
@@ -134,7 +144,8 @@ function isDeploymentBody(value: unknown): value is DeploymentBody {
     'env' in value &&
     isStringRecord(value.env) &&
     'port' in value &&
-    typeof value.port === 'number'
+    typeof value.port === 'number' &&
+    (!('listens' in value) || value.listens === undefined || typeof value.listens === 'boolean')
   );
 }
 
@@ -147,7 +158,34 @@ interface RuntimeInfo {
   backoffTimer: NodeJS.Timeout | undefined;
   expectedExit: boolean;
   log: ServiceLog | undefined;
+  /** The start in flight, until its child accepts connections or fails to. A newer start or a stop replaces or clears it. */
+  start: InFlightStart | undefined;
+  /** A stop still waiting for its child to exit. A start waits for it, so it never spawns beside a dying child. */
+  stopping: Promise<void> | undefined;
+  /** Set when the app is being deleted: no start may spawn on this runtime again. */
+  deleted: boolean;
 }
+
+interface InFlightStart {
+  readonly token: StartToken;
+  readonly fresh: boolean;
+  readonly result: Promise<SpawnResult>;
+}
+
+interface StartToken {
+  /** Set when the process this start spawned exits. The start is about to fail, so no other start may wait for it. */
+  processExited: boolean;
+}
+
+interface SpawnResult {
+  readonly ok: boolean;
+  readonly message?: string;
+}
+
+type ReadyOutcome =
+  | { readonly kind: 'listening' }
+  | { readonly kind: 'exited'; readonly code: number | null; readonly signal: string | null }
+  | { readonly kind: 'timed-out' };
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -188,12 +226,21 @@ class ServiceLog {
   }
 }
 
-function parseArgs(argv: readonly string[]): { readonly port: number; readonly stateDir: string } {
+function parseArgs(argv: readonly string[]): {
+  readonly port: number;
+  readonly stateDir: string;
+  readonly readyTimeoutMs: number;
+  readonly readyPollMs: number;
+} {
   let port: number | undefined;
   let stateDir: string | undefined;
+  let readyTimeoutMs = DEFAULT_READY_TIMEOUT_MS;
+  let readyPollMs = DEFAULT_READY_POLL_MS;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--port') port = Number(argv[i + 1]);
     else if (argv[i] === '--state-dir') stateDir = argv[i + 1];
+    else if (argv[i] === '--ready-timeout-ms') readyTimeoutMs = Number(argv[i + 1]);
+    else if (argv[i] === '--ready-poll-ms') readyPollMs = Number(argv[i + 1]);
   }
   if (port === undefined || Number.isNaN(port)) {
     throw new Error('compute-main: --port <n> is required');
@@ -201,7 +248,56 @@ function parseArgs(argv: readonly string[]): { readonly port: number; readonly s
   if (stateDir === undefined) {
     throw new Error('compute-main: --state-dir <dir> is required');
   }
-  return { port, stateDir };
+  if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) {
+    throw new Error('compute-main: --ready-timeout-ms must be a positive number');
+  }
+  if (!Number.isFinite(readyPollMs) || readyPollMs <= 0) {
+    throw new Error('compute-main: --ready-poll-ms must be a positive number');
+  }
+  return { port, stateDir, readyTimeoutMs, readyPollMs };
+}
+
+function acceptsConnection(port: number, host: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host });
+    socket.setTimeout(READY_PROBE_TIMEOUT_MS);
+    const settle = (accepted: boolean): void => {
+      socket.destroy();
+      resolve(accepted);
+    };
+    socket.once('connect', () => settle(true));
+    socket.once('error', () => settle(false));
+    socket.once('timeout', () => settle(false));
+  });
+}
+
+/** Both loopback families: a service may bind IPv4 only, IPv6 only, or both, and `localhost` in its URL reaches either. */
+async function acceptsLoopbackConnection(port: number): Promise<boolean> {
+  const [v4, v6] = await Promise.all([
+    acceptsConnection(port, '127.0.0.1'),
+    acceptsConnection(port, '::1'),
+  ]);
+  return v4 || v6;
+}
+
+/** Polls `port` every `pollMs` until it accepts a connection, the child exits, or `timeoutMs` passes. */
+async function waitUntilListening(
+  child: ChildProcess,
+  port: number,
+  timeoutMs: number,
+  pollMs: number,
+): Promise<ReadyOutcome> {
+  let exit: ReadyOutcome | undefined;
+  child.once('exit', (code, signal) => {
+    exit = { kind: 'exited', code, signal };
+  });
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (exit) return exit;
+    if (await acceptsLoopbackConnection(port)) return exit ?? { kind: 'listening' };
+    if (Date.now() >= deadline) return exit ?? { kind: 'timed-out' };
+    await sleep(pollMs);
+  }
 }
 
 /** Resolves `bun` from THIS request's env PATH — never the daemon's own. POSIX-only (Windows is out of scope). */
@@ -222,7 +318,7 @@ function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undef
 }
 
 function main(): void {
-  const { port, stateDir } = parseArgs(process.argv.slice(2));
+  const { port, stateDir, readyTimeoutMs, readyPollMs } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
   const appsJsonPath = path.join(stateDir, 'apps.json');
   const stateFile = new StateFile<AppsState>(appsJsonPath, APPS_STATE_MODE);
@@ -251,6 +347,9 @@ function main(): void {
         backoffTimer: undefined,
         expectedExit: false,
         log: undefined,
+        start: undefined,
+        stopping: undefined,
+        deleted: false,
       };
       runtimes.set(key, rt);
     }
@@ -351,8 +450,10 @@ function main(): void {
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
+    child: ChildProcess,
     code: number | null,
   ): void {
+    if (child !== rt.child) return;
     clearStableTimer(rt);
     rt.child = undefined;
     delete svc.pid;
@@ -391,18 +492,65 @@ function main(): void {
     }, delayMs);
   }
 
-  interface SpawnResult {
-    readonly ok: boolean;
-    readonly message?: string;
+  /** Records `run` as the service's start in flight, replacing any earlier one. */
+  function beginStart(
+    rt: RuntimeInfo,
+    fresh: boolean,
+    run: (token: StartToken) => Promise<SpawnResult>,
+  ): Promise<SpawnResult> {
+    const token: StartToken = { processExited: false };
+    const result = run(token).finally(() => {
+      if (rt.start?.token === token) rt.start = undefined;
+    });
+    rt.start = { token, fresh, result };
+    return result;
   }
 
-  async function spawnService(
+  /** The start in flight, unless its process has already exited. */
+  function joinableStart(rt: RuntimeInfo): InFlightStart | undefined {
+    return rt.start?.token.processExited === false ? rt.start : undefined;
+  }
+
+  /** Undefined while `token` is still the service's start. Otherwise what that start reports: a newer start's result, or "stopped" after a stop or an app delete. */
+  function supersededOutcome(
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    token: StartToken,
+  ): Promise<SpawnResult> | undefined {
+    if (!rt.deleted && rt.start?.token === token) return undefined;
+    if (!rt.deleted && rt.start) return rt.start.result;
+    return Promise.resolve({
+      ok: false,
+      message: `service "${svc.address}" was stopped before it accepted connections`,
+    });
+  }
+
+  /**
+   * Spawns the service's child and resolves once it accepts connections on
+   * its port — only then is it `running`. A child that exits first, or never
+   * listens within the readiness timeout, fails the start with a message
+   * naming the service and its log.
+   */
+  function spawnService(
     app: string,
     id: string,
     svc: ServiceRecord,
     rt: RuntimeInfo,
     /** A fresh start (a deployment or a session resume) begins a clean log; a crash-backoff respawn keeps the run's crash trail. */
     fresh: boolean,
+  ): Promise<SpawnResult> {
+    return beginStart(rt, fresh, (token) =>
+      spawnAndWaitUntilListening(app, id, svc, rt, fresh, token),
+    );
+  }
+
+  async function spawnAndWaitUntilListening(
+    app: string,
+    id: string,
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    fresh: boolean,
+    token: StartToken,
   ): Promise<SpawnResult> {
     const env = svc.env ?? {};
     const artifactDir = svc.artifactDir ?? '.';
@@ -434,21 +582,75 @@ function main(): void {
 
     child.stdout?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
     child.stderr?.on('data', (chunk: Buffer) => log.writeRaw(chunk));
-    child.on('exit', (code) => handleChildExit(app, id, svc, rt, code));
-
-    svc.status = 'running';
+    child.on('exit', (code) => handleChildExit(app, id, svc, rt, child, code));
+    child.once('exit', () => {
+      token.processExited = true;
+    });
     if (child.pid !== undefined) svc.pid = child.pid;
+    if (svc.listens === false) {
+      svc.status = 'running';
+      schedulePersist();
+      return { ok: true };
+    }
+    schedulePersist();
+
+    const port = String(svc.port);
+    const outcome = await waitUntilListening(child, svc.port, readyTimeoutMs, readyPollMs);
+    const superseded = supersededOutcome(svc, rt, token);
+    if (superseded) return superseded;
+    const service = `service "${svc.address}"`;
+    if (outcome.kind === 'exited') {
+      const how =
+        outcome.code !== null ? `code ${String(outcome.code)}` : (outcome.signal ?? 'no exit code');
+      return {
+        ok: false,
+        message: `${service} exited (${how}) before it accepted connections on its port ${port}. Its log: ${svc.logPath}`,
+      };
+    }
+    if (outcome.kind === 'timed-out') {
+      const seconds = String(readyTimeoutMs / 1000);
+      const message = `${service} did not accept connections on its port ${port} within ${seconds}s. Its log: ${svc.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on a port, declare it with compute({ listens: false }).`;
+      if (fresh) {
+        log.writeLine(
+          `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
+        );
+        await stopService(svc, rt);
+      } else {
+        log.writeLine(
+          `[emulator] restart did not accept connections on port ${port} within ${seconds}s — held; send a new deployment to resume`,
+        );
+        await stopService(svc, rt, 'held');
+      }
+      return { ok: false, message };
+    }
+    svc.status = 'running';
     schedulePersist();
     return { ok: true };
   }
 
-  async function stopService(svc: ServiceRecord, rt: RuntimeInfo): Promise<void> {
+  async function stopService(
+    svc: ServiceRecord,
+    rt: RuntimeInfo,
+    finalStatus: 'stopped' | 'held' = 'stopped',
+  ): Promise<void> {
+    rt.start = undefined;
     clearBackoffTimer(rt);
     clearStableTimer(rt);
-    await killChild(rt, TERMINATE_GRACE_MS);
-    svc.status = 'stopped';
-    delete svc.pid;
-    schedulePersist();
+    const stopping = killChild(rt, TERMINATE_GRACE_MS).then(() => {
+      svc.status = finalStatus;
+      delete svc.pid;
+      schedulePersist();
+    });
+    rt.stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (rt.stopping === stopping) rt.stopping = undefined;
+    }
+  }
+
+  async function stopsFinished(rt: RuntimeInfo): Promise<void> {
+    while (rt.stopping) await rt.stopping;
   }
 
   /**
@@ -459,15 +661,22 @@ function main(): void {
    * the same way a deployment PUT does — but from the service's already
    * STORED deployment spec, since no new one arrives with a start.
    */
-  async function startService(app: string, id: string, svc: ServiceRecord): Promise<void> {
-    if (svc.artifactHash === undefined) return; // never deployed — nothing to start
-    if (svc.status === 'running') return; // idempotent — already up
+  async function startService(app: string, id: string, svc: ServiceRecord): Promise<SpawnResult> {
+    if (svc.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(app, id);
-    clearBackoffTimer(rt);
-    clearStableTimer(rt);
-    rt.consecutiveFastExits = 0;
+    const inFlight = joinableStart(rt);
+    if (inFlight) return inFlight.result;
+    if (svc.status === 'running' && rt.stopping === undefined) return { ok: true }; // already up
     // A session resume is a fresh start — begin a clean log.
-    await spawnService(app, id, svc, rt, true);
+    return beginStart(rt, true, async (token) => {
+      clearBackoffTimer(rt);
+      await stopsFinished(rt);
+      const superseded = supersededOutcome(svc, rt, token);
+      if (superseded) return superseded;
+      clearStableTimer(rt);
+      rt.consecutiveFastExits = 0;
+      return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+    });
   }
 
   // ——— HTTP plumbing ———
@@ -540,33 +749,49 @@ function main(): void {
     const svc = await getOrCreateService(app, id);
     const rt = getRuntime(app, id);
 
-    const changed = svc.artifactHash !== parsed.artifactHash || !envEquals(svc.env, parsed.env);
+    const listens = parsed.listens ?? true;
+    const changed =
+      svc.artifactHash !== parsed.artifactHash ||
+      !envEquals(svc.env, parsed.env) ||
+      (svc.listens ?? true) !== listens;
 
-    if (svc.status === 'running') {
-      if (!changed) {
-        // A true no-op: nothing about this service's persisted record
-        // changes, so nothing is mutated here either — nothing to persist.
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-      await killChild(rt, TERMINATE_GRACE_MS);
+    let result: SpawnResult;
+    const inFlight = joinableStart(rt);
+    if (!changed && inFlight?.fresh === true) {
+      // The same deployment is already starting: answer when it does.
+      result = await inFlight.result;
+    } else if (
+      !changed &&
+      rt.start === undefined &&
+      rt.stopping === undefined &&
+      svc.status === 'running'
+    ) {
+      // A true no-op: nothing about this service's persisted record
+      // changes, so nothing is mutated here either — nothing to persist.
+      result = { ok: true };
     } else {
+      svc.address = parsed.address;
+      svc.port = parsed.port;
+      svc.artifactHash = parsed.artifactHash;
+      svc.env = parsed.env;
+      svc.artifactDir = parsed.artifactDir;
+      svc.listens = listens;
       clearBackoffTimer(rt);
+      schedulePersist();
+      // A new or changed deployment, or a service that is not up: a fresh
+      // start with a clean log, once the old process (if any) has exited.
+      result = await beginStart(rt, true, async (token) => {
+        await stopsFinished(rt);
+        await killChild(rt, TERMINATE_GRACE_MS);
+        const superseded = supersededOutcome(svc, rt, token);
+        if (superseded) return superseded;
+        svc.status = 'stopped';
+        delete svc.pid;
+        clearStableTimer(rt);
+        rt.consecutiveFastExits = 0;
+        return spawnAndWaitUntilListening(app, id, svc, rt, true, token);
+      });
     }
-
-    svc.address = parsed.address;
-    svc.port = parsed.port;
-    clearStableTimer(rt);
-    rt.consecutiveFastExits = 0;
-    svc.artifactHash = parsed.artifactHash;
-    svc.env = parsed.env;
-    svc.artifactDir = parsed.artifactDir;
-    schedulePersist();
-
-    // A deployment PUT that reaches here is a new or changed deployment (an
-    // unchanged running one returned 204 above) — a fresh start, clean log.
-    const result = await spawnService(app, id, svc, rt, true);
     if (!result.ok) {
       return text(res, 500, result.message ?? 'failed to start the service');
     }
@@ -732,11 +957,13 @@ function main(): void {
 
       if (method === 'POST' && segments.length === 3 && segments[2] === 'start') {
         const appRec = state[app];
-        if (appRec) {
-          await Promise.all(
-            Object.entries(appRec.services).map(([id, svc]) => startService(app, id, svc)),
-          );
-        }
+        const results = appRec
+          ? await Promise.all(
+              Object.entries(appRec.services).map(([id, svc]) => startService(app, id, svc)),
+            )
+          : [];
+        const failures = results.flatMap((r) => (r.ok ? [] : [r.message ?? 'failed to start']));
+        if (failures.length > 0) return text(res, 500, failures.join('\n'));
         res.writeHead(204);
         res.end();
         return;
@@ -745,6 +972,7 @@ function main(): void {
       if (method === 'DELETE' && segments.length === 2) {
         const appRec = state[app];
         if (appRec) {
+          for (const id of Object.keys(appRec.services)) getRuntime(app, id).deleted = true;
           await Promise.all(
             Object.entries(appRec.services).map(([id, svc]) =>
               stopService(svc, getRuntime(app, id)),

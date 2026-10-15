@@ -15,7 +15,8 @@ import { parseEvery } from './schedule.ts';
 const cronInputSchema = type({ jobs: type({ jobId: 'string', every: 'string' }).array() });
 
 /**
- * The always-on scheduler service. Job-agnostic: the schedule arrives as the
+ * The always-on scheduler service. It receives no requests, so it does not
+ * listen on its port (`listens: false`). Job-agnostic: the schedule arrives as the
  * `jobs` key of the input binding `cron()` supplies at provision, and the
  * entrypoint reads it back through `input()`.
  */
@@ -23,6 +24,7 @@ export function cronScheduler() {
   return compute({
     name: 'scheduler',
     deps: { trigger: rpc(triggerContract) },
+    listens: false,
     input: cronInputSchema,
     build: node({
       module: new URL('./scheduler-service.mjs', import.meta.url).href,

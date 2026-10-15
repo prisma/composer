@@ -90,6 +90,8 @@ emulator, which owns the processes:
   old child if any, spawn the artifact's `bootstrap.js` under bun with the
   materialized env. Only the changed service restarts — Alchemy's diff
   already limited which deployments were re-put.
+- **Readiness** → a service declared `compute({ ..., listens: false })` (the cron scheduler, which receives no requests) is `running` as soon as its process is spawned; the descriptor records `listens: false` in the artifact's `compute.manifest.json`, the local `Deployment` provider reads it from there and sends it with the deployment, and the emulator stores it with the service. Every other service is `running` only once its port accepts a TCP connection on loopback (IPv4 or IPv6). The emulator probes the port every 50 ms until it does, so a service that counts connections sees a few extra ones. The compute emulator's `--ready-poll-ms` argument changes that interval; the CLI never passes it, and the emulator's own tests use it to widen the moment between a process exiting and its start noticing. The deployment PUT and the session-resume start return only then, so a converge, and the `[dev] ready:` line after it, finish only when every URL answers. A redeploy of a running service sets it to `stopped` once the old process has exited, and back to `running` when the new one listens. A child that exits before it listens fails the call with its address, exit code, and log path. A child that does not listen within the readiness timeout (30 seconds; `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS`, which the CLI passes to the compute emulator as `--ready-timeout-ms` when it starts the emulator) is stopped, and the call fails with its address, port, log path and the variable's name. A crash-backoff restart that times out ends `held`, like other crash loops.
+- **Concurrent starts and stops** → a service has at most one process and at most one start in flight; the rules are in [Concurrent starts and stops](#concurrent-starts-and-stops) below.
 - **Child exits unexpectedly** → the emulator restarts it with backoff and
   writes its supervision events into that service's log stream; repeated
   crash-looping is a held state visible in the service listing and the logs,
@@ -130,6 +132,37 @@ emulator, which owns the processes:
   on every attachment after each converge, before printing the front door
   (`run-dev.ts`) — so a warm start restarts what a previous session's
   Ctrl-C stopped even when the converge is all-noop.
+
+### Concurrent starts and stops
+
+Each service has at most one process and at most one start in flight. A stop in progress stays recorded until its process has exited. A start whose process has exited is about to fail, so no other start waits for it: a resume or redeploy that arrives in that moment starts the service again.
+
+| Request | Service state | What happens |
+| --- | --- | --- |
+| Session-resume start | Never deployed | Succeeds at once; nothing starts |
+| Session-resume start | A start in flight whose process has not exited | Waits for that start and returns its result |
+| Session-resume start | `running`, no stop in progress | Succeeds at once |
+| Session-resume start | Anything else | Becomes the start in flight: waits for any stop to finish, then spawns |
+| Deployment PUT, identical | A deployment or resume start in flight whose process has not exited | Waits for that start and returns its result |
+| Deployment PUT, identical | `running`, no start or stop in progress | Succeeds at once |
+| Deployment PUT | Anything else | Stores the deployment and becomes the start in flight, replacing any earlier one: waits for any stop to finish, stops the current process, then spawns |
+| Stop | Any | Ends the start in flight and any crash-backoff restart, stops the process, and sets `stopped` once it has exited |
+| App delete | Any | Marks each service deleted, stops it, and removes it; no start on a deleted service spawns |
+| Crash-backoff restart | After an unexpected exit | Becomes the start in flight and spawns at once |
+
+A start in flight ends with the first of these that applies:
+
+| Condition | Result |
+| --- | --- |
+| A newer start replaced it | The newer start's result |
+| `bun` is not on the deployment's `PATH` | Fails with how to install bun; the service is `stopped` |
+| The service was deployed with `listens: false` | Succeeds as soon as the process is spawned; the service is `running` |
+| A stop or an app delete ended it | Fails: "was stopped before it accepted connections" |
+| Its process exited | Fails with the exit code and the log path; crash supervision handles the exit |
+| The readiness timeout passed | Fails with the port, the log path and the timeout variable; the process is stopped and the service ends `stopped`, or `held` for a crash-backoff restart |
+| The port accepted a connection | Succeeds; the service is `running` |
+
+The exit of a process the emulator no longer tracks is ignored.
 
 The env materialization is the one platform-side behavior the local target
 implements itself: the hosted platform joins the branch's config variables
@@ -277,6 +310,9 @@ Deploy's rule holds: every failure names its fix.
 | port conflict on a persisted allocation | which service, which port, and how to free or re-allocate (`--fresh`) |
 | secret slot unbound | warning (not an error) naming the env var and the placeholder behavior |
 | env-sourced param unbound | hard error listing the missing names, deploy-preflight style |
+| a service exits before it listens, or does not listen within the readiness timeout | the address, the port, the exit code if it exited, and the log path; `dev` stops the app's services before it returns the failure |
+| an emulator does not accept connections (retried briefly; an error response from the emulator is never retried) | `DEV.EMULATOR_UNREACHABLE`, with the emulator's URL, from `dev` and `log` alike |
+| `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` is not a positive whole number | `DEV.SERVICE_READY_TIMEOUT_INVALID`, with the value |
 | service crash-loops | the address, exit code, and the last stderr lines, as a standing message |
 
 ## Out of scope (designed around)
