@@ -333,8 +333,7 @@ its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with
-`dependencies: 'external'`, whose runtime dependencies are being traced. In json mode (`--json`, or stdout not a
-terminal) each step is a `step-started`/`step-finished` line whose `data`
+`dependencies: 'external'`, whose runtime dependencies are being traced. With `--json`, each step is a `step-started`/`step-finished` line whose `data`
 holds `durationMs` plus whatever the build adapter or deploy target reported;
 those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's
@@ -456,11 +455,11 @@ that surprise:
    Don't hard-code a local port; ports differ per directory. `prisma dev url
    <address>` (run in the same directory as `dev`) prints where a running node
    answers: a service's `http://localhost:<port>`, a database's connection
-   string, a bucket's S3 endpoint plus `/<bucket>`. Piped stdout carries JSON
-   frames, so scripts use
-   `url=$(prisma dev url gateway | jq -er 'select(.kind=="result").envelope.result.url') && curl "$url"`
-   or `--format human`. Keep `-e`: on failure there is no URL, `jq -r` alone
-   prints `null`, and the code is in `.envelope.error.code`. It fails with
+   string, a bucket's S3 endpoint plus `/<bucket>`. The URL alone goes to
+   stdout, piped or not, so scripts use `url=$(prisma dev url gateway) && curl "$url"`
+   (`dev url`, `dev stop` and `emulator list` first ship in the `prisma`
+   release after 8.0.0-rc.23).
+   `--json` gives the full result or the error with its code. It fails with
    `DEV.NOT_STARTED_HERE` (no `dev` ran here), `DEV.ADDRESS_UNKNOWN` (lists
    the known addresses), `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the
    node is stopped, a service is crash-looping and its log is named, or the
@@ -468,7 +467,9 @@ that surprise:
    `prisma dev stop` stops the app's services and database servers when `dev`
    was killed without doing it; data and ports stay. `prisma emulator list`
    shows every local emulator and its instances, from any directory; one that
-   runs but cannot be listed carries an `error` in its own entry.
+   runs but cannot be listed carries an `error` in its own entry. Piped, it
+   writes one tab-separated line per instance: emulator kind, instance id,
+   URL, state, node address, directory.
    `prisma emulator start` and `stop` are planned.
    For agents, scripts and CI, `prisma dev <entry> --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
