@@ -1,15 +1,24 @@
 # Connection contracts — typed service-to-service interfaces
 
 A service-to-service dependency is described by a **Contract**: a value both the
-consumer and the provider import. A Contract is parametric over its **kind**; the
-first — and today only — kind is **service RPC** (`@prisma/composer/service-rpc`).
-Compatibility between consumer and provider
-is checked in three places — plain TypeScript assignability where the two are wired, a
-runtime `satisfies()` check at Load, and per-call input/output validation at Run.
+consumer and the provider import. A Contract is parametric over its **kind**. Two
+service-to-service kinds ship:
 
-This replaces the untyped `http()` Connection from
-[core-model.md](core-model.md), which hydrated to a URL-anchored `fetch` wrapper
-where nothing checked that the provider answered what the consumer expected.
+- **Service RPC** (`@prisma/composer/service-rpc`) is the typed tier. The framework
+  generates both the client and the server, so compatibility between consumer and
+  provider is checked in three places: plain TypeScript assignability where the two
+  are wired, a runtime `satisfies()` check at Load, and per-call input/output
+  validation at Run.
+- **Raw HTTP** (`@prisma/composer/http`) is the untyped tier, for HTTP servers the
+  framework does not generate. It checks only that the provider declared an HTTP
+  port. See [Raw HTTP](#raw-http--the-untyped-tier) below.
+
+Service RPC replaced the untyped `http()` Connection that
+[core-model.md](core-model.md) first described. That slot hydrated to a
+URL-anchored `fetch` wrapper, accepted any provisioned reference, and checked
+nothing about the provider. It is removed
+([ADR-0054](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md));
+raw HTTP keeps the `fetch` wrapper but requires the provider to declare the port.
 
 The rest of this document builds the idea up from a worked example, explains how
 the compile-time check actually works, and ends with the alternatives we weighed.
@@ -18,9 +27,11 @@ the compile-time check actually works, and ends with the alternatives we weighed
 
 Connections are **internal by definition** — where internal means *inside the
 application's topology*, not co-located on one network. Every Connection kind —
-service RPC today, any later kind — is an edge between two components declared
-in one application, provisioned by the framework, authenticated with
-framework-minted keys. The components may be provided by different targets, and
+service RPC, raw HTTP, any later kind — is an edge between two components
+declared in one application and provisioned by the framework. A service RPC
+edge is also authenticated with framework-minted keys; a raw HTTP edge leaves
+authentication to the app, because the framework does not generate the
+server. The components may be provided by different targets, and
 such an edge necessarily crosses networks; that is a deployment fact about the
 edge, not a change in what the kind is for. What internal never means: an
 endpoint for parties outside the application.
@@ -79,7 +90,7 @@ export default serve(service, {
   rpc: { verify: async ({ token }, { db }) => ({ ok: await check(db, token) }) },
 })
 
-// storefront/service.ts — the consumer REQUIRES the contract: rpc(contract), not http().
+// storefront/service.ts — the consumer REQUIRES the contract: rpc(contract).
 export default compute({
   deps: { auth: rpc(authContract) },
   build: nextjs({ entry: "server.js" }),
@@ -129,8 +140,8 @@ dependency:
 
 The prose name of a kind is its `kind` brand plus "Contract" — `Contract<'rpc'>` is an
 *RPC Contract*, `Contract<'data'>` a *Data Contract*. **Bare "Contract" always means
-the abstraction, never a specific kind**; RPC gets no default privilege. Today RPC is
-the only implemented kind. Data Contract is Prisma's existing concept (see PDL below);
+the abstraction, never a specific kind**; RPC gets no default privilege. Today service
+RPC and raw HTTP are the implemented service-to-service kinds. Data Contract is Prisma's existing concept (see PDL below);
 naming it a sibling kind rather than a loose analogy is deliberate — it makes our
 taxonomy and Prisma's the same one.
 
@@ -241,11 +252,19 @@ comparison type** `Cmp`, and a runtime `satisfies()` method:
 
 ```ts
 interface Contract<Kind extends string, Cmp> {
-  readonly kind: Kind                                    // "rpc" · "grpc" · … (the brand)
+  readonly kind: Kind                                    // "rpc" · "http" · … (the brand)
   readonly __cmp: Cmp                                    // opaque to the core
+  readonly style?: "request-response" | "stream"         // how calls communicate, if the kind guarantees it
   satisfies(required: Contract<Kind, unknown>): boolean  // runtime mirror of the compile check
 }
 ```
+
+`style` is the one field the core reads, and only to copy it onto the graph's
+output ports. Service RPC declares `request-response`. Raw HTTP declares none,
+because an arbitrary HTTP server may answer a request or hold a stream open. A
+deploy target that reports the application topology labels each edge with the
+style its producing port's contract declares, so it never keeps a list of kind
+names.
 
 `provision` requires each wired contract to be assignable to the consumer's required
 slot, with `NoInfer` on the brand so the `kind` is checked rather than co-inferred
@@ -342,13 +361,56 @@ framework owns the builder and the type, never the location:
 All three are "both sides import one Contract value," which is also why the RPC
 contract's identity-based `satisfies()` is enough today.
 
+## Raw HTTP — the untyped tier
+
+Service RPC works because the framework generates both ends. Many servers are not
+generated by the framework: a reverse proxy's upstreams, a Next.js app, a static
+file server, Better Auth's browser endpoints. A service that calls one of them
+declares a raw HTTP dependency, so the topology still records the call.
+
+```ts
+import { rawHttp, rawHttpContract } from "@prisma/composer/http"
+
+const docs = compute({
+  name: "docs", deps: {}, expose: { http: rawHttpContract },   // the provider declares the port
+  build: node({ module: import.meta.url, entry: "server.js" }),
+})
+const gateway = compute({
+  name: "gateway", deps: { docs: rawHttp() },                    // the consumer declares the slot
+  build: node({ module: import.meta.url, entry: "server.js" }),
+})
+
+module("web", ({ provision }) => {
+  const docsRef = provision(docs)
+  provision(gateway, { deps: { docs: docsRef.http } })
+})
+
+// in the gateway's server
+const { docs } = gateway.load()            // { url, fetch(path, init) }
+await docs.fetch("/guides/intro")          // resolved against docs.url
+```
+
+`rawHttpContract` has kind `http` and compares by kind only, so any port declared
+with it fills any `rawHttp()` slot. TypeScript and Load both reject a bare service
+reference and a port of another kind. That is all the framework checks: the
+consumer takes on knowing which paths, methods and headers the provider accepts.
+There is no service key, retry or idempotency key, because the provider is the
+app's own server and the framework cannot enforce anything on its side.
+
+The provider declares the port, rather than every service offering one
+automatically, because the declaration states intent: a service that does not mean
+to answer HTTP should not appear to. The name `http(contract)` is kept free for a
+typed tier that describes routes.
+
 ## Alternatives considered
 
 - **RPC first, not REST.** HTTP is still the transport; the choice is the interface
   style on top of it. RPC drops REST's semantic surface (resources, verbs, status
   codes) so a contract collapses to `method → { input, output }`, which is trivial to
-  compare and to generate. A legacy REST endpoint is not modelled directly — wrap it
-  in a Service that satisfies an RPC contract.
+  compare and to generate. A REST endpoint the framework does not generate is
+  depended on through a raw HTTP connection, which checks only that the provider
+  declared an HTTP port. To get a typed, validated interface over it instead, wrap
+  it in a Service that satisfies an RPC contract.
 - **Identity comparison first, not structural** — in the RPC contract's `satisfies()`.
   Comparing by value identity is enough while both sides import one contract, and it is
   the simplest thing that is correct. Structural comparison is additive (above) and only
@@ -367,8 +429,9 @@ contract's identity-based `satisfies()` is enough today.
 
 ## Related
 
-- [`core-model.md`](core-model.md) — the Connection primitive (`http()`,
-  `DependencyEnd`, the Module) this types.
+- [`core-model.md`](core-model.md) — the Connection primitive (`DependencyEnd`,
+  the Module) this types.
+- [`../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md`](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md) — raw HTTP and contract styles.
 - [`../03-domain-model/authoring-surface.md`](../03-domain-model/authoring-surface.md) — ports, direction-from-position.
 - [`../90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md`](../90-decisions/ADR-0030-rpc-callers-verified-with-an-auto-provisioned-service-key.md) — the per-binding service key the network binding carries.
 - [`../90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md`](../90-decisions/ADR-0031-provisioned-param-values-are-a-need-resolved-through-a-target-registry.md) — the opaque provisioning need + target registry that mints it.

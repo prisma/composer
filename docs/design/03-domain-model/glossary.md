@@ -273,16 +273,17 @@ inside them and never creates or destroys a container itself.
 ## Authoring surface — the next layer
 
 How a developer actually writes the [Core nouns](#core-nouns). The concrete
-vocabulary — `compute` (a Service), `postgres` (a Resource), connection types like
-`http` — comes from a **target pack**; `@prisma/composer` is a target-agnostic router
-beneath it. See [`core-and-targets.md`](core-and-targets.md) for that split and
+vocabulary — `compute` (a Service), `postgres` (a Resource) — comes from a **target
+pack**; `@prisma/composer` is a target-agnostic router beneath it. Service-to-service
+connection kinds (service RPC, raw HTTP) are target-agnostic and ship with
+`@prisma/composer`. See [`core-and-targets.md`](core-and-targets.md) for that split and
 [`authoring-surface.md`](authoring-surface.md) for the full narrative.
 
 ### Target pack
 
 A pack (e.g. `@prisma/composer-prisma-cloud`) that supplies the concrete vocabulary for one
-deployment platform as **data**: `compute` (a Service), `postgres` (a Resource),
-`http` (a Connection). Each is an ergonomic constructor returning a plain object whose
+deployment platform as **data**: `compute` (a Service), `postgres` (a Resource).
+Each is an ergonomic constructor returning a plain object whose
 metadata routes it to an Alchemy Stack/Provider (and, for a Resource, a runtime
 hydrator). Core imports no target; swap the pack and core is untouched.
 

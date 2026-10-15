@@ -164,7 +164,7 @@ Rules that bite:
 
 ## Contracts and RPC
 
-A contract is the typed interface through which services communicate. It
+An RPC contract is the typed interface through which services communicate. It
 lives with the service that owns it, typed by any Standard Schema validator,
 and both provider (`serve()`, exhaustive over the contract's methods at
 compile time) and consumer (`rpc(contract)`) reference the same value. Calls
@@ -192,6 +192,25 @@ be reimplemented:
    beyond one instance's memory; most don't. Locally and in tests nothing is
    provisioned, so `serve()` passes every call through: never supply a key
    in test inputs.
+
+## Raw HTTP connections
+
+For a server Composer does not generate (a reverse proxy's upstreams, a
+Next.js app, a static file server), import `rawHttp` and `rawHttpContract`
+from `@prisma/composer/http`. The provider declares
+`expose: { http: rawHttpContract }`; the caller declares
+`deps: { site: rawHttp() }`; the Module wires
+`provision(gateway, { deps: { site: siteRef.http } })`. `gateway.load().site`
+is `{ url, fetch(path, init) }`, where `fetch` resolves `path` against `url`.
+
+Composer checks only that the provider declared an HTTP port: TypeScript and
+Load reject a bare service ref or a port of another kind. The caller is
+responsible for knowing the provider's paths, methods and headers. Raw HTTP
+has no service key, retry or idempotency key; authentication, if needed, is
+the app's. Each dependency shows in the application topology as a call, also
+through module boundaries; a URL passed as `input` (`serviceOrigin()`)
+does not, so declare a dependency for every service you call. The auth
+module's `api` port is a raw HTTP port: wire it with `rawHttp()`.
 
 ## Builds are yours
 
@@ -627,8 +646,9 @@ Name the gap instead of inventing an API:
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a
    co-located handler without HTTP; use `bootstrapService` with a loopback
    fake.
-3. **RPC over HTTP is the only contract kind.** No gRPC, WebSocket, or
-   streaming contracts.
+3. **Service RPC and raw HTTP are the only service-to-service kinds.** No
+   gRPC, WebSocket, or streaming contracts, and no typed contract for an
+   HTTP server's routes.
 
 For anything else missing, check `examples/`, `docs/design/10-domains/`, and
 `docs/design/90-decisions/` in the prisma/composer repo, then file an issue

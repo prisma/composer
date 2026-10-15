@@ -23,9 +23,11 @@ export default compute({ db: rawPostgres() }, ({ db }) => Bun.serve(/* uses db *
   — as a graph, plus the machinery to Load, validate, lower, and run that graph. It
   imports no deployment target. It never learns what "Postgres" or "Compute" is.
 - **`@prisma/composer-prisma-cloud`** (a target pack) provides the concrete vocabulary:
-  `compute()` — a Service; `rawPostgres()` — a Resource; and connection types like
-  `http()`. Each is an ergonomic constructor that returns a **plain data object**
-  carrying the metadata that routes it to an Alchemy Stack/Provider.
+  `compute()` — a Service; `rawPostgres()` — a Resource. Each is an ergonomic
+  constructor that returns a **plain data object** carrying the metadata that
+  routes it to an Alchemy Stack/Provider. Service-to-service connection kinds
+  (`@prisma/composer/service-rpc`, `@prisma/composer/http`) are target-agnostic
+  and ship with `@prisma/composer`.
 
 The developer imports the vocabulary from the target; core is the invisible engine
 underneath.

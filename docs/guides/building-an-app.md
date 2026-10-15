@@ -36,7 +36,7 @@ values.
 
 ## Contracts
 
-A **contract** is a service's API written as schemas, and it types both ends
+An **RPC contract** is a service's API written as schemas, and it types both ends
 of the edge: the producer's handlers and the consumer's client. Define it
 once, in the package of the service that owns it:
 
@@ -68,8 +68,9 @@ On the consumer, declare `deps: { auth: rpc(authContract) }` and
 like a local function. Inputs and outputs are also validated at runtime, at
 the boundary, against the same schemas.
 
-The only contract kind today is RPC over HTTP — no gRPC, WebSockets, or
-streaming contracts yet.
+For an HTTP server the framework does not generate, use a
+[raw HTTP connection](#raw-http-connections-and-reverse-proxies) instead.
+There are no gRPC, WebSocket or streaming contracts yet.
 
 ### Calls are authenticated for you
 
@@ -120,6 +121,54 @@ Two limits worth knowing:
 - **Each dependency gets its own key**, so one leaking never exposes the
   others. Keys stay the same across redeploys; to replace one, remove the
   dependency (or destroy the stack) and deploy again.
+
+## Raw HTTP connections and reverse proxies
+
+A reverse proxy, a Next.js app or a static file server already speaks HTTP
+and has no RPC contract. To call one, the provider exposes
+`rawHttpContract` and the caller declares `rawHttp()`:
+
+```ts
+import { module } from '@prisma/composer';
+import { rawHttp, rawHttpContract } from '@prisma/composer/http';
+import node from '@prisma/composer/node';
+import { compute } from '@prisma/composer-prisma-cloud';
+
+const site = compute({
+  name: 'site', deps: {}, expose: { http: rawHttpContract },
+  build: node({ module: import.meta.url, entry: '../dist/site/server.mjs' }),
+});
+const docs = compute({
+  name: 'docs', deps: {}, expose: { http: rawHttpContract },
+  build: node({ module: import.meta.url, entry: '../dist/docs/server.mjs' }),
+});
+const gateway = compute({
+  name: 'gateway', deps: { site: rawHttp(), docs: rawHttp() },
+  build: node({ module: import.meta.url, entry: '../dist/gateway/server.mjs' }),
+});
+
+export default module('web', ({ provision }) => {
+  const siteRef = provision(site);
+  const docsRef = provision(docs);
+  provision(gateway, { deps: { site: siteRef.http, docs: docsRef.http } });
+});
+```
+
+In the gateway, `gateway.load()` returns `{ site, docs }`. Each has a `url`,
+to hand to your proxy library, and `fetch(path, init)`, which resolves `path`
+against that `url`. The framework fills in the right origin locally and in
+each deployed stage.
+
+The framework checks only that the provider declared an HTTP port: TypeScript
+and Load both reject a bare service reference or a port of another kind.
+Which paths, methods and headers the provider accepts is your code's
+business. A raw HTTP connection has no service key, retry or idempotency
+key, and exposing the port adds nothing to the provider's server.
+
+Each dependency appears as a call from the gateway to the upstream in the
+application topology, including through module boundaries. Passing a URL as
+`input` (for example with `serviceOrigin()`) does not; use it for canonical
+link origins, and declare a dependency for every service you call.
 
 ## Databases
 
