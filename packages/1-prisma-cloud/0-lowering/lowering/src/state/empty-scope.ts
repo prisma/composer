@@ -74,13 +74,12 @@ const listBranchResources = (
 /**
  * The empty-scope-with-live-resources case: the platform state API holds no
  * resources for (stack, stage) while the platform already has Compute apps,
- * databases, or buckets on the target Branch — this stage predates the
- * platform state API (its state lives in a legacy `prisma-composer-state`
- * database, which is never read; there is no automatic migration), or the
- * deploy targets a project that already runs something. Deploying would
- * recreate every resource and die in per-resource `already_exists` failures —
- * so fail once, up front. A genuinely fresh deploy sees an empty Branch and
- * passes. Connections are not counted: they are children of databases, which
+ * databases, or buckets on the target Branch — the stage was deployed by an
+ * older Composer version whose state store is never read, or the resources
+ * belong to something other than this app. The rows could be identified by
+ * logicalId, but the rest of the state could not be rebuilt from them
+ * (ADR-0051), so fail once, up front. A genuinely fresh deploy sees an empty
+ * Branch and passes. Connections are not counted: they are children of databases, which
  * are. Local dev never reaches this — the dev stack pins
  * `state: localState()` (generate-dev-stack.ts).
  */
