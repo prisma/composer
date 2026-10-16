@@ -1,13 +1,15 @@
 /**
- * The bucket emulator (local-dev spec § 2 `buckets-main.ts`): `/_pcdev/`
- * admin, SigV4 round-trip via a real `@aws-sdk/client-s3`, multi-app
- * isolation (same bucket name, two apps, no collisions), 501 multipart, and
- * validation. Every test uses a temp `registryRoot` and stops the daemon it
- * started.
+ * The bucket emulator (local-dev spec § 2 `buckets-main.ts`): bucket
+ * instances keyed by ids the emulator generates, which are also their S3
+ * bucket names; per-instance credentials; a SigV4 round-trip via a real
+ * `@aws-sdk/client-s3`; isolation between buckets; 501 multipart; and
+ * discarding an earlier version's state. Every test uses a temp
+ * `registryRoot` and stops the daemon it started.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   GetObjectCommand,
   ListMultipartUploadsCommand,
@@ -15,17 +17,19 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { bucketsClient } from '../client.ts';
-import { ensureDaemon, stopDaemon } from '../daemon.ts';
-import { ensureFreshDaemon, entryFor, tempDir } from './helpers.ts';
+import { type BucketsClient, bucketsClient } from '../client.ts';
+import { daemonStateDir, ensureDaemon, stopDaemon } from '../daemon.ts';
+import { ensureFreshDaemon, entryFor, tempDir, waitFor } from './helpers.ts';
 
 let registryRoot: string;
 let daemonUrl: string;
+let client: BucketsClient;
 
 beforeEach(async () => {
   registryRoot = tempDir('buckets-registry');
   const { url } = await ensureFreshDaemon('buckets', registryRoot);
   daemonUrl = url;
+  client = bucketsClient({ registryRoot });
 });
 
 afterEach(async () => {
@@ -44,222 +48,208 @@ function s3For(accessKeyId: string, secretAccessKey: string): S3Client {
   });
 }
 
-describe('bucket + credential admin', () => {
-  test('PUT bucket registers the physical name and creates the directory; idempotent', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
+function dataDir(): string {
+  return path.join(tempDir('bucket-data'), 'objects');
+}
 
-    await client.putBucket('myapp', 'uploads', dir);
-    expect(fs.existsSync(dir)).toBe(true);
+describe('bucket instances', () => {
+  test('create makes the data root; list and get return the labels verbatim', async () => {
+    const dir = dataDir();
+    const labels = { 'composer.app': 'My App', note: 'any: /value' };
 
-    // Second PUT with the same args is idempotent — no error, dir untouched.
-    await client.putBucket('myapp', 'uploads', dir);
+    const bucket = await client.createInstance({ labels, dir });
+
+    expect(bucket.id).toMatch(/^bkt-[0-9a-f]{16}$/);
+    expect(bucket).toEqual({ id: bucket.id, labels, dir });
     expect(fs.existsSync(dir)).toBe(true);
+    expect(await client.listInstances()).toEqual([bucket]);
+    expect(await client.getInstance(bucket.id)).toEqual(bucket);
+    expect(await client.getInstance('bkt-0000000000000000')).toBeUndefined();
   });
 
-  test('DELETE app removes registrations and credentials but not the object directory', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIADELETETEST', 'secret');
+  test('delete forgets the bucket and its credentials but leaves its objects', async () => {
+    const dir = dataDir();
+    const bucket = await client.createInstance({ labels: {}, dir });
+    await client.putCredentials(bucket.id, 'AKIADELETETEST', 'secret');
     fs.writeFileSync(path.join(dir, 'kept.txt'), 'still here');
 
-    await client.deleteApp('myapp');
+    await client.deleteInstance(bucket.id);
 
-    // The registration is gone: a PUT through the S3 wire against the
-    // physical bucket now hits an unknown bucket (put has no graceful
-    // shape, so it throws — surfaced by the SDK as an error).
-    const s3 = s3For('AKIADELETETEST', 'secret');
+    expect(await client.getInstance(bucket.id)).toBeUndefined();
     await expect(
-      s3.send(new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'x', Body: 'x' })),
+      s3For('AKIADELETETEST', 'secret').send(
+        new PutObjectCommand({ Bucket: bucket.id, Key: 'x', Body: 'x' }),
+      ),
     ).rejects.toThrow();
-
-    // Objects already on disk are untouched — only `teardown`'s `fs.rm` owns them.
     expect(fs.existsSync(path.join(dir, 'kept.txt'))).toBe(true);
+    await client.deleteInstance(bucket.id);
   });
 
-  test('re-registering an accessKeyId already owned by a different app is rejected with 409, naming neither secret', async () => {
-    const client = bucketsClient({ registryRoot });
-    await client.putCredentials('myapp', 'AKIACONFLICT', 'myappsecret');
+  test('a malformed instance id is rejected with 400', async () => {
+    const res = await fetch(`${daemonUrl}/_pcdev/instances/uploads`);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('"uploads"');
+  });
 
-    const res = await fetch(`${daemonUrl}/_pcdev/apps/otherapp/credentials`, {
+  test('labels that are not all strings are rejected with 400', async () => {
+    const res = await fetch(`${daemonUrl}/_pcdev/instances`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ labels: { count: 1 }, dir: dataDir() }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('credentials', () => {
+  test('an accessKeyId registered for another bucket is refused with 409, naming neither secret', async () => {
+    const mine = await client.createInstance({ labels: {}, dir: dataDir() });
+    const other = await client.createInstance({ labels: {}, dir: dataDir() });
+    await client.putCredentials(mine.id, 'AKIACONFLICT', 'minesecret');
+
+    const res = await fetch(`${daemonUrl}/_pcdev/instances/${other.id}/credentials`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ accessKeyId: 'AKIACONFLICT', secretAccessKey: 'otherappsecret' }),
+      body: JSON.stringify({ accessKeyId: 'AKIACONFLICT', secretAccessKey: 'othersecret' }),
     });
     expect(res.status).toBe(409);
     const body = await res.text();
-    expect(body).not.toContain('myappsecret');
-    expect(body).not.toContain('otherappsecret');
+    expect(body).not.toContain('minesecret');
+    expect(body).not.toContain('othersecret');
 
-    // The SAME app re-registering (rotating the secret) still succeeds.
-    await client.putCredentials('myapp', 'AKIACONFLICT', 'myappsecret-rotated');
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    const s3 = s3For('AKIACONFLICT', 'myappsecret-rotated');
-    await s3.send(new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'k', Body: 'x' }));
-    expect(fs.existsSync(path.join(dir, 'k'))).toBe(true);
+    // The same bucket rotating its secret still succeeds.
+    await client.putCredentials(mine.id, 'AKIACONFLICT', 'minesecret-rotated');
+    await s3For('AKIACONFLICT', 'minesecret-rotated').send(
+      new PutObjectCommand({ Bucket: mine.id, Key: 'k', Body: 'x' }),
+    );
+    expect(fs.existsSync(path.join(mine.dir, 'k'))).toBe(true);
   });
 
-  test('a credentials owning app round-trips across a daemon restart', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIARESTART', 'restartsecret');
+  test('buckets and their credentials survive an emulator restart', async () => {
+    const bucket = await client.createInstance({ labels: { note: 'kept' }, dir: dataDir() });
+    await client.putCredentials(bucket.id, 'AKIARESTART', 'restartsecret');
 
     await stopDaemon('buckets', { registryRoot });
     const restarted = await ensureDaemon('buckets', entryFor('buckets'), { registryRoot });
     daemonUrl = restarted.url;
 
-    // The secret survived: the original app's own credential still works.
-    const s3 = s3For('AKIARESTART', 'restartsecret');
-    await s3.send(
-      new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'k', Body: 'still owned by myapp' }),
+    expect(await bucketsClient({ registryRoot }).getInstance(bucket.id)).toEqual(bucket);
+    await s3For('AKIARESTART', 'restartsecret').send(
+      new PutObjectCommand({ Bucket: bucket.id, Key: 'k', Body: 'still owned' }),
     );
-    expect(fs.existsSync(path.join(dir, 'k'))).toBe(true);
-
-    // The OWNER survived too: a different app re-registering the same
-    // accessKeyId still 409s, not a silent takeover.
-    const res = await fetch(`${daemonUrl}/_pcdev/apps/otherapp/credentials`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ accessKeyId: 'AKIARESTART', secretAccessKey: 'stolen' }),
-    });
-    expect(res.status).toBe(409);
+    expect(fs.existsSync(path.join(bucket.dir, 'k'))).toBe(true);
   });
 });
 
 describe('SigV4 round-trip', () => {
-  test('put + get round-trips real bytes through the filesystem', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIAROUNDTRIP', 'roundtripsecret');
-
+  test('put + get round-trips real bytes through the data root', async () => {
+    const bucket = await client.createInstance({ labels: {}, dir: dataDir() });
+    await client.putCredentials(bucket.id, 'AKIAROUNDTRIP', 'roundtripsecret');
     const s3 = s3For('AKIAROUNDTRIP', 'roundtripsecret');
+
     await s3.send(
       new PutObjectCommand({
-        Bucket: 'myapp--uploads',
+        Bucket: bucket.id,
         Key: 'hello.txt',
         Body: 'hello bucket emulator',
         ContentType: 'text/plain',
       }),
     );
 
-    expect(fs.existsSync(path.join(dir, 'hello.txt'))).toBe(true);
-
-    const got = await s3.send(new GetObjectCommand({ Bucket: 'myapp--uploads', Key: 'hello.txt' }));
-    const body = await got.Body?.transformToString();
-    expect(body).toBe('hello bucket emulator');
+    expect(fs.existsSync(path.join(bucket.dir, 'hello.txt'))).toBe(true);
+    const got = await s3.send(new GetObjectCommand({ Bucket: bucket.id, Key: 'hello.txt' }));
+    expect(await got.Body?.transformToString()).toBe('hello bucket emulator');
   });
 
-  test('a wrong credential is rejected with a signature failure', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIAREALKEY', 'realsecret');
+  test('a wrong secret is rejected with a signature failure', async () => {
+    const bucket = await client.createInstance({ labels: {}, dir: dataDir() });
+    await client.putCredentials(bucket.id, 'AKIAREALKEY', 'realsecret');
 
-    const s3 = s3For('AKIAREALKEY', 'wrong-secret');
     await expect(
-      s3.send(new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'x', Body: 'x' })),
+      s3For('AKIAREALKEY', 'wrong-secret').send(
+        new PutObjectCommand({ Bucket: bucket.id, Key: 'x', Body: 'x' }),
+      ),
     ).rejects.toThrow();
   });
 
-  test('SigV4 verifies against any of the bucket-owning apps OWN accepted credentials', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIAFIRST', 'firstsecret');
-    await client.putCredentials('myapp', 'AKIASECOND', 'secondsecret');
+  test('any of a bucket’s own credentials verifies', async () => {
+    const bucket = await client.createInstance({ labels: {}, dir: dataDir() });
+    await client.putCredentials(bucket.id, 'AKIAFIRST', 'firstsecret');
+    await client.putCredentials(bucket.id, 'AKIASECOND', 'secondsecret');
 
-    const s3First = s3For('AKIAFIRST', 'firstsecret');
-    await s3First.send(new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'a', Body: 'a' }));
+    await s3For('AKIAFIRST', 'firstsecret').send(
+      new PutObjectCommand({ Bucket: bucket.id, Key: 'a', Body: 'a' }),
+    );
+    await s3For('AKIASECOND', 'secondsecret').send(
+      new PutObjectCommand({ Bucket: bucket.id, Key: 'b', Body: 'b' }),
+    );
 
-    const s3Second = s3For('AKIASECOND', 'secondsecret');
-    await s3Second.send(new PutObjectCommand({ Bucket: 'myapp--uploads', Key: 'b', Body: 'b' }));
-
-    expect(fs.existsSync(path.join(dir, 'a'))).toBe(true);
-    expect(fs.existsSync(path.join(dir, 'b'))).toBe(true);
+    expect(fs.existsSync(path.join(bucket.dir, 'a'))).toBe(true);
+    expect(fs.existsSync(path.join(bucket.dir, 'b'))).toBe(true);
   });
 });
 
-describe('multi-app isolation', () => {
-  test('the same bucket name under two apps maps to distinct physical dirs, no collisions', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dirOne = path.join(tempDir('bucket-data-one'), 'objects');
-    const dirTwo = path.join(tempDir('bucket-data-two'), 'objects');
-    await client.putBucket('tenant-one', 'data', dirOne);
-    await client.putBucket('tenant-two', 'data', dirTwo);
-    await client.putCredentials('tenant-one', 'AKIAONE', 'onesecret');
-    await client.putCredentials('tenant-two', 'AKIATWO', 'twosecret');
+describe('isolation between buckets with the same labels', () => {
+  const labels = { 'composer.app': 'same-app', 'composer.address': 'uploads' };
 
+  test('each keeps its own objects in its own data root', async () => {
+    const one = await client.createInstance({ labels, dir: dataDir() });
+    const two = await client.createInstance({ labels, dir: dataDir() });
+    await client.putCredentials(one.id, 'AKIAONE', 'onesecret');
+    await client.putCredentials(two.id, 'AKIATWO', 'twosecret');
     const s3One = s3For('AKIAONE', 'onesecret');
     const s3Two = s3For('AKIATWO', 'twosecret');
 
-    await s3One.send(
-      new PutObjectCommand({ Bucket: 'tenant-one--data', Key: 'k', Body: 'from tenant one' }),
-    );
-    await s3Two.send(
-      new PutObjectCommand({ Bucket: 'tenant-two--data', Key: 'k', Body: 'from tenant two' }),
-    );
+    await s3One.send(new PutObjectCommand({ Bucket: one.id, Key: 'k', Body: 'from one' }));
+    await s3Two.send(new PutObjectCommand({ Bucket: two.id, Key: 'k', Body: 'from two' }));
 
-    const gotOne = await s3One.send(new GetObjectCommand({ Bucket: 'tenant-one--data', Key: 'k' }));
-    const gotTwo = await s3Two.send(new GetObjectCommand({ Bucket: 'tenant-two--data', Key: 'k' }));
-    expect(await gotOne.Body?.transformToString()).toBe('from tenant one');
-    expect(await gotTwo.Body?.transformToString()).toBe('from tenant two');
-
-    expect(fs.readFileSync(path.join(dirOne, 'k'), 'utf8')).toBe('from tenant one');
-    expect(fs.readFileSync(path.join(dirTwo, 'k'), 'utf8')).toBe('from tenant two');
+    const gotOne = await s3One.send(new GetObjectCommand({ Bucket: one.id, Key: 'k' }));
+    const gotTwo = await s3Two.send(new GetObjectCommand({ Bucket: two.id, Key: 'k' }));
+    expect(await gotOne.Body?.transformToString()).toBe('from one');
+    expect(await gotTwo.Body?.transformToString()).toBe('from two');
+    expect(fs.readFileSync(path.join(one.dir, 'k'), 'utf8')).toBe('from one');
+    expect(fs.readFileSync(path.join(two.dir, 'k'), 'utf8')).toBe('from two');
   });
 
-  test("app A's credential is rejected against app B's bucket exactly like a bad signature", async () => {
-    const client = bucketsClient({ registryRoot });
-    const dirTwo = path.join(tempDir('bucket-data-two'), 'objects');
-    await client.putBucket('tenant-two', 'data', dirTwo);
-    await client.putCredentials('tenant-one', 'AKIACROSSONE', 'onesecret');
-    await client.putCredentials('tenant-two', 'AKIACROSSTWO', 'twosecret');
+  test("one bucket's credential is rejected against another exactly like a bad signature", async () => {
+    const one = await client.createInstance({ labels, dir: dataDir() });
+    const two = await client.createInstance({ labels, dir: dataDir() });
+    await client.putCredentials(one.id, 'AKIACROSSONE', 'onesecret');
+    await client.putCredentials(two.id, 'AKIACROSSTWO', 'twosecret');
 
-    // tenant-one's credential, CORRECTLY signed, targeting tenant-two's bucket.
-    const s3CrossApp = s3For('AKIACROSSONE', 'onesecret');
-    const crossAppUrl = await getSignedUrl(
-      s3CrossApp,
-      new PutObjectCommand({ Bucket: 'tenant-two--data', Key: 'x' }),
+    // One's credential, CORRECTLY signed, targeting two's bucket.
+    const crossUrl = await getSignedUrl(
+      s3For('AKIACROSSONE', 'onesecret'),
+      new PutObjectCommand({ Bucket: two.id, Key: 'x' }),
       { expiresIn: 900 },
     );
-    const crossAppRes = await fetch(crossAppUrl, { method: 'PUT', body: 'x' });
-
-    // tenant-two's OWN accessKeyId, but a wrong secret — a genuinely bad signature.
-    const s3BadSig = s3For('AKIACROSSTWO', 'not-the-real-secret');
+    const crossRes = await fetch(crossUrl, { method: 'PUT', body: 'x' });
+    // Two's OWN accessKeyId with a wrong secret — a genuinely bad signature.
     const badSigUrl = await getSignedUrl(
-      s3BadSig,
-      new PutObjectCommand({ Bucket: 'tenant-two--data', Key: 'x' }),
+      s3For('AKIACROSSTWO', 'not-the-real-secret'),
+      new PutObjectCommand({ Bucket: two.id, Key: 'x' }),
       { expiresIn: 900 },
     );
     const badSigRes = await fetch(badSigUrl, { method: 'PUT', body: 'x' });
 
-    expect(crossAppRes.status).toBe(403);
-    expect(crossAppRes.status).toBe(badSigRes.status);
-    expect(await crossAppRes.text()).toBe(await badSigRes.text());
-
-    expect(fs.existsSync(path.join(dirTwo, 'x'))).toBe(false);
+    expect(crossRes.status).toBe(403);
+    expect(crossRes.status).toBe(badSigRes.status);
+    expect(await crossRes.text()).toBe(await badSigRes.text());
+    expect(fs.existsSync(path.join(two.dir, 'x'))).toBe(false);
   });
 });
 
 describe('multipart uploads', () => {
   test('an initiate-multipart request is rejected with the pinned 501', async () => {
-    const client = bucketsClient({ registryRoot });
-    const dir = path.join(tempDir('bucket-data'), 'objects');
-    await client.putBucket('myapp', 'uploads', dir);
-    await client.putCredentials('myapp', 'AKIAMULTI', 'multisecret');
+    const bucket = await client.createInstance({ labels: {}, dir: dataDir() });
+    await client.putCredentials(bucket.id, 'AKIAMULTI', 'multisecret');
 
-    const s3 = s3For('AKIAMULTI', 'multisecret');
     await expect(
-      s3.send(new ListMultipartUploadsCommand({ Bucket: 'myapp--uploads' })),
+      s3For('AKIAMULTI', 'multisecret').send(
+        new ListMultipartUploadsCommand({ Bucket: bucket.id }),
+      ),
     ).rejects.toThrow();
-
-    // Confirm the actual wire response is exactly the pinned 501 + body
-    // (the SDK's own error swallows status/body detail).
-    const res = await fetch(`${daemonUrl}/myapp--uploads?uploads`);
+    const res = await fetch(`${daemonUrl}/${bucket.id}?uploads`);
     expect(res.status).toBe(501);
     expect(await res.text()).toBe(
       'multipart upload is not supported by the local dev bucket emulator yet',
@@ -267,39 +257,76 @@ describe('multipart uploads', () => {
   });
 });
 
-describe('validation', () => {
-  test('PUT bucket rejects an app segment with an uppercase letter, naming the segment', async () => {
-    const res = await fetch(`${daemonUrl}/_pcdev/apps/BadApp/buckets/data`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ dir: tempDir('bucket-invalid') }),
-    });
-    expect(res.status).toBe(400);
-    expect(await res.text()).toContain('BadApp');
-  });
-
-  test('PUT bucket rejects a physical name over the 63-char cap, naming both parts and the cap', async () => {
-    // Each of app/name individually satisfies the ≤63 path-segment rule, but
-    // "<app>--<name>" (with its 2-char separator) exceeds the store's own
-    // 63-char bucket-name cap — the SEPARATE check this endpoint applies.
-    const app = 'a'.repeat(35);
-    const name = 'b'.repeat(35);
-    const res = await fetch(`${daemonUrl}/_pcdev/apps/${app}/buckets/${name}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ dir: tempDir('bucket-invalid') }),
-    });
-    expect(res.status).toBe(400);
-    const body = await res.text();
-    expect(body).toContain(app);
-    expect(body).toContain(name);
-    expect(body).toContain('63');
-  });
-
+describe('health', () => {
   test('health is available at both /health and /_pcdev/health', async () => {
-    const plain = await fetch(`${daemonUrl}/health`);
-    const admin = await fetch(`${daemonUrl}/_pcdev/health`);
-    expect(plain.status).toBe(200);
-    expect(admin.status).toBe(200);
+    expect((await fetch(`${daemonUrl}/health`)).status).toBe(200);
+    expect((await fetch(`${daemonUrl}/_pcdev/health`)).status).toBe(200);
+  });
+});
+
+describe('state written by an earlier version', () => {
+  test('is discarded on load', async () => {
+    await stopDaemon('buckets', { registryRoot });
+    const stateDir = daemonStateDir(registryRoot, 'buckets');
+    fs.rmSync(path.join(stateDir, 'instances.json'), { force: true });
+    fs.writeFileSync(
+      path.join(stateDir, 'state.json'),
+      JSON.stringify({
+        buckets: { 'legacy--data': { app: 'legacy', name: 'data', dir: dataDir() } },
+        credentials: { AKIALEGACY: { app: 'legacy', secretAccessKey: 's' } },
+      }),
+    );
+
+    await ensureDaemon('buckets', entryFor('buckets'), { registryRoot });
+
+    expect(await bucketsClient({ registryRoot }).listInstances()).toEqual([]);
+    expect(fs.existsSync(path.join(stateDir, 'state.json'))).toBe(false);
+  });
+});
+
+/**
+ * The emulator never interprets Composer's data: an app name, a node address
+ * or a directory reaches it only as label values and as the data root it is
+ * given, which it stores verbatim.
+ */
+describe('the emulator never interprets Composer data', () => {
+  test('labels and the data root are stored verbatim, and nothing else carries their values', async () => {
+    const directory = path.join(tempDir('marker-project'), 'zzdirectorymarker');
+    const dir = path.join(directory, '.prisma-composer', 'dev', 'buckets', 'zzaddressmarker');
+    const labels = {
+      'composer.directory': directory,
+      'composer.app': 'zzappmarker',
+      'composer.address': 'zzaddressmarker',
+    };
+    const bucket = await client.createInstance({ labels, dir });
+    await client.putCredentials(bucket.id, 'AKIAMARKER', 'secret');
+
+    const stateDir = daemonStateDir(registryRoot, 'buckets');
+    const statePath = path.join(stateDir, 'instances.json');
+    await waitFor(() => fs.existsSync(statePath), 5000);
+    const state: unknown = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    const record: unknown = Reflect.get(Reflect.get(state as object, 'instances'), bucket.id);
+    expect(record).toMatchObject({ labels, dir });
+
+    const opaque = (key: string, value: unknown) =>
+      key === 'labels' || key === 'dir' ? undefined : value;
+    const listed = JSON.stringify(await client.listInstances(), opaque);
+    for (const marker of ['zzdirectorymarker', 'zzappmarker', 'zzaddressmarker']) {
+      expect(JSON.stringify(state, opaque)).not.toContain(marker);
+      expect(listed).not.toContain(marker);
+      for (const file of fs.readdirSync(stateDir, { recursive: true })) {
+        expect(String(file)).not.toContain(marker);
+      }
+    }
+  });
+
+  test("the emulator's code names no app, address, directory or Composer concept", () => {
+    const source = fs.readFileSync(
+      fileURLToPath(new URL('../buckets-main.ts', import.meta.url)),
+      'utf8',
+    );
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+    expect(code).not.toMatch(/\b(apps?|appName|address(es)?|directory|composer)\b/i);
   });
 });

@@ -117,6 +117,29 @@ function sleep(ms: number): Promise<void> {
 /** The environment variable that names the emulator registry root. */
 export const EMULATORS_DIR_ENV = 'PRISMA_COMPOSER_EMULATORS_DIR';
 
+/** The environment variable that sets how long the compute emulator waits for a service to accept connections, in milliseconds. */
+export const SERVICE_READY_TIMEOUT_ENV = 'PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS';
+
+/** The compute emulator's `--ready-timeout-ms` from `SERVICE_READY_TIMEOUT_ENV` in this process's environment; none when it is unset. */
+function daemonArgs(name: DaemonName): string[] {
+  if (name !== 'compute') return [];
+  const raw = process.env[SERVICE_READY_TIMEOUT_ENV];
+  if (raw === undefined || raw === '') return [];
+  const ms = Number(raw);
+  if (!Number.isInteger(ms) || ms <= 0) {
+    throw new CliStructuredError(
+      'DEV.SERVICE_READY_TIMEOUT_INVALID',
+      `${SERVICE_READY_TIMEOUT_ENV} must be a positive whole number of milliseconds; got "${raw}".`,
+      {
+        why: 'The compute emulator waits this long for each service to accept connections before it gives up on the service.',
+        fix: `Set ${SERVICE_READY_TIMEOUT_ENV} to a whole number of milliseconds, such as 60000, or unset it to use the default of 30000.`,
+        meta: { variable: SERVICE_READY_TIMEOUT_ENV, value: raw },
+      },
+    );
+  }
+  return ['--ready-timeout-ms', String(ms)];
+}
+
 /** `registryRoot`'s default: `$PRISMA_COMPOSER_EMULATORS_DIR` (an absolute path, normalised) when set, else `~/.prisma-composer/emulators/`. */
 export function defaultRegistryRoot(): string {
   const dir = process.env[EMULATORS_DIR_ENV];
@@ -314,11 +337,13 @@ function spawnDaemonProcess(
   port: number,
   stateDir: string,
   logPath: string,
+  extraArgs: readonly string[],
 ): ChildProcess {
   const logFd = fs.openSync(logPath, 'a');
   let child: ChildProcess;
   try {
-    child = spawn(process.execPath, [entryPath, '--port', String(port), '--state-dir', stateDir], {
+    const args = [entryPath, '--port', String(port), '--state-dir', stateDir, ...extraArgs];
+    child = spawn(process.execPath, args, {
       detached: true,
       stdio: ['ignore', logFd, logFd],
     });
@@ -423,6 +448,7 @@ export async function ensureDaemon(
   opts: DaemonRootOptions = {},
 ): Promise<{ url: string }> {
   const registryRoot = opts.registryRoot ?? defaultRegistryRoot();
+  const extraArgs = daemonArgs(name);
   const registryFile = registryFilePath(registryRoot, name);
   const healthPath = healthPathFor(name);
   const ownVersion = readOwnVersion();
@@ -468,7 +494,7 @@ export async function ensureDaemon(
     await fsp.mkdir(path.dirname(logPath), { recursive: true });
 
     for (let attempt = 1; ; attempt++) {
-      const child = spawnDaemonProcess(entry, port, stateDir, logPath);
+      const child = spawnDaemonProcess(entry, port, stateDir, logPath, extraArgs);
       if (child.pid === undefined) {
         throw new Error(`failed to spawn the ${name} emulator — see ${logPath}.`);
       }

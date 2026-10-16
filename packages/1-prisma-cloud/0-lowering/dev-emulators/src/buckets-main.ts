@@ -1,53 +1,69 @@
 /**
  * The bucket emulator daemon (local-dev spec § 2 `buckets-main.ts`): the S3
  * wire protocol (`@internal/s3-protocol`'s handler + `fsStore`) over
- * registered per-app, per-bucket directories, multi-tenant via physical
- * names `<app>--<name>`. Admin lives under `/_pcdev/` (the underscore can't
- * collide with a valid bucket name). Plain `node:http`.
+ * registered bucket instances. Each instance is keyed by an id this daemon
+ * generates, which is also its bucket name on the S3 wire; its objects live
+ * in the data root its creator registers, a path stored verbatim and never
+ * interpreted, as are its labels. Credentials are registered per instance.
+ * Admin lives under `/_pcdev/` (the underscore can't collide with a valid
+ * bucket name). Plain `node:http`.
  *
  * Runs as its own OS process, started by `daemon.ts`'s `ensureDaemon` via
  * `process.execPath <this file> --port <n> --state-dir <dir>`.
  */
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import { type Credentials, createS3Handler, fsStore } from '@internal/s3-protocol';
 import { readOwnVersion } from './daemon.ts';
-import { isValidSegment } from './segments.ts';
 import { readJsonFile, StateFile } from './state-file.ts';
 
 const STATE_MODE = 0o600;
-// Mirrors `@internal/s3-protocol`'s own fs-store.ts bucket-name rule (not
-// exported — it's the physical-bucket-name check this endpoint applies to
-// the composed `<app>--<name>`, not a wire-level concern of the handler).
-const PHYSICAL_BUCKET_NAME_RE = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
 
 const MULTIPART_MESSAGE = 'multipart upload is not supported by the local dev bucket emulator yet';
 
-interface BucketRegistration {
-  readonly app: string;
-  readonly name: string;
+/** Also the bucket's name on the S3 wire, so it uses only characters a bucket name allows. */
+const INSTANCE_ID_RE = /^bkt-[0-9a-f]{16}$/;
+
+function newInstanceId(): string {
+  return `bkt-${randomBytes(8).toString('hex')}`;
+}
+
+interface BucketRecord {
+  readonly id: string;
+  readonly labels: Record<string, string>;
+  /** Where the bucket's objects live, as its creator registered it. */
   readonly dir: string;
 }
 
 interface CredentialRecord {
-  readonly app: string;
+  readonly instanceId: string;
   readonly secretAccessKey: string;
 }
 
 interface BucketsState {
-  buckets: Record<string, BucketRegistration>;
+  instances: Record<string, BucketRecord>;
   credentials: Record<string, CredentialRecord>;
 }
 
-function isBucketRegistration(value: unknown): value is BucketRegistration {
+function isStringRecord(value: unknown): value is Record<string, string> {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'app' in value &&
-    typeof value.app === 'string' &&
-    'name' in value &&
-    typeof value.name === 'string' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((v) => typeof v === 'string')
+  );
+}
+
+function isBucketRecord(value: unknown): value is BucketRecord {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
     'dir' in value &&
     typeof value.dir === 'string'
   );
@@ -57,8 +73,8 @@ function isCredentialRecord(value: unknown): value is CredentialRecord {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'app' in value &&
-    typeof value.app === 'string' &&
+    'instanceId' in value &&
+    typeof value.instanceId === 'string' &&
     'secretAccessKey' in value &&
     typeof value.secretAccessKey === 'string'
   );
@@ -68,10 +84,10 @@ function isBucketsState(value: unknown): value is BucketsState {
   return (
     typeof value === 'object' &&
     value !== null &&
-    'buckets' in value &&
-    typeof value.buckets === 'object' &&
-    value.buckets !== null &&
-    Object.values(value.buckets).every(isBucketRegistration) &&
+    'instances' in value &&
+    typeof value.instances === 'object' &&
+    value.instances !== null &&
+    Object.values(value.instances).every(isBucketRecord) &&
     'credentials' in value &&
     typeof value.credentials === 'object' &&
     value.credentials !== null &&
@@ -79,13 +95,19 @@ function isBucketsState(value: unknown): value is BucketsState {
   );
 }
 
-interface BucketBody {
+interface CreateBody {
+  readonly labels: Record<string, string>;
   readonly dir: string;
 }
 
-function isBucketBody(value: unknown): value is BucketBody {
+function isCreateBody(value: unknown): value is CreateBody {
   return (
-    typeof value === 'object' && value !== null && 'dir' in value && typeof value.dir === 'string'
+    typeof value === 'object' &&
+    value !== null &&
+    'labels' in value &&
+    isStringRecord(value.labels) &&
+    'dir' in value &&
+    typeof value.dir === 'string'
   );
 }
 
@@ -156,12 +178,12 @@ async function sendWebResponse(res: http.ServerResponse, webRes: Response): Prom
 function main(): void {
   const { port, stateDir } = parseArgs(process.argv.slice(2));
   const ownVersion = readOwnVersion();
-  const stateJsonPath = path.join(stateDir, 'state.json');
-  const stateFile = new StateFile<BucketsState>(stateJsonPath, STATE_MODE);
+  const statePath = path.join(stateDir, 'instances.json');
+  const stateFile = new StateFile<BucketsState>(statePath, STATE_MODE);
 
-  let state: BucketsState = { buckets: {}, credentials: {} };
+  let state: BucketsState = { instances: {}, credentials: {} };
 
-  const store = fsStore((physicalName) => state.buckets[physicalName]?.dir);
+  const store = fsStore((bucket) => state.instances[bucket]?.dir);
 
   function json(res: http.ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -173,88 +195,78 @@ function main(): void {
     res.end(body);
   }
 
-  function badSegment(res: http.ServerResponse, segment: string): void {
-    text(
-      res,
-      400,
-      `invalid path segment "${segment}": must match /^[a-z0-9][a-z0-9-]*$/ and be at most 63 characters`,
-    );
+  function noContent(res: http.ServerResponse): void {
+    res.writeHead(204);
+    res.end();
   }
 
-  async function handlePutBucket(
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    app: string,
-    name: string,
-  ): Promise<void> {
-    const physicalName = `${app}--${name}`;
-    if (!PHYSICAL_BUCKET_NAME_RE.test(physicalName)) {
+  async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+    const raw = await readBody(req);
+    try {
+      return JSON.parse(raw.toString('utf8'));
+    } catch {
+      return undefined;
+    }
+  }
+
+  function instanceView(bucket: BucketRecord): unknown {
+    return { id: bucket.id, labels: bucket.labels, dir: bucket.dir };
+  }
+
+  async function handleCreate(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await readJsonBody(req);
+    if (!isCreateBody(body)) {
       return text(
         res,
         400,
-        `invalid bucket "${physicalName}" (app "${app}", name "${name}"): the physical bucket name must match /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/ and be at most 63 characters`,
+        'malformed body: expected { "labels": Record<string, string>, "dir": string }',
       );
     }
-    const raw = await readBody(req);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString('utf8'));
-    } catch {
-      return text(res, 400, 'malformed JSON body');
-    }
-    if (!isBucketBody(parsed))
-      return text(res, 400, 'malformed bucket body: expected { "dir": string }');
-
-    await fs.promises.mkdir(parsed.dir, { recursive: true });
-    state.buckets[physicalName] = { app, name, dir: parsed.dir };
+    await fs.promises.mkdir(body.dir, { recursive: true });
+    const id = newInstanceId();
+    const bucket: BucketRecord = { id, labels: { ...body.labels }, dir: body.dir };
+    state.instances[id] = bucket;
     await stateFile.write(state);
-    res.writeHead(204);
-    res.end();
+    return json(res, 201, instanceView(bucket));
   }
 
   async function handlePutCredentials(
     req: http.IncomingMessage,
     res: http.ServerResponse,
-    app: string,
+    bucket: BucketRecord,
   ): Promise<void> {
-    const raw = await readBody(req);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw.toString('utf8'));
-    } catch {
-      return text(res, 400, 'malformed JSON body');
-    }
-    if (!isCredentialsBody(parsed)) {
+    const body = await readJsonBody(req);
+    if (!isCredentialsBody(body)) {
       return text(
         res,
         400,
         'malformed credentials body: expected { "accessKeyId", "secretAccessKey" }',
       );
     }
-    const existing = state.credentials[parsed.accessKeyId];
-    if (existing && existing.app !== app) {
+    const existing = state.credentials[body.accessKeyId];
+    if (existing && existing.instanceId !== bucket.id) {
       return text(
         res,
         409,
-        `accessKeyId "${parsed.accessKeyId}" is already registered by a different app`,
+        `accessKeyId "${body.accessKeyId}" is already registered for another bucket`,
       );
     }
-    state.credentials[parsed.accessKeyId] = { app, secretAccessKey: parsed.secretAccessKey };
+    state.credentials[body.accessKeyId] = {
+      instanceId: bucket.id,
+      secretAccessKey: body.secretAccessKey,
+    };
     await stateFile.write(state);
-    res.writeHead(204);
-    res.end();
+    noContent(res);
   }
 
-  async function handleDeleteApp(res: http.ServerResponse, app: string): Promise<void> {
-    for (const [key, reg] of Object.entries(state.buckets)) {
-      if (reg.app === app) delete state.buckets[key];
-    }
+  /** Removes the bucket's registration and credentials; its objects stay where its creator put them. */
+  async function handleDelete(res: http.ServerResponse, id: string): Promise<void> {
+    delete state.instances[id];
     for (const [key, cred] of Object.entries(state.credentials)) {
-      if (cred.app === app) delete state.credentials[key];
+      if (cred.instanceId === id) delete state.credentials[key];
     }
     await stateFile.write(state);
-    res.writeHead(204);
-    res.end();
+    noContent(res);
   }
 
   /** Path-style addressing: the bucket is the first non-empty path segment. Mirrors the handler's own `parseTarget`, which isn't exported. */
@@ -264,20 +276,15 @@ function main(): void {
   }
 
   /**
-   * Credentials accepted for THIS request's target bucket only — its
-   * owning app, derived from the bucket's registration (the authoritative
-   * source for the `<app>--<name>` split; unregistered apps/names may
-   * themselves contain `--`, so the registration is trusted over re-parsing
-   * the string). An unknown bucket or an app with no registered credentials
-   * yields no candidates, which still resolves through the real 403 path
-   * below — never a bespoke "unknown bucket" shortcut that would reveal
-   * anything.
+   * Credentials accepted for THIS request's target bucket only. An unknown
+   * bucket or one with no registered credentials yields no candidates, which
+   * still resolves through the real 403 path below — never a bespoke
+   * "unknown bucket" shortcut that would reveal anything.
    */
   function credentialsForBucket(bucket: string | undefined): Credentials[] {
-    const owningApp = bucket !== undefined ? state.buckets[bucket]?.app : undefined;
-    if (owningApp === undefined) return [];
+    if (bucket === undefined || state.instances[bucket] === undefined) return [];
     return Object.entries(state.credentials)
-      .filter(([, rec]) => rec.app === owningApp)
+      .filter(([, rec]) => rec.instanceId === bucket)
       .map(([accessKeyId, rec]) => ({ accessKeyId, secretAccessKey: rec.secretAccessKey }));
   }
 
@@ -302,12 +309,10 @@ function main(): void {
     const headers = toWebHeaders(req.headers);
 
     const candidates: Credentials[] = credentialsForBucket(bucketFromPath(url.pathname));
-    // No candidate for this bucket (unknown bucket, or its app has no
-    // credentials registered): fall through to a single verification
+    // No candidate for this bucket: fall through to a single verification
     // attempt against an unusable pair, so the request still resolves
-    // through the real 403 path instead of a bespoke shortcut. A valid
-    // signature from a DIFFERENT app's credential never even reaches this
-    // list, so it fails exactly the same way — same status, same body.
+    // through the real 403 path. A valid signature from ANOTHER bucket's
+    // credential never reaches this list, so it fails exactly the same way.
     if (candidates.length === 0) candidates.push({ accessKeyId: '', secretAccessKey: '' });
 
     let last: Response | undefined;
@@ -325,6 +330,42 @@ function main(): void {
     if (last) await sendWebResponse(res, last);
   }
 
+  async function handleAdmin(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    segments: readonly string[],
+  ): Promise<void> {
+    const method = req.method ?? 'GET';
+    // segments[0] === '_pcdev'
+    if (method === 'GET' && segments.length === 2 && segments[1] === 'health') {
+      return json(res, 200, { version: ownVersion });
+    }
+    if (segments[1] !== 'instances') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    if (segments.length === 2) {
+      if (method === 'GET') return json(res, 200, Object.values(state.instances).map(instanceView));
+      if (method === 'POST') return handleCreate(req, res);
+    }
+    const id = segments[2];
+    if (id !== undefined && !INSTANCE_ID_RE.test(id)) {
+      return text(res, 400, `invalid instance id "${id}"`);
+    }
+    if (method === 'DELETE' && segments.length === 3 && id !== undefined) {
+      return handleDelete(res, id);
+    }
+    const bucket = id === undefined ? undefined : state.instances[id];
+    if (!bucket) return text(res, 404, `no such instance: "${id ?? ''}"`);
+    if (method === 'GET' && segments.length === 3) return json(res, 200, instanceView(bucket));
+    if (method === 'PUT' && segments.length === 4 && segments[3] === 'credentials') {
+      return handlePutCredentials(req, res, bucket);
+    }
+    res.writeHead(404);
+    res.end();
+  }
+
   async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${String(port)}`);
     const method = req.method ?? 'GET';
@@ -333,39 +374,12 @@ function main(): void {
       return json(res, 200, { version: ownVersion });
     }
 
-    if (url.pathname === '/_pcdev/health' || url.pathname.startsWith('/_pcdev/')) {
+    if (url.pathname.startsWith('/_pcdev/')) {
       const segments = url.pathname
         .split('/')
         .filter((s) => s.length > 0)
         .map((s) => decodeURIComponent(s));
-      // segments[0] === '_pcdev'
-
-      if (method === 'GET' && segments.length === 2 && segments[1] === 'health') {
-        return json(res, 200, { version: ownVersion });
-      }
-
-      if (segments[1] === 'apps' && segments.length >= 3) {
-        const app = segments[2];
-        if (app === undefined || !isValidSegment(app)) return badSegment(res, app ?? '');
-
-        if (method === 'PUT' && segments.length === 5 && segments[3] === 'buckets') {
-          const name = segments[4];
-          if (name === undefined || !isValidSegment(name)) return badSegment(res, name ?? '');
-          return handlePutBucket(req, res, app, name);
-        }
-
-        if (method === 'PUT' && segments.length === 4 && segments[3] === 'credentials') {
-          return handlePutCredentials(req, res, app);
-        }
-
-        if (method === 'DELETE' && segments.length === 3) {
-          return handleDeleteApp(res, app);
-        }
-      }
-
-      res.writeHead(404);
-      res.end();
-      return;
+      return handleAdmin(req, res, segments);
     }
 
     return handleS3Wire(req, res, url);
@@ -390,7 +404,8 @@ function main(): void {
   process.on('SIGTERM', () => void shutdown());
   process.on('SIGINT', () => void shutdown());
 
-  readJsonFile(stateJsonPath, isBucketsState)
+  discardStateFromEarlierVersions(stateDir, statePath)
+    .then(() => readJsonFile(statePath, isBucketsState))
     .then((loaded) => {
       if (loaded) state = loaded;
       // A single, unambiguous line into the daemon's own stdio log once
@@ -406,6 +421,21 @@ function main(): void {
       console.error('buckets-main: failed to load state', err);
       process.exit(1);
     });
+}
+
+/**
+ * Removes state files this version does not write. Local dev state is never
+ * migrated across versions; buckets registered by an earlier version are
+ * gone, and their objects stay where they were.
+ */
+async function discardStateFromEarlierVersions(stateDir: string, statePath: string): Promise<void> {
+  const files = await fs.promises.readdir(stateDir).catch(() => []);
+  await Promise.all(
+    files
+      .map((name) => path.join(stateDir, name))
+      .filter((file) => file.endsWith('.json') && file !== statePath)
+      .map((file) => fs.promises.rm(file, { force: true })),
+  );
 }
 
 main();

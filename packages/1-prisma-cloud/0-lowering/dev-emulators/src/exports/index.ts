@@ -6,12 +6,17 @@
  */
 
 export type {
+  BucketInstanceInfo,
   BucketsClient,
   ComputeClient,
-  DatabaseInfo,
+  CreateBucketRequest,
+  CreateDatabaseRequest,
+  CreateServiceRequest,
+  DatabaseInstanceInfo,
   DeploymentRequest,
   PostgresClient,
-  ServiceInfo,
+  ServiceInstanceInfo,
+  ServiceInstanceStatus,
 } from '../client.ts';
 export { bucketsClient, computeClient, postgresClient } from '../client.ts';
 export type { DaemonName, DaemonRootOptions, RegistryEntry } from '../daemon.ts';
@@ -27,4 +32,10 @@ export {
   registryFilePath,
   stopDaemon,
 } from '../daemon.ts';
-export { instanceNameFor, slug } from '../instance-name.ts';
+export type {
+  EmulatorInstance,
+  EmulatorKind,
+  EmulatorList,
+  EmulatorListing,
+} from '../emulator-list.ts';
+export { EMULATOR_KINDS, isEmulatorRunning, listEmulators } from '../emulator-list.ts';

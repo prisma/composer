@@ -274,20 +274,36 @@ function readEmulatorEntry(
   return isRegistryEntry(parsed) ? parsed : undefined;
 }
 
-interface PostgresDatabaseInfo {
-  readonly id: string;
-  readonly url: string;
-  readonly instanceName: string;
-  readonly databasePort: number;
+/** The nodes of `kind` that `prisma dev` recorded for `app` in fixtureDir's `.prisma-composer/dev/emulator-instances.json`. */
+function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
+  const record = readJson(
+    path.join(fixtureDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+  ) as
+    | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
+    | undefined;
+  const nodes = record?.apps[app]?.nodes ?? {};
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => node.kind === kind));
 }
 
-/** The documented postgres-emulator wire protocol (spec § 4, REVISED — operator review of #162) — plain fetch, never the typed client. */
+interface PostgresDatabaseInfo {
+  readonly address: string;
+  readonly id: string;
+  readonly url: string;
+  readonly status: string;
+}
+
+/** The databases `prisma dev` recorded for the app, as the postgres emulator reports them (plain fetch, never the typed client). */
 async function listPostgresDatabases(): Promise<readonly PostgresDatabaseInfo[]> {
   const entry = readEmulatorEntry('postgres');
   if (entry === undefined) throw new Error('postgres emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/databases`);
-  if (!res.ok) throw new Error(`postgres emulator listDatabases failed: ${res.status}`);
-  return (await res.json()) as PostgresDatabaseInfo[];
+  const databases: PostgresDatabaseInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'database'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`postgres emulator getInstance failed: ${res.status}`);
+    databases.push({ ...((await res.json()) as PostgresDatabaseInfo), address });
+  }
+  return databases;
 }
 
 interface ServiceInfo {
@@ -299,13 +315,18 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never the typed client. */
+/** The services `prisma dev` recorded for the app, as the Compute emulator reports them (plain fetch, never the typed client). */
 async function listComputeServices(): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/services`);
-  if (!res.ok) throw new Error(`compute emulator listServices failed: ${res.status}`);
-  return (await res.json()) as ServiceInfo[];
+  const services: ServiceInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'service'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
+    services.push({ ...((await res.json()) as ServiceInfo), address });
+  }
+  return services;
 }
 
 /**
@@ -545,17 +566,11 @@ async function main(): Promise<void> {
       'secrets.json carries the shell-sourced env-param',
     );
 
-    // 11. The postgres-main daemon's own listing (REVISED — operator review
-    // of #162: no more dev-store postgres.json, the daemon owns instance
-    // state) + a real, running `@prisma/dev` server. Keyed by the instance
-    // name itself (`pcdev-<app>-<node>`), not the bare node id.
+    // 11. The database the directory's record names for `appdb`, as the
+    // postgres emulator reports it, + a real, running `@prisma/dev` server.
     const databases = await listPostgresDatabases();
-    const dbEntry = databases.find((d) => d.instanceName === 'pcdev-localdevs4fixture-appdb');
-    assertEqual(
-      dbEntry?.instanceName,
-      'pcdev-localdevs4fixture-appdb',
-      'postgres-main database listing instance name',
-    );
+    const dbEntry = databases.find((d) => d.address === 'appdb');
+    assertEqual(dbEntry?.status, 'running', 'the recorded appdb database is running');
     const dbUrl = new URL(dbEntry?.url ?? '');
     const dbReachable = await probeTcp(dbUrl.hostname, Number(dbUrl.port), 2000);
     assert(
@@ -635,7 +650,7 @@ async function main(): Promise<void> {
     console.log('PASS: local dev (S4) integration proof');
   } finally {
     process.chdir(originalCwd);
-    await attachment?.stopServices().catch(() => undefined);
+    await attachment?.stopApp().catch(() => undefined);
 
     // App-scoped teardown through the extension's own public
     // localTarget.teardown — never stops the daemons themselves (D4/D12),

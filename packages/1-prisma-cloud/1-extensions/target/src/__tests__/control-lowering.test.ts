@@ -1639,6 +1639,43 @@ describe("prismaCloud().nodes['compute'] — the service descriptor", () => {
     expect(result).toEqual({ path: '/tmp/auth.tar.gz', sha256: 'sha-auth' });
   });
 
+  test('package passes listens: false for a compute service declared with listens: false', () => {
+    const target = prismaCloud({ workspaceId: 'ws_1' });
+    const node = compute({
+      name: 'clock',
+      deps: {},
+      listens: false,
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: 'file:///test/service.ts',
+        entry: 'server.js',
+      },
+    });
+    // A copy, as a node built by another bundle of this package reaches the descriptor.
+    const ctx = { id: 'clock', node: { ...node } } as unknown as LowerContext;
+    recorded.pkg.length = 0;
+
+    run(
+      serviceDescriptorOf(target, 'compute').package(ctx, {
+        assembled: { dir: 'dist/bundle', entry: 'server.js' },
+        address: 'clock',
+      }),
+    );
+
+    expect(recorded.pkg).toEqual([
+      [
+        {
+          id: 'clock',
+          bundleDir: 'dist/bundle',
+          appEntry: 'server.js',
+          address: 'clock',
+          listens: false,
+        },
+      ],
+    ]);
+  });
+
   test("deploy declares serialize's triggers (plus pointer timestamps) and rides the app ordering edge — PRO-211", () => {
     const target = prismaCloud({ workspaceId: 'ws_1' });
     const ctx = { id: 'auth' } as unknown as LowerContext;

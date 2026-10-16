@@ -23,6 +23,8 @@ compute({
 });
 ```
 
+A service that receives no requests and so never listens on its port, such as a scheduler that only calls out, declares `listens: false`. `prisma dev` then reports it running as soon as its process starts, instead of waiting for its port. Every other service must listen on `service.port()`.
+
 Dependencies and input are two deliberately separate channels with two
 separate accessors. A dependency is a live connection to another node; input
 is data — plain values and credentials together, declared as one schema

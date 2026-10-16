@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.29.1"
+  library_version: "0.30.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
@@ -333,8 +333,7 @@ its duration (`✔ assemble web (3m 42s)`), and ends with the real total
 assemble per service, connect to project and branch, check environment
 variables, plan and apply (one step: alchemy does both in one process), record
 result. A slow assemble is usually a Node service with
-`dependencies: 'external'`, whose runtime dependencies are being traced. In json mode (`--json`, or stdout not a
-terminal) each step is a `step-started`/`step-finished` line whose `data`
+`dependencies: 'external'`, whose runtime dependencies are being traced. With `--json`, each step is a `step-started`/`step-finished` line whose `data`
 holds `durationMs` plus whatever the build adapter or deploy target reported;
 those extra fields vary, so don't parse them as a stable format. The
 `deploy` operation's `onEvent` receives the same steps, and its result's
@@ -417,8 +416,9 @@ authored the connection or an extension on one side.
 **Driving deploys from code.** A script imports only
 `@prisma/composer/control`; the extensions' `/control` entries are imported
 only by `prisma.config.ts` (ADR-0017). `@prisma/composer/control` exposes typed
-`deploy`, `destroy`, `dev`, and `log` returning structured results;
-`prisma deploy` and `prisma dev` render `deploy` and `dev`. Each takes
+`deploy`, `destroy`, `dev`, `devUrl`, `devStop`, and `log` returning structured
+results; `prisma deploy`, `prisma dev`, `prisma dev url` and `prisma dev stop`
+render `deploy`, `dev`, `devUrl` and `devStop`. Each takes
 a required `config: { value, file }` (`ComposerConfigSource`): the `composer`
 export of your `prisma.config.ts` and that file's path; a relative `file`
 resolves against `cwd`, so build it from `import.meta.url`. The operations
@@ -441,7 +441,9 @@ that surprise:
 1. It runs the same pipeline as deploy, so **build first**, exactly like
    deploy. It watches built output and restarts a service when its build
    changes.
-2. Ctrl-C stops the app's processes but leaves local databases, buckets, and their data up: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data first, is an explicit opt-in flag. On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service before the services that call it, otherwise provision order. A warm start keeps the ports services already have.
+   `ready` prints only once every service accepts connections on its port, except a service declared `compute({ ..., listens: false })` (one that never listens, like the cron scheduler), which counts as running once its process starts. A service that exits before it listens, or does not listen within 30 seconds, fails `dev` (and stops the app's other services) with a message naming the service, its port, and its log file: on a first start it is in the deploy engine's output, before the error that the deploy engine exited (`DEV.CONVERGE_FAILED` from the `dev` operation); on a warm start it is the `DEV.SERVICE_START_FAILED` message. `PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS` raises the 30-second limit (milliseconds); the compute emulator reads it when it starts, so a running emulator keeps its old value until its process ends. An emulator that does not accept connections fails `dev` and `log` with `DEV.EMULATOR_UNREACHABLE` after a few seconds of retries; nothing else is retried.
+2. Ctrl-C (or `dev` ending on SIGTERM or a failure) stops the app's service processes and its local Postgres servers and keeps their data and ports: the next `dev` is a warm start. Starting clean, wiping this app's local instances and data first, is an explicit opt-in flag. On a fresh start, each service gets the lowest free port from 3000 up, in dependency order: a service before the services that call it, otherwise provision order. A warm start keeps the ports services already have.
+   Services, databases and buckets belong to the directory `dev` runs in: two checkouts of one app (two git worktrees) run separate processes on separate ports, with separate databases and buckets, and never restart or write into each other's. `.prisma-composer/dev/emulator-instances.json` records which local instance backs each node. A service or database keeps its port in its directory across runs, even while stopped. If a local instance is gone (a Composer upgrade discarded an emulator's state), the next `dev` re-creates it, empty, and asks for the old port, and a Prisma ORM database's (`postgres()`) committed migrations run again (a `rawPostgres()` database stays empty); when another directory has taken the port, the instance gets the lowest free one and `dev` prints `[dev] service "<address>" now uses port <new>: its previous port <old> is in use` (`database "<address>"` for a database). A directory keeps the local state of every app run from it: running a different app there (another entry, another `--name`) stops the previous app's services and databases, keeps their data and ports, and prints `[dev] stopped the local services of "<app>", the app run here before; its data is kept`; running it again resumes them. `--fresh` wipes only the app it starts. A stopped instance keeps its port reserved and a database its data, so a deleted checkout's instances keep theirs; there is no command to remove them yet.
 3. `dev` does not print service logs. The `log` operation follows the
    already-running app's merged logs; it never builds, provisions, starts, or
    stops anything:
@@ -450,6 +452,33 @@ that surprise:
    const attached = await log({ entry: 'module.ts', config, tail: 20, signal });
    if (attached.ok) for await (const { service, line } of attached.value.lines) console.log(service, line);
    ```
+   Don't hard-code a local port; ports differ per directory. `prisma dev url
+   <address>` (run in the same directory as `dev`) prints where a running node
+   answers: a service's `http://localhost:<port>`, a database's connection
+   string, a bucket's S3 endpoint plus `/<bucket>`. The URL alone goes to
+   stdout, piped or not, so scripts use `url=$(prisma dev url gateway) && curl "$url"`
+   (`dev url`, `dev stop` and `emulator list` first ship in the `prisma`
+   release after 8.0.0-rc.23).
+   `--json` gives the full result or the error with its code. It fails with
+   `DEV.NOT_STARTED_HERE` (no `dev` ran here), `DEV.ADDRESS_UNKNOWN` (lists
+   the known addresses), `DEV.EMULATOR_UNREACHABLE`, or `DEV.NOT_RUNNING` (the
+   node is stopped, a service is crash-looping and its log is named, or the
+   emulator lost the node and the next `dev` creates it again).
+   `prisma dev stop` stops the app's services and database servers when `dev`
+   was killed without doing it; data and ports stay. `prisma emulator list`
+   shows every local emulator and its instances, from any directory; one that
+   runs but cannot be listed carries an `error` in its own entry. Piped, it
+   writes one tab-separated line per instance: emulator kind, instance id,
+   URL, state, node address, directory.
+   `prisma emulator start` and `stop` are planned.
+   For agents, scripts and CI, `prisma dev <entry> --detach` runs the app in
+   the background: it exits 0 once every service answers and prints the URLs,
+   does not watch for changes, and leaves the app running until
+   `prisma dev stop`. Use it, then `prisma dev stop`, instead of keeping a
+   foreground `prisma dev` alive. A failure before ready stops the whole
+   app, including one an earlier `--detach` left running (a failed redeploy
+   has already replaced that service's process), and exits non-zero: fix the
+   build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
 5. An unset secret doesn't block a local run: it becomes a placeholder plus a
@@ -457,12 +486,11 @@ that surprise:
    service it calls.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
-   to an absolute directory to give a checkout or CI job its own compute and
-   buckets daemons, registry and data; a relative path (or an unexpanded `~`)
-   fails with `DEV.EMULATORS_DIR_INVALID`. It does not isolate local Postgres:
-   servers are named after the app and database, so two checkouts of one app
-   share a server, and `--fresh` or teardown in either stops it and deletes
-   the database for both. `emulatorRegistryRoot()` from
+   to an absolute directory to give a checkout or CI job its own compute,
+   Postgres and buckets daemons, registry and state; a relative path (or an
+   unexpanded `~`) fails with `DEV.EMULATORS_DIR_INVALID`. A local database's
+   data is kept by `@prisma/dev` in its own data directory under a name unique
+   to the database, whatever the variable says. `emulatorRegistryRoot()` from
    `@prisma/composer-prisma-cloud/local-target` returns the directory in
    effect.
 7. Windows isn't supported yet.

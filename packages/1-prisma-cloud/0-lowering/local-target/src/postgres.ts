@@ -1,17 +1,15 @@
 /**
  * Local postgres-cluster providers: upstream alchemy's `Prisma.Database` and
  * `Prisma.Connection` become clients of the `postgres-main` emulator daemon
- * (one named, persistent `@prisma/dev` server per `Database` resource).
+ * (one `@prisma/dev` server per database instance).
  * `PgWarm`/`OrmMigration` are not here — the hosted ones run against whatever
  * URL they are handed. Attributes match upstream's shapes; the daemon's
  * DIRECT connection string maps to `directConnectionString` and
- * `databaseUrl`, everything else is left absent. Instance names come from
- * `@internal/dev-emulators`' own `instanceNameFor` — a locally re-derived
- * slug drifted from the daemon's and broke `Connection`'s lookup.
+ * `databaseUrl`, everything else is left absent. A Database's `databaseId`
+ * is its emulator instance's id.
  */
-import { createRequire } from 'node:module';
 import type { LocalTargetProvidersInput } from '@internal/core/config';
-import { instanceNameFor, postgresClient, slug } from '@internal/dev-emulators';
+import { postgresClient } from '@internal/dev-emulators';
 import * as Prisma from 'alchemy/Prisma';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
@@ -19,6 +17,13 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
+import {
+  type AppScope,
+  ensureDatabaseInstance,
+  recordedInstanceId,
+  recordKeyOf,
+} from './emulator-instances.ts';
+import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads a database id from upstream's `database` input: a plain string or a resolved `Prisma.Database` attributes record. */
@@ -29,32 +34,12 @@ function databaseIdOfInput(value: unknown): string | undefined {
   return undefined;
 }
 
-function noPrismaDevError(cause: unknown): Error {
-  return new Error(
-    `local dev needs @prisma/dev for its local Postgres emulator — @prisma/composer-prisma-cloud declares it as a dependency, but it did not resolve from Composer's own installation; reinstall your dependencies. (${cause instanceof Error ? cause.message : String(cause)})`,
-  );
-}
-
 /**
- * Composer owns the local Postgres emulator's version: `@prisma/dev` is a
- * dependency of `@prisma/composer-prisma-cloud` and is resolved from
- * Composer's own package, never from the app. The app's copy (if any) is
- * ignored on purpose — an old `@prisma/dev` pulled in transitively (alchemy
- * pins `^0.20.0`, whose pglite-socket crashes on any message over 64 KiB)
- * would otherwise silently replace the version Composer tested against.
- * The daemon imports the returned path dynamically.
- */
-export function resolvePrismaDevModulePath(): string {
-  try {
-    return createRequire(import.meta.url).resolve('@prisma/dev');
-  } catch (cause) {
-    throw noPrismaDevError(cause);
-  }
-}
-
-/**
- * `Prisma.Database` → an ensured `postgres-main` server, one per resource.
- * Stores the daemon's returned url as the `directConnectionString` attribute.
+ * `Prisma.Database` → the database instance the directory's record names for
+ * the resource, started if it is stopped and created when there is none.
+ * Stores its url as the `directConnectionString` attribute. A Database whose
+ * recorded instance changed (re-created after the emulator lost it) is
+ * updated, so its Connection and dependents get the new instance's URL.
  */
 export function LocalDatabaseProvider(
   input: LocalTargetProvidersInput,
@@ -64,30 +49,16 @@ export function LocalDatabaseProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const app = appNameOf(input.container);
-          // Hosted branch-stage deploys omit the display name (see
-          // descriptors/postgres.ts); local dev never has a branch, so
-          // `news.name` is normally present — the resource's logical id is
-          // only a defensive fallback.
-          const name = news.name ?? id;
-          const prismaDevModulePath = resolvePrismaDevModulePath();
-          // The daemon's `<id>` path segment must match
-          // /^[a-z0-9][a-z0-9-]*$/ (spec § 2's API hygiene rule) — but a
-          // Database resource's name is hierarchical and dot-separated for
-          // a nested module (e.g. "catalog.database"). Same seam as
-          // compute.ts's `slugServiceId`: the daemon-facing id is the slug;
-          // `slug` is idempotent, so the daemon's own
-          // `instanceNameFor(app, slug(name))` equals
-          // `instanceNameFor(app, name)` — the very name the attributes
-          // below record and `Connection` looks up.
-          const { url } = await postgresClient().ensureDatabase(
-            app,
-            slug(name),
-            prismaDevModulePath,
+          // Hosted branch-stage deploys omit the name; local dev has no branch.
+          const name = recordKeyOf('database', id, news.name);
+          const { instance } = await ensureDatabaseInstance(
+            appScopeOf(input),
+            name,
+            resolvePrismaDevModulePath(),
           );
-          const direct = Redacted.make(url);
+          const direct = Redacted.make(instance.url);
           return {
-            databaseId: instanceNameFor(app, name),
+            databaseId: instance.id,
             databaseName: name,
             projectId: projectIdOfInput(news.project),
             status: 'ready',
@@ -107,9 +78,22 @@ export function LocalDatabaseProvider(
         },
         catch: (cause) => cause,
       }),
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined || output.databaseName === undefined) return undefined;
+          const recorded = await recordedInstanceId(appScopeOf(input), output.databaseName);
+          return recorded === output.databaseId ? undefined : { action: 'update' as const };
+        },
+        catch: (cause) => cause,
+      }),
     delete: () => Effect.void,
   };
   return Provider.effect(Prisma.Database, Effect.succeed(service));
+}
+
+function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  return { devDir: input.devDir, app: appNameOf(input.container) };
 }
 
 function noRecordedInstanceError(databaseId: string): Error {
@@ -119,26 +103,24 @@ function noRecordedInstanceError(databaseId: string): Error {
   );
 }
 
-/** `Prisma.Connection` → the daemon's live listing, matched by instance name (the Database attributes' `databaseId` IS the instance name). */
+/** `Prisma.Connection` → the database instance the Database attributes' `databaseId` names. */
 export function LocalConnectionProvider(
-  input: LocalTargetProvidersInput,
+  _input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<Prisma.Connection>> {
   const service: Provider.ProviderService<Prisma.Connection> = {
     list: () => Effect.succeed([]),
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const app = appNameOf(input.container);
           const databaseId = databaseIdOfInput(news.database);
           if (databaseId === undefined) throw noRecordedInstanceError(String(news.database));
-          const databases = await postgresClient().listDatabases(app);
-          const found = databases.find((entry) => entry.instanceName === databaseId);
+          const found = await postgresClient().getInstance(databaseId);
           if (found === undefined) throw noRecordedInstanceError(databaseId);
           const direct = Redacted.make(found.url);
           return {
-            connectionId: found.instanceName,
+            connectionId: found.id,
             connectionName: news.name ?? id,
-            databaseId: found.instanceName,
+            databaseId: found.id,
             kind: 'postgres',
             createdAt: DEV_TIMESTAMP,
             directConnectionString: direct,

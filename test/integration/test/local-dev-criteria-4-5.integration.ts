@@ -9,7 +9,8 @@
  *
  * Criterion 4 (bucket round-trip): PUT an object through the app's own
  * `/blobs/:key` route, confirm it lands as a plain file under
- * `.prisma-composer/dev/buckets/files/<key>`; drop a file directly into
+ * `.prisma-composer/dev/buckets/<app>/files/<key>`, where `<app>` is the app
+ * the directory's `emulator-instances.json` records as current; drop a file directly into
  * that directory and GET it back through the app.
  *
  * Criterion 5 (value sourcing): with `LOCALDEV_FIXTURE_API_KEY` unset, the
@@ -29,6 +30,21 @@ import { prismaBinDir } from './spawn-prisma.ts';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(`assertion failed: ${message}`);
+}
+
+/** The app `dev` records as current in the directory's `emulator-instances.json`; its buckets' objects live under `buckets/<app>/`. */
+function currentApp(): string {
+  const record: unknown = JSON.parse(
+    fs.readFileSync(path.join(devDir, 'emulator-instances.json'), 'utf8'),
+  );
+  assert(
+    typeof record === 'object' &&
+      record !== null &&
+      'current' in record &&
+      typeof record.current === 'string',
+    'emulator-instances.json names the current app',
+  );
+  return record.current;
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
@@ -101,23 +117,11 @@ function dumpDiagnostics(): void {
   console.error('=== end diagnostics ===\n');
 }
 
+/** The front door, from the `--json` run's NDJSON frames: a `status` frame marks readiness and each service is an `endpoint` frame. */
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
-  const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
-  if (readyAt !== -1) {
-    const endpoints: Endpoint[] = [];
-    for (let i = readyAt + 1; i < lines.length; i += 1) {
-      const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
-      if (m === null) break;
-      endpoints.push({ address: m[1] as string, url: m[2] as string });
-    }
-    return endpoints.length > 0 ? endpoints : undefined;
-  }
-  // Engine 0.2.0 renders a non-TTY run as NDJSON frames instead: readiness
-  // is a `status` frame and each service is an `endpoint` frame.
   let ready = false;
   const endpoints: Endpoint[] = [];
-  for (const line of lines) {
+  for (const line of log.split('\n')) {
     if (!line.startsWith('{')) continue;
     try {
       const frame = JSON.parse(line) as {
@@ -131,7 +135,7 @@ function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
       }
       if (frame.kind === 'status' && frame.status === 'ready') ready = true;
     } catch {
-      // Child output interleaved with the frames; not every line is JSON.
+      // Converge output is interleaved with the frames; not every line is JSON.
     }
   }
   return ready && endpoints.length > 0 ? endpoints : undefined;
@@ -181,7 +185,7 @@ function startDevRaw(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', fixtureEntry, ...(opts.fresh === true ? ['--fresh'] : [])];
+  const args = ['dev', fixtureEntry, '--json', ...(opts.fresh === true ? ['--fresh'] : [])];
   const child = spawn(CLI_BIN, args, {
     cwd: integrationDir,
     env,
@@ -281,7 +285,8 @@ async function main(): Promise<void> {
     );
     assertEqual(putRes.status, 201, 'PUT /blobs/proving-key.txt through the app');
 
-    const objectPath = path.join(devDir, 'buckets', 'files', 'proving-key.txt');
+    const bucketDir = path.join(devDir, 'buckets', currentApp(), 'files');
+    const objectPath = path.join(bucketDir, 'proving-key.txt');
     const onDisk = await waitForAsync(
       async () => (fs.existsSync(objectPath) ? fs.readFileSync(objectPath, 'utf8') : undefined),
       5_000,
@@ -291,7 +296,7 @@ async function main(): Promise<void> {
     console.log(`[proving] PASS criterion 4 (write direction): ${objectPath}`);
 
     // Drop a file directly into the bucket directory, read it back through the app.
-    const droppedPath = path.join(devDir, 'buckets', 'files', 'dropped-key.txt');
+    const droppedPath = path.join(bucketDir, 'dropped-key.txt');
     fs.writeFileSync(droppedPath, 'dropped straight onto disk');
     const getRes = await waitForAsync(
       () =>

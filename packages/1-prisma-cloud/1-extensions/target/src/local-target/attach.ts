@@ -1,11 +1,17 @@
 /**
  * The dev session's view of the running app (local-dev spec § 5, ADR-0041 D5)
  * — a Compute-emulator client scoped to this app. Core renders `endpoints()`/
- * `logs()`/`stopServices()` and never learns the emulator's HTTP API
+ * `logs()`/`stopApp()` and never learns the emulator's HTTP API
  * (ADR-0038's opacity pattern).
  */
 import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/core/config';
 import { computeClient } from '@internal/dev-emulators';
+import {
+  type AppScope,
+  nodeInstancesOf,
+  stopAppInstances,
+  withServiceAddresses,
+} from '@internal/local-target';
 import { prismaCloudContainerOf } from '../container.ts';
 
 const RELIST_INTERVAL_MS = 2000;
@@ -22,7 +28,11 @@ interface LogLine {
  * dropped (an emulator restart shows a gap in that service's stream, never a
  * dead session).
  */
-async function* mergedLogs(app: string, signal: AbortSignal, tail: number): AsyncIterable<LogLine> {
+async function* mergedLogs(
+  scope: AppScope,
+  signal: AbortSignal,
+  tail: number,
+): AsyncIterable<LogLine> {
   const client = computeClient();
   const followed = new Set<string>();
   // Backlog is emitted once per service, on its FIRST follow — a follower
@@ -46,7 +56,7 @@ async function* mergedLogs(app: string, signal: AbortSignal, tail: number): Asyn
     void (async () => {
       try {
         let buffer = '';
-        for await (const chunk of client.followLogs(app, id, signal, { tail: followTail })) {
+        for await (const chunk of client.followLogs(id, signal, { tail: followTail })) {
           buffer += chunk;
           let newlineAt = buffer.indexOf('\n');
           while (newlineAt !== -1) {
@@ -64,14 +74,12 @@ async function* mergedLogs(app: string, signal: AbortSignal, tail: number): Asyn
   };
 
   const relist = async (): Promise<void> => {
-    const services = await client.listServices(app);
-    // The emulator's `id` is the (path-segment-safe) key `followLogs` needs;
-    // the log line is labelled with the real, dotted address — the same
-    // identity the front door prints, so a service's endpoint line and its
-    // log lines name it identically (a nested module's service address
-    // contains dots the emulator's own id path segment cannot carry — see
-    // compute.ts's `slugServiceId`).
-    for (const svc of services) follow(svc.id, svc.address);
+    // Log lines are labelled with the service's address — the identity the
+    // front door prints, so a service's endpoint line and its log lines name
+    // it identically.
+    for (const { address, instance } of await nodeInstancesOf(scope, 'service')) {
+      follow(instance.id, address);
+    }
   };
 
   await relist();
@@ -99,16 +107,32 @@ async function* mergedLogs(app: string, signal: AbortSignal, tail: number): Asyn
 }
 
 export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment> {
-  const app = prismaCloudContainerOf(input.container).input.appName;
+  const scope = {
+    devDir: input.devDir,
+    app: prismaCloudContainerOf(input.container).input.appName,
+  };
   const client = computeClient();
 
   return {
-    startServices: () => client.startApp(app),
-    endpoints: async () => {
-      const services = await client.listServices(app);
-      return services.map((svc) => ({ address: svc.address, url: svc.url }));
+    startServices: async () => {
+      const nodes = await nodeInstancesOf(scope, 'service');
+      try {
+        await client.startInstances(nodes.map(({ instance }) => instance.id));
+      } catch (error) {
+        throw withServiceAddresses(error, nodes);
+      }
     },
-    logs: (signal, opts) => mergedLogs(app, signal, opts?.tail ?? 0),
-    stopServices: () => client.stopApp(app),
+    endpoints: async () => {
+      const nodes = await nodeInstancesOf(scope, 'service');
+      return nodes.map(({ address, instance }) => ({
+        address,
+        url: `http://localhost:${String(instance.port)}`,
+      }));
+    },
+    logs: (signal, opts) => mergedLogs(scope, signal, opts?.tail ?? 0),
+    // Service processes and database servers; their data and ports are kept.
+    stopApp: async () => {
+      await stopAppInstances(scope);
+    },
   };
 }

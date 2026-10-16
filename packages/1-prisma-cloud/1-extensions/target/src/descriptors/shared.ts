@@ -7,6 +7,7 @@ import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
+import { resourceName } from '../service-app.ts';
 
 /**
  * The provider-side reserved param for one brand's minted values (ADR-0031:
@@ -200,7 +201,7 @@ export const stageDatabase = ({
     const db = yield* Prisma.Database(`${id}-db`, {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId } : { name: id }),
+      ...(branchId !== undefined ? { branchId } : { name: resourceName(id) }),
       ...logicalIdProp(application, address),
     });
     const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });

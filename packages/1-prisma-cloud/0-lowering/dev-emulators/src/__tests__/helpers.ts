@@ -57,6 +57,27 @@ export function servingBootstrapEnv(body: string): { FIXTURE_BODY: string } {
   return { FIXTURE_BODY: body };
 }
 
+/** Serves like `SERVING_BOOTSTRAP`, but only after `LISTEN_DELAY_MS` — a service that boots slowly. */
+export const DELAYED_SERVING_BOOTSTRAP =
+  "const body = process.env['FIXTURE_BODY'] ?? '';\n" +
+  "console.log('booted pid ' + process.pid);\n" +
+  "setTimeout(() => Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response(body) }), Number(process.env['LISTEN_DELAY_MS']));\n";
+
+/** Stays up without ever listening — a service bound to the wrong port, as far as the emulator can tell. */
+export const NEVER_LISTENING_BOOTSTRAP = 'setInterval(() => {}, 1000);\n';
+
+/** Crashes on its first run in an artifact directory, then stays up without listening — a crash whose restart never becomes ready. */
+export const CRASH_ONCE_THEN_SILENT_BOOTSTRAP =
+  "const fs = require('node:fs');\n" +
+  "if (!fs.existsSync('crashed-once')) { fs.writeFileSync('crashed-once', ''); process.exit(1); }\n" +
+  'setInterval(() => {}, 1000);\n';
+
+/** Exits with code 1 until a file named `allow-serving` exists in its artifact directory, then serves like `LOGGING_BOOTSTRAP` — a crash loop the test can end. */
+export const CRASH_UNTIL_ALLOWED_BOOTSTRAP =
+  "const fs = require('node:fs');\n" +
+  "if (!fs.existsSync('allow-serving')) process.exit(1);\n" +
+  "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('ok') });\n";
+
 /** Exits immediately with a nonzero code — a fast-crashing service. */
 export const CRASHING_BOOTSTRAP = 'process.exit(1);\n';
 
@@ -85,12 +106,7 @@ export async function waitFor(
   }
 }
 
-/**
- * `compute-main` marks a service `running` as soon as it spawns the child —
- * matching the spec (spawning IS the observable action) — not once the
- * child has finished booting and bound its own port. Tests that then fetch
- * the service's own HTTP server need to retry past that short boot window.
- */
+/** Fetches `url`, retrying while the connection is refused — for a service start the test did not wait on, such as a crash-backoff respawn. */
 export async function waitForHttp(url: string, timeoutMs: number): Promise<Response> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -144,20 +160,19 @@ export async function skipContendedDaemonPorts(registryRoot: string): Promise<vo
 const DEFAULT_MIN_SERVICE_PORT = 3000;
 
 /**
- * Reserves dummy services on a fresh Compute daemon to push every REAL
- * service this test reserves afterward past any port near the default
- * service range already bound by a process outside this test's control —
- * unlike the daemon-registry case, a service's port is only chosen (never
- * verified against the real OS) at reservation time, so a service that
- * lands on a contended port fails to bind only once something actually
- * tries to `Bun.serve()` there.
+ * Creates dummy instances on a fresh Compute daemon to push every REAL
+ * instance this test creates afterward past any port near the default
+ * service range already bound by a process outside this test's control.
+ * The emulator checks that a port is bindable when it creates an instance,
+ * but a process outside this test can still bind it before the instance's
+ * service does.
  */
 export async function skipContendedServicePorts(
-  client: Pick<ComputeClient, 'ensureService'>,
+  client: Pick<ComputeClient, 'createInstance'>,
   minPort: number = DEFAULT_MIN_SERVICE_PORT,
 ): Promise<void> {
   const freePort = await getPort({ port: portNumbers(minPort, minPort + 200) });
   for (let i = 0; i < freePort - minPort; i++) {
-    await client.ensureService('port-skip', `dummy-${String(i)}`);
+    await client.createInstance({ labels: { purpose: 'port-skip' } });
   }
 }
