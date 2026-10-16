@@ -132,8 +132,8 @@ export const stateLayerAgainst = (
 
       // Before the store exists — so the check precedes Alchemy's first state
       // read. An empty scope with live resources (apps, databases, buckets)
-      // on the Branch means the stage predates the platform state API (or a
-      // foreign deployment): refuse before Alchemy mutates any resource.
+      // on the Branch means the stage's state is elsewhere (an older Composer
+      // version) or the resources are foreign: refuse before Alchemy mutates any.
       const occupied = yield* scopeOccupied(mgmt, scope, lease).pipe(
         Effect.mapError(bootstrapError('probing the deploy state scope')),
       );

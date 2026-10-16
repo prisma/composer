@@ -74,13 +74,12 @@ const listBranchResources = (
 /**
  * The empty-scope-with-live-resources case: the platform state API holds no
  * resources for (stack, stage) while the platform already has Compute apps,
- * databases, or buckets on the target Branch — this stage predates the
- * platform state API (its state lives in a legacy `prisma-composer-state`
- * database, which is never read; there is no automatic migration), or the
- * deploy targets a project that already runs something. Deploying would
- * recreate every resource and die in per-resource `already_exists` failures —
- * so fail once, up front. A genuinely fresh deploy sees an empty Branch and
- * passes. Connections are not counted: they are children of databases, which
+ * databases, or buckets on the target Branch — the stage was deployed by an
+ * older Composer version whose state store is never read, or the resources
+ * belong to something other than this app. The rows could be identified by
+ * logicalId, but the rest of the state could not be rebuilt from them
+ * (ADR-0051), so fail once, up front. A genuinely fresh deploy sees an empty
+ * Branch and passes. Connections are not counted: they are children of databases, which
  * are. Local dev never reaches this — the dev stack pins
  * `state: localState()` (generate-dev-stack.ts).
  */
@@ -99,13 +98,14 @@ export const failOnEmptyScopeWithLiveResources = (
       new PrismaApiError({
         status: 0,
         message:
-          `the platform state API holds no deploy state for stage "${stage}" (stack "${stack}"), but the ` +
-          `platform already has ${String(resources.length)} resource(s) on the target branch ${branchId}: ${names}. ` +
-          'This stage predates the platform state API. With no state, a deploy would recreate every ' +
-          'resource and fail with already_exists, and a destroy would remove nothing. Destroy the stage ' +
-          'with the previous version of composer, or delete the stage (its branch — or the project, for ' +
-          'production) in the Prisma Console or via the Management API — then redeploy fresh. If those ' +
-          "resources are another deployment's, remove them or deploy into a different project. Then retry.",
+          `stage "${stage}" (stack "${stack}") has no deploy state, but its branch ${branchId} already ` +
+          `holds ${String(resources.length)} resource(s): ${names}. Without state, a deploy would try to ` +
+          'recreate them and a destroy would remove nothing. This happens when the stage was deployed ' +
+          'by a Composer version that kept deploy state elsewhere, or when the resources belong to ' +
+          'something other than this app. Delete the stage (its branch, or the project for production) ' +
+          'in the Prisma Console or via the Management API, then deploy again; a stage from an older ' +
+          'version can instead be destroyed with that version first. If the resources belong to ' +
+          'something else, remove them or deploy into a different project.',
       }),
     );
   });

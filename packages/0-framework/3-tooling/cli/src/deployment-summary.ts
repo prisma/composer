@@ -113,10 +113,28 @@ const OUTPUT_TAIL_LIMIT = 64 * 1024;
 /** Fits the platform's 5000-character build `errorMessage` with room for the exit-status prefix. */
 const ENGINE_FAILURE_CAUSE_LIMIT = 1000;
 
+/** Alchemy's advice to rerun its own CLI with `--adopt`, which a Composer user has no way to do. */
+const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
+  [
+    /Re-run with `--adopt` \(or wrap the effect in `adopt\(true\)`\) to take it over\./g,
+    'Something other than this app holds it. Remove that resource, or deploy into a different project, then deploy again.',
+  ],
+  [/\(re-deploy with --adopt to take ownership, then destroy\)/g, '(remove it by hand)'],
+];
+
+/** Replaces Alchemy CLI advice in engine output with steps that work from Composer. */
+export function withComposerAdvice(text: string): string {
+  return ALCHEMY_ADOPT_ADVICE.reduce(
+    (current, [advice, replacement]) => current.replace(advice, replacement),
+    text,
+  );
+}
+
 /**
  * Child half of the failure protocol, called by the generated stack file.
  * Keeps a bounded tail of everything this process logs through `console`,
- * passing every call through untouched, and on a non-zero exit writes the
+ * passing every call through except Alchemy's CLI advice (see
+ * {@link withComposerAdvice}), and on a non-zero exit writes the
  * redacted cause beside the result file. `console`, not the output streams:
  * alchemy's logger and its error reporting both go through it, and under Bun
  * `console` does not reach `process.stdout.write`.
@@ -128,9 +146,12 @@ export function captureEngineFailure(): void {
   for (const method of ['log', 'info', 'warn', 'error', 'debug'] as const) {
     const original = console[method];
     console[method] = (...args: unknown[]) => {
+      const text = format(...args);
+      const shown = withComposerAdvice(text);
       // Redacted per record, so the tail cut can never leave half a secret behind.
-      tail = `${tail}${redactSecrets(format(...args), process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
-      original.apply(console, args);
+      tail = `${tail}${redactSecrets(shown, process.env)}\n`.slice(-OUTPUT_TAIL_LIMIT);
+      if (shown === text) original.apply(console, args);
+      else original.call(console, shown);
     };
   }
   process.once('exit', (code) => {
