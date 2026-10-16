@@ -14,10 +14,11 @@
  */
 import { emailSender } from '@internal/email';
 import { secretString } from '@internal/foundation/arktype';
+import { rawHttpContract } from '@internal/http';
 import node from '@internal/node';
 import { compute } from '@internal/prisma-cloud';
 import { type } from 'arktype';
-import { authAdminContract, authApiContract, authDb, authSessionContract } from './contract.ts';
+import { authAdminContract, authDb, authSessionContract } from './contract.ts';
 import { authTemplates } from './templates.ts';
 
 export function authService() {
@@ -30,7 +31,7 @@ export function authService() {
     // box). `port` stays compute()'s RESERVED service param — the entrypoint
     // reads it from `service.port()`, never the input.
     input: type({ baseUrl: 'string', secret: secretString(), signUp: "'open' | 'closed'" }),
-    expose: { api: authApiContract, session: authSessionContract, admin: authAdminContract },
+    expose: { api: rawHttpContract, session: authSessionContract, admin: authAdminContract },
     build: node({
       module: new URL('./auth-service.mjs', import.meta.url).href,
       entry: './auth-entrypoint.mjs',

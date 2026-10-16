@@ -1,4 +1,5 @@
 import { CliStructuredError } from '@internal/foundation/errors';
+import type { ContractStyle } from './contract.ts';
 import type { DependencyEnd, InputBinding, ModuleNode, ResourceNode, ServiceNode } from './node.ts';
 
 /** Path-derived: root-scope children are bare ids ("auth", "db"); a nested module's own children dot-join under its address ("auth.db"). */
@@ -31,9 +32,11 @@ export interface PortEndpoint {
  * input/expose entry, or a resource's one anonymous output (`$out`).
  * `contractKind` is the protocol brand riding the port — a DependencyEnd's
  * `type` on an `in` port, the exposed Contract's `kind` on an `out` port.
+ * `style` is the exposed Contract's declared style; `in` ports carry none.
  */
 export interface BoundaryPort extends PortEndpoint {
   readonly contractKind: string | undefined;
+  readonly style: ContractStyle | undefined;
 }
 
 /**

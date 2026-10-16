@@ -9,7 +9,7 @@ const authContract = contract({
 });
 
 describe('rpc(contract) — the dependency end', () => {
-  test('returns a branded dependency end declaring the same { url: string } param as http()', () => {
+  test('returns a branded dependency end declaring the same { url: string } param as rawHttp()', () => {
     const end = rpc(authContract);
 
     expect(isNode(end)).toBe(true);

@@ -61,6 +61,12 @@
       "plane": "shared"
     },
     {
+      "glob": "packages/0-framework/2-authoring/http/src/**",
+      "domain": "framework",
+      "layer": "authoring",
+      "plane": "shared"
+    },
+    {
       "glob": "packages/0-framework/2-authoring/node/src/*.ts",
       "domain": "framework",
       "layer": "authoring",
@@ -776,6 +782,12 @@
     },
     {
       "glob": "packages/9-public/composer/src/exports/service-rpc.ts",
+      "domain": "public",
+      "layer": "public",
+      "plane": "shared"
+    },
+    {
+      "glob": "packages/9-public/composer/src/exports/http.ts",
       "domain": "public",
       "layer": "public",
       "plane": "shared"

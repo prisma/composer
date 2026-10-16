@@ -97,7 +97,7 @@ test('module composition preserves declared and inferred contracts', () => {
     return {};
   });
 
-  // ---- untyped inputs (http()'s escape hatch): no compile-time forwarding check ----
+  // ---- untyped inputs (no required contract): no compile-time forwarding check ----
 
   // Req = unknown — `unknown` does not extend Contract, so InputRef resolves to
   // `never`: the forwarded value carries NO compile-time contract, and any slot

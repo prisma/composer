@@ -16,18 +16,14 @@
  * `capturedEmails` then stays empty.
  */
 import type { EmailSender } from '@internal/email';
+import { rawHttpContract } from '@internal/http';
 import node from '@internal/node';
 import { compute } from '@internal/prisma-cloud';
 import { serve } from '@internal/service-rpc';
 import { composeServiceFetch } from '@internal/service-rpc/compose-fetch';
 import { betterAuth } from 'better-auth';
 import { buildAuthOptions } from '../auth-options.ts';
-import {
-  authAdminContract,
-  authApiContract,
-  authSessionContract,
-  type SignUpMode,
-} from '../contract.ts';
+import { authAdminContract, authSessionContract, type SignUpMode } from '../contract.ts';
 import { createAuthHandlers } from '../handlers.ts';
 import { createPgAuthStore } from '../pg-auth-store.ts';
 import { type AuthTemplates, authTemplates } from '../templates.ts';
@@ -107,7 +103,7 @@ export async function startLocalAuthServer(opts: {
     name: 'authLocal',
     deps: {},
     build: node({ module: import.meta.url, entry: 'testing.ts' }),
-    expose: { api: authApiContract, session: authSessionContract, admin: authAdminContract },
+    expose: { api: rawHttpContract, session: authSessionContract, admin: authAdminContract },
   });
   const handlers = createAuthHandlers(createPgAuthStore(opts.databaseUrl));
   const rpcHandler = serve(localService, {

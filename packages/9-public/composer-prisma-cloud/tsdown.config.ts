@@ -15,6 +15,7 @@ const FRAMEWORK: Record<string, string> = {
   '@internal/core/testing': '@prisma/composer/testing',
   '@internal/core': '@prisma/composer',
   '@internal/service-rpc': '@prisma/composer/service-rpc',
+  '@internal/http': '@prisma/composer/http',
   '@internal/node/control': '@prisma/composer/node/control',
   '@internal/node': '@prisma/composer/node',
   '@internal/nextjs/control': '@prisma/composer/nextjs/control',

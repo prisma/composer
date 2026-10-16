@@ -1,3 +1,4 @@
+import { contractStyleOf } from './contract.ts';
 import {
   type BoundaryPort,
   type Edge,
@@ -12,7 +13,8 @@ import { topoSort } from './toposort.ts';
 /**
  * The declared boundary ports of a module or service node at `id`: dep slots
  * as `in` ports (contractKind = the slot's `type`), exposed contracts as
- * `out` ports (contractKind = the contract's `kind`). A resource's one
+ * `out` ports (contractKind = the contract's `kind`, style = its declared
+ * style). A resource's one
  * `$out` port is recorded at its provision site instead (load-module.ts).
  */
 export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): BoundaryPort[] {
@@ -23,7 +25,7 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
       typeof slot === 'object' && slot !== null && 'type' in slot && typeof slot.type === 'string'
         ? slot.type
         : undefined;
-    ports.push({ node: id, direction: 'in', name, contractKind: type });
+    ports.push({ node: id, direction: 'in', name, contractKind: type, style: undefined });
   }
   for (const [name, contract] of Object.entries(node.expose ?? {})) {
     const kind =
@@ -33,7 +35,13 @@ export function boundaryPortsOf(id: NodeId, node: ModuleNode | ServiceNode): Bou
       typeof contract.kind === 'string'
         ? contract.kind
         : undefined;
-    ports.push({ node: id, direction: 'out', name, contractKind: kind });
+    ports.push({
+      node: id,
+      direction: 'out',
+      name,
+      contractKind: kind,
+      style: contractStyleOf(contract),
+    });
   }
   return ports;
 }
