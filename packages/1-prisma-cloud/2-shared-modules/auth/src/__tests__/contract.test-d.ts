@@ -8,6 +8,7 @@
 import type { DependencyEnd, ModuleNode, ParamNeed, RefPort } from '@internal/core';
 import { module, paramSource } from '@internal/core';
 import { emailSendContract, type emailSender } from '@internal/email';
+import { type RawHttpClient, rawHttp, type rawHttpContract } from '@internal/http';
 import node from '@internal/node';
 import { compute, type rawPostgresContract } from '@internal/prisma-cloud';
 import type { PostgresContract } from '@internal/prisma-cloud/orm';
@@ -16,10 +17,7 @@ import { type Client, rpc } from '@internal/service-rpc';
 import { expectTypeOf, test } from 'vitest';
 import { auth } from '../auth-module.ts';
 import {
-  type AuthApiClient,
   type authAdminContract,
-  authApi,
-  type authApiContract,
   authDb,
   authSessionContract,
   type JwtVerifier,
@@ -42,7 +40,7 @@ test('auth() is a ModuleNode with the db + email boundary deps, three ports, and
   const asModule: ModuleNode<
     { db: ReturnType<typeof authDb>; email: ReturnType<typeof emailSender<AuthTemplates>> },
     {
-      api: typeof authApiContract;
+      api: typeof rawHttpContract;
       session: typeof authSessionContract;
       admin: typeof authAdminContract;
     },
@@ -53,8 +51,8 @@ test('auth() is a ModuleNode with the db + email boundary deps, three ports, and
 });
 
 test('the dependency factories hydrate to their pinned binding types', () => {
-  expectTypeOf(authApi()).toExtend<DependencyEnd<AuthApiClient, typeof authApiContract>>();
-  expectTypeOf(jwtVerifier()).toExtend<DependencyEnd<JwtVerifier, typeof authApiContract>>();
+  expectTypeOf(rawHttp()).toExtend<DependencyEnd<RawHttpClient, typeof rawHttpContract>>();
+  expectTypeOf(jwtVerifier()).toExtend<DependencyEnd<JwtVerifier, typeof rawHttpContract>>();
   expectTypeOf(authDb()).toExtend<DependencyEnd<{ url: string }, PostgresContract>>();
 });
 
@@ -94,7 +92,7 @@ test('the module ports wire into their consumer slots; a wrong-kind port is reje
     provision(
       compute({
         name: 'app',
-        deps: { authApi: authApi(), verifier: jwtVerifier(), session: rpc(authSessionContract) },
+        deps: { authApi: rawHttp(), verifier: jwtVerifier(), session: rpc(authSessionContract) },
         build,
       }),
       {
@@ -105,9 +103,9 @@ test('the module ports wire into their consumer slots; a wrong-kind port is reje
     return {};
   });
 
-  // A postgres port does not satisfy an auth-api slot.
+  // A postgres port does not satisfy the api port's raw HTTP slot.
   expectTypeOf<RefPort<typeof rawPostgresContract>>().not.toExtend<
-    RefPort<typeof authApiContract>
+    RefPort<typeof rawHttpContract>
   >();
 });
 

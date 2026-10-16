@@ -23,9 +23,11 @@ export default compute({ db: rawPostgres() }, ({ db }) => Bun.serve(/* uses db *
   — as a graph, plus the machinery to Load, validate, lower, and run that graph. It
   imports no deployment target. It never learns what "Postgres" or "Compute" is.
 - **`@prisma/composer-prisma-cloud`** (a target pack) provides the concrete vocabulary:
-  `compute()` — a Service; `rawPostgres()` — a Resource; and connection types like
-  `http()`. Each is an ergonomic constructor that returns a **plain data object**
-  carrying the metadata that routes it to an Alchemy Stack/Provider.
+  `compute()` — a Service; `rawPostgres()` — a Resource. Each is an ergonomic
+  constructor that returns a **plain data object** carrying the metadata that
+  routes it to an Alchemy Stack/Provider. Service-to-service connection kinds
+  (`@prisma/composer/service-rpc`, `@prisma/composer/http`) are target-agnostic
+  and ship with `@prisma/composer`.
 
 The developer imports the vocabulary from the target; core is the invisible engine
 underneath.
@@ -117,9 +119,12 @@ target/tooling concerns the core must not absorb.
   `layering.md` already commits to. Target packs supply only data (providers +
   lowerings). See the decision note in
   [`core-model.md`](../10-domains/core-model.md).
-- **Where connection types route.** A Connection (e.g. `http`) between two nodes
-  lowers to config wiring — a URL carried in an env var. Whether that wiring is target
-  vocabulary (like a resource) or core structure is TBD.
+- **Where connection types route.** — *Resolved* for service-to-service connections:
+  service RPC and raw HTTP are core vocabulary, shipped with `@prisma/composer`,
+  because they are protocols between services rather than things a target
+  provisions. The target only supplies the provider's URL, which lowers to config
+  wiring. See
+  [ADR-0054](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md).
 - **A serializable neutral plan.** Routing can walk the in-memory graph directly. A
   serialized, target-neutral plan would also feed the inspectable-topology goal, at
   the cost of an IR to maintain. (The graph's topology view is JSON-safe by

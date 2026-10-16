@@ -1,7 +1,8 @@
 /**
- * `@internal/auth`'s authoring barrel: the three port contracts, the wire
- * record schemas, the consumer dependency factories (`authApi()`,
- * `jwtVerifier()`), the email templates, and the `auth()` module. The
+ * `@internal/auth`'s authoring barrel: the rpc port contracts, the wire
+ * record schemas, the `jwtVerifier()` dependency, the email templates, and
+ * the `auth()` module. The `api` port is a raw HTTP port: a consumer wires it
+ * with `rawHttp()` from `@internal/http`. The
  * runtime engine (store, handlers, entrypoint) stays OUT of this barrel, so
  * a consumer graph that imports this module never bundles a `node:`/`bun`
  * token. The pack has its own subpath (`./pack`).
@@ -9,8 +10,6 @@
 export type { AuthModuleOptions } from '../auth-module.ts';
 export { auth } from '../auth-module.ts';
 export type {
-  AuthApiClient,
-  AuthApiConfig,
   JwtVerifier,
   SessionRecord,
   SignUpMode,
@@ -19,8 +18,6 @@ export type {
 } from '../contract.ts';
 export {
   authAdminContract,
-  authApi,
-  authApiContract,
   authDb,
   authSessionContract,
   jwtVerifier,

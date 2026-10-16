@@ -458,7 +458,7 @@ describe('pass-through: an expose may return a boundary input directly', () => {
   });
 });
 
-describe('untyped inputs (http() escape hatch) forward with no compile-time check', () => {
+describe('untyped inputs (no required contract) forward with no compile-time check', () => {
   const someContract = fakeContract({ a: async () => 1 });
   const otherContract = fakeContract({ b: async () => 2 });
 

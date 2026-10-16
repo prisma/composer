@@ -12,7 +12,7 @@
  * and `family` values are this tool's vocabulary, stored uninterpreted.
  */
 import { createHash } from 'node:crypto';
-import type { AuthoredEdge, Graph, PortEndpoint } from '@internal/core';
+import type { AuthoredEdge, ContractStyle, Graph, PortEndpoint } from '@internal/core';
 import type { ManagementApiClient } from '../client.ts';
 
 export interface ApplicationTopologyNodeBody {
@@ -50,9 +50,6 @@ export interface ApplicationTopologyBody {
   readonly ports: readonly ApplicationTopologyPortBody[];
   readonly edges: readonly ApplicationTopologyEdgeBody[];
 }
-
-/** The producer out-ports whose edges are request/response communication (@prisma/composer/service-rpc's contract kind). */
-const REQUEST_RESPONSE_CONTRACT_KINDS: ReadonlySet<string> = new Set(['rpc']);
 
 /** A map keyed by a port endpoint's node, direction and name. */
 class EndpointMap<V> {
@@ -95,7 +92,7 @@ const endpointBody = (endpoint: PortEndpoint): ApplicationTopologyEndpointBody =
  * client-side: follow the source endpoint through module boundaries (a
  * module port's own one incoming edge) until a service or resource —
  * `data` when the producer is a resource, `communication` otherwise, styled
- * `request-response` when the producing port carries the rpc contract kind.
+ * with the style the producing port's contract declares.
  */
 export function composeApplicationTopology(graph: Graph): ApplicationTopologyBody {
   const kinds = new Map<string, 'module' | 'service' | 'resource'>();
@@ -121,8 +118,8 @@ export function composeApplicationTopology(graph: Graph): ApplicationTopologyBod
 
   const incoming = new EndpointMap<AuthoredEdge>();
   for (const edge of graph.authoredEdges) incoming.set(edge.to, edge);
-  const contractKindByPort = new EndpointMap<string | undefined>();
-  for (const port of graph.ports) contractKindByPort.set(port, port.contractKind);
+  const styleByPort = new EndpointMap<ContractStyle | undefined>();
+  for (const port of graph.ports) styleByPort.set(port, port.style);
 
   const resolveProducer = (from: PortEndpoint): PortEndpoint | undefined => {
     let current = from;
@@ -139,13 +136,7 @@ export function composeApplicationTopology(graph: Graph): ApplicationTopologyBod
 
   const edges: ApplicationTopologyEdgeBody[] = graph.authoredEdges.map((edge) => {
     const producer = resolveProducer(edge.from);
-    const producerContractKind =
-      producer === undefined ? undefined : contractKindByPort.get(producer);
-    const style =
-      producerContractKind !== undefined &&
-      REQUEST_RESPONSE_CONTRACT_KINDS.has(producerContractKind)
-        ? 'request-response'
-        : undefined;
+    const style = producer === undefined ? undefined : styleByPort.get(producer);
     return {
       from: endpointBody(edge.from),
       to: endpointBody(edge.to),

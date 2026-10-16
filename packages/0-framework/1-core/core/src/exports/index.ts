@@ -16,7 +16,7 @@ export type {
   Values,
 } from '../config.ts';
 export { configOf, inputManifest, number, param, paramManifest, string } from '../config.ts';
-export type { Contract } from '../contract.ts';
+export type { Contract, ContractStyle } from '../contract.ts';
 export type {
   AuthoredEdge,
   BoundaryPort,

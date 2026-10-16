@@ -18,9 +18,9 @@ describe('authoring barrel', () => {
     expect(out.success).toBe(true);
 
     const js = await out.outputs[0]!.text();
-    // Positive markers: the probe genuinely bundled the surface (the port
-    // kind and the pack claim both survive minification-free bundling).
-    expect(js).toContain('auth-api');
+    // Positive markers: the probe genuinely bundled the surface (the api
+    // port's contract and the pack claim both survive minification-free bundling).
+    expect(js).toContain('rawHttpContract');
     expect(js).toContain('requiredPackHead');
     for (const token of [
       'alchemy',
