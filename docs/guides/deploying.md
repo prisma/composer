@@ -162,7 +162,9 @@ Services, managed Postgres databases and buckets record their node address
 in the topology to find each resource and its counterpart on main. The row on a
 Branch that holds a node's address is that node's resource: if a deploy is
 interrupted after a resource was created but before it was recorded, the next
-deploy finds the resource by its address and carries on. Existing environments
+deploy finds the resource by its address and carries on. Destroy does not do
+this: after an interrupted production deploy, deploy once more before destroying,
+or the half-created resource is left behind. Existing environments
 receive the address on their next deploy, without replacing the resource. Local
 dev creates no platform rows.
 

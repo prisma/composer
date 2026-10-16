@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterAll, describe, expect, mock, test } from 'bun:test';
 import * as path from 'node:path';
 import type { Contract } from '@internal/core';
 import type { NodeDescriptor } from '@internal/core/config';
@@ -2785,7 +2785,24 @@ describe('platform identity: each row carries its topology node logicalId — th
       );
       expect(ownRows.some(([resource]) => resource.startsWith('EnvironmentVariable '))).toBe(true);
       expect(ownRows.filter(([, adopt]) => adopt !== true)).toEqual([]);
+      expect(policies.has('Connection auth.database-conn')).toBe(true);
       expect(policies.get('Connection auth.database-conn')).toBeUndefined();
     });
   });
+});
+
+afterAll(() => {
+  const declared = recorded.adoptPolicy.filter(([resource]) => !resource.startsWith('Connection '));
+  const variables = declared
+    .map(([resource]) => resource)
+    .filter((resource) => resource.startsWith('EnvironmentVariable '));
+  // Every declaration site in compute.ts ran somewhere in this file: params, the input document,
+  // generated leaves and provider params.
+  for (const suffix of ['_INPUT-var', '_GENERATED-var', '_RPC_ACCEPTED_KEYS-var', '_PORT-var']) {
+    expect(variables.some((resource) => resource.endsWith(suffix))).toBe(true);
+  }
+  expect(
+    variables.filter((resource) => !resource.startsWith('EnvironmentVariable COMPOSER_')),
+  ).toEqual([]);
+  expect(declared.filter(([, adopt]) => adopt !== true)).toEqual([]);
 });

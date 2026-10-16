@@ -117,12 +117,9 @@ const ENGINE_FAILURE_CAUSE_LIMIT = 1000;
 const ALCHEMY_ADOPT_ADVICE: readonly (readonly [RegExp, string])[] = [
   [
     /Re-run with `--adopt` \(or wrap the effect in `adopt\(true\)`\) to take it over\./g,
-    "Composer only uses a row it can identify as this app's. Delete that row in the Prisma Console or via the Management API, then deploy again.",
+    'Something other than this app holds it. Remove that resource, or deploy into a different project, then deploy again.',
   ],
-  [
-    /\(re-deploy with --adopt to take ownership, then destroy\)/g,
-    '(delete it in the Prisma Console or via the Management API)',
-  ],
+  [/\(re-deploy with --adopt to take ownership, then destroy\)/g, '(remove it by hand)'],
 ];
 
 /** Replaces Alchemy CLI advice in engine output with steps that work from Composer. */

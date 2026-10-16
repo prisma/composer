@@ -184,6 +184,27 @@ describe('the failure cause through a real child process', () => {
   }, 15_000);
 });
 
+/** The `+`-joined string literals around each non-comment source line that mentions `--adopt`, as the message they build. */
+function adoptMessagesIn(source: string): string[] {
+  const lines = source.split('\n');
+  const joinedWithNext = (index: number) => /\+\s*$/.test(lines[index] ?? '');
+  const messages: string[] = [];
+  lines.forEach((line, index) => {
+    if (!line.includes('--adopt') || /^\s*(\*|\/\/)/.test(line)) return;
+    let start = index;
+    while (start > 0 && joinedWithNext(start - 1)) start--;
+    let end = index;
+    while (joinedWithNext(end)) end++;
+    const literals =
+      lines
+        .slice(start, end + 1)
+        .join('\n')
+        .match(/"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g) ?? [];
+    messages.push(literals.map((literal) => literal.slice(1, -1)).join(''));
+  });
+  return messages;
+}
+
 describe('withComposerAdvice', () => {
   test("replaces every piece of Alchemy's --adopt advice with steps that work from Composer", () => {
     const upstream = [
@@ -195,7 +216,7 @@ describe('withComposerAdvice', () => {
       const shown = withComposerAdvice(line);
       expect(shown).not.toContain('--adopt');
       expect(shown).not.toContain('adopt(true)');
-      expect(shown).toContain('Prisma Console or via the Management API');
+      expect(shown).toMatch(/Remove that resource|remove it by hand/);
     }
   });
 
@@ -203,15 +224,15 @@ describe('withComposerAdvice', () => {
     expect(withComposerAdvice(alchemyFailedApply)).toBe(alchemyFailedApply);
   });
 
-  test("covers every --adopt mention in the installed Alchemy's engine", () => {
-    const engine = path.dirname(fileURLToPath(import.meta.resolve('alchemy/Plan')));
-    const mentions = ['Plan.ts', 'Apply.ts'].flatMap((file) =>
-      fs
-        .readFileSync(path.join(engine, file), 'utf8')
-        .split('\n')
-        .filter((line) => line.includes('--adopt') && !/^\s*(\*|\/\/)/.test(line)),
+  test("rewrites every --adopt message in the installed Alchemy's engine", () => {
+    let root = path.dirname(fileURLToPath(import.meta.resolve('alchemy')));
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const messages = ['Plan.ts', 'Apply.ts'].flatMap((file) =>
+      adoptMessagesIn(fs.readFileSync(path.join(root, 'src', file), 'utf8')),
     );
-    // An Alchemy upgrade that adds or rewords --adopt advice must update withComposerAdvice.
-    expect(mentions).toHaveLength(4);
+    expect(messages.length).toBeGreaterThan(0);
+    for (const message of messages) {
+      expect(withComposerAdvice(message)).not.toContain('--adopt');
+    }
   });
 });

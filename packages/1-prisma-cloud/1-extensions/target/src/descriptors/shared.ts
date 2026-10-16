@@ -161,7 +161,9 @@ export function logicalIdProp(
 /**
  * Declares one of the app's own App, Database, Bucket or `COMPOSER_` variable rows. On the app's
  * Project and branch, the row holding a node's logicalId (or a variable's key) is that node's row,
- * so a deploy resuming an interrupted create uses it instead of refusing it (ADR-0051).
+ * so a deploy resuming an interrupted create uses it instead of refusing it (ADR-0051). Only for
+ * resources declared with their identity: `logicalIdProp` on App, Database and Bucket, a
+ * `COMPOSER_` key on variables. Without one, upstream falls back to matching by display name.
  */
 export const asOwnRow = adopt(true);
 
