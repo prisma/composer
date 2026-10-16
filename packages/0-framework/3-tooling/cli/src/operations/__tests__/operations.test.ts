@@ -21,6 +21,7 @@ import type {
   RunOutcome,
 } from '@internal/core/config';
 import type { LocalTargetAttachment, LocalTargetDescriptor } from '@internal/core/local-target';
+import { CliStructuredError } from '@internal/foundation/errors';
 import * as Layer from 'effect/Layer';
 import type { ComposerConfigSource } from '../../composer-config.ts';
 import {
@@ -1198,7 +1199,7 @@ function fakeAttachment(
 ): LocalTargetAttachment {
   return {
     startServices: () => Promise.resolve(),
-    stopServices: () => Promise.resolve(),
+    stopApp: () => Promise.resolve(),
     endpoints: () => Promise.resolve(endpoints),
     logs,
   };
@@ -1312,7 +1313,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     let stops = 0;
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1341,6 +1342,74 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(stops).toBe(1);
   }, 15_000);
 
+  test('a failed first converge stops the services it started before returning DEV.CONVERGE_FAILED', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 1, signal: null }),
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+    expect(stops).toBe(1);
+  }, 15_000);
+
+  test('a converge that cannot be spawned still stops the app services', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([]),
+      logs: async function* () {},
+    };
+
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            throw new Error('spawn failed');
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.code).toBe('DEV.CONVERGE_FAILED');
+    expect(stops).toBe(1);
+  }, 15_000);
+
   test('a startServices that throws mid-start is rolled back: the partially-started attachment is stopped again', async () => {
     const app = makeAppDir('hello-dev');
     let stops = 0;
@@ -1349,7 +1418,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
       // the rollback must stop this attachment even though startServices
       // never returned.
       startServices: () => Promise.reject(new Error('service two failed to bind its port')),
-      stopServices: () => {
+      stopApp: () => {
         stops += 1;
         return Promise.resolve();
       },
@@ -1389,7 +1458,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(buildOutput, 'v1');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1450,7 +1519,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1516,7 +1585,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
   describe('the prisma.config.ts watch', () => {
     const quietAttachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1631,7 +1700,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.reject(new Error('service pid 123 will not die')),
+      stopApp: () => Promise.reject(new Error('service pid 123 will not die')),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1664,7 +1733,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([{ address: 'app', url: 'http://localhost:3000' }]),
       logs: async function* () {},
     };
@@ -1709,11 +1778,55 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
   }, 15_000);
 
+  test('a detached session is ready, watches nothing, is already closed, and stopping it stops nothing', async () => {
+    const app = makeAppDir('hello-dev');
+    let stops = 0;
+    const attachment: LocalTargetAttachment = {
+      startServices: () => Promise.resolve(),
+      stopApp: () => {
+        stops += 1;
+        return Promise.resolve();
+      },
+      endpoints: () => Promise.resolve([{ address: 'app', url: 'http://localhost:3000' }]),
+      logs: async function* () {},
+    };
+    const events: string[] = [];
+    let watches = 0;
+
+    await silently(async () => {
+      const start = await devWithDeps(
+        {
+          config: composerConfig(devConfigWith(attachment)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          detach: true,
+          onEvent: (event) => void events.push(event.kind),
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => ({ exitCode: 0, signal: null }),
+          watch: () => {
+            watches += 1;
+            throw new Error('a detached session must not watch');
+          },
+        },
+      );
+      if (!start.ok) throw new Error('expected a started session');
+      expect(start.value.endpoints).toEqual([{ address: 'app', url: 'http://localhost:3000' }]);
+      await start.value.closed;
+      await start.value.stop();
+    });
+
+    expect(watches).toBe(0);
+    expect(stops).toBe(0);
+    expect(events).toEqual(['ready']);
+  }, 15_000);
+
   test('a host onEvent that throws cannot prevent closed from settling', async () => {
     const app = makeAppDir('hello-dev');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1747,7 +1860,7 @@ describe.skipIf(process.platform === 'win32')('dev()', () => {
     fs.writeFileSync(path.join(app.dir, '.prisma-composer'), 'not a directory');
     const attachment: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => Promise.resolve([]),
       logs: async function* () {},
     };
@@ -1915,10 +2028,14 @@ describe.skipIf(process.platform === 'win32')('log()', () => {
     let attempts = 0;
     const flaky: LocalTargetAttachment = {
       startServices: () => Promise.resolve(),
-      stopServices: () => Promise.resolve(),
+      stopApp: () => Promise.resolve(),
       endpoints: () => {
         attempts += 1;
-        if (attempts === 1) return Promise.reject(new Error('ECONNREFUSED'));
+        if (attempts === 1) {
+          return Promise.reject(
+            new CliStructuredError('DEV.EMULATOR_UNREACHABLE', 'connect ECONNREFUSED'),
+          );
+        }
         return Promise.resolve([{ address: 'a', url: 'http://a' }]);
       },
       logs: async function* () {},

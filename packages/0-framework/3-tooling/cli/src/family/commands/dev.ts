@@ -16,7 +16,7 @@
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag, positional } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
-import type { DevEvent } from '../../operations/dev.ts';
+import type { DevEvent, DevInput } from '../../operations/dev.ts';
 import type { ServiceEndpoint } from '../../operations/shared.ts';
 import type { AlchemyInvocation, AlchemyOutcome, RunAlchemy } from '../../run-alchemy.ts';
 import { convergeSpawn, settleConvergeFailure } from '../converge.ts';
@@ -176,6 +176,24 @@ function reportDevEvent(
   };
 }
 
+/** A detached session owns nothing to stop, so a Ctrl-C before it was ready stops the app the way `prisma dev stop` does. */
+async function stopDetachedApp(
+  operations: ComposerOperations,
+  ctx: {
+    readonly config: DevInput['config'];
+    readonly cwd: string;
+    readonly report: (event: EngineEvent) => void;
+  },
+): Promise<void> {
+  const stopped = await operations.devStop({ config: ctx.config, cwd: ctx.cwd });
+  if (stopped.ok) return;
+  ctx.report({
+    kind: 'message',
+    severity: 'warn',
+    text: `The app could not be stopped: ${stopped.failure.message} Run \`prisma dev stop\`.`,
+  });
+}
+
 export const createDevCommand = (operations: ComposerOperations) =>
   defineSessionCommand({
     help: {
@@ -183,8 +201,21 @@ export const createDevCommand = (operations: ComposerOperations) =>
         "Bring up the application whose root node is <entry>'s default export, entirely on " +
         'this machine.',
       description:
-        'Runs credential-free and watches the app for changes, reconverging on every edit.',
-      examples: ['{bin} dev module.ts', '{bin} dev module.ts --fresh'],
+        'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
+        'A node is one service, database or bucket in the app. Each node runs on a local ' +
+        'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
+        "services, databases or S3-compatible buckets. A node's address is its name in the " +
+        'app, with dots for a nested node (catalog.database). The app and where each node ' +
+        'runs are recorded in this directory: `prisma dev url` works from here while ' +
+        '`prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was killed. ' +
+        'Ending `prisma dev` stops its services and database servers; data and ports are kept. ' +
+        'With --detach it returns once every service answers and leaves the app running ' +
+        'without watching for changes, until `prisma dev stop`.',
+      examples: [
+        '{bin} dev module.ts',
+        '{bin} dev module.ts --fresh',
+        '{bin} dev module.ts --detach',
+      ],
     },
     args: {
       positionals: {
@@ -202,6 +233,11 @@ export const createDevCommand = (operations: ComposerOperations) =>
         fresh: flag.boolean({
           brief: 'Destroy the dev stack and wipe the dev state directory before starting.',
         }),
+        detach: flag.boolean({
+          brief:
+            'Return once every service answers and leave the app running without watching for ' +
+            'changes. Use it in scripts, agents and CI. `prisma dev stop` stops the app.',
+        }),
       },
     },
     needs: { config: composerSection },
@@ -214,6 +250,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
           config: ctx.config,
           name: args.flags.name,
           fresh: args.flags.fresh,
+          detach: args.flags.detach,
           cwd: ctx.cwd,
           onEvent: reportDevEvent(ctx.report, ctx.lastChild),
         },
@@ -225,6 +262,11 @@ export const createDevCommand = (operations: ComposerOperations) =>
       // three from drifting. A signal-killed converge needs no branch: the
       // engine settles the run from its own record of the signal.
       if (!result.ok) return settleConvergeFailure(result.failure, ctx);
+
+      if (args.flags.detach) {
+        if (ctx.signal.aborted) await stopDetachedApp(operations, ctx);
+        return ok(undefined);
+      }
 
       await stopRequested(ctx.signal);
       await result.value.stop();

@@ -15,11 +15,13 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
+import {
+  type AppScope,
+  ensureBucketInstance,
+  recordedInstanceId,
+  recordKeyOf,
+} from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
-
-/** Upstream lets `name` default to the resource's logical ID; locally a bucket must have a concrete name to register under. */
-const bucketNameOf = (news: { readonly name?: string | undefined }, id: string): string =>
-  news.name ?? id;
 
 /** Reads a bucket id from upstream's `bucket` input: a plain string or a resolved `Prisma.Bucket` attributes record. */
 function bucketIdOfInput(value: unknown): string {
@@ -30,7 +32,24 @@ function bucketIdOfInput(value: unknown): string {
   return 'local';
 }
 
-/** `Bucket` → registers `<app>--<name>` with the bucket emulator, backed by an in-project data root. */
+export const BUCKETS_DIR = 'buckets';
+
+/** Where a bucket's objects live: in the project's dev directory, under its app, so `--fresh` removes them with the app. */
+export function bucketDataDir(scope: AppScope, name: string): string {
+  return path.join(scope.devDir, BUCKETS_DIR, scope.app, name);
+}
+
+function appScopeOf(input: LocalTargetProvidersInput): AppScope {
+  return { devDir: input.devDir, app: appNameOf(input.container) };
+}
+
+/**
+ * `Bucket` → the bucket instance the directory's record names for the
+ * resource, created when there is none, over an in-project data root. Its
+ * `bucketId` is the instance id, which is also its S3 bucket name. A Bucket
+ * whose recorded instance changed is updated, so its access key is
+ * registered on the new instance.
+ */
 export function LocalBucketProvider(
   input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<Bucket>> {
@@ -39,16 +58,28 @@ export function LocalBucketProvider(
     reconcile: ({ news, id }) =>
       Effect.tryPromise({
         try: async () => {
-          const app = appNameOf(input.container);
-          const name = bucketNameOf(news, id);
-          const dir = path.join(input.devDir, 'buckets', name);
-          await bucketsClient().putBucket(app, name, dir);
+          const name = recordKeyOf('bucket', id, news.name);
+          const bucket = await ensureBucketInstance(
+            appScopeOf(input),
+            name,
+            bucketDataDir(appScopeOf(input), name),
+          );
           return {
-            bucketId: name,
+            bucketId: bucket.id,
             name,
             projectId: projectIdOfInput(news.project),
             createdAt: DEV_TIMESTAMP,
+            logicalId: null,
           };
+        },
+        catch: (cause) => cause,
+      }),
+    diff: ({ output }) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (output === undefined) return undefined;
+          const recorded = await recordedInstanceId(appScopeOf(input), output.name);
+          return recorded === output.bucketId ? undefined : { action: 'update' as const };
         },
         catch: (cause) => cause,
       }),
@@ -67,14 +98,13 @@ export function LocalBucketProvider(
  * next converge.
  */
 export function LocalBucketAccessKeyProvider(
-  input: LocalTargetProvidersInput,
+  _input: LocalTargetProvidersInput,
 ): Layer.Layer<Provider.Provider<BucketAccessKey>> {
   const service: Provider.ProviderService<BucketAccessKey> = {
     list: () => Effect.succeed([]),
     reconcile: ({ news, output, id }) =>
       Effect.tryPromise({
         try: async () => {
-          const app = appNameOf(input.container);
           const pair =
             output !== undefined
               ? {
@@ -83,15 +113,15 @@ export function LocalBucketAccessKeyProvider(
                 }
               : mintKeyPair();
           const client = bucketsClient();
-          await client.putCredentials(app, pair.accessKeyId, pair.secretAccessKey);
           const bucketId = bucketIdOfInput(news.bucket);
+          await client.putCredentials(bucketId, pair.accessKeyId, pair.secretAccessKey);
           return {
             bucketAccessKeyId: news.name ?? id,
             bucketId,
             accessKeyId: pair.accessKeyId,
             secretAccessKey: Redacted.make(pair.secretAccessKey),
             endpoint: client.baseUrl,
-            bucketName: `${app}--${bucketId}`,
+            bucketName: bucketId,
           };
         },
         catch: (cause) => cause,

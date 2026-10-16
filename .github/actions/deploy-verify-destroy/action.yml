@@ -57,6 +57,12 @@ runs:
         STACK_NAME: ${{ inputs.stack-name }}
       run: ${{ inputs.verify-command }}
 
+    - name: Verify platform identities
+      shell: bash
+      env:
+        STACK_NAME: ${{ inputs.stack-name }}
+      run: bun "${{ github.workspace }}/scripts/e2e-verify-identity.ts"
+
     - name: Destroy
       # Check the Deploy step's outcome, not `.alchemy/` presence — deploy
       # state is hosted, not local to the runner.

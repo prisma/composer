@@ -1,4 +1,5 @@
 import { blindCast } from '@internal/foundation/casts';
+import { contractStyleOf } from './contract.ts';
 import {
   type AuthoredEdge,
   type BoundaryPort,
@@ -557,6 +558,7 @@ function flatten(
         direction: 'out',
         name: RESOURCE_OUT_PORT,
         contractKind: child.provides.kind,
+        style: contractStyleOf(child.provides),
       });
       return refForResource(fullAddress, child);
     }

@@ -1,12 +1,13 @@
 /**
- * `@internal/auth`'s authoring surface: the three port contracts (`api`
- * public HTTP, `session` rpc, `admin` rpc), the wire record schemas, and the
- * dependency factories a consumer wires (`authApi()`, `jwtVerifier()`) plus
- * the module's own db claim (`authDb()`). arktype throughout; dates cross
+ * `@internal/auth`'s authoring surface: the two rpc port contracts
+ * (`session`, `admin`; the `api` port is raw HTTP), the wire record schemas,
+ * the `jwtVerifier()` dependency a consumer wires, and the module's own db
+ * claim (`authDb()`). arktype throughout; dates cross
  * the wire as ISO-8601 UTC strings (email's convention).
  */
-import type { Contract, DependencyEnd } from '@internal/core';
+import type { DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
+import { rawHttpContract } from '@internal/http';
 import { requiredPackHead } from '@internal/prisma-cloud';
 // Type-only, and type-only it must stay: the value surface of ./orm
 // carries pg (node: imports), which this authoring barrel must never bundle.
@@ -49,45 +50,6 @@ export type SessionRecord = typeof sessionRecord.infer;
  * accounts then come only from `admin.createUser`.
  */
 export type SignUpMode = 'open' | 'closed';
-
-// ——— Port `api` — the public Better Auth surface ———
-
-export interface AuthApiConfig {
-  readonly url: string;
-}
-
-/**
- * The contract of the public auth surface. Kind-only `satisfies` (storage's
- * `s3Contract` shape); the `url` connection param is the compute service's
- * own producer output, resolved by name the way `streamsProviderContract`'s
- * is.
- */
-export const authApiContract: Contract<'auth-api', AuthApiConfig> = Object.freeze({
-  kind: 'auth-api',
-  __cmp: { url: '' },
-  satisfies: (required: Contract<'auth-api', unknown>) => required.kind === 'auth-api',
-});
-
-/** Thin URL-anchored client for the public surface — what `authProxy()` consumes. */
-export interface AuthApiClient {
-  readonly url: string;
-  fetch(path: string, init?: RequestInit): Promise<Response>;
-}
-
-/** A consumer's dependency on the public auth surface. */
-export function authApi(): DependencyEnd<AuthApiClient, typeof authApiContract> {
-  return dependency({
-    type: 'auth-api',
-    connection: {
-      params: { url: string() },
-      hydrate: ({ url }): AuthApiClient => ({
-        url,
-        fetch: (path, init) => fetch(new URL(path, url), init),
-      }),
-    },
-    required: authApiContract,
-  });
-}
 
 // ——— jwtVerifier() — stateless verification over the instance's JWKS ———
 
@@ -135,9 +97,9 @@ function claimString(claims: Record<string, unknown>, key: string): string | und
  * trusts keys fetched from the wired instance, and instances never share
  * keys. jose caches the JWKS and refetches on an unknown `kid`.
  */
-export function jwtVerifier(): DependencyEnd<JwtVerifier, typeof authApiContract> {
+export function jwtVerifier(): DependencyEnd<JwtVerifier, typeof rawHttpContract> {
   return dependency({
-    type: 'auth-api',
+    type: 'http',
     connection: {
       params: { url: string() },
       hydrate: ({ url }): JwtVerifier => {
@@ -177,7 +139,7 @@ export function jwtVerifier(): DependencyEnd<JwtVerifier, typeof authApiContract
         };
       },
     },
-    required: authApiContract,
+    required: rawHttpContract,
   });
 }
 

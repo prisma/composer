@@ -23,6 +23,8 @@ compute({
 });
 ```
 
+A service that receives no requests and so never listens on its port, such as a scheduler that only calls out, declares `listens: false`. `prisma dev` then reports it running as soon as its process starts, instead of waiting for its port. Every other service must listen on `service.port()`.
+
 Dependencies and input are two deliberately separate channels with two
 separate accessors. A dependency is a live connection to another node; input
 is data — plain values and credentials together, declared as one schema
@@ -66,7 +68,8 @@ On the consumer, declare `deps: { auth: rpc(authContract) }` and
 like a local function. Inputs and outputs are also validated at runtime, at
 the boundary, against the same schemas.
 
-Composer also supports [ordinary HTTP ports](#http-connections-and-reverse-proxies).
+For an HTTP server the framework does not generate, use a
+[raw HTTP connection](#raw-http-connections-and-reverse-proxies) instead.
 There are no gRPC, WebSocket or streaming contracts yet.
 
 ### Calls are authenticated for you
@@ -119,27 +122,29 @@ Two limits worth knowing:
   others. Keys stay the same across redeploys; to replace one, remove the
   dependency (or destroy the stack) and deploy again.
 
-## HTTP connections and reverse proxies
+## Raw HTTP connections and reverse proxies
 
-A reverse proxy, Next.js app or static file server already speaks HTTP. Expose
-`httpContract` on the provider and declare `http()` in its caller's `deps`:
+A reverse proxy, a Next.js app or a static file server already speaks HTTP
+and has no RPC contract. To call one, the provider exposes
+`rawHttpContract` and the caller declares `rawHttp()`:
 
 ```ts
 import { module } from '@prisma/composer';
+import { rawHttp, rawHttpContract } from '@prisma/composer/http';
 import node from '@prisma/composer/node';
-import { compute, http, httpContract } from '@prisma/composer-prisma-cloud';
+import { compute } from '@prisma/composer-prisma-cloud';
 
 const site = compute({
-  name: 'site', deps: {}, expose: { http: httpContract },
-  build: node({ module: import.meta.url, dir: './dist/site', entry: 'server.js' }),
+  name: 'site', deps: {}, expose: { http: rawHttpContract },
+  build: node({ module: import.meta.url, entry: '../dist/site/server.mjs' }),
 });
 const docs = compute({
-  name: 'docs', deps: {}, expose: { http: httpContract },
-  build: node({ module: import.meta.url, dir: './dist/docs', entry: 'server.js' }),
+  name: 'docs', deps: {}, expose: { http: rawHttpContract },
+  build: node({ module: import.meta.url, entry: '../dist/docs/server.mjs' }),
 });
 const gateway = compute({
-  name: 'gateway', deps: { site: http(), docs: http() },
-  build: node({ module: import.meta.url, dir: './dist/gateway', entry: 'server.js' }),
+  name: 'gateway', deps: { site: rawHttp(), docs: rawHttp() },
+  build: node({ module: import.meta.url, entry: '../dist/gateway/server.mjs' }),
 });
 
 export default module('web', ({ provision }) => {
@@ -149,24 +154,23 @@ export default module('web', ({ provision }) => {
 });
 ```
 
-The gateway reads its upstreams with `gateway.load()`. Each binding has a `url`
-for the application's proxy library and `fetch(path, init)` for ordinary HTTP
-requests. Composer resolves those origins for local development and each
-deployed stage. Providers continue serving their existing HTTP handlers;
-exposing the port adds no RPC endpoint or authentication middleware.
+In the gateway, `gateway.load()` returns `{ site, docs }`. Each has a `url`,
+to hand to your proxy library, and `fetch(path, init)`, which resolves `path`
+against that `url`. The client only reaches its provider's origin: `fetch`
+rejects a path that resolves to another host, such as `//other.example/x` or
+an absolute URL. The framework fills in the right origin locally and in each
+deployed stage.
 
-These wires are actual communication edges in the Console topology, including
-through exposed Module ports. Console can present Internet → gateway →
-site/docs, with HTTP edges styled as request/response. This describes declared
-calls; it does not measure traffic or make upstream Compute URLs private.
-`serviceOrigin()` in `input` is still useful for a canonical URL in generated
-links, but a configuration reference does not declare that one service calls
-another. Use dependencies for proxy upstreams.
+The framework checks only that the provider declared an HTTP port: TypeScript
+and Load both reject a bare service reference or a port of another kind.
+Which paths, methods and headers the provider accepts is your code's
+business. A raw HTTP connection has no service key, retry or idempotency
+key, and exposing the port adds nothing to the provider's server.
 
-The original `http({ name })` overload remains an untyped compatibility escape
-hatch. New code should use `http()` and wire an exposed `httpContract` port:
-TypeScript and Load then reject a bare service ref or an incompatible contract,
-and the exported topology retains the named connection.
+Each dependency appears as a call from the gateway to the upstream in the
+application topology, including through module boundaries. Passing a URL as
+`input` (for example with `serviceOrigin()`) does not; use it for canonical
+link origins, and declare a dependency for every service you call.
 
 ## Databases
 

@@ -7,6 +7,7 @@ import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
+import { resourceName } from '../service-app.ts';
 
 /**
  * The provider-side reserved param for one brand's minted values (ADR-0031:
@@ -148,6 +149,14 @@ export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
 
+/** The `logicalId` prop of a node's App, Database or Bucket: its address on every platform deploy, none in branchless dev (ADR-0051). */
+export function logicalIdProp(
+  application: unknown,
+  address: string,
+): { readonly logicalId?: string } {
+  return cloudApplicationOf(application).branchless ? {} : { logicalId: address };
+}
+
 /**
  * The Branch a database attaches to. Upstream treats an omitted branch as
  * desired-unassigned (`branchId` PATCHed back to `null` on reconcile), so a
@@ -177,10 +186,12 @@ export function attachmentBranchIdOf(application: unknown, id: string): string |
  */
 export const stageDatabase = ({
   id,
+  address,
   application,
   region,
 }: {
   readonly id: string;
+  readonly address: string;
   readonly application: unknown;
   readonly region: ProjectRegion | undefined;
 }) =>
@@ -190,7 +201,8 @@ export const stageDatabase = ({
     const db = yield* Prisma.Database(`${id}-db`, {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId } : { name: id }),
+      ...(branchId !== undefined ? { branchId } : { name: resourceName(id) }),
+      ...logicalIdProp(application, address),
     });
     const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
     const url = Output.map(conn.directConnectionString, (value) => {

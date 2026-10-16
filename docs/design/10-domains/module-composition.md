@@ -74,9 +74,9 @@ export default module("auth", { deps: { db }, expose: { verify: authContract } }
   module's own output port, or one of the module's own boundary inputs returned
   directly (a pass-through: the module re-offers what it was wired, and a
   consumer of that output still resolves to the original producer).
-- An untyped input (e.g. `http()`) carries no contract, so forwarding it has
-  no compile-time check — it defers wholly to Load's `satisfies()` backstop
-  at whatever consumer slot it reaches.
+- An untyped input (a dependency end with no required contract) has no
+  compile-time forwarding check — it defers wholly to Load's `satisfies()`
+  backstop at whatever consumer slot it reaches.
 - A module that re-exports one child's whole face is both moves at once — a
   wrapper module is a few lines.
 

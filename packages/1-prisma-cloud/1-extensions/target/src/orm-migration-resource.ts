@@ -22,7 +22,12 @@ import { Resource } from 'alchemy';
 import * as Provider from 'alchemy/Provider';
 import * as Effect from 'effect/Effect';
 import { loadContractJson, resolveOrmConfig } from './orm-config.ts';
-import { applyOrmMigration, OrmMigrationError, targetStorageHash } from './orm-migrate.ts';
+import {
+  applyOrmMigration,
+  isAtTargetRef,
+  OrmMigrationError,
+  targetStorageHash,
+} from './orm-migrate.ts';
 
 export interface OrmMigrationProps {
   /** The live DB connection string (an Alchemy Output at wiring time, resolved at apply). */
@@ -137,3 +142,31 @@ export const ormMigrationProviderService: Provider.ProviderService<OrmMigration>
 /** The `OrmMigration` provider layer — merged into the extension descriptor's `providers()`. */
 export const OrmMigrationProvider = () =>
   Provider.effect(OrmMigration, Effect.succeed(ormMigrationProviderService));
+
+/**
+ * Local dev's `OrmMigration` provider: the same service, plus a diff that
+ * asks for an update when the database is not at the target by its marker.
+ * A local database the emulator had to create again starts empty on the
+ * same URL, so nothing in the props changes and Alchemy would otherwise skip
+ * the migration. Reading the marker is one connection per converge.
+ */
+export const LocalOrmMigrationProvider = () =>
+  Provider.effect(
+    OrmMigration,
+    Effect.succeed({
+      ...ormMigrationProviderService,
+      diff: ({ olds }) =>
+        Effect.tryPromise({
+          // A marker that cannot be read is left to the update, which
+          // retries the connection and reports a failure properly.
+          try: async () => {
+            const atTarget = await isAtTargetRef(olds.url, {
+              hash: olds.targetHash,
+              invariants: olds.invariants,
+            }).catch(() => false);
+            return atTarget ? undefined : { action: 'update' as const };
+          },
+          catch: (cause) => cause,
+        }),
+    } satisfies Provider.ProviderService<OrmMigration>),
+  );

@@ -157,6 +157,19 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
+Services, managed Postgres databases and buckets record their node address
+(`auth.database`) as `logicalId` on their Branch. Console uses the same address
+in the topology to find each resource and its counterpart on main. The upstream
+Alchemy resource owns the identity; a conflicting identity fails the deploy.
+Existing environments receive it on their next deploy, without replacing the
+resource. Local dev creates no platform rows.
+
+The address is the identity, so changing it makes a different entity. Renaming
+a node that has no explicit provision `id`, changing its `id`, or moving it into
+another module creates new rows and deletes the old ones on the next deploy; for
+a database or a bucket, that deletes its data. Renaming a resource in the
+Console changes nothing.
+
 Compute deployments capture their environment when they are created. Composer
 waits for its environment-variable updates to finish before creating a
 deployment, including updates to an existing input document. Later variable
@@ -197,7 +210,7 @@ dependencies are traced and copied into the deploy artifact (see
 Planning and applying run in one deploy engine process, so they are one step.
 The last line is the whole deploy, from start to finish.
 
-With `--json`, or whenever stdout is not a terminal, each step is a
+With `--json`, each step is a
 `step-started` and a `step-finished` line on stdout, followed by an
 `endpoint` line per public URL and the `result` line. A `step-finished` line
 carries `data.durationMs`. An assemble step's `data` also holds whatever the
@@ -352,7 +365,7 @@ resolves a single `effect`.
 The fix is to use the same `effect` as Composer. Match your own `effect`
 dependency to `@prisma/composer`'s exact pin (see its `dependencies.effect`),
 or, when a dependency you cannot change pins another version, force
-Composer's. `<pin>` below stands for that exact version (`4.0.0-rc.115` in
+Composer's. `<pin>` below stands for that exact version (`4.0.3` in
 Composer 0.29.1). With npm, in your app's `package.json`:
 
 ```json
@@ -473,10 +486,11 @@ With the graph empty, planning auto-baselines from the ref: it authors empty →
 
 ## Driving deploys from code
 
-`@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, and `log`
-operations that return structured results instead of printing and exiting.
-`prisma deploy` and `prisma dev` are thin renderers over the `deploy` and
-`dev` operations, so the two surfaces can't drift. `destroy` and `log` have
+`@prisma/composer/control` exports typed `deploy`, `destroy`, `dev`, `devUrl`,
+`devStop` and `log` operations that return structured results instead of
+printing and exiting. `prisma deploy`, `prisma dev`, `prisma dev url` and
+`prisma dev stop` are thin renderers over the `deploy`, `dev`, `devUrl` and
+`devStop` operations, so the two surfaces can't drift. `destroy` and `log` have
 no command; these operations are how you run them. They read their
 credentials from the environment (see [Credentials](#credentials)).
 
@@ -509,7 +523,7 @@ if (result.ok) {
 
 What to know before embedding it:
 
-- **You pass the config.** `deploy`, `destroy`, `dev` and `log` each take a
+- **You pass the config.** Each operation takes a
   required `config: { value, file }` (the `ComposerConfigSource` type): the
   `composer` section of your `prisma.config.ts` and the path of the file that
   declares it. A relative `file` resolves against `cwd`, not against your

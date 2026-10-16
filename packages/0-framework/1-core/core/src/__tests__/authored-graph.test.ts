@@ -22,6 +22,7 @@ const fakeContract = <Cmp>(cmp: Cmp): Contract<'rpc', Cmp> => {
   const value: Contract<'rpc', Cmp> = {
     kind: 'rpc',
     __cmp: cmp,
+    style: 'request-response',
     satisfies: (required) => value === required,
   };
   return value;
@@ -104,7 +105,7 @@ describe('explicit parents', () => {
 });
 
 describe('boundary ports', () => {
-  test('dep slots are in ports, exposed contracts are out ports, a resource has one $out', () => {
+  test('dep slots are in ports, exposed contracts are out ports with their style, a resource has one $out', () => {
     const graph = shopGraph();
 
     expect(graph.ports).toContainEqual({
@@ -112,42 +113,49 @@ describe('boundary ports', () => {
       direction: 'out',
       name: '$out',
       contractKind: 'fake/db',
+      style: undefined,
     });
     expect(graph.ports).toContainEqual({
       node: 'auth',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
+      style: undefined,
     });
     expect(graph.ports).toContainEqual({
       node: 'auth',
       direction: 'out',
       name: 'verify',
       contractKind: 'rpc',
+      style: 'request-response',
     });
     expect(graph.ports).toContainEqual({
       node: 'auth.api',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
+      style: undefined,
     });
     expect(graph.ports).toContainEqual({
       node: 'auth.api',
       direction: 'out',
       name: 'verify',
       contractKind: 'rpc',
+      style: 'request-response',
     });
     expect(graph.ports).toContainEqual({
       node: 'web',
       direction: 'in',
       name: 'db',
       contractKind: 'fake/db',
+      style: undefined,
     });
     expect(graph.ports).toContainEqual({
       node: 'web',
       direction: 'in',
       name: 'verify',
       contractKind: 'fake/rpc',
+      style: undefined,
     });
     // The root declares no boundary, so it contributes no ports.
     expect(graph.ports.filter((p) => p.node === 'shop')).toEqual([]);

@@ -1,5 +1,7 @@
 # ADR-0050: Composer runs as `prisma deploy` and `prisma dev`; it has no binary of its own
 
+Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
+
 ## Decision
 
 Composer has no command-line binary of its own. The `prisma` CLI is its only command line, and it mounts exactly two Composer commands:

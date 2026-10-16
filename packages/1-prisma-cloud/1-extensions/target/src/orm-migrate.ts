@@ -197,6 +197,24 @@ export function decideMigrationAction(
 }
 
 /**
+ * Whether the database at `url` is already at `ref` by its marker, read
+ * without applying anything. A database with no marker, such as one created
+ * empty, is not.
+ */
+export async function isAtTargetRef(url: string, ref: PnTargetRef): Promise<boolean> {
+  const client = createPostgresControlClient({
+    connection: normalizeSslMode(url),
+    extensions: [],
+  });
+  await client.connect();
+  try {
+    return decideMigrationAction(await client.readMarker(), ref) === 'noop';
+  } finally {
+    await client.close();
+  }
+}
+
+/**
  * Bring the database at `url` to the target ref via PN's authored migrations.
  * Reads the live marker, decides no-op / migrate
  * ({@link decideMigrationAction}), applies, and throws a typed

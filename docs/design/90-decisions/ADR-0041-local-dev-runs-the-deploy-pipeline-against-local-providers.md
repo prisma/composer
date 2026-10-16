@@ -2,6 +2,8 @@
 
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma dev <entry>`, and reading the running app's logs is the `log` operation on `@prisma/composer/control`, not a command. The `prisma-composer` binary is retired. The local pipeline below is unchanged.
 
+Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md): the emulators know nothing about Composer. A dev instance is no longer identified on the emulators by the app name: the Compute, Postgres and bucket emulators key their instances by ids they generate, and Composer records, per working directory, which instance backs each node of each app run there. When `prisma dev` ends it stops the app's database servers as well as its services.
+
 ## Decision
 
 `prisma-composer dev <entry>` boots the whole application locally, with no cloud
@@ -116,7 +118,7 @@ every attachment after each converge, before printing the front door — so
 a warm start restarts stopped services independent of Alchemy's props
 diff. Details in [local-dev.md](../10-domains/local-dev.md). A detached
 mode (services keep serving with no session, full platform parity) is a
-designed extension, not v1.
+designed extension, not v1. *(Amended by ADR-0053: `prisma dev --detach`.)*
 
 **Rebuilds stay the user's** (ADR-0005). Dev watches the *built* output that
 assembly consumes, never sources; the user's own watcher (`next dev` is not

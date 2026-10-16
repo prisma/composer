@@ -1,6 +1,6 @@
 /** The `compute` node kind's descriptor: the four service hooks — provision, serialize, package, deploy. */
 
-import { isParamSource, type ServiceNode } from '@internal/core';
+import { isParamSource } from '@internal/core';
 import type { ServiceLowering } from '@internal/core/deploy';
 import {
   ARTIFACT_CONTENT_TYPE,
@@ -27,10 +27,16 @@ import {
 import { serviceAppName } from '../service-app.ts';
 import {
   cloudApplicationOf,
+  logicalIdProp,
   projectIdOf,
   type ResolvedCloudOptions,
   validateName,
 } from './shared.ts';
+
+/** `compute({ listens: false })`, read structurally: the node may be a copy made by another bundle of this package, so `instanceof` cannot be relied on. */
+function declaresNoListening(node: unknown): boolean {
+  return typeof node === 'object' && node !== null && 'listens' in node && node.listens === false;
+}
 
 /**
  * compute's provision → serialize/deploy handoff. `serviceId` is an
@@ -143,16 +149,17 @@ export function computeDescriptor(
     kind: 'service' as const,
     // The service as a PLACE inside the application's Project: the App,
     // identity-bearing only, no code runs.
-    provision: ({ id, application }) =>
+    provision: ({ id, address, application }) =>
       Effect.gen(function* () {
         validateName(id, 'service name (from provision id)');
         const projectId = projectIdOf(application);
-        const branchId = cloudApplicationOf(application).branchId;
+        const { branchId } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(`${id}-svc`, {
           project: projectId,
           displayName: serviceAppName(id),
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
+          ...logicalIdProp(application, address),
         });
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
@@ -169,7 +176,10 @@ export function computeDescriptor(
         const cls = branchId ? ('preview' as const) : ('production' as const);
         const branch = branchId !== undefined ? { branchId } : {};
         const projectId = provisioned.projectId;
-        const svc = node as ServiceNode;
+        if (node.kind !== 'service') {
+          throw new Error(`prisma-cloud: cannot serialize non-service node "${address}".`);
+        }
+        const svc = node;
         const rows: EnvRow[] = [];
 
         for (const d of paramEntries(svc)) {
@@ -352,13 +362,14 @@ export function computeDescriptor(
 
     // Deterministic tar.gz (fixed mtimes/ordering) so unchanged inputs hash
     // identically; the fs/tar work itself lives in @internal/lowering.
-    package: ({ id }, { assembled, address }) =>
+    package: ({ id, node }, { assembled, address }) =>
       Effect.try(() =>
         packageComputeArtifact({
           id,
           bundleDir: assembled.dir,
           appEntry: assembled.entry,
           address,
+          ...(declaresNoListening(node) ? { listens: false } : {}),
         }),
       ),
 

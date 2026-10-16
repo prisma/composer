@@ -179,6 +179,18 @@ export async function executeDev(
     return { outcome, stackPath };
   };
 
+  // A failed first converge can leave some services started; the session never began, so stop them.
+  const stopStartedServices = async (): Promise<void> => {
+    for (const [id, dev] of resolved) {
+      try {
+        const attachment = await dev.attach({ container: containers.get(id), devDir });
+        await attachment.stopApp();
+      } catch {
+        // Best effort: the converge failure is the error to report.
+      }
+    }
+  };
+
   // Write the dev stack file and converge. Inside the try: a stray
   // `.prisma-composer` FILE, a full disk, or a spawn that throws must come
   // back as a failure result, not a rejection out of dev().
@@ -186,11 +198,13 @@ export async function executeDev(
   try {
     first = await converge();
   } catch (error) {
+    await stopStartedServices();
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }
   const firstStatus = first.outcome.signal !== null ? null : (first.outcome.exitCode ?? 1);
   if (firstStatus !== 0) {
+    await stopStartedServices();
     return notOk(
       new CliStructuredError(
         'DEV.CONVERGE_FAILED',
@@ -249,7 +263,7 @@ export async function executeDev(
     for (const attachment of attachments) {
       // Recorded BEFORE the call: startServices can start some services and
       // then throw, and a partially-started attachment must be rolled back by
-      // the catch below too (stopServices failures are already swallowed
+      // the catch below too (stopApp failures are already swallowed
       // there, so stopping a never-started attachment is harmless).
       started.push(attachment);
       try {
@@ -265,6 +279,10 @@ export async function executeDev(
       throw toStructured('DEV.ATTACH_FAILED', error);
     }
     emit({ kind: 'ready', endpoints });
+    if (input.detach === true) {
+      const closed = Promise.resolve();
+      return ok({ endpoints, stop: () => closed, closed });
+    }
 
     // Watch loop until the session is stopped: rebuild → re-assemble →
     // re-converge; a converge failure keeps the running app and keeps watching.
@@ -370,7 +388,7 @@ export async function executeDev(
           // teardown continues, `stopped` still fires, `closed` still settles.
           for (const attachment of attachments) {
             try {
-              await attachment.stopServices();
+              await attachment.stopApp();
             } catch (error) {
               emit({ kind: 'stop-error', message: failureMessage(error) });
             }
@@ -389,7 +407,7 @@ export async function executeDev(
     // back as values — a non-structured escape is a bug and throws (rule 6).
     watch?.stop();
     configWatch?.stop();
-    await Promise.all(started.map((a) => a.stopServices().catch(() => undefined)));
+    await Promise.all(started.map((a) => a.stopApp().catch(() => undefined)));
     if (CliStructuredError.is(error)) return notOk(error);
     throw error;
   }

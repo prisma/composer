@@ -13,7 +13,7 @@
  * Criteria proved here:
  *   1. Credential-free bring-up: PRISMA_WORKSPACE_ID/PRISMA_SERVICE_TOKEN/
  *      PRISMA_REGION are stripped from the child's env; the front door
- *      (`dev: ready` + one line per service) is parsed from real stdout;
+ *      (the `--json` run's `ready` status frame and `endpoint` frames) is parsed from real stdout;
  *      an HTTP round-trip against the storefront's URL succeeds.
  *   2. Rebuild restarts exactly one service: touching ONLY catalog's built
  *      artifact (so its hash moves, nothing else's) restarts `catalog.service`
@@ -71,6 +71,7 @@
 
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as path from 'node:path';
 import { containerEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
@@ -170,29 +171,11 @@ function readLog(logPath: string): string {
   }
 }
 
-/**
- * Parses the front-door block out of the tee'd log. The engine renders `dev`'s
- * ready status and its endpoint events as `dev: ready` followed by one
- * `<address>: <url>` line per service; the old `[dev] `-prefixed block was the
- * legacy CLI adapter's own console formatting and went with it.
- */
+/** The front door, from the `--json` run's NDJSON frames: a `status` frame marks readiness and each service is an `endpoint` frame. */
 function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
-  const lines = log.split('\n');
-  const readyAt = lines.findIndex((l) => l.trim() === 'dev: ready');
-  if (readyAt !== -1) {
-    const endpoints: Endpoint[] = [];
-    for (let i = readyAt + 1; i < lines.length; i += 1) {
-      const m = /^(\S+): (\S+)$/.exec(lines[i]?.trim() ?? '');
-      if (m === null) break;
-      endpoints.push({ address: m[1] as string, url: m[2] as string });
-    }
-    return endpoints.length > 0 ? endpoints : undefined;
-  }
-  // Engine 0.2.0 renders a non-TTY run as NDJSON frames instead: readiness
-  // is a `status` frame and each service is an `endpoint` frame.
   let ready = false;
   const endpoints: Endpoint[] = [];
-  for (const line of lines) {
+  for (const line of log.split('\n')) {
     if (!line.startsWith('{')) continue;
     try {
       const frame = JSON.parse(line) as {
@@ -206,7 +189,7 @@ function parseFrontDoor(log: string): readonly Endpoint[] | undefined {
       }
       if (frame.kind === 'status' && frame.status === 'ready') ready = true;
     } catch {
-      // Child output interleaved with the frames; not every line is JSON.
+      // Converge output is interleaved with the frames; not every line is JSON.
     }
   }
   return ready && endpoints.length > 0 ? endpoints : undefined;
@@ -240,27 +223,50 @@ interface ServiceInfo {
   readonly pid?: number;
 }
 
-/** The documented Compute-emulator wire protocol (spec § 2 compute-main.ts) — plain fetch, never a typed client. */
+/** The services `prisma dev` recorded for the app, as the Compute emulator reports them (plain fetch, never the typed client). */
 async function listComputeServices(app: string): Promise<readonly ServiceInfo[]> {
   const entry = readEmulatorEntry('compute');
   if (entry === undefined) throw new Error('compute emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${app}/services`);
-  if (!res.ok) throw new Error(`compute emulator listServices failed: ${res.status}`);
-  return (await res.json()) as ServiceInfo[];
+  const services: ServiceInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(app, 'service'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`compute emulator getInstance failed: ${res.status}`);
+    services.push({ ...((await res.json()) as ServiceInfo), address });
+  }
+  return services;
+}
+
+/** The nodes of `kind` that `prisma dev` recorded for `app` in storeDir's `.prisma-composer/dev/emulator-instances.json`. */
+function recordedNodes(app: string, kind: string): Record<string, { id: string }> {
+  const record = readJson(
+    path.join(storeDir, '.prisma-composer', 'dev', 'emulator-instances.json'),
+  ) as
+    | { apps: Record<string, { nodes: Record<string, { kind: string; id: string }> }> }
+    | undefined;
+  const nodes = record?.apps[app]?.nodes ?? {};
+  return Object.fromEntries(Object.entries(nodes).filter(([, node]) => node.kind === kind));
 }
 
 interface PostgresDatabaseInfo {
-  readonly instanceName: string;
+  readonly address: string;
+  readonly id: string;
   readonly url: string;
+  readonly status: string;
 }
 
-/** The documented postgres-emulator wire protocol (spec § 4, REVISED — operator review of #162: the daemon owns instance state, there is no dev-store postgres.json) — plain fetch, never the typed client. */
+/** The databases `prisma dev` recorded for the app, as the postgres emulator reports them (plain fetch, never the typed client). */
 async function listPostgresDatabases(): Promise<readonly PostgresDatabaseInfo[]> {
   const entry = readEmulatorEntry('postgres');
   if (entry === undefined) throw new Error('postgres emulator registry entry not found');
-  const res = await fetch(`http://127.0.0.1:${entry.port}/apps/${APP_NAME}/databases`);
-  if (!res.ok) throw new Error(`postgres emulator listDatabases failed: ${res.status}`);
-  return (await res.json()) as PostgresDatabaseInfo[];
+  const databases: PostgresDatabaseInfo[] = [];
+  for (const [address, node] of Object.entries(recordedNodes(APP_NAME, 'database'))) {
+    const res = await fetch(`http://127.0.0.1:${entry.port}/instances/${node.id}`);
+    if (res.status === 404) continue;
+    if (!res.ok) throw new Error(`postgres emulator getInstance failed: ${res.status}`);
+    databases.push({ ...((await res.json()) as PostgresDatabaseInfo), address });
+  }
+  return databases;
 }
 
 /** Every address's pid, keyed by address — undefined for a stopped/absent service. */
@@ -304,7 +310,7 @@ async function startDev(fresh: boolean): Promise<DevSession> {
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', 'module.ts', ...(fresh ? ['--fresh'] : [])];
+  const args = ['dev', 'module.ts', '--json', ...(fresh ? ['--fresh'] : [])];
   const child = spawn(CLI_BIN, args, {
     cwd: storeDir,
     env: credentialFreeEnv(),
@@ -342,6 +348,17 @@ async function startDev(fresh: boolean): Promise<DevSession> {
  * that it survives composer's own signal wiring and reaches the shell is
  * provable only here.
  */
+function acceptsConnection(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => resolve(false));
+  });
+}
+
 async function stopDev(session: DevSession): Promise<void> {
   if (session.child.exitCode !== null || session.child.signalCode !== null) return;
   session.child.kill('SIGINT');
@@ -371,11 +388,8 @@ function readJson(file: string): unknown {
 
 async function readCatalogDbUrl(): Promise<string> {
   const databases = await listPostgresDatabases();
-  const entry = databases.find((d) => d.instanceName === 'pcdev-store-catalog-database');
-  assert(
-    entry?.url !== undefined,
-    'the postgres-main listing must carry a pcdev-store-catalog-database entry',
-  );
+  const entry = databases.find((d) => d.address === 'catalog.database');
+  assert(entry?.url !== undefined, 'the record must name a running catalog.database database');
   return entry.url;
 }
 
@@ -442,7 +456,7 @@ const REAL_WATCH_TIMEOUT_MS = 30_000;
  * re-assemble, and re-converge are what's being proved.
  *
  * Waits for the watch loop's OWN completion signal — run-dev.ts reprints the
- * front door (`dev: ready` + one line per service) after a successful
+ * front door (a `ready` status frame and `endpoint` frames) after a successful
  * reconverge — rather than just for catalog.service's pid to move: the spec
  * re-runs assemble for EVERY service on a fire (not just the touched one),
  * so waiting on catalog's pid alone can return while the running process is
@@ -627,6 +641,15 @@ async function main(): Promise<void> {
     // ——— Ctrl-C ———
     await stopDev(session);
     console.log('[proving] session 1 stopped cleanly on SIGINT');
+    // Ending `prisma dev` stops the app's database servers too; their data
+    // and ports are kept for the warm start below.
+    const stoppedDb = (await listPostgresDatabases()).find((d) => d.address === 'catalog.database');
+    assert(stoppedDb?.status === 'stopped', 'catalog.database must be stopped after Ctrl-C');
+    const stoppedPort = new URL(stoppedDb.url).port;
+    assert(
+      !(await acceptsConnection(Number(stoppedPort))),
+      `catalog.database's port ${stoppedPort} must refuse connections after Ctrl-C`,
+    );
 
     // ——— Criterion 3 (warm read) + criterion 6 (same ports) ———
     session = await startDev(false);
@@ -680,9 +703,9 @@ async function main(): Promise<void> {
     session = await startDev(true);
     console.log(`[proving] session 3 (--fresh) ready: ${JSON.stringify(session.endpoints)}`);
     const freshDbUrl = await readCatalogDbUrl();
-    // --fresh removes the app's postgres-main-hosted servers and their
-    // persisted data (DELETE /apps/<app> on the daemon, runDevTeardown) and
-    // recreates them on next provision — migrations reapply as part of THIS
+    // --fresh deletes the app's recorded database instances, their
+    // persisted data with them (runDevTeardown), and the converge creates
+    // them again — migrations reapply as part of THIS
     // SAME converge (OrmMigration runs on every converge), so the "product"
     // table exists again by the time the front door prints; the proof is
     // that it's freshly migrated and EMPTY — the proving row from before

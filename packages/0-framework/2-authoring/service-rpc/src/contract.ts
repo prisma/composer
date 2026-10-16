@@ -14,6 +14,7 @@ export function contract<
   const value: Contract<'rpc', Fns> = {
     kind: 'rpc',
     __cmp: fns,
+    style: 'request-response',
     satisfies: (required) => value === required,
   };
   return Object.freeze(value);

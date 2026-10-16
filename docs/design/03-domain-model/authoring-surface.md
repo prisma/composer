@@ -20,8 +20,9 @@ export default compute({ db: rawPostgres() }, ({ db }) =>
 `rawPostgres()` is a **Resource** the service depends on; `compute(deps, handler)` is a
 **Service**. The framework provisions the Postgres and the compute unit, injects a typed
 `db` client into the handler, and serves — with no `process.env` in the service code.
-The vocabulary (`compute`, `postgres`, `http`, …) belongs to the target; the wiring
-rules below belong to the core.
+The service and resource vocabulary (`compute`, `postgres`, …) belongs to the target;
+the wiring rules below, and the service-to-service connection kinds (service RPC, raw
+HTTP), belong to the core.
 
 ## One port mechanic, uniform at every level
 
@@ -41,8 +42,10 @@ export default compute(
 
 ## Direction is inferred from position; connection types are neutral
 
-A connection type is a value — `Auth = http(AuthInterface)`, also from the target
-pack — not a raw TypeScript interface, and it is direction-neutral. Where you place
+A connection type is a value — `Auth = http(AuthInterface)`, shipped with
+`@prisma/composer` — not a raw TypeScript interface, and it is direction-neutral.
+(The typed `http(contract)` tier is not built yet; today the typed kind is service
+RPC's `rpc(contract)`, and `rawHttp()` is the untyped HTTP kind.) Where you place
 it decides polarity: name it as a dependency and it is an Input, hydrated to a typed
 client; return it and it is an Output you must implement. This is not merely
 stylistic — it mirrors data flow. Inputs must be declared up front because they are

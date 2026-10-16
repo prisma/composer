@@ -1,8 +1,8 @@
 {
   "name": "@prisma/composer-cli",
-  "version": "0.29.1",
+  "version": "0.30.0",
   "type": "module",
-  "description": "Prisma Composer's command family, which the `prisma` CLI mounts as `deploy` and `dev`.",
+  "description": "Prisma Composer's command family, which the `prisma` CLI mounts as `deploy`, `dev`, `dev url`, `dev stop` and `emulator list`.",
   "exports": {
     "./family": "./dist/family.mjs",
     "./testing": "./dist/testing.mjs",
@@ -15,21 +15,25 @@
   "scripts": {
     "build": "tsdown",
     "clean": "rm -rf dist",
+    "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/composer": "workspace:0.29.1",
-    "alchemy": "2.0.0-beta.78",
+    "@prisma/composer": "workspace:0.30.0",
+    "alchemy": "2.0.0-beta.83",
     "cross-spawn": "^7.0.6",
-    "effect": "4.0.0-rc.115",
+    "effect": "4.0.3",
     "esbuild": "^0.28.1"
   },
   "peerDependencies": {
     "@prisma/cli-engine": "0.7.0"
   },
   "devDependencies": {
-    "@internal/cli": "workspace:0.29.1",
-    "@internal/tsdown-config": "workspace:0.29.1",
+    "@internal/cli": "workspace:0.30.0",
+    "@internal/dev-emulators": "workspace:0.30.0",
+    "@internal/foundation": "workspace:0.30.0",
+    "@internal/tsdown-config": "workspace:0.30.0",
+    "@types/bun": "^1.3.13",
     "@prisma/cli-engine": "0.7.0",
     "@types/node": "^26.0.1",
     "tsdown": "^0.22.7",

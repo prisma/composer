@@ -15,14 +15,20 @@
  * mount this family against the test double and exercise real grammar, real
  * arg validation and real handlers with no alchemy behind them.
  *
- * The family ships `deploy` and `dev` only. `destroy` and `log` are
- * programmatic operations in `@prisma/composer/control`, not commands.
+ * The family ships `deploy`, `dev`, `dev url` and `dev stop`, keyed by the
+ * path they are meant to mount at; the host decides where each one mounts.
+ * A host may add commands of its own through `commands` — the published
+ * family adds `emulator list`, which needs no project. `destroy` and `log`
+ * are programmatic operations in `@prisma/composer/control`, not commands.
  */
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
 import { deployWithDeps } from '../operations/deploy.ts';
 import { devWithDeps } from '../operations/dev.ts';
+import { devStop, devUrl } from '../operations/dev-current.ts';
 import { createDeployCommand } from './commands/deploy.ts';
 import { createDevCommand } from './commands/dev.ts';
+import { createDevStopCommand } from './commands/dev-stop.ts';
+import { createDevUrlCommand } from './commands/dev-url.ts';
 import { composerSection } from './section.ts';
 
 /**
@@ -36,16 +42,22 @@ import { composerSection } from './section.ts';
 export interface ComposerOperations {
   readonly deploy: typeof deployWithDeps;
   readonly dev: typeof devWithDeps;
+  readonly devUrl: typeof devUrl;
+  readonly devStop: typeof devStop;
 }
 
 export const realOperations: ComposerOperations = {
   deploy: deployWithDeps,
   dev: devWithDeps,
+  devUrl,
+  devStop,
 };
 
 export interface CreateComposerFamilyOptions {
   /** Defaults to the real control operations. */
   readonly operations?: ComposerOperations | undefined;
+  /** More commands to ship in the family, keyed by the path they are meant to mount at. */
+  readonly commands?: CommandFamily['commands'] | undefined;
 }
 
 /** The `prisma` CLI's error reference; the engine appends `/<CODE>` to it for every error envelope. */
@@ -58,6 +70,9 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
     commands: {
       deploy: createDeployCommand(operations),
       dev: createDevCommand(operations),
+      'dev url': createDevUrlCommand(operations),
+      'dev stop': createDevStopCommand(operations),
+      ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
   });
