@@ -1,7 +1,7 @@
 import type { Contract, DependencyEnd } from '@internal/core';
 import { dependency, string } from '@internal/core';
 
-/** What a `rawHttp()` dependency hydrates to: the provider's URL and a fetch that resolves `path` against it and refuses any path that leaves the provider's origin. */
+/** What a `rawHttp()` dependency hydrates to: the provider's URL and a fetch that resolves `path` against it, refuses any path that leaves the provider's origin, and returns redirects instead of following them unless `init.redirect` says otherwise. */
 export interface RawHttpClient {
   readonly url: string;
   fetch(path: string, init?: RequestInit): Promise<Response>;
@@ -32,12 +32,13 @@ function resolveOnProvider(path: string, url: string): URL {
 /** A dependency on a service that exposes a `rawHttpContract` port. */
 export function rawHttp(): DependencyEnd<RawHttpClient, typeof rawHttpContract> {
   return dependency({
-    type: 'http',
+    type: rawHttpContract.kind,
     connection: {
       params: { url: string() },
       hydrate: ({ url }): RawHttpClient => ({
         url,
-        fetch: async (path, init) => fetch(resolveOnProvider(path, url), init),
+        fetch: async (path, init) =>
+          fetch(resolveOnProvider(path, url), { ...init, redirect: init?.redirect ?? 'manual' }),
       }),
     },
     required: rawHttpContract,

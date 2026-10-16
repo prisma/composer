@@ -99,7 +99,7 @@ function claimString(claims: Record<string, unknown>, key: string): string | und
  */
 export function jwtVerifier(): DependencyEnd<JwtVerifier, typeof rawHttpContract> {
   return dependency({
-    type: 'http',
+    type: rawHttpContract.kind,
     connection: {
       params: { url: string() },
       hydrate: ({ url }): JwtVerifier => {

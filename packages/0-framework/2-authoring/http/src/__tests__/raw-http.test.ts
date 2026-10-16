@@ -42,6 +42,28 @@ describe('rawHttp()', () => {
     }
   });
 
+  test('returns a redirect to another host instead of following it, unless the caller opts in', async () => {
+    const other = Bun.serve({ port: 0, fetch: () => new Response('other host') });
+    const provider = Bun.serve({
+      port: 0,
+      fetch: () => Response.redirect(`${other.url.origin}/landing`, 302),
+    });
+    try {
+      const client = await rawHttp().connection.hydrate({ url: provider.url.origin });
+
+      const returned = await client.fetch('/login');
+      expect(returned.status).toBe(302);
+      expect(returned.headers.get('location')).toBe(`${other.url.origin}/landing`);
+
+      const followed = await client.fetch('/login', { redirect: 'follow' });
+      expect(followed.status).toBe(200);
+      expect(await followed.text()).toBe('other host');
+    } finally {
+      provider.stop(true);
+      other.stop(true);
+    }
+  });
+
   test("refuses a protocol-relative path or an absolute URL that leaves the provider's origin", async () => {
     const client = await rawHttp().connection.hydrate({ url: 'https://docs.internal' });
 

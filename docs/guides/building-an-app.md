@@ -156,9 +156,11 @@ export default module('web', ({ provision }) => {
 
 In the gateway, `gateway.load()` returns `{ site, docs }`. Each has a `url`,
 to hand to your proxy library, and `fetch(path, init)`, which resolves `path`
-against that `url`. The client only reaches its provider's origin: `fetch`
-rejects a path that resolves to another host, such as `//other.example/x` or
-an absolute URL. The framework fills in the right origin locally and in each
+against that `url`. The client never leaves its provider's origin by itself:
+`fetch` rejects a path that resolves to another host, such as
+`//other.example/x` or an absolute URL, and it returns a redirect to you
+instead of following it. Pass `redirect: 'follow'` in `init` to follow
+redirects. The framework fills in the right origin locally and in each
 deployed stage.
 
 The framework checks only that the provider declared an HTTP port: TypeScript
