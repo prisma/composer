@@ -136,6 +136,7 @@ Rules:
 
 - The value is the address, never the Alchemy resource ID. Upstream's Prisma resources default `logicalId` to their fully qualified resource ID (`catalog-db` for Composer), so the lowering always passes it explicitly.
 - For App, Database and Bucket, the resource that creates the row writes its `logicalId`, as a prop. No separate resource or later API call writes it.
+- On the app's own Project and Branch, the row holding a node's `logicalId` is that node's row. The descriptors declare App, Database, Bucket and `COMPOSER_` EnvironmentVariable resources with `asOwnRow` (Alchemy's `adopt(true)`), so a deploy resuming an interrupted create uses the row instead of failing with `OwnedBySomeoneElse`. Connections need nothing: their generated name already proves which create made them.
 - Other platform rows a node lowers to carry no `logicalId`: `Prisma.Connection`, `Prisma.Deployment`, `Prisma.EnvironmentVariable`, `Prisma.BucketAccessKey`. Composer's local resources (`ServiceKey`, `PgWarm`, `OrmMigration`, `GeneratedParam`, `S3Credentials`) create no platform row.
 - Branchless local dev creates no platform rows and writes none.
 

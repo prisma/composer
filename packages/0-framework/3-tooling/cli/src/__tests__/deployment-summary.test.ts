@@ -10,6 +10,7 @@ import {
   engineFailureFilePath,
   readEngineFailureCause,
   redactSecrets,
+  withComposerAdvice,
 } from '../deployment-summary.ts';
 
 const ESC = String.fromCharCode(27);
@@ -181,4 +182,36 @@ describe('the failure cause through a real child process', () => {
     expect(fs.existsSync(engineFailureFilePath(resultFile))).toBe(false);
     expect(readEngineFailureCause(resultFile)).toBeUndefined();
   }, 15_000);
+});
+
+describe('withComposerAdvice', () => {
+  test("replaces every piece of Alchemy's --adopt advice with steps that work from Composer", () => {
+    const upstream = [
+      "OwnedBySomeoneElse: Cannot adopt resource 'auth.database-conn' (Prisma.Connection): it exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
+      "OwnedBySomeoneElse: Cannot resume creating resource 'storefront-svc' (Prisma.App): a resource with its physical identity exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
+      'Resource exists in the cloud but is not owned by this stack — leaving it in place (re-deploy with --adopt to take ownership, then destroy).',
+    ];
+    for (const line of upstream) {
+      const shown = withComposerAdvice(line);
+      expect(shown).not.toContain('--adopt');
+      expect(shown).not.toContain('adopt(true)');
+      expect(shown).toContain('Prisma Console or via the Management API');
+    }
+  });
+
+  test('leaves other output unchanged', () => {
+    expect(withComposerAdvice(alchemyFailedApply)).toBe(alchemyFailedApply);
+  });
+
+  test("covers every --adopt mention in the installed Alchemy's engine", () => {
+    const engine = path.dirname(fileURLToPath(import.meta.resolve('alchemy/Plan')));
+    const mentions = ['Plan.ts', 'Apply.ts'].flatMap((file) =>
+      fs
+        .readFileSync(path.join(engine, file), 'utf8')
+        .split('\n')
+        .filter((line) => line.includes('--adopt') && !/^\s*(\*|\/\/)/.test(line)),
+    );
+    // An Alchemy upgrade that adds or rewords --adopt advice must update withComposerAdvice.
+    expect(mentions).toHaveLength(4);
+  });
 });

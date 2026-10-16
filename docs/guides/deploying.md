@@ -159,10 +159,12 @@ an invalid name is a hard error, never a silent rename.
 
 Services, managed Postgres databases and buckets record their node address
 (`auth.database`) as `logicalId` on their Branch. Console uses the same address
-in the topology to find each resource and its counterpart on main. The upstream
-Alchemy resource owns the identity; a conflicting identity fails the deploy.
-Existing environments receive it on their next deploy, without replacing the
-resource. Local dev creates no platform rows.
+in the topology to find each resource and its counterpart on main. The row on a
+Branch that holds a node's address is that node's resource: if a deploy is
+interrupted after a resource was created but before it was recorded, the next
+deploy finds the resource by its address and carries on. Existing environments
+receive the address on their next deploy, without replacing the resource. Local
+dev creates no platform rows.
 
 The address is the identity, so changing it makes a different entity. Renaming
 a node that has no explicit provision `id`, changing its `id`, or moving it into
@@ -434,7 +436,7 @@ footguns with diagnoses, kept current as we hit them.
 
 Older framework versions stored deploy state differently: first in a workspace-level `prisma-composer-state` project, later in a small `prisma-composer-state` database on each environment's Branch. The current version stores state behind the platform's API and never reads either legacy store — there is no automated migration. The cutover is the same for both generations: destroy, upgrade, redeploy.
 
-Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the stage predates the platform state API — instead of blindly recreating every resource and failing halfway. Cut over per app:
+Deploying over a live legacy environment is refused up front. The deploy finds no API-hosted state but sees resources (apps, databases, or buckets) already on the Branch, and stops with an error saying the stage has no deploy state but its branch already holds resources — instead of blindly recreating every resource and failing halfway. Cut over per app:
 
 1. On the **old** framework version, destroy every environment: each `--stage`, then `--production`. (Equivalent: delete the stage's Branch — or the whole Project, for production — in the Console or via the Management API.)
 2. Upgrade the framework packages.

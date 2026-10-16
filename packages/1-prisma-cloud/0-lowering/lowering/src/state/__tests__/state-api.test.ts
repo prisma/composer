@@ -367,12 +367,12 @@ describe('prismaStateLayer against the platform state API', () => {
     expect(fake.countRequests(/POST .*\/lease/)).toBe(1);
   });
 
-  test('an empty scope with live apps on the branch refuses — the stage predates the platform state API', async () => {
+  test('an empty scope with live apps on the branch refuses', async () => {
     fake.apps.push({ id: 'app-1', name: 'legacy.web', projectId: PROJECT_ID, branchId: BRANCH_ID });
 
     const error: unknown = await runLayer(() => Effect.void).catch((e: unknown) => e);
 
-    expect(String(error)).toContain('predates the platform state API');
+    expect(String(error)).toContain('has no deploy state');
     expect(String(error)).toContain('"legacy.web"');
     // The refusal released the lease on the way out.
     expect(fake.liveLeaseIds()).toEqual([]);

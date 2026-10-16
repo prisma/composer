@@ -99,13 +99,14 @@ export const failOnEmptyScopeWithLiveResources = (
       new PrismaApiError({
         status: 0,
         message:
-          `the platform state API holds no deploy state for stage "${stage}" (stack "${stack}"), but the ` +
-          `platform already has ${String(resources.length)} resource(s) on the target branch ${branchId}: ${names}. ` +
-          'This stage predates the platform state API. With no state, a deploy would recreate every ' +
-          'resource and fail with already_exists, and a destroy would remove nothing. Destroy the stage ' +
-          'with the previous version of composer, or delete the stage (its branch — or the project, for ' +
-          'production) in the Prisma Console or via the Management API — then redeploy fresh. If those ' +
-          "resources are another deployment's, remove them or deploy into a different project. Then retry.",
+          `stage "${stage}" (stack "${stack}") has no deploy state, but its branch ${branchId} already ` +
+          `holds ${String(resources.length)} resource(s): ${names}. Without state, a deploy would try to ` +
+          'recreate them and a destroy would remove nothing. This happens when the stage was deployed ' +
+          'by a Composer version that kept deploy state elsewhere, or when the resources belong to ' +
+          'something other than this app. Delete the stage (its branch, or the project for production) ' +
+          'in the Prisma Console or via the Management API, then deploy again; a stage from an older ' +
+          'version can instead be destroyed with that version first. If the resources belong to ' +
+          'something else, remove them or deploy into a different project.',
       }),
     );
   });

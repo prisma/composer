@@ -14,10 +14,12 @@ import { secretString } from '@internal/foundation/arktype';
 // Static-importing the real module here forces the survivable patch-in-place
 // mode regardless of the (filesystem-dependent) test-file order.
 import * as RealPrismaAlchemy from '@internal/lowering';
+import { AdoptPolicy } from 'alchemy/AdoptPolicy';
 import * as RealOutput from 'alchemy/Output';
 import * as RealAlchemyPrisma from 'alchemy/Prisma';
 import { type } from 'arktype';
 import * as Effect from 'effect/Effect';
+import * as Option from 'effect/Option';
 import * as Redacted from 'effect/Redacted';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import type { ComputeProvisioned, ComputeSerialized } from '../descriptors/compute.ts';
@@ -57,6 +59,7 @@ const recorded: {
   generated: Array<[string, unknown]>;
   pnMigrate: Array<[string, unknown]>;
   databaseUrlClaims: string[];
+  adoptPolicy: Array<[string, boolean | undefined]>;
 } = {
   envVar: [],
   envVarProps: [],
@@ -73,6 +76,7 @@ const recorded: {
   generated: [],
   pnMigrate: [],
   databaseUrlClaims: [],
+  adoptPolicy: [],
 };
 
 mock.module('alchemy/Output', () => ({
@@ -94,15 +98,25 @@ mock.module('alchemy/Output', () => ({
 // import them from 'alchemy/Prisma', so the stubs live there. The returned
 // attributes use upstream's field names (`databaseId`, `appId`,
 // `appEndpointDomain`, `environmentVariableId`).
+/** Records the adoption policy the resource declaration runs under, as Alchemy captures it at registration. */
+const recordingAdoptPolicy = <A>(resource: string, result: Effect.Effect<A>) =>
+  Effect.flatMap(Effect.serviceOption(AdoptPolicy), (policy) => {
+    recorded.adoptPolicy.push([resource, Option.getOrUndefined(policy)]);
+    return result;
+  });
+
 mock.module('alchemy/Prisma', () => ({
   ...RealAlchemyPrisma,
   App: (id: string, props: unknown) => {
     recorded.svc.push([id, props]);
-    return Effect.succeed({
-      appId: `${id}#cloud-id`,
-      name: id,
-      appEndpointDomain: `https://${id}.example`,
-    });
+    return recordingAdoptPolicy(
+      `App ${id}`,
+      Effect.succeed({
+        appId: `${id}#cloud-id`,
+        name: id,
+        appEndpointDomain: `https://${id}.example`,
+      }),
+    );
   },
   Deployment: (id: string, props: unknown) => {
     recorded.deploy.push([id, props]);
@@ -123,11 +137,17 @@ mock.module('alchemy/Prisma', () => ({
         value: Redacted.isRedacted(props.value) ? Redacted.value(props.value) : props.value,
       },
     ]);
-    return Effect.succeed({ environmentVariableId: `${id}#cloud-id`, key: props.key });
+    return recordingAdoptPolicy(
+      `EnvironmentVariable ${id}`,
+      Effect.succeed({ environmentVariableId: `${id}#cloud-id`, key: props.key }),
+    );
   },
   Bucket: (id: string, props: unknown) => {
     recorded.bucket.push([id, props]);
-    return Effect.succeed({ bucketId: `${id}#cloud-id`, name: id });
+    return recordingAdoptPolicy(
+      `Bucket ${id}`,
+      Effect.succeed({ bucketId: `${id}#cloud-id`, name: id }),
+    );
   },
   BucketAccessKey: (id: string, props: unknown) => {
     recorded.bucketKey.push([id, props]);
@@ -142,14 +162,20 @@ mock.module('alchemy/Prisma', () => ({
   },
   Database: (id: string, props: unknown) => {
     recorded.db.push([id, props]);
-    return Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id });
+    return recordingAdoptPolicy(
+      `Database ${id}`,
+      Effect.succeed({ databaseId: `${id}#cloud-id`, databaseName: id }),
+    );
   },
   Connection: (id: string, props: unknown) => {
     recorded.conn.push([id, props]);
-    return Effect.succeed({
-      connectionId: `${id}#cloud-id`,
-      directConnectionString: Redacted.make(`postgres://${id}`),
-    });
+    return recordingAdoptPolicy(
+      `Connection ${id}`,
+      Effect.succeed({
+        connectionId: `${id}#cloud-id`,
+        directConnectionString: Redacted.make(`postgres://${id}`),
+      }),
+    );
   },
 }));
 
@@ -2715,6 +2741,7 @@ describe('platform identity: each row carries its topology node logicalId — th
         svc: recorded.svc.length,
         db: recorded.db.length,
         bucket: recorded.bucket.length,
+        adoptPolicy: recorded.adoptPolicy.length,
       };
 
       run<undefined>(
@@ -2746,6 +2773,19 @@ describe('platform identity: each row carries its topology node logicalId — th
 
       expect(nodes).toEqual(['app auth.service', 'bucket files', 'database auth.database']);
       expect(rows).toEqual(nodes);
+
+      const policies = new Map(recorded.adoptPolicy.slice(before.adoptPolicy));
+      const ownRows = [...policies].filter(([resource]) => !resource.startsWith('Connection '));
+      expect(ownRows.map(([resource]) => resource)).toEqual(
+        expect.arrayContaining([
+          'App auth.service-svc',
+          'Database auth.database-db',
+          'Bucket files-bucket',
+        ]),
+      );
+      expect(ownRows.some(([resource]) => resource.startsWith('EnvironmentVariable '))).toBe(true);
+      expect(ownRows.filter(([, adopt]) => adopt !== true)).toEqual([]);
+      expect(policies.get('Connection auth.database-conn')).toBeUndefined();
     });
   });
 });

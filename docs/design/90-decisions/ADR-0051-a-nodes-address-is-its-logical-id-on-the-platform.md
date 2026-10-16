@@ -1,5 +1,7 @@
 # ADR-0051: A node's address is its logical ID on the platform
 
+> Amended 2026-10-16: on the app's own Project and Branch, the row holding a node's `logicalId` is that node's row, and a deploy uses it even without a record of it in deploy state. The first version said Composer must never take over a row because it holds the same `logicalId`. See Consequences.
+
 ## Decision
 
 Every node's address is its identity on Prisma Cloud. Composer writes the address, byte for byte, as the `logicalId` of the one platform row that represents the node, and submits the same string as the node's `logicalId` in the branch's application topology. Nothing else is ever written to `logicalId`.
@@ -54,7 +56,7 @@ One writer owns each row's `logicalId`. For App, Database and Bucket rows, it is
 - Changing a display name never changes identity.
 - The address format is an identity contract. The platform treats `logicalId` as an opaque string and never parses it, so Composer may change how addresses are composed, but any change re-identifies every existing entity.
 - Every node kind that lowers to a platform row must pass the node's address as that row's `logicalId`. A new node kind isn't done until it does. An upgrade that gives a resource a `logicalId` prop must pass the address in the same change, or the default writes the Alchemy resource ID.
-- Composer must not take over an App, Database or Bucket row because it holds the same `logicalId`. A `logicalId` already held by another row on the same Branch fails the deploy. The Project is the exception: container resolution finds it by `logicalId` on purpose.
+- A `logicalId` says which node a row is, so on the app's own Project and Branch the row holding a node's `logicalId` is that node's row. A deploy uses that row even when its deploy state has no record of it. The usual case is resuming a create that was interrupted after the platform created the row but before Alchemy recorded its ID. Composer therefore declares its App, Database and Bucket resources as its own (Alchemy's per-resource `adopt(true)`), so Alchemy does not refuse a row it cannot otherwise prove it created. Composer's environment variables follow the same rule by key: every one is in the reserved `COMPOSER_` namespace on the app's own Project and Branch. The Project is found the same way, by `logicalId`, in container resolution. A stage whose Branch holds rows but which has no deploy state at all is still refused before the deploy starts (ADR-0045), because rows from older Composer versions carry no `logicalId`.
 - When no Project has the app name as its `logicalId`, container resolution falls back to matching a Project by display name. This is a compatibility path for Projects created before they carried a `logicalId`. That path is not identity and is not extended to other rows.
 - Local dev (ADR-0041) creates no platform rows and writes no `logicalId`.
 
@@ -64,6 +66,7 @@ One writer owns each row's `logicalId`. For App, Database and Bucket rows, it is
 - **Write `logicalId` with a separate Composer resource after the row is created.** Duplicates what the upstream resource does (ADR-0048), and puts two resources in charge of one field. When they disagree, they fight on every deploy.
 - **Put platform `id`s in the topology.** The `id`s don't exist when the topology is written, before the apply. They also differ on every branch, so they can't say "the same service on `main`".
 - **Match on display names.** They are mutable and not unique. Matching Projects by display name forked deploy history when a Project was renamed.
+- **Refuse a row Composer cannot prove it created, even when it holds the node's `logicalId`.** This was this decision's first wording. It contradicts what the field is for: the row holding the node's `logicalId` on the app's Branch is that node's row by definition. In practice it left a stage that could not be deployed again after one interrupted create, and Alchemy's error asked for an `--adopt` flag Composer doesn't have; destroying the stage was the only recovery.
 - **Have Console read Alchemy's deploy state to map nodes to rows.** That state is Composer's private bookkeeping. Its format belongs to the deploy engine, it contains secrets, and the platform deliberately stores it without reading it.
 
 ## Related
