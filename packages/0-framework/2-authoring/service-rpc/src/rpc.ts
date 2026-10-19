@@ -7,7 +7,7 @@
  * the two schemas for serve()/the client to read back out.
  *
  * A Contract instead types a dependency end — the typed sibling
- * of `http()`, same `{ url }` param plus an optional `serviceKey` (the
+ * of `rawHttp()`, same `{ url }` param plus an optional `serviceKey` (the
  * per-binding auth token ADR-0030 wires through here as a provisioning need,
  * ADR-0031), hydrating to the typed client `Client<C>` over the network
  * binding in client.ts. It carries the contract as its `required` value, so

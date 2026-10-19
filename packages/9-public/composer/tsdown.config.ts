@@ -23,6 +23,7 @@ export default defineConfig({
     assertions: 'src/exports/assertions.ts',
     arktype: 'src/exports/arktype.ts',
     'service-rpc': 'src/exports/service-rpc.ts',
+    http: 'src/exports/http.ts',
     node: 'src/exports/node.ts',
     'node-control': 'src/exports/node-control.ts',
     nextjs: 'src/exports/nextjs.ts',

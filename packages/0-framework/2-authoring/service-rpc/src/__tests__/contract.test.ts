@@ -27,6 +27,14 @@ describe('contract()', () => {
     expect(authContract.__cmp).toBe(fns);
   });
 
+  test('declares the request-response style', () => {
+    const authContract = contract({
+      verify: rpc({ input: type({ token: 'string' }), output: type({ ok: 'boolean' }) }),
+    });
+
+    expect(authContract.style).toBe('request-response');
+  });
+
   test('satisfies() is nominal — a contract only satisfies itself', () => {
     const build = () =>
       contract({

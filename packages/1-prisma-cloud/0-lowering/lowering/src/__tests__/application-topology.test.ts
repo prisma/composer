@@ -29,6 +29,7 @@ const rpcContract = (): Contract<'rpc', undefined> => {
   const value: Contract<'rpc', undefined> = {
     kind: 'rpc',
     __cmp: undefined,
+    style: 'request-response',
     satisfies: (required) => value === required,
   };
   return value;
@@ -180,6 +181,46 @@ describe('composeApplicationTopology', () => {
       style: 'request-response',
     });
     expect(topology.edges).toHaveLength(5);
+  });
+
+  test('an edge whose producing contract declares no style is communication with no style', () => {
+    const plain: Contract<'plain', undefined> = {
+      kind: 'plain',
+      __cmp: undefined,
+      satisfies: (required) => required.kind === 'plain',
+    };
+    const upstream = service({
+      name: 'upstream',
+      extension: 'test/pack',
+      type: 'compute',
+      inputs: {},
+      params: {},
+      build,
+      expose: { http: plain },
+    });
+    const gateway = service({
+      name: 'gateway',
+      extension: 'test/pack',
+      type: 'compute',
+      inputs: { upstream: dependency({ type: 'plain', connection, required: plain }) },
+      params: {},
+      build,
+    });
+    const topology = composeApplicationTopology(
+      Load(
+        module('web', {}, ({ provision }) => {
+          provision(gateway, { deps: { upstream: provision(upstream).http } });
+        }),
+      ),
+    );
+
+    expect(topology.edges).toEqual([
+      {
+        from: { logicalId: 'upstream', direction: 'out', name: 'http' },
+        to: { logicalId: 'gateway', direction: 'in', name: 'upstream' },
+        family: 'communication',
+      },
+    ]);
   });
 
   test('an empty graph composes an empty submission — a valid replace that empties the branch', () => {

@@ -66,9 +66,10 @@ is small and pure and still sits on `.`; the config *types* (`defineConfig`,
 | `@prisma/composer` | node factories (`service`, `resource`, `dependency`, `module`), `Load`, `configOf`, `hydrate`, `BuildAdapter` type, model types (incl. `Config`) | nothing |
 | `@prisma/composer/config` | `defineConfig`, `PrismaAppConfig`, `ExtensionDescriptor`, `NodeDescriptor`, `PreflightInput`, `TeardownInput` — the types the `composer` section of `prisma.config.ts` is checked against (ADR-0017, ADR-0049) | nothing (types + one identity function) |
 | `@prisma/composer/deploy` | `lower()`, `lowering()`, the SPI types (`ServiceLowering`, `Lowering`, `ApplicationDescriptor`, `ProvisionerDescriptor`, `LowerContext`, `Outputs`, `LoweredResult`, `DeployedEntity`), `Bundle`/`AssembleInput` (the assembler's contract, defined once here) | `alchemy`, `effect` |
-| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract`, `http()` | `@prisma/composer` only |
+| `@prisma/composer-prisma-cloud` | `compute()` (declares a service; carries `run`/`load`), `rawPostgres()` (`{ name }` identity or `{ client }` dependency, by argument shape) + `rawPostgresContract` | `@prisma/composer` only |
 | `@prisma/composer/arktype` | `secretString()` — the arktype spelling of a `SecretString` input leaf (ADR-0042). Opt-in: no other entry imports it, so a Zod app never loads arktype | `arktype` |
 | `@prisma/composer/service-rpc` | the RPC Contract kind — `contract()`, `rpc()`, `serve()`, the typed client binding (see [`connection-contracts.md`](connection-contracts.md)) | `@prisma/composer` + a Standard Schema validator |
+| `@prisma/composer/http` | raw HTTP, the untyped service-to-service kind — `rawHttp()`, `rawHttpContract`, the `RawHttpClient` binding (see [ADR-0054](../90-decisions/ADR-0054-raw-http-is-the-untyped-tier-of-service-connections.md)) | `@prisma/composer` only |
 | `@prisma/composer-prisma-cloud/cron` | cron as a driver (see [ADR-0020](../90-decisions/ADR-0020-scheduled-work-is-a-driver-not-a-resource.md)) — `defineSchedule`, `serveSchedule`, `cronScheduler`, `cron()`, `triggerContract` | `@prisma/composer` + `app-node` + `app-rpc` |
 | `@prisma/composer-prisma-cloud/storage` | S3-compatible object storage as a module (S3 wire protocol on Compute + Postgres `bytea`; see [`README`](../../../packages/1-prisma-cloud/2-shared-modules/storage/README.md)) — `storage()`, `s3()` + `s3Contract`/`S3Config`, `storageService`; `/storage/testing` adds the `createPgStore` + `startStorageServer` local stand-in | `@prisma/composer` + `app-node` + `@prisma/composer-prisma-cloud` |
 | `@prisma/composer-prisma-cloud/control` | `prismaCloud()` — the extension descriptor the config lists | `@internal/lowering`, `alchemy`, `effect` |
@@ -309,8 +310,8 @@ interface ServiceNode<D extends Deps = Deps, P extends Params = Params> extends 
 // EDGE from that producer to the consumer. At run it hydrates its binding through
 // the Connection machinery; the consumer never learns HOW the producer's
 // address reached it. `Req` is the required Contract — `unknown` for an untyped
-// end (`http()`, the escape hatch that accepts anything); `required` carries it
-// as a value so Load can call `satisfies()` as the backstop.
+// end, which Load does not check; `required` carries it as a value so Load can
+// call `satisfies()` as the backstop.
 interface DependencyEnd<C = unknown, Req = unknown> extends NodeBase {
   readonly kind: "dependency"
   readonly connection: Connection<Params, C>
@@ -875,23 +876,10 @@ export function postgres(opts?: { name: string }): unknown {
   })
 }
 
-// A service-to-service dependency. Its binding is a DERIVED client — a thin
-// URL-anchored fetch wrapper (fetch is standard across runtimes — no driver,
-// no runtime coupling). http() is a protocol-owned kind (the framework owns the
-// transport), so the client is kind-canonical and derived from the contract,
-// with no user client in the declaration (ADR-0015). Untyped (required
-// undefined) — the escape hatch; typed generated clients arrive with the
-// interface primitive (§ Extension points).
-export interface HttpClient { readonly url: string; fetch(path: string, init?: RequestInit): Promise<Response> }
-export const http = (opts: { name: string }): DependencyEnd<HttpClient> =>
-  dependency({
-    name: opts.name,
-    type: "http",
-    connection: {
-      params: { url: string() },
-      hydrate: (v) => defaultHttpClient({ url: v.url }),
-    },
-  })
+// Service-to-service dependencies are not part of the pack: service RPC
+// (@prisma/composer/service-rpc) and raw HTTP (@prisma/composer/http, ADR-0054)
+// are target-agnostic kinds. The pack only supplies the provider's URL, which
+// every compute service publishes to its consumers.
 
 const computeParams = { port: number({ default: 3000 }) }
 
@@ -1215,7 +1203,8 @@ model promises. The config round-trip is proven separately at the pack level
 The storefront-auth shape: `auth` is a self-served Hono service shaped like the
 one above — its `db` is a `rawPostgres()` dependency whose binding is the config
 its own server builds a client from, while the composing module below owns and
-provisions the database; `storefront` is a **framework-hosted**
+provisions the database. `auth` also declares `expose: { http: rawHttpContract }`,
+so it offers a raw HTTP port. `storefront` is a **framework-hosted**
 Next.js service whose page pulls the `auth`
 client via `load()`. This replaces the hand-written mixed stack — the URL plumbing,
 the `requireStringOutput` guard, and the hand-named `EnvironmentVariable` all
@@ -1223,20 +1212,20 @@ disappear into core's sequencing.
 
 ```ts
 // storefront/src/service.ts — declares the dependency; never learns how the URL arrives
-import { compute, http } from "@prisma/composer-prisma-cloud"
+import { compute } from "@prisma/composer-prisma-cloud"
+import { rawHttp } from "@prisma/composer/http"
 import nextjs from "@prisma/composer/nextjs"
-const auth = http({ name: "auth" })
 export default compute({ name: "storefront",
-  deps: { auth },
+  deps: { auth: rawHttp() },
   build: nextjs({ module: import.meta.url, appDir: "..", entry: "server.js" }) })
 
 // storefront/app/page.tsx — the app's own Next code; `next build` bundles it.
-// It pulls the typed auth client via load() — the SAME mechanism the Hono entry
+// It pulls the auth client via load() — the SAME mechanism the Hono entry
 // uses. force-dynamic keeps it out of build-time prerender (no run() then).
 import service from "../src/service"
 export const dynamic = "force-dynamic"
 export default async function Home() {
-  const { auth } = service.load()               // auth: HttpClient — inferred
+  const { auth } = service.load()               // auth: RawHttpClient — inferred
   const res = await auth.fetch("/verify")
   return <p>Auth /verify says: {res.status} {await res.text()}</p>
 }
@@ -1252,7 +1241,7 @@ import storefrontService from "./modules/storefront/src/service"
 export default module("storefront-auth", (h) => {
   const db = h.provision("db", rawPostgres({ name: "db" }))
   const authRef = h.provision("auth", authService, { db })         // db→auth dependency edge
-  h.provision("storefront", storefrontService, { auth: authRef })  // auth→storefront dependency edge
+  h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront dependency edge
 })
 
 // No deploy config file (ADR-0003): build both apps, then
@@ -1316,7 +1305,9 @@ producer from a resource — one mechanism.
   dependency is declared against a Contract (`@prisma/composer/service-rpc`'s `contract()` +
   `rpc()`), compatibility is checked at the wiring site, at Load
   (`satisfies()`), and per call, and the consumer's `load()` returns a typed
-  client. `http()` remains the untyped escape hatch. The mechanism — including
+  client. Raw HTTP (`@prisma/composer/http`'s `rawHttp()`) is the untyped
+  tier for servers the framework does not generate; it still requires the
+  provider to declare an HTTP port. The mechanism — including
   `expose` on the service node, ref-ports on `provision()`'s return, and
   `serve()` — is documented in
   [`connection-contracts.md`](connection-contracts.md); this document's type

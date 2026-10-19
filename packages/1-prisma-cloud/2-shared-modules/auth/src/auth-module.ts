@@ -13,15 +13,10 @@
 import type { ModuleNode, ParamNeed } from '@internal/core';
 import { module, paramNeed } from '@internal/core';
 import { emailSender } from '@internal/email';
+import { rawHttpContract } from '@internal/http';
 import { generatedParam } from '@internal/prisma-cloud';
 import { authService } from './auth-service.ts';
-import {
-  authAdminContract,
-  authApiContract,
-  authDb,
-  authSessionContract,
-  type SignUpMode,
-} from './contract.ts';
+import { authAdminContract, authDb, authSessionContract, type SignUpMode } from './contract.ts';
 import { type AuthTemplates, authTemplates } from './templates.ts';
 
 export interface AuthModuleOptions {
@@ -37,7 +32,7 @@ export interface AuthModuleOptions {
 export function auth(opts?: AuthModuleOptions): ModuleNode<
   { db: ReturnType<typeof authDb>; email: ReturnType<typeof emailSender<AuthTemplates>> },
   {
-    api: typeof authApiContract;
+    api: typeof rawHttpContract;
     session: typeof authSessionContract;
     admin: typeof authAdminContract;
   },
@@ -50,7 +45,7 @@ export function auth(opts?: AuthModuleOptions): ModuleNode<
       deps: { db: authDb(), email: emailSender(authTemplates) },
       params: { baseUrl: paramNeed() },
       expose: {
-        api: authApiContract,
+        api: rawHttpContract,
         session: authSessionContract,
         admin: authAdminContract,
       },
