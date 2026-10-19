@@ -165,6 +165,31 @@ describe('postgres() factory shapes', () => {
     );
   });
 
+  test.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'database'],
+  ])('a second argument after %s, which is not a contract, is refused', (_, first) => {
+    const untypedPostgres = blindCast<
+      (...args: unknown[]) => unknown,
+      'test-only: a JavaScript caller the overloads cannot stop'
+    >(postgres);
+
+    let thrown: unknown;
+    try {
+      untypedPostgres(first, { extensions: [] });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      name: 'CliStructuredError',
+      code: 'COMPOSE.ARGUMENT_INVALID',
+      message:
+        'postgres() takes a second argument only when its first argument is a data contract.',
+    });
+    expect(thrown).not.toHaveProperty('meta');
+  });
+
   test('postgres(contract) yields a branded DependencyEnd requiring that contract', () => {
     const widget = dataContract<WidgetContract>(widgetContractJson);
     const dep = postgres(widget);

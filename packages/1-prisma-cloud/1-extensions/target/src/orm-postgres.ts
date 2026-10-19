@@ -155,7 +155,7 @@ export function postgres(
   options?: PostgresDependencyOptions,
 ): unknown {
   if (!isPostgresContract(arg)) {
-    if (options !== undefined) throw resourceOptionsRefused(arg.name);
+    if (options !== undefined) throw secondArgumentRefused(resourceNameOf(arg));
     return new PostgresResourceNode(arg);
   }
   const contract = arg;
@@ -169,14 +169,22 @@ export function postgres(
   });
 }
 
-function resourceOptionsRefused(name: string): CliStructuredError {
+function resourceNameOf(arg: unknown): string | undefined {
+  return typeof arg === 'object' && arg !== null && 'name' in arg && typeof arg.name === 'string'
+    ? arg.name
+    : undefined;
+}
+
+function secondArgumentRefused(resource: string | undefined): CliStructuredError {
   return new CliStructuredError(
     'COMPOSE.ARGUMENT_INVALID',
-    `postgres({ name: "${name}", … }) takes no second argument.`,
+    resource === undefined
+      ? 'postgres() takes a second argument only when its first argument is a data contract.'
+      : `postgres({ name: "${resource}", … }) takes no second argument.`,
     {
-      why: 'An object first argument declares the database resource. Runtime extensions configure the client a service builds, so they belong on the dependency end; here they would be dropped.',
+      why: 'Runtime extensions configure the client a service builds, so they belong on the dependency end, whose first argument is a data contract. Anywhere else they would be dropped.',
       fix: 'Pass the extensions where the service declares the dependency: `postgres(contract, { extensions })`.',
-      meta: { resource: name },
+      ...(resource === undefined ? {} : { meta: { resource } }),
     },
   );
 }
