@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { CliStructuredError } from '@internal/foundation/errors';
-import { notOk } from '@internal/foundation/result';
+import { notOk, ok } from '@internal/foundation/result';
 import { createTestCli } from '@prisma/cli-engine/testing';
 import {
   createOperationsDouble,
@@ -100,5 +100,33 @@ describe('dev stop', () => {
     expect(human.exitCode).toBe(0);
     expect(human.stdout).toBe('');
     expect(calls.devStop).toHaveLength(2);
+  });
+
+  test('names what it stopped in a table of addresses and kinds', async () => {
+    const { cli } = cliWith({
+      devStop: ok({
+        app: 'orm-demo',
+        stopped: [
+          { address: 'database', kind: 'database' },
+          { address: 'api', kind: 'service' },
+        ],
+      }),
+    });
+
+    const result = await cli.run(['dev', 'stop', '--format', 'human']);
+
+    expect(result.stderr).toContain('Stopped orm-demo.');
+    expect(result.stderr).toMatch(/Address\s+Kind/);
+    expect(result.stderr).toMatch(/api\s+service/);
+  });
+
+  test('says nothing was running when there was nothing to stop, and still succeeds', async () => {
+    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', stopped: [] }) });
+
+    const result = await cli.run(['dev', 'stop', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('Nothing of orm-demo was running.');
+    expect(result.stderr).not.toContain('Stopped orm-demo');
   });
 });

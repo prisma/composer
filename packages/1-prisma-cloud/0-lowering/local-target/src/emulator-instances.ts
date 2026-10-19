@@ -236,8 +236,8 @@ export interface StoppedNode {
 
 /**
  * Stops the service processes and database servers of `nodes`, keeping
- * their data and ports, and returns the nodes it stopped. A kind whose
- * emulator is not running has nothing running to stop.
+ * their data and ports, and returns the nodes that were running. A kind
+ * whose emulator is not running has nothing running to stop.
  */
 async function stopNodes(
   nodes: Readonly<Record<string, NodeInstance>>,
@@ -247,28 +247,47 @@ async function stopNodes(
   // Both are attempted, so a failed service stop never leaves the database
   // servers running; the first failure is reported after both.
   const results = await Promise.allSettled([
-    services.length > 0 && whenRunning('service', () => computeClient().stopInstances(services)),
-    databases.length > 0 &&
-      whenRunning('database', () => postgresClient().stopInstances(databases)),
+    stopRunning('service', services),
+    stopRunning('database', databases),
   ]);
   const failure = results.find((result) => result.status === 'rejected');
   if (failure) throw failure.reason;
-  const stoppedKinds = new Set<NodeKind>();
-  if (results[0].status === 'fulfilled' && results[0].value === true) stoppedKinds.add('service');
-  if (results[1].status === 'fulfilled' && results[1].value === true) stoppedKinds.add('database');
+  const stoppedIds = new Set(
+    results.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
+  );
   return Object.entries(nodes).flatMap(([address, node]) =>
-    node.kind !== 'bucket' && stoppedKinds.has(node.kind) ? [{ address, kind: node.kind }] : [],
+    node.kind !== 'bucket' && stoppedIds.has(node.id) ? [{ address, kind: node.kind }] : [],
   );
 }
 
-/** Runs `action` when the emulator for `kind` is running; returns whether it ran. */
-async function whenRunning(
+/**
+ * Sends a stop for every one of `ids` on the emulator for `kind`, since an
+ * instance whose start is in flight can still be listed as `stopped`, and
+ * returns those that were running. A `held` service with no process is
+ * left `held`.
+ */
+async function stopRunning(
   kind: 'service' | 'database',
-  action: () => Promise<void>,
-): Promise<boolean> {
-  if (!(await isEmulatorRunning(kind))) return false;
-  await action();
-  return true;
+  ids: readonly string[],
+): Promise<readonly string[]> {
+  if (ids.length === 0 || !(await isEmulatorRunning(kind))) return [];
+  const wanted = new Set(ids);
+  if (kind === 'service') {
+    const client = computeClient();
+    const listed = (await client.listInstances()).filter((i) => wanted.has(i.id));
+    const settledHeld = new Set(
+      listed.filter((i) => i.status === 'held' && i.pid === undefined).map((i) => i.id),
+    );
+    const toStop = ids.filter((id) => !settledHeld.has(id));
+    if (toStop.length > 0) await client.stopInstances(toStop);
+    return listed
+      .filter((i) => i.pid !== undefined || i.status === 'running' || i.status === 'backoff')
+      .map((i) => i.id);
+  }
+  const client = postgresClient();
+  const listed = (await client.listInstances()).filter((i) => wanted.has(i.id));
+  await client.stopInstances(ids);
+  return listed.filter((i) => i.status === 'running').map((i) => i.id);
 }
 
 /**
