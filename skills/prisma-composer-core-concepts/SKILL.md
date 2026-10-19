@@ -302,7 +302,10 @@ Two kinds of Postgres dependency:
    dependency end:
    `postgres(catalogData, { extensions: [pgvectorRuntime] })`, where
    `pgvectorRuntime` is the default export of
-   `@prisma/orm-extension-pgvector/runtime`. Composer never looks extensions
+   `@prisma/orm-extension-pgvector/runtime`. Install the pack at exactly the
+   `@prisma/orm-postgres` version: the pack pins the ORM's shared packages
+   to its own version, so a mismatch installs two copies that silently
+   reject each other's values. Composer never looks extensions
    up itself; without it, the first `binding.client` access throws
    "Contract requires extension pack(s) 'pgvector'".
 

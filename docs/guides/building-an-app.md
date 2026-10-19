@@ -228,14 +228,16 @@ import contractJson from '../contract.json' with { type: 'json' };
 export const catalogData = dataContract<Contract>(contractJson);
 ```
 
-`postgres` is both ends of the edge, told apart by what you pass it. The
-contract alone is the dependency end — the service declaring what it queries:
+`postgres` is both ends of the edge, told apart by its first argument. A
+contract is the dependency end — the service declaring what it queries. It
+takes an optional second argument, covered under
+[extension types](#extension-types-such-as-pgvector) below:
 
 ```ts
 deps: { db: postgres(catalogData) }
 ```
 
-An options object is the resource end — the module that owns the database
+A `{ name, contract, config }` object is the resource end — the module that owns the database
 provisions it, naming the `prisma.config.ts` path (relative to the
 module file) so the deploy can reload the emitted `contract.json` and find
 `migrations/`:
@@ -262,7 +264,8 @@ the full pattern inside a reusable Module.
 If your schema uses a column type from a Prisma ORM extension pack, such as
 `embedding pgvector.Vector(length: 1024)?` with
 `@prisma/orm-extension-pgvector` listed in `prisma.config.ts`, the client
-needs that pack's runtime extension too. Install the pack in the app and pass
+needs that pack's runtime extension too. Install the pack in the app at
+exactly the version of `@prisma/orm-postgres` that Composer names, and pass
 its runtime extension to the dependency:
 
 ```ts
@@ -276,6 +279,13 @@ what you give it to the client. If you leave one out, the first `db.client`
 access throws `Contract requires extension pack(s) 'pgvector', but runtime
 descriptors do not provide matching component(s)`. A service that reads only
 `db.url` does not need to pass extensions.
+
+The exact version matters. The pack depends on the ORM's shared packages
+(`@prisma/orm-framework`, `@prisma/orm-family-sql`) at its own exact
+version, so a pack version different from the facade's installs a second
+copy of them. The runtime extension then comes from one copy and the client
+from the other, and the client rejects or mishandles it without a clear
+error.
 
 ## Reusable Modules
 

@@ -306,9 +306,16 @@ describe('hydrate — the { url, client } binding (ADR-0040), no live database r
   test('postgres(contract) with no options hands the runtime no extensions', async () => {
     const binding = await postgres(packContract).connection.hydrate({ url });
 
-    expect(() => binding.client).toThrow(
-      "Contract requires extension pack(s) 'testpack', but runtime descriptors do not provide matching component(s).",
-    );
+    let thrown: unknown;
+    try {
+      void binding.client;
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      code: 'RUNTIME.MISSING_EXTENSION_PACK',
+      details: { packIds: ['testpack'] },
+    });
   });
 
   test('postgres(contract, { extensions }) hands the extensions to the runtime', async () => {

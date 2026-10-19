@@ -95,20 +95,29 @@ namespace that ADR-0044's closed list does not have. What a user needs that
 the runtime's error does not say is where to pass the descriptor; the
 guide and the agent skill say it, next to the `postgres()` dependency.
 
-**One copy of the ORM keeps the descriptor and the runtime compatible.**
-The app imports the descriptor from its extension package, and Composer
-builds the client with the app's copy of `@prisma/orm-postgres`, which is a
-peer dependency (ADR-0046). The pack peers on the same ORM, so the
-descriptor and the runtime that reads it come from one copy.
+**The pack must be installed at exactly the facade's version.** The app
+imports the descriptor from its extension package, and Composer builds the
+client with the app's copy of `@prisma/orm-postgres`, which is a peer
+dependency (ADR-0046). The pack does not share that guarantee: pgvector
+peers only on `@prisma/orm-target-postgres`, and takes
+`@prisma/orm-framework` and `@prisma/orm-family-sql` as regular
+dependencies pinned to its own exact version. A pack at a version different
+from the facade's therefore installs a second copy of those shared
+packages, and the descriptor is built against one copy while the runtime
+reading it is the other. ADR-0046 describes how that fails: silently, as a
+rejected value or a type error naming the same type on both sides. Only
+installing the pack at exactly the facade's version keeps one copy, so the
+guide and the skill say so.
 
 ## Consequences
 
 - A service whose contract uses an extension type gets the framework-built
   client, with its cold-start retry, idle timeout and pool error handling,
   by passing the pack's runtime descriptor to `postgres()`.
-- The app depends on the extension package itself and keeps its version in
-  step with `@prisma/orm-postgres`, as the pack's own peer dependency
-  requires. Composer adds no dependency.
+- The app depends on the extension package itself, at exactly the version
+  of `@prisma/orm-postgres` that Composer names; nothing enforces this at
+  install, because the pack does not peer on the facade. Composer adds no
+  dependency.
 - A missing descriptor is found on the first `client` access in the running
   service, not at deploy. A test that touches `db.client` finds it before
   that.
