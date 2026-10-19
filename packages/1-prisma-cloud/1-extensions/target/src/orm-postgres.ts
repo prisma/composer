@@ -9,6 +9,7 @@
 import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@internal/core';
 import { dependency, freezeNode, ResourceNodeBase, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import { CliStructuredError } from '@internal/foundation/errors';
 import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types';
 import ormPostgresRuntime, {
   type PostgresClient,
@@ -151,9 +152,10 @@ export function postgres(
   arg:
     | { name: string; contract: PostgresContract; config: string; targetRef?: string }
     | PostgresContract,
-  options: PostgresDependencyOptions = {},
+  options?: PostgresDependencyOptions,
 ): unknown {
   if (!isPostgresContract(arg)) {
+    if (options !== undefined) throw resourceOptionsRefused(arg.name);
     return new PostgresResourceNode(arg);
   }
   const contract = arg;
@@ -161,10 +163,22 @@ export function postgres(
     type: 'postgres',
     connection: {
       params: { url: string() },
-      hydrate: ({ url }) => bindLazyClient(contract, url, options),
+      hydrate: ({ url }) => bindLazyClient(contract, url, options ?? {}),
     },
     required: contract,
   });
+}
+
+function resourceOptionsRefused(name: string): CliStructuredError {
+  return new CliStructuredError(
+    'COMPOSE.ARGUMENT_INVALID',
+    `postgres({ name: "${name}", … }) takes no second argument.`,
+    {
+      why: 'An object first argument declares the database resource. Runtime extensions configure the client a service builds, so they belong on the dependency end; here they would be dropped.',
+      fix: 'Pass the extensions where the service declares the dependency: `postgres(contract, { extensions })`.',
+      meta: { resource: name },
+    },
+  );
 }
 
 function isPostgresContract(value: unknown): value is PostgresContract {

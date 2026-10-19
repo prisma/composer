@@ -42,7 +42,12 @@ runtime descriptors do not provide matching component(s)."
 The option's type is the Prisma ORM runtime's own:
 `PostgresDependencyOptions = Pick<PostgresOptionsBase, 'extensions'>`, from
 `@prisma/orm-postgres/runtime`. The resource end,
-`postgres({ name, contract, config, targetRef? })`, is unchanged.
+`postgres({ name, contract, config, targetRef? })`, is unchanged, and it
+refuses a second argument. The overloads already stop a TypeScript caller;
+a JavaScript caller who passes `{ extensions }` there gets
+`COMPOSE.ARGUMENT_INVALID`, which says the extensions belong on the
+dependency end, instead of having them dropped and later seeing the
+runtime's missing-pack error.
 
 ## Reasoning
 

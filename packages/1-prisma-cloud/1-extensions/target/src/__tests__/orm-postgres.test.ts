@@ -144,6 +144,27 @@ describe('postgres() factory shapes', () => {
     expect(Object.isFrozen(node)).toBe(true);
   });
 
+  test('the resource end refuses a second argument instead of dropping it', () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const untypedPostgres = blindCast<
+      (...args: unknown[]) => unknown,
+      'test-only: a JavaScript caller the overloads cannot stop'
+    >(postgres);
+
+    expect(() =>
+      untypedPostgres(
+        { name: 'database', contract: widget, config: './prisma.config.ts' },
+        { extensions: [] },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        name: 'CliStructuredError',
+        code: 'COMPOSE.ARGUMENT_INVALID',
+        meta: { resource: 'database' },
+      }),
+    );
+  });
+
   test('postgres(contract) yields a branded DependencyEnd requiring that contract', () => {
     const widget = dataContract<WidgetContract>(widgetContractJson);
     const dep = postgres(widget);

@@ -84,7 +84,10 @@ Closed subcode registry:
   and EVALUATION_FAILED retired by
   [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE,
-  NAME_MISSING, GRAPH_INVALID
+  NAME_MISSING, GRAPH_INVALID, ARGUMENT_INVALID. ARGUMENT_INVALID is raised
+  by a node constructor called with arguments its types refuse, which only
+  a JavaScript caller can do; `postgres()` raises it for a second argument
+  to the resource end ([ADR-0055](ADR-0055-the-postgres-dependency-takes-the-apps-runtime-extensions.md)).
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING,
   DESCRIPTOR_KIND_MISMATCH, SERVICE_MISSING, BUILD_FAILED
 - `DEPLOY` — FLAG_INVALID, TARGET_CONFLICT, TARGET_MISSING, TARGET_NOT_FOUND,
