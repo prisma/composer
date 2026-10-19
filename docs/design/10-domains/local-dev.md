@@ -41,8 +41,8 @@ command:
 - **`prisma dev stop`** — stop that app's service processes and database
   servers, as ending `prisma dev` does, for a `dev` that was killed without the
   chance. Data and ports stay. It is the `devStop` operation, returning
-  `{ app, stopped }`; `stopped` lists only the nodes whose emulator was
-  running.
+  `{ app, stopped }`; `stopped` lists only the nodes that were running, so
+  it is empty when nothing was, and the command then says so.
 - **`prisma emulator list`** — every local emulator on this machine, whether it
   runs, its admin URL (`null` when it is not running), and its instances with
   id, kind, URL, state and labels. An emulator that runs but cannot be listed

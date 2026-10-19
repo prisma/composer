@@ -191,6 +191,14 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     });
   }, 90_000);
 
+  test('stopping again stops nothing and reports nothing', async () => {
+    const { devDir } = await runApp('a');
+    const current = await currentOf(devDir);
+    await current.stop();
+
+    expect(await current.stop()).toEqual([]);
+  }, 90_000);
+
   test('stopping reports only the nodes whose emulator was running', async () => {
     const { devDir } = await runApp('a');
     await stopDaemon('compute', { registryRoot });
