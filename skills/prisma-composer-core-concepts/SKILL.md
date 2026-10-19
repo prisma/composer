@@ -297,6 +297,14 @@ Two kinds of Postgres dependency:
    (`deps: { db: postgres(catalogData) }`) and the resource end, which also
    names the `prisma.config.ts` path so the deploy's migration step can
    reload the emitted `contract.json` and find `migrations/`.
+   A contract that uses an extension type (for example
+   `pgvector.Vector(length: 1024)`) needs the pack's runtime extension on the
+   dependency end:
+   `postgres(catalogData, { extensions: [pgvectorRuntime] })`, where
+   `pgvectorRuntime` is the default export of
+   `@prisma/orm-extension-pgvector/runtime`. Composer never looks extensions
+   up itself; without it, the first `binding.client` access throws
+   "Contract requires extension pack(s) 'pgvector'".
 
 **Deploys are replay-only**: they apply the migrations committed under
 `migrations/` and never create schema themselves. Every schema change,

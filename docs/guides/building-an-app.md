@@ -257,6 +257,26 @@ version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is
 the full pattern inside a reusable Module.
 
+### Extension types, such as pgvector
+
+If your schema uses a column type from a Prisma ORM extension pack, such as
+`embedding pgvector.Vector(length: 1024)?` with
+`@prisma/orm-extension-pgvector` listed in `prisma.config.ts`, the client
+needs that pack's runtime extension too. Install the pack in the app and pass
+its runtime extension to the dependency:
+
+```ts
+import pgvectorRuntime from '@prisma/orm-extension-pgvector/runtime';
+
+deps: { db: postgres(catalogData, { extensions: [pgvectorRuntime] }) }
+```
+
+Composer does not look extensions up from the contract; it passes exactly
+what you give it to the client. If you leave one out, the first `db.client`
+access throws `Contract requires extension pack(s) 'pgvector', but runtime
+descriptors do not provide matching component(s)`. A service that reads only
+`db.url` does not need to pass extensions.
+
 ## Reusable Modules
 
 When a service and its database belong together, package them as a
