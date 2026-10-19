@@ -174,7 +174,7 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
     expect(result).toMatchObject({ ok: false, failure: { code: 'DEV.EMULATOR_UNREACHABLE' } });
   });
 
-  test('a node that is not running fails with DEV.NOT_RUNNING, naming its state', async () => {
+  test('a stopped node fails with DEV.NOT_RUNNING, saying what stops a node and how it is started again', async () => {
     const result = await devUrl({
       config: config(async () => recordedApp(running)),
       address: 'catalog',
@@ -186,7 +186,10 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
       failure: { code: 'DEV.NOT_RUNNING', meta: { state: 'stopped' } },
     });
     if (!result.ok) {
-      expect(result.failure.message).toContain('stopped');
+      expect(result.failure.message).toBe('The database "catalog" is stopped.');
+      expect(result.failure.why).toContain('`prisma dev stop`');
+      expect(result.failure.why).toContain('`prisma dev` ending');
+      expect(result.failure.why).toContain('running another app in this directory');
       expect(result.failure.fix).toContain('prisma dev');
     }
   });

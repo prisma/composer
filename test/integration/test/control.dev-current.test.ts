@@ -160,7 +160,7 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
     expect(appdb.value.url).toStartWith('postgres');
   }, 30_000);
 
-  test('devStop stops the service and the database server, and their ports close', async () => {
+  test('devStop stops the running service and the database server, and their ports close', async () => {
     const web = nodes['web'];
     const appdb = nodes['appdb'];
     if (web?.port === undefined || appdb?.port === undefined) throw new Error('not recorded');
@@ -169,9 +169,9 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
 
     if (!result.ok) throw new Error(result.failure.message);
     expect(result.value.app).toBe(APP);
+    // bkg was never deployed, so it was not running and is not reported.
     expect([...result.value.stopped].sort((a, b) => a.address.localeCompare(b.address))).toEqual([
       { address: 'appdb', kind: 'database' },
-      { address: 'bkg', kind: 'service' },
       { address: 'web', kind: 'service' },
     ]);
     expect(await acceptsConnection(web.port)).toBe(false);
@@ -180,5 +180,6 @@ describe.skipIf(process.platform === 'win32')('devUrl and devStop on the real ta
       ok: false,
       failure: { code: 'DEV.NOT_RUNNING' },
     });
+    expect(await devStop({ config, cwd })).toMatchObject({ ok: true, value: { stopped: [] } });
   }, 60_000);
 });
