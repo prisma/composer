@@ -119,6 +119,35 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
     return { directory, devDir };
   }
 
+  /** Redeploys the app's gateway with `source` as its bootstrap; resolves or rejects as the deployment does. */
+  async function redeployGateway(
+    directory: string,
+    source: string,
+  ): Promise<{ readonly id: string; readonly port: number; readonly deployed: Promise<void> }> {
+    const gateway = (await readEmulatorInstances(directory))?.apps[APP]?.nodes['gateway'];
+    if (gateway?.kind !== 'service') throw new Error('not recorded');
+    const artifactDir = fs.mkdtempSync(path.join(root, 'redeploy-'));
+    fs.writeFileSync(path.join(artifactDir, 'bootstrap.js'), source);
+    const deployed = computeClient().putDeployment(gateway.id, {
+      artifactDir,
+      artifactHash: artifactDir,
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(gateway.port) },
+    });
+    return { id: gateway.id, port: gateway.port, deployed };
+  }
+
+  async function statusOf(id: string): Promise<string | undefined> {
+    return (await computeClient().getInstance(id))?.status;
+  }
+
+  async function waitForStatus(id: string, status: string, timeoutMs: number): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while ((await statusOf(id)) !== status) {
+      if (Date.now() > deadline) throw new Error(`"${id}" never reached ${status}`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
   async function currentOf(devDir: string): Promise<LocalTargetCurrentApp> {
     const current = await localTargetDescriptor().current?.({ devDir });
     if (current === undefined) throw new Error('no current app');
@@ -190,6 +219,53 @@ describe.skipIf(process.platform === 'win32')("the directory's current app", () 
       condition: 'stopped',
     });
   }, 90_000);
+
+  test('stopping during a start in flight ends that start, and nothing is left listening', async () => {
+    const { directory, devDir } = await runApp('a');
+    const slow = await redeployGateway(
+      directory,
+      "setTimeout(() => Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('late') }), 3000);\n",
+    );
+    const outcome = slow.deployed.then(
+      () => 'deployed',
+      (error: unknown) => String(error),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 800));
+
+    await (await currentOf(devDir)).stop();
+
+    expect(await outcome).toContain('stopped before it accepted connections');
+    expect(await statusOf(slow.id)).toBe('stopped');
+    await new Promise((resolve) => setTimeout(resolve, 3500));
+    expect(await acceptsConnection(slow.port)).toBe(false);
+  }, 90_000);
+
+  test('a service waiting to be restarted after a crash is reported and stays stopped', async () => {
+    const { directory, devDir } = await runApp('a');
+    const crashing = await redeployGateway(directory, 'process.exit(1);\n');
+    void crashing.deployed.catch(() => undefined);
+    await waitForStatus(crashing.id, 'backoff', 10_000);
+
+    const stopped = await (await currentOf(devDir)).stop();
+
+    expect(stopped).toContainEqual({ address: 'gateway', kind: 'service' });
+    expect(await statusOf(crashing.id)).toBe('stopped');
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(await statusOf(crashing.id)).toBe('stopped');
+  }, 90_000);
+
+  test('a service held after repeated crashes is not reported and stays held', async () => {
+    const { directory, devDir } = await runApp('a');
+    const crashing = await redeployGateway(directory, 'process.exit(1);\n');
+    void crashing.deployed.catch(() => undefined);
+    await waitForStatus(crashing.id, 'held', 60_000);
+
+    const stopped = await (await currentOf(devDir)).stop();
+
+    expect(stopped).not.toContainEqual({ address: 'gateway', kind: 'service' });
+    expect(stopped).toContainEqual({ address: 'catalog', kind: 'database' });
+    expect(await statusOf(crashing.id)).toBe('held');
+  }, 120_000);
 
   test('stopping again stops nothing and reports nothing', async () => {
     const { devDir } = await runApp('a');

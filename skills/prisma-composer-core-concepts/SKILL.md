@@ -488,7 +488,9 @@ that surprise:
    node is stopped, a service is crash-looping and its log is named, or the
    emulator lost the node and the next `dev` creates it again).
    `prisma dev stop` stops the app's services and database servers when `dev`
-   was killed without doing it; data and ports stay. `prisma emulator list`
+   was killed without doing it; data and ports stay. It lists what it
+   stopped, and says so and still succeeds when nothing was running.
+   `prisma emulator list`
    shows every local emulator and its instances, from any directory; one that
    runs but cannot be listed carries an `error` in its own entry. Piped, it
    writes one tab-separated line per instance: emulator kind, instance id,

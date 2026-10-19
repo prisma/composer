@@ -160,10 +160,11 @@ a code a script can branch on:
 - `DEV.ADDRESS_UNKNOWN`: the app has no node at that address; the message
   lists the ones it has.
 - `DEV.EMULATOR_UNREACHABLE`: the emulator the node runs on is not running.
-- `DEV.NOT_RUNNING`: the node exists but is not running. Usually it was
-  stopped, by `prisma dev stop` or by `prisma dev` ending. A service that keeps crashing is reported this way too, with the
-  path of its log; and a node the emulator lost is created again, empty, by the
-  next `prisma dev`.
+- `DEV.NOT_RUNNING`: the node exists but is not running. Usually it is
+  stopped: `prisma dev stop`, `prisma dev` ending, and running another app in
+  this directory all stop an app's services and database servers. A service
+  that keeps crashing is reported this way too, with the path of its log; and
+  a node the emulator lost is created again, empty, by the next `prisma dev`.
 
 `prisma dev stop` stops the app's service processes and database servers, as
 `Ctrl-C` does. Use it to stop an app started with `--detach`, or when

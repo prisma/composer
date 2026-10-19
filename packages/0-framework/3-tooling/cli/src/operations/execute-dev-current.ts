@@ -114,8 +114,8 @@ function notRunning(
       meta,
     });
   }
-  return new CliStructuredError('DEV.NOT_RUNNING', `The ${kind} "${address}" was stopped.`, {
-    why: 'It was stopped by `prisma dev stop` or by `prisma dev` ending, and a stopped node has no URL that answers.',
+  return new CliStructuredError('DEV.NOT_RUNNING', `The ${kind} "${address}" is stopped.`, {
+    why: "`prisma dev stop`, `prisma dev` ending, and running another app in this directory all stop an app's services and database servers, and a stopped node has no URL that answers.",
     fix: RUN_DEV,
     meta,
   });

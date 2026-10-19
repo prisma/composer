@@ -228,9 +228,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
       flags: {
         name: flag.string({
           brief:
-            'Run the app under this name instead of the name its entry module declares. A ' +
+            'Run the app under this name instead of the name its root module declares. A ' +
             'different name gets its own local services, databases and buckets (default: the ' +
-            "entry module's name).",
+            "root module's name).",
           placeholder: 'name',
         }),
         fresh: flag.boolean({

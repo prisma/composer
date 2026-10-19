@@ -260,22 +260,34 @@ async function stopNodes(
   );
 }
 
-/** A state in which an instance has no process and no restart pending. */
-const AT_REST = new Set(['stopped', 'held']);
-
-/** Stops those of `ids` that are running on the emulator for `kind`; returns their ids. */
+/**
+ * Sends a stop for every one of `ids` on the emulator for `kind`, since an
+ * instance whose start is in flight can still be listed as `stopped`, and
+ * returns those that were running. A `held` service with no process is
+ * left `held`.
+ */
 async function stopRunning(
   kind: 'service' | 'database',
   ids: readonly string[],
 ): Promise<readonly string[]> {
   if (ids.length === 0 || !(await isEmulatorRunning(kind))) return [];
-  const client = kind === 'service' ? computeClient() : postgresClient();
   const wanted = new Set(ids);
-  const running = (await client.listInstances())
-    .filter((instance) => wanted.has(instance.id) && !AT_REST.has(instance.status))
-    .map((instance) => instance.id);
-  if (running.length > 0) await client.stopInstances(running);
-  return running;
+  if (kind === 'service') {
+    const client = computeClient();
+    const listed = (await client.listInstances()).filter((i) => wanted.has(i.id));
+    const settledHeld = new Set(
+      listed.filter((i) => i.status === 'held' && i.pid === undefined).map((i) => i.id),
+    );
+    const toStop = ids.filter((id) => !settledHeld.has(id));
+    if (toStop.length > 0) await client.stopInstances(toStop);
+    return listed
+      .filter((i) => i.pid !== undefined || i.status === 'running' || i.status === 'backoff')
+      .map((i) => i.id);
+  }
+  const client = postgresClient();
+  const listed = (await client.listInstances()).filter((i) => wanted.has(i.id));
+  await client.stopInstances(ids);
+  return listed.filter((i) => i.status === 'running').map((i) => i.id);
 }
 
 /**
