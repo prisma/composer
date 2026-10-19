@@ -2,14 +2,18 @@
  * `postgres()` is the `postgres` kind's single entry, overloaded: a
  * resource end takes `{ name, contract }`; a dependency end hydrates to a
  * `{ url, client }` binding whose typed client is built lazily (ADR-0022,
- * ADR-0040). No runtime schema check.
+ * ADR-0040) with the runtime extensions the app passes (ADR-0055). No
+ * runtime schema check.
  */
 
 import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@internal/core';
 import { dependency, freezeNode, ResourceNodeBase, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types';
-import ormPostgresRuntime, { type PostgresClient } from '@prisma/orm-postgres/runtime';
+import ormPostgresRuntime, {
+  type PostgresClient,
+  type PostgresOptionsBase,
+} from '@prisma/orm-postgres/runtime';
 import pg from 'pg';
 import { normalizeSslMode, retryTransientConnect } from './pg-connection.ts';
 import { type RequiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
@@ -57,6 +61,14 @@ export interface PostgresBinding<Ct> {
   readonly url: string;
   readonly client: Client<Ct>;
 }
+
+/**
+ * What the app passes to a `postgres(contract, options)` dependency.
+ * `extensions` are the Prisma ORM runtime extensions the contract's
+ * extension types need, such as the default export of
+ * `@prisma/orm-extension-pgvector/runtime` (ADR-0055).
+ */
+export type PostgresDependencyOptions = Pick<PostgresOptionsBase, 'extensions'>;
 
 /**
  * The `postgres` resource node: a core Resource node plus `config`, the
@@ -126,17 +138,20 @@ export function postgres<C extends PostgresContract>(opts: {
   targetRef?: string;
 }): PostgresResourceNode<C>;
 /**
- * `postgres(contract)` — a service's dependency on a Prisma-ORM-typed
- * Postgres. Its binding carries the raw connection URL and the typed Prisma
- * Next client, built lazily on first `client` access (ADR-0040).
+ * `postgres(contract, options?)` — a service's dependency on a
+ * Prisma-ORM-typed Postgres. Its binding carries the raw connection URL and
+ * the typed Prisma ORM client, built lazily on first `client` access
+ * (ADR-0040) with `options.extensions` (ADR-0055).
  */
 export function postgres<C extends PostgresContract>(
   contract: C,
+  options?: PostgresDependencyOptions,
 ): DependencyEnd<PostgresBinding<C>, C>;
 export function postgres(
   arg:
     | { name: string; contract: PostgresContract; config: string; targetRef?: string }
     | PostgresContract,
+  options: PostgresDependencyOptions = {},
 ): unknown {
   if (!isPostgresContract(arg)) {
     return new PostgresResourceNode(arg);
@@ -146,7 +161,7 @@ export function postgres(
     type: 'postgres',
     connection: {
       params: { url: string() },
-      hydrate: ({ url }) => bindLazyClient(contract, url),
+      hydrate: ({ url }) => bindLazyClient(contract, url, options),
     },
     required: contract,
   });
@@ -169,12 +184,16 @@ function isPostgresContract(value: unknown): value is PostgresContract {
  * validates `contractJson` eagerly — deferring it keeps a bad contract from
  * poisoning `load()` and spares URL-only consumers the cost (ADR-0040).
  */
-function bindLazyClient<C extends PostgresContract>(contract: C, url: string): PostgresBinding<C> {
+function bindLazyClient<C extends PostgresContract>(
+  contract: C,
+  url: string,
+  options: PostgresDependencyOptions,
+): PostgresBinding<C> {
   let client: Client<C> | undefined;
   return Object.freeze({
     url,
     get client(): Client<C> {
-      client ??= buildClient(contract, url);
+      client ??= buildClient(contract, url, options);
       return client;
     },
   });
@@ -186,9 +205,14 @@ function bindLazyClient<C extends PostgresContract>(contract: C, url: string): P
  * bare `url`: the runtime's bare-`url` connect is a one-shot that fails
  * permanently, but a pool connects lazily on first query, so a bounded retry there suffices.
  */
-function buildClient<C extends PostgresContract>(contract: C, url: string): Client<C> {
+function buildClient<C extends PostgresContract>(
+  contract: C,
+  url: string,
+  options: PostgresDependencyOptions,
+): Client<C> {
   return ormPostgresRuntime<OrmContractOf<C>>({
     contractJson: contract.__cmp.contractJson,
+    ...(options.extensions !== undefined ? { extensions: options.extensions } : {}),
     // Explicit binding, NOT `pg: pool`: the bare form sniffs the pool with
     // `instanceof`, which breaks whenever a bundle carries two copies of pg
     // (the pool from one, the runtime's Pool class from the other).

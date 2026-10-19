@@ -12,12 +12,14 @@
  */
 import type { BuildAdapter, DependencyEnd, Hydrated, ModuleBuilder } from '@internal/core';
 import { service } from '@internal/core';
+import type { PostgresOptionsBase } from '@prisma/orm-postgres/runtime';
 import { expectTypeOf, test } from 'vitest';
 import {
   type Client,
   dataContract,
   type PostgresBinding,
   type PostgresContract,
+  type PostgresDependencyOptions,
   type PostgresResourceNode,
   postgres,
 } from '../exports/orm.ts';
@@ -54,6 +56,33 @@ test('postgres(contract) yields the dependency requiring that contract; its bind
   expectTypeOf<Hydrated<typeof dep>>().toEqualTypeOf<PostgresBinding<typeof widget>>();
   expectTypeOf<Hydrated<typeof dep>['url']>().toEqualTypeOf<string>();
   expectTypeOf<Hydrated<typeof dep>['client']>().toEqualTypeOf<Client<typeof widget>>();
+});
+
+declare const pgvectorRuntime: NonNullable<PostgresOptionsBase['extensions']>[number];
+
+test('postgres(contract, { extensions }) takes the runtime extensions and yields the same dependency', () => {
+  const dep = postgres(widget, { extensions: [pgvectorRuntime] });
+  expectTypeOf(dep).toEqualTypeOf<DependencyEnd<PostgresBinding<typeof widget>, typeof widget>>();
+  expectTypeOf<PostgresDependencyOptions['extensions']>().toEqualTypeOf<
+    PostgresOptionsBase['extensions']
+  >();
+});
+
+test('the dependency options take nothing but runtime extensions', () => {
+  // @ts-expect-error a connection URL is delivered at hydrate, never passed by the app
+  postgres(widget, { url: 'postgres://localhost/db' });
+  // @ts-expect-error an extension is a runtime descriptor, not a pack name
+  postgres(widget, { extensions: ['pgvector'] });
+});
+
+test('the resource end takes no second argument', () => {
+  expectTypeOf(postgres).toBeCallableWith({
+    name: 'db',
+    contract: widget,
+    config: './prisma.config.ts',
+  });
+  // @ts-expect-error runtime extensions belong to the dependency end
+  postgres({ name: 'db', contract: widget, config: './prisma.config.ts' }, { extensions: [] });
 });
 
 const build: BuildAdapter = {

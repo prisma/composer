@@ -17,6 +17,7 @@ import { blindCast } from '@internal/foundation/casts';
 import {
   dataContract,
   isPostgresResourceNode,
+  type PostgresDependencyOptions,
   postgres,
   requiredPackHead,
   requiredPackHeadOf,
@@ -227,6 +228,36 @@ describe('the config path rides through provisioning (brand intact)', () => {
   });
 });
 
+type RuntimeExtension = NonNullable<PostgresDependencyOptions['extensions']>[number];
+
+/**
+ * A stand-in for a runtime extension such as pgvector's: it contributes no
+ * codecs and counts how often the runtime asks for them, which happens only
+ * when the client is constructed.
+ */
+function testpackExtension(): RuntimeExtension & { codecReads(): number } {
+  let reads = 0;
+  return {
+    kind: 'extension',
+    id: 'testpack',
+    familyId: 'sql',
+    targetId: 'postgres',
+    version: '0.0.0',
+    codecs: () => {
+      reads += 1;
+      return [];
+    },
+    create: () => ({ familyId: 'sql', targetId: 'postgres' }),
+    codecReads: () => reads,
+  };
+}
+
+/** The widget contract, declaring that it needs the `testpack` extension at runtime. */
+const packContract = dataContract<WidgetContract>({
+  ...widgetContractJson,
+  extensions: { testpack: {} },
+});
+
 describe('hydrate — the { url, client } binding (ADR-0040), no live database required', () => {
   const url = 'postgres://user:pass@localhost:5432/does-not-exist';
 
@@ -270,6 +301,34 @@ describe('hydrate — the { url, client } binding (ADR-0040), no live database r
 
     expect(binding.url).toBe(url);
     expect(() => binding.client).toThrow();
+  });
+
+  test('postgres(contract) with no options hands the runtime no extensions', async () => {
+    const binding = await postgres(packContract).connection.hydrate({ url });
+
+    expect(() => binding.client).toThrow(
+      "Contract requires extension pack(s) 'testpack', but runtime descriptors do not provide matching component(s).",
+    );
+  });
+
+  test('postgres(contract, { extensions }) hands the extensions to the runtime', async () => {
+    const extension = testpackExtension();
+    const binding = await postgres(packContract, { extensions: [extension] }).connection.hydrate({
+      url,
+    });
+
+    expect(extension.codecReads()).toBe(0);
+    expect(typeof binding.client.orm).toBe('object');
+    expect(extension.codecReads()).toBeGreaterThan(0);
+  });
+
+  test('passing extensions leaves the dependency end unchanged', () => {
+    const plain = postgres(packContract);
+    const withExtensions = postgres(packContract, { extensions: [testpackExtension()] });
+
+    expect(withExtensions.type).toBe(plain.type);
+    expect(withExtensions.required).toBe(packContract);
+    expect(Object.keys(withExtensions.connection.params)).toEqual(['url']);
   });
 
   test('hydrate does no schema verification — it just builds the binding', () => {
