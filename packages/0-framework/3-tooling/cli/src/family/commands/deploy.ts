@@ -76,7 +76,10 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       },
       flags: {
         name: flag.string({
-          brief: "Override the root node's name — the deploy's application name.",
+          brief:
+            'Deploy the app under this name instead of the name its entry module declares. A ' +
+            'different name is a separate app on Prisma Cloud, with its own services, databases ' +
+            "and buckets (default: the entry module's name).",
           placeholder: 'name',
         }),
         stage: flag.string({
