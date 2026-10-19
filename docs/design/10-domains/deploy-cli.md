@@ -42,7 +42,8 @@ local emulators; [local-dev.md](local-dev.md) covers them
   local counterparts of every provisioned resource, real service processes,
   no platform account. See [local-dev.md](local-dev.md) (ADR-0041) for the
   design; flags: `--name` (same override semantics as deploy), `--fresh`
-  (tear down and reprovision every local instance before starting).
+  (before starting, delete the current app's local services, databases and
+  buckets and their data; other apps run from the directory keep theirs).
 
 `deploy` flags: `--name` (override the root's name — per-run ephemeral
 deploys in shared workspaces), `--stage <name>` (target a named, isolated
