@@ -227,11 +227,16 @@ export const createDevCommand = (operations: ComposerOperations) =>
       },
       flags: {
         name: flag.string({
-          brief: "Override the root node's name — the dev instance's application name.",
+          brief:
+            'Run the app under this name instead of the name its root module declares. A ' +
+            'different name gets its own local services, databases and buckets (default: the ' +
+            "root module's name).",
           placeholder: 'name',
         }),
         fresh: flag.boolean({
-          brief: 'Destroy the dev stack and wipe the dev state directory before starting.',
+          brief:
+            "Delete this app's local services, databases and buckets, and their data, before " +
+            'starting.',
         }),
         detach: flag.boolean({
           brief:

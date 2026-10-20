@@ -10,6 +10,7 @@ import {
   engineFailureFilePath,
   readEngineFailureCause,
   redactSecrets,
+  withComposerAdvice,
 } from '../deployment-summary.ts';
 
 const ESC = String.fromCharCode(27);
@@ -181,4 +182,57 @@ describe('the failure cause through a real child process', () => {
     expect(fs.existsSync(engineFailureFilePath(resultFile))).toBe(false);
     expect(readEngineFailureCause(resultFile)).toBeUndefined();
   }, 15_000);
+});
+
+/** The `+`-joined string literals around each non-comment source line that mentions `--adopt`, as the message they build. */
+function adoptMessagesIn(source: string): string[] {
+  const lines = source.split('\n');
+  const joinedWithNext = (index: number) => /\+\s*$/.test(lines[index] ?? '');
+  const messages: string[] = [];
+  lines.forEach((line, index) => {
+    if (!line.includes('--adopt') || /^\s*(\*|\/\/)/.test(line)) return;
+    let start = index;
+    while (start > 0 && joinedWithNext(start - 1)) start--;
+    let end = index;
+    while (joinedWithNext(end)) end++;
+    const literals =
+      lines
+        .slice(start, end + 1)
+        .join('\n')
+        .match(/"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g) ?? [];
+    messages.push(literals.map((literal) => literal.slice(1, -1)).join(''));
+  });
+  return messages;
+}
+
+describe('withComposerAdvice', () => {
+  test("replaces every piece of Alchemy's --adopt advice with steps that work from Composer", () => {
+    const upstream = [
+      "OwnedBySomeoneElse: Cannot adopt resource 'auth.database-conn' (Prisma.Connection): it exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
+      "OwnedBySomeoneElse: Cannot resume creating resource 'storefront-svc' (Prisma.App): a resource with its physical identity exists in the cloud but is not owned by this stack/stage/logical-id. Re-run with `--adopt` (or wrap the effect in `adopt(true)`) to take it over.",
+      'Resource exists in the cloud but is not owned by this stack — leaving it in place (re-deploy with --adopt to take ownership, then destroy).',
+    ];
+    for (const line of upstream) {
+      const shown = withComposerAdvice(line);
+      expect(shown).not.toContain('--adopt');
+      expect(shown).not.toContain('adopt(true)');
+      expect(shown).toMatch(/Remove that resource|remove it by hand/);
+    }
+  });
+
+  test('leaves other output unchanged', () => {
+    expect(withComposerAdvice(alchemyFailedApply)).toBe(alchemyFailedApply);
+  });
+
+  test("rewrites every --adopt message in the installed Alchemy's engine", () => {
+    let root = path.dirname(fileURLToPath(import.meta.resolve('alchemy')));
+    while (!fs.existsSync(path.join(root, 'package.json'))) root = path.dirname(root);
+    const messages = ['Plan.ts', 'Apply.ts'].flatMap((file) =>
+      adoptMessagesIn(fs.readFileSync(path.join(root, 'src', file), 'utf8')),
+    );
+    expect(messages.length).toBeGreaterThan(0);
+    for (const message of messages) {
+      expect(withComposerAdvice(message)).not.toContain('--adopt');
+    }
+  });
 });

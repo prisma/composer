@@ -2,7 +2,7 @@
 name: prisma-composer-core-concepts
 metadata:
   library: "@prisma/composer"
-  library_version: "0.31.0"
+  library_version: "0.32.0"
   version: 2026.9.1
 description: >-
   Use when deploying or managing an app that uses Prisma Composer
@@ -358,7 +358,8 @@ shell runs `prisma` under Bun with Alchemy on Node.
 Services, managed Postgres databases and buckets record their node address as
 `logicalId` on their Branch. Console uses that address to match topology nodes
 to resources and compare them with main. Existing environments receive the
-identity on their next deploy; a conflicting identity fails deploy. Local dev
+identity on their next deploy. A deploy interrupted after creating a resource
+resumes on the next deploy, which finds the resource by its address. Local dev
 creates no platform rows. Changing a node's address (its name without an
 explicit `id`, its `id`, or its module) makes a new entity: the next deploy
 deletes the old rows, and a database's or bucket's data with them.
@@ -501,7 +502,9 @@ that surprise:
    node is stopped, a service is crash-looping and its log is named, or the
    emulator lost the node and the next `dev` creates it again).
    `prisma dev stop` stops the app's services and database servers when `dev`
-   was killed without doing it; data and ports stay. `prisma emulator list`
+   was killed without doing it; data and ports stay. It lists what it
+   stopped, and says so and still succeeds when nothing was running.
+   `prisma emulator list`
    shows every local emulator and its instances, from any directory; one that
    runs but cannot be listed carries an `error` in its own entry. Piped, it
    writes one tab-separated line per instance: emulator kind, instance id,

@@ -33,11 +33,11 @@ describe('failOnEmptyScopeWithLiveResources', () => {
 
     expect(error).toBeInstanceOf(PrismaApiError);
     const message = (error as PrismaApiError).message;
-    expect(message).toContain(`no deploy state for stage "${stage}"`);
+    expect(message).toContain(`stage "${stage}" (stack "${stack}") has no deploy state`);
     expect(message).toContain(branchId);
     expect(message).toContain('app "storefront.web"');
     expect(message).toContain('app "storefront.worker"');
-    expect(message).toContain('already_exists');
+    expect(message).toContain('a deploy would try to recreate them');
   });
 
   test('a database-only legacy stage fails too — a legacy prisma-composer-state database alone trips the guard', async () => {
@@ -51,7 +51,7 @@ describe('failOnEmptyScopeWithLiveResources', () => {
     const message = (error as PrismaApiError).message;
     expect(message).toContain('1 resource(s)');
     expect(message).toContain('database "prisma-composer-state"');
-    expect(message).toContain('predates the platform state API');
+    expect(message).toContain('has no deploy state');
   });
 
   test('a bucket-only branch fails too', async () => {
@@ -81,7 +81,7 @@ describe('failOnEmptyScopeWithLiveResources', () => {
     expect(message).toContain('bucket "files"');
   });
 
-  test('the message says the stage predates the platform state API and how to cut over', async () => {
+  test('the message names both causes and how to recover', async () => {
     const state = newFakeState({
       apps: [{ id: 'app-1', name: 'storefront.web', projectId: PROJECT_ID, branchId }],
     });
@@ -89,11 +89,13 @@ describe('failOnEmptyScopeWithLiveResources', () => {
     const error: unknown = await check(state).catch((e: unknown) => e);
 
     const message = (error as PrismaApiError).message;
-    expect(message).toContain('predates the platform state API');
-    expect(message).toContain('previous version of composer');
-    expect(message).toContain('delete the stage');
-    expect(message).toContain('redeploy fresh');
+    expect(message).toContain('has no deploy state');
+    expect(message).toContain('a Composer version that kept deploy state elsewhere');
+    expect(message).toContain('something other than this app');
+    expect(message).toContain('Delete the stage');
+    expect(message).toContain('deploy again');
     expect(message).toContain('remove them or deploy into a different project');
+    expect(message).not.toContain('predates');
   });
 
   test('a multi-page listing is walked to the end — apps beyond the first page still fail the check by name', async () => {

@@ -41,8 +41,8 @@ command:
 - **`prisma dev stop`** — stop that app's service processes and database
   servers, as ending `prisma dev` does, for a `dev` that was killed without the
   chance. Data and ports stay. It is the `devStop` operation, returning
-  `{ app, stopped }`; `stopped` lists only the nodes whose emulator was
-  running.
+  `{ app, stopped }`; `stopped` lists only the nodes that were running, so
+  it is empty when nothing was, and the command then says so.
 - **`prisma emulator list`** — every local emulator on this machine, whether it
   runs, its admin URL (`null` when it is not running), and its instances with
   id, kind, URL, state and labels. An emulator that runs but cannot be listed
@@ -66,8 +66,9 @@ record. `dev url` reports a node only while it is running, so every URL it
 prints answers.
 
 Flags: `dev` takes `--name` (override the root's name, as on deploy),
-`--fresh` (destroy the dev stack and wipe the dev state directory before
-starting) and `--detach` (return once every service answers and leave the app
+`--fresh` (before starting, delete the current app's local services,
+databases and buckets, their data, and the app's entry in the directory's
+record; other apps run from the directory keep theirs) and `--detach` (return once every service answers and leave the app
 running; see § Process lifetimes). Stages do not apply — a working directory has
 exactly one dev instance; parallel instances are parallel checkouts.
 

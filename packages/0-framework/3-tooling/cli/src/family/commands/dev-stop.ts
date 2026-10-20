@@ -31,22 +31,27 @@ export const createDevStopCommand = (operations: ComposerOperations) =>
         ctx.present(
           { data: result.value },
           {
-            human: (ui) => [
-              {
-                kind: 'summary',
-                status: 'ok',
-                text: `Stopped ${ui.emphasize(app)}. Its data and ports are kept for the next \`prisma dev\`.`,
-              },
-              ...(stopped.length === 0
-                ? []
+            human: (ui) =>
+              stopped.length === 0
+                ? [
+                    {
+                      kind: 'summary',
+                      status: 'info',
+                      text: `Nothing of ${ui.emphasize(app)} was running.`,
+                    },
+                  ]
                 : [
                     {
-                      kind: 'table' as const,
+                      kind: 'summary',
+                      status: 'ok',
+                      text: `Stopped ${ui.emphasize(app)}. Its data and ports are kept for the next \`prisma dev\`.`,
+                    },
+                    {
+                      kind: 'table',
                       columns: ['Address', 'Kind'],
                       rows: stopped.map(({ address, kind }) => [address, kind]),
                     },
-                  ]),
-            ],
+                  ],
             stdout: () => [],
             json: () => result.value,
             next: () => [],

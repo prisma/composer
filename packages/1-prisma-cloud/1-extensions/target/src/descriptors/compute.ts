@@ -26,6 +26,7 @@ import {
 } from '../serializer.ts';
 import { serviceAppName } from '../service-app.ts';
 import {
+  asOwnRow,
   cloudApplicationOf,
   logicalIdProp,
   projectIdOf,
@@ -160,7 +161,7 @@ export function computeDescriptor(
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
           ...logicalIdProp(application, address),
-        });
+        }).pipe(asOwnRow);
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
@@ -205,7 +206,7 @@ export function computeDescriptor(
             value: wrapped,
             class: cls,
             ...branch,
-          });
+          }).pipe(asOwnRow);
           // A pointer row triggers on its text (the platform NAME); the pointed
           // variable's own rotation joins as a `<name>:updatedAt` member.
           const pointer =
@@ -240,7 +241,7 @@ export function computeDescriptor(
               value: inputValue,
               class: cls,
               ...branch,
-            }),
+            }).pipe(asOwnRow),
             key: inputRow.key,
             value: inputValue,
             pointers: inputRow.secrets,
@@ -269,7 +270,7 @@ export function computeDescriptor(
                 value: generatedValue,
                 class: cls,
                 ...branch,
-              }),
+              }).pipe(asOwnRow),
               key: leaf.varName,
               value: generatedValue,
             });
@@ -340,7 +341,7 @@ export function computeDescriptor(
               value: providerValue,
               class: cls,
               ...branch,
-            }),
+            }).pipe(asOwnRow),
             key,
             value: providerValue,
           });
