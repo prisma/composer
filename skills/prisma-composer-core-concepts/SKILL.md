@@ -287,26 +287,28 @@ Two kinds of Postgres dependency:
 
 1. **`rawPostgres()`**: the binding is `{ url }` and the app owns its client.
 2. **`postgres(...)`**: a Prisma-ORM-typed database. The binding is
-   `{ url, client }` (ADR-0040): the raw connection URL plus the typed
-   client Composer constructs from your data contract, lazily on first
-   access, so queries go through `binding.client` and are compile-time
-   checked. Both `postgres` and `dataContract` import from
+   `{ url, connection, client, clientWith }` (ADR-0040, ADR-0055): the raw
+   connection URL, the connection pool, the typed client Composer constructs
+   from your data contract lazily on first access, and `clientWith(options)`,
+   which builds a typed client with Prisma ORM runtime options. Queries go
+   through `binding.client` and are compile-time checked. Both `postgres` and `dataContract` import from
    `@prisma/composer-prisma-cloud/orm`, not the package root. One
    `dataContract`-wrapped value (emitted from `contract.prisma` by
    `prisma contract emit`) is referenced by both the dependency end
    (`deps: { db: postgres(catalogData) }`) and the resource end, which also
    names the `prisma.config.ts` path so the deploy's migration step can
    reload the emitted `contract.json` and find `migrations/`.
-   A contract that uses an extension type (for example
-   `pgvector.Vector(length: 1024)`) needs the pack's runtime extension on the
-   dependency end:
-   `postgres(catalogData, { extensions: [pgvectorRuntime] })`, where
-   `pgvectorRuntime` is the default export of
-   `@prisma/orm-extension-pgvector/runtime`. Install the pack at exactly the
+   Client options never go on the dependency declaration. A contract that
+   uses an extension type (for example `pgvector.Vector(length: 1024)`)
+   needs the pack's runtime extension when the client is built:
+   `export const orm = db.clientWith({ extensions: [pgvectorRuntime] })`,
+   where `pgvectorRuntime` is the default export of
+   `@prisma/orm-extension-pgvector/runtime`; other runtime options, such as
+   `middleware`, go in the same object. Install the pack at exactly the
    `@prisma/orm-postgres` version: the pack pins the ORM's shared packages
    to its own version, so a mismatch installs two copies that silently
-   reject each other's values. Composer never looks extensions
-   up itself; without it, the first `binding.client` access throws
+   reject each other's values. Composer never looks extensions up itself;
+   with `binding.client` instead, the first access throws
    "Contract requires extension pack(s) 'pgvector'".
 
 **Deploys are replay-only**: they apply the migrations committed under

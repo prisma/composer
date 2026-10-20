@@ -109,6 +109,13 @@ carries a Prisma ORM contract *can* construct the typed client from the contract
 alone — contract plus URL is the client's entire input. Because "data contracts
 are Prisma ORM" is a framework-level decision, Prisma ORM is blessed the way
 RPC is: this dependency kind gets a client, while bare postgres keeps `{ url }`.
+
+> Amended by [ADR-0055](ADR-0055-the-postgres-binding-builds-clients-with-the-apps-options.md):
+> contract plus URL is not the client's entire input. A contract with an
+> extension type needs the pack's runtime extension, and apps pass other
+> runtime options too. Composer still builds the default client, and the
+> binding's `clientWith(options)` builds one with the app's options over
+> the same pool.
 The dependency cost is contained by packaging — the primitive lives behind its
 own subpath entry, never re-exported from the index — so a service that opts out
 never loads `@prisma/orm-postgres` or `pg` at runtime.

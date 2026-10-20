@@ -12,14 +12,17 @@
  */
 import type { BuildAdapter, DependencyEnd, Hydrated, ModuleBuilder } from '@internal/core';
 import { service } from '@internal/core';
-import type { PostgresOptionsBase } from '@prisma/orm-postgres/runtime';
+import type {
+  PostgresBinding as OrmBinding,
+  PostgresOptionsBase,
+} from '@prisma/orm-postgres/runtime';
 import { expectTypeOf, test } from 'vitest';
 import {
   type Client,
   dataContract,
   type PostgresBinding,
+  type PostgresClientOptions,
   type PostgresContract,
-  type PostgresDependencyOptions,
   type PostgresResourceNode,
   postgres,
 } from '../exports/orm.ts';
@@ -48,7 +51,7 @@ test('{ name, contract, config } yields the resource node carrying the config pa
   expectTypeOf(identity.config).toEqualTypeOf<string>();
 });
 
-test('postgres(contract) yields the dependency requiring that contract; its binding is { url, client }', () => {
+test('postgres(contract) yields the dependency requiring that contract; its binding is { url, connection, client, clientWith }', () => {
   const dep = postgres(widget);
   expectTypeOf(dep).toEqualTypeOf<DependencyEnd<PostgresBinding<typeof widget>, typeof widget>>();
   // The binding load() hands the app: the raw URL plus the Prisma ORM client
@@ -56,32 +59,28 @@ test('postgres(contract) yields the dependency requiring that contract; its bind
   expectTypeOf<Hydrated<typeof dep>>().toEqualTypeOf<PostgresBinding<typeof widget>>();
   expectTypeOf<Hydrated<typeof dep>['url']>().toEqualTypeOf<string>();
   expectTypeOf<Hydrated<typeof dep>['client']>().toEqualTypeOf<Client<typeof widget>>();
-});
-
-declare const pgvectorRuntime: NonNullable<PostgresOptionsBase['extensions']>[number];
-
-test('postgres(contract, { extensions }) takes the runtime extensions and yields the same dependency', () => {
-  const dep = postgres(widget, { extensions: [pgvectorRuntime] });
-  expectTypeOf(dep).toEqualTypeOf<DependencyEnd<PostgresBinding<typeof widget>, typeof widget>>();
-  expectTypeOf<PostgresDependencyOptions['extensions']>().toEqualTypeOf<
-    PostgresOptionsBase['extensions']
+  expectTypeOf<Hydrated<typeof dep>['connection']>().toEqualTypeOf<OrmBinding>();
+  expectTypeOf<ReturnType<Hydrated<typeof dep>['clientWith']>>().toEqualTypeOf<
+    Client<typeof widget>
   >();
 });
 
-test('the dependency options take nothing but runtime extensions', () => {
-  // @ts-expect-error a connection URL is delivered at hydrate, never passed by the app
-  postgres(widget, { url: 'postgres://localhost/db' });
+declare const pgvectorRuntime: NonNullable<PostgresOptionsBase['extensions']>[number];
+declare const binding: PostgresBinding<typeof widget>;
+
+test('clientWith takes the runtime options, less poolOptions', () => {
+  expectTypeOf<PostgresClientOptions>().toEqualTypeOf<Omit<PostgresOptionsBase, 'poolOptions'>>();
+  binding.clientWith({ extensions: [pgvectorRuntime] });
   // @ts-expect-error an extension is a runtime descriptor, not a pack name
-  postgres(widget, { extensions: ['pgvector'] });
+  binding.clientWith({ extensions: ['pgvector'] });
+  // @ts-expect-error the pool belongs to the binding
+  binding.clientWith({ poolOptions: { idleTimeoutMillis: 1 } });
 });
 
-test('the resource end takes no second argument', () => {
-  expectTypeOf(postgres).toBeCallableWith({
-    name: 'db',
-    contract: widget,
-    config: './prisma.config.ts',
-  });
-  // @ts-expect-error runtime extensions belong to the dependency end
+test('postgres() takes no options at either end', () => {
+  // @ts-expect-error client options go to binding.clientWith, not the declaration
+  postgres(widget, { extensions: [pgvectorRuntime] });
+  // @ts-expect-error the resource end takes one argument
   postgres({ name: 'db', contract: widget, config: './prisma.config.ts' }, { extensions: [] });
 });
 

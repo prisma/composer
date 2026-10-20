@@ -228,10 +228,8 @@ import contractJson from '../contract.json' with { type: 'json' };
 export const catalogData = dataContract<Contract>(contractJson);
 ```
 
-`postgres` is both ends of the edge, told apart by its first argument. A
-contract is the dependency end — the service declaring what it queries. It
-takes an optional second argument, covered under
-[extension types](#extension-types-such-as-pgvector) below:
+`postgres` is both ends of the edge, told apart by its argument. A
+contract is the dependency end — the service declaring what it queries:
 
 ```ts
 deps: { db: postgres(catalogData) }
@@ -259,26 +257,42 @@ version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is
 the full pattern inside a reusable Module.
 
-### Extension types, such as pgvector
+### Client options, such as extension types
+
+`load()` hands the service a binding with three ways to reach the database.
+All of them share one connection pool, which retries a database that is
+still starting and drops idle connections before Prisma Postgres closes
+them:
+
+- `db.client` is the typed client with default options.
+- `db.clientWith(options)` builds a typed client with the Prisma ORM
+  runtime's options, such as `extensions`, `middleware` or `log`. Call it
+  once, at module scope.
+- `db.connection` is the pool itself, in the form the runtime's `binding`
+  option takes, for an app that builds its client entirely itself.
+
+The options belong to the code that uses the client, not to the dependency
+declaration, which only states what the service needs.
 
 If your schema uses a column type from a Prisma ORM extension pack, such as
 `embedding pgvector.Vector(length: 1024)?` with
 `@prisma/orm-extension-pgvector` listed in `prisma.config.ts`, the client
-needs that pack's runtime extension too. Install the pack in the app at
-exactly the version of `@prisma/orm-postgres` that Composer names, and pass
-its runtime extension to the dependency:
+needs that pack's runtime extension. Install the pack in the app at exactly
+the version of `@prisma/orm-postgres` that Composer names, and pass its
+runtime extension:
 
 ```ts
 import pgvectorRuntime from '@prisma/orm-extension-pgvector/runtime';
 
-deps: { db: postgres(catalogData, { extensions: [pgvectorRuntime] }) }
+const { db } = service.load();
+export const orm = db.clientWith({ extensions: [pgvectorRuntime] });
 ```
 
-Composer does not look extensions up from the contract; it passes exactly
-what you give it to the client. If you leave one out, the first `db.client`
-access throws `Contract requires extension pack(s) 'pgvector', but runtime
-descriptors do not provide matching component(s)`. A service that reads only
-`db.url` does not need to pass extensions.
+Composer does not look extensions up from the contract. If you use
+`db.client` with such a contract, the first access throws
+`Contract requires extension pack(s) 'pgvector', but runtime descriptors do
+not provide matching component(s)`. A service that reads only `db.url`
+needs no extensions.
 
 The exact version matters. The pack depends on the ORM's shared packages
 (`@prisma/orm-framework`, `@prisma/orm-family-sql`) at its own exact

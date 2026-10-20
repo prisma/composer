@@ -122,12 +122,11 @@ factory the app supplied at authoring time, since Prisma Composer ships
 none (the
 [runtime-agnostic principle](../01-principles/architectural-principles.md)).
 The same holds for code a client needs beyond the driver: a Prisma ORM
-dependency whose contract uses an extension type takes that pack's runtime
-extension from the app at authoring time, as
-`postgres(contract, { extensions: [pgvectorRuntime] })`, and the binding
-builds its client with it. The framework never imports or looks up an
-extension from the pack names the contract records
-([ADR-0055](../90-decisions/ADR-0055-the-postgres-dependency-takes-the-apps-runtime-extensions.md)).
+binding builds its client with the options the app passes to
+`binding.clientWith(options)`, such as a pack's runtime extension, and never
+from options on the dependency declaration. The framework never imports or
+looks up an extension from the pack names the contract records
+([ADR-0055](../90-decisions/ADR-0055-the-postgres-binding-builds-clients-with-the-apps-options.md)).
 Validating the values is the pack reversing its own serialization. Config is
 thereby enumerable without booting (`configOf`), injectable with fakes in tests
 (`invoke`), and reportable (secrets redacted) in production. When the "handler" is a framework that owns
