@@ -345,7 +345,8 @@ shell runs `prisma` under Bun with Alchemy on Node.
 Services, managed Postgres databases and buckets record their node address as
 `logicalId` on their Branch. Console uses that address to match topology nodes
 to resources and compare them with main. Existing environments receive the
-identity on their next deploy; a conflicting identity fails deploy. Local dev
+identity on their next deploy. A deploy interrupted after creating a resource
+resumes on the next deploy, which finds the resource by its address. Local dev
 creates no platform rows. Changing a node's address (its name without an
 explicit `id`, its `id`, or its module) makes a new entity: the next deploy
 deletes the old rows, and a database's or bucket's data with them.

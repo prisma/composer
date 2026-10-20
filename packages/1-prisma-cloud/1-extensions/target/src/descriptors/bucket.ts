@@ -8,6 +8,7 @@ import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { resourceName } from '../service-app.ts';
 import {
+  asOwnRow,
   cloudApplicationOf,
   logicalIdProp,
   projectIdOf,
@@ -32,7 +33,7 @@ export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor
         name: resourceName(id),
         ...(branchId !== undefined ? { branchId } : {}),
         ...logicalIdProp(application, address),
-      });
+      }).pipe(asOwnRow);
       // `name: id` matches what Composer's own resource always created, so a
       // migrated legacy row diffs clean instead of replacing the key (a
       // replacement would mint fresh credentials).
