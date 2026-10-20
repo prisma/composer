@@ -33,6 +33,8 @@ const products = await db.client.orm.public.Product.all();
 memoized accessor over the same client construction as before; `hydrate`
 itself no longer constructs anything. The exported binding type is
 `PostgresBinding<C> = { readonly url: string; readonly client: Client<C> }`.
+([ADR-0055](ADR-0055-the-postgres-binding-builds-clients-with-the-apps-options.md)
+adds `connection` and `clientWith(options)`.)
 
 Everything else about the edge is unchanged: the dependency still names the
 contract, `satisfies` still compares storage hashes, and the deploy still

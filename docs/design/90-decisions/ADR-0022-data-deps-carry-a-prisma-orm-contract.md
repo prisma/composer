@@ -113,6 +113,13 @@ The dependency cost is contained by packaging — the primitive lives behind its
 own subpath entry, never re-exported from the index — so a service that opts out
 never loads `@prisma/orm-postgres` or `pg` at runtime.
 
+> Amended by [ADR-0055](ADR-0055-the-postgres-binding-builds-clients-with-the-apps-options.md):
+> contract plus URL is not the client's entire input. A contract with an
+> extension type needs the pack's runtime extension, and apps pass other
+> runtime options too. Composer still builds the default client, and the
+> binding's `clientWith(options)` builds one with the app's options over
+> the same pool.
+
 **Consume the contract; locate the config.** The runtime and the type system
 need to *consume* the contract: `contract.json` (the data the framework hands
 the runtime at *hydrate* — the boot-time step that builds each dependency's

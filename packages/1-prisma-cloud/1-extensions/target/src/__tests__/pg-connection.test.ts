@@ -8,6 +8,8 @@
  *     failure is retryable; a real query (SQL-state) error is not.
  *   - `withConnectionRetry` — retries per `shouldRetry` and gives up after
  *     `attempts`, surfacing the last error.
+ *   - `retryingConnect` — the pool's `connect` in both node-postgres forms,
+ *     so `pool.query()`, which uses the callback form, works too.
  *   - `retryTransientConnect` — the runtime client's seam: retry a transient
  *     cold-start on connection acquisition, surface a real query error at once.
  */
@@ -15,6 +17,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isTransientConnectionError,
   normalizeSslMode,
+  retryingConnect,
   retryTransientConnect,
   withConnectionRetry,
 } from '../exports/pg-connection.ts';
@@ -199,5 +202,57 @@ describe('retryTransientConnect (the runtime client seam)', () => {
       queryError,
     );
     expect(calls).toBe(1);
+  });
+});
+
+describe('retryingConnect (the pool connect replacement)', () => {
+  function flakyAcquire(failures: number) {
+    let calls = 0;
+    const released: unknown[] = [];
+    const client = { release: (error?: unknown) => released.push(error ?? 'released') };
+    const acquire = async () => {
+      calls++;
+      if (calls <= failures) throw new Error('Failed to connect to upstream database');
+      return client;
+    };
+    return { acquire, client, released, calls: () => calls };
+  }
+
+  test('the promise form retries a transient cold-start, then resolves the client', async () => {
+    const flaky = flakyAcquire(2);
+    const connect = retryingConnect(flaky.acquire, { attempts: 5, sleep: noSleep });
+
+    expect(await connect()).toBe(flaky.client);
+    expect(flaky.calls()).toBe(3);
+  });
+
+  test('the callback form, which pool.query() uses, retries and hands over the client', async () => {
+    const flaky = flakyAcquire(2);
+    const connect = retryingConnect(flaky.acquire, { attempts: 5, sleep: noSleep });
+
+    const result = await new Promise<{ error: unknown; client: unknown }>((resolve) => {
+      connect((error, client, done) => {
+        done();
+        resolve({ error, client });
+      });
+    });
+
+    expect(result).toEqual({ error: undefined, client: flaky.client });
+    expect(flaky.released).toEqual(['released']);
+  });
+
+  test('the callback form hands over a real error', async () => {
+    const queryError = Object.assign(new Error('password authentication failed'), {
+      code: '28P01',
+    });
+    const connect = retryingConnect(
+      async (): Promise<{ release(): void }> => {
+        throw queryError;
+      },
+      { attempts: 5, sleep: noSleep },
+    );
+
+    const error = await new Promise((resolve) => connect((e) => resolve(e)));
+    expect(error).toBe(queryError);
   });
 });

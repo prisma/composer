@@ -200,8 +200,9 @@ connections get closed; see
 
 If you want typed queries and managed migrations, make the database a
 [Prisma ORM](https://github.com/prisma/orm) one. `load()` then
-returns `{ url, client }`: the raw connection string, plus a client generated
-from your schema — queries like
+returns `{ url, client }` and two more members covered
+[below](#client-options-such-as-extension-types): the raw connection string,
+plus a client generated from your schema — queries like
 `db.client.orm.public.Product.where({ id }).first()` are compile-time
 checked, no SQL strings, no row mapping. The client is constructed on first
 access, so a service that brings its own Postgres client reads `db.url` and
@@ -228,14 +229,14 @@ import contractJson from '../contract.json' with { type: 'json' };
 export const catalogData = dataContract<Contract>(contractJson);
 ```
 
-`postgres` is both ends of the edge, told apart by what you pass it. The
-contract alone is the dependency end — the service declaring what it queries:
+`postgres` is both ends of the edge, told apart by its argument. A
+contract is the dependency end — the service declaring what it queries:
 
 ```ts
 deps: { db: postgres(catalogData) }
 ```
 
-An options object is the resource end — the module that owns the database
+A `{ name, contract, config }` object is the resource end — the module that owns the database
 provisions it, naming the `prisma.config.ts` path (relative to the
 module file) so the deploy can reload the emitted `contract.json` and find
 `migrations/`:
@@ -256,6 +257,50 @@ the deploy fails before touching the database.
 version;
 [`examples/store/modules/catalog`](../../examples/store/modules/catalog/) is
 the full pattern inside a reusable Module.
+
+### Client options, such as extension types
+
+`load()` hands the service a binding with three ways to reach the database.
+All of them share one connection pool, which retries a database that is
+still starting and drops idle connections before Prisma Postgres closes
+them:
+
+- `db.client` is the typed client with default options.
+- `db.clientWith(options)` builds a typed client with the Prisma ORM
+  runtime's options, such as `extensions`, `middleware` or `log`. Call it
+  once, at module scope.
+- `db.connection` is the pool itself, in the form the runtime's `binding`
+  option takes, for an app that builds its client entirely itself.
+
+The options belong to the code that uses the client, not to the dependency
+declaration, which only states what the service needs.
+
+If your schema uses a column type from a Prisma ORM extension pack, such as
+`embedding pgvector.Vector(length: 1024)?` with
+`@prisma/orm-extension-pgvector` listed in `prisma.config.ts`, the client
+needs that pack's runtime extension. Install the pack in the app at exactly
+the version of `@prisma/orm-postgres` that Composer names, and pass its
+runtime extension:
+
+```ts
+import pgvectorRuntime from '@prisma/orm-extension-pgvector/runtime';
+
+const { db } = service.load();
+export const orm = db.clientWith({ extensions: [pgvectorRuntime] });
+```
+
+Composer does not look extensions up from the contract. If you use
+`db.client` with such a contract, the first access throws
+`Contract requires extension pack(s) 'pgvector', but runtime descriptors do
+not provide matching component(s)`. A service that reads only `db.url`
+needs no extensions.
+
+The exact version matters. The pack depends on the ORM's shared packages
+(`@prisma/orm-framework`, `@prisma/orm-family-sql`) at its own exact
+version, so a pack version different from the facade's installs a second
+copy of them. The runtime extension then comes from one copy and the client
+from the other, and the client rejects or mishandles it without a clear
+error.
 
 ## Reusable Modules
 

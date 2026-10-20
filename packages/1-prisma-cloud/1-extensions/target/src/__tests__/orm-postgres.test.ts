@@ -14,9 +14,11 @@ import { describe, expect, test } from 'bun:test';
 import type { Contract, ResourceNode } from '@internal/core';
 import { isNode, Load, module, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
+import ormPostgresRuntime from '@prisma/orm-postgres/runtime';
 import {
   dataContract,
   isPostgresResourceNode,
+  type PostgresClientOptions,
   postgres,
   requiredPackHead,
   requiredPackHeadOf,
@@ -227,7 +229,37 @@ describe('the config path rides through provisioning (brand intact)', () => {
   });
 });
 
-describe('hydrate — the { url, client } binding (ADR-0040), no live database required', () => {
+type RuntimeExtension = NonNullable<PostgresClientOptions['extensions']>[number];
+
+/**
+ * A stand-in for a runtime extension such as pgvector's: it contributes no
+ * codecs and counts how often the runtime asks for them, which happens only
+ * when the client is constructed.
+ */
+function testpackExtension(): RuntimeExtension & { codecReads(): number } {
+  let reads = 0;
+  return {
+    kind: 'extension',
+    id: 'testpack',
+    familyId: 'sql',
+    targetId: 'postgres',
+    version: '0.0.0',
+    codecs: () => {
+      reads += 1;
+      return [];
+    },
+    create: () => ({ familyId: 'sql', targetId: 'postgres' }),
+    codecReads: () => reads,
+  };
+}
+
+/** The widget contract, declaring that it needs the `testpack` extension at runtime. */
+const packContract = dataContract<WidgetContract>({
+  ...widgetContractJson,
+  extensions: { testpack: {} },
+});
+
+describe('hydrate — the { url, connection, client, clientWith } binding (ADR-0040, ADR-0055), no live database required', () => {
   const url = 'postgres://user:pass@localhost:5432/does-not-exist';
 
   test('the binding carries the wire url and is frozen', async () => {
@@ -270,6 +302,87 @@ describe('hydrate — the { url, client } binding (ADR-0040), no live database r
 
     expect(binding.url).toBe(url);
     expect(() => binding.client).toThrow();
+  });
+
+  test('client hands the runtime no extensions', async () => {
+    const binding = await postgres(packContract).connection.hydrate({ url });
+
+    let thrown: unknown;
+    try {
+      void binding.client;
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({
+      code: 'RUNTIME.MISSING_EXTENSION_PACK',
+      details: { packIds: ['testpack'] },
+    });
+  });
+
+  test('clientWith({ extensions }) hands the extensions to the runtime when it is called', async () => {
+    const extension = testpackExtension();
+    const binding = await postgres(packContract).connection.hydrate({ url });
+
+    expect(extension.codecReads()).toBe(0);
+    const client = binding.clientWith({ extensions: [extension] });
+    expect(typeof client.orm).toBe('object');
+    expect(extension.codecReads()).toBeGreaterThan(0);
+  });
+
+  test('clientWith passes runtime options through, such as cursor', async () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const binding = await postgres(widget).connection.hydrate({ url });
+
+    expect(() => binding.clientWith({ cursor: { batchSize: 0 } })).toThrow(
+      expect.objectContaining({ code: 'RUNTIME.ARGUMENT_INVALID' }),
+    );
+  });
+
+  test('clientWith builds a new client on each call', async () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const binding = await postgres(widget).connection.hydrate({ url });
+
+    expect(binding.clientWith({})).not.toBe(binding.clientWith({}));
+  });
+
+  test('client and clientWith query through the one pool in connection', async () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const binding = await postgres(widget).connection.hydrate({ url });
+    if (binding.connection.kind !== 'pgPool') throw new Error('expected a pool binding');
+    let acquisitions = 0;
+    binding.connection.pool.connect = blindCast<
+      typeof binding.connection.pool.connect,
+      'test-only: a pool that counts acquisitions and never connects'
+    >(async () => {
+      acquisitions++;
+      throw new Error('test pool does not connect');
+    });
+
+    await expect(binding.client.orm.public.Widget.all().toArray()).rejects.toThrow();
+    expect(acquisitions).toBe(1);
+    await expect(binding.clientWith({}).orm.public.Widget.all().toArray()).rejects.toThrow();
+    expect(acquisitions).toBe(2);
+  });
+
+  test('connection is one memoized pool binding', async () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const binding = await postgres(widget).connection.hydrate({ url });
+
+    expect(binding.connection.kind).toBe('pgPool');
+    expect(binding.connection).toBe(binding.connection);
+  });
+
+  test('an app-built client over connection opens a contract that needs an extension', async () => {
+    const extension = testpackExtension();
+    const binding = await postgres(packContract).connection.hydrate({ url });
+
+    const client = ormPostgresRuntime<WidgetContract>({
+      contractJson: packContract.__cmp.contractJson,
+      extensions: [extension],
+      binding: binding.connection,
+    });
+    expect(typeof client.orm).toBe('object');
+    expect(extension.codecReads()).toBeGreaterThan(0);
   });
 
   test('hydrate does no schema verification — it just builds the binding', () => {
