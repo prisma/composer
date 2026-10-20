@@ -97,3 +97,38 @@ export function retryTransientConnect<T>(
 ): Promise<T> {
   return withConnectionRetry(acquire, { ...opts, shouldRetry: isTransientConnectionError });
 }
+
+/** The callback node-postgres's callback-form `pool.connect` takes; `done` releases the client. */
+export type ConnectCallback<C> = (
+  error: Error | undefined,
+  client: C | undefined,
+  done: (error?: unknown) => void,
+) => void;
+
+/**
+ * A replacement for node-postgres's `pool.connect` that retries a transient
+ * cold-start in both of its forms: the promise form the Prisma ORM driver
+ * calls, and the callback form `pool.query()` calls.
+ */
+export function retryingConnect<C extends { release(error?: unknown): void }>(
+  acquire: () => Promise<C>,
+  opts: {
+    readonly attempts?: number;
+    readonly delayMs?: number;
+    readonly sleep?: (ms: number) => Promise<void>;
+  } = {},
+): { (): Promise<C>; (callback: ConnectCallback<C>): void } {
+  function connect(): Promise<C>;
+  function connect(callback: ConnectCallback<C>): void;
+  function connect(callback?: ConnectCallback<C>): Promise<C> | undefined {
+    const connecting = retryTransientConnect(acquire, opts);
+    if (callback === undefined) return connecting;
+    connecting.then(
+      (client) => callback(undefined, client, (error) => client.release(error)),
+      (error: unknown) =>
+        callback(error instanceof Error ? error : new Error(String(error)), undefined, () => {}),
+    );
+    return undefined;
+  }
+  return connect;
+}

@@ -58,12 +58,14 @@ interface PostgresBinding<C> {
   its client itself passes it as the runtime's `binding` option.
 
 All clients share the one pool. The runtime never closes a pool it was
-handed, so closing one client does not affect another.
+handed, so closing one client does not affect another. The pool retries a
+database that is still starting in both of node-postgres's `connect` forms,
+so a library handed `connection.pool` can call `pool.query()` as well.
 
-A contract that needs an extension still fails on the first access of a
-client built without it, with the runtime's own error: "Contract requires
-extension pack(s) 'pgvector', but runtime descriptors do not provide
-matching component(s)."
+A contract that needs an extension fails, with the runtime's own error, when
+a client is built without it: on the first access of `client`, or at the
+`clientWith(...)` call. The error reads "Contract requires extension pack(s)
+'pgvector', but runtime descriptors do not provide matching component(s)."
 
 ## Reasoning
 
@@ -136,9 +138,9 @@ install the pack at exactly the facade's version.
 - The app depends on each extension package itself, at exactly the version
   of `@prisma/orm-postgres` that Composer names. Nothing enforces this at
   install. Composer adds no dependency.
-- A missing descriptor is found on the first access of the client in the
-  running service, not at deploy. A test that builds the client finds it
-  before that.
+- A missing descriptor is found when the client is built in the running
+  service, not at deploy. A test that builds the client finds it before
+  that.
 
 ## Alternatives considered
 

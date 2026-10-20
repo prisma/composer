@@ -1,7 +1,8 @@
 /**
  * `postgres()`'s two shapes, and storageHash-exact wiring compatibility.
  * `{ name, contract }` is the provisionable identity; `postgres(contract)` is
- * the dependency, whose binding is `{ url, client }` (ADR-0040). The
+ * the dependency, whose binding is `{ url, connection, client, clientWith }`
+ * (ADR-0040, ADR-0055). The
  * `WidgetContract`/`GadgetContract` types come from real `orm-postgres
  * contract emit` output (`fixtures/{widget,gadget}-contract/emitted/contract.d.ts`)
  * — the branded `storageHash` literal each carries is the lever under test.

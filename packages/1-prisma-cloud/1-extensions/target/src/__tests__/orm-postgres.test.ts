@@ -329,7 +329,7 @@ describe('hydrate — the { url, connection, client, clientWith } binding (ADR-0
     expect(extension.codecReads()).toBeGreaterThan(0);
   });
 
-  test('clientWith passes every runtime option through, not only extensions', async () => {
+  test('clientWith passes runtime options through, such as cursor', async () => {
     const widget = dataContract<WidgetContract>(widgetContractJson);
     const binding = await postgres(widget).connection.hydrate({ url });
 
@@ -343,6 +343,25 @@ describe('hydrate — the { url, connection, client, clientWith } binding (ADR-0
     const binding = await postgres(widget).connection.hydrate({ url });
 
     expect(binding.clientWith({})).not.toBe(binding.clientWith({}));
+  });
+
+  test('client and clientWith query through the one pool in connection', async () => {
+    const widget = dataContract<WidgetContract>(widgetContractJson);
+    const binding = await postgres(widget).connection.hydrate({ url });
+    if (binding.connection.kind !== 'pgPool') throw new Error('expected a pool binding');
+    let acquisitions = 0;
+    binding.connection.pool.connect = blindCast<
+      typeof binding.connection.pool.connect,
+      'test-only: a pool that counts acquisitions and never connects'
+    >(async () => {
+      acquisitions++;
+      throw new Error('test pool does not connect');
+    });
+
+    await expect(binding.client.orm.public.Widget.all().toArray()).rejects.toThrow();
+    expect(acquisitions).toBe(1);
+    await expect(binding.clientWith({}).orm.public.Widget.all().toArray()).rejects.toThrow();
+    expect(acquisitions).toBe(2);
   });
 
   test('connection is one memoized pool binding', async () => {

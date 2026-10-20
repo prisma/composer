@@ -200,8 +200,9 @@ connections get closed; see
 
 If you want typed queries and managed migrations, make the database a
 [Prisma ORM](https://github.com/prisma/orm) one. `load()` then
-returns `{ url, client }`: the raw connection string, plus a client generated
-from your schema — queries like
+returns `{ url, client }` and two more members covered
+[below](#client-options-such-as-extension-types): the raw connection string,
+plus a client generated from your schema — queries like
 `db.client.orm.public.Product.where({ id }).first()` are compile-time
 checked, no SQL strings, no row mapping. The client is constructed on first
 access, so a service that brings its own Postgres client reads `db.url` and

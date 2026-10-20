@@ -7,7 +7,6 @@
 
 import type { Contract, DependencyEnd, ResourceNode, ServiceNode } from '@internal/core';
 import { dependency, freezeNode, ResourceNodeBase, string } from '@internal/core';
-import { blindCast } from '@internal/foundation/casts';
 import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types';
 import ormPostgresRuntime, {
   type PostgresClient,
@@ -15,7 +14,7 @@ import ormPostgresRuntime, {
   type PostgresOptionsBase,
 } from '@prisma/orm-postgres/runtime';
 import pg from 'pg';
-import { normalizeSslMode, retryTransientConnect } from './pg-connection.ts';
+import { normalizeSslMode, retryingConnect } from './pg-connection.ts';
 import { type RequiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
 
 export type { RequiredPackHead } from './required-pack-head.ts';
@@ -248,10 +247,7 @@ function resilientPool(url: string): pg.Pool {
   // discards the dead client and reconnects on the next acquire.
   pool.on('error', (err) => console.error('pg pool idle client error', err));
   const acquire = pool.connect.bind(pool);
-  pool.connect = blindCast<
-    typeof pool.connect,
-    'the pn postgres pool driver only calls pool.connect() (the no-arg promise form)'
-  >(() => retryTransientConnect(() => acquire()));
+  pool.connect = retryingConnect(() => acquire());
   return pool;
 }
 
