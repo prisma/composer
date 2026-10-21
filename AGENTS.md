@@ -13,12 +13,30 @@ stays inside the bundle, and never dereferenced)
 amended by
 [ADR-0047](docs/design/90-decisions/ADR-0047-compute-assembly-preserves-safe-runtime-topology.md)).
 
-For design work, also check:
+## Read the design docs before any design discussion
 
-- [`docs/design/00-purpose/`](docs/design/00-purpose/) — what this framework is for.
-- [`docs/design/90-decisions/README.md`](docs/design/90-decisions/README.md) —
-  the ADR index. Settled decisions are not relitigated; ground proposals in
-  what is already decided.
+Before your first reply that offers an opinion, a proposal, or an answer to a
+design question, read the documentation for that topic. This applies even when
+the question looks small or conversational, and again whenever the discussion
+moves to a new topic. Read:
+
+1. [`docs/design/01-principles/`](docs/design/01-principles/) and
+   [`docs/design/00-purpose/`](docs/design/00-purpose/).
+2. The ADR index,
+   [`docs/design/90-decisions/README.md`](docs/design/90-decisions/README.md),
+   then every ADR it ties to the topic, in full, including the ADRs that amend
+   them.
+3. The [glossary](docs/design/03-domain-model/glossary.md) entry for every term
+   the discussion uses.
+4. The domain or architecture doc for the area, under
+   [`docs/design/10-domains/`](docs/design/10-domains/) or the target's folder.
+
+In your reply, say what you read. Settled decisions are not relitigated by
+accident: when a proposal contradicts a recorded decision, say so plainly and
+say what it would reverse. A discussion held without reading these has
+repeatedly produced proposals that a recorded decision had already rejected,
+renames of terms the glossary defines on purpose, and identity formats the
+recorded design contradicts.
 
 Operational rules (naming, casts, build isolation, test idioms) live in
 [`.agents/rules/`](.agents/rules/) and load automatically in harnesses that
