@@ -4,7 +4,7 @@
 // name and price at placement time.
 
 model Order {
-  id          String   @id @default(uuid(4))
+  id          String   @id @onCreate(uuid(4))
   productId   String
   productName String
   quantity    Int
