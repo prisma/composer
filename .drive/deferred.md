@@ -234,7 +234,8 @@ ADR-0053 (the commands). What we deliberately didn't do:
   `migration status`, `migration log`, `migration show`, `migration plan`,
   `migration new`, `migration check`, `migration graph`, `migration ref set`,
   `migration ref delete`, `contract infer`, `contract format`, `db init`,
-  `db schema`, `db sign`, `db update`, `db verify`, `db migrate`, `orm init`.
+  `db schema`, `db sign`, `db update`, `db verify`, `db migrate`, `orm init`. (`contract print` and `contract emit` already write their
+  output to stdout, so a pipe gets data from them.)
 - **The `prisma` CLI's "agent skills out of date" notice names
   `@prisma/orm-postgres` in projects that don't use it** (prisma/prisma-cli).
 - **Removing instances and their data, and `prisma emulator start` /
