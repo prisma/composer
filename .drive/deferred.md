@@ -187,3 +187,58 @@ registry). What we deliberately didn't do:
   (branch `claude/prisma-app-port` in prisma/datahub) was proven by a graph
   test and a local boot, but never refreshed to the current packages,
   deployed with real credentials, or cut over. Needs operator credentials.
+
+# Emulator commands — deferred at project close (2026-10-21)
+
+Shipped: `prisma dev url`, `prisma dev stop`, `prisma dev --detach` and
+`prisma emulator list` (Composer 0.32.0, `prisma@8.0.0-rc.24`). The design is
+ADR-0052 (Composer maps its nodes to emulator instances per directory) and
+ADR-0053 (the commands). What we deliberately didn't do:
+
+- **A deployment that arrives while its instance is being deleted can start a
+  process the emulator no longer tracks.** Same race as an app delete in the
+  Compute emulator.
+- **`env.json` and `secrets.json` in `.prisma-composer/dev/` are shared by
+  every app run from a directory, and `--fresh` wipes them.** One app's
+  `--fresh` can drop rows another app in the same directory needs on its next
+  redeploy. Making them per app, like bucket objects
+  (`buckets/<app>/<bucket>/`), would fix it.
+- **`[dev]` notices bypass the CLI engine's output.** The emulators hook
+  writes `[dev] compute emulator ready`, the port-change line and the
+  app-switch line with `console.log` to stdout, so they land among a piped
+  `prisma dev`'s data lines and inside `--json` frames. Fixing it needs a
+  channel for the local target's hooks to report through the engine.
+- **`prisma dev url` doesn't retry an emulator that is briefly unreachable.**
+  `prisma dev` and `prisma log` use `withEmulatorRetry`
+  (`cli/src/operations/emulator-retry.ts`); `dev url` should too.
+- **`prisma dev url` loads the config's extensions, and so Alchemy, to read
+  one JSON file.** It only matters when a script calls it in a loop.
+- **`prisma dev url` and `prisma dev stop` in a directory with no
+  `prisma.config.ts` fail with two stacked config-section errors instead of
+  `DEV.NOT_STARTED_HERE`.** The commands declare that they need the `composer`
+  config section, so the CLI engine refuses them before the operation can say
+  that `prisma dev` never ran here. Either the commands stop requiring the
+  section, or the engine's missing-config error names the real requirement.
+- **`prisma deploy` and `prisma dev --detach` print no data lines to a
+  pipe.** The deploy engine runs as a delegated child that inherits stdout, so
+  its log would share the pipe with the data. Once a delegated child's output
+  stops sharing stdout, give `deploy` one line per deployed node (address and
+  public URL) and `--detach` one line per service (address and URL). Until
+  then, scripts use `prisma dev url <address>` after `--detach` returns.
+- **A run-then-stop mode for CI: `prisma dev --exec "<cmd>"`,** like Firebase
+  `emulators:exec`. It would bring the app up as `--detach` does, run the
+  command, stop the app and exit with the command's code.
+- **ORM commands print nothing to a pipe.** The `prisma` CLI now gives a
+  piped stdout plain data, and each command needs data lines in its owning
+  repo (`@prisma/orm-toolchain`): `migration list`, `migration ref list`,
+  `migration status`, `migration log`, `migration show`, `migration plan`,
+  `migration new`, `migration check`, `migration graph`, `migration ref set`,
+  `migration ref delete`, `contract infer`, `contract format`, `db init`,
+  `db schema`, `db sign`, `db update`, `db verify`, `db migrate`, `orm init`. (`contract print` is not on the list: it already writes
+  the contract to stdout, so a pipe gets data from it.)
+- **The `prisma` CLI's "agent skills out of date" notice names
+  `@prisma/orm-postgres` in projects that don't use it** (prisma/prisma-cli).
+- **Removing instances and their data, and `prisma emulator start` /
+  `stop`.** A deleted worktree leaves its stopped instances' records and
+  Postgres data on disk, holding their ports. Planned for the emulator
+  start/stop project.
