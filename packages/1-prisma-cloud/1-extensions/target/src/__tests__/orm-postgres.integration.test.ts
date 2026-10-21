@@ -19,7 +19,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { createPostgresControlClient } from '@prisma/orm-postgres/control';
-import type { Char } from '@prisma/orm-postgres/target/codec-types';
 import type { PostgresBinding } from '../exports/orm.ts';
 import { dataContract, postgres } from '../exports/orm.ts';
 import type { Contract as WidgetContract } from './fixtures/widget-contract/emitted/contract.d.ts';
@@ -72,6 +71,7 @@ describe.skipIf(pg === undefined)('postgres hydrate — live round trip', () => 
       contract: widgetContractJson,
       mode: 'apply',
       migrationsDir,
+      invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
     });
     expect(result.ok).toBe(true);
     await control.close();
@@ -89,15 +89,12 @@ describe.skipIf(pg === undefined)('postgres hydrate — live round trip', () => 
   });
 
   test('inserts and reads back a Widget row through the typed client', async () => {
-    // Widget.id is a char(36) column, so its typed value is the branded
-    // Char<36> — casting here (test files may) is itself proof the client
-    // is contract-typed: a plain string does not compile as the id.
-    const id = '11111111-1111-1111-1111-111111111111' as Char<36>;
+    const id = '11111111-1111-1111-1111-111111111111';
 
     const created = await db.client.orm.public.Widget.create({ id, name: 'gizmo' });
     // Typed result: the ORM row is the contract's Widget shape. Accessing
     // `.id`/`.name` compiles only because the binding's client is Client<WidgetContract>.
-    expect(created.id).toBe(id);
+    expect<string>(created.id).toBe(id);
     expect(created.name).toBe('gizmo');
 
     const one = await db.client.orm.public.Widget.where({ id }).first();
@@ -106,6 +103,6 @@ describe.skipIf(pg === undefined)('postgres hydrate — live round trip', () => 
 
     const all = await db.client.orm.public.Widget.all();
     expect(all).toHaveLength(1);
-    expect(all[0]?.id).toBe(id);
+    expect<string | undefined>(all[0]?.id).toBe(id);
   });
 });

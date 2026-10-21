@@ -8,13 +8,14 @@
  * `dataContract<Contract>(contractJson)` pins the type parameter explicitly —
  * a JSON module import's inferred type is plain data, not the branded
  * `contract.d.ts` type, matching `@prisma/orm-postgres/runtime`'s own
- * `postgres<Contract>({ contractJson })` convention (see orm-postgres.ts).
+ * `contractFromJson<Contract>(contractJson)` convention (see orm-postgres.ts).
  */
 import { describe, expect, test } from 'bun:test';
 import type { Contract, ResourceNode } from '@internal/core';
 import { isNode, Load, module, string } from '@internal/core';
 import { blindCast } from '@internal/foundation/casts';
 import ormPostgresRuntime from '@prisma/orm-postgres/runtime';
+import { contractFromJson } from '@prisma/orm-postgres/static';
 import {
   dataContract,
   isPostgresResourceNode,
@@ -376,8 +377,8 @@ describe('hydrate — the { url, connection, client, clientWith } binding (ADR-0
     const extension = testpackExtension();
     const binding = await postgres(packContract).connection.hydrate({ url });
 
-    const client = ormPostgresRuntime<WidgetContract>({
-      contractJson: packContract.__cmp.contractJson,
+    const client = ormPostgresRuntime({
+      contract: contractFromJson<WidgetContract>(packContract.__cmp.contractJson),
       extensions: [extension],
       binding: binding.connection,
     });

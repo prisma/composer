@@ -120,6 +120,7 @@ describe.skipIf(pgServer === undefined)('auth pack schema conformance', () => {
         contract: emptyAppContractJson,
         mode: 'apply',
         migrationsDir,
+        invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
       });
       expect(result.ok).toBe(true);
     } finally {

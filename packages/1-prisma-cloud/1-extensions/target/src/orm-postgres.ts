@@ -13,6 +13,7 @@ import ormPostgresRuntime, {
   type PostgresBinding as PostgresConnection,
   type PostgresOptionsBase,
 } from '@prisma/orm-postgres/runtime';
+import { contractFromJson } from '@prisma/orm-postgres/static';
 import pg from 'pg';
 import { normalizeSslMode, retryingConnect } from './pg-connection.ts';
 import { type RequiredPackHead, requiredPackHeadOf } from './required-pack-head.ts';
@@ -182,7 +183,7 @@ function isPostgresContract(value: unknown): value is PostgresContract {
 /**
  * The hydrated binding: `url` as delivered; the pool and the clients built
  * on first access. Construction stays out of hydrate because the runtime
- * validates `contractJson` eagerly — deferring it keeps a bad contract from
+ * validates the contract eagerly — deferring it keeps a bad contract from
  * poisoning `load()` and spares URL-only consumers the cost (ADR-0040).
  */
 function bindLazyClient<C extends PostgresContract>(contract: C, url: string): PostgresBinding<C> {
@@ -219,9 +220,9 @@ function buildClient<C extends PostgresContract>(
   connection: PostgresConnection,
   options: PostgresClientOptions,
 ): Client<C> {
-  return ormPostgresRuntime<OrmContractOf<C>>({
+  return ormPostgresRuntime({
     ...options,
-    contractJson: contract.__cmp.contractJson,
+    contract: contractFromJson<OrmContractOf<C>>(contract.__cmp.contractJson),
     binding: connection,
   });
 }
