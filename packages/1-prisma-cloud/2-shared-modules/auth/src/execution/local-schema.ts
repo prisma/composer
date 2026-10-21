@@ -109,10 +109,11 @@ export async function ensureLocalAuthSchema(databaseUrl: string): Promise<void> 
         contract: emptyAppContractJson,
         mode: 'apply',
         migrationsDir,
+        invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
       });
       if (!result.ok) {
         throw new Error(
-          `local auth bootstrap: Prisma ORM dbInit failed: ${result.failure.summary}` +
+          `local auth bootstrap: Prisma ORM dbInit failed: ${result.failure.message}` +
             (result.failure.why !== undefined ? ` — ${result.failure.why}` : ''),
         );
       }

@@ -8,7 +8,7 @@
 // default) so the emitted storageHash matches byte-for-byte.
 
 model Gadget {
-  id    String @id @default(uuid(4))
+  id    String @id @onCreate(uuid(4))
   label String
 
   @@map("Gadget")

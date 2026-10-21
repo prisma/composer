@@ -287,19 +287,24 @@ async function runMigration(
     const result = await client.migrate({
       contract: contractJson,
       migrationsDir,
+      invocation: { cwd: process.cwd(), configPath: undefined, dbGiven: false },
       ...(refName !== undefined
         ? { refHash: ref.hash, refInvariants: ref.invariants, refName }
         : {}),
     });
     if (!result.ok) {
-      if (result.failure.code === 'MIGRATION_PATH_NOT_FOUND') {
+      if (result.failure.code === 'MIGRATION.PATH_UNREACHABLE') {
         throw new OrmMigrationError(
           'MIGRATION_PATH_NOT_FOUND',
-          noPathRefusal(result.failure.summary, markerHashBefore, extensionPacks.length > 0),
+          noPathRefusal(result.failure.message, markerHashBefore, extensionPacks.length > 0),
           result.failure.why,
         );
       }
-      throw new OrmMigrationError('RUNNER_FAILED', result.failure.summary, result.failure.why);
+      throw new OrmMigrationError(
+        'RUNNER_FAILED',
+        `${result.failure.code}: ${result.failure.message}`,
+        result.failure.why,
+      );
     }
     return { action, targetHash: ref.hash, markerHashBefore };
   } finally {

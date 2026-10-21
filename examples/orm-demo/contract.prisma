@@ -6,7 +6,7 @@
 // branded types the service's typed client flows from).
 
 model Widget {
-  id    String @id @default(uuid(4))
+  id    String @id @onCreate(uuid(4))
   label String
 
   @@map("Widget")
