@@ -170,7 +170,7 @@ a code a script can branch on:
 
 `prisma emulator list` shows every local emulator on the machine, whether it is running, and every instance on it, with the directory, app and address it belongs to. It works from any directory. Piped, it writes one line per instance with six tab-separated fields: the emulator's kind (`service`, `database` or `bucket`), the instance id, its URL, its state, the address of the node it runs and the absolute path of the directory `prisma dev` ran from. The last two are empty for an instance Composer did not label. An emulator that is running but does not answer, or answers with an error, is shown with that error, and the others are still listed. `prisma emulator start` and `prisma emulator stop` are planned.
 
-In every piped line, a backslash, tab, newline or carriage return inside a field is written as `\\`, `\t`, `\n` or `\r`, so each line stays one record. `--json` gives the full result instead.
+Each command's piped lines are listed in [Piped output](#piped-output).
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an
@@ -180,6 +180,28 @@ Local dev state is never migrated across framework versions. Note `--fresh`
 wipes local *data* too — database contents, bucket objects, instance state —
 not just the resource bookkeeping; the next start rebuilds empty resources.
 Use it when the local data is disposable, which in a dev loop it usually is.
+
+## Piped output
+
+When stdout is a pipe or a file, Composer's commands write data lines to it, one record per line. Everything else, such as progress, tables and warnings, goes to stderr, so `prisma deploy module.ts > out.txt` leaves only data lines in `out.txt`. `--json` gives each command's full result instead.
+
+The rules for every line:
+
+- Fields are separated by a tab.
+- A backslash, tab, newline or carriage return inside a field is written as `\\`, `\t`, `\n` or `\r`, so each line stays one record.
+- An absent value is an empty field. The line still has every field, so `cut -f4` always reads the fourth one.
+- Fields are only ever added at the end of a line. Changing, removing or reordering a field is a breaking change.
+
+| Command | One line per | Fields |
+| --- | --- | --- |
+| `prisma deploy` | deployed entity | node address, entity kind (`compute-service`, `postgres-database` or `bucket`), entity id, URL (empty for an entity without one) |
+| `prisma dev stop` | node it stopped | node address, node kind (`service`, `database` or `bucket`) |
+| `prisma dev url` | the node asked for | URL |
+| `prisma emulator list` | emulator instance | emulator kind (`service`, `database` or `bucket`), instance id, URL, state, node address, directory |
+
+A command with nothing to report writes no lines and still exits 0: `dev stop` when nothing was running, and `deploy` for a node that published no entities (such as S3 credentials) or when the deploy wrote no report. [Deploying](deploying.md#production-and-stages) says how to tell these apart.
+
+The directory in `emulator list` is an absolute path, unlike the paths other `prisma` commands print, which are relative to the working directory. The list covers every app on the machine and runs from any directory, so a relative path would change with the directory you run it from and would not identify an app reliably.
 
 ## Logs
 
