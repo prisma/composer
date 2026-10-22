@@ -330,7 +330,7 @@ describe('what a successful run presents', () => {
     });
   });
 
-  test('piped, prints one line per deployed entity: address, kind, id and URL', async () => {
+  test('piped, prints one line per deployed entity: address, kind, id and URL, and none for a node without entities', async () => {
     const { cli } = composerCli({
       fixtures: {
         deploy: ok({
@@ -340,10 +340,18 @@ describe('what a successful run presents', () => {
               {
                 address: 'catalog.service',
                 entities: [
-                  { kind: 'Worker', id: 'catalog-worker', url: 'https://catalog.example.com' },
+                  {
+                    kind: 'compute-service',
+                    id: 'svc_1',
+                    url: 'https://catalog.example.com',
+                  },
                 ],
               },
-              { address: 'catalog.database', entities: [{ kind: 'Database', id: 'db_1' }] },
+              {
+                address: 'catalog.database',
+                entities: [{ kind: 'postgres-database', id: 'db_1' }],
+              },
+              { address: 'catalog.credentials', entities: [] },
             ],
           },
           durationMs: 575_000,
@@ -354,8 +362,8 @@ describe('what a successful run presents', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      'catalog.service\tWorker\tcatalog-worker\thttps://catalog.example.com\n' +
-        'catalog.database\tDatabase\tdb_1\t\n',
+      'catalog.service\tcompute-service\tsvc_1\thttps://catalog.example.com\n' +
+        'catalog.database\tpostgres-database\tdb_1\t\n',
     );
   });
 
@@ -368,6 +376,16 @@ describe('what a successful run presents', () => {
     expect(result.exitCode).toBe(0);
     expect(plain(result.stderr)).toContain('Deployed to production in 850ms.');
     expect(result.presented?.data).toEqual({ summary: null, durationMs: 850 });
+  });
+
+  test('piped, a deploy whose child wrote no report prints no data lines', async () => {
+    const { cli } = composerCli({
+      fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },
+    });
+    const result = await cli.run(['deploy', 'src/service.ts'], { cwd: CWD });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
   });
 });
 

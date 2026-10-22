@@ -47,6 +47,22 @@ describe('dev url', () => {
     expect(calls.devUrl.map((input) => input.address)).toEqual(['gateway']);
   });
 
+  test('escapes a backslash and a tab in the URL', async () => {
+    const { cli } = cliWith({
+      devUrl: ok({
+        address: 'catalog',
+        kind: 'database',
+        url: 'postgres://app:p\\w\td@localhost:5432/app',
+        state: 'running',
+      }),
+    });
+
+    const result = await cli.run(['dev', 'url', 'catalog', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('postgres://app:p\\\\w\\td@localhost:5432/app\n');
+  });
+
   test('returns address, kind, url and state as the JSON result', async () => {
     const { cli } = cliWith({
       devUrl: {

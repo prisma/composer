@@ -3,16 +3,21 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import * as path from 'node:path';
 
-const COMMANDS_DIR = path.join(import.meta.dir, '../commands');
+const COMMAND_DIRS = [
+  path.join(import.meta.dir, '../commands'),
+  path.join(import.meta.dir, '../../../../../../9-public/composer-cli/src/family'),
+];
 
 const EMPTY_STDOUT = [
   /stdout:\s*\(\)\s*=>\s*\(?\s*\[\s*\]/,
   /stdout\s*(?::\s*(?:function\s*)?)?\([^)]*\)\s*(?:=>\s*)?\{\s*return\s*\[\s*\]/,
 ];
 
-const sources = readdirSync(COMMANDS_DIR)
-  .filter((name) => name.endsWith('.ts'))
-  .map((name) => ({ name, text: readFileSync(path.join(COMMANDS_DIR, name), 'utf8') }));
+const sources = COMMAND_DIRS.flatMap((dir) =>
+  readdirSync(dir)
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => ({ name, text: readFileSync(path.join(dir, name), 'utf8') })),
+);
 
 describe('command stdout', () => {
   test('reads every command source', () => {
@@ -21,6 +26,7 @@ describe('command stdout', () => {
       'dev-stop.ts',
       'dev-url.ts',
       'dev.ts',
+      'emulator-list.ts',
     ]);
   });
 
@@ -30,6 +36,14 @@ describe('command stdout', () => {
       .map((source) => source.name);
 
     expect(silent).toEqual([]);
+  });
+
+  test('every command prints data lines, so none calls noDataLines', () => {
+    const withoutDataLines = sources
+      .filter((source) => source.text.includes('noDataLines('))
+      .map((source) => source.name);
+
+    expect(withoutDataLines).toEqual([]);
   });
 
   test.each([
