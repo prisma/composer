@@ -330,6 +330,35 @@ describe('what a successful run presents', () => {
     });
   });
 
+  test('piped, prints one line per deployed entity: address, kind, id and URL', async () => {
+    const { cli } = composerCli({
+      fixtures: {
+        deploy: ok({
+          summary: {
+            app: 'shop',
+            nodes: [
+              {
+                address: 'catalog.service',
+                entities: [
+                  { kind: 'Worker', id: 'catalog-worker', url: 'https://catalog.example.com' },
+                ],
+              },
+              { address: 'catalog.database', entities: [{ kind: 'Database', id: 'db_1' }] },
+            ],
+          },
+          durationMs: 575_000,
+        }),
+      },
+    });
+    const result = await cli.run(['deploy', 'src/service.ts'], { cwd: CWD });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(
+      'catalog.service\tWorker\tcatalog-worker\thttps://catalog.example.com\n' +
+        'catalog.database\tDatabase\tdb_1\t\n',
+    );
+  });
+
   test('a deploy whose child wrote no report still reports success', async () => {
     const { cli } = composerCli({
       fixtures: { deploy: ok({ summary: undefined, durationMs: 850 }) },

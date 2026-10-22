@@ -5,7 +5,8 @@
  * family here, where both domains may be imported.
  */
 
-import { toEngineError } from '@internal/cli/family';
+import * as path from 'node:path';
+import { dataLine, toEngineError } from '@internal/cli/family';
 import type { EmulatorList, EmulatorListing } from '@internal/dev-emulators';
 import type { CliStructuredError as ComposerError } from '@internal/foundation/errors';
 import type { Result } from '@internal/foundation/result';
@@ -92,16 +93,17 @@ export const createEmulatorListCommand = (list: ListEmulators) =>
             ],
             stdout: () =>
               emulators.flatMap((emulator) =>
-                emulator.instances.map((instance) =>
-                  [
+                emulator.instances.map((instance) => {
+                  const directory = instance.labels['composer.directory'];
+                  return dataLine([
                     emulator.kind,
                     instance.id,
                     instance.url,
                     instance.state,
-                    instance.labels['composer.address'] ?? '',
-                    instance.labels['composer.directory'] ?? '',
-                  ].join('\t'),
-                ),
+                    instance.labels['composer.address'],
+                    directory === undefined ? undefined : path.relative(ctx.cwd, directory) || '.',
+                  ]);
+                }),
               ),
             json: () => result.value,
             next: () => [],

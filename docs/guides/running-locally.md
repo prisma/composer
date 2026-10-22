@@ -166,22 +166,11 @@ a code a script can branch on:
   that keeps crashing is reported this way too, with the path of its log; and
   a node the emulator lost is created again, empty, by the next `prisma dev`.
 
-`prisma dev stop` stops the app's service processes and database servers, as
-`Ctrl-C` does. Use it to stop an app started with `--detach`, or when
-`prisma dev` was killed without the chance to stop it. Data and ports are kept,
-so the next `prisma dev` is still a warm start. It lists what it stopped; when
-nothing of the app was running, it says so and still succeeds.
+`prisma dev stop` stops the app's service processes and database servers, as `Ctrl-C` does. Use it to stop an app started with `--detach`, or when `prisma dev` was killed without the chance to stop it. Data and ports are kept, so the next `prisma dev` is still a warm start. It lists what it stopped; when nothing of the app was running, it says so and still succeeds. Piped, it writes one line per node it stopped with two tab-separated fields: the node's address and its kind.
 
-`prisma emulator list` shows every local emulator on the machine, whether it
-is running, and every instance on it, with the directory, app and address it
-belongs to. It works from any directory. Piped, it writes one line per
-instance with six tab-separated fields: the emulator's kind (`service`,
-`database` or `bucket`), the instance id, its URL, its state, the address of
-the node it runs and the directory `prisma dev` ran from. The last two are
-empty for an instance Composer did not label. An emulator that is running but does
-not answer, or answers with an error, is shown with that error, and the
-others are still listed. `prisma emulator start` and
-`prisma emulator stop` are planned.
+`prisma emulator list` shows every local emulator on the machine, whether it is running, and every instance on it, with the directory, app and address it belongs to. It works from any directory. Piped, it writes one line per instance with six tab-separated fields: the emulator's kind (`service`, `database` or `bucket`), the instance id, its URL, its state, the address of the node it runs and the directory `prisma dev` ran from, relative to the working directory (`.` when it is the working directory). The last two are empty for an instance Composer did not label. An emulator that is running but does not answer, or answers with an error, is shown with that error, and the others are still listed. `prisma emulator start` and `prisma emulator stop` are planned.
+
+In every piped line, a backslash, tab, newline or carriage return inside a field is written as `\\`, `\t`, `\n` or `\r`, so each line stays one record. `--json` gives the full result instead.
 
 `--fresh` is also the fix when a framework upgrade leaves stale rows in this
 app's local dev state — the symptom is a plan-time error naming an

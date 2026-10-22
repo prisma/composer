@@ -89,17 +89,39 @@ describe('dev url', () => {
 });
 
 describe('dev stop', () => {
-  test('returns what it stopped as the JSON result and writes nothing to stdout in human format', async () => {
+  test('returns what it stopped as the JSON result', async () => {
     const stopped = { app: 'shop', stopped: [{ address: 'gateway', kind: 'service' }] };
-    const { cli, calls } = cliWith({ devStop: { ok: true, value: stopped } as never });
+    const { cli } = cliWith({ devStop: { ok: true, value: stopped } as never });
 
-    const json = await cli.run(['dev', 'stop', '--json']);
-    const human = await cli.run(['dev', 'stop', '--format', 'human']);
+    const result = await cli.run(['dev', 'stop', '--json']);
 
-    expect(json.json.at(-1)).toMatchObject({ envelope: { ok: true, result: stopped } });
-    expect(human.exitCode).toBe(0);
-    expect(human.stdout).toBe('');
-    expect(calls.devStop).toHaveLength(2);
+    expect(result.json.at(-1)).toMatchObject({ envelope: { ok: true, result: stopped } });
+  });
+
+  test('piped, prints one line per stopped node: its address and kind', async () => {
+    const { cli } = cliWith({
+      devStop: ok({
+        app: 'orm-demo',
+        stopped: [
+          { address: 'database', kind: 'database' },
+          { address: 'api', kind: 'service' },
+        ],
+      }),
+    });
+
+    const result = await cli.run(['dev', 'stop']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('database\tdatabase\napi\tservice\n');
+  });
+
+  test('piped, prints nothing when nothing was running', async () => {
+    const { cli } = cliWith({ devStop: ok({ app: 'orm-demo', stopped: [] }) });
+
+    const result = await cli.run(['dev', 'stop']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
   });
 
   test('names what it stopped in a table of addresses and kinds', async () => {

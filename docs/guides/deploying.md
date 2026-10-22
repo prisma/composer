@@ -157,6 +157,8 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
+Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity's kind, its id and its URL, which is empty for an entity without one. For example, `prisma deploy module.ts | cut -f4` prints each entity's URL, or an empty line for one without. A backslash, tab, newline or carriage return inside a field is written as `\\`, `\t`, `\n` or `\r`. `--json` gives the full result instead.
+
 Services, managed Postgres databases and buckets record their node address
 (`auth.database`) as `logicalId` on their Branch. Console uses the same address
 in the topology to find each resource and its counterpart on main. The row on a
