@@ -23,7 +23,7 @@ import type {
 } from '@prisma/orm-postgres/contract/types';
 
 export type StorageHash =
-  StorageHashBase<'0df0ef0989ec3dd95124dde6303fbe0572bbab08bebf00abff6a7955cadd786e'>;
+  StorageHashBase<'24a0762cac2c89426d118c9a9a81876ebcf32eba11789722d7c907ba710dc60d'>;
 export type ExecutionHash = ExecutionHashBase<string>;
 export type ProfileHash =
   ProfileHashBase<'3916f444a8a17ad749191acf9e08dad97d1a327b88c2f1d45d12f240296aa8b2'>;
@@ -374,7 +374,6 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly accountId: {
@@ -388,7 +387,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly id: {
@@ -425,7 +423,6 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly scope: {
@@ -438,7 +435,6 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly userId: {
@@ -478,14 +474,12 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly expiresAt: {
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly id: {
@@ -519,14 +513,12 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly expiresAt: {
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly id: {
@@ -557,7 +549,6 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly userAgent: {
@@ -603,7 +594,6 @@ type ContractBase = Omit<
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: true;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly banReason: {
@@ -623,7 +613,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly email: {
@@ -667,7 +656,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
               };
@@ -683,14 +671,12 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly expiresAt: {
                   readonly dataType: 'pg/timestamptz';
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly id: {
@@ -710,7 +696,6 @@ type ContractBase = Omit<
                   readonly codecId: 'pg/timestamptz-string@1';
                   readonly nullable: false;
                   readonly default: { readonly kind: 'function'; readonly expression: 'now()' };
-                  readonly typeRef: 'Tstz';
                   readonly many: false;
                 };
                 readonly value: {
@@ -738,14 +723,6 @@ type ContractBase = Omit<
         readonly id: 'public';
         readonly kind: 'postgres-schema';
         readonly entries: { readonly table: {} };
-      };
-    };
-    readonly types: {
-      readonly Tstz: {
-        readonly kind: 'codec-instance';
-        readonly codecId: 'pg/timestamptz-string@1';
-        readonly dataType: 'pg/timestamptz';
-        readonly typeParams: Record<string, never>;
       };
     };
     readonly storageHash: StorageHash;
