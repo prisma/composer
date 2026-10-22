@@ -85,7 +85,7 @@ describe('emulator list', () => {
     );
   });
 
-  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL, state, node address and directory relative to the working directory', async () => {
+  test('writes one tab-separated line per instance to stdout: emulator kind, id, URL, state, node address and directory, a tab inside a field escaped', async () => {
     const cli = cliWith({
       listEmulators: async () =>
         ok({
@@ -102,7 +102,7 @@ describe('emulator list', () => {
                   url: 'postgres://postgres:postgres@localhost:51300/template1?sslmode=disable',
                   state: 'stopped',
                   labels: {
-                    'composer.directory': '/work',
+                    'composer.directory': '/work/shop\tlab',
                     'composer.app': 'shop',
                     'composer.address': 'catalog',
                   },
@@ -129,12 +129,12 @@ describe('emulator list', () => {
         }),
     });
 
-    const result = await cli.run(['emulator', 'list'], { cwd: '/work' });
+    const result = await cli.run(['emulator', 'list']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\tgateway\tshop\n' +
-        'database\tdb_0123456789abcdef\tpostgres://postgres:postgres@localhost:51300/template1?sslmode=disable\tstopped\tcatalog\t.\n' +
+      'service\tsvc_0123456789abcdef\thttp://localhost:3000\trunning\tgateway\t/work/shop\n' +
+        'database\tdb_0123456789abcdef\tpostgres://postgres:postgres@localhost:51300/template1?sslmode=disable\tstopped\tcatalog\t/work/shop\\tlab\n' +
         'bucket\tbkt-0123456789abcdef\thttp://127.0.0.1:4301/bkt-0123456789abcdef\trunning\t\t\n',
     );
   });
