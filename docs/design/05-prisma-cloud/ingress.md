@@ -1,6 +1,6 @@
 # Ingress on Prisma Cloud
 
-How an `ingress()` node ([ADR-0060](../90-decisions/ADR-0060-ingress-is-a-driver-on-an-exposed-http-port.md)) becomes platform state, and what the platform must provide for it. The platform side is proposed in pdp-control-plane as [ADR 015 — an ingress is an independent record with a hostname](https://github.com/prisma/pdp-control-plane/blob/docs/adr-ingress-entity/docs/architecture/adrs/ADR-015-ingress-is-an-independent-entity.md).
+How an `ingress()` node ([ADR-0060](../90-decisions/ADR-0060-ingress-is-a-driver-on-an-exposed-http-port.md)) becomes platform state, and what the platform must provide for it. The platform side is proposed in pdp-control-plane as [ADR 015 — an ingress is an independent record with a hostname](https://github.com/prisma/pdp-control-plane/pull/5795).
 
 ## The two sides
 
