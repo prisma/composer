@@ -1,5 +1,7 @@
 # ADR-0044: Errors are structural envelopes with dotted namespace codes
 
+Amended 2026-10-23: the `CONFIG` registry gains ENTRY_MISSING, for a command or operation that has no entry module from the config or an override.
+
 ## The shape of a failure, end to end
 
 The site that detects a failure builds the complete error, because it is the only place that knows the context:
@@ -80,9 +82,11 @@ Closed subcode registry:
 
 - `CONFIG` — SECTION_MISSING, FIELD_INVALID, FIELD_UNKNOWN, FIELD_RETIRED,
   FILE_MISSING, FILE_RETIRED, EXTENSION_DUPLICATE, EXTENSION_MISSING,
-  DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH *(EXPORT_INVALID, PATH_MISMATCH
+  DESCRIPTOR_MISSING, DESCRIPTOR_KIND_MISMATCH, ENTRY_MISSING *(EXPORT_INVALID, PATH_MISMATCH
   and EVALUATION_FAILED retired by
-  [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*
+  [ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md))*.
+  ENTRY_MISSING (added 2026-10-23): neither `entry` in the `composer` section
+  nor `--entry`, or the operation's `entry` input, names the entry module.
 - `COMPOSE` — ENTRY_UNLOADABLE, ENTRY_EXPORT_INVALID, ROOT_NOT_MODULE,
   NAME_MISSING, GRAPH_INVALID
 - `ASSEMBLE` — EXTENSION_MISSING, DESCRIPTOR_MISSING,

@@ -2,13 +2,15 @@
 
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
+Amended 2026-10-23: neither command takes a positional entry. The entry is `entry` in the `composer` section of `prisma.config.ts` ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), and both commands take `--entry <path>` to override it for one run. The `destroy` and `log` operations' `entry` input is optional and overrides the config's.
+
 ## Decision
 
 Composer has no command-line binary of its own. The `prisma` CLI is its only command line, and it mounts exactly two Composer commands:
 
 ```sh
-prisma deploy module.ts --stage staging   # deploy the app whose root module is module.ts
-prisma dev module.ts                      # run the same app locally
+prisma deploy --stage staging   # deploy the app whose root module the config's `entry` names
+prisma dev                      # run the same app locally
 ```
 
 Tearing an environment down and reading a local app's logs are not commands. They are the `destroy` and `log` operations on `@prisma/composer/control`, called from a short script:
@@ -20,7 +22,7 @@ import { destroy } from '@prisma/composer/control';
 import prismaConfig from './prisma.config.ts';
 
 const result = await destroy({
-  entry: 'module.ts',
+  entry: 'module.ts', // optional: overrides the config's entry
   target: { kind: 'stage', stage: 'staging' }, // or { kind: 'production' }
   config: {
     value: prismaConfig.composer,
@@ -33,7 +35,7 @@ if (!result.ok) {
 }
 ```
 
-The script needs `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` in the environment, and the app must be built first, as for a deploy. `entry` resolves against the directory the script runs in; `file` resolves against the script's own location.
+The script needs `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID` in the environment, and the app must be built first, as for a deploy. Without `entry`, the operation uses the config's, resolved against `file`'s directory; a given `entry` resolves against the directory the script runs in. `file` resolves against the script's own location.
 
 The standalone `prisma-composer` binary, with its `deploy`, `destroy`, `dev` and `log` subcommands, is retired.
 
@@ -41,7 +43,7 @@ The standalone `prisma-composer` binary, with its `deploy`, `destroy`, `dev` and
 
 `@prisma/composer-cli` used to declare a `bin` and also export a command family: a set of command definitions that the `prisma` host (the `prisma` package, built on the Prisma CLI engine) mounts into its own command tree. Two command-line entry points ran the same operations. Users had to learn which one to run, and the docs had to describe both. Composer's configuration already moved into the shared `prisma.config.ts` ([ADR-0049](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md)), which the engine loads for every command family. A second binary that also loads that file adds nothing. So the package declares no `bin` and ships only the command family.
 
-The family contributes two commands. Both run the pipeline the earlier ADRs describe; only the name a user types changes. `prisma deploy <entry>` takes `--stage`, `--name`, `--report` (write the deploy's outcome as JSON to a file) and `--build-id` (join a deploy record that CI already created). `prisma dev <entry>` takes `--name` and `--fresh`. Both are thin renderers over the matching `@prisma/composer/control` operations ([ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md)).
+The family contributes two commands. Both run the pipeline the earlier ADRs describe; only the name a user types changes. `prisma deploy` takes `--entry` (amended 2026-10-23), `--stage`, `--name`, `--report` (write the deploy's outcome as JSON to a file) and `--build-id` (join a deploy record that CI already created). `prisma dev` takes `--entry`, `--name` and `--fresh`. Both are thin renderers over the matching `@prisma/composer/control` operations ([ADR-0043](ADR-0043-the-control-subpath-is-the-programmatic-deploy-surface.md)).
 
 Most `prisma` commands follow a noun-then-verb grammar, `prisma <noun> <verb>`, such as `prisma auth login`. A few are mounted at the root as bare verbs, such as `prisma init`. `deploy` and `dev` are mounted at the root as bare verbs on purpose, and are not renamed to `prisma project deploy` and `prisma project dev`. They are the two commands a Composer user runs most, the short form is what users and agents will type, and a noun in front adds nothing a reader needs.
 

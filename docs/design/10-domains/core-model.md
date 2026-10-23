@@ -106,10 +106,10 @@ Who imports what, end to end:
   bundles this file (their bundler, or `next build`) — the framework never touches it;
 - the **deploy entry is the app module itself**: everything about the
   *application* is still derived from the root node (ADR-0003).
-  `prisma deploy <entry>` imports it and calls
+  `prisma deploy` imports it (the `composer` section's `entry`, or `--entry`) and calls
   `@prisma/composer/deploy`'s `lower()` internally;
 - the **`composer` section of `prisma.config.ts`** carries the two things the
-  graph cannot yield — the **extension list** and the **state store** (ADR-0017,
+  graph cannot yield — the **extension list** and the **state store** — plus the **entry** path, an input to the tool that says where the root module is (ADR-0017,
   ADR-0049). The Prisma CLI engine finds and loads the file, searching from the
   command's working directory up to the repository root. The section is the only importer of the `/control` entries where heavy code lives, and app
   code never imports it, which is what keeps that code out of the artifact. The
@@ -1179,7 +1179,7 @@ Bun.serve({ port, hostname: "0.0.0.0",
 
 // The app builds itself first (its own bundler produces dist/server.js), then:
 //
-//   prisma deploy src/module.ts
+//   prisma deploy        # the composer section names it: entry: './src/module.ts'
 //
 // The application is derived from the module root (ADR-0003); the extension list
 // and state store come from the `composer` section of prisma.config.ts (ADR-0017,
@@ -1247,8 +1247,9 @@ export default module("storefront-auth", (h) => {
   h.provision("storefront", storefrontService, { auth: authRef.http })  // auth→storefront dependency edge
 })
 
-// No deploy config file (ADR-0003): build both apps, then
-//   prisma deploy app.ts
+// Application facts stay in code (ADR-0003): build both apps, then, with
+// `entry: './app.ts'` in the composer section,
+//   prisma deploy
 ```
 
 At deploy, core sequences: the db resource (lowered once) → auth provision →
