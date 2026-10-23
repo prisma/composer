@@ -2069,29 +2069,29 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-            billing: { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.billing': { dir: 'modules/billing/dist/bundle', entry: 'server.js' },
           },
         }),
       );
 
       expect(recorded.db.slice(before.db)).toEqual([
         [
-          'data-db',
+          'shop.data-db',
           {
             project: 'shop-project#cloud-id',
             region: 'inherit',
             branchId: 'br_default',
-            logicalId: 'data',
+            logicalId: 'shop.data',
           },
         ],
       ]);
       expect(recorded.conn.slice(before.conn)).toEqual([
         [
-          'data-conn',
+          'shop.data-conn',
           {
-            database: { databaseId: 'data-db#cloud-id', databaseName: 'data-db' },
-            name: 'data',
+            database: { databaseId: 'shop.data-db#cloud-id', databaseName: 'shop.data-db' },
+            name: 'shop.data',
           },
         ],
       ]);
@@ -2099,14 +2099,14 @@ describe('sharing: one module-provisioned postgres, two compute consumers — th
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH_MAIN_URL',
-        value: 'postgres://data-conn',
+        key: 'COMPOSER_SHOP_AUTH_MAIN_URL',
+        value: 'postgres://shop.data-conn',
         class: 'production',
       });
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_BILLING_STORE_URL',
-        value: 'postgres://data-conn',
+        key: 'COMPOSER_SHOP_BILLING_STORE_URL',
+        value: 'postgres://shop.data-conn',
         class: 'production',
       });
     });
@@ -2162,28 +2162,28 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
-            web: { dir: 'modules/web/dist/bundle', entry: 'server.js' },
+            'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' },
+            'shop.web': { dir: 'modules/web/dist/bundle', entry: 'server.js' },
           },
         }),
       );
 
       // One ServiceKey minted, its id carrying the edge id.
       expect(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id)).toEqual([
-        'servicekey-web.auth',
+        'servicekey-shop.web.auth',
       ]);
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_WEB_AUTH_SERVICEKEY',
-        value: 'key-for-servicekey-web.auth',
+        key: 'COMPOSER_SHOP_WEB_AUTH_SERVICEKEY',
+        value: 'key-for-servicekey-shop.web.auth',
         class: 'production',
       });
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH_RPC_ACCEPTED_KEYS',
-        value: '["key-for-servicekey-web.auth"]',
+        key: 'COMPOSER_SHOP_AUTH_RPC_ACCEPTED_KEYS',
+        value: '["key-for-servicekey-shop.web.auth"]',
         class: 'production',
       });
     });
@@ -2213,9 +2213,9 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth2: { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
-            web1: { dir: 'modules/web1/dist/bundle', entry: 'server.js' },
-            web2: { dir: 'modules/web2/dist/bundle', entry: 'server.js' },
+            'shop.auth2': { dir: 'modules/auth2/dist/bundle', entry: 'server.js' },
+            'shop.web1': { dir: 'modules/web1/dist/bundle', entry: 'server.js' },
+            'shop.web2': { dir: 'modules/web2/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2223,13 +2223,15 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writes = recorded.envVar
         .slice(before)
         .map(([, props]) => props as { key: string; value: string });
-      const web1Key = writes.find((w) => w.key === 'COMPOSER_WEB1_AUTH_SERVICEKEY')?.value;
-      const web2Key = writes.find((w) => w.key === 'COMPOSER_WEB2_AUTH_SERVICEKEY')?.value;
+      const web1Key = writes.find((w) => w.key === 'COMPOSER_SHOP_WEB1_AUTH_SERVICEKEY')?.value;
+      const web2Key = writes.find((w) => w.key === 'COMPOSER_SHOP_WEB2_AUTH_SERVICEKEY')?.value;
       expect(web1Key).toBeDefined();
       expect(web2Key).toBeDefined();
       expect(web1Key).not.toBe(web2Key);
 
-      const acceptedRaw = writes.find((w) => w.key === 'COMPOSER_AUTH2_RPC_ACCEPTED_KEYS')?.value;
+      const acceptedRaw = writes.find(
+        (w) => w.key === 'COMPOSER_SHOP_AUTH2_RPC_ACCEPTED_KEYS',
+      )?.value;
       if (acceptedRaw === undefined) throw new Error('expected an accepted-keys row');
       expect(JSON.parse(acceptedRaw).sort()).toEqual([web1Key, web2Key].sort());
     });
@@ -2250,7 +2252,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { auth3: { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.auth3': { dir: 'modules/auth3/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2260,7 +2262,7 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_AUTH3_RPC_ACCEPTED_KEYS',
+        key: 'COMPOSER_SHOP_AUTH3_RPC_ACCEPTED_KEYS',
         value: '[]',
         class: 'production',
       });
@@ -2288,8 +2290,8 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            auth4: { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
-            storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+            'shop.auth4': { dir: 'modules/auth4/dist/bundle', entry: 'server.js' },
+            'shop.storefront': { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2297,11 +2299,11 @@ describe('ADR-0030: per-binding RPC service keys — mint (control.ts) + wire (d
       const writtenKeys = recorded.envVar
         .slice(before)
         .map(([, props]) => (props as { key: string }).key);
-      expect(writtenKeys).not.toContain('COMPOSER_STOREFRONT_RPC_ACCEPTED_KEYS');
+      expect(writtenKeys).not.toContain('COMPOSER_SHOP_STOREFRONT_RPC_ACCEPTED_KEYS');
       // The origin row is service-derived, not edge-derived, so the expose
       // check above does not apply to it: the non-exposing storefront still
       // gets its own origin row.
-      expect(writtenKeys).toContain('COMPOSER_STOREFRONT_ORIGIN');
+      expect(writtenKeys).toContain('COMPOSER_SHOP_STOREFRONT_ORIGIN');
     });
   });
 });
@@ -2353,9 +2355,9 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
         lowering(root, configFor(target), {
           name: 'shop',
           bundles: {
-            events: { dir: 'modules/events/dist/bundle', entry: 'server.js' },
-            reader: { dir: 'modules/reader/dist/bundle', entry: 'server.js' },
-            writer: { dir: 'modules/writer/dist/bundle', entry: 'server.js' },
+            'shop.events': { dir: 'modules/events/dist/bundle', entry: 'server.js' },
+            'shop.reader': { dir: 'modules/reader/dist/bundle', entry: 'server.js' },
+            'shop.writer': { dir: 'modules/writer/dist/bundle', entry: 'server.js' },
           },
         }),
       );
@@ -2363,7 +2365,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       // Both edges resolve to ONE resource id — the PROVIDER's address, not
       // the edge's — so the mint is shared (upstream auths a single API_KEY).
       expect([...new Set(recorded.serviceKey.slice(before.serviceKey).map(([id]) => id))]).toEqual([
-        'streamskey-events',
+        'streamskey-shop.events',
       ]);
 
       const writes = recorded.envVar.slice(before.envVar).map(([, props]) => props);
@@ -2373,8 +2375,12 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
             | { value?: unknown }
             | undefined
         )?.value;
-      expect(writtenValue('COMPOSER_READER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
-      expect(writtenValue('COMPOSER_WRITER_EVENTS_APIKEY')).toBe('key-for-streamskey-events');
+      expect(writtenValue('COMPOSER_SHOP_READER_EVENTS_APIKEY')).toBe(
+        'key-for-streamskey-shop.events',
+      );
+      expect(writtenValue('COMPOSER_SHOP_WRITER_EVENTS_APIKEY')).toBe(
+        'key-for-streamskey-shop.events',
+      );
 
       // The provider's own reserved provider param: the same key, under the
       // name the streams entrypoint reads (address-scoped; compute's run
@@ -2382,8 +2388,8 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       // literal param.
       expect(writes).toContainEqual({
         project: 'shop-project#cloud-id',
-        key: 'COMPOSER_EVENTS_STREAMS_API_KEY',
-        value: '"key-for-streamskey-events"',
+        key: 'COMPOSER_SHOP_EVENTS_STREAMS_API_KEY',
+        value: '"key-for-streamskey-shop.events"',
         class: 'production',
       });
     });
@@ -2458,7 +2464,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { lonely: { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.lonely': { dir: 'modules/lonely/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2466,7 +2472,7 @@ describe("streams' provisioned bearer key — one value per PROVIDER, stored on 
       const keys = recorded.envVar
         .slice(before.envVar)
         .map(([, props]) => (props as { key: string }).key);
-      expect(keys).not.toContain('COMPOSER_LONELY_STREAMS_API_KEY');
+      expect(keys).not.toContain('COMPOSER_SHOP_LONELY_STREAMS_API_KEY');
     });
   });
 });
@@ -2574,7 +2580,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     module: 'file:///test/service.ts',
     entry: 'server.js',
   };
-  const bundles = { auth: { dir: 'modules/auth/dist/bundle', entry: 'server.js' } };
+  const bundles = { 'shop.auth': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } };
 
   // The plain throw validateName raises becomes an Effect defect; run() (runSync)
   // re-raises it synchronously — exactly what `lower()`'s Effect.orDie surfaces
@@ -2588,11 +2594,14 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     throw new Error('expected lowering to throw');
   };
 
-  test('a too-short postgres provision id throws the framework error at lower time, before any Database is recorded', async () => {
+  // A full address always has at least three characters, so only the upper bound can fail.
+  const longId = 'd'.repeat(61);
+
+  test('a too-long postgres address throws the framework error at lower time, before any Database is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
-        const db = provision(rawPostgres({ name: 'db' }), { id: 'db' });
+        const db = provision(rawPostgres({ name: 'db' }), { id: longId });
         provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
           id: 'auth',
           deps: {
@@ -2607,7 +2616,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       // A framework authoring error naming the id and the constraint — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain('resource name (from provision id) "db"');
+      expect(error.message).toContain(`resource name (from its address) "shop.${longId}"`);
       expect(error.message).toContain('3–65 characters');
       expect(error.message).not.toContain('PrismaApiError');
       // It failed BEFORE creating the Database (strictly better than the mid-deploy API error).
@@ -2615,20 +2624,23 @@ describe('name validation — fail fast on Prisma name constraints, before creat
     });
   });
 
-  test('a too-short service provision id throws the framework error naming the service name', async () => {
+  test('a too-long service address throws the framework error naming the service name', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
       const root = module('shop', {}, ({ provision }) => {
-        provision(compute({ name: 'a', deps: {}, build }), { id: 'a' });
+        provision(compute({ name: 'a', deps: {}, build }), { id: longId });
         return {};
       });
       const before = recorded.svc.length;
 
       const error = lowerError(
-        lowering(root, configFor(target), { name: 'shop', bundles: { a: bundles.auth } }),
+        lowering(root, configFor(target), {
+          name: 'shop',
+          bundles: { [`shop.${longId}`]: bundles['shop.auth'] },
+        }),
       );
 
-      expect(error.message).toContain('service name (from provision id) "a"');
+      expect(error.message).toContain(`service name (from its address) "shop.${longId}"`);
       expect(error.message).toContain('3–65 characters');
       expect(recorded.svc.length).toBe(before);
     });
@@ -2747,7 +2759,7 @@ describe('platform identity: each row carries its topology node logicalId — th
       run<undefined>(
         lowering(root, configFor(target), {
           name: 'shop',
-          bundles: { 'auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
+          bundles: { 'shop.auth.service': { dir: 'modules/auth/dist/bundle', entry: 'server.js' } },
         }),
       );
 
@@ -2771,22 +2783,26 @@ describe('platform identity: each row carries its topology node logicalId — th
         )
         .sort();
 
-      expect(nodes).toEqual(['app auth.service', 'bucket files', 'database auth.database']);
+      expect(nodes).toEqual([
+        'app shop.auth.service',
+        'bucket shop.files',
+        'database shop.auth.database',
+      ]);
       expect(rows).toEqual(nodes);
 
       const policies = new Map(recorded.adoptPolicy.slice(before.adoptPolicy));
       const ownRows = [...policies].filter(([resource]) => !resource.startsWith('Connection '));
       expect(ownRows.map(([resource]) => resource)).toEqual(
         expect.arrayContaining([
-          'App auth.service-svc',
-          'Database auth.database-db',
-          'Bucket files-bucket',
+          'App shop.auth.service-svc',
+          'Database shop.auth.database-db',
+          'Bucket shop.files-bucket',
         ]),
       );
       expect(ownRows.some(([resource]) => resource.startsWith('EnvironmentVariable '))).toBe(true);
       expect(ownRows.filter(([, adopt]) => adopt !== true)).toEqual([]);
-      expect(policies.has('Connection auth.database-conn')).toBe(true);
-      expect(policies.get('Connection auth.database-conn')).toBeUndefined();
+      expect(policies.has('Connection shop.auth.database-conn')).toBe(true);
+      expect(policies.get('Connection shop.auth.database-conn')).toBeUndefined();
     });
   });
 });

@@ -20,7 +20,7 @@ import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared
 export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, address, node, application, graph }) =>
     Effect.gen(function* () {
-      validateName(id, 'resource name (from provision id)');
+      validateName(id, 'resource name (from its address)');
       const { db, url } = yield* stageDatabase({ id, address, application, region: o().region });
 
       if (!isPostgresResourceNode(node)) {

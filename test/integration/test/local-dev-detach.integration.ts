@@ -214,7 +214,7 @@ async function main(): Promise<void> {
     endpoints
       .map((e) => e.address)
       .sort()
-      .join(',') === 'bkg,web',
+      .join(',') === `${APP}.bkg,${APP}.web`,
     `the front door lists bkg and web (got ${JSON.stringify(endpoints)})`,
   );
   for (const endpoint of endpoints) {

@@ -221,7 +221,7 @@ describe('the config path rides through provisioning (brand intact)', () => {
     );
 
     // Provisioned as a resource (the brand survived, so Load recognized it).
-    const db = graph.nodes.find((n) => n.id === 'db');
+    const db = graph.nodes.find((n) => n.id === 'pn.db');
     expect(db?.node.kind).toBe('resource');
     // The exact augmented node is in the graph, config and all — so the
     // predicate holds for the very value the graph carries.

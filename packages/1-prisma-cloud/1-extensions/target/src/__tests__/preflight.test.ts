@@ -316,7 +316,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain('STRIPE_SECRET_KEY');
-    expect(message).toContain('service "ingest"');
+    expect(message).toContain('service "app.ingest"');
     expect(message).toContain('production');
     expect(message).toContain(
       'prisma project env add STRIPE_SECRET_KEY="<value>" --project proj --role production',
@@ -447,7 +447,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('STRIPE_SECRET_KEY');
-    expect((error as Error).message).toMatch(/service "(web|ingest)"/);
+    expect((error as Error).message).toMatch(/service "app\.(web|ingest)"/);
     // The shared name is deduped to a single platform existence check.
     expect(state.gets).toHaveLength(1);
   });
@@ -464,7 +464,7 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain('APP_ORIGIN');
-    expect(message).toContain('service "web"');
+    expect(message).toContain('service "app.web"');
     expect(state.posts).toEqual([]);
   });
 

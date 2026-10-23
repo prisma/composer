@@ -270,7 +270,7 @@ async function main(): Promise<void> {
     console.log('[proving] PASS criterion 5a: placeholder warning printed, topology still serves');
 
     // ——— Criterion 4: bucket round-trip through the app ———
-    const web = session.endpoints.find((e) => e.address === 'web');
+    const web = session.endpoints.find((e) => e.address === 'localdevs4fixture.web');
     assert(web !== undefined, 'the web service must appear in the front door');
     if (web === undefined) throw new Error('unreachable');
 
@@ -285,7 +285,7 @@ async function main(): Promise<void> {
     );
     assertEqual(putRes.status, 201, 'PUT /blobs/proving-key.txt through the app');
 
-    const bucketDir = path.join(devDir, 'buckets', currentApp(), 'files');
+    const bucketDir = path.join(devDir, 'buckets', currentApp(), `${currentApp()}.files`);
     const objectPath = path.join(bucketDir, 'proving-key.txt');
     const onDisk = await waitForAsync(
       async () => (fs.existsSync(objectPath) ? fs.readFileSync(objectPath, 'utf8') : undefined),
@@ -336,8 +336,10 @@ async function main(): Promise<void> {
       'the pinned listing-error header must appear',
     );
     assert(
-      // In the structured frame the quotes around "bkg" arrive JSON-escaped.
-      /LOCALDEV_FIXTURE_GREETING\s+\(required by service \\?"bkg\\?"\)/.test(log2),
+      // In the structured frame the quotes around the address arrive JSON-escaped.
+      /LOCALDEV_FIXTURE_GREETING\s+\(required by service \\?"localdevs4fixture\.bkg\\?"\)/.test(
+        log2,
+      ),
       'the error must name LOCALDEV_FIXTURE_GREETING and the service that requires it',
     );
     assert(

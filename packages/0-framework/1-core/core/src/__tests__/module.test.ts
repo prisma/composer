@@ -74,18 +74,18 @@ describe('Load of a module root', () => {
     expect(graph.root.id).toBe('shop');
     expect(graph.root.node).toBe(root);
     expect(graph.nodes.map((n) => ({ id: n.id, kind: n.node.kind }))).toEqual([
-      { id: 'db', kind: 'resource' },
-      { id: 'auth.db', kind: 'dependency' },
-      { id: 'auth', kind: 'service' },
-      { id: 'storefront.auth', kind: 'dependency' },
-      { id: 'storefront', kind: 'service' },
+      { id: 'shop.db', kind: 'resource' },
+      { id: 'shop.auth.db', kind: 'dependency' },
+      { id: 'shop.auth', kind: 'service' },
+      { id: 'shop.storefront.auth', kind: 'dependency' },
+      { id: 'shop.storefront', kind: 'service' },
       { id: 'shop', kind: 'module' },
     ]);
     expect(graph.edges).toEqual([
-      { from: 'auth.db', to: 'auth', input: 'db', kind: 'input' },
-      { from: 'db', to: 'auth', input: 'db', kind: 'dependency' },
-      { from: 'storefront.auth', to: 'storefront', input: 'auth', kind: 'input' },
-      { from: 'auth', to: 'storefront', input: 'auth', kind: 'dependency' },
+      { from: 'shop.auth.db', to: 'shop.auth', input: 'db', kind: 'input' },
+      { from: 'shop.db', to: 'shop.auth', input: 'db', kind: 'dependency' },
+      { from: 'shop.storefront.auth', to: 'shop.storefront', input: 'auth', kind: 'input' },
+      { from: 'shop.auth', to: 'shop.storefront', input: 'auth', kind: 'dependency' },
     ]);
   });
 
@@ -93,8 +93,8 @@ describe('Load of a module root', () => {
     const graph = Load(twoServiceModule(), { id: 'prod' });
 
     expect(graph.root.id).toBe('prod');
-    // Provision ids are module-local and unaffected by the root id.
-    expect(graph.nodes.map((n) => n.id)).toContain('auth');
+    // Every child address starts with the root id.
+    expect(graph.nodes.map((n) => n.id)).toContain('prod.auth');
   });
 
   test('the body runs at Load, not at construction', () => {
@@ -165,7 +165,7 @@ describe('Load of a module root', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "auth" of provisioned service "storefront" is not wired/,
+      /Dependency input "auth" of provisioned service "shop.storefront" is not wired/,
     );
   });
 
@@ -181,7 +181,7 @@ describe('Load of a module root', () => {
     });
 
     expect(() => Load(root)).toThrow(LoadError);
-    expect(() => Load(root)).toThrow(/"storefront.auth" reference "nope"/);
+    expect(() => Load(root)).toThrow(/"shop.storefront.auth" reference "nope"/);
   });
 
   test('wiring a name that is not a dependency slot of the service is a LoadError', () => {
@@ -213,7 +213,7 @@ describe('Load of a module root', () => {
 
     Load(root);
 
-    expect(seen).toEqual(['auth']);
+    expect(seen).toEqual(['shop.auth']);
   });
 
   test('graph layer: a 2-cycle (forged refs) is a LoadError naming both nodes', () => {
@@ -235,8 +235,8 @@ describe('Load of a module root', () => {
     });
     const root = module('shop', {}, (h) => {
       // Forged ref: the builder API cannot produce this — the DAG check can.
-      h.provision(a, { id: 'a', deps: { peer: { id: 'b' } as ProvisionedRef } });
-      h.provision(b, { id: 'b', deps: { peer: { id: 'a' } as ProvisionedRef } });
+      h.provision(a, { id: 'a', deps: { peer: { id: 'shop.b' } as ProvisionedRef } });
+      h.provision(b, { id: 'b', deps: { peer: { id: 'shop.a' } as ProvisionedRef } });
       return {};
     });
 
@@ -248,7 +248,7 @@ describe('Load of a module root', () => {
       const message = (error as Error).message;
       expect(message).toContain('a');
       expect(message).toContain('b');
-      expect(message).toMatch(/(a → b → a|b → a → b)/);
+      expect(message).toMatch(/(shop\.a → shop\.b → shop\.a|shop\.b → shop\.a → shop\.b)/);
     }
   });
 
@@ -261,7 +261,7 @@ describe('Load of a module root', () => {
       h.provision(makeStorefrontService(), {
         id: 'storefront',
         deps: {
-          auth: { id: 'auth' } as ProvisionedRef,
+          auth: { id: 'shop.auth' } as ProvisionedRef,
         },
       });
       const db = h.provision(dbResource(), { id: 'db' });
@@ -272,15 +272,15 @@ describe('Load of a module root', () => {
     const graph = Load(root);
 
     expect(graph.nodes.map((n) => n.id)).toEqual([
-      'storefront.auth',
-      'db',
-      'auth.db',
-      'auth',
-      'storefront',
+      'shop.storefront.auth',
+      'shop.db',
+      'shop.auth.db',
+      'shop.auth',
+      'shop.storefront',
       'shop',
     ]);
-    const authIndex = graph.nodes.findIndex((n) => n.id === 'auth');
-    const storefrontIndex = graph.nodes.findIndex((n) => n.id === 'storefront');
+    const authIndex = graph.nodes.findIndex((n) => n.id === 'shop.auth');
+    const storefrontIndex = graph.nodes.findIndex((n) => n.id === 'shop.storefront');
     expect(authIndex).toBeLessThan(storefrontIndex);
   });
 
@@ -306,10 +306,10 @@ describe('Load of a module root — provisioned resources', () => {
     const graph = Load(root);
 
     const resourceNodes = graph.nodes.filter((n) => n.node.kind === 'resource');
-    expect(resourceNodes.map((n) => n.id)).toEqual(['db']);
+    expect(resourceNodes.map((n) => n.id)).toEqual(['shop.db']);
     expect(graph.edges.filter((e) => e.kind === 'dependency')).toEqual([
-      { from: 'db', to: 'auth', input: 'db', kind: 'dependency' },
-      { from: 'db', to: 'billing', input: 'db', kind: 'dependency' },
+      { from: 'shop.db', to: 'shop.auth', input: 'db', kind: 'dependency' },
+      { from: 'shop.db', to: 'shop.billing', input: 'db', kind: 'dependency' },
     ]);
   });
 
@@ -322,7 +322,7 @@ describe('Load of a module root — provisioned resources', () => {
       }),
     );
 
-    expect(ref?.id).toBe('db');
+    expect(ref?.id).toBe('shop.db');
     expect(ref?.kind).toBe('fake/db');
     expect(typeof ref?.satisfies).toBe('function');
   });
@@ -343,7 +343,7 @@ describe('Load of a module root — provisioned resources', () => {
     });
 
     expect(() => Load(root)).toThrow(LoadError);
-    expect(() => Load(root)).toThrow(/"auth.db" do not satisfy the slot's required contract/);
+    expect(() => Load(root)).toThrow(/"shop.auth.db" do not satisfy the slot's required contract/);
   });
 
   test('wiring a contract-requiring slot to a bare service ref (no matching port) is a LoadError', () => {
@@ -355,7 +355,7 @@ describe('Load of a module root — provisioned resources', () => {
     });
 
     expect(() => Load(root)).toThrow(LoadError);
-    expect(() => Load(root)).toThrow(/"auth.db" do not satisfy the slot's required contract/);
+    expect(() => Load(root)).toThrow(/"shop.auth.db" do not satisfy the slot's required contract/);
   });
 
   test("an untyped slot accepts a resource ref — uniformity's escape hatch, unchecked by design", () => {
@@ -368,7 +368,7 @@ describe('Load of a module root — provisioned resources', () => {
     const graph = Load(root);
 
     expect(graph.edges.filter((e) => e.kind === 'dependency')).toEqual([
-      { from: 'db', to: 'storefront', input: 'auth', kind: 'dependency' },
+      { from: 'shop.db', to: 'shop.storefront', input: 'auth', kind: 'dependency' },
     ]);
   });
 
@@ -381,7 +381,7 @@ describe('Load of a module root — provisioned resources', () => {
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /Dependency input "db" of provisioned service "auth" is not wired/,
+      /Dependency input "db" of provisioned service "shop.auth" is not wired/,
     );
   });
 
@@ -482,7 +482,7 @@ describe('Load of a module root — typed wiring (the satisfies() backstop)', ()
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      /"storefront.auth" do not satisfy the slot's required contract/,
+      /"shop.storefront.auth" do not satisfy the slot's required contract/,
     );
   });
 });

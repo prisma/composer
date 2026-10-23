@@ -131,7 +131,7 @@ describe('runDevPreflight (local-dev spec S5, ADR-0041 D7)', () => {
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain('APP_ORIGIN');
-    expect(message).toContain('service "web"');
+    expect(message).toContain('service "app.web"');
     expect(message).toContain('Set each in the shell you run `prisma dev` from.');
   });
 

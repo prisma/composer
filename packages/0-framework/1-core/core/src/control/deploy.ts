@@ -110,7 +110,7 @@ export interface LowerContext {
   readonly id: NodeId;
   /**
    * The node's deployment address: its full, dot-joined hierarchical
-   * position in the graph (e.g. "auth.api"). The config-key namespace and
+   * position in the graph, starting with the app name (e.g. "shop.auth.api"). The config-key namespace and
    * the bootstrap parameter.
    */
   readonly address: string;

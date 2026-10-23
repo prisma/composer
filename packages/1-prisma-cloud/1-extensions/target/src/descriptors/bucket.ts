@@ -26,7 +26,7 @@ import {
 export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, address, application }) =>
     Effect.gen(function* () {
-      validateName(id, 'resource name (from provision id)');
+      validateName(id, 'resource name (from its address)');
       const { branchId } = cloudApplicationOf(application);
       const bkt = yield* Prisma.Bucket(`${id}-bucket`, {
         project: projectIdOf(application),

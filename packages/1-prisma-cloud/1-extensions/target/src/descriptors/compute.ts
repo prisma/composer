@@ -152,7 +152,7 @@ export function computeDescriptor(
     // identity-bearing only, no code runs.
     provision: ({ id, address, application }) =>
       Effect.gen(function* () {
-        validateName(id, 'service name (from provision id)');
+        validateName(id, 'service name (from its address)');
         const projectId = projectIdOf(application);
         const { branchId } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(`${id}-svc`, {

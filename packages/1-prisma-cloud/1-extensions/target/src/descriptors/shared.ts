@@ -103,7 +103,7 @@ export function validateName(value: string, source: string): void {
     throw new Error(
       `prisma-cloud: ${source} "${value}" (${value.length} characters) is not a valid Prisma ` +
         `resource name — Prisma requires ${PRISMA_NAME_MIN}–${PRISMA_NAME_MAX} characters. ` +
-        'Rename the provision id (or the deploy --name) to fit.',
+        'Shorten the address to fit: the app name (or the deploy --name) and every provision id on its path count.',
     );
   }
 }
@@ -150,7 +150,7 @@ export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
 
-/** The `logicalId` prop of a node's App, Database or Bucket: its address on every platform deploy, none in branchless dev (ADR-0051). */
+/** The `logicalId` prop of a node's App, Database or Bucket: its full address on every platform deploy, none in branchless dev (ADR-0056). */
 export function logicalIdProp(
   application: unknown,
   address: string,
