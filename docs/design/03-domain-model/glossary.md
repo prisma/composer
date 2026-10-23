@@ -264,7 +264,9 @@ Service.
 A deploy-time **environment** name, chosen with `--stage` and never authored in
 the topology — the same graph deploys to any stage. The **default stage** (no
 `--stage`) is production, at the Project level; a **named stage** resolves to a
-Prisma Cloud **Branch**, its `gitName` set to the stage name. See
+Prisma Cloud **Branch**, its `gitName` set to the stage name. Stage is a
+target-neutral term; Composer never calls it a branch
+([ADR-0059](../90-decisions/ADR-0059-a-deployment-environment-is-a-stage.md)). See
 [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 and
 [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
