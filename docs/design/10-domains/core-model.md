@@ -1,5 +1,7 @@
 # Core model — classes and data structures
 
+> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does; the module `params`/`paramNeed()` and `secrets`/`secret()` slots described here are removed.
+
 The complete type-level design of `@prisma/composer` and the target-pack contract,
 with `@prisma/composer-prisma-cloud` as the worked instance. This is the implementation
 design under [`core-and-targets.md`](../03-domain-model/core-and-targets.md): that
