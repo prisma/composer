@@ -1,6 +1,6 @@
 # ADR-0053: `prisma dev url`, `prisma dev stop`, `prisma dev --detach` and `prisma emulator list`
 
-Amended by [ADR-0056](ADR-0056-prisma-dev-serves-a-service-with-its-own-dev-command.md): `dev url` reports a service that runs its dev command with state `served`, `dev stop` ends that command, and `--detach` refuses `--serve`.
+Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): `devUrl`'s result gains `runs`, `"artifact"` or `"dev-server"`, for a service. `dev stop`, `--detach` and `emulator list` need nothing new, because the emulator runs a dev server as a deployment.
 
 ## Decision
 
