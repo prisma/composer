@@ -168,15 +168,17 @@ Config = { service: { jobs: [ {jobId:'tick',…}, {jobId:'mrr',…} ], port: 300
 
 **Deploy — serialize (the target).** `@prisma/composer-prisma-cloud` encodes each value into
 its medium — key/value strings, keyed `COMPOSER_ADDRESS_OWNER_NAME` to stay unique in
-the shared project — validating structured values and passing dependency-input values
+the shared project. The address is the full one, starting with the app name, with
+`-` turned into `_` (a `scheduler` service in the app `billing` is
+`COMPOSER_BILLING_SCHEDULER_…`) — validating structured values and passing dependency-input values
 (provisioning refs) through untouched. Every generated key carries the `COMPOSER_`
 prefix — the framework's reserved namespace, kept clear of the user-provisioned
 variables secrets point at (§ Secrets):
 
 ```
-COMPOSER_SCHEDULER_JOBS        = '[{"jobId":"tick","every":"60s"},…]'
-COMPOSER_SCHEDULER_PORT        = '3000'
-COMPOSER_SCHEDULER_TRIGGER_URL = 'https://…runner…'
+COMPOSER_BILLING_SCHEDULER_JOBS        = '[{"jobId":"tick","every":"60s"},…]'
+COMPOSER_BILLING_SCHEDULER_PORT        = '3000'
+COMPOSER_BILLING_SCHEDULER_TRIGGER_URL = 'https://…runner…'
 ```
 
 The encoding (JSON here) is app-cloud's own; a different target would store the
@@ -256,7 +258,7 @@ The round trip carries only the name, never the value:
    (`COMPOSER_`-prefixed, like every generated key) maps to the bound name, not a
    value:
    ```
-   COMPOSER_AUTH_SIGNINGKEY = "AUTH_SIGNING_KEY"
+   COMPOSER_SHOP_AUTH_SIGNINGKEY = "AUTH_SIGNING_KEY"   # service `auth` in the app `shop`
    ```
 4. **Boot double-lookup.** Boot reads the pointer for the name, then reads
    `process.env[name]` for the platform value, and wraps it in a `SecretBox`.
