@@ -25,7 +25,7 @@ composer: composer({ entry: './module.ts', extensions: [...], state: prismaState
 $ prisma deploy --stage pr-42     # entry from the config; --entry overrides it
 ```
 
-Under the hood, a node's address, its platform `logicalId` and its Alchemy resource IDs all become the same fully qualified form (`shop.catalog`, `shop.catalog.conn`). Existing apps move over on their next deploy without losing data.
+Under the hood, a node's address, its platform `logicalId` and its Alchemy resource IDs all become the same fully qualified form (`shop.catalog`, `shop.catalog.connection`). Existing apps move over on their next deploy without losing data.
 
 The decisions and their reasons are in [design-notes.md](design-notes.md).
 

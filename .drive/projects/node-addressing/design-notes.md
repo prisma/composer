@@ -16,7 +16,7 @@ The address is the path of provision IDs starting at the root: `shop`, `shop.cat
 
 ## 2. Alchemy resource IDs are built from the address with dots
 
-A node's main resource uses the address itself (`shop.catalog`). Its other pieces add a role (`shop.catalog.conn`, `shop.api.deploy`). Today they are `catalog-db`, `catalog-conn`, `api-svc`.
+A node's main resource uses the address itself (`shop.catalog`). Its other pieces add a role (`shop.catalog.connection`, `shop.api.deployment`). Today they are `catalog-db`, `catalog-conn`, `api-svc`.
 
 **Why.** The `logicalId` names a node; a resource ID names one of the pieces the node becomes. They do the same job at different sizes, so they should read the same way. There is no value in telling them apart by their characters, which is the only reason `-` was used.
 
@@ -51,7 +51,9 @@ Every Alchemy resource Composer declares carries a rename declaration from its o
 
 **Verified** by the spike on the real platform ([assets/spike-alchemy-renames.md](assets/spike-alchemy-renames.md)): renames keep platform ids and data; renames on a new stage are ignored; a deploy that fails or is killed partway reruns cleanly; dotted IDs work in the hosted state; a `logicalId` change alone updates in place. The API is `renamedFrom('catalog-db')` from `alchemy/Rename`, piped onto the resource.
 
-**Two constraints from the spike.** A Connection is replaced when its `name` prop changes, which would rotate the database's credentials, so the migration keeps each Connection's current `name`. A database's display name is derived from its resource ID, so it changes in place; that is harmless, display names are labels.
+**Every platform name is the full address.** Will, 2026-10-23: "WE HAVE A SINGLE FUCKING METHOD OF IDENTIFYING A NODE." The App display name, the local Database name, and the Connection, Bucket and bucket access key names are all the full address (`shop.catalog`), on new stages and on the upgrade deploy. App, Database and Bucket names update in place. Upstream replaces a Connection or an access key when its `name` changes, so the upgrade gives each database a new password and each bucket new S3 credentials; data and objects are kept, and Composer's services get the new values in the same deploy. Will accepted this. Name validation uses each platform kind's real limit (Connection 65, Bucket 100, App 256) and fails naming the address; it never shortens a name.
+
+**Rejected.** Keeping the short name below the app on these platform objects, to avoid recreating Connections and access keys. That is a second form of a node's name.
 
 **Accepted.** An older Composer deploying a stage after it migrated deletes and recreates resources. Will: not a concern.
 

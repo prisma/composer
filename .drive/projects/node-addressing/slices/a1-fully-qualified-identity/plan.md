@@ -36,8 +36,22 @@ Spec: [spec.md](spec.md). Dispatches run in order on branch `drive/fully-qualifi
 
 `/drive-code-review` on the branch (no walkthrough); fix findings in follow-up dispatches.
 
+### D7. Merge main and renumber the identity decision
+
+- **Outcome:** `origin/main` (v0.34.0 and the dev-server decision record numbered 0056) is merged in. The branch's identity decision record becomes ADR-0057, and every reference to it on the branch says 0057; main's ADR-0056 keeps its number and meaning. The three conflicting docs (ADR-0053, the ADR index, `docs/guides/deploying.md`) keep both sides' content.
+- **Builds on:** the review fixes.
+- **Hands to:** a branch current with main.
+- **Gate:** `pnpm typecheck`, `pnpm lint`; no reference to the identity record as ADR-0056 remains.
+
+### D8. Every platform name is the full address
+
+- **Outcome:** the App `displayName`, the local Database `name`, and the Connection, Bucket and bucket access key `name` are the full address. `addressBelowApp` survives only for building legacy resource IDs. Name validation checks each kind against the platform's real limit (Connection 65, Bucket 100, App 256, access key none) and names the address on failure. ADR-0057, the glossary, the principle and `alchemy-lowering.md` say every platform name is the address, and that the upgrade recreates Connections and access keys with new credentials. Unit tests assert the full names.
+- **Builds on:** D7.
+- **Hands to:** a deploy that writes one form of name everywhere.
+- **Gate:** `pnpm typecheck`; tests for core, cli, lowering, local-target, target; `test/integration`.
+
 ### D6. QA on the real platform
 
-- **Outcome:** the slice's done conditions are checked with evidence on a fabricated app: deploy with the current published release, write rows, objects, and record the generated secret and RPC key; redeploy from this branch; confirm everything is unchanged and the state and rows use the new form; deploy the same app to a new stage from scratch; run `prisma dev` on a directory last used with the current release and confirm local data survived. Every test Project is deleted afterwards.
+- **Outcome:** the slice's done conditions are checked with evidence on a fabricated app: deploy with the current published release, write rows, objects, and record the generated secret and RPC key; redeploy from this branch; confirm data, objects, the generated secret and RPC key are unchanged, that the Connection and access key were recreated under full-address names and the services work with their new credentials, and that the state and rows use the new form; deploy the same app to a new stage from scratch; run `prisma dev` on a directory last used with the current release and confirm local data survived. Every test Project is deleted afterwards.
 - **Builds on:** review fixes.
 - **Hands to:** evidence for the PR description.
