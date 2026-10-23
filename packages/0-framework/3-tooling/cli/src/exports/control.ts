@@ -14,6 +14,7 @@
  * structural recognition; ADR 239 in prisma/prisma).
  */
 
+export type { DestructiveChange, DestructivePlan } from '@internal/core/config';
 export type { CliStructuredError } from '@internal/foundation/errors';
 export type { NotOk, Ok, Result } from '@internal/foundation/result';
 export type { ComposerConfigSource } from '../composer-config.ts';

@@ -6,6 +6,8 @@
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
  */
+
+import type { DestructivePlan } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
@@ -37,7 +39,9 @@ export interface DeployInput {
   readonly entry: string;
   /** Override the root node's name (the `--name` flag's slot). */
   readonly name?: string | undefined;
-  /** Target stage. ABSENT = production — bare deploy targets production (main.ts effectiveStage). */
+  /** Target branch. Absent selects the project's current default branch. */
+  readonly branch?: string | undefined;
+  /** @deprecated Use branch. Passing both is an error. */
   readonly stage?: string | undefined;
   /** Defaults to process.cwd(); the directory `.prisma-composer/` and `.alchemy` state live under. */
   readonly cwd?: string | undefined;
@@ -56,6 +60,10 @@ export interface DeployInput {
    */
   readonly reportId?: string | undefined;
   /** Each step as it starts and finishes, in real time. Rendering is the host's. */
+  /** Approval token returned in DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED. */
+  readonly destructiveApproval?: string | undefined;
+  /** Called with the exact destructive plan. Absent means refuse without mutation. */
+  readonly approveDestructivePlan?: ((plan: DestructivePlan) => Promise<boolean>) | undefined;
   readonly onEvent?: ((event: DeployEvent) => void) | undefined;
 }
 

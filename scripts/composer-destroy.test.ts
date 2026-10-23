@@ -12,7 +12,11 @@ const FAKE_CONTROL = `
 import { writeFileSync } from 'node:fs';
 export async function destroy(input) {
   if (process.env.FAKE_THROW === '1') throw new Error('entry did not load');
-  const { onEvent, config, ...rest } = input;
+  const { onEvent, config, approveDestructivePlan, ...rest } = input;
+  if (process.env.FAKE_PLAN === '1') {
+    const approved = await approveDestructivePlan?.({ token: 'remove-test', scopes: [{ application: process.env.FAKE_PLAN_APP }], changes: [] });
+    if (!approved) return {ok:false, failure:{message:'Destructive plan not approved.'}};
+  }
   writeFileSync(process.env.FAKE_RECORD, JSON.stringify({ ...rest, file: config.file, section: config.value }));
   if (process.env.FAKE_EVENT === '1') onEvent?.({ kind: 'no-local-deploy-state', cwd: input.cwd });
   if (process.env.FAKE_FAIL !== '1') return { ok: true, value: undefined };
@@ -180,4 +184,39 @@ describe('composer-destroy', () => {
       assert.throws(() => readFileSync(record));
     });
   }
+});
+
+it('passes explicit branch and destructive approval to destroy', () => {
+  const result = run(['module.ts', '--branch', 'staging', '--confirm', 'remove-plan-token']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(recorded(), {
+    entry: 'module.ts',
+    target: { kind: 'branch', branch: 'staging' },
+    destructiveApproval: 'remove-plan-token',
+    cwd: app,
+    file: join(app, 'prisma.config.ts'),
+    section: { marker: 'section' },
+  });
+});
+
+it('test cleanup approves only the exact current-run project in the plan', () => {
+  const env = {
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'prisma/composer',
+    GITHUB_RUN_ID: '123',
+    FAKE_PLAN: '1',
+    FAKE_PLAN_APP: 'orm-demo-ci-123',
+  };
+  const args = [
+    'module.ts',
+    '--production',
+    '--name',
+    'orm-demo-ci-123',
+    '--test-project',
+    'orm-demo-ci-123',
+  ];
+  assert.equal(run(args, env).status, 0);
+  assert.equal(run(args, { ...env, FAKE_PLAN_APP: 'customer-project' }).status, 1);
+  assert.equal(run(args, { ...env, GITHUB_RUN_ID: '456' }).status, 2);
+  assert.equal(run(args, { ...env, GITHUB_ACTIONS: 'false' }).status, 2);
 });

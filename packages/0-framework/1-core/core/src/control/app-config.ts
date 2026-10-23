@@ -91,6 +91,12 @@ export interface ExtensionDescriptor {
    * in container-transport.ts.
    */
   readonly container?: ContainerDescriptor;
+  /** Target-owned context and safe replacement rules for the shared pre-apply guard. */
+  readonly deploymentSafety?: {
+    /** Only replacements that preserve bindings and durable data may be listed. Deletions remain protected. */
+    readonly safeReplacementTypes: readonly string[];
+    describe(container: ContainerInstance | undefined): Promise<DeploymentScope>;
+  };
   /**
    * Deploy-run reporting. The CLI begins a session after the graph is loaded
    * and before containers are resolved, and finishes it on every exit path.
@@ -390,4 +396,25 @@ export interface PrismaAppConfig {
 /** Typed identity — exists so the `composer` section of `prisma.config.ts` gets checked against PrismaAppConfig where it is written. */
 export function defineConfig(config: PrismaAppConfig): PrismaAppConfig {
   return config;
+}
+
+/** Public target context shown before destructive changes. No credentials or connection strings. */
+export interface DeploymentScope {
+  readonly application?: string;
+  readonly id: string;
+  readonly label: string;
+  readonly removalConsequence: string;
+}
+
+export interface DestructiveChange {
+  readonly resource: string;
+  readonly type: string;
+  readonly action: 'delete' | 'replace';
+  readonly consequence: string;
+}
+
+export interface DestructivePlan {
+  readonly token: string;
+  readonly scopes: readonly DeploymentScope[];
+  readonly changes: readonly DestructiveChange[];
 }

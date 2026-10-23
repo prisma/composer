@@ -11,6 +11,7 @@ import type {
   ContainerCredentials,
   ContainerDescriptor,
   ContainerInstance,
+  DeploymentScope,
   LocateContainerInput,
 } from '@internal/core/config';
 import {
@@ -354,3 +355,36 @@ function missingBranchId(instance: PrismaCloudContainer): never {
       'missing its branchId — this is a bug in ensure/locate/deserialize.',
   );
 }
+
+/** Prisma Cloud's context for the framework's shared destructive-plan guard. */
+export const deploymentSafety = {
+  safeReplacementTypes: ['Prisma.Deployment'],
+  async describe(value: ContainerInstance | undefined): Promise<DeploymentScope> {
+    const container = prismaCloudContainerOf(value);
+    const branchId = container.branchId ?? container.defaultBranchId;
+    if (branchId === undefined) throw new Error('A deployed branch is required for approval.');
+    const branch = await runWithClient(
+      Effect.gen(function* () {
+        const client = yield* ManagementClient;
+        const response = yield* Effect.promise(() =>
+          client.GET('/v1/branches/{branchId}', {
+            params: { path: { branchId } },
+          }),
+        );
+        if (response.data === undefined)
+          throw new Error('Could not read the deployment branch for approval.');
+        return response.data.data;
+      }),
+      undefined,
+    );
+    return {
+      id: `${container.projectId}/${branchId}`,
+      application: container.input.appName,
+      label: `Project ${container.projectId}, branch ${branch.gitName} (${branchId}${branch.isDefault ? ', current default' : ', not the default'})`,
+      removalConsequence:
+        container.branchId === undefined
+          ? 'Remove the managed resources on this branch, then attempt to remove the empty project. The platform keeps the project if other branches still have resources.'
+          : 'Delete this branch and all its apps, databases, buckets and domain bindings, including resources managed outside Composer.',
+    };
+  },
+};

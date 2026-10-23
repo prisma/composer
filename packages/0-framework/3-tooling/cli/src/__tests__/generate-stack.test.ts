@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load, module, service } from '@internal/core';
-import { renderStackFile } from '../generate-stack.ts';
+import { renderStackFile, writeApplyFile } from '../generate-stack.ts';
 import { loadEntry } from '../load-entry.ts';
 
 describe('renderStackFile() — a module root', () => {
@@ -199,4 +201,32 @@ describe('nested-module proof (H1: module-composition) — dotted addresses surv
     // as a plain string literal — a bare property key can't spell a ".".
     expect(content).toContain('"auth.api": { dir: "/bundles/auth-api", entry: "server.js" }');
   });
+});
+
+test('concurrent branch runs keep separate guarded entrypoints', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-guard-entry-'));
+  fs.mkdirSync(path.join(cwd, '.prisma-composer'));
+  try {
+    const first = writeApplyFile({
+      cwd,
+      configFile: path.join(cwd, 'prisma.config.ts'),
+      stage: 'br_staging',
+      operation: 'deploy',
+      planFile: path.join(cwd, 'staging.plan.json'),
+    });
+    const second = writeApplyFile({
+      cwd,
+      configFile: path.join(cwd, 'prisma.config.ts'),
+      stage: 'br_main',
+      operation: 'destroy',
+      planFile: path.join(cwd, 'main.plan.json'),
+    });
+    expect(first).not.toBe(second);
+    expect(fs.readFileSync(first, 'utf8')).toContain('stage: "br_staging"');
+    expect(fs.readFileSync(first, 'utf8')).toContain('operation: "deploy"');
+    expect(fs.readFileSync(second, 'utf8')).toContain('stage: "br_main"');
+    expect(fs.readFileSync(second, 'utf8')).toContain('operation: "destroy"');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });

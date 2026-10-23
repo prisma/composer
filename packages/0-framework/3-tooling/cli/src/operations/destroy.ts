@@ -6,6 +6,7 @@
  * fails to load comes back as a structured failure, never a throw out of
  * the host.
  */
+import type { DestructivePlan } from '@internal/core/config';
 import type { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, type Result } from '@internal/foundation/result';
 import type { ComposerConfigSource } from '../composer-config.ts';
@@ -14,6 +15,7 @@ import { executorLoadFailure, type OperationDeps } from './shared.ts';
 /** Destroy must name its target explicitly — no silent default to production. Encoded, not re-derived from flags. */
 export type DestroyTarget =
   | { readonly kind: 'production' }
+  | { readonly kind: 'branch'; readonly branch: string }
   | { readonly kind: 'stage'; readonly stage: string };
 
 export type DestroyEvent =
@@ -30,6 +32,8 @@ export interface DestroyInput {
   readonly target: DestroyTarget;
   readonly cwd?: string | undefined;
   /** Mid-operation notifications, in real time. Rendering is the host's. */
+  readonly destructiveApproval?: string | undefined;
+  readonly approveDestructivePlan?: ((plan: DestructivePlan) => Promise<boolean>) | undefined;
   readonly onEvent?: ((event: DestroyEvent) => void) | undefined;
 }
 

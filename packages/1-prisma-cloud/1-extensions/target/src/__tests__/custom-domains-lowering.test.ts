@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { LoweredResult, LowerContext } from '@internal/core/deploy';
+import type { LowerContext, LoweredResult } from '@internal/core/deploy';
 import {
   CustomDomain,
   customDomainProviderService,

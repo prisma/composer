@@ -1,40 +1,82 @@
-# ADR-0057: Custom domains are environment bindings with Console setup
+# ADR-0057: Keep custom domains in branch deployment configuration and guard destructive changes
 
 ## Decision
 
-The Prisma Cloud target takes `domains[branchName][serviceAddress]`, containing exact hostnames. It reads the actual branch name from the platform, including for a default deploy. `main` is an ordinary name, and `production` has no special meaning. It selects only the deploying branch; changing the default branch never moves the old branch's hostnames automatically. The module graph and runtime inputs stay environment-neutral.
+Declare custom hostnames in the Prisma Cloud deployment target, keyed by actual branch name and service address. Keep reusable modules independent of the environment they run in.
 
-A hostname is a binding to an app in one environment, not a domain registration or DNS zone. Missing TXT ownership or routing records is an expected `setup_required` outcome. The service deploy succeeds and reports its generated URL, the hostname's status, and a Console setup link. Console validates that navigation hint and opens the DNS step. Verification remains an explicit mutation behind existing authorization. Authentication errors, conflicts, quotas and infrastructure failures are not setup outcomes.
+```ts
+// The Prisma Cloud extension in prisma.config.ts's composer section.
+prismaCloud({
+  domains: {
+    main: { web: ['example.com', 'www.example.com'] },
+    staging: { web: ['staging.example.com'] },
+  },
+})
+```
 
-Each declared hostname has its own resource in the existing per-stage deploy state. A declaration authorizes management of the matching binding on that app, including one completed in Console. Reads observe live status and absent bindings are retried on subsequent deploys without replacing the service. Removing a declaration or destroying a stage deletes that binding only. Domain registration, DNS records and zones outlive a stage. Undeclared bindings on surviving apps remain external.
+Here, `web` is the service's address in the module graph. A branch is the platform container for one environment's services, data, configuration and deploy state. Only the deploying branch's entry is applied. An unlisted branch gets no declared custom domains. A default deploy reads the project's current default branch name from the platform; `main` is an ordinary name, and `production` is not a configuration alias. Changing which branch is default does not move hostnames.
+
+Use **branch** as the public name for this concept. The public CLI spelling is:
+
+```sh
+prisma deploy module.ts                   # the project's current default branch
+prisma deploy module.ts --branch staging  # the branch named staging
+```
+
+`--branch` replaces the public `--stage` spelling. During migration, `--stage` remains a deprecated alias with the same meaning; passing both is an error. Alchemy, the deployment engine Composer uses, may continue to call its internal state scope a stage. That internal scope remains keyed by the resolved branch ID. A public spelling change must not recreate resources or change their state namespace.
+
+A hostname binding connects a hostname to a service's app on one branch. It is separate from registering a domain with a registrar or owning a DNS zone. Composer deploys the service before attaching its declared hostnames. When ownership TXT or routing DNS records are missing, the app deployment completes with its generated URL and a domain result of **Setup required**. That result includes a Console link to the correct app, with the hostname prefilled. Opening the link makes no writes. The user adds the displayed DNS records and chooses **Verify and connect**. Certificate provisioning and an active domain are distinct results. Invalid declarations, ownership conflicts, quota limits and API failures remain errors.
+
+Removing a declaration requests removal of its binding. It does not authorize the removal by itself. Before applying any planned resource mutation, a shared deployment safeguard inspects the complete plan for deletion or destructive replacement of managed resources. Detaching a serving hostname, deleting a database or bucket, and deleting an app whose children include them require explicit approval of the destructive plan. Show the resolved project and branch, whether it is the current default, the affected service or resource, and the consequences. Include indirect removals caused by deleting a parent or changing a resource's identity.
+
+This safeguard applies to every branch and to the deploy and explicit teardown paths. Interactive use requires confirmation; non-interactive use returns a structured refusal unless the caller supplies approval for that exact destructive plan. A general `--yes`, omitted configuration or the label "preview" is not such approval. Recheck the plan against current state before applying it; a changed target or destructive action requires new approval. Routine code deployments and promotions that preserve app bindings and durable data continue without a destructive-change confirmation. A warning alone is insufficient. Composer runs Alchemy's plan and apply APIs in a guarded child process. It checks the full plan before calling apply. Preparation can still create containers, fill missing environment variables and record a deploy attempt. Those steps are outside the resource plan.
 
 ## Reasoning
 
-A hostname written on the reusable module would be claimed by every environment. Explicit deploy-target configuration preserves the stage boundary. DNS may take minutes or require a person; blocking a healthy deployment on that setup prevents the very app the person needs to configure from existing.
+The same module should deploy unchanged to a default branch, staging or a pull-request preview. Putting a concrete hostname on its `compute()` declaration would give every copy the same address. Branch-conditioned logic inside a module would make its topology depend on its deployment environment. The target configuration is the existing boundary where Composer translates reusable topology into a particular platform deployment, so the hostname-to-branch assignment belongs there. This extends that boundary with public deployment bindings; it does not add environment access to application code or a new source of runtime secrets.
 
-Console owns the setup interaction. Today it shows external TXT/CNAME instructions. In the future it can offer buying a domain, using a managed zone or entering external DNS, at the same link. Composer records the requested binding without encoding a registrar, DNS provider, purchase, renewal or billing operation.
+The branch map is deliberately explicit. It makes routing assignments reviewable in code and prevents a new preview from inheriting a serving hostname. All branches still use the same module graph. Only the selected branch's bindings enter its deploy state. Runtime values continue to use the existing input and environment-source mechanisms. This is a limited use of environment-specific configuration in the deploy target, not a general facility for branching the module graph by environment.
 
-Alchemy beta.83's `Prisma.CustomDomain` rejects every non-default branch and fails when registration requires DNS. Its required `customDomainId` cannot represent setup before registration. This is a narrow exception to ADR-0048: Composer supplies `PrismaComposer.CustomDomain` until upstream supports branch bindings and pre-registration setup outcomes. Existing upstream App, Deployment and EnvironmentVariable providers remain unchanged. The provider calls the existing authenticated Management API, so ownership verification, domain quotas and certificate issuance remain platform-owned.
+A Composer stage already resolves to a platform branch. Calling it a branch removes the translation users and agents otherwise make between Composer and the rest of the Prisma CLI. The default branch is a mutable platform designation, not a fixed name or proof that another branch is safe to delete. This changes the public terminology in the earlier stage and CLI decisions; the branch containment and state model stay the same.
+
+DNS setup can require a person and propagation time. A deploy should leave a working generated URL while that work is pending. Console owns the setup interaction and its authorization. It can later offer purchasing a domain, choosing a managed zone or configuring external DNS at the same entry point. Composer does not need registrar credentials, DNS-provider choices or billing operations to describe the requested binding.
+
+A declaration opts that exact hostname's binding on that app into Composer management, including one completed in Console. The provider observes it on later deploys and reuses it without another registration. Bindings never declared to Composer remain externally managed while their app survives. This authority must be visible: the existence of an undeclared child does not make deleting its parent safe, so the shared safeguard must show cascades too.
+
+Desired state alone cannot distinguish a deliberate removal from an accidental edit. A missing domain entry can interrupt traffic just as a missing database entry can destroy data. A domain-only or default-branch-only exception would leave the same error elsewhere in the topology. Checking the full plan before mutation both gives the user one decision and avoids partially applying a deployment before discovering a protected deletion. Hostname changes should normally add and verify the new binding, cut traffic over, then approve removal of the old one. A hostname conflict never silently transfers ownership.
+
+The upstream Alchemy domain provider requires a registration ID and restricts creation to the default branch. It cannot represent a branch binding awaiting initial DNS setup. Composer therefore uses a small domain provider for that contract while retaining the upstream app and deployment providers. Registration still calls the authenticated Management API, which owns TXT verification, quotas and certificate issuance. This is a narrow exception to the upstream-provider decision, not a separate domain platform.
 
 ## Consequences
 
-- The public guide and installed skill describe explicit adoption: declaring an existing hostname makes its app binding Composer-managed.
-- `setup_required` never reserves a hostname or issues a certificate. Another workspace still needs its own TXT proof.
-- Console setup links target the canonical app IDs. Query values never authorize writes, transfers, DNS changes or purchases.
-- An unlisted stage and local dev make no domain registration requests.
-- Purchase and zone lifetimes must remain independent when managed DNS is added. Stage destruction must never cancel a purchase or delete a zone.
+The branch configuration, Console setup links and domain status reporting can be implemented independently of buying domains or managing zones. The `--branch` migration must update the CLI, programmatic terminology, guides, installed agent skill and examples together, while preserving branch IDs and existing deploy state. Programmatic deploy accepts `branch`; `stage` remains a deprecated alias, and passing both is an error. Destroy accepts `{ kind: 'branch', branch }`, alongside its existing compatibility targets.
+
+The shared destructive-change safeguard covers automatic detachment. Tests must prove that removing a hostname, renaming or removing a service, and deleting or destructively replacing a database or bucket cannot bypass it. Default and non-default branches, CI and programmatic callers, indirect cascades and stale approvals all need coverage. Explicit approved preview teardown remains possible. The CLI uses the engine's explicit-consent prompt: type the plan's token interactively or pass `--confirm <token>` in CI after review. `--yes` cannot satisfy it. Programmatic callers receive `DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED` with `failure.meta.plan` and can retry with `destructiveApproval: plan.token`, or obtain explicit consent through `approveDestructivePlan(plan)`. The token fingerprints the target, planned resource actions, prior resource state and replacement inputs. A retry computes a fresh plan and compares its token; the checked in-memory snapshot is then applied. A stale approval stops without applying any part of that plan. This is an explicit-consent check, not a substitute for serialized deployments or a platform-wide transaction.
+
+Every deletion is protected, and every replacement is protected unless the target declares that resource type safe to replace. Retrying an interrupted replacement still requires approval before deleting its old resource. Prisma Cloud exempts only `Prisma.Deployment` replacement, which changes the code version while preserving its app, bindings and durable data. Parent app deletion warns that it also removes domain bindings managed outside Composer. Explicit teardown adds the branch or project container itself to the destructive plan, including the warning that default-deployment teardown attempts to remove the empty project. The platform keeps the project when another branch still has resources. Composer does not enumerate or manage external child resources individually. The guard covers resource lifecycle actions in the engine plan; it does not inspect SQL migrations or application-level data changes.
+
+Deleting an app or branch releases its hostname bindings, while the domain registration, DNS records and zone keep their own lifetimes. Recreating a branch can reconnect its declared hostnames using the same workspace's TXT ownership proof. Another workspace must publish its own proof. Retaining a DNS record alone never authorizes another workspace to claim the hostname.
+
+Future Console-managed domains must preserve that separation. App deploys and branch teardown must never buy, renew, transfer or cancel a domain, delete a zone or remove shared DNS records. Those are separate Console operations with their own permissions, billing and explicit consent. Purchasing a domain does not bypass hostname ownership verification or the safeguard for removing a serving binding.
 
 ## Alternatives considered
 
-- Use a `production` alias for whichever branch is currently default: rejected; it hides the branch identity and could move a hostname when the default changes.
-- Fail deploy until DNS is configured: rejected; DNS setup is not deployment failure.
-- Put domains on `compute()` or inherit production defaults: rejected; previews would compete for shared hostnames.
-- Use upstream unchanged: rejected for its default-branch restriction and mandatory registration ID.
-- Add registrar or DNS-provider APIs to Composer: rejected; these are Console operations with separate ownership, billing and consent.
+- **Keep `stage` and `branch` as separate public names.** They refer to the same platform scope and impose a translation without adding a capability. Keep the deployment engine's internal term private.
+- **Treat `production` as an alias in the domain map.** A default-branch change could silently reassign traffic. Exact branch names make that change explicit.
+- **Put hostnames or environment conditions in reusable modules.** Copies would compete for a hostname, or the module graph would vary by environment.
+- **Manage every binding only in Console.** Keep this available for externally managed bindings, but do not make it the only option: it loses the code-reviewed declaration and reproducibility for Composer-managed bindings.
+- **Block a healthy app deploy until DNS is ready.** The app can serve on its generated URL while the user completes setup.
+- **Delete on omission, or warn only for default-branch domains.** An accidental edit can remove live routing or durable data on any branch. Use the same explicit approval rule across resources.
+- **Retain removed bindings silently.** That hides drift and weakens Composer's ownership model. Report the requested removal and stop for approval instead.
+- **Use the upstream domain provider unchanged.** Its branch restriction and mandatory registration ID do not support this setup flow.
+- **Add registrar and DNS-provider APIs to Composer.** Domain and zone ownership outlive individual deployments and require separate consent and billing.
 
 ## Related
 
-- [Stage boundary](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
+- [Application and branch containment](ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md).
+- [Environment-neutral modules and deploy-time stage selection](ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).
+- [Public deploy command](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md).
+- [Shared configuration file](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md).
+- [Address changes change resource identity](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md).
 - [Upstream resource providers](ADR-0048-prisma-cloud-resources-come-from-the-upstream-alchemy-provider.md).
-- [Shared configuration](ADR-0049-composers-configuration-is-the-composer-section-of-prisma-config.md).
-- [Deploy guide](../../guides/deploying.md#custom-domains).
+- [Guiding principles](../01-principles/guiding-principles.md) and [architectural principles](../01-principles/architectural-principles.md).

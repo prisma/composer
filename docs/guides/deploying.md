@@ -11,7 +11,7 @@ in your code.
 | You want to… | Run |
 | --- | --- |
 | Deploy to production | `prisma deploy module.ts` |
-| Deploy an isolated environment | `prisma deploy module.ts --stage <name>` |
+| Deploy an isolated environment | `prisma deploy module.ts --branch <name>` |
 | Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
 | Tear down an environment | the `destroy` operation (see [Destroying](#destroying)) |
 
@@ -139,18 +139,18 @@ Deploy state (what's already provisioned, so re-deploys diff instead of recreate
 
 ## Production and stages
 
-Deploying with no `--stage` targets **production**. In Prisma Cloud terms:
+Deploying with no `--branch` targets the project's **current default branch**. In Prisma Cloud terms:
 the app is a Project (named after your root module), and production lives at
 the Project level.
 
-`--stage <name>` deploys a complete, isolated copy of the app — every
+`--branch <name>` deploys a complete, isolated copy of the app — every
 service, every database, its own configuration — as a Branch of that same
 Project. Nothing is shared with production except the code:
 
 ```sh
 prisma deploy module.ts                  # production
-prisma deploy module.ts --stage staging  # a persistent staging environment
-prisma deploy module.ts --stage pr-42    # one environment per PR
+prisma deploy module.ts --branch staging  # a persistent staging environment
+prisma deploy module.ts --branch pr-42    # one environment per PR
 ```
 
 Re-deploying any environment is idempotent — it updates the resources in
@@ -275,13 +275,14 @@ import prismaConfig from './prisma.config.ts';
 
 const result = await destroy({
   entry: 'module.ts',
-  target: { kind: 'stage', stage: 'staging' }, // or { kind: 'production' }
+  target: { kind: 'branch', branch: 'staging' }, // or { kind: 'production' }
   config: {
     value: prismaConfig.composer,
     file: fileURLToPath(new URL('./prisma.config.ts', import.meta.url)),
   },
 });
 if (!result.ok) {
+  // Review failure.meta.plan and retry with destructiveApproval: plan.token.
   console.error(result.failure.message);
   process.exitCode = 1;
 }
@@ -300,9 +301,9 @@ the Project still holds another stage's resources, it's left in place.
 
 Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
 as CI secrets, build, and run the same commands. The per-PR environment
-pattern: on push, run `prisma deploy module.ts --stage "pr-$PR_NUMBER"`; on
+pattern: on push, run `prisma deploy module.ts --branch "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Destroying](#destroying) whose
-target is that stage, `{ kind: 'stage', stage: 'pr-42' }` for PR 42.
+target is that branch, `{ kind: 'branch', branch: 'pr-42' }` for PR 42.
 
 One extra: if your app binds input fields with `envSecret` or `envParam`
 (see [Building an app § Service input](building-an-app.md#service-input)),
@@ -468,7 +469,7 @@ On the first deploy after the upgrade, the framework also **stops tracking** the
 
 Deleting the variables by hand is not useful: the next deploy's claim (or the platform's own template filler) recreates them. If you genuinely want a value there — for a tool outside the framework that insists on `DATABASE_URL` — set your own value in the Console; both the framework's claim and the platform's filler are create-only and will leave your value alone.
 
-**Stage (`--stage`) environments see two one-time effects on their first deploy after the upgrade**, because a branch-attached database can no longer carry an explicit display name at create:
+**Stage (`--branch`) environments see two one-time effects on their first deploy after the upgrade**, because a branch-attached database can no longer carry an explicit display name at create:
 
 - Each existing stage database is **renamed** to a generated physical name (`<app>-<resource>-db-<stage>-<suffix>`). The database itself, its data, and its ID are untouched — only the display name in the Console changes.
 - The database's **default connection credentials are rotated** during that same reconcile. The framework's own named connection — the one your services actually use — is NOT rotated and keeps working. Only credentials minted outside the framework from the database's *default* connection (for example, copied out of the Console) stop working and must be re-issued.
@@ -609,14 +610,44 @@ prismaCloud({
 })
 ```
 
-Each key (`web`, or a nested address such as `auth.api`) names a Compute service in the module. The outer keys are actual platform branch names. A deploy without `--stage` reads the current default branch's name: if it is `main`, it selects `domains.main`; if it is `trunk`, it selects `domains.trunk`. `prisma deploy module.ts --stage staging` selects `domains.staging`. There is no reserved `production` alias, and changing the default branch never carries the old branch's hostnames to the new one. An unlisted branch receives no custom domains. Each hostname must belong to one service and environment. `prisma dev` keeps its local URLs and makes no domain requests.
+Each key (`web`, or a nested address such as `auth.api`) names a Compute service in the module. The outer keys are actual platform branch names. A deploy without `--branch` reads the current default branch's name: if it is `main`, it selects `domains.main`; if it is `trunk`, it selects `domains.trunk`. `prisma deploy module.ts --branch staging` selects `domains.staging`. There is no reserved `production` alias, and changing the default branch never carries the old branch's hostnames to the new one. An unlisted branch receives no custom domains. Each hostname must belong to one service and environment. `prisma dev` keeps its local URLs and makes no domain requests.
 
 Build and deploy normally. If DNS is ready, Composer connects the hostname after the service is deployed and promoted. If the workspace TXT ownership record or routing record is missing, the app still deploys successfully. The report keeps the working generated URL and adds a `custom-domain` entry with `status: Setup required` and a Console setup link. The same entries are in the deploy report written by `--report`.
 
 Open that link to see the hostname prefilled in the correct app's DNS setup. Add the displayed TXT and CNAME records at your DNS provider, then choose **Verify and connect**. Opening the link does not change anything. A connected domain can still be provisioning its certificate: only `active` means it is ready to serve traffic. Failures, including ownership conflicts, quota limits and API outages, remain errors rather than becoming setup notices.
 
-Later deploys retry missing bindings even when the service code is unchanged. They reuse domains completed in Console without requesting another certificate. Declaring a hostname opts its binding on that app into Composer management, including an existing binding with that exact hostname. Removing the declaration detaches that binding; unrelated Console-added hostnames are left alone. To hand a domain to another service or environment, detach it deliberately before declaring it there. Composer never moves it automatically.
+Later deploys retry missing bindings even when the service code is unchanged. They reuse domains completed in Console without requesting another certificate. Declaring a hostname opts its binding on that app into Composer management, including an existing binding with that exact hostname. Removing the declaration requests detachment and requires explicit plan approval; unrelated Console-added hostnames are left alone. To hand a domain to another service or environment, detach it deliberately before declaring it there. Composer never moves it automatically.
 
 Destroying a stage removes its app bindings but leaves domain registration and DNS records alone. Recreating the stage can reconnect its declarations using the same workspace TXT proof. A different workspace must publish its own proof. Domain caps and workspace creation rate limits still apply. For a separate Console deployment, set `consoleUrl` on `prismaCloud()` to that Console's origin so setup links reach the matching environment.
 
 Domain purchase and DNS hosting are separate from app bindings. Future Console-managed DNS will use the same setup link; Composer declarations will not need registrar credentials or provider-specific settings. Deploying or destroying an app never buys, renews or cancels a domain, or deletes a DNS zone.
+
+### Review destructive changes before deployment
+
+Composer stops before applying a plan that deletes a resource or destructively
+replaces it. This includes domain detachment, service renames, database and
+bucket replacement, and branch or project teardown. The plan shows the project,
+branch, whether it is currently default, and each affected resource. Parent
+removal also warns about children managed outside Composer. This protection
+applies to every branch. Routine Compute code-version replacement stays automatic.
+
+Review the plan and type its token when prompted. CI can pass
+`prisma deploy module.ts --branch staging --confirm <token>` after a reviewer
+approves the plan from the preceding refusal. `--yes` does not grant consent.
+Composer checks the plan again; changed targets, prior state or destructive
+actions require a new token. It never partially applies an unapproved plan.
+The preparation steps can still create a deployment container, fill missing
+environment variables and record the attempted deploy before the guard runs.
+
+Programmatic `deploy` accepts `branch` and `destructiveApproval`. Without approval,
+a destructive deploy or `destroy` returns `DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED`
+with the public plan in `failure.meta.plan`. Retry with that plan's token in
+`destructiveApproval`, or use `approveDestructivePlan(plan)` to ask the operator.
+The programmatic destroy target `{ kind: 'branch', branch: 'staging' }` names an
+explicit branch; `{ kind: 'production' }` keeps the existing project teardown
+behavior. Destroying the default deployment attempts to remove the empty project. The
+platform keeps it when another branch still has resources. Both paths require approval, even if the engine state is empty.
+
+`--stage` remains a deprecated alias for `--branch`; passing both is an error.
+The programmatic `stage` field and `{ kind: 'stage', stage }` destroy target are
+also compatibility aliases. The internal Alchemy state namespace is unchanged.

@@ -21,4 +21,4 @@ entry="$2"
 stack_name="$3"
 
 echo "Destroying ${label}stack $stack_name…"
-bun "$scripts_dir/composer-destroy.ts" "$entry" --name "$stack_name" --production
+bun "$scripts_dir/composer-destroy.ts" "$entry" --name "$stack_name" --production --test-project "$stack_name"

@@ -12,7 +12,7 @@ import { notOk, ok } from '@internal/foundation/result';
 import type { ScriptedChildProgram, TestCli } from '@prisma/cli-engine/testing';
 import { createTestCli, mintTestJwt } from '@prisma/cli-engine/testing';
 import { createOperationsDouble, type OperationsDouble } from '../../testing/operations-double.ts';
-import { createComposerFamily } from '../family.ts';
+import { type ComposerOperations, createComposerFamily } from '../family.ts';
 import { commandAt } from './command-at.ts';
 import { validComposerSection } from './fixtures/composer-section.ts';
 
@@ -63,12 +63,18 @@ interface Harness {
 function composerCli(
   spec: {
     readonly fixtures?: Fixtures;
+    readonly deploy?: ComposerOperations['deploy'];
     readonly signedIn?: boolean;
     readonly spawnScript?: ScriptedChildProgram;
   } = {},
 ): Harness {
   const double = createOperationsDouble(spec.fixtures ?? {});
-  const family = createComposerFamily({ operations: double.operations });
+  const family = createComposerFamily({
+    operations: {
+      ...double.operations,
+      ...(spec.deploy === undefined ? {} : { deploy: spec.deploy }),
+    },
+  });
   const cli = createTestCli({
     commandFamilies: [family],
     // The two product verbs, at the root. `dev url` and `dev stop` mount
@@ -133,7 +139,7 @@ describe('argument validation', () => {
     expect(plain(result.stderr)).toContain('--production');
   });
 
-  test('deploy passes entry, --name and --stage through to the operation verbatim', async () => {
+  test('deploy keeps --stage as a deprecated branch alias', async () => {
     const { cli, double } = composerCli();
     const result = await cli.run(
       ['deploy', 'src/service.ts', '--name', 'shop', '--stage', 'feat-auth'],
@@ -141,6 +147,7 @@ describe('argument validation', () => {
     );
 
     expect(result.exitCode).toBe(0);
+    expect(plain(result.stderr)).toContain('--stage is deprecated');
     expect(double.calls.deploy).toEqual([
       {
         entry: 'src/service.ts',
@@ -152,7 +159,8 @@ describe('argument validation', () => {
           file: path.join(CWD, 'prisma.config.ts'),
         },
         name: 'shop',
-        stage: 'feat-auth',
+        branch: 'feat-auth',
+        approveDestructivePlan: expect.any(Function),
         cwd: CWD,
         onEvent: expect.any(Function),
       },
@@ -315,7 +323,7 @@ describe('what a successful run presents', () => {
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toContain('Deployed shop to production in 9m 35s.');
+    expect(plain(result.stderr)).toContain('Deployed shop to the default branch in 9m 35s.');
     expect(plain(result.stderr)).toContain('catalog.service');
     expect(plain(result.stderr)).toContain('Worker orders-worker');
     expect(result.presented?.data).toEqual({
@@ -374,7 +382,7 @@ describe('what a successful run presents', () => {
     const result = await cli.run(['deploy', 'src/service.ts'], AS_TTY);
 
     expect(result.exitCode).toBe(0);
-    expect(plain(result.stderr)).toContain('Deployed to production in 850ms.');
+    expect(plain(result.stderr)).toContain('Deployed to the default branch in 850ms.');
     expect(result.presented?.data).toEqual({ summary: null, durationMs: 850 });
   });
 
@@ -513,4 +521,82 @@ describe('step events', () => {
       envelope: { ok: true, result: { summary: { app: 'shop' }, durationMs: 12_300 } },
     });
   });
+});
+
+test('canonical branch flag reaches the operation and rejects ambiguous aliases', async () => {
+  const { cli, double } = composerCli();
+  const result = await cli.run(['deploy', 'module.ts', '--branch', 'staging'], AS_TTY);
+  expect(result.exitCode).toBe(0);
+  expect(double.calls.deploy[0]?.branch).toBe('staging');
+  const conflict = await cli.run(
+    ['deploy', 'module.ts', '--branch', 'main', '--stage', 'main'],
+    AS_TTY,
+  );
+  expect(conflict.exitCode).toBe(2);
+  expect(plain(conflict.stderr)).toContain('DEPLOY.BRANCH_CONFLICT');
+  expect(double.calls.deploy).toHaveLength(1);
+});
+
+test('destructive consent is not satisfied by --yes, and accepts only the plan token', async () => {
+  const token = `remove-${'a'.repeat(64)}`;
+  const { cli } = composerCli({
+    deploy: async (input) => {
+      const approved = await input.approveDestructivePlan?.({
+        token,
+        scopes: [],
+        changes: [
+          {
+            resource: 'web/domain',
+            type: 'CustomDomain',
+            action: 'delete',
+            consequence: 'Disconnect example.com.',
+          },
+        ],
+      });
+      return approved
+        ? ok({ summary: undefined, durationMs: 1 })
+        : notOk(new CliStructuredError('DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED', 'Refused.'));
+    },
+  });
+  const refused = await cli.run(['deploy', 'module.ts', '--yes', '--no-interactive', '--json'], {
+    cwd: CWD,
+  });
+  expect(refused.exitCode).toBe(2);
+  expect(refused.stdout).toContain('CLI.CONSENT_REQUIRED');
+  const approved = await cli.run(['deploy', 'module.ts', '--confirm', token, '--no-interactive'], {
+    cwd: CWD,
+  });
+  expect(approved.exitCode).toBe(0);
+});
+
+test('a child guard refusal keeps the structured consent error in JSON mode', async () => {
+  const token = `remove-${'a'.repeat(64)}`;
+  const { cli } = composerCli({
+    spawnScript: childExiting(42),
+    deploy: async (input, deps) => {
+      await deps.alchemy?.({
+        action: 'deploy',
+        cwd: CWD,
+        stage: 'main',
+        env: {},
+        stackFileRelativePath: 'unused.ts',
+      });
+      try {
+        await input.approveDestructivePlan?.({ token, scopes: [], changes: [] });
+      } catch (error) {
+        return notOk(error as CliStructuredError);
+      }
+      return notOk(
+        new CliStructuredError('DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED', 'Review the plan.', {
+          meta: { token },
+        }),
+      );
+    },
+  });
+  const result = await cli.run(['deploy', 'module.ts', '--yes', '--no-interactive', '--json'], {
+    cwd: CWD,
+  });
+  expect(result.exitCode).toBe(2);
+  expect(result.stdout).toContain('CLI.CONSENT_REQUIRED');
+  expect(result.stdout).toContain(token);
 });

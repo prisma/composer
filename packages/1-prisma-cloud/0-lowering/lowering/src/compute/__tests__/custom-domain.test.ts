@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { ManagementClient } from '../../client.ts';
 import { createManagementApiClient } from '@prisma/management-api-sdk';
 import * as Provider from 'alchemy/Provider';
 import { inMemoryState } from 'alchemy/State/InMemoryState';
 import * as Core from 'alchemy/Test/Core';
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
+import { ManagementClient } from '../../client.ts';
 import {
   CustomDomain,
   customDomainBranchName,

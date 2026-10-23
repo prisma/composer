@@ -417,7 +417,7 @@ needed.
 2. Failures are bisectable through that file. A failing deploy names its
    path and prints a reproduce command: Node running the bin of the `alchemy`
    Composer depends on, with `deploy .prisma-composer/alchemy.run.ts --yes
-   --stage <stage>`. Running it directly separates "the framework computed the wrong thing" from "the engine or
+   --stage <stage>`. For deploy and destroy, use the guarded runner printed by Composer; raw Alchemy bypasses Composer checks. Running it directly separates "the framework computed the wrong thing" from "the engine or
    platform rejected the right thing". An engine failure surfaces as
    `DEPLOY.ENGINE_FAILED` carrying the exit code, the engine's own error
    lines (credentials redacted, capped at 1000 characters) and that reproduce
@@ -677,8 +677,31 @@ there rather than guessing.
 
 ## Custom domains
 
-`prismaCloud({ domains: { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Nested service addresses such as `auth.api` work. A deploy without `--stage` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
+`prismaCloud({ domains: { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Nested service addresses such as `auth.api` work. A deploy without `--branch` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
 
 `prisma deploy` connects a declared hostname after deployment when DNS is ready. Missing TXT ownership or routing DNS completes the app deploy with a `custom-domain` report entry, `status: Setup required`, and a Console setup link; the generated URL remains usable. The same entries appear in `--report`. The link opens DNS instructions with the hostname prefilled; it makes no write. Configure TXT/CNAME at the DNS provider, then choose **Verify and connect**. Certificate provisioning is distinct from `active`. Conflicts, quotas and API failures remain errors.
 
-Later deploys retry missing bindings and reuse Console-completed ones. A declaration opts that exact binding into Composer ownership, including an existing one on the app. Removing it detaches the binding; undeclared Console domains remain. Moving a hostname between environments needs an explicit detach. Stage teardown releases bindings, never domain registrations or DNS zones. Workspace TXT proof survives stage recreation; another workspace needs its own proof. Set `prismaCloud({ consoleUrl: 'https://your-console.example' })` when targeting a separate Console deployment. Domain purchase and managed DNS are future Console concerns; Composer needs no registrar credentials.
+Later deploys retry missing bindings and reuse Console-completed ones. A declaration opts that exact binding into Composer ownership, including an existing one on the app. Removing it requests detachment and requires explicit plan approval; undeclared Console domains remain. Moving a hostname between environments needs an explicit detach. Stage teardown releases bindings, never domain registrations or DNS zones. Workspace TXT proof survives stage recreation; another workspace needs its own proof. Set `prismaCloud({ consoleUrl: 'https://your-console.example' })` when targeting a separate Console deployment. Domain purchase and managed DNS are future Console concerns; Composer needs no registrar credentials.
+
+### Branch selection and destructive changes
+
+Use `prisma deploy module.ts --branch staging` for a named branch. With no flag,
+Composer selects the project's current default branch. `--stage` is a deprecated
+alias; passing both flags is an error. Programmatic deploys use `branch`; the old
+`stage` input remains an alias. State stays keyed by the resolved branch ID.
+
+Before applying a deploy or destroy plan, Composer checks every deletion and
+replacement. Routine Prisma Compute code-version replacements preserve apps,
+bindings and data and do not require destructive approval. Removing a hostname,
+renaming a service, replacing a database or bucket, and deleting a parent container
+do require approval. The plan shows the target branch, resource identities and
+possible cascades, including bindings managed outside Composer. Review it before
+approving. Do not treat an omitted declaration, preview branch, or `--yes` as consent.
+
+The CLI asks for an exact plan token. In CI, pass `--confirm <token>` only after
+reviewing the refusal's plan. A changed target, prior state or destructive action
+invalidates it. Programmatic callers receive
+`DEPLOY.DESTRUCTIVE_APPROVAL_REQUIRED` with `failure.meta.plan`; retry with that
+plan's `token` in `destructiveApproval`, or supply `approveDestructivePlan(plan)`
+to obtain explicit consent. Destroy has the same protection, including deletion
+of its branch or project and resources managed outside Composer.

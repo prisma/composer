@@ -29,13 +29,15 @@ import type {
 } from '@prisma/composer/control';
 
 const USAGE =
-  'Usage: composer-destroy.ts <entry> (--production | --stage <name>) [--name <name>] [--config <file>]';
+  'Usage: composer-destroy.ts <entry> (--production | --branch <name>) [--confirm <plan-token>] [--name <name>] [--config <file>]';
 
 interface DestroyRequest {
   readonly entry: string;
   readonly target: DestroyTarget;
   readonly name: string | undefined;
   readonly config: string;
+  readonly approval: string | undefined;
+  readonly testProject?: string | undefined;
 }
 
 /** A failure this script reports on one line, before or around the operation. */
@@ -66,6 +68,9 @@ function parseDestroyArgs(argv: readonly string[]) {
     strict: true,
     options: {
       stage: { type: 'string' },
+      branch: { type: 'string' },
+      confirm: { type: 'string' },
+      'test-project': { type: 'string' },
       production: { type: 'boolean' },
       name: { type: 'string' },
       config: { type: 'string' },
@@ -83,13 +88,40 @@ function parseRequest(argv: readonly string[]): DestroyRequest | string {
   const { positionals, values } = parsed;
   const [entry, ...extra] = positionals;
   if (entry === undefined || extra.length > 0) return 'Pass exactly one entry file.';
-  const { stage, production, name } = values;
+  const { stage, branch, production, name } = values;
+  if (stage !== undefined && branch !== undefined) return 'Pass --branch or --stage, not both.';
+  const selected = branch ?? stage;
+  const approval = values.confirm;
+  const testProject = values['test-project'];
+  if (
+    testProject !== undefined &&
+    (testProject !== name ||
+      production !== true ||
+      process.env['GITHUB_ACTIONS'] !== 'true' ||
+      process.env['GITHUB_REPOSITORY'] !== 'prisma/composer' ||
+      !/^\d+$/.test(process.env['GITHUB_RUN_ID'] ?? '') ||
+      !testProject.endsWith(`-ci-${process.env['GITHUB_RUN_ID']}`))
+  ) {
+    return '--test-project approves only this prisma/composer GitHub Actions run’s named test project.';
+  }
   const config = values.config ?? 'prisma.config.ts';
-  if (stage !== undefined && production === true) {
+  if (selected !== undefined && production === true) {
     return 'Pass either --stage <name> or --production, not both.';
   }
-  if (stage !== undefined) return { entry, target: { kind: 'stage', stage }, name, config };
-  if (production === true) return { entry, target: { kind: 'production' }, name, config };
+  if (selected !== undefined)
+    return {
+      entry,
+      target:
+        branch === undefined
+          ? { kind: 'stage', stage: selected }
+          : { kind: 'branch', branch: selected },
+      name,
+      config,
+      approval,
+      testProject,
+    };
+  if (production === true)
+    return { entry, target: { kind: 'production' }, name, config, approval, testProject };
   return 'destroy requires an explicit target: --stage <name> or --production.';
 }
 
@@ -153,6 +185,21 @@ async function run(request: DestroyRequest, cwd: string): Promise<number> {
       entry: request.entry,
       name: request.name,
       target: request.target,
+      destructiveApproval: request.approval,
+      ...(request.testProject === undefined
+        ? {}
+        : {
+            approveDestructivePlan: async (plan) => {
+              const matches =
+                plan.scopes.length === 1 &&
+                plan.scopes.every((scope) => scope.application === request.testProject);
+              if (matches)
+                console.error(
+                  `Approving cleanup of this run's test project: ${JSON.stringify(plan)}`,
+                );
+              return matches;
+            },
+          }),
       cwd,
       onEvent: warnOnEvent(cwd),
     });

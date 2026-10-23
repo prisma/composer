@@ -1,5 +1,6 @@
 # The deploy commands (`prisma deploy`, `prisma dev`)
 
+> [ADR-0057](../90-decisions/ADR-0057-custom-domains-are-environment-bindings-with-console-setup.md) amends this document: use `--branch` publicly; `--stage` remains a deprecated alias. Deploy and destroy use a guarded Alchemy runner and require exact-plan approval before destructive changes. Internal stage fields and branch IDs remain unchanged.
 Prisma Composer's deploy entrypoint: what the `prisma deploy` and `prisma dev`
 commands do, the contracts they introduce, and what stays out of its scope.
 The decisions it

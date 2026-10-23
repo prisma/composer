@@ -425,3 +425,20 @@ describe('spawnCommandLine()', () => {
     },
   );
 });
+
+test('guarded deploy preserves the invoking Bun runtime', () => {
+  const line = alchemyCommandLine(
+    {
+      action: 'deploy',
+      cwd: '/app',
+      stage: 'br_main',
+      env: {},
+      stackFileRelativePath: '.prisma-composer/alchemy.run.ts',
+      guardedEntry: '/app/apply.mjs',
+    },
+    '/store/alchemy/bin/cli.js',
+  );
+  expect(line.command).toBe(process.execPath);
+  expect(line.args).toEqual(['/app/apply.mjs']);
+  expect(line.env['NODE_ENV']).toBe('production');
+});

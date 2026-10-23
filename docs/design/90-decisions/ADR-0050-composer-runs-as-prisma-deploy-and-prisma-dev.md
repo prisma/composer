@@ -1,5 +1,7 @@
 # ADR-0050: Composer runs as `prisma deploy` and `prisma dev`; it has no binary of its own
 
+Amended by [ADR-0057](ADR-0057-custom-domains-are-environment-bindings-with-console-setup.md): the public deploy flag is `--branch`, with `--stage` as a deprecated alias. Deploy and destroy apply the complete engine plan only after explicit approval of destructive changes. Branch IDs and existing deploy state remain unchanged.
+
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
 ## Decision

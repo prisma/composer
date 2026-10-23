@@ -95,6 +95,7 @@ export function nodeExecutable(runtime: HostRuntime = currentRuntime()): string 
  * credential vars last.
  */
 export interface AlchemyInvocation {
+  readonly guardedEntry?: string | undefined;
   readonly action: 'deploy' | 'destroy';
   readonly stackFileRelativePath: string;
   readonly cwd: string;
@@ -120,20 +121,36 @@ export interface AlchemyCommandLine {
 export function alchemyCommandLine(
   invocation: AlchemyInvocation,
   alchemyBin: string = resolveAlchemyBin(invocation.cwd),
-  node: string = nodeExecutable(),
+  node?: string,
 ): AlchemyCommandLine {
+  const bun =
+    invocation.guardedEntry !== undefined &&
+    node === undefined &&
+    process.versions.bun !== undefined;
   return {
-    command: node,
-    args: [
-      alchemyBin,
-      invocation.action,
-      invocation.stackFileRelativePath,
-      '--yes',
-      '--stage',
-      invocation.stage,
-    ],
+    command: bun ? process.execPath : (node ?? nodeExecutable()),
+    args:
+      invocation.guardedEntry === undefined
+        ? [
+            alchemyBin,
+            invocation.action,
+            invocation.stackFileRelativePath,
+            '--yes',
+            '--stage',
+            invocation.stage,
+          ]
+        : bun
+          ? [invocation.guardedEntry]
+          : [
+              '--import',
+              path.join(path.dirname(alchemyBin), 'register-oxc.js'),
+              invocation.guardedEntry,
+            ],
     cwd: invocation.cwd,
-    env: invocation.env,
+    env:
+      invocation.guardedEntry === undefined
+        ? invocation.env
+        : { ...invocation.env, NODE_ENV: 'production' },
   };
 }
 
@@ -214,16 +231,18 @@ export function reproduceCommand(
   platform: NodeJS.Platform = process.platform,
 ): string {
   const argv =
-    outcome?.commandLine === undefined
-      ? [
-          'alchemy',
-          invocation.action,
-          invocation.stackFileRelativePath,
-          '--yes',
-          '--stage',
-          invocation.stage,
-        ]
-      : [outcome.commandLine.command, ...outcome.commandLine.args];
+    outcome?.commandLine === undefined && invocation.guardedEntry !== undefined
+      ? ['node', '--import', '<alchemy Oxc loader>', invocation.guardedEntry]
+      : outcome?.commandLine === undefined
+        ? [
+            'alchemy',
+            invocation.action,
+            invocation.stackFileRelativePath,
+            '--yes',
+            '--stage',
+            invocation.stage,
+          ]
+        : [outcome.commandLine.command, ...outcome.commandLine.args];
   return argv.map((arg) => shellArg(arg, platform)).join(' ');
 }
 

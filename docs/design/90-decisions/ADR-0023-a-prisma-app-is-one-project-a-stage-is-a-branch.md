@@ -1,5 +1,7 @@
 # ADR-0023: A Prisma App is one Project; a Stage is a Branch
 
+Amended by [ADR-0057](ADR-0057-custom-domains-are-environment-bindings-with-console-setup.md): the public deploy flag is `--branch`, with `--stage` as a deprecated alias. Deploy and destroy apply the complete engine plan only after explicit approval of destructive changes. Branch IDs and existing deploy state remain unchanged.
+
 ## Decision
 
 A Prisma App lowers to **one Prisma Cloud Project**. The Modules inside the app

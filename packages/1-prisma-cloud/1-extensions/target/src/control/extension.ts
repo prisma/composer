@@ -15,6 +15,7 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import {
   containerDescriptor,
+  deploymentSafety,
   PRISMA_CLOUD_EXTENSION_ID,
   prismaCloudContainerOf,
 } from '../container.ts';
@@ -360,6 +361,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     id: PRISMA_CLOUD_EXTENSION_ID,
 
     container: containerDescriptor({ region: () => o().region }),
+    deploymentSafety,
 
     providers: () =>
       asProvidersLayer(
