@@ -31,7 +31,7 @@ export interface CreateComposerFamilyOptions extends FrameworkFamilyOptions {
   readonly listEmulators?: ListEmulators | undefined;
 }
 
-/** Composer's command family: `deploy`, `dev`, `dev url`, `dev stop` and `emulator list`, keyed by the path each is meant to mount at. */
+/** Composer's command family: `deploy`, `dev`, `dev url`, `dev stop`, `dev logs` and `emulator list`, keyed by the path each is meant to mount at. */
 export function createComposerFamily(options: CreateComposerFamilyOptions = {}): CommandFamily {
   return createFrameworkFamily({
     ...options,

@@ -1,7 +1,7 @@
 /**
- * `dev url` and `dev stop` through the engine, over the operations double:
- * the URL as the human data line, the JSON results, and failures carrying
- * their code and fix.
+ * `dev url`, `dev stop` and `dev logs` through the engine, over the
+ * operations double: the URL and log lines as human data lines, the JSON
+ * results and frames, and failures carrying their code and fix.
  */
 import { describe, expect, test } from 'bun:test';
 import { CliStructuredError } from '@internal/foundation/errors';
@@ -29,6 +29,7 @@ function cliWith(fixtures: OperationsDoubleFixtures = {}) {
     commands: {
       'dev url': commandAt(family, 'dev url'),
       'dev stop': commandAt(family, 'dev stop'),
+      'dev logs': commandAt(family, 'dev logs'),
     },
     groups: { dev: { brief: 'Run the app on this machine.' } },
     config: { composer: composerConfig() },
@@ -166,5 +167,107 @@ describe('dev stop', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain('Nothing of orm-demo was running.');
     expect(result.stderr).not.toContain('Stopped orm-demo');
+  });
+});
+
+describe('dev logs', () => {
+  const devLogLines = [
+    { service: 'catalog', line: 'catalog ready' },
+    { service: 'gateway', line: 'GET / 200' },
+    { service: 'gateway', line: 'GET /health 200' },
+  ];
+
+  test("prints every service's lines on stdout, each labelled with its service", async () => {
+    const { cli, calls } = cliWith({ devLogLines });
+
+    const result = await cli.run(['dev', 'logs', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(
+      '[catalog] catalog ready\n[gateway] GET / 200\n[gateway] GET /health 200\n',
+    );
+    expect(calls.devLogs).toHaveLength(1);
+    expect(calls.devLogs[0]).toMatchObject({ address: undefined, tail: undefined, follow: false });
+  });
+
+  test("one service's lines are printed bare, and --tail and --follow reach the operation", async () => {
+    const { cli, calls } = cliWith({ devLogLines });
+
+    const result = await cli.run([
+      'dev',
+      'logs',
+      'gateway',
+      '--tail',
+      '20',
+      '--follow',
+      '--format',
+      'human',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('GET / 200\nGET /health 200\n');
+    expect(calls.devLogs[0]).toMatchObject({ address: 'gateway', tail: 20, follow: true });
+    expect(calls.devLogs[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('with --json, each line is an output frame carrying its service', async () => {
+    const { cli } = cliWith({ devLogLines });
+
+    const result = await cli.run(['dev', 'logs', 'gateway', '--json']);
+
+    const frames = result.json.filter((frame) => frame.kind === 'output');
+    expect(frames).toEqual([
+      expect.objectContaining({
+        channel: 'data',
+        line: 'GET / 200',
+        data: { service: 'gateway', line: 'GET / 200' },
+      }),
+      expect.objectContaining({
+        channel: 'data',
+        line: 'GET /health 200',
+        data: { service: 'gateway', line: 'GET /health 200' },
+      }),
+    ]);
+    expect(result.json.at(-1)).toMatchObject({ kind: 'result', envelope: { ok: true } });
+  });
+
+  test('an app with no services says so on stderr and prints nothing on stdout', async () => {
+    const { cli } = cliWith();
+
+    const result = await cli.run(['dev', 'logs', '--format', 'human']);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain('app has no services');
+  });
+
+  test('a failure keeps its code, and its fix becomes the next action', async () => {
+    const { cli } = cliWith({
+      devLogs: notOk(
+        new CliStructuredError(
+          'DEV.NO_LOGS',
+          '"catalog" is a database, and only services have logs.',
+          {
+            fix: 'Pass the address of a service, or no address for every service.',
+          },
+        ),
+      ),
+    });
+
+    const result = await cli.run(['dev', 'logs', 'catalog', '--json']);
+
+    expect(result.exitCode).not.toBe(0);
+    expect(result.json.at(-1)).toMatchObject({
+      envelope: {
+        ok: false,
+        error: { code: 'DEV.NO_LOGS' },
+        nextActions: [
+          {
+            kind: 'user-choice',
+            label: 'Pass the address of a service, or no address for every service.',
+          },
+        ],
+      },
+    });
   });
 });

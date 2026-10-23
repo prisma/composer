@@ -25,6 +25,9 @@ import { composerSection } from '../section.ts';
 
 const STOP_STEP = "Stopping the app's services — emulators and data stay up";
 
+/** Where the front door points for the services' logs. */
+const LOGS_COMMAND = 'prisma dev logs';
+
 /** Resolves when the run is asked to stop. */
 function stopRequested(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -95,6 +98,20 @@ function reportDevEvent(
         report({ kind: 'status', subject: 'dev', status: 'ready' });
         for (const endpoint of frontDoorOrder(event.endpoints)) {
           report({ kind: 'endpoint', name: endpoint.address, url: endpoint.url });
+        }
+        // `dev` does not stream service logs, so the front door says where
+        // they are, in the same `name: value` shape as the lines above.
+        if (event.endpoints.length > 0) {
+          report({ kind: 'message', severity: 'info', text: `logs: ${LOGS_COMMAND}` });
+          report({
+            kind: 'remediation',
+            action: {
+              kind: 'run-command',
+              label: "Read the services' logs",
+              command: LOGS_COMMAND,
+              reason: '`prisma dev` does not print service logs.',
+            },
+          });
         }
         return;
 
@@ -206,8 +223,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
         "services, databases or S3-compatible buckets. A node's address is its name in the " +
         'app, with dots for a nested node (catalog.database). The app and where each node ' +
-        'runs are recorded in this directory: `prisma dev url` works from here while ' +
-        '`prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was killed. ' +
+        'runs are recorded in this directory: `prisma dev url` and `prisma dev logs` work from ' +
+        'here while `prisma dev` runs, and `prisma dev stop` also works after `prisma dev` was ' +
+        "killed. `prisma dev` does not print the services' own output; `prisma dev logs` does. " +
         'Ending `prisma dev` stops its services and database servers; data and ports are kept. ' +
         'With --detach it returns once every service answers and leaves the app running ' +
         'without watching for changes, until `prisma dev stop`.',

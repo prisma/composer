@@ -37,6 +37,36 @@ describe('dev --detach', () => {
     expect(double.calls.devStop).toHaveLength(0);
   });
 
+  test('the front door says where the logs are, after the URLs', async () => {
+    const double = createOperationsDouble({
+      devEndpoints: [{ address: 'gateway', url: 'http://localhost:3001' }],
+    });
+
+    const result = await cliOver(double).run(
+      ['dev', 'src/service.ts', '--detach', '--format', 'human'],
+      AS_TTY,
+    );
+
+    expect(result.stderr).toMatch(/gateway: http:\/\/localhost:3001\nlogs: prisma dev logs\n/);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        kind: 'remediation',
+        action: expect.objectContaining({ kind: 'run-command', command: 'prisma dev logs' }),
+      }),
+    );
+  });
+
+  test('an app with no services gets no logs line', async () => {
+    const double = createOperationsDouble({ devEndpoints: [] });
+
+    const result = await cliOver(double).run(
+      ['dev', 'src/service.ts', '--detach', '--format', 'human'],
+      AS_TTY,
+    );
+
+    expect(result.stderr).not.toContain('logs:');
+  });
+
   test('without --detach, dev asks the operation for a watching session', async () => {
     const double = createOperationsDouble({});
     const interrupt = new AbortController();

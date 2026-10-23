@@ -16,10 +16,11 @@ describe('createComposerFamily()', () => {
     expect(createComposerFamily().configSection).toBe(composerSection);
   });
 
-  test('the family ships deploy, dev, dev url and dev stop — destroy and log are operations, not commands', () => {
+  test('the family ships deploy, dev, dev url, dev stop and dev logs — destroy and log are operations, not commands', () => {
     expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
       'deploy',
       'dev',
+      'dev logs',
       'dev stop',
       'dev url',
     ]);
@@ -30,7 +31,7 @@ describe('createComposerFamily()', () => {
     if (extra === undefined) throw new Error('no dev url command');
     expect(
       Object.keys(createComposerFamily({ commands: { 'emulator list': extra } }).commands).sort(),
-    ).toEqual(['deploy', 'dev', 'dev stop', 'dev url', 'emulator list']);
+    ).toEqual(['deploy', 'dev', 'dev logs', 'dev stop', 'dev url', 'emulator list']);
   });
 
   test('the family ships no redirects for the retired spellings', () => {

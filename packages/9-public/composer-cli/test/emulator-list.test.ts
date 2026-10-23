@@ -54,6 +54,7 @@ describe('emulator list', () => {
     expect(Object.keys(createComposerFamily().commands).sort()).toEqual([
       'deploy',
       'dev',
+      'dev logs',
       'dev stop',
       'dev url',
       'emulator list',

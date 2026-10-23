@@ -15,18 +15,20 @@
  * mount this family against the test double and exercise real grammar, real
  * arg validation and real handlers with no alchemy behind them.
  *
- * The family ships `deploy`, `dev`, `dev url` and `dev stop`, keyed by the
- * path they are meant to mount at; the host decides where each one mounts.
- * A host may add commands of its own through `commands` — the published
- * family adds `emulator list`, which needs no project. `destroy` and `log`
- * are programmatic operations in `@prisma/composer/control`, not commands.
+ * The family ships `deploy`, `dev`, `dev url`, `dev stop` and `dev logs`,
+ * keyed by the path they are meant to mount at; the host decides where each
+ * one mounts. A host may add commands of its own through `commands` — the
+ * published family adds `emulator list`, which needs no project. `destroy`
+ * and `log` are programmatic operations in `@prisma/composer/control`, not
+ * commands.
  */
 import { type CommandFamily, defineCommandFamily } from '@prisma/cli-engine';
 import { deployWithDeps } from '../operations/deploy.ts';
 import { devWithDeps } from '../operations/dev.ts';
-import { devStop, devUrl } from '../operations/dev-current.ts';
+import { devLogs, devStop, devUrl } from '../operations/dev-current.ts';
 import { createDeployCommand } from './commands/deploy.ts';
 import { createDevCommand } from './commands/dev.ts';
+import { createDevLogsCommand } from './commands/dev-logs.ts';
 import { createDevStopCommand } from './commands/dev-stop.ts';
 import { createDevUrlCommand } from './commands/dev-url.ts';
 import { composerSection } from './section.ts';
@@ -44,6 +46,7 @@ export interface ComposerOperations {
   readonly dev: typeof devWithDeps;
   readonly devUrl: typeof devUrl;
   readonly devStop: typeof devStop;
+  readonly devLogs: typeof devLogs;
 }
 
 export const realOperations: ComposerOperations = {
@@ -51,6 +54,7 @@ export const realOperations: ComposerOperations = {
   dev: devWithDeps,
   devUrl,
   devStop,
+  devLogs,
 };
 
 export interface CreateComposerFamilyOptions {
@@ -72,6 +76,7 @@ export function createComposerFamily(options: CreateComposerFamilyOptions = {}):
       dev: createDevCommand(operations),
       'dev url': createDevUrlCommand(operations),
       'dev stop': createDevStopCommand(operations),
+      'dev logs': createDevLogsCommand(operations),
       ...options.commands,
     },
     docsBaseUrl: CLI_DOCS_BASE,
