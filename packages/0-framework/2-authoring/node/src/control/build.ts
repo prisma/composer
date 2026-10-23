@@ -39,7 +39,7 @@ import {
 } from '@internal/bundle-paths';
 import type { BuildAdapter } from '@internal/core';
 import type { ExtensionDescriptor } from '@internal/core/config';
-import type { AssembleInput, Bundle } from '@internal/core/deploy';
+import type { AssembleInput, Bundle, DevServer, ServeInput } from '@internal/core/deploy';
 import { nodeFileTrace } from '@vercel/nft';
 import { build } from 'esbuild';
 import type { NodeBuildAdapter } from '../node.ts';
@@ -53,7 +53,10 @@ function isNodeBuild(descriptor: BuildAdapter): descriptor is NodeBuildAdapter {
     (!('dir' in descriptor) || typeof descriptor.dir === 'string') &&
     (!('dependencies' in descriptor) ||
       descriptor.dependencies === 'bundled' ||
-      descriptor.dependencies === 'external')
+      descriptor.dependencies === 'external') &&
+    (!('dev' in descriptor) ||
+      descriptor.dev === undefined ||
+      (Array.isArray(descriptor.dev) && descriptor.dev.every((arg) => typeof arg === 'string')))
   );
 }
 
@@ -460,10 +463,31 @@ export async function assemble(input: AssembleInput): Promise<Bundle> {
   };
 }
 
+/**
+ * The author's `dev` command, run in the authoring module's directory
+ * (ADR-0004, ADR-0056), or `undefined` when they wrote none. Nothing is
+ * appended to it: the command reads `PORT` and `HOST` from its environment.
+ */
+export async function serve(input: ServeInput): Promise<DevServer | undefined> {
+  if (!isNodeBuild(input.build)) {
+    throw new Error(
+      `@prisma/composer/node/control: expected a "node" build adapter, got "${input.build.type}".`,
+    );
+  }
+  const dev = input.build.dev;
+  if (dev === undefined) return undefined;
+  if (dev.length === 0) throw new Error('node(): `dev` must name a command');
+  return {
+    cwd: path.dirname(fileURLToPath(input.build.module)),
+    argv: () => dev,
+    display: dev.join(' '),
+  };
+}
+
 /** The node build extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const nodeBuild = (): ExtensionDescriptor => ({
   id: '@prisma/composer/node',
   nodes: {
-    node: { kind: 'build', assemble },
+    node: { kind: 'build', assemble, serve },
   },
 });
