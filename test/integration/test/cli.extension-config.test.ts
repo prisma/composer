@@ -47,7 +47,7 @@ describe('prisma deploy — real extension-config resolution of prisma-cloud + n
   // Spawns the real CLI, which resolves /control entries and evaluates a config —
   // inherently slower than bun test's default 5000ms, so give it real headroom.
   test('resolves both /control entries for real and fails at the missing built entry, not at resolution', () => {
-    const result = spawnPrisma(['deploy', fixtureEntry], {
+    const result = spawnPrisma(['deploy', '--entry', fixtureEntry], {
       ...process.env,
       PRISMA_SERVICE_TOKEN: serviceToken({ workspace_id: 'ws-integration-test' }),
       PRISMA_WORKSPACE_ID: 'ws-integration-test',
@@ -77,7 +77,7 @@ describe('prisma deploy — real extension-config resolution of prisma-cloud + n
     const env: NodeJS.ProcessEnv = { ...process.env, PRISMA_SERVICE_TOKEN: serviceToken({}) };
     delete env['PRISMA_WORKSPACE_ID'];
 
-    const result = spawnPrisma(['deploy', fixtureEntry], env);
+    const result = spawnPrisma(['deploy', '--entry', fixtureEntry], env);
 
     const output = result.stdout + result.stderr;
     expect(result.status).not.toBe(0);

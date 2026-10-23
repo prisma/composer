@@ -132,7 +132,7 @@ describe.skipIf(process.platform === 'win32')(
         config: { composer: configWhoseEmulatorsThrow() },
       });
 
-      const result = await cli.run(['dev', app.entryPath, '--json'], { cwd: app.dir });
+      const result = await cli.run(['dev', '--entry', app.entryPath, '--json'], { cwd: app.dir });
 
       expect(result.exitCode).toBe(2);
       expect(result.json.at(-1)).toMatchObject({

@@ -13,6 +13,7 @@ import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     // ONE state store per deploy — the workspace-hosted ledger (reads
     // PRISMA_WORKSPACE_ID), shared by every deployer of this app.

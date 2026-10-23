@@ -26,7 +26,7 @@ export interface ConfigFinding {
 }
 
 const SECTION_FIX =
-  "Write `composer: composer({ extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
+  "Write `composer: composer({ entry: './module.ts', extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
 
 const MOVE_TO_SECTION_FIX = `${SECTION_FIX} If the project has a prisma-composer.config.ts, move its extensions and state into that section and delete the file.`;
 
@@ -115,14 +115,33 @@ const stateInvalid: ConfigFinding = {
   field: 'state',
 };
 
+const SECTION_FIELDS: ReadonlySet<string> = new Set(['entry', 'extensions', 'state']);
+
+const entryInvalid: ConfigFinding = {
+  code: 'CONFIG.FIELD_INVALID',
+  summary:
+    '`composer.entry` must be a non-empty string: the path to the module whose default export is the app.',
+  fix: "Set `entry` to that module's path, relative to prisma.config.ts, e.g. `entry: './module.ts'`.",
+  field: 'entry',
+};
+
+/** Neither the section's `entry` nor an override names the module whose default export is the app. */
+export const entryMissing: ConfigFinding = {
+  code: 'CONFIG.ENTRY_MISSING',
+  summary: 'No entry module is set, so there is no app to load.',
+  why: 'The entry is the module whose default export is the app root, built with module(...).',
+  fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>` (the `entry` input when calling @prisma/composer/control).",
+  field: 'entry',
+};
+
 function unknownField(key: string): ConfigFinding {
   return {
     code: 'CONFIG.FIELD_UNKNOWN',
     summary: `The \`composer\` section has no field \`${key}\`.`,
     fix:
       key === 'composer'
-        ? 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `extensions` and `state`.'
-        : `Remove \`${key}\`. The section takes only \`extensions\` and \`state\`.`,
+        ? 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions` and `state`.'
+        : `Remove \`${key}\`. The section takes only \`entry\`, \`extensions\` and \`state\`.`,
     field: key,
   };
 }
@@ -211,7 +230,7 @@ function checkFields(section: Record<string, unknown>): CheckedSection {
     return { ok: false, findings: [unknownField('composer')] };
 
   const findings = Object.keys(section)
-    .filter((key) => key !== 'extensions' && key !== 'state')
+    .filter((key) => !SECTION_FIELDS.has(key))
     .map(unknownField);
 
   const checked = checkExtensions(section['extensions']);
@@ -220,9 +239,16 @@ function checkFields(section: Record<string, unknown>): CheckedSection {
   const state = section['state'];
   if (!isStateDescriptor(state)) findings.push(stateInvalid);
 
+  const entry = section['entry'];
+  const entryValid = entry === undefined || (typeof entry === 'string' && entry.length > 0);
+  if (!entryValid) findings.push(entryInvalid);
+
   const [first, ...rest] = findings;
-  if (first === undefined && isStateDescriptor(state)) {
-    return { ok: true, value: { extensions: checked.extensions, state } };
+  if (first === undefined && isStateDescriptor(state) && entryValid) {
+    return {
+      ok: true,
+      value: { extensions: checked.extensions, state, ...(entry === undefined ? {} : { entry }) },
+    };
   }
   return { ok: false, findings: [first ?? stateInvalid, ...rest] };
 }

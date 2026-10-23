@@ -86,7 +86,7 @@ async function runDetached(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `run-${String(runCount)}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const child = spawn(CLI_BIN, ['dev', fixtureEntry, '--detach', '--fresh', '--json'], {
+  const child = spawn(CLI_BIN, ['dev', '--entry', fixtureEntry, '--detach', '--fresh', '--json'], {
     cwd: integrationDir,
     env: runEnv,
     stdio: ['ignore', logFd, logFd],

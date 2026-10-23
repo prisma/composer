@@ -185,7 +185,13 @@ function startDevRaw(
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', fixtureEntry, '--json', ...(opts.fresh === true ? ['--fresh'] : [])];
+  const args = [
+    'dev',
+    '--entry',
+    fixtureEntry,
+    '--json',
+    ...(opts.fresh === true ? ['--fresh'] : []),
+  ];
   const child = spawn(CLI_BIN, args, {
     cwd: integrationDir,
     env,

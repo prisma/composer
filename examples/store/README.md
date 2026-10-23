@@ -77,7 +77,7 @@ To run the **whole real topology** locally instead — every service, its
 Postgres and buckets, wired as they deploy, credential-free:
 
 ```sh
-pnpm build && pnpm prisma dev module.ts
+pnpm build && pnpm prisma dev
 ```
 
 See [Running locally](../../docs/guides/running-locally.md), and
@@ -87,7 +87,7 @@ under Bun.
 ## Deploy
 
 ```sh
-pnpm prisma deploy module.ts
+pnpm prisma deploy
 ```
 
 To remove it, delete its Project: find the id with `prisma project list`, then

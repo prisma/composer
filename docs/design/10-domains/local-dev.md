@@ -14,8 +14,9 @@ this doc is the mechanics.
 Three commands about the app, one about the machine, and one operation with no
 command:
 
-- **`prisma dev <entry>`** — bring up the application whose root node
-  is `entry`'s default export, entirely on the local machine, and keep it up:
+- **`prisma dev`** — bring up the application whose root node
+  is the default export of the entry module (`entry` in the `composer` section,
+  or `--entry <path>`), entirely on the local machine, and keep it up:
   watch built output, restart changed services, until interrupted. It does
   **not** stream service logs — once it is supervising several processes,
   streaming them all inline drowns the front door and the rebuild notices. To
@@ -78,7 +79,7 @@ record; other apps run from the directory keep theirs) and `--detach` (return on
 running; see § Process lifetimes). Stages do not apply — a working directory has
 exactly one dev instance; parallel instances are parallel checkouts.
 
-**Naming.** The `prisma` CLI mounts this as `prisma dev <entry>`
+**Naming.** The `prisma` CLI mounts this as `prisma dev`
 ([ADR-0050](../90-decisions/ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)).
 Local Postgres comes from `@prisma/dev`, the local Prisma Postgres server
 library that the Prisma 7 ORM CLI's own `prisma dev` command runs. Composer
@@ -541,7 +542,7 @@ gaps found during implementation.)
 The design's founding claim was proven against open-chat — a real,
 pre-existing Composer app in its own repo (chat service, Postgres, streams
 and storage modules), written before local dev existed. With no cloud
-credentials of any kind in the shell, `prisma dev module.ts`
+credentials of any kind in the shell, `prisma dev`
 brought it up: sign-in worked, chat history loaded, and the live-tail
 stream delivered events. Chat generation failed at exactly one place — the
 outbound OpenRouter call — because the local run minted a placeholder for

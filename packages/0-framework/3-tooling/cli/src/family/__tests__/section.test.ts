@@ -49,7 +49,7 @@ function validate(
 }
 
 const SECTION_FIX =
-  "Write `composer: composer({ extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
+  "Write `composer: composer({ entry: './module.ts', extensions: [...], state: ... })` in prisma.config.ts, with `import { defineConfig as composer } from '@prisma/composer/config'`.";
 
 describe('composerSection.validate() on a well-formed section', () => {
   test('returns extensions and state together with the file that declared them', () => {
@@ -152,7 +152,7 @@ describe('composerSection.validate() on unknown fields', () => {
           nextActions: [
             {
               kind: 'edit-file',
-              label: 'Remove `stage`. The section takes only `extensions` and `state`.',
+              label: 'Remove `stage`. The section takes only `entry`, `extensions` and `state`.',
             },
           ],
           where: { path: DECLARING_FILE },

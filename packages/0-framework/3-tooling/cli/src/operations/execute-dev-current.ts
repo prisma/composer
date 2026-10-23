@@ -13,7 +13,7 @@ import { checkConfigSource } from '../pipeline.ts';
 import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from './dev-current.ts';
 import { toStructured } from './shared.ts';
 
-const RUN_DEV = 'Run `prisma dev <entry>` in this directory.';
+const RUN_DEV = 'Run `prisma dev` in this directory.';
 
 function platformUnsupported(): CliStructuredError {
   return new CliStructuredError(

@@ -33,8 +33,8 @@ export interface DeployInput {
    * Composer's configuration: the `composer` section of `prisma.config.ts` and that file. The operation does not look for a config file; it refuses a section the CLI would refuse, before any work starts.
    */
   readonly config: ComposerConfigSource;
-  /** Path to the entry module, resolved against `cwd` — same contract as `prisma deploy <entry>`. */
-  readonly entry: string;
+  /** The entry module, resolved against `cwd`. Overrides the `entry` in `config`; without either the operation fails with `CONFIG.ENTRY_MISSING`. */
+  readonly entry?: string | undefined;
   /** Override the root node's name (the `--name` flag's slot). */
   readonly name?: string | undefined;
   /** Target stage. ABSENT = production — bare deploy targets production (main.ts effectiveStage). */
