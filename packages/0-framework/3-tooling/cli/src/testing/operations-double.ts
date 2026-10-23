@@ -21,7 +21,7 @@ import { CliStructuredError } from '@internal/foundation/errors';
 import { notOk, ok, type Result } from '@internal/foundation/result';
 import type { ComposerOperations } from '../family/family.ts';
 import type { DeployEvent, DeployInput, DeploySuccess } from '../operations/deploy.ts';
-import type { DevInput, DevSession } from '../operations/dev.ts';
+import type { DevEvent, DevInput, DevSession } from '../operations/dev.ts';
 import type { DevStopInput, DevStopped, DevUrl, DevUrlInput } from '../operations/dev-current.ts';
 import type { OperationDeps, ServiceEndpoint } from '../operations/shared.ts';
 import { type AlchemyInvocation, reproduceCommand } from '../run-alchemy.ts';
@@ -38,6 +38,8 @@ export interface OperationsDoubleFixtures {
   readonly dev?: Result<DevSession, CliStructuredError> | undefined;
   /** The session's front door; emitted as the initial 'ready' event, like the real operation's. */
   readonly devEndpoints?: readonly ServiceEndpoint[] | undefined;
+  /** Sent to the dev session's `onEvent`, in order, right after the initial 'ready'. */
+  readonly devEvents?: readonly DevEvent[] | undefined;
   /** Returned as-is. Default: the address as a running service at http://localhost:3000. */
   readonly devUrl?: Result<DevUrl, CliStructuredError> | undefined;
   /** Returned as-is. Default: an app named `app` with nothing to stop. */
@@ -70,13 +72,18 @@ export interface OperationsDouble {
   readonly calls: OperationsDoubleCalls;
 }
 
-function devSessionDouble(input: DevInput, endpoints: readonly ServiceEndpoint[]): DevSession {
+function devSessionDouble(
+  input: DevInput,
+  endpoints: readonly ServiceEndpoint[],
+  events: readonly DevEvent[],
+): DevSession {
   let resolveClosed: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
   });
   let stopped = false;
   input.onEvent?.({ kind: 'ready', endpoints });
+  for (const event of events) input.onEvent?.(event);
   return {
     endpoints,
     closed,
@@ -190,7 +197,10 @@ export function createOperationsDouble(fixtures: OperationsDoubleFixtures = {}):
     dev: async (input, operationDeps) => {
       calls.dev.push(input);
       deps.dev.push(operationDeps);
-      return fixtures.dev ?? ok(devSessionDouble(input, fixtures.devEndpoints ?? []));
+      return (
+        fixtures.dev ??
+        ok(devSessionDouble(input, fixtures.devEndpoints ?? [], fixtures.devEvents ?? []))
+      );
     },
     devUrl: async (input) => {
       devUrlCalls.push(input);

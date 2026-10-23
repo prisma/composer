@@ -120,7 +120,8 @@ type Call =
       readonly id: string;
       readonly artifact: Artifact;
       readonly environment: unknown;
-    };
+    }
+  | { readonly phase: 'reserve'; readonly id: string; readonly environment: unknown };
 
 // The fake 'fake/compute' descriptor's own intra-node handoff types — stand-
 // ins for a real extension's descriptor-owned provision/serialize products.
@@ -132,7 +133,9 @@ interface FakeSerialized {
   readonly environment: ReadonlyArray<{ input: string; name: string; value: unknown }>;
 }
 
-function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor> } = {}) {
+function fakeExtension(
+  opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescriptor>; noReserve?: boolean } = {},
+) {
   const calls: Call[] = [];
   const descriptor: ExtensionDescriptor = {
     id: 'test/pack',
@@ -208,6 +211,24 @@ function fakeExtension(opts: { provisions?: ReadonlyMap<symbol, ProvisionerDescr
             ],
           });
         },
+        ...(opts.noReserve === true
+          ? {}
+          : {
+              reserve: (
+                ctx: LowerContext,
+                provisioned: FakeProvisioned,
+                serialized: FakeSerialized,
+              ) => {
+                calls.push({ phase: 'reserve', id: ctx.id, environment: serialized.environment });
+                return Effect.succeed({
+                  outputs: {
+                    url: `https://${ctx.id}.example`,
+                    resourceRef: provisioned.resourceRef,
+                  },
+                  entities: [{ kind: 'fake-compute', id: provisioned.serviceId }],
+                });
+              },
+            }),
       } satisfies { readonly kind: 'service' } & ServiceLowering<FakeProvisioned, FakeSerialized>,
     },
   };
@@ -1504,5 +1525,115 @@ describe('isBuildOnlyExtension', () => {
 
   test('true for an extension with no nodes at all (vacuously every node is build)', () => {
     expect(isBuildOnlyExtension({ id: 'test/empty', nodes: {} })).toBe(true);
+  });
+});
+
+describe('lowering a service that runs a dev server (ADR-0056)', () => {
+  const twoServiceModule = () =>
+    module('shop', {}, (h) => {
+      const db = h.provision(dbResource(), { id: 'db' });
+      const authRef = h.provision(app('fake/compute', { db: dbEnd() }), {
+        id: 'auth',
+        deps: { db },
+      });
+      h.provision(app('fake/compute', { auth: httpEnd() }), {
+        id: 'storefront',
+        deps: { auth: authRef },
+      });
+      return {};
+    });
+  const storefrontBundle = {
+    storefront: { dir: 'modules/storefront/dist/bundle', entry: 'server.js' },
+  };
+
+  test('an unassembled service is provisioned and serialized, then reserved: no package, no deploy', () => {
+    const { config, calls } = fakeExtension();
+
+    run(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['auth'],
+      }),
+    );
+
+    const order = calls.map((c) => (c.phase === 'application' ? c.phase : `${c.phase}:${c.id}`));
+    expect(order).toEqual([
+      'application',
+      'provision:auth',
+      'provision:storefront',
+      'resource:db',
+      'serialize:auth',
+      'reserve:auth',
+      'serialize:storefront',
+      'package:storefront',
+      'deploy:storefront',
+    ]);
+    expect(calls.find((c) => c.phase === 'reserve')).toMatchObject({
+      environment: [{ input: 'db', name: 'url', value: 'db://db' }],
+    });
+  });
+
+  test("a dependent of an unassembled service sees reserve's outputs, as it would deploy's", () => {
+    const { config, calls } = fakeExtension();
+
+    run(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['auth'],
+      }),
+    );
+
+    expect(calls.find((c) => c.phase === 'serialize' && c.id === 'storefront')).toMatchObject({
+      config: { inputs: { auth: { url: 'https://auth.example' } } },
+    });
+  });
+
+  test('a descriptor without reserve fails, naming the service and the descriptor', () => {
+    const { config } = fakeExtension({ noReserve: true });
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: storefrontBundle,
+        unassembled: ['auth'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toBe(
+      'service "auth" runs a dev server but its descriptor (test/pack/fake/compute) has no `reserve` step',
+    );
+  });
+
+  test('an address both unassembled and given a bundle is a LowerError naming it', () => {
+    const { config } = fakeExtension();
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: { ...storefrontBundle, auth: { dir: 'x', entry: 'y' } },
+        unassembled: ['auth'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('"auth"');
+  });
+
+  test('an unassembled address that is not a service is a LowerError naming it', () => {
+    const { config } = fakeExtension();
+
+    const error = runError(
+      lowering(twoServiceModule(), config, {
+        name: 'shop',
+        bundles: { ...storefrontBundle, auth: { dir: 'x', entry: 'y' } },
+        unassembled: ['db'],
+      }),
+    );
+
+    expect(error).toBeInstanceOf(LowerError);
+    expect(error.message).toContain('"db"');
   });
 });

@@ -50,6 +50,7 @@ async function locate(address: string, node: NodeInstance): Promise<LocalNodeLoc
       state: instance.status,
       condition: CONDITION_OF[instance.status],
       logPath: instance.logPath,
+      ...(instance.command !== undefined ? { command: instance.command.argv } : {}),
     };
   }
   if (node.kind === 'database') {
