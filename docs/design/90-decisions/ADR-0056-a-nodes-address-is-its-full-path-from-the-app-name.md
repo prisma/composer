@@ -116,7 +116,7 @@ A rename keeps a resource only if its props allow an in-place update. Any prop w
 
 An environment variable row is replaced whenever its key changes, and every key changes in this migration. That is harmless: Composer writes every row's value on every deploy, so the new row holds the same value as the old one, and a changed environment already makes a new Deployment.
 
-Local dev creates no platform rows. Its per-directory record of which emulator instance backs each node (ADR-0052) is keyed by address. On the first `prisma dev` after upgrading, Composer rewrites the record's keys to full addresses, and moves anything else keyed by address, so local databases keep their data and services keep their ports.
+Local dev creates no platform rows. Its per-directory record of which emulator instance backs each node (ADR-0052) is keyed by address. On the first `prisma dev` after upgrading, Composer rewrites the record's keys to full addresses, so local services, databases and buckets keep their instances, ports and data. A bucket's objects stay in the folder named by its address without the app name, which is already inside the app's own folder, so nothing moves. Alchemy's local deploy state goes through the same rename declarations as the hosted state.
 
 ## Consequences
 

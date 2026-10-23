@@ -299,9 +299,11 @@ instance by its labels. The labels Composer writes on create —
 `composer.address` — are for people reading an emulator listing. The record
 can be read from the directory alone, without running the pipeline. Its node
 keys are full addresses (`shop.catalog`). A record written by an older release,
-keyed by addresses without the app name, has its keys rewritten on the first
-`prisma dev`, and anything else keyed by address follows, so existing instances,
-ports and data are reused
+keyed by addresses without the app name, reads with each such key given the
+app name in front, and is rewritten that way on the next write, so existing
+instances, ports and data are reused. A bucket's objects live in
+`buckets/<app>/<address without the app name>`, the folder earlier releases
+used, so they need no move
 ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 - **Ensuring an instance.** The emulators hook goes through the app's nodes
