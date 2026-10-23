@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ServiceNode } from '@internal/core';
 import { Load, module, service } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
+import { CliStructuredError } from '@internal/foundation/errors';
 import { AssembleError } from '../assemble-error.ts';
 import { type AssembleEvent, assembleServices } from '../assemble-services.ts';
 
@@ -255,5 +256,106 @@ describe('assembleServices()', () => {
     );
 
     expect(error).toBe(structured);
+  });
+});
+
+describe('assembleServices({ devServers }) (ADR-0056)', () => {
+  const server = { cwd: '/app/web', argv: () => ['next', 'dev'], display: 'next dev' };
+  const devConfig = (serve: () => Promise<typeof server | undefined>): PrismaAppConfig => ({
+    extensions: [
+      {
+        id: '@community/adapter',
+        nodes: {
+          web: {
+            kind: 'build',
+            assemble: async () => ({ dir: '/bundles/web', entry: 'x' }),
+            serve,
+          },
+          api: { kind: 'build', assemble: async () => ({ dir: '/bundles/api', entry: 'x' }) },
+        },
+      },
+    ],
+    state: emptyConfig.state,
+  });
+  const root = () =>
+    module('fixture-module', {}, ({ provision }) => {
+      provision(makeService('web', { extension: '@community/adapter', type: 'web' }), {
+        id: 'web',
+      });
+      provision(makeService('api', { extension: '@community/adapter', type: 'api' }), {
+        id: 'api',
+      });
+      return {};
+    });
+
+  test('a service whose descriptor declares a dev server is recorded and not assembled', async () => {
+    const events: AssembleEvent[] = [];
+
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => server),
+      CWD,
+      undefined,
+      (event) => events.push(event),
+      { devServers: true },
+    );
+
+    expect(assembled.devServers).toEqual({ web: server });
+    expect(Object.keys(assembled.bundles)).toEqual(['api']);
+    expect(events.map((e) => `${e.kind}:${e.address}`)).toEqual([
+      'service-started:api',
+      'service-assembled:api',
+    ]);
+  });
+
+  test('a serve step returning undefined assembles the service as before', async () => {
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => undefined),
+      CWD,
+      undefined,
+      undefined,
+      { devServers: true },
+    );
+
+    expect(assembled.devServers).toEqual({});
+    expect(Object.keys(assembled.bundles).sort()).toEqual(['api', 'web']);
+  });
+
+  test('without devServers every service is assembled and serve is never asked', async () => {
+    let asked = false;
+    const assembled = await assembleServices(
+      Load(root()),
+      devConfig(async () => {
+        asked = true;
+        return server;
+      }),
+      CWD,
+    );
+
+    expect(asked).toBe(false);
+    expect(assembled.devServers).toEqual({});
+    expect(Object.keys(assembled.bundles).sort()).toEqual(['api', 'web']);
+  });
+
+  test('a serve step that throws is DEV.DEV_SERVER_UNAVAILABLE naming the address and the message', async () => {
+    const error = await assembleServices(
+      Load(root()),
+      devConfig(async () => {
+        throw new Error('cannot find the `next` package from /app/web');
+      }),
+      CWD,
+      undefined,
+      undefined,
+      { devServers: true },
+    ).catch((e: unknown) => e);
+
+    expect(CliStructuredError.is(error)).toBe(true);
+    expect(error).toMatchObject({
+      code: 'DEV.DEV_SERVER_UNAVAILABLE',
+      message:
+        'service "web" cannot run its dev server: cannot find the `next` package from /app/web',
+      meta: { address: 'web' },
+    });
   });
 });

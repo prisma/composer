@@ -1,13 +1,20 @@
-/** Pipeline step 5: assembles each service's deploy artifact via its build descriptor at config.extensions[build.extension].nodes[build.type]. */
+/** Pipeline step 5: assembles each service's deploy artifact via its build descriptor at config.extensions[build.extension].nodes[build.type] — or, under `prisma dev`, records the dev server that descriptor declares instead (ADR-0056). */
 import type { Graph, GraphNode, ServiceNode } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
-import type { Bundle } from '@internal/core/deploy';
+import type { Bundle, DevServer } from '@internal/core/deploy';
 import { CliStructuredError } from '@internal/foundation/errors';
 import { AssembleError } from './assemble-error.ts';
 
 export interface AssembledServices {
-  /** One bundle per provisioned service, keyed by the service's full hierarchical address (its graph id). */
+  /** One bundle per assembled service, keyed by the service's full hierarchical address (its graph id). A service with a dev server has none. */
   readonly bundles: Record<string, Bundle>;
+  /** One dev server per service that runs one, keyed by address (ADR-0056). Empty under `prisma deploy`. */
+  readonly devServers: Record<string, DevServer>;
+}
+
+export interface AssembleOptions {
+  /** Ask each service's build descriptor for a dev server before assembling it; a service that has one is not assembled (ADR-0056). `prisma dev` passes `true`, `prisma deploy` `false`. */
+  readonly devServers?: boolean;
 }
 
 /** What a build adapter measured during one assemble, for progress output. Never read here. */
@@ -75,12 +82,41 @@ function buildDescriptorAssemble(
   });
 }
 
+/**
+ * The dev server a service's build descriptor declares, or `undefined` when it
+ * declares none — including when the registry route misses, which the
+ * assemble that follows reports with its own pinned error.
+ */
+async function buildDescriptorServe(
+  config: PrismaAppConfig,
+  node: ServiceNode,
+  address: string,
+): Promise<DevServer | undefined> {
+  const { extension, type } = node.build;
+  const nodeDescriptor = config.extensions.find((candidate) => candidate.id === extension)?.nodes[
+    type
+  ];
+  if (nodeDescriptor?.kind !== 'build' || nodeDescriptor.serve === undefined) return undefined;
+  try {
+    return await nodeDescriptor.serve({ build: node.build, address });
+  } catch (error) {
+    if (CliStructuredError.is(error)) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    throw new CliStructuredError(
+      'DEV.DEV_SERVER_UNAVAILABLE',
+      `service "${address}" cannot run its dev server: ${message}`,
+      { meta: { address }, cause: error },
+    );
+  }
+}
+
 export async function assembleServices(
   graph: Graph,
   config: PrismaAppConfig,
   cwd: string,
   run?: RunAssembler,
   onEvent?: (event: AssembleEvent) => void,
+  options: AssembleOptions = {},
 ): Promise<AssembledServices> {
   const runAssembler: RunAssembler =
     run ??
@@ -97,7 +133,15 @@ export async function assembleServices(
   }
 
   const bundles: Record<string, Bundle> = {};
+  const devServers: Record<string, DevServer> = {};
   for (const { id, node } of serviceNodes) {
+    if (options.devServers === true) {
+      const server = await buildDescriptorServe(config, node, id);
+      if (server !== undefined) {
+        devServers[id] = server;
+        continue;
+      }
+    }
     onEvent?.({ kind: 'service-started', address: id });
     const data: Record<string, string | number> = {};
     let artifact: Bundle;
@@ -117,5 +161,5 @@ export async function assembleServices(
     bundles[id] = artifact;
     onEvent?.({ kind: 'service-assembled', address: id, data });
   }
-  return { bundles };
+  return { bundles, devServers };
 }
