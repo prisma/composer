@@ -1,124 +1,132 @@
-# Code review — A1, fully qualified node identity
+# Code review — A1, fully qualified node identity (round 2)
 
-Branch `drive/fully-qualified-node-addresses`, range `origin/main...HEAD` (16 commits, 102 files). Reviewed against the slice [spec](../spec.md) and [plan](../plan.md), the project [spec](../../../spec.md), [design notes](../../../design-notes.md), the [spike findings](../../../assets/spike-alchemy-renames.md) and ADR-0057.
+Branch `a1-full-platform-names` (pushed as `drive/fully-qualified-node-addresses`), range `origin/main...HEAD`, 33 commits, 109 files. Reviewed against the slice [spec](../spec.md), [plan](../plan.md) and [upgrade-effects.md](../upgrade-effects.md), the project [spec](../../../spec.md) and [design notes](../../../design-notes.md), the [spike findings](../../../assets/spike-alchemy-renames.md) and ADR-0057. Upstream source read in `node_modules/alchemy/src` (`alchemy@2.0.0-beta.83`, the same version v0.34.0 pins). Platform limits read in `wip/pdp-control-plane` (management-api routes and models).
+
+Settled and not reopened: one form of identity, the full address, used for every platform name; the upgrade recreates Composer's own Connections and access keys; an older Composer deploying after the upgrade; `serviceOrigin` with the full address breaking `--name`; `--stage` keeps its name.
 
 ## Summary
 
-The migration is built correctly for every app whose name is made of letters, digits, `-` and `_`. I checked every Alchemy resource Composer declares against the code at `origin/main`. For each one, the declared former ID is exactly the ID `origin/main` builds, and every prop that would make upstream Alchemy replace the resource keeps its old value. The one exception is environment variable rows. Their key changes, so upstream replaces them, but their values are rebuilt from sources that are themselves renamed, so no value changes. The unit tests assert each new ID and each former ID as literal strings, so they would catch a drift.
+I rebuilt every old resource ID from `git show v0.34.0:<path>`, not from the branch's helpers. Every declared former ID matches what v0.34.0 built, and the list of resources is complete. By reading the upstream code, no step of the upgrade deletes a database, a bucket, an object or a custom domain, and every replace deletes only the one object Composer stored, after checking its identity. So the critical condition holds by code reading. It is not yet shown on the platform, because QA has not run.
 
-The main risk is in what the code assumes about the app name. Nothing checks the root module's name or `--name`. ADR-0057 and the glossary say the app name may contain `-` and `_`, but no code enforces that. If an existing app's name contains a `.`, the first deploy computes the wrong former IDs. It then creates new, empty databases and buckets and deletes the old ones with their data (F01). If the name contains a space or another character that is not allowed in an environment variable name, every `COMPOSER_` key becomes invalid (F02). Both need a name check that runs before anything is deployed.
-
-The other findings are smaller. Local dev guesses which record keys are old, and that guess can be wrong (F03). A service's full address now counts toward the 65-character name limit, which can block an app from upgrading at all (F04). Two documents say a failing `serviceOrigin` changes nothing, but the topology has already been replaced by then (F05). The real-platform done conditions are still NOT VERIFIED until QA runs.
+Two things need fixing before QA. First, the documented way out of the environment-variable key clash tells the user to rename a node, which deletes that node's rows, and for a module holding a database or bucket, its data (F01). Second, the QA plan does not plant the out-of-graph state the critical condition requires, and does not check the behaviours the spike never covered (F02). The rest are small accuracy fixes.
 
 ## What looks solid
 
-- **Every former ID matches `origin/main`.** At `origin/main`, Load gave the root's direct children bare addresses, so `id === address` in every lowering context and the old address is the new address minus its first segment. `legacyAddress` computes exactly that. I compared each declaration with the code at `origin/main`:
-  - App `${id}-svc`, Deployment `${id}-deploy`, Database `${id}-db`, Connection `${id}-conn`, PgWarm `${id}-warm`, OrmMigration `${id}-migrate`, Bucket `${id}-bucket`, BucketAccessKey `${id}-key`, S3Credentials `${id}-creds` all go through `legacyNodeResourceId`, which builds the same strings.
-  - Environment rows: `${configKey(address, d)}-var`, `${inputRow.key}-var`, `${leaf.varName}-var`, and the provider-param `${configKey(address, {owner:'service', name})}-var` are rebuilt through the same serializer functions, applied to the old address. The `-` to `_` change cannot alter an old key, because old addresses never contained the app name.
-  - GeneratedParam `${inputKey(address)}:${path}-generated`, ServiceKey `servicekey-${edgeId}` with `edgeId = ${edge.to}.${edge.input}`, and streams key `streamskey-${providerAddress}` all match.
-- **Props that would force a replacement keep their old values.** I checked each resource's `diff` in `node_modules/alchemy/src/Prisma` (beta.83).
-  - The Connection `name` and the BucketAccessKey `name` force a replacement. Both stay the old label (`resourceLabel` equals the old `id`), and so does the Bucket `name`.
-  - The hosted Database passes no `name`, because it is attached to a branch. Its physical name is derived from the resource ID, so it changes, but that is an update in place, as the spike saw.
-  - The App's `displayName` and every resource's `logicalId` are updated in place.
-  - Project, region, branch, role and bucket IDs are unchanged.
-- **Generated values and keys survive a rename.** `ServiceKey`, `GeneratedParam` and `S3Credentials` all return their stored output from `reconcile` (`output ?? mint…`). Moving the state row therefore keeps the value.
-- **Environment rows are replaced, and that is harmless.** Upstream replaces a row whose `key` changes. Each row's value comes from a renamed source (a generated value, a service key, an endpoint) or from config. ADR-0057 states this outright, and the upgrade guide tells users about it.
-- **The `--name` mismatch is fixed.** `runPipeline` now resolves the name before Load and passes it as the root ID (`packages/0-framework/3-tooling/cli/src/pipeline.ts` lines 128–137). The child lowering already did the same (`core/src/control/deploy.ts` line 578). The topology the reporter submits and the lowering therefore share one root `logicalId`, the same name the Project uses.
-- **What deploy writes and what boot reads stay in step.** The boot address comes from `compute.bootstrap.json`, which is written from the same graph address. Deploy and boot both build keys with `configKey`/`addressKeySegments`, and the local `servicePortEnvKey`/`ownEnvKeyPrefix` copies apply the same `-` to `_` rule.
-- **Local dev record and bucket folders.** The local record keeps its old instances: `normalized()` rewrites the keys on read. The bucket folder stays `buckets/<app>/<address without app>`, the same path as before. The local providers now look instances up by resource ID, which equals the address. A test with real emulators starts from a record in the old format and asserts that the ids, ports and bucket objects are kept, and that a second run changes nothing.
-- **Tests are literal and complete.** `control-lowering.test.ts` (lines 2897–3205) asserts both the new ID and the former ID as literal strings for every node kind. An `afterAll` check fails if any declared resource lacks exactly one former ID. I ran `resource-ids`, `control-lowering` and `serializer`: 103 pass.
-- **The deploy report** strips the app segment once, using `opts.name`, which is the same name used for the root.
+- **Every former ID matches v0.34.0.** At v0.34.0 a node's lowering `id` equalled its address, which left out the app name (`core/src/control/deploy.ts` lines 673–675, 731; `load-module.ts` line 528). `addressBelowApp` removes the known `${app}.` prefix, so each former ID is v0.34.0's string:
+  - App `${id}-svc`, Deployment `${id}-deploy`, Database `${id}-db`, Connection `${id}-conn`, PgWarm `${id}-warm`, OrmMigration `${id}-migrate`, Bucket `${id}-bucket`, BucketAccessKey `${id}-key`, S3Credentials `${id}-creds`.
+  - Environment rows `${configKey(address, d)}-var`, `${inputRow.key}-var`, `${leaf.varName}-var` and the provider row `${configKey(address, {owner:'service', name})}-var`, rebuilt through the same serializer functions on the old address. The `-` to `_` change cannot alter an old key: old addresses never contained the app name, and child provision IDs were already letters and digits at v0.34.0.
+  - GeneratedParam `${inputKey}:${path}-generated`, ServiceKey `servicekey-${edge.to}.${edge.input}`, streams key `streamskey-${edge.from}`.
+- **The resource list is complete.** A grep of v0.34.0 for every resource constructor finds exactly the 17 call sites above. Project and Branch are resolved outside Alchemy and are unchanged. No Alchemy namespaces are used, so bare former IDs resolve correctly.
+- **No old ID can equal a new ID.** Every new ID starts with `<app>.` and ends in a segment without `-`; every old ID ends in `-<suffix>` or starts with `servicekey-`/`streamskey-`/`COMPOSER_`. So the rename shift and cycle rules in `Rename.ts` never apply.
+- **Upstream replace and delete paths are as `upgrade-effects.md` says.** I read each `diff` and `delete`:
+  - App, Database and Bucket replace only on project (Database also on region, default flag or source). `logicalId`, `displayName` and `name` changes are updates. The Bucket update API documents its display name as a label that does not change the S3 bucket name (`pdp-control-plane` `routes/v1/buckets.ts` around line 640).
+  - Connection replaces on `name`; its `delete` loads the stored `connectionId` and refuses if its database or physical name differ from the stored ones.
+  - BucketAccessKey replaces on `name`; its `delete` removes `{bucketId, keyId}` from state only. Upstream keeps no list for it, so a hand-made key is never in state.
+  - EnvironmentVariable `delete` checks project, branch, class and key (`ensureVariableIdentity`) and skips system-managed rows.
+  - Deployment `delete` checks the deployment belongs to the stored `appId`.
+  - Replacement is create-first, and old generations are deleted only in the garbage-collection phase after every resource has converged (`Apply.ts` line 247, lines 1102–1110). A run that fails partway deletes nothing.
+- **The 52-character Connection limit is right.** `physicalInstanceName` (`Prisma/Internal/EnvName.ts`) cuts the name to 52 and appends `-` and 12 characters; the API caps Connection names at 65 (`routes/v1/connections.ts` line 223). Bucket 100 (`routes/v1/buckets.ts` line 307) and App 256 (`models/v1/compute.ts` line 55) match; the access key name has no maximum. No name kind restricts characters, so dots are accepted by the API schema.
+- **`validatePlatformName` runs while the stack is declared**, before Alchemy applies anything, and the tests assert the exact message and that no Database or Bucket was recorded (`control-lowering.test.ts` lines 2718–2800).
+- **App name check.** `assertAppName` runs in Load for every module root and in `resolveAppIdentity`, so a name with `.` can no longer produce wrong former IDs.
+- **Local dev.** The record carries `formatVersion`; a record without it gets the app name in front of every key, without guessing. The emulators hook and the local providers both key by `resourceId(address)`. The bucket folder keeps its old path.
+- **Tests pin literal former IDs** for every node kind (`control-lowering.test.ts` lines 3025–3330), including an app name with `-`.
 
 ## Findings
 
-### F01 — An app name containing `.` makes the first deploy delete every database and bucket
+### F01 — The documented way out of the env key clash deletes data, and the clash is wider than described
 
-- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/legacy-resource-ids.ts` lines 11–14; `packages/1-prisma-cloud/1-extensions/target/src/service-app.ts` lines 12–14; `packages/0-framework/1-core/core/src/load-module.ts` lines 770–771; `packages/0-framework/3-tooling/cli/src/pipeline.ts` lines 128–137; `packages/0-framework/1-core/core/src/node.ts` lines 474–478 (`requireName` checks only that the name is not empty).
-- **Issue:** `legacyAddress` and `resourceLabel` drop everything up to the first `.`, which assumes the app name contains no dot. Nothing enforces that. The root module's name and `--name` only have to be non-empty, while ADR-0057 and the glossary say the app name "may contain `-` and `_`". Take an existing app `acme.shop` with a database `db`:
-  - `origin/main` stored the database as `db-db`.
-  - This branch declares `acme.shop.db` with former ID `shop.db-db`, which matches no state row, so Alchemy ignores the rename.
-  - Adopting by `logicalId` (`acme.shop.db`) finds nothing either, because the row still holds `db`.
-  - Alchemy creates an empty database and deletes `db-db` with its data. The same happens to buckets, generated secrets and service keys. The Connection `name` also changes.
+- **Location:** `docs/design/90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md` line 136; `.drive/projects/node-addressing/slices/a1-fully-qualified-identity/upgrade-effects.md` line 37; `docs/guides/deploying.md` lines 458–495 (says nothing).
+- **Issue:** The ADR says to "rename one of the two nodes before upgrading". Renaming a node makes it a new entity, and the same ADR (line 127) says the deploy then deletes the old entity's rows. If the user renames the module named like the app, every database and bucket inside it is deleted with its data. If they rename the service, its App is deleted with its custom domains, and its generated secrets are minted again. Either breaks the critical done condition.
 
-  The address itself is ambiguous too: `buildTree` in the deploy report and the local `bucketDataDir` both split on `.`.
-- **Suggestion:** Check the root name in one place, before Load returns, in both the CLI pipeline and `lowering()`. Enforce the grammar the ADR states (`[A-Za-z0-9_-]+`) and fail with a message that names the name and the rule. Then also compute the former address by removing the known `${appName}.` prefix, not by cutting at the first dot. That way the migration does not depend on an assumption made elsewhere. Add a test with an app name containing `.` that expects the clear error.
+  The condition is also wider than "a module named like the app". Keys are upper-cased and `-` becomes `_`, so a new key of node N equals an old key of node M whenever M's old key starts with the app name in key form. That happens with:
+  - a module or a service directly below the root whose ID is the app name in any letter case (`Shop` in the app `shop`). A service `shop.shop` with a dependency input `x` had the old key `COMPOSER_SHOP_X_P`, which is the new key of service `shop.x`'s own param `p`;
+  - an app name with `-` or `_` and modules that spell it (`my-shop` with `my.shop.x`).
 
-### F02 — App names with characters not allowed in environment variable names now produce invalid `COMPOSER_` keys
+  The user sees upstream's message "appeared after the adoption check... rerun with adoption enabled", which names neither node and suggests the wrong fix. Every rerun fails the same way.
+- **Suggestion:** Detect it before Alchemy applies anything. From the graph, compute every new key that equals another node's old key; preflight already queries variables by key (`target/src/preflight.ts` `listEnvVars`), so check whether a row with that key exists on the stage. If one does, fail naming both addresses and the key. Give a remedy that loses nothing: delete that old `COMPOSER_` variable on the Branch (it is Composer's own superseded row, and the old Deployment already holds a copy), then deploy again; garbage collection then finds it gone and continues. Write the precise condition and this remedy in the ADR, `upgrade-effects.md` and the upgrade guide, and add a unit test for the detection.
 
-- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/serializer.ts` lines 76–80; `packages/1-prisma-cloud/0-lowering/local-target/src/compute.ts` lines 79–94.
-- **Issue:** Before this branch, the app name never appeared in an environment variable key. Now every key starts with it, and only `-` is mapped to `_`. An existing app named `My Shop`, `acme/shop` or `@acme/shop` would write keys such as `COMPOSER_MY SHOP_API_PORT`. The platform will probably reject these while applying, after the database and app renames have already happened. The stage is then stuck until the user renames the app, which gives it a new identity and a new Project. Local dev would set keys a shell cannot even name.
-- **Suggestion:** The same check as F01, run before anything is deployed, fixes this. The grammar must make every key valid. If names with other characters already exist in the wild, decide explicitly whether to map them or refuse them. Do not let them fail halfway through a deploy.
+### F02 — The QA plan does not cover the critical done condition
 
-### F03 — Local dev guesses which record keys are old, and the guess can drop a node's instance
+- **Location:** `.drive/projects/node-addressing/slices/a1-fully-qualified-identity/plan.md` D6 (lines 55–59); `.drive/projects/node-addressing/handover.md` lines 62–69.
+- **Issue:** The slice spec requires QA to plant state the graph does not represent before the upgrade (a custom domain on a service, a hand-set environment variable, a hand-made Connection) and show it is unchanged after. D6 and the handover's steps do not mention it, and step 1 on `qa-a1-qsgn6n` already ran without it. The spike also never changed an App `displayName`, a Bucket `name` or an access key `name`; it kept the short Connection name.
+- **Suggestion:** Add to D6 and the handover, before step 2: plant a custom domain on a service, a hand-set environment variable, a hand-made Connection on the database and a hand-made access key on the bucket, and record their ids. After the redeploy, check that each is unchanged, that the App id, endpoint domain and custom domain binding are unchanged, that the Bucket id and S3 bucket name are unchanged, that the database's default connection was not rotated (F03), and that the platform accepted the dotted names. Plant these on the existing QA Project before step 2, or start over.
 
-- **Location:** `packages/1-prisma-cloud/0-lowering/local-target/src/legacy-address-keys.ts` lines 10–28.
-- **Issue:** A key is treated as already full if it equals the app name or starts with `<app>.`. Old keys can look like that:
-  - An app `shop` that provisions a module with id `shop` had the old key `shop.db`. That key is kept as is, so the real address `shop.shop.db` matches nothing.
-  - An app `auth` that provisions a node with id `auth` had the old key `auth`. That key is kept as the app's own key.
+### F03 — `upgrade-effects.md` says a Database update changes nothing, but upstream can rotate its default connection
 
-  In both cases `prisma dev` creates a fresh, empty local database or bucket. It also leaves the old instance, and its port, unreachable until `--fresh` is run. The rewrite also runs on every read for as long as the code exists, so the guess never stops being made.
-- **Suggestion:** Write a format marker into the record, for example `"addresses": "full"`, the first time it is rewritten. Only rewrite records that lack the marker, and in those records add the app name to every key, without guessing. Add a test for an app that provisions a child whose id equals the app name.
+- **Location:** `.drive/projects/node-addressing/slices/a1-fully-qualified-identity/upgrade-effects.md` line 16 (Database row); upstream `node_modules/alchemy/src/Prisma/Database.ts` lines 916–933 and `Prisma/Internal/DatabaseSecrets.ts` lines 105–165.
+- **Issue:** Every upgrade updates every Database, because its `logicalId` and derived name change. On update, upstream calls `recoverDatabaseConnectionSecrets`, which rotates the database's default connection when the deploy state holds no connection secrets for it. The default connection is not in the Composer graph, and anything that copied its URL from Console would stop working. State that upstream created holds the secrets, so this should not happen for most v0.34.0 stages, but the document should not say "Nothing" without the condition.
+- **Suggestion:** State the condition in the Database row and the verdict. Add the check to QA (F02).
 
-### F04 — The full address now counts toward a service's 65-character name limit, which can stop an existing app from upgrading
+### F04 — The core-model sketch still says the Connection keeps an unchanged label
 
-- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/descriptors/compute.ts` line 165; `packages/1-prisma-cloud/1-extensions/target/src/descriptors/shared.ts` lines 103–115.
-- **Issue:** `validateName` used to check the short address. It now checks `<app>.<path>`. An app whose service addresses were close to the limit fails on its first deploy with this version. The error message suggests shortening provision IDs or the app name, but both change the service's identity: a new App, a new URL and a new Project for the root. The name being checked is only used as the App's `displayName`, which ADR-0057 calls a label. The check runs while the plan is built, so no data is lost, but the user cannot upgrade without re-identifying the service.
-- **Suggestion:** Decide this on purpose and record the decision. Either keep validating, and therefore keep the display name, on the old label (the address without the app name), which upstream accepts, or keep the current rule and say in the upgrade guide that long names block the upgrade. Also make the error name the full address and the length, as the spec's edge case requires. For databases and buckets the message shows the label, not the address.
+- **Location:** `docs/design/10-domains/core-model.md`, the descriptor sketch (`Prisma.Connection(`${address}.connection`, { database: db, name: /* unchanged label */ })`).
+- **Issue:** The Connection `name` is now the address.
+- **Suggestion:** Write `name: address`.
 
-### F05 — The documents say a bad `serviceOrigin` fails "before anything changes", but the topology has already been replaced
+### F05 — `Load`'s doc comment now documents the `APP_NAME` regex
 
-- **Location:** `docs/guides/deploying.md` lines 467–470; `docs/design/90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md` line 92; `packages/1-prisma-cloud/0-lowering/lowering/src/builds/reporter.ts` lines 227–260.
-- **Issue:** The reporter's `attach` step replaces the Branch's application topology before Alchemy runs. When an existing app still has `serviceOrigin('api')`, the deploy fails during planning, but the topology on the Branch already lists full addresses while the rows still hold the short `logicalId`s. Console's join between topology nodes and rows then finds nothing until the next successful deploy. No data is at risk.
-- **Suggestion:** Make the two documents accurate ("before any resource is created"). Better, make `serviceOrigin` targets fail at Load or preflight, before `attach`. The graph already holds every address, so the check needs nothing from the platform.
+- **Location:** `packages/0-framework/1-core/core/src/graph.ts` lines 19–28.
+- **Issue:** `const APP_NAME` was inserted between `Load`'s doc comment and `Load`, so the comment attaches to the constant and `Load` has none.
+- **Suggestion:** Move `APP_NAME` and `assertAppName` above the comment.
 
-### F06 — Two helpers with the same meaning behave differently
+### F06 — Two code comments cite the superseded ADR-0051 for the adoption rule
 
-- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/legacy-resource-ids.ts` lines 11–14; `packages/1-prisma-cloud/1-extensions/target/src/service-app.ts` lines 12–14.
-- **Issue:** `legacyAddress` and `resourceLabel` both mean "the address without the app name". For an input with no dot they disagree: one returns `''`, the other returns the input unchanged. Both feed values the migration depends on (the former IDs and the Connection and access-key names), so if one is changed later the two can drift apart.
-- **Suggestion:** Keep one function and build the other from it. With F01's fix, both should take the app name as a parameter and remove `${app}.`.
+- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/descriptors/shared.ts` line 175; `packages/1-prisma-cloud/0-lowering/lowering/src/state/empty-scope.ts` line 81.
+- **Issue:** The rule now lives in ADR-0057, which supersedes ADR-0051.
+- **Suggestion:** Cite ADR-0057.
 
-### F07 — The local providers and the emulators hook now agree on a key only because the main resource ID equals the address
+### F07 — `prisma emulator list` shows short addresses for instances made before the upgrade
 
-- **Location:** `packages/1-prisma-cloud/0-lowering/local-target/src/postgres.ts` line 48; `packages/1-prisma-cloud/0-lowering/local-target/src/bucket.ts` line 65; `packages/1-prisma-cloud/1-extensions/target/src/local-target/emulators.ts` lines 52–60.
-- **Issue:** Before, both sides took the key from one helper (`resourceName`). Now the hook keys a node by `n.id` and the provider by Alchemy's `id`. They match only while `resourceId(address)` returns the address unchanged. If that rule changes, local dev would quietly create new, empty instances.
-- **Suggestion:** Have the hook call `resourceId(n.id)`, so both sides go through the same function. Alternatively, add a test that runs a database through both the emulators hook and the local provider.
+- **Location:** `packages/1-prisma-cloud/0-lowering/local-target/src/emulator-instances.ts` line 224; `packages/9-public/composer-cli/src/family/emulator-list.ts` lines 29 and 101; `docs/guides/running-locally.md` line 173.
+- **Issue:** Carried over from round 1 (F08), not addressed. Old instances keep the label `composer.address: 'api'`, while the guide says the list shows the node's address. One form of identity means the listing should not show two.
+- **Suggestion:** Rewrite the label when an existing instance is reused, or say in the upgrade note that old instances show the short address until `--fresh`.
 
-### F08 — Old local instances keep their short address label
+## Deferred (out of scope)
 
-- **Location:** `packages/1-prisma-cloud/0-lowering/local-target/src/emulator-instances.ts` around line 210; `packages/9-public/composer-cli/src/family/emulator-list.ts` lines 29 and 101.
-- **Issue:** Instances created before the upgrade carry the label `composer.address: 'api'`, while new instances carry full addresses. `prisma emulator list` shows a mix of both forms. Only the display is affected.
-- **Suggestion:** Show the record's key instead of the label, or say in the upgrade note that old instances show short addresses until `--fresh`.
+- **`LowerContext.id` and `address` are always equal** (round 1, S06). A cleanup across core; not this slice.
+- **Rename declarations under a filtered deploy.** Upstream refuses them; Composer has no filtered deploy path.
+- **A state row in the oldest format that also needs a rename.** Should compose; low priority.
+- **Temporary duplicate `COMPOSER_` rows and Connections during the upgrade deploy.** Only matters near a platform count limit; a failure there is loud and deletes nothing.
 
-### F09 — The upgrade guide's teardown rewrite is outside this slice and makes an unchecked claim
+## Already addressed (round 1)
 
-- **Location:** `docs/guides/deploying.md` lines 1–18 and 262–275.
-- **Issue:** The guide now tells users to remove an app with `prisma project delete`, and says that this "removes every stage, its resources and its deploy state". Teardown is design decision 9, not part of A1. Nothing in this branch or in QA checks that deleting a Project deletes the hosted deploy state.
-- **Suggestion:** Move this change to the teardown slice, or check the claim during QA and keep it.
+| Round-1 finding | Fixed by |
+| --- | --- |
+| F01 app name with `.` gives wrong former IDs | `058dd4dd` (`assertAppName`); `addressBelowApp` removes the known prefix |
+| F02 app name characters invalid in env keys | `058dd4dd` |
+| F03 local record guessed old keys | `a3c3e9a3` (`formatVersion`) |
+| F04 length limit on the full address | `25d9b0d7`, `f8f46c16` (per-kind limits, decided by Will) |
+| F05 "before anything changes" | `4b480705` (ADR and guide now say the topology is replaced) |
+| F06 two helpers for "address without the app name" | `c4b46087` (`addressBelowApp` only) |
+| F07 hook and providers keyed by different helpers | `c4b46087` (both use `resourceId`) |
+| S02/S04 short labels on some platform names | `25d9b0d7` (every name is the address) |
+| S07 `serviceOrigin` with `--name` | `4b480705` |
+| S08 role names | `c4b46087` (nouns) |
+| S09 "streams module" comment | `c4b46087` |
 
-## Deferred
+## Acceptance-criteria verification
 
-- **`serviceOrigin` with `--name`.** One source file cannot write a `serviceOrigin` that works under both the authored name and a `--name` override. This was decided in design note 4 and in ADR-0057, so it is not reopened here.
-- **An older Composer deploying a migrated stage** deletes and recreates its resources. Will accepted this in the design notes, and the slice spec puts it out of scope.
-- **Rename declarations under a filtered deploy.** The spike found that a deploy limited to selected resources refuses to migrate a rename. I found no filtered deploy path in Composer today. Revisit this if one is added.
-- **A state row that is in the oldest format and also needs a rename.** `lowering/src/state/legacy-resources.ts` rewrites row shapes when it reads them, and the rename then moves the row. The two should compose, but no test covers a row that needs both. This is low priority because rows that old should no longer exist.
-- **Temporary duplicate environment rows.** During the upgrade deploy, each `COMPOSER_` variable exists twice, once under the old key and once under the new key, until the old rows are deleted. This only matters if a project is close to a limit on its number of variables.
-
-## Acceptance criteria
-
-The three slice-specific done conditions can only be shown on the real platform or on a real local directory. They are NOT VERIFIED until D6 runs. Below each one I list what QA must check.
-
-| Criterion | Verdict | Evidence or what QA must check |
+| AC | Verdict | Detail |
 | --- | --- | --- |
-| **Done:** an app deployed with the current release (a database with rows, a bucket with objects, a generated secret, an RPC edge, a `serviceOrigin`), then redeployed from this branch: rows, objects, the secret and the RPC key are unchanged; rows carry full `logicalId`s; the state holds only the new IDs | NOT VERIFIED | QA must check that the database, connection, bucket, access key and App platform IDs are unchanged. The connection string and the S3 access key must be the same strings before and after. The `COMPOSER_<APP>_<SVC>_<PATH>_GENERATED` value must equal the old `COMPOSER_<SVC>_<PATH>_GENERATED` value. The consumer's service key must equal the old one, and the provider's accepted-keys row must still contain it. The deploy state must list only dotted IDs, with no `-db`, `-var`, `servicekey-` or `-generated` left. No old `COMPOSER_<SVC>_…` variables may remain on the Branch. QA must also deliberately cover what the spike did not: buckets, access keys, environment rows (which are replaced), generated values and service keys. Use an app name containing `-`. |
-| **Done:** the same app deploys from scratch to a new stage from this branch | NOT VERIFIED | QA must check that a deploy to a new `--stage` succeeds, that the rename declarations are ignored, and that a second deploy plans no changes. |
-| **Done:** `prisma dev` on a directory last run with the current release keeps its local database's data | WEAK | `legacy-address-keys.test.ts` uses real emulators and an old-format record, and asserts that ids, ports and bucket objects are kept. It does not run the full `prisma dev` path with Alchemy's local state renames, and it does not check database rows. QA must run the current release's `prisma dev`, write rows and objects, upgrade, and run `prisma dev` again. |
-| Addresses: Load prefixes every child with the root's ID, and the root's ID is the deployed name on both the CLI graph and the lowering | PASS | See `load-module.ts` line 526 and `pipeline.ts` line 137. `lowering()` passes `{ id: opts.name }`. F01 still applies to the name's grammar. |
-| Resource IDs: `<address>` or `<address>.<role>`, each piped through `renamedFrom(<today's ID>)` | PASS (with F01) | Every declaration in `descriptors/*.ts` and `control/extension.ts` does this. The literal-string tests are in `control-lowering.test.ts` lines 2897–3205, and the `afterAll` check requires exactly one former ID per resource. |
-| Generated values, RPC service keys and stream keys are renamed, not recreated | PASS (unit) / NOT VERIFIED (live) | The former IDs match `origin/main`, and the providers return their stored output. QA must confirm on the platform. |
-| Connections keep their current `name` | PASS | `resourceLabel(address)` equals the old `id`, and tests assert `name: 'catalog'`. The BucketAccessKey and Bucket names are also kept. |
-| `logicalId`: `logicalIdProp` and the topology builder write full addresses | PASS | Both use graph IDs, which are now full, and `application-topology.test.ts` asserts it. See F05 for when the topology is submitted. |
-| Env keys: full address, with `-` replaced by `_`, in the serializer and its local copies | PASS (with F02) | `addressKeySegments` in both places, and the test with an app name containing `-` (`control-lowering.test.ts` line 2976). Characters other than `-` are not handled (F02). |
-| User-facing addresses (`serviceOrigin`, `dev url`, reports, labels, errors) use the full address | PASS | The `serviceOrigin` error, the report tree and the docs all use it. F08 is a small gap in the emulator list. |
-| Local dev: the record is rewritten, and bucket folders and database lookups follow | PASS (with F03) | `normalized()` calls `withFullAddressKeys`, `bucketDataDir` keeps the old path, and the providers key by ID. |
-| Design records and docs updated in this PR (the new ADR, the index, the principle, the glossary, four domain docs, guides, skill, examples, READMEs) | PASS | All files are present. F05 is an accuracy problem in two of them, and F09 is a change outside this slice. |
-| Edge case: `validateName` still applies, and fails with a clear message naming the address | WEAK | It still applies. For databases and buckets the message names the label, not the address, and F04 means the advice it gives would re-identify the service. |
+| **Critical:** upgrading from v0.34.0 loses no application data and touches no out-of-graph state; only Composer's Connections and access keys are recreated | **NOT VERIFIED** | By code reading it holds: former IDs match v0.34.0, no App/Database/Bucket is replaced, every replace deletes one stored object after an identity check, and deletes happen only after a fully converged run. Open: F01 (the documented remedy deletes data), F03 (default connection rotation when state lacks secrets). QA has not run and its plan omits the planted state (F02). |
+| A fabricated app deployed with v0.34.0 then redeployed keeps rows, objects, the secret and the RPC key; rows carry full `logicalId`s; the state has only new IDs | **NOT VERIFIED** | QA step 2 not run. Unit tests prove the declarations; the providers of GeneratedParam, ServiceKey and S3Credentials return their stored output, so a moved row keeps its value. |
+| The same app deploys from scratch to a new stage | **NOT VERIFIED** | The spike showed unmatched renames are ignored; QA step 3 not run. |
+| `prisma dev` on a directory last run with v0.34.0 keeps its local database's data | **WEAK** | `legacy-address-keys.test.ts` lines 261–300 runs real emulators from an old-format record and asserts instances, ports and the bucket folder are reused. It does not write and read database rows, and does not start from a directory v0.34.0 itself wrote. QA step 4 covers it. |
+| Addresses start with the deployed app name on the CLI graph and the lowering | **PASS** | `load-module.ts` line 526; `pipeline.ts` lines 129–138 pass the name to Load; `lowering()` passes `opts.name`. Tests in `load.test.ts` and `lowering.test.ts`. |
+| Resource IDs are `<address>` or `<address>.<role>`, each with `renamedFrom(<v0.34.0 ID>)` | **PASS** | Every constructor checked; literal former IDs asserted in `control-lowering.test.ts` lines 3025–3330. |
+| Generated values, RPC keys and stream keys are renamed, not recreated | **PASS** (unit) | Former IDs match v0.34.0; reconcile returns stored output. Live check in QA. |
+| Every platform name is the full address; validation per kind, never shortened | **PASS** | `descriptors/shared.ts` lines 96–118; test "every platform name Composer writes is the address" and the limit tests at lines 2718–2800. |
+| `logicalId` and the topology use full addresses | **PASS** | `logicalIdProp` and the unchanged topology builder take graph IDs; `application-topology.test.ts`. |
+| Env keys from the full address, `-` to `_`, in the serializer and local copies | **PASS** | `serializer.ts` `addressKeySegments`; `local-target/src/compute.ts` lines 79–94; test with `my-shop`. F01 concerns the transition only. |
+| User-facing addresses are full | **PASS** | `serviceOrigin` error, report tree (`render-deployment.ts` line 82), `dev url`, docs. F07 is a display gap. |
+| Local dev rewrites the record; bucket folders and lookups follow | **PASS** | `normalized()` with `formatVersion`; `bucketDataDir`; tests listed above. |
+| Design records and docs updated in this PR | **PASS** | ADR-0057, index, principle, glossary, domain docs, guides, skill, examples. F01, F03, F04 are accuracy fixes. |
+
+### Summary
+
+| Result | Count | ACs |
+| --- | --- | --- |
+| PASS | 9 | addresses, resource IDs, renamed values (unit), platform names, `logicalId`, env keys, user-facing addresses, local record, docs |
+| NOT VERIFIED | 3 | critical condition, round trip, new stage |
+| WEAK | 1 | `prisma dev` data |
+| FAIL | 0 | |

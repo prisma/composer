@@ -50,7 +50,22 @@ Spec: [spec.md](spec.md). Dispatches run in order on branch `drive/fully-qualifi
 - **Hands to:** a deploy that writes one form of name everywhere.
 - **Gate:** `pnpm typecheck`; tests for core, cli, lowering, local-target, target; `test/integration`.
 
+### D9. Review round 2 fixes
+
+- **Outcome:** the findings in `reviews/code-review.md` and `reviews/system-design-review.md` are fixed. The env key clash is caught before anything changes, by a preflight check that computes every new `COMPOSER_` key from the graph and fails naming both node addresses and the variable. The documented fix loses nothing: delete that one old `COMPOSER_` variable, then deploy again. The ADR no longer says to rename a node, and no longer says keys cannot collide during the move. `upgrade-effects.md` states when a Database update can rotate its default connection.
+- **Builds on:** D8.
+- **Gate:** typecheck, lint, tests for core, cli, lowering, local-target, target.
+
 ### D6. QA on the real platform
+
+QA starts from scratch with a new test Project. The Project from the earlier attempt, `qa-a1-qsgn6n`, is deleted. Before the upgrade deploy, QA plants state the Composer graph doesn't represent, and checks after the upgrade that each item is unchanged:
+- a custom domain on a service;
+- an environment variable set by hand;
+- a Connection made by hand on the database, which must still connect afterwards;
+- a bucket access key made by hand, which must still read objects afterwards;
+- the database's default connection.
+
+QA also checks what the spike didn't: that the App, Bucket and access key name changes apply, that each service's endpoint domain is unchanged, and that the names are dotted.
 
 - **Outcome:** the slice's done conditions are checked with evidence on a fabricated app: deploy with the current published release, write rows, objects, and record the generated secret and RPC key; redeploy from this branch; confirm data, objects, the generated secret and RPC key are unchanged, that the Connection and access key were recreated under full-address names and the services work with their new credentials, and that the state and rows use the new form; deploy the same app to a new stage from scratch; run `prisma dev` on a directory last used with the current release and confirm local data survived. Every test Project is deleted afterwards.
 - **Builds on:** review fixes.
