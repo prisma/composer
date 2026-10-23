@@ -3,20 +3,24 @@
 import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
 import * as Effect from 'effect/Effect';
+import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import { S3Credentials } from '../s3-credentials-resource.ts';
 import type { ResolvedCloudOptions } from './shared.ts';
 
 /**
- * One `S3Credentials` resource per provisioned credentials node — `id` is the
- * module provision id, so a pair shared by the storage service is minted once
+ * One `S3Credentials` resource per provisioned credentials node, keyed by its
+ * address, so a pair shared by the storage service is minted once
  * and kept stable across deploys (the resource's provider preserves it).
  * `_o` is unused today (the mint needs no region/project) but kept for symmetry
  * with the other descriptors' signature.
  */
 export function s3CredentialsDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ id }) =>
+  const lowering: Lowering = ({ address }) =>
     Effect.gen(function* () {
-      const creds = yield* S3Credentials(`${id}-creds`, {});
+      const creds = yield* S3Credentials(resourceId(address), {}).pipe(
+        fromLegacyId(legacyNodeResourceId(address, 'creds')),
+      );
       // No entities: a minted keypair has nothing publishable. Both fields
       // are secret material, and secret material must never reach an entity
       // — entities are built to be rendered to a terminal.

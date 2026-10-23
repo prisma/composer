@@ -6,7 +6,9 @@ import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
-import { resourceName } from '../service-app.ts';
+import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
+import { resourceLabel } from '../service-app.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
@@ -24,24 +26,24 @@ import {
  * secretAccessKey) become the four S3Config outputs consumers resolve by name.
  */
 export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ id, address, application }) =>
+  const lowering: Lowering = ({ address, application }) =>
     Effect.gen(function* () {
-      validateName(id, 'resource name (from its address)');
+      const label = resourceLabel(address);
+      validateName(label, 'bucket name (its address without the app name)');
       const { branchId } = cloudApplicationOf(application);
-      const bkt = yield* Prisma.Bucket(`${id}-bucket`, {
+      const bkt = yield* Prisma.Bucket(resourceId(address), {
         project: projectIdOf(application),
-        name: resourceName(id),
+        name: label,
         ...(branchId !== undefined ? { branchId } : {}),
         ...logicalIdProp(application, address),
-      }).pipe(asOwnRow);
-      // `name: id` matches what Composer's own resource always created, so a
-      // migrated legacy row diffs clean instead of replacing the key (a
-      // replacement would mint fresh credentials).
-      const key = yield* Prisma.BucketAccessKey(`${id}-key`, {
+      }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(address, 'bucket')));
+      // A new access key `name` replaces the key and mints fresh credentials,
+      // so it keeps the label every release has written.
+      const key = yield* Prisma.BucketAccessKey(resourceId(address, 'key'), {
         bucket: bkt.bucketId,
-        name: id,
+        name: label,
         role: 'read_write',
-      });
+      }).pipe(fromLegacyId(legacyNodeResourceId(address, 'key')));
       const secretAccessKey = Output.map(key.secretAccessKey, (v) => Redacted.value(v));
       // No credentials on the entity: secret material must never reach an entity
       // (entities are rendered to a terminal). The outputs carry the full S3Config

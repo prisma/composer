@@ -7,8 +7,10 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
+import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
+import { resourceId } from '../resource-ids.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
-import { resourceName } from '../service-app.ts';
+import { resourceLabel } from '../service-app.ts';
 
 /**
  * The provider-side reserved param for one brand's minted values (ADR-0031:
@@ -103,7 +105,7 @@ export function validateName(value: string, source: string): void {
     throw new Error(
       `prisma-cloud: ${source} "${value}" (${value.length} characters) is not a valid Prisma ` +
         `resource name — Prisma requires ${PRISMA_NAME_MIN}–${PRISMA_NAME_MAX} characters. ` +
-        'Shorten the address to fit: the app name (or the deploy --name) and every provision id on its path count.',
+        'Shorten the provision ids it is built from; a service name also counts the app name (or the deploy --name).',
     );
   }
 }
@@ -208,17 +210,23 @@ export const stageDatabase = ({
   Effect.gen(function* () {
     const branchId = attachmentBranchIdOf(application, id);
     // 'inherit' resolves to the project's default region on the platform.
-    const db = yield* Prisma.Database(`${id}-db`, {
+    const label = resourceLabel(address);
+    const db = yield* Prisma.Database(resourceId(address), {
       project: projectIdOf(application),
       region: region ?? 'inherit',
-      ...(branchId !== undefined ? { branchId } : { name: resourceName(id) }),
+      ...(branchId !== undefined ? { branchId } : { name: label }),
       ...logicalIdProp(application, address),
-    }).pipe(asOwnRow);
-    const conn = yield* Prisma.Connection(`${id}-conn`, { database: db, name: id });
+    }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(address, 'db')));
+    // A new Connection `name` replaces the Connection and rotates the
+    // database's credentials, so it keeps the label every release has written.
+    const conn = yield* Prisma.Connection(resourceId(address, 'conn'), {
+      database: db,
+      name: label,
+    }).pipe(fromLegacyId(legacyNodeResourceId(address, 'conn')));
     const url = Output.map(conn.directConnectionString, (value) => {
       if (value === undefined) {
         throw new Error(
-          `prisma-cloud: connection "${id}-conn" returned no direct connection string.`,
+          `prisma-cloud: connection "${resourceId(address, 'conn')}" returned no direct connection string.`,
         );
       }
       return Redacted.value(value);

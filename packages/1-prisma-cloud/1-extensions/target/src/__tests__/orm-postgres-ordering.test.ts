@@ -33,7 +33,8 @@ const lowering = postgresDescriptor(() => ({
 if (lowering.kind !== 'resource') throw new Error('postgres must lower as a resource');
 
 const ctx = {
-  id: 'pndata',
+  id: 'shop.pndata',
+  address: 'shop.pndata',
   node: postgres({
     name: 'pndata',
     contract: dataContract(widgetContractJson),
@@ -55,15 +56,15 @@ const { outputs } = await Effect.runPromise(
 describe("the postgres lowering's url — what every consumer is scheduled after", () => {
   test('the url references the migration as well as the warm-up', () => {
     expect(Object.keys(Output.upstreamAny(outputs['url'])).sort()).toEqual(
-      ['pndata-migrate', 'pndata-warm'].sort(),
+      ['shop.pndata.migrate', 'shop.pndata.warm'].sort(),
     );
   });
 
   test('the url still resolves to the connection string, not the migration attributes', () => {
     const resolved = Effect.runSync(
       Output.evaluate(outputs['url'] as Output.Output<string>, {
-        'pndata-warm': { url: 'postgres://pndata' },
-        'pndata-migrate': { storageHash: 'sha256:target', invariants: [] },
+        'shop.pndata.warm': { url: 'postgres://pndata' },
+        'shop.pndata.migrate': { storageHash: 'sha256:target', invariants: [] },
       }) as Effect.Effect<string>,
     );
     expect(resolved).toBe('postgres://pndata');
@@ -74,14 +75,14 @@ describe("the postgres lowering's url — what every consumer is scheduled after
     // Built the way the compute descriptor builds a dependency-input row.
     const row = Effect.runSync(
       registered(
-        Prisma.EnvironmentVariable('COMPOSER_WIDGETS_DB_URL-var', {
+        Prisma.EnvironmentVariable('shop.widgets.env.COMPOSER_SHOP_WIDGETS_DB_URL', {
           project: 'proj-1',
           class: 'production',
-          key: 'COMPOSER_WIDGETS_DB_URL',
+          key: 'COMPOSER_SHOP_WIDGETS_DB_URL',
           value: Output.map(url, Redacted.make),
         }),
       ),
     );
-    expect(Object.keys(Output.upstreamAny(row.Props))).toContain('pndata-migrate');
+    expect(Object.keys(Output.upstreamAny(row.Props))).toContain('shop.pndata.migrate');
   });
 });

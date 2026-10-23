@@ -4,12 +4,15 @@ import type { NodeDescriptor } from '@internal/core/config';
 import type { Lowering } from '@internal/core/deploy';
 import * as Output from 'alchemy/Output';
 import * as Effect from 'effect/Effect';
+import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
 import { packHeadRefHashes, resolveOrmConfig } from '../orm-config.ts';
 import { resolveTargetRef, targetStorageHash } from '../orm-migrate.ts';
 import { OrmMigration } from '../orm-migration-resource.ts';
 import { isPostgresResourceNode } from '../orm-postgres.ts';
 import { PgWarm } from '../pg-warm-resource.ts';
 import { runPackPreflight } from '../preflight.ts';
+import { resourceId } from '../resource-ids.ts';
+import { resourceLabel } from '../service-app.ts';
 import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared.ts';
 
 /**
@@ -20,7 +23,7 @@ import { type ResolvedCloudOptions, stageDatabase, validateName } from './shared
 export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescriptor {
   const lowering: Lowering = ({ id, address, node, application, graph }) =>
     Effect.gen(function* () {
-      validateName(id, 'resource name (from its address)');
+      validateName(resourceLabel(address), 'database name (its address without the app name)');
       const { db, url } = yield* stageDatabase({ id, address, application, region: o().region });
 
       if (!isPostgresResourceNode(node)) {
@@ -47,11 +50,13 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
 
       // Warm the DB first (FT-5226), then migrate against the now-warm url —
       // `warm.url` threads the ordering (PgWarm → OrmMigration).
-      const warm = yield* PgWarm(`${id}-warm`, { url });
+      const warm = yield* PgWarm(resourceId(address, 'warm'), { url }).pipe(
+        fromLegacyId(legacyNodeResourceId(address, 'warm')),
+      );
 
       // Keyed on the ref identity so a data-only change (same hash, new
       // invariant) still triggers reconcile.
-      const migration = yield* OrmMigration(`${id}-migrate`, {
+      const migration = yield* OrmMigration(resourceId(address, 'migrate'), {
         url: warm.url,
         migrationsDir,
         currentContractHash,
@@ -60,7 +65,7 @@ export function postgresDescriptor(o: () => ResolvedCloudOptions): NodeDescripto
         packHeadRefHashes: packHeadRefHashes(extensionPacks),
         configPath: node.config,
         ...(node.targetRef !== undefined ? { refName: node.targetRef } : {}),
-      });
+      }).pipe(fromLegacyId(legacyNodeResourceId(address, 'migrate')));
 
       // No `url` entity field — same reason as postgres: a connection string is
       // not a public endpoint, and only the descriptor can know that.
