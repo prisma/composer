@@ -218,10 +218,9 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
-    expect(readDevPreflightPayload(childEnv)).toEqual({
-      absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
-      fingerprints: { STRIPE_SECRET_KEY: sha256('sk_test_1') },
-    });
+    const payload = readDevPreflightPayload(childEnv);
+    expect(payload?.absentSecrets).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect(Object.keys(payload?.fingerprints ?? {})).toEqual(['STRIPE_SECRET_KEY']);
     expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
   });
 
@@ -236,7 +235,7 @@ describe('prisma dev preflight', () => {
     const first = await memberFor('sk_test_1');
     expect(await memberFor('sk_test_1')).toBe(first);
     expect(await memberFor('sk_test_2')).not.toBe(first);
-    expect(first).toBe(sha256('sk_test_1'));
+    expect(first).not.toBe(sha256('sk_test_1'));
   });
 
   test('an unset secret has no trigger member value', async () => {
@@ -278,7 +277,33 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(paramGraph()));
 
-    expect(readDevPreflightPayload(childEnv)?.fingerprints).toEqual({ APP_PORT: sha256('3000') });
+    expect(Object.keys(readDevPreflightPayload(childEnv)?.fingerprints ?? {})).toEqual([
+      'APP_PORT',
+    ]);
+  });
+
+  test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
+    process.env['APP_PORT'] = '3000';
+    const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
+
+    const first = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    const key = fs.readFileSync(keyPath);
+    const second = readDevPreflightPayload(transported(await preflight(paramGraph())));
+
+    expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+    expect(fs.readFileSync(keyPath)).toEqual(key);
+    expect(second?.fingerprints).toEqual(first?.fingerprints ?? {});
+  });
+
+  test('a lost fingerprint key only changes the fingerprints', async () => {
+    process.env['APP_PORT'] = '3000';
+    const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
+
+    const first = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    fs.rmSync(keyPath);
+    const second = readDevPreflightPayload(transported(await preflight(paramGraph())));
+
+    expect(second?.fingerprints['APP_PORT']).not.toBe(first?.fingerprints['APP_PORT']);
   });
 
   test('a secrets file left by an older prisma dev is deleted', async () => {

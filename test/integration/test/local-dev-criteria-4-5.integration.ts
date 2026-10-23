@@ -384,6 +384,8 @@ async function main(): Promise<void> {
 
     // ——— Criterion 5: a changed value reaches the service on a warm start; an empty optional secret arrives absent ———
     fs.rmSync(envFile, { force: true });
+    // An older prisma dev stored secret values here; starting dev must delete it.
+    fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"LOCALDEV_FIXTURE_API_KEY":"old"}');
     session = await startDevUntilReady(
       baseEnv({
         ...GREETING,
@@ -400,7 +402,7 @@ async function main(): Promise<void> {
 
     assert(
       !fs.existsSync(path.join(devDir, 'secrets.json')),
-      'dev stores no secret values on disk',
+      'a secrets file left by an older prisma dev is deleted',
     );
 
     console.log('PASS: local dev (S5 proving) — criteria 4 and 5');

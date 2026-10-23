@@ -14,7 +14,7 @@ import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
 import type { PreflightInput, PreflightPayload } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { removeRetiredSecretsFile } from '@internal/local-target';
+import { fingerprintKey, removeRetiredSecretsFile } from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../dev-preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
 import { inputValidationFailure } from '../serializer.ts';
@@ -80,15 +80,17 @@ function requiredSecrets(
   return required.length > 0 ? required : [{ names: unset, serviceAddress, message: withoutAll }];
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+/** HMAC-SHA256 under a local random key, so a stored fingerprint cannot be reversed by guessing values. */
+async function fingerprint(key: CryptoKey, value: string): Promise<string> {
+  const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function runDevPreflight(input: PreflightInput): Promise<PreflightPayload> {
   // No `node:path` import (invariant 5) — local dev is POSIX-only (spec's
   // Windows note), so a plain `/`-join is exact, not an approximation.
-  await removeRetiredSecretsFile(`${process.cwd()}/${DEV_DIR}`);
+  const devDir = `${process.cwd()}/${DEV_DIR}`;
+  await removeRetiredSecretsFile(devDir);
   const env = process.env;
 
   const absentSecrets = new Set<string>();
@@ -125,7 +127,14 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   }
 
   if (absentSecrets.size === 0 && pointed.size === 0) return undefined;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    await fingerprintKey(devDir),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
   const fingerprints: Record<string, string> = {};
-  for (const name of pointed) fingerprints[name] = await sha256Hex(env[name] ?? '');
+  for (const name of pointed) fingerprints[name] = await fingerprint(key, env[name] ?? '');
   return serializeDevPreflightPayload({ absentSecrets: [...absentSecrets], fingerprints });
 }
