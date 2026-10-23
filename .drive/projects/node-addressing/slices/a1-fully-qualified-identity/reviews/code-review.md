@@ -130,3 +130,41 @@ Two things need fixing before QA. First, the documented way out of the environme
 | NOT VERIFIED | 3 | critical condition, round trip, new stage |
 | WEAK | 1 | `prisma dev` data |
 | FAIL | 0 | |
+
+---
+
+# Round 3 — fixes for the round-2 findings
+
+Commits `b6a2b273`, `82afb495`, `0c8e807e` on top of `49ce6e91`. Two deviations from the round-2 suggestions were accepted by the coordinator and are not reopened: the clash check consults the platform rather than failing on the graph alone, and F07 is a note in the upgrade guide rather than a code change.
+
+## Verdict on the round-2 findings
+
+| Round-2 finding | Status | Evidence |
+| --- | --- | --- |
+| F01 env key clash | **Fixed, with two small gaps (R3-F01, R3-F02)** | `target/src/env-key-clash.ts` enumerates every row a service writes, under both keys: each `paramEntries` entry (service-own and dependency-input), the input document, every reserved provider param (accepted RPC keys, streams key, origin), and every generated or origin leaf. That is the same set `descriptors/compute.ts` writes (lines 197, 236, 278, 329–362). Tests cover the module case, another letter case, `-` and `_` in the app name, and a service named like the app with a dependency input (`env-key-clash.test.ts`). `runPreflight` checks the clash before its own fill step, and the alchemy process (where the first resource and the `DATABASE_URL` claim are written) starts after preflight. The scope check matches Composer's writes: production class with no branch, or preview class on the stage's Branch. |
+| F02 QA plan | **Fixed** in `49ce6e91` | Plan D6 plants a custom domain, a hand-set variable, a hand-made Connection, a hand-made access key and checks the default connection; QA restarts on a new Project. |
+| F03 default connection rotation | **Fixed** | `upgrade-effects.md` now states the condition. I checked the argument: upstream rotates only when neither the stored attributes nor the API read hold a connection string; v0.34.0's upstream Database stores them on create and on every update; only a row rewritten by `lowering/src/state/legacy-resources.ts` lacks them (lines 223–235), and such a row has no `logicalId`, so the first deploy with `logicalIdProp` (first tagged in `v0.29.1-dev.5`) updated it and stored them. A stage last deployed by v0.34.0 cannot hit it. |
+| F04 core-model sketch | Fixed | `name: address`. |
+| F05 `Load` doc comment | Fixed | `graph.ts`. |
+| F06 ADR-0051 citations | Fixed | `shared.ts`, `empty-scope.ts`. |
+| F07 emulator labels | Resolved by a guide note | `docs/guides/deploying.md`; the note says `--fresh` deletes local data. |
+
+**The fix loses nothing.** Deleting the old owner's row with that key removes a `COMPOSER_` row Composer wrote. Its value comes from Composer's own sources (config, the renamed `GeneratedParam` state, service-key state), so the rerun writes it under the old owner's new key. The running Deployment keeps its environment snapshot. The garbage-collection delete of the old generation then gets `NotFound` and continues. I checked `prisma project env delete` in `wip/prisma-cli` (`packages/cli/src/commands/project/env-delete.ts`). `--role production` and `--branch <name>` delete exactly one row in that scope, and a Composer stage's Branch `gitName` is the stage name, so the printed commands target the right row. A new stage, or a stage that has moved, passes: the old key is absent, or the old owner's new key exists.
+
+## Round-3 findings
+
+### R3-F01 — "Deploy failed before changing anything" is not true: the Branch's topology and the Build record are already written
+
+- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/preflight.ts` line 308 (the error); ADR-0057 lines 123 and 138; `docs/guides/deploying.md` line 497; `upgrade-effects.md` line 44.
+- **Issue:** `executeDeploy` attaches the reporters, which replace the Branch's application topology and record the Build, at `cli/src/operations/execute-deploy-destroy.ts` line 465. Preflight starts at line 497. So when the clash check fails, the topology already names the full addresses, while the rows still hold the short `logicalId`s, until a deploy succeeds. No data is at risk. But the message and three documents say nothing changed. The ADR's `serviceOrigin` paragraph already describes this same situation accurately.
+- **Suggestion:** Use the `serviceOrigin` wording: "before any resource is created, changed or deleted; the Branch's topology has already been replaced". Alternatively, move the check ahead of `attachReporters`.
+
+### R3-F02 — A chain of clashes takes one failed deploy per link
+
+- **Location:** `packages/1-prisma-cloud/1-extensions/target/src/preflight.ts`, `pendingEnvKeyClashes`.
+- **Issue:** A clash on key K is skipped when the old owner's new key K' exists. If K' is itself the old key of a third node, it exists before any move, for example `shop.x`, `shop.shop.x` and `shop.shop.shop.x` in the app `shop`. In that case only the K' clash is reported. After the user deletes K', the next deploy reports K. Every run still stops before any resource is written, so this is safe, but the user needs three deploys and two error messages.
+- **Suggestion:** Count K' as "already moved" only when K' is not the key of another clash in the list. Then every pending variable is reported at once. Add a test with the three-node chain.
+
+## Acceptance criteria (round 3)
+
+Unchanged from round 2, except that the critical condition's open code issues (F01, F03) are closed. It stays **NOT VERIFIED** only because QA (D6) has not run.

@@ -73,3 +73,20 @@ Doc consistency: the principle, glossary, `deploy-cli.md`, `config-params.md`, `
 ## Out of scope for this pass
 
 Implementation correctness, failure modes and AC verification are in `code-review.md`.
+
+---
+
+# Round 3
+
+Read: the diffs of `b6a2b273`, `82afb495` and `0c8e807e`; ADR-0057 lines 88, 123 and 138; the glossary entry; `upgrade-effects.md`; the upgrade guide.
+
+- **S01 (the env key clash): fixed.**
+  - Line 88 now limits the no-collision claim to one format.
+  - The new paragraph states every form of the clash, and the check matches it.
+  - The consequence no longer tells the user to rename a node, and says why renaming is wrong.
+  - The check consults the platform, so a new stage or a stage that has moved never fails. That deviates from the round-2 suggestion; the coordinator accepted it, and it is correct.
+  - `env-key-clash.ts` is a compatibility file with a deletion note, next to `legacy-resource-ids.ts`. That is the right place.
+- **S02 (the Connection name suffix): fixed** in the glossary.
+- **New, low:** the clash paragraph (line 123) and consequence (line 138) say the deploy fails "before changing anything". At that point the topology is already replaced, which the `serviceOrigin` paragraph states correctly. Use the same wording in both places (code-review R3-F01).
+
+Verdict for this pass: the design is coherent; one wording fix remains.

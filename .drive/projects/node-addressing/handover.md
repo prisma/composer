@@ -59,15 +59,8 @@ Branch `drive/fully-qualified-node-addresses`, pushed to `prisma/composer` (remo
 - Tests: typecheck passes. core, cli, local-target, lowering and test/integration pass. In the target package, 6 local-Postgres tests failed with "No space left on device" because about 31 leaked test Postgres servers (`prisma-composer-pn-pg-*`) were holding shared memory. They are not caused by this branch. Some may belong to other sessions, so they were not killed. Re-run the target tests once they are gone.
 
 **Remaining for A1:**
-1. **QA (D6) was interrupted after step 1.** Its brief is the last dispatch in `slices/a1-fully-qualified-identity/plan.md`. The detailed steps:
-   1. Deploy with the published release and record the state.
-   2. Redeploy from the branch, then check ids, rows, objects, the generated value and RPC key hashes, the `logicalId`s, the state IDs, and that no old variables are left.
-   3. Deploy to a new stage from scratch.
-   4. Local dev: run `prisma dev` with the published release, then from the branch, and check the data survived.
-   5. `prisma project delete` with services running, then confirm with `project list`.
-
-   Step 1 is done. A test Project **`qa-a1-qsgn6n` (`proj_lbs6tif5hbmz29ge7btc3wax`) is still deployed** with the published release. Its scripts and snapshot (`api.sh`, `snap.sh`, `snap1-old.txt`) are in the old worktree at `/Users/will/Projects/prisma/composer/.claude/worktrees/composer-destroy-discussion-56c939/wip/qa-a1/`. Continue from step 2 with it, or delete it and start over. Either way, delete it when QA is done. Write results to `slices/a1-fully-qualified-identity/qa.md`.
-2. Open the PR. Follow `~/.claude/CLAUDE.md`'s PR rules: grounding example first, `Agent: <name>`, Auto-fix on. In the description, list the platform-name rule and the short bucket folder names for Will's attention.
+1. **QA (D6) restarts from scratch** (superseded 2026-10-23 by victoria-52). Follow D6 in `slices/a1-fully-qualified-identity/plan.md`, including the planted state outside the graph. The earlier test Project `qa-a1-qsgn6n` (`proj_lbs6tif5hbmz29ge7btc3wax`) recorded no data and an incomplete snapshot; delete it. Write results to `slices/a1-fully-qualified-identity/qa.md`.
+2. Open the PR. Follow `~/.claude/CLAUDE.md`'s PR rules: grounding example first, `Agent: <name>`, Auto-fix on. Every platform name is now the full address (Will decided 2026-10-23); the PR lists that the upgrade recreates Composer's Connections and access keys with new credentials, and that local bucket folders keep their names.
 3. The asks app's production deploy is the project's final production test, after A1 is released.
 
 ## How to work
