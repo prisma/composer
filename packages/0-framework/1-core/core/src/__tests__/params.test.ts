@@ -50,7 +50,7 @@ describe('Load records param bindings', () => {
     );
 
     expect(graph.params).toEqual([
-      { serviceAddress: 'app', slot: 'origin', binding: 'https://example.com' },
+      { serviceAddress: 'root.app', slot: 'origin', binding: 'https://example.com' },
     ]);
   });
 
@@ -63,7 +63,7 @@ describe('Load records param bindings', () => {
     );
 
     expect(graph.params).toHaveLength(1);
-    expect(graph.params[0]?.serviceAddress).toBe('app');
+    expect(graph.params[0]?.serviceAddress).toBe('root.app');
     expect(graph.params[0]?.slot).toBe('origin');
     expect(isParamSource(graph.params[0]?.binding)).toBe(true);
   });
@@ -94,7 +94,7 @@ describe('Load records param bindings', () => {
     );
 
     expect(graph.params).toHaveLength(1);
-    expect(graph.params[0]?.serviceAddress).toBe('wrapper.inner');
+    expect(graph.params[0]?.serviceAddress).toBe('root.wrapper.inner');
     expect(graph.params[0]?.slot).toBe('origin');
     expect(isParamSource(graph.params[0]?.binding)).toBe(true);
   });

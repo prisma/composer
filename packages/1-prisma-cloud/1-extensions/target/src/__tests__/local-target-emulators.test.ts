@@ -108,7 +108,7 @@ test('ensures the getting-started services in dependency order once the compute 
   expect(events).toEqual([
     'daemon compute',
     'select my-app',
-    'ensure my-app: service quotes, service gateway',
+    'ensure my-app: service my-app.quotes, service my-app.gateway',
   ]);
 });
 
@@ -127,7 +127,7 @@ test('ensures services and databases in declaration order when nothing orders th
     'daemon compute',
     'daemon postgres',
     'select my-app',
-    'ensure my-app: service web, database db, service admin',
+    'ensure my-app: service my-app.web, database my-app.db, service my-app.admin',
   ]);
 });
 
@@ -177,5 +177,8 @@ test('a failure ensuring the instances stops what the run started, then reports 
   await expect(runDevEmulators({ graph, container, devDir: '/dev/null/unused' })).rejects.toThrow(
     'the second database could not start',
   );
-  expect(events.slice(-2)).toEqual(['ensure my-app: database one, database two', 'stop my-app']);
+  expect(events.slice(-2)).toEqual([
+    'ensure my-app: database my-app.one, database my-app.two',
+    'stop my-app',
+  ]);
 });

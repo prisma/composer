@@ -35,10 +35,10 @@ describe('streams()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('streams.service')).toBe('compute');
+    expect(typeOf('root.streams.service')).toBe('compute');
     expect(graph.edges).toContainEqual({
-      from: 'storage.service',
-      to: 'streams.service',
+      from: 'root.storage.service',
+      to: 'root.streams.service',
       input: 'store',
       kind: 'dependency',
     });
@@ -46,21 +46,21 @@ describe('streams()', () => {
 
   test("the consumer's apiKey param carries the streams provisioning need — nothing is wired for it", () => {
     const graph = Load(root());
-    const consumerNode = graph.nodes.find((n) => n.id === 'consumer')?.node;
+    const consumerNode = graph.nodes.find((n) => n.id === 'root.consumer')?.node;
     if (consumerNode === undefined || consumerNode.kind !== 'service') {
       throw new Error('expected the consumer service');
     }
     const apiKey = consumerNode.inputs['events']?.connection.params['apiKey'];
     expect(apiKey?.provision?.brand).toBe(STREAMS_API_KEY);
     // The module owns no credentials resource — the key is the target's to mint.
-    expect(graph.nodes.map((n) => n.id)).not.toContain('streams.credentials');
+    expect(graph.nodes.map((n) => n.id)).not.toContain('root.streams.credentials');
   });
 
   test("a consumer's durableStreams() slot resolves to the module's streams port (the service)", () => {
     const graph = Load(root());
     expect(graph.edges).toContainEqual({
-      from: 'streams.service',
-      to: 'consumer',
+      from: 'root.streams.service',
+      to: 'root.consumer',
       input: 'events',
       kind: 'dependency',
     });
@@ -91,6 +91,6 @@ describe('streams()', () => {
       return {};
     });
     const graph = Load(named);
-    expect(graph.nodes.map((n) => n.id)).toContain('events.service');
+    expect(graph.nodes.map((n) => n.id)).toContain('root.events.service');
   });
 });

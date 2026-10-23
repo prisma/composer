@@ -50,10 +50,10 @@ const { data: services, error } = await client.GET('/v1/apps', {
 if (error !== undefined || services === undefined) {
   fail(`GET /v1/apps?projectId=${projectId} failed: ${JSON.stringify(error)}`);
 }
-const service = services.data.find((s) => s.name === 'blobs');
+const service = services.data.find((s) => s.logicalId === `${stack}.blobs`);
 const domain = service?.appEndpointDomain;
 if (domain === undefined || domain.length === 0) {
-  fail(`Project ${projectId} has no 'blobs' app with an endpoint domain.`);
+  fail(`Project ${projectId} has no '${stack}.blobs' app with an endpoint domain.`);
 }
 
 const url = /^https?:\/\//.test(domain) ? domain.replace(/\/$/, '') : `https://${domain}`;

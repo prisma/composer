@@ -17,8 +17,9 @@ description: >-
 
 A **Prisma App** is a tree of typed declarations composed in TypeScript and
 handed to the `prisma` CLI, which has two Composer commands: `prisma deploy`
-and `prisma dev`. Teardown and logs are not commands; they are the `destroy`
-and `log` operations of `@prisma/composer/control`, called from a script.
+and `prisma dev`. Removing a whole app is `prisma project delete`. Removing
+one stage and reading logs are not commands; they are the `destroy` and `log`
+operations of `@prisma/composer/control`, called from a script.
 This file covers structures, hierarchies, relationships, and workflows: the
 concepts you cannot observe from the code or the CLI's help output. It is not
 a CLI reference; discover each command's flags with `prisma <command> --help`
@@ -355,7 +356,11 @@ Bun under `bunx` or `bun run`: `bunx prisma` gives Node then Bun,
 Bun APIs, `bun node_modules/prisma/dist/prisma.js deploy module.ts` from a
 shell runs `prisma` under Bun with Alchemy on Node.
 
-Services, managed Postgres databases and buckets record their node address as
+A node's **address** is the app name followed by the provision ids down to it
+(`shop.auth.api`); the root's address is the app name, or `--name` when given.
+Every surface uses this full form: `serviceOrigin('shop.api')`,
+`prisma dev url shop.api`, the `log` operation's `address`, errors and reports.
+Services, managed Postgres databases and buckets record their address as
 `logicalId` on their Branch. Console uses that address to match topology nodes
 to resources and compare them with main. Existing environments receive the
 identity on their next deploy. A deploy interrupted after creating a resource
@@ -383,7 +388,12 @@ stage is a Branch of it, with its own running services, its own empty
 database, its own configuration. A stage name must be a valid git ref name;
 an invalid name is a hard error.
 
-**Destroy** is the `destroy` operation, and its `target` is required:
+**Removing an app** with every stage is a platform command: find the Project
+id with `prisma project list`, then `prisma project delete <id> --confirm <id>`,
+and check `prisma project list` again to confirm it is gone. It works while the
+app's services are running. Don't write a script for this.
+
+**Destroying one stage** is the `destroy` operation, and its `target` is required:
 `{ kind: 'stage', stage }` or `{ kind: 'production' }`, never a default:
 
 ```ts
@@ -493,7 +503,7 @@ that surprise:
    <address>` (run in the same directory as `dev`) prints where a running node
    answers: a service's `http://localhost:<port>`, a database's connection
    string, a bucket's S3 endpoint plus `/<bucket>`. The URL alone goes to
-   stdout, piped or not, so scripts use `url=$(prisma dev url gateway) && curl "$url"`
+   stdout, piped or not, so scripts use `url=$(prisma dev url shop.gateway) && curl "$url"`
    (`dev url`, `dev stop` and `emulator list` first ship in the `prisma`
    release after 8.0.0-rc.23).
    `--json` gives the full result or the error with its code. It fails with
@@ -634,9 +644,14 @@ today the blocks above plus your own Modules are the whole set, so verify a
    node names must be ASCII letters and digits only (`[A-Za-z0-9]`): they
    derive config keys and address segments, so a hyphenated name like
    `my-db` passes `tsc` and then fails the load. The root module's name is
-   exempt. A provision id shorter than 3 characters is rejected by the
-   platform (name the database `'database'`, not `'db'`), and a service
-   whose name equals its enclosing Module's reads as `auth.auth` unless
+   the app name and may also contain `-` and `_`. Every platform name is the
+   node's full address, so short provision ids are fine: `db` in the app
+   `shop` names its platform rows `shop.db`. Only a full address over its
+   kind's limit fails the deploy: 52 characters for a database's
+   Connection, 100 for a bucket, 256 for a service. The platform's minimums
+   (3 for a Connection, 1 otherwise) are always met, because the shortest
+   address below the root, such as `a.b`, has 3 characters. A service
+   whose name equals its enclosing Module's reads as `shop.auth.auth` unless
    given an explicit `id`.
 8. **`MIGRATION_PATH_NOT_FOUND`**: see Databases above; author the missing
    migration, don't skip the plan step.
@@ -660,8 +675,10 @@ today the blocks above plus your own Modules are the whole set, so verify a
 
 Name the gap instead of inventing an API:
 
-1. **No `prisma` command for teardown or logs.** Use the `destroy` and `log`
-   operations of `@prisma/composer/control` from a script. A destroy script
+1. **No `prisma` command for removing one stage, or for logs.** Remove a whole
+   app with `prisma project delete <id> --confirm <id>`. For one stage and for
+   logs, use the `destroy` and `log` operations of `@prisma/composer/control`
+   from a script. A destroy script
    cannot use the `prisma auth login` session; it needs `PRISMA_SERVICE_TOKEN`
    and `PRISMA_WORKSPACE_ID` in the environment.
 2. **No in-memory contract bindings.** A dependency can't yet be wired to a

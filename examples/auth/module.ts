@@ -45,7 +45,7 @@ export default module('auth-example', ({ provision }) => {
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db, email: mail.send },
-    params: { baseUrl: serviceOrigin('api') },
+    params: { baseUrl: serviceOrigin('auth-example.api') },
   });
   provision(apiService, {
     id: 'api',

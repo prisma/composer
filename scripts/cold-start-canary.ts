@@ -233,8 +233,9 @@ async function findApps(projectId: string): Promise<Apps> {
   let streamsAppId: string | undefined;
   for (const app of list) {
     if (!isRecord(app)) continue;
-    if (app['name'] === 'jobs') jobsUrl = requireString(app, 'appEndpointDomain');
-    if (app['name'] === 'streams.service') streamsAppId = requireString(app, 'id');
+    if (app['logicalId'] === `${stackName}.jobs`) jobsUrl = requireString(app, 'appEndpointDomain');
+    if (app['logicalId'] === `${stackName}.streams.service`)
+      streamsAppId = requireString(app, 'id');
   }
   if (!jobsUrl || !streamsAppId) {
     throw new Error(`stack "${stackName}" is missing the jobs/streams apps`);
@@ -249,10 +250,14 @@ async function findApps(projectId: string): Promise<Apps> {
  */
 function findStreamsArtifact(): string {
   const dir = `${os.tmpdir()}/prisma-composer-compute-${os.userInfo().uid}`;
-  const found = execSync(`ls -t ${dir}/*/streams.service.tar.gz 2>/dev/null | head -1`, {
-    encoding: 'utf8',
-  }).trim();
-  if (!found) throw new Error(`no streams.service.tar.gz under ${dir} — did the deploy build?`);
+  const found = execSync(
+    `ls -t ${dir}/*/${stackName}.streams.service.tar.gz 2>/dev/null | head -1`,
+    {
+      encoding: 'utf8',
+    },
+  ).trim();
+  if (!found)
+    throw new Error(`no ${stackName}.streams.service.tar.gz under ${dir} — did the deploy build?`);
   return found;
 }
 

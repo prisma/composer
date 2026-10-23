@@ -1,10 +1,11 @@
 # Deploying and operating
 
 `prisma deploy` takes your entry file (the one whose default export is the
-root module) and stands the whole app up on Prisma Cloud. Tearing an
-environment down is not a `prisma` command: it is the `destroy` operation from
-`@prisma/composer/control`, which you call from a script (see
-[Destroying](#destroying)). Which environment you're touching — production or
+root module) and stands the whole app up on Prisma Cloud. To remove the app
+with every environment, delete its Project with `prisma project delete`. To
+remove one stage, call the `destroy` operation from `@prisma/composer/control`
+in a script (see [Removing an app or a stage](#removing-an-app-or-a-stage)).
+Which environment you're touching — production or
 an isolated **stage** — is always your choice when you run it, never something
 in your code.
 
@@ -13,7 +14,8 @@ in your code.
 | Deploy to production | `prisma deploy module.ts` |
 | Deploy an isolated environment | `prisma deploy module.ts --stage <name>` |
 | Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
-| Tear down an environment | the `destroy` operation (see [Destroying](#destroying)) |
+| Remove the app and every environment | `prisma project delete <id> --confirm <id>` (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
+| Remove one stage | the `destroy` operation (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
 
 ## Credentials
 
@@ -157,12 +159,15 @@ Re-deploying any environment is idempotent — it updates the resources in
 place. A stage name must be a valid git ref name (`git check-ref-format`);
 an invalid name is a hard error, never a silent rename.
 
+Every node has an **address**: the app name, then the path of provision ids
+down to the node (`storefront-auth.auth.database`).
+
 Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity kind, the entity id and its URL, which is empty for an entity without one. On Prisma Cloud the entity kind is `compute-service`, `postgres-database` or `bucket`. For example, `prisma deploy module.ts | cut -f4` prints each entity's URL, or an empty line for one without. Everything else the deploy prints, including Alchemy's progress, goes to stderr. [Piped output](running-locally.md#piped-output) gives the rules every data line follows.
 
 Two successful deploys print fewer lines than you might expect. A node that published no entities, such as S3 credentials, gets no line. A deploy whose run wrote no report prints no lines at all. Both exit 0. A script that must tell these apart from a deploy with nothing in it uses `--json`: its `summary` lists every node, including those without entities, and is `null` when the run wrote no report.
 
-Services, managed Postgres databases and buckets record their node address
-(`auth.database`) as `logicalId` on their Branch. Console uses the same address
+Services, managed Postgres databases and buckets record their address as
+`logicalId` on their Branch. Console uses the same address
 in the topology to find each resource and its counterpart on main. The row on a
 Branch that holds a node's address is that node's resource: if a deploy is
 interrupted after a resource was created but before it was recorded, the next
@@ -240,8 +245,8 @@ storefront-auth
             https://uvw.ewr.prisma.build
 ```
 
-The tree is your module structure: `auth.api` is the `api` service inside the
-`auth` module. Under each name is the platform resource it became and its id
+The tree is your module structure: `storefront-auth.auth.api` is the `api`
+service inside the `auth` module. Under each name is the platform resource it became and its id
 — the thing to search for in the Console when you need it.
 
 **A URL appears only where the address is genuinely public.** A Compute
@@ -260,9 +265,21 @@ A node that deployed but published nothing reportable is still listed, marked
 about your app. It's gone, replaced by the tree above. Nothing you can
 configure printed it and nothing depended on it.
 
-## Destroying
+## Removing an app or a stage
 
-The `prisma` CLI has no teardown command. Call the `destroy` operation from
+To remove an app with every environment, delete its Project. Its id is in the
+`id` column of `prisma project list`:
+
+```bash
+prisma project list
+prisma project delete proj_123 --confirm proj_123
+prisma project list    # the app is gone
+```
+
+This works while the app's services are running, and removes every stage, its
+resources and its deploy state.
+
+To remove one stage and keep the rest, call the `destroy` operation from
 `@prisma/composer/control` in a script, run from the directory you deploy
 from. It refuses to guess: `target` is required, either
 `{ kind: 'stage', stage }` or `{ kind: 'production' }`.
@@ -301,7 +318,7 @@ the Project still holds another stage's resources, it's left in place.
 Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
 as CI secrets, build, and run the same commands. The per-PR environment
 pattern: on push, run `prisma deploy module.ts --stage "pr-$PR_NUMBER"`; on
-close, run a script like the one under [Destroying](#destroying) whose
+close, run a script like the one under [Removing an app or a stage](#removing-an-app-or-a-stage) whose
 target is that stage, `{ kind: 'stage', stage: 'pr-42' }` for PR 42.
 
 One extra: if your app binds input fields with `envSecret` or `envParam`
@@ -321,7 +338,7 @@ the other end of the wire has to supply them. When one doesn't, the deploy
 stops and names the edge rather than standing the app up:
 
 ```
-Connection input "auth.db" declares param "url", but its producer "db" did not
+Connection input "shop.auth.db" declares param "url", but its producer "shop.db" did not
 supply it — the producer's outputs carry [host]. Add "url" to the outputs the
 producer returns from its lowering, or declare the param optional on the
 connection.
@@ -437,6 +454,68 @@ What deployed apps actually run into, and what to do about it:
 When something misbehaves in ways these don't explain, check
 [`gotchas.md`](../../gotchas.md) at the repo root — the catalogue of platform
 footguns with diagnoses, kept current as we hit them.
+
+## Upgrading to addresses that start with the app name
+
+Earlier versions left the app name out of every address below the root
+(`auth.database` instead of `storefront-auth.auth.database`), and named the
+deploy engine's resources `auth.database-db`, `auth.database-conn` and so on.
+The first deploy with this version moves every resource of an existing
+environment to its new name in place. Databases keep their rows, buckets keep
+their objects, and generated secrets and service keys keep their values. The
+platform resources' `logicalId`s change to the full address in the same deploy.
+Environment variable keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`): each
+variable is replaced by one with the same value under the new key, and services
+get a new deployment.
+
+Every name Composer gives a platform resource becomes the full address too:
+apps, buckets and Composer's database connections and bucket access keys are
+named `storefront-auth.auth.database` and so on. Apps and buckets are renamed in
+place, and custom domains stay. Each database connection and bucket access key
+Composer made is replaced by a new one with new credentials, which your services
+receive in the same deploy. The database and the bucket's objects are kept, and
+connections, keys and environment variables you made yourself are not touched.
+Anything outside the app that copied the old connection string or access key
+needs the new one.
+
+Two things to do yourself:
+
+- **`serviceOrigin()` takes the full address.** Change
+  `serviceOrigin('api')` to `serviceOrigin('<app>.api')`. An address that names
+  no service fails the deploy, naming the address, while it plans. By then the
+  Project and stage Branch exist and the Branch's topology is the new one, but
+  no resource has been created, changed or deleted. An app that uses
+  `serviceOrigin()` can't be deployed under a different name with `--name`,
+  because its addresses start with the app's own name.
+- **Don't deploy an environment with an older version afterwards.** It would
+  look for the old names and recreate every resource, losing their data.
+
+An app with a module or a service directly below the root named like the app
+(`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell
+an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can
+hit one more step. There, one node's new variable key is the key an earlier
+version wrote for another node. The deploy stops before any resource is created, changed or deleted, and
+names the variable and both nodes. The Branch's topology in the Console already
+shows the new addresses by then. It lists every such variable at once. Delete each,
+then deploy again:
+
+```sh
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --role production
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --branch '<stage>'
+```
+
+The first form is for production, the second for a `--stage` environment; the
+Console's Environment variables page works too. Nothing is lost: the deploy
+writes every value under its new key, and running services keep their own copy
+until then. Don't rename either node to get around it: a new address is a new
+entity, and its old rows, and a database's or bucket's data, are deleted.
+
+`prisma dev` keeps its local services, databases and buckets: on its first run
+it rewrites the directory's record to the new addresses. `prisma dev url` takes
+the full address. `prisma emulator list` still shows an instance created before
+the upgrade with its old address label (`api` instead of `shop.api`), because
+the emulators keep the labels they were created with; `prisma dev --fresh`
+recreates the instances with full addresses, and deletes their local data.
 
 ## Upgrading from an older state store
 

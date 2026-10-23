@@ -161,12 +161,13 @@ export interface OriginParamPayload {
 
 /**
  * Binds an input leaf to another service's public origin on the stage being deployed,
- * e.g. `auth()`'s `baseUrl: serviceOrigin('web')`. `address` is the target's provision id.
+ * e.g. `auth()`'s `baseUrl: serviceOrigin('shop.web')`. `address` is the target service's
+ * full address, starting with the app name.
  */
 export function serviceOrigin(address: string): ParamSource<OriginParamPayload> {
   if (typeof address !== 'string' || address.length === 0) {
     throw new Error(
-      "serviceOrigin() requires the target service's deployment address, e.g. serviceOrigin('web').",
+      "serviceOrigin() requires the target service's full address, e.g. serviceOrigin('shop.web').",
     );
   }
   return paramSource<OriginParamPayload>({ [PRISMA_CLOUD_ORIGIN_PARAM_SOURCE]: true, address });

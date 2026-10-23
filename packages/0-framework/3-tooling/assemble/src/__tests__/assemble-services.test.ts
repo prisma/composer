@@ -50,8 +50,8 @@ describe('assembleServices()', () => {
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
     expect(assembled.bundles).toEqual({
-      auth: { dir: '/bundles/auth', entry: 'server.js' },
-      storefront: { dir: '/bundles/storefront', entry: 'server.js' },
+      'fixture-module.auth': { dir: '/bundles/auth', entry: 'server.js' },
+      'fixture-module.storefront': { dir: '/bundles/storefront', entry: 'server.js' },
     });
   });
 
@@ -68,7 +68,7 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, emptyConfig, CWD, fakeRun);
 
-    expect(Object.keys(assembled.bundles)).toEqual(['auth.api']);
+    expect(Object.keys(assembled.bundles)).toEqual(['shop.auth.api']);
   });
 
   test('a module with no provisioned services throws AssembleError', async () => {
@@ -92,7 +92,7 @@ describe('assembleServices()', () => {
 
     await assembleServices(graph, emptyConfig, CWD, run);
 
-    expect(seen).toEqual([{ address: 'auth', cwd: CWD }]);
+    expect(seen).toEqual([{ address: 'fixture-module.auth', cwd: CWD }]);
   });
 
   test("the default RunAssembler routes through the config's build descriptor — (build.extension, build.type), any community id — and forwards the address + cwd", async () => {
@@ -128,8 +128,8 @@ describe('assembleServices()', () => {
 
     const assembled = await assembleServices(graph, config, CWD);
 
-    expect(seen).toEqual([{ type: 'cron', address: 'svc', cwd: CWD }]);
-    expect(assembled.bundles['svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
+    expect(seen).toEqual([{ type: 'cron', address: 'fixture-module.svc', cwd: CWD }]);
+    expect(assembled.bundles['fixture-module.svc']).toEqual({ dir: '/bundles/cron', entry: 'x' });
   });
 
   test('each service reports its start and end, carrying what its build descriptor reported', async () => {
@@ -165,10 +165,14 @@ describe('assembleServices()', () => {
     await assembleServices(Load(root), config, CWD, undefined, (event) => events.push(event));
 
     expect(events).toEqual([
-      { kind: 'service-started', address: 'loud' },
-      { kind: 'service-assembled', address: 'loud', data: { strategy: 'copy', files: 3 } },
-      { kind: 'service-started', address: 'quiet' },
-      { kind: 'service-assembled', address: 'quiet', data: {} },
+      { kind: 'service-started', address: 'fixture-module.loud' },
+      {
+        kind: 'service-assembled',
+        address: 'fixture-module.loud',
+        data: { strategy: 'copy', files: 3 },
+      },
+      { kind: 'service-started', address: 'fixture-module.quiet' },
+      { kind: 'service-assembled', address: 'fixture-module.quiet', data: {} },
     ]);
   });
 
@@ -233,7 +237,7 @@ describe('assembleServices()', () => {
     if (!(error instanceof AssembleError)) throw new Error('unreachable');
     expect(error.code).toBe('ASSEMBLE.BUILD_FAILED');
     expect(error.message).toBe('no built entry at /some/dist/server.js');
-    expect(error.meta).toEqual({ address: 'auth' });
+    expect(error.meta).toEqual({ address: 'fixture-module.auth' });
     expect(error.cause).toBe(cause);
   });
 

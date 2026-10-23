@@ -12,10 +12,10 @@ describe('storefront-auth root graph', () => {
     const graph = Load(root);
     expect(graph.inputBindings.length).toBe(1);
     const recorded = graph.inputBindings[0];
-    expect(recorded?.serviceAddress).toBe('auth.service');
+    expect(recorded?.serviceAddress).toBe('storefront-auth.auth.service');
     const binding = recorded?.binding;
     if (typeof binding !== 'object' || binding === null || Array.isArray(binding)) {
-      throw new Error('expected an object input binding for auth.service');
+      throw new Error('expected an object input binding for storefront-auth.auth.service');
     }
     const leaf = (binding as Record<string, unknown>)['signingKey'];
     if (!isSecretSource(leaf)) throw new Error('expected a secret-source leaf');

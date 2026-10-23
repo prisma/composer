@@ -21,6 +21,7 @@ import * as Effect from 'effect/Effect';
 import { LocalBucketAccessKeyProvider, LocalBucketProvider } from '../bucket.ts';
 
 const APP = 'bucket-providers-app';
+const UPLOADS = `${APP}.uploads`;
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 
 const reconcileInput = (id: string, news: Record<string, unknown>) =>
@@ -61,25 +62,27 @@ describe.skipIf(process.platform === 'win32')('the local Bucket providers', () =
     else process.env[EMULATORS_DIR_ENV] = savedEmulatorsDir;
   });
 
-  async function reconcileBucket(name: string): Promise<Bucket['Attributes']> {
+  /** The resource ID is the node's address and keys the record; `name` is only the label. */
+  async function reconcileBucket(address: string): Promise<Bucket['Attributes']> {
     const service = await Effect.runPromise(
       Bucket.Provider.pipe(Effect.provide(LocalBucketProvider(input))),
     );
-    return Effect.runPromise(service.reconcile(reconcileInput(name, { project: 'p', name })));
+    const name = address.slice(address.indexOf('.') + 1);
+    return Effect.runPromise(service.reconcile(reconcileInput(address, { project: 'p', name })));
   }
 
   test('a Bucket creates a bucket instance once, with its data root in the project', async () => {
-    const first = await reconcileBucket('uploads');
-    const again = await reconcileBucket('uploads');
+    const first = await reconcileBucket(UPLOADS);
+    const again = await reconcileBucket(UPLOADS);
 
     expect(again.bucketId).toBe(first.bucketId);
     const instance = await bucketsClient().getInstance(first.bucketId);
     expect(instance?.dir).toBe(path.join(input.devDir, 'buckets', APP, 'uploads'));
-    expect(instance?.labels['composer.address']).toBe('uploads');
+    expect(instance?.labels['composer.address']).toBe(UPLOADS);
   });
 
   test("a BucketAccessKey names the bucket's instance as the bucket on the S3 wire", async () => {
-    const bucket = await reconcileBucket('uploads');
+    const bucket = await reconcileBucket(UPLOADS);
     const service = await Effect.runPromise(
       BucketAccessKey.Provider.pipe(Effect.provide(LocalBucketAccessKeyProvider(input))),
     );

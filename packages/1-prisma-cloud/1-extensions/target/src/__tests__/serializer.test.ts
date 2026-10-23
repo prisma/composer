@@ -13,6 +13,7 @@ import {
   deserialize,
   encode,
   encodeParamPointer,
+  generatedParamVarName,
   isParamPointerRow,
   readOrigin,
   stashProviderParams,
@@ -177,5 +178,29 @@ describe('the framework-resolved origin row rides stashProviderParams; readOrigi
     await withEnv({ [freeKey]: encode('service', 'https://web.example.com') }, () => {
       expect(readOrigin()).toBe('https://web.example.com');
     });
+  });
+});
+
+describe('COMPOSER_ keys are built from the full address', () => {
+  test('configKey turns `-` in the app name into `_`', () => {
+    expect(configKey('my-shop.api', { owner: 'service', name: 'port' })).toBe(
+      'COMPOSER_MY_SHOP_API_PORT',
+    );
+  });
+
+  test('configKey scopes an input-owned param by every address segment', () => {
+    expect(configKey('my-shop.auth.api', { owner: { input: 'db' }, name: 'url' })).toBe(
+      'COMPOSER_MY_SHOP_AUTH_API_DB_URL',
+    );
+  });
+
+  test('generatedParamVarName turns `-` in the app name into `_`', () => {
+    expect(generatedParamVarName('my-shop.api', 'session.secret')).toBe(
+      'COMPOSER_MY_SHOP_API_SESSION_SECRET_GENERATED',
+    );
+  });
+
+  test('an empty address yields the address-free key', () => {
+    expect(configKey('', { owner: 'service', name: 'port' })).toBe('COMPOSER_PORT');
   });
 });

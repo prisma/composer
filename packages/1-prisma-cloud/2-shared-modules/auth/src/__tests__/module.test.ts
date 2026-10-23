@@ -30,7 +30,7 @@ function sourcePayload(binding: unknown): unknown {
 /** The object input binding a root provisioned for one service address (ADR-0042). */
 function serviceBindingOf(
   inputBindings: ReadonlyArray<{ serviceAddress: string; binding: unknown }>,
-  address = 'auth.service',
+  address = 'root.auth.service',
 ): Record<string, unknown> {
   const binding = inputBindings.find((b) => b.serviceAddress === address)?.binding;
   if (typeof binding !== 'object' || binding === null || Array.isArray(binding)) {
@@ -83,20 +83,20 @@ describe('auth()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('auth.service')).toBe('compute');
+    expect(typeOf('root.auth.service')).toBe('compute');
     // The database and the mail provider are the ROOT's nodes — the module
     // provisions no db or email service of its own.
-    expect(typeOf('database')).toBe('postgres');
-    expect(typeOf('mail')).toBe('compute');
+    expect(typeOf('root.database')).toBe('postgres');
+    expect(typeOf('root.mail')).toBe('compute');
     expect(graph.edges).toContainEqual({
-      from: 'database',
-      to: 'auth.service',
+      from: 'root.database',
+      to: 'root.auth.service',
       input: 'db',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'mail',
-      to: 'auth.service',
+      from: 'root.mail',
+      to: 'root.auth.service',
       input: 'email',
       kind: 'dependency',
     });
@@ -131,26 +131,26 @@ describe('auth()', () => {
   test('the three ports wire to three consumers independently', () => {
     const graph = Load(rootWithAuth());
     expect(graph.edges).toContainEqual({
-      from: 'auth.service',
-      to: 'app',
+      from: 'root.auth.service',
+      to: 'root.app',
       input: 'authApi',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'auth.service',
-      to: 'app',
+      from: 'root.auth.service',
+      to: 'root.app',
       input: 'verifier',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'auth.service',
-      to: 'profile',
+      from: 'root.auth.service',
+      to: 'root.profile',
       input: 'session',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'auth.service',
-      to: 'ops',
+      from: 'root.auth.service',
+      to: 'root.ops',
       input: 'admin',
       kind: 'dependency',
     });
@@ -170,8 +170,8 @@ describe('auth()', () => {
       }),
     );
     const ids = graph.nodes.map((n) => n.id);
-    expect(ids).toContain('identity.service');
-    const binding = serviceBindingOf(graph.inputBindings, 'identity.service');
+    expect(ids).toContain('root.identity.service');
+    const binding = serviceBindingOf(graph.inputBindings, 'root.identity.service');
     expect(isGeneratedParamSource(binding['secret'])).toBe(true);
   });
 });

@@ -28,19 +28,19 @@ describe('storage()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('storage.db')).toBe('raw-postgres');
-    expect(typeOf('storage.credentials')).toBe('credentials');
-    expect(typeOf('storage.service')).toBe('s3-store');
+    expect(typeOf('root.storage.db')).toBe('raw-postgres');
+    expect(typeOf('root.storage.credentials')).toBe('credentials');
+    expect(typeOf('root.storage.service')).toBe('s3-store');
 
     expect(graph.edges).toContainEqual({
-      from: 'storage.db',
-      to: 'storage.service',
+      from: 'root.storage.db',
+      to: 'root.storage.service',
       input: 'db',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'storage.credentials',
-      to: 'storage.service',
+      from: 'root.storage.credentials',
+      to: 'root.storage.service',
       input: 'credentials',
       kind: 'dependency',
     });
@@ -57,8 +57,8 @@ describe('storage()', () => {
 
     // The exposed `store` port resolves to the underlying s3-store service.
     expect(graph.edges).toContainEqual({
-      from: 'storage.service',
-      to: 'consumer',
+      from: 'root.storage.service',
+      to: 'root.consumer',
       input: 'store',
       kind: 'dependency',
     });
@@ -72,12 +72,12 @@ describe('storage()', () => {
 
     const graph = Load(root);
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
-    expect([...byId.keys()]).toContain('blobs.service');
-    expect([...byId.keys()]).toContain('blobs.db');
+    expect([...byId.keys()]).toContain('root.blobs.service');
+    expect([...byId.keys()]).toContain('root.blobs.db');
 
     // opts.bucket reaches the s3-store service as its input binding (ADR-0042).
     expect(graph.inputBindings).toContainEqual({
-      serviceAddress: 'blobs.service',
+      serviceAddress: 'root.blobs.service',
       binding: { bucket: 'photos' },
     });
   });
@@ -89,7 +89,7 @@ describe('storage()', () => {
     });
 
     expect(Load(root).inputBindings).toContainEqual({
-      serviceAddress: 'storage.service',
+      serviceAddress: 'root.storage.service',
       binding: { bucket: 'storage' },
     });
   });
