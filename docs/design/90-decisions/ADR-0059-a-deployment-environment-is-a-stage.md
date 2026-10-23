@@ -17,6 +17,8 @@ A deployment target decides what a stage becomes on its platform. Prisma Cloud m
 | `staging` | the Branch whose `gitName` is `staging` |
 | the local development environment (`prisma dev`) | nothing: local dev creates no Branch |
 
+A deploy without `--stage` is still resolved as ADR-0024 describes: at the Project level, on the Project's default Branch. This ADR records the term only and does not change how any stage resolves.
+
 The target's own word appears only where Composer reports what the target did, such as naming the Branch a deploy landed on. It never replaces "stage" in a flag, an input, or a description of Composer's model.
 
 ## Reasoning
