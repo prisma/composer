@@ -272,6 +272,9 @@ const fillFailedError = (key: string, error: unknown): Error =>
     `deploy preflight: failed to provision "${key}" from the deploy shell: ${JSON.stringify(error)}.`,
   );
 
+/** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
 function missingError(
   missing: readonly MissingBinding[],
   projectId: string,
@@ -282,11 +285,12 @@ function missingError(
   const countPhrase =
     missing.length === 1 ? '1 required setting has' : `${missing.length} required settings have`;
   const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
-  // `project env add` takes a single KEY=VALUE per call; the placeholder is
-  // quoted so a pasted command is not read as a shell redirection.
+    branchId === undefined ? '--role production' : `--branch ${shellQuote(stage ?? branchId)}`;
+  // `project env add` takes a single KEY=VALUE per call. Quoting the pair keeps the
+  // `<value>` placeholder from being read as a shell redirection.
   const commands = missing.map(
-    (m) => `prisma project env add ${m.name}="<value>" --project ${projectId} ${scopeFlag}`,
+    (m) =>
+      `prisma project env add ${shellQuote(`${m.name}=<value>`)} --project ${shellQuote(projectId)} ${scopeFlag}`,
   );
   const runStep =
     commands.length === 1
@@ -304,9 +308,6 @@ function missingError(
       `  - Or in the Prisma Console: open the project, go to Environment variables, and ${consoleStep}`,
   );
 }
-
-/** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
-const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 function envKeyClashError(
   clashes: readonly EnvKeyClash[],

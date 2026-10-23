@@ -319,9 +319,22 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     expect(message).toContain('service "app.ingest"');
     expect(message).toContain('production');
     expect(message).toContain(
-      'prisma project env add STRIPE_SECRET_KEY="<value>" --project proj --role production',
+      "prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --role production",
     );
     expect(state.posts).toEqual([]);
+  });
+
+  test('quotes the stage in the printed add command so it is safe to paste', async () => {
+    state.rows = [];
+
+    const error = await runPreflight(
+      { graph: secretGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(String(error)).toContain(
+      `prisma project env add 'STRIPE_SECRET_KEY=<value>' --project 'proj' --branch 'it'\\''s "$HOME" x'`,
+    );
   });
 
   test('reports how many names it checked, filled from the shell, and found missing', async () => {
