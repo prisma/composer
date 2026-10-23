@@ -22,6 +22,9 @@ import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
 
+/** The record's format. A record without it was written before node keys were full addresses (ADR-0056). */
+export const EMULATOR_INSTANCES_FORMAT_VERSION = 2;
+
 export interface ServiceNodeInstance {
   readonly kind: 'service';
   readonly id: string;
@@ -134,20 +137,28 @@ function isSingleAppRecord(value: unknown): value is SingleAppRecord {
   );
 }
 
-type StoredRecord = EmulatorInstances | SingleAppRecord;
+/** What is on disk: the current format carries `formatVersion`; older records do not. */
+type VersionedRecord = EmulatorInstances & { readonly formatVersion?: number };
+
+type StoredRecord = VersionedRecord | SingleAppRecord;
 
 function isStoredRecord(value: unknown): value is StoredRecord {
   return isEmulatorInstances(value) || isSingleAppRecord(value);
 }
 
 /**
- * A single-app record reads as a record holding that one app, and a node keyed
- * by its address without the app name reads under its full address. The next
- * write rewrites the file in the current form.
+ * A record without `formatVersion` was written before node keys were full addresses, so each of
+ * its keys reads with the app's name in front; a single-app record also reads as a record holding
+ * that one app. The next write stores the current format.
  */
 function normalized(stored: StoredRecord | undefined): EmulatorInstances | undefined {
   if (stored === undefined) return undefined;
-  if (isEmulatorInstances(stored)) return withFullAddressKeys(stored);
+  if (isEmulatorInstances(stored)) {
+    if (stored.formatVersion === EMULATOR_INSTANCES_FORMAT_VERSION) {
+      return { current: stored.current, apps: stored.apps };
+    }
+    return withFullAddressKeys(stored);
+  }
   const nodes = Object.fromEntries(
     Object.entries(stored.nodes).map(([address, { id, port }]) => [
       address,
@@ -177,7 +188,10 @@ async function updateRecord(
   devDir: string,
   mutate: (record: EmulatorInstances | undefined) => EmulatorInstances,
 ): Promise<void> {
-  await store(devDir).update((stored) => mutate(normalized(stored)));
+  await store(devDir).update((stored) => ({
+    formatVersion: EMULATOR_INSTANCES_FORMAT_VERSION,
+    ...mutate(normalized(stored)),
+  }));
 }
 
 /** The record `prisma dev` left in `directory`; undefined when it has not run there. */

@@ -1,7 +1,7 @@
 /**
- * Upgrading a directory whose record keys each node by its address without
- * the app name (`uploads`) to full addresses (`shop.uploads`), with the
- * bucket data folders where earlier releases put them.
+ * Upgrading a directory whose record has no format version, and so keys each
+ * node by its address without the app name (`uploads`), to full addresses
+ * (`shop.uploads`), with the bucket data folders where earlier releases put them.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -27,6 +27,7 @@ import {
   ensureDatabaseInstance,
   ensureServiceInstance,
   type NodeInstance,
+  readEmulatorInstances,
   selectApp,
 } from '../emulator-instances.ts';
 import { withFullAddressKeys } from '../legacy-address-keys.ts';
@@ -35,12 +36,18 @@ import { resolvePrismaDevModulePath } from '../prisma-dev-module.ts';
 const service = (id: string): NodeInstance => ({ kind: 'service', id, port: 3000 });
 
 describe('withFullAddressKeys', () => {
-  test('puts the app name in front of an old key and leaves full keys and the app key alone', () => {
+  test('puts the app name in front of every key, whatever the key looks like', () => {
     const record: EmulatorInstances = {
       current: 'shop',
       apps: {
         shop: {
-          nodes: { api: service('a'), 'shop.web': service('w'), shop: service('s') },
+          nodes: {
+            api: service('a'),
+            'auth.api': service('b'),
+            // A child provisioned with the id `shop`, and a node `db` in a module `shop`.
+            shop: service('c'),
+            'shop.db': service('d'),
+          },
         },
       },
     };
@@ -49,28 +56,14 @@ describe('withFullAddressKeys', () => {
       current: 'shop',
       apps: {
         shop: {
-          nodes: { 'shop.api': service('a'), 'shop.web': service('w'), shop: service('s') },
+          nodes: {
+            'shop.api': service('a'),
+            'shop.auth.api': service('b'),
+            'shop.shop': service('c'),
+            'shop.shop.db': service('d'),
+          },
         },
       },
-    });
-  });
-
-  test('a nested old key gets the app name in front', () => {
-    const record = { current: 'shop', apps: { shop: { nodes: { 'auth.api': service('a') } } } };
-
-    expect(withFullAddressKeys(record).apps['shop']?.nodes).toEqual({
-      'shop.auth.api': service('a'),
-    });
-  });
-
-  test('when both the old and the full key exist, the full one wins', () => {
-    const record = {
-      current: 'shop',
-      apps: { shop: { nodes: { api: service('old'), 'shop.api': service('new') } } },
-    };
-
-    expect(withFullAddressKeys(record).apps['shop']?.nodes).toEqual({
-      'shop.api': service('new'),
     });
   });
 
@@ -88,15 +81,76 @@ describe('withFullAddressKeys', () => {
       blog: { nodes: { 'blog.api': service('b') } },
     });
   });
+});
 
-  test('rewriting a rewritten record changes nothing', () => {
-    const record = {
+describe('the record format version', () => {
+  let directory: string;
+  let scope: AppScope;
+  let recordFile: string;
+
+  beforeEach(() => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'local-target-record-format-'));
+    scope = { devDir: path.join(directory, '.prisma-composer', 'dev'), app: 'shop' };
+    recordFile = path.join(scope.devDir, EMULATOR_INSTANCES_FILE);
+    fs.mkdirSync(scope.devDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+
+  const write = (record: unknown) => fs.writeFileSync(recordFile, JSON.stringify(record));
+  const onDisk = () => JSON.parse(fs.readFileSync(recordFile, 'utf8')) as unknown;
+
+  test('a record without a version gets the app name in front of every key', async () => {
+    write({
       current: 'shop',
-      apps: { shop: { nodes: { api: service('a'), 'auth.api': service('b') } } },
-    };
-    const once = withFullAddressKeys(record);
+      apps: { shop: { nodes: { api: service('a'), shop: service('c'), 'shop.db': service('d') } } },
+    });
 
-    expect(withFullAddressKeys(once)).toEqual(once);
+    expect(await readEmulatorInstances(directory)).toEqual({
+      current: 'shop',
+      apps: {
+        shop: {
+          nodes: {
+            'shop.api': service('a'),
+            'shop.shop': service('c'),
+            'shop.shop.db': service('d'),
+          },
+        },
+      },
+    });
+  });
+
+  test('a record with the version is read as it is, even a key that looks like an old one', async () => {
+    const nodes = { 'shop.api': service('a'), api: service('b') };
+    write({ formatVersion: 2, current: 'shop', apps: { shop: { nodes } } });
+
+    expect(await readEmulatorInstances(directory)).toEqual({
+      current: 'shop',
+      apps: { shop: { nodes } },
+    });
+  });
+
+  test('the first write stores the version and the full keys, and the next leaves the file byte for byte', async () => {
+    write({ current: 'shop', apps: { shop: { nodes: { shop: service('c') } } } });
+
+    await selectApp(scope);
+
+    expect(onDisk()).toEqual({
+      formatVersion: 2,
+      current: 'shop',
+      apps: { shop: { nodes: { 'shop.shop': service('c') } } },
+    });
+    const first = fs.readFileSync(recordFile, 'utf8');
+    await selectApp(scope);
+    expect(fs.readFileSync(recordFile, 'utf8')).toBe(first);
+  });
+
+  test('a new directory starts with the version', async () => {
+    await selectApp(scope);
+
+    expect(onDisk()).toEqual({ formatVersion: 2, current: 'shop', apps: { shop: { nodes: {} } } });
   });
 });
 
@@ -216,6 +270,7 @@ describe.skipIf(process.platform === 'win32')('upgrading a directory from short 
     });
     expect(fs.readFileSync(path.join(bucketDir, 'kept.txt'), 'utf8')).toBe('kept');
     expect(JSON.parse(fs.readFileSync(recordFile, 'utf8'))).toEqual({
+      formatVersion: 2,
       current: APP,
       apps: {
         [APP]: {

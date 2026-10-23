@@ -334,7 +334,11 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       fs.readFileSync(path.join(devDir, EMULATOR_INSTANCES_FILE), 'utf8'),
     );
     const node = await nodeOf(directory, QUOTES);
-    expect(onDisk).toEqual({ current: APP, apps: { [APP]: { nodes: { [QUOTES]: node } } } });
+    expect(onDisk).toEqual({
+      formatVersion: 2,
+      current: APP,
+      apps: { [APP]: { nodes: { [QUOTES]: node } } },
+    });
     expect((await computeClient().getInstance(node.id))?.labels).toEqual({
       'composer.directory': directory,
       'composer.app': APP,
@@ -435,7 +439,10 @@ describe.skipIf(process.platform === 'win32')('against a real Compute emulator',
       const provider = await appProvider(devDir);
       return Effect.runPromise(
         provider.reconcile(
-          reconcileInput(`${address}-svc`, { project: 'local', displayName: address }),
+          reconcileInput(address, {
+            project: 'local',
+            displayName: address.slice(address.indexOf('.') + 1),
+          }),
         ),
       );
     }
