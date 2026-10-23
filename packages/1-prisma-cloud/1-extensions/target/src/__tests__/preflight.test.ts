@@ -747,7 +747,7 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
       { client: fakeClient(state) },
     );
 
-  test('fails before changing anything while the old owner still holds the key', async () => {
+  test('fails before any resource changes while the old owner still holds the key', async () => {
     state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
 
     const error = await preflight().catch((e: unknown) => e);
@@ -777,5 +777,67 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
     state.rows = [{ ...row('COMPOSER_SHOP_X_ORIGIN'), branchId: null }];
 
     await preflight();
+  });
+});
+
+describe('runPreflight — a chain of COMPOSER_ keys that change owner', () => {
+  /** `shop.x`, `shop.shop.x` and `shop.shop.shop.x`: each node's new key is the next one's old key. */
+  const chainGraph = () =>
+    Load(
+      module('shop', ({ provision }) => {
+        provision(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+        provision(
+          module('shop', ({ provision: p }) => {
+            p(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+            p(
+              module('shop', ({ provision: q }) => {
+                q(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+              }),
+              { id: 'shop' },
+            );
+          }),
+          { id: 'shop' },
+        );
+      }),
+    );
+  const row = (key: string): Row => ({
+    projectId: 'proj',
+    class: 'production',
+    key,
+    branchId: null,
+  });
+  const preflight = (state: FakeState) =>
+    runPreflight(
+      { graph: chainGraph(), container: fakeContainer('proj', undefined), stage: undefined },
+      { client: fakeClient(state) },
+    );
+
+  test('reports every link in one run', async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      rows: [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')],
+      postStatus: 201,
+    };
+
+    const message = String(await preflight(state).catch((e: unknown) => e));
+
+    expect(message).toContain('COMPOSER_SHOP_X_ORIGIN belongs to "shop.shop.x"');
+    expect(message).toContain('COMPOSER_SHOP_SHOP_X_ORIGIN belongs to "shop.shop.shop.x"');
+  });
+
+  test('passes once every node has moved', async () => {
+    const state: FakeState = {
+      gets: [],
+      posts: [],
+      rows: [
+        row('COMPOSER_SHOP_X_ORIGIN'),
+        row('COMPOSER_SHOP_SHOP_X_ORIGIN'),
+        row('COMPOSER_SHOP_SHOP_SHOP_X_ORIGIN'),
+      ],
+      postStatus: 201,
+    };
+
+    await preflight(state);
   });
 });

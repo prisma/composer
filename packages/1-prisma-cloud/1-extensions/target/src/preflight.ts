@@ -181,7 +181,10 @@ async function composerRowExists(
 /**
  * A clash blocks the deploy while the old owner's row still holds the key and has not moved to
  * its new key yet. Before the move, the deploy would fail on that key partway through; after it,
- * the key belongs to the new owner, and a new stage has neither row.
+ * the key belongs to the new owner, and a new stage has neither row. The old owner's new key can
+ * itself be a third node's old key (`shop.x`, `shop.shop.x`, `shop.shop.shop.x`); a row there
+ * counts as moved only when that clash is not pending, so a whole chain is reported at once.
+ * Along a chain every key is longer than the one before, so the walk ends.
  */
 async function pendingEnvKeyClashes(
   client: ManagementApiClient,
@@ -189,11 +192,25 @@ async function pendingEnvKeyClashes(
   branchId: string | undefined,
   clashes: readonly EnvKeyClash[],
 ): Promise<readonly EnvKeyClash[]> {
+  const byKey = new Map(clashes.map((clash) => [clash.key, clash]));
+  const exists = new Map<string, Promise<boolean>>();
+  const rowExists = (key: string) => {
+    const known = exists.get(key);
+    if (known !== undefined) return known;
+    const found = composerRowExists(client, projectId, branchId, key);
+    exists.set(key, found);
+    return found;
+  };
+  const isPending = async (clash: EnvKeyClash): Promise<boolean> =>
+    (await rowExists(clash.key)) && !(await hasMoved(clash.oldOwnerNewKey));
+  const hasMoved = async (key: string): Promise<boolean> => {
+    if (!(await rowExists(key))) return false;
+    const next = byKey.get(key);
+    return next === undefined || !(await isPending(next));
+  };
   const pending: EnvKeyClash[] = [];
   for (const clash of clashes) {
-    if (!(await composerRowExists(client, projectId, branchId, clash.key))) continue;
-    if (await composerRowExists(client, projectId, branchId, clash.oldOwnerNewKey)) continue;
-    pending.push(clash);
+    if (await isPending(clash)) pending.push(clash);
   }
   return pending;
 }
@@ -305,7 +322,8 @@ function envKeyClashError(
     (c) => `      prisma project env delete ${c.key} --project ${projectId} ${scopeFlag}`,
   );
   return new Error(
-    'Deploy failed before changing anything. Moving to addresses that start with the app name ' +
+    "Deploy failed before any resource was created, changed or deleted; the branch's application " +
+      'topology has already been replaced and the build recorded. Moving to addresses that start with the app name ' +
       "gives these environment variables a new owner, but each still holds its old owner's value:\n" +
       `${lines.join('\n')}\n\n` +
       'Delete each one, then deploy again. The deploy writes every value under its new key, so ' +
