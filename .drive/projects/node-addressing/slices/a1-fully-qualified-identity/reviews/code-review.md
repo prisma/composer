@@ -168,3 +168,15 @@ Commits `b6a2b273`, `82afb495`, `0c8e807e` on top of `49ce6e91`. Two deviations 
 ## Acceptance criteria (round 3)
 
 Unchanged from round 2, except that the critical condition's open code issues (F01, F03) are closed. It stays **NOT VERIFIED** only because QA (D6) has not run.
+
+---
+
+# Round 4 — R3-F01 and R3-F02
+
+Commits `b34ac515`, `648a4872`. **Verdict: SATISFIED.**
+
+- **R3-F01 fixed.** The error (`preflight.ts`), ADR-0057's clash paragraph and consequence, the upgrade guide and `upgrade-effects.md` now say that no resource has been created, changed or deleted, and that the Branch's topology has been replaced and the build recorded. That matches the order in `execute-deploy-destroy.ts`: reporters attach at line 465, preflight starts at line 497. No other copy of "before changing anything" remains. One leftover detail: the ADR consequence still says "until that one old variable is deleted", but with a chain there can be several. The guide correctly says "delete each". Not blocking.
+- **R3-F02 fixed.** `pendingEnvKeyClashes` now counts a row under the old owner's new key as moved only if no pending clash has that key. The walk always ends: each step moves from a clash's key to the old owner's new key, and the new key is the old key plus the app-name segment, so it is strictly longer. No cycle is possible. Row lookups are memoized. I traced the three-node chain by hand. With the old rows K and K' present and K'' absent, both K and K' are reported. Once K'' exists, neither is.
+- **The tests assert what they claim.** "reports every link in one run" expects both `COMPOSER_SHOP_X_ORIGIN belongs to "shop.shop.x"` and `COMPOSER_SHOP_SHOP_X_ORIGIN belongs to "shop.shop.shop.x"`. A successful preflight would turn into `[object Map]` and fail both checks. Before this fix, the first check would have failed, so the test tells the two behaviours apart. "passes once every node has moved" fails if preflight throws.
+
+The critical condition has no open code issues. It is still NOT VERIFIED until QA (D6) runs.
