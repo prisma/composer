@@ -1,5 +1,7 @@
 # ADR-0041: Local dev runs the deploy pipeline against local providers
 
+Amended by [ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md): local dev runs at a stage the user names, `dev` by default.
+
 Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md): the command is `prisma dev <entry>`, and reading the running app's logs is the `log` operation on `@prisma/composer/control`, not a command. The `prisma-composer` binary is retired. The local pipeline below is unchanged.
 
 Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md): the emulators know nothing about Composer. A dev instance is no longer identified on the emulators by the app name: the Compute, Postgres and bucket emulators key their instances by ids they generate, and Composer records, per working directory, which instance backs each node of each app run there. When `prisma dev` ends it stops the app's database servers as well as its services.

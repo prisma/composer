@@ -1,5 +1,7 @@
 # Config params
 
+> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does; the module `params`/`paramNeed()` and `secrets`/`secret()` slots described here are removed.
+
 How a service's configuration is declared, typed, carried to the platform, and
 read back at boot. Rests on
 [ADR-0018](../90-decisions/ADR-0018-config-params-carry-a-caller-owned-schema.md)

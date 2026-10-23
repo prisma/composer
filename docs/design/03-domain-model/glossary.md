@@ -194,7 +194,11 @@ A Module consuming a Postgres Resource.
 ### Ingress / Egress
 
 **Ingress** = a request/response Output exposed to the public (e.g. the website) —
-a real edge at the topology's public boundary. **Egress** = a Service's declared
+a real edge at the topology's public boundary. It is authored as an `ingress()`
+node: a driver that routes one hostname to one exposed HTTP port; with no
+hostname, the platform generates one
+([ADR-0060](../90-decisions/ADR-0060-ingress-is-a-driver-on-an-exposed-http-port.md)).
+**Egress** = a Service's declared
 **outbound dependency** on something outside the topology (an external URL/API).
 Egress is *not* an edge to a node — the far end isn't in the graph; it's a property
 of the Service plus the Configuration (URL + credentials) it carries. To represent
@@ -262,9 +266,12 @@ Service.
 ### Stage
 
 A deploy-time **environment** name, chosen with `--stage` and never authored in
-the topology — the same graph deploys to any stage. The **default stage** (no
-`--stage`) is production, at the Project level; a **named stage** resolves to a
-Prisma Cloud **Branch**, its `gitName` set to the stage name. See
+the topology — the same graph deploys to any stage. Every stage has a name:
+`prisma deploy` defaults to `production` and `prisma dev` to `dev`, and no
+stage is special. On Prisma Cloud, `production` resolves to the Project's
+default Branch and any other stage to the **Branch** whose `gitName` is the
+stage name
+([ADR-0062](../90-decisions/ADR-0062-stage-configuration-comes-from-providers.md)). See
 [ADR-0023](../90-decisions/ADR-0023-a-prisma-app-is-one-project-a-stage-is-a-branch.md)
 and
 [ADR-0024](../90-decisions/ADR-0024-a-stage-is-a-deploy-time-environment-resolved-to-project-and-branch.md).

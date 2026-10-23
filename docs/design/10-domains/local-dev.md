@@ -1,5 +1,7 @@
 # Local dev (`prisma dev`)
 
+> Amended by [ADR-0062](../90-decisions/ADR-0062-stage-configuration-comes-from-providers.md): local dev runs at a stage the user names, `dev` by default; "Stages do not apply" below no longer holds.
+
 The local dev loop: one command brings up the whole topology from the root
 module, credential-free, with deploy parity everywhere above the Alchemy
 provider boundary. The architectural decision — dev runs the deploy pipeline

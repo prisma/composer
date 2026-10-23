@@ -1,5 +1,7 @@
 # Module composition
 
+> Amended by [ADR-0061](../90-decisions/ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares one `input` schema, as a compute service does; the module `params`/`paramNeed()` and `secrets`/`secret()` slots described here are removed.
+
 How a module declares a boundary, forwards through it, nests, and is consumed
 from another module. The decision this design rests on is
 [ADR-0016](../90-decisions/ADR-0016-a-module-has-the-same-boundary-as-a-service.md)
