@@ -93,8 +93,12 @@ export interface ResolvedCloudOptions {
   readonly pointerUpdatedAt: PointerUpdatedAt;
 }
 
-/** The longest name the Management API accepts for each kind of row Composer names. */
-const PLATFORM_NAME_LIMITS = { App: 256, Connection: 65, Bucket: 100 } as const;
+/**
+ * The longest address each kind of row can be named by. The platform allows 65 characters in a
+ * Connection name, but upstream appends `-` and a 12-character token to every one and cuts what
+ * does not fit, so 52 keeps the whole address.
+ */
+const PLATFORM_NAME_LIMITS = { App: 256, Connection: 52, Bucket: 100 } as const;
 
 /**
  * Checks that the platform can hold the node's address as the name of its `kind` row (ADR-0057).

@@ -2718,7 +2718,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   test('a database whose address is over the Connection limit throws at lower time, before any Database is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
-      const id = idForAddressOfLength(66);
+      const id = idForAddressOfLength(53);
       const root = module('shop', {}, ({ provision }) => {
         const db = provision(rawPostgres({ name: 'db' }), { id });
         provision(compute({ name: 'auth', deps: { main: rawPostgres() }, build }), {
@@ -2735,7 +2735,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       // A framework authoring error naming the address and the limit — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain(tooLongMessage(id, 'Connection', 65));
+      expect(error.message).toContain(tooLongMessage(id, 'Connection', 52));
       expect(error.message).not.toContain('PrismaApiError');
       // It failed BEFORE creating the Database (strictly better than the mid-deploy API error).
       expect(recorded.db.length).toBe(before);
@@ -2745,7 +2745,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   test('a database whose address is exactly at the Connection limit lowers, named by its address', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
       const target = prismaCloud({ workspaceId: 'ws_1' });
-      const id = idForAddressOfLength(65);
+      const id = idForAddressOfLength(52);
       const root = module('shop', {}, ({ provision }) => {
         provision(rawPostgres({ name: 'db' }), { id });
         return {};

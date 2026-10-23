@@ -15,6 +15,7 @@ import {
   legacyStreamsKeyId,
 } from '../legacy-resource-ids.ts';
 import { resourceId } from '../resource-ids.ts';
+import { configKey } from '../serializer.ts';
 
 describe('resourceId', () => {
   test("is the address for a node's main resource", () => {
@@ -83,6 +84,13 @@ describe('legacy resource IDs', () => {
     expect(
       legacyConfigKey('my-shop', 'my-shop.auth.api', { owner: { input: 'db' }, name: 'url' }),
     ).toBe('COMPOSER_AUTH_API_DB_URL');
+  });
+
+  test("a module named like the app makes a node's new key equal another node's old key", () => {
+    const port = { owner: 'service', name: 'port' } as const;
+    // The upgrade deploy of such an app fails with a conflict on this key and deletes nothing (ADR-0057).
+    expect(configKey('shop.x', port)).toBe(legacyConfigKey('shop', 'shop.shop.x', port));
+    expect(configKey('shop.x', port)).toBe('COMPOSER_SHOP_X_PORT');
   });
 
   test('legacyInputKey is the input row key below the app', () => {
