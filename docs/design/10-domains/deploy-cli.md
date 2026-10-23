@@ -103,6 +103,10 @@ user can rerun it by hand (ADR-0007).
    address, so every node's address starts with it (`shop.catalog`), on the
    graph the CLI reports and the graph it lowers alike
    ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+   The name must start with a letter or digit and contain only letters,
+   digits, `-` and `_`; Load refuses any other. An app that uses
+   `serviceOrigin()` can't be deployed under `--name`: the addresses in its
+   code start with its own name, which then names no node.
 5. **Assemble each service.** Look up the service's build descriptor in the
    registries — `extensions[build.extension].nodes[build.type].assemble` — and
    run it. The assembler resolves its `entry` (and any other path field)

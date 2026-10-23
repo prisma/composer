@@ -149,22 +149,24 @@ For the app `shop`:
 | Node kind | Resource | ID | Renamed from |
 | --- | --- | --- | --- |
 | compute service `shop.web` | `Prisma.App` | `shop.web` | `web-svc` |
-| | `Prisma.Deployment` | `shop.web.deploy` | `web-deploy` |
+| | `Prisma.Deployment` | `shop.web.deployment` | `web-deploy` |
 | | `Prisma.EnvironmentVariable`, one per key | `shop.web.env.<KEY>` | `<old KEY>-var` |
 | | `GeneratedParam`, one per generated input leaf | `shop.web.generated.<leaf path>` | `<old input KEY>:<leaf path>-generated` |
 | | `ServiceKey` for an RPC input (per calling service and input) | `shop.web.servicekey.<input>` | `servicekey-web.<input>` |
-| | `ServiceKey` for a streams provider (per provider) | `<provider address>.streamskey` | `streamskey-<old provider address>` |
+| | `ServiceKey` for a streams provider (per providing service) | `<provider address>.streamkey` | `streamskey-<old provider address>` |
 | postgres resource `shop.catalog` | `Prisma.Database` | `shop.catalog` | `catalog-db` |
-| | `Prisma.Connection` | `shop.catalog.conn` | `catalog-conn` |
-| | `PgWarm` | `shop.catalog.warm` | `catalog-warm` |
-| | `OrmMigration` (ORM postgres only) | `shop.catalog.migrate` | `catalog-migrate` |
+| | `Prisma.Connection` | `shop.catalog.connection` | `catalog-conn` |
+| | `PgWarm` | `shop.catalog.warmup` | `catalog-warm` |
+| | `OrmMigration` (ORM postgres only) | `shop.catalog.migration` | `catalog-migrate` |
 | bucket `shop.uploads` | `Prisma.Bucket` | `shop.uploads` | `uploads-bucket` |
-| | `Prisma.BucketAccessKey` | `shop.uploads.key` | `uploads-key` |
+| | `Prisma.BucketAccessKey` | `shop.uploads.accesskey` | `uploads-key` |
 | s3 credentials `shop.creds` | `S3Credentials` | `shop.creds` | `creds-creds` |
 
-The old ID is computed from the address with the app name removed, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
+Every role is a noun naming the piece: `deployment`, `env`, `generated`, `servicekey`, `streamkey`, `connection`, `warmup`, `migration`, `accesskey`. The old ID is computed in `legacy-resource-ids.ts` from `addressBelowApp(address, app)`, which removes the known `<app>.` prefix, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
 
-A rename keeps a resource only if its props allow an in-place update, so a prop whose change makes upstream replace the resource keeps its current value. Upstream `alchemy/Prisma` replaces, rather than updates:
+**Platform names.** Every platform name Composer writes is `addressBelowApp(address, app)`, the address without the app name (`catalog`, `auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They live inside the app's own Project, which already carries the app name, so they are labels, never identity. Leaving the app name out keeps them within the 65-character limit `validateName` checks however long the app name is, and it is the name every earlier release wrote, so the upgrade changes none of them. A hosted Database gets no `name`; upstream derives its physical name from the resource ID and updates it in place.
+
+That a name never changes matters for the props whose change makes upstream replace the resource. Upstream `alchemy/Prisma` replaces, rather than updates:
 
 - a Connection when its `name` or database changes, which rotates the database's credentials;
 - a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;
@@ -172,7 +174,7 @@ A rename keeps a resource only if its props allow an in-place update, so a prop 
 - an App, Database or Bucket only when its project (or, for a Database, its region, source or default flag) changes;
 - a Deployment when its artifact or `triggers` fingerprint changes.
 
-So the Connection, BucketAccessKey and Bucket `name`, and the branchless Database `name`, are `resourceLabel(address)`: the address without the app name (`catalog`), the value every earlier release wrote, on new stages too. They are labels. An App's `displayName`, a Database's derived display name and every `logicalId` update in place and take the new value. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
+Every `logicalId` and a hosted Database's derived name update in place. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
 
 Status:
 
@@ -229,10 +231,10 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph P [Project: shop]
-    DBa[(Database shop.authdb)] --> Ca[Connection shop.authdb.conn] -- url --> EVa["EnvironmentVariable(COMPOSER_SHOP_AUTH_DB_URL)"]
-    DBs[(Database shop.storefrontdb)] --> Cs[Connection shop.storefrontdb.conn] -- url --> EVs["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_DB_URL)"]
-    Sa[App shop.auth] --> Da[Deployment shop.auth.deploy]
-    Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deploy]
+    DBa[(Database shop.authdb)] --> Ca[Connection shop.authdb.connection] -- url --> EVa["EnvironmentVariable(COMPOSER_SHOP_AUTH_DB_URL)"]
+    DBs[(Database shop.storefrontdb)] --> Cs[Connection shop.storefrontdb.connection] -- url --> EVs["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_DB_URL)"]
+    Sa[App shop.auth] --> Da[Deployment shop.auth.deployment]
+    Ss[App shop.storefront] --> Ds[Deployment shop.storefront.deployment]
     EVa -- resource ref --> Da
     EVs -- resource ref --> Ds
     Da -- appEndpointDomain --> EVu["EnvironmentVariable(COMPOSER_SHOP_STOREFRONT_AUTH_URL)"]

@@ -751,7 +751,7 @@ compute.manifest.json  ← pack-written envelope; entrypoint = bootstrap.js
 
 The node carries its own runner: the pack's service node has `run(address, boot)` and `load()` (§ Runtime), so the wrapper already contains the boot loop — the bootstrap is a two-line sliver that imports `./main.js` and dynamically imports the app's entry, and the artifact holds a single copy of core. There is **no import cycle**: the app's entry imports the service module (for `load()`), and the bootstrap imports the wrapper and dynamically imports the entry — nothing imports the bootstrap, and the serve code lives in the app's entry, never in the service module. Every byte is deterministic — the app's built entry, the framework's wrapper, the printed bootstrap — so unchanged services hash identically and noop, once the app's build is itself deterministic (the Next standalone case is a named follow-up). Because the same Load walk feeds both `serialize`'s env keys and the bootstrap's address (and the pack derives config keys from that address on both sides), the config writer and the boot-time reader cannot drift. An address changes only when the graph position changes (a changed provision ID, a move into another module, or a different deployed app name), which correctly cascades: new keys, new bootstrap, new version.
 
-The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, and builds the node's Alchemy resource IDs from it (`shop.catalog`, `shop.catalog.conn`), so a changed address is a different entity there too ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+The address is also the node's identity on the platform. Composer writes it as the `logicalId` of the node's platform row and of its node in the application topology, and builds the node's Alchemy resource IDs from it (`shop.catalog`, `shop.catalog.connection`), so a changed address is a different entity there too ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 Notes:
 
@@ -1004,9 +1004,9 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ({ address, application }) =>
           Effect.gen(function* () {
             const db = yield* Prisma.Database(address, { project: projectIdOf(application), region, logicalId: address })
-            const conn = yield* Prisma.Connection(`${address}.conn`, { database: db, name: /* unchanged label */ })
-            const warm = yield* PgWarm(`${address}.warm`, { url: conn.directConnectionString })  // FT-5226 cold-start
-            const migration = yield* OrmMigration(`${address}.migrate`, { url: warm.url, /* target ref, config path */ })
+            const conn = yield* Prisma.Connection(`${address}.connection`, { database: db, name: /* unchanged label */ })
+            const warm = yield* PgWarm(`${address}.warmup`, { url: conn.directConnectionString })  // FT-5226 cold-start
+            const migration = yield* OrmMigration(`${address}.migration`, { url: warm.url, /* target ref, config path */ })
             const url = Output.map(Output.all(warm.url, Output.of(migration)), ([value]) => value)
             return { outputs: { url }, entities: [{ kind: "postgres-database", id: db.databaseId }] }
           }),
@@ -1026,7 +1026,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         provision: ({ address, application }) =>
           Effect.gen(function* () {
             const svc = yield* Prisma.App(address, {
-              project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
+              project: projectIdOf(application), displayName: /* the address without the app name */, regionId: o.region ?? "us-east-1", logicalId: address,
             })
             return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
           }),
@@ -1066,7 +1066,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         // still Output refs until apply.
         deploy: ({ address }, provisioned, artifact, serialized) =>
           Effect.gen(function* () {
-            const deployment = yield* Prisma.Deployment(`${address}.deploy`, {
+            const deployment = yield* Prisma.Deployment(`${address}.deployment`, {
               app: appAfterEnvironment(provisioned.serviceId, serialized.environment),
               artifactPath: artifact.path,
               artifactContentType: "application/gzip",

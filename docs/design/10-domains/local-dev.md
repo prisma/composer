@@ -269,6 +269,7 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 
 ```json
 {
+  "formatVersion": 2,
   "current": "shop",
   "apps": {
     "shop": {
@@ -283,12 +284,13 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 }
 ```
 
-`current` names the app `prisma dev` last ran from the directory. A record
+`formatVersion` is the record's format. `current` names the app `prisma dev` last ran from the directory. A record
 written by the previous version (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
 is rewritten on the next write. Every node's key is its address, which is
-also the resource ID of a database's `Database` and a bucket's `Bucket`, so the
-local providers find their instance by resource ID.
+also the resource ID of its main resource (a service's `App`, a database's
+`Database`, a bucket's `Bucket`), so the local providers find their instance
+by resource ID.
 
 The record is the only place Composer's names are mapped to instances. The
 emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
@@ -298,10 +300,11 @@ instance by its labels. The labels Composer writes on create —
 `composer.directory` (the absolute directory), `composer.app` and
 `composer.address` — are for people reading an emulator listing. The record
 can be read from the directory alone, without running the pipeline. Its node
-keys are full addresses (`shop.catalog`). A record written by an older release,
-keyed by addresses without the app name, reads with each such key given the
-app name in front, and is rewritten that way on the next write, so existing
-instances, ports and data are reused. A bucket's objects live in
+keys are full addresses (`shop.catalog`). A record without `formatVersion` was
+written by an older release, whose keys left out the app name: every one of
+its keys reads with the app name in front, whatever it looks like, and the
+next write stores the current format, so existing instances, ports and data
+are reused. A bucket's objects live in
 `buckets/<app>/<address without the app name>`, the folder earlier releases
 used, so they need no move
 ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).

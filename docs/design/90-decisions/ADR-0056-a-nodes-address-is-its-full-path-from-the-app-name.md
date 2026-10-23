@@ -19,10 +19,10 @@ export default module('shop', ({ provision }) => {
 address        platform row                         Alchemy resource IDs                 env keys
 ─────────────  ───────────────────────────────────  ───────────────────────────────────  ───────────────────────
 shop           Project   logicalId "shop"           (none; found before Alchemy runs)
-shop.catalog   Database  logicalId "shop.catalog"   shop.catalog, shop.catalog.conn, …
+shop.catalog   Database  logicalId "shop.catalog"   shop.catalog, shop.catalog.connection, …
 shop.auth      (a module has no row)                (none)
-shop.auth.api  App       logicalId "shop.auth.api"  shop.auth.api, shop.auth.api.deploy  COMPOSER_SHOP_AUTH_API_…
-shop.web       App       logicalId "shop.web"       shop.web, shop.web.deploy            COMPOSER_SHOP_WEB_…
+shop.auth.api  App       logicalId "shop.auth.api"  shop.auth.api, shop.auth.api.deployment  COMPOSER_SHOP_AUTH_API_…
+shop.web       App       logicalId "shop.web"       shop.web, shop.web.deployment            COMPOSER_SHOP_WEB_…
 ```
 
 Deploying the same configuration to the stage `pr-123` creates new App and Database rows on that stage's Branch, with different `id`s and the same `logicalId`s. That is how the platform knows `shop.web` on `pr-123` is the same service as `shop.web` on `main`.
@@ -39,7 +39,7 @@ If children left the app name out, as `auth.api` does, a reference to a node wou
 
 The root's address is the *deployed* app name. That is the root module's name, or the value of `prisma deploy --name` when it is given (ADR-0006). Every place that writes an address uses the deployed name, so the topology's root node and the Project always carry the same `logicalId`.
 
-Below the root, provision IDs are letters and digits only. The app name may also contain `-` and `_`. So an address is the app name, then any number of dots each followed by letters and digits. Addresses are unique within a graph, they are derived from code, and git carries them between branches with the rest of the configuration.
+Below the root, provision IDs are letters and digits only. The app name must start with a letter or digit and contain only letters, digits, `-` and `_`; Load refuses any other name, whether it comes from the code or from `--name`, before anything is deployed. A `.` would split it, and it becomes part of every environment variable key. So an address is the app name, then any number of dots each followed by letters and digits. Addresses are unique within a graph, they are derived from code, and git carries them between branches with the rest of the configuration.
 
 ### The address is the platform `logicalId`
 
@@ -71,9 +71,11 @@ One node lowers to several Alchemy resources: a postgres resource becomes a Data
 
 | Node | Main resource | Other pieces |
 | --- | --- | --- |
-| compute service `shop.web` | App `shop.web` | Deployment `shop.web.deploy`, one environment variable row per key |
-| postgres resource `shop.catalog` | Database `shop.catalog` | Connection `shop.catalog.conn`, `shop.catalog.warm`, `shop.catalog.migrate` |
-| bucket `shop.uploads` | Bucket `shop.uploads` | access key `shop.uploads.key` |
+| compute service `shop.web` | App `shop.web` | Deployment `shop.web.deployment`, one environment variable row per key `shop.web.env.<KEY>`, generated values `shop.web.generated.<path>`, RPC service keys `shop.web.servicekey.<input>`, a streams key `shop.web.streamkey` |
+| postgres resource `shop.catalog` | Database `shop.catalog` | Connection `shop.catalog.connection`, `shop.catalog.warmup`, `shop.catalog.migration` |
+| bucket `shop.uploads` | Bucket `shop.uploads` | access key `shop.uploads.accesskey` |
+
+Every role is a noun naming the piece. Changing a role later would need another rename declaration.
 
 A piece that a node has several of, such as an environment variable row or a generated value, adds a segment that says which one. An RPC service key is minted per calling service and input, so it is named under the calling service; a stream key is minted per providing service, so it is named under the provider. The exact roles are listed in [alchemy-lowering.md](../05-prisma-cloud/alchemy-lowering.md#platform-identity-logicalid).
 
@@ -89,7 +91,9 @@ On the app's own Branch a key identifies the variable the way `logicalId` identi
 
 ### `serviceOrigin` takes the full address
 
-`serviceOrigin('shop.auth.api')` binds a parameter to another service's public origin. It takes the same fully qualified address as everything else. If the app is deployed under a different name from the one in the code (`--name`), the address names no node and the deploy fails with an unknown address while it builds its plan, before anything is created. That failure is loud and is fixed in one line.
+`serviceOrigin('shop.auth.api')` binds a parameter to another service's public origin. It takes the same fully qualified address as everything else. An app that uses `serviceOrigin()` therefore cannot be deployed under a different name with `--name`: the address in the code starts with the app's own name, which then names no node. Writing the `--name` value into the code instead breaks the deploy without `--name`. This is the accepted cost of having one way to write an address.
+
+A `serviceOrigin()` address that names no service fails the deploy with an unknown address while the deploy builds its plan. By then the Project and the stage Branch have been found or created, and the Branch's application topology has been replaced with the new one. No resource the app declares has been created, changed or deleted, and the deploy state is unchanged; until a deploy succeeds, Console's topology names nodes that no row matches yet.
 
 ### Existing deployments migrate on their next deploy
 
@@ -100,7 +104,7 @@ So every Alchemy resource Composer declares also declares the ID it had before, 
 ```ts
 const db = yield* Prisma.Database('shop.catalog', { ...props, logicalId: 'shop.catalog' })
   .pipe(asOwnRow, renamedFrom('catalog-db'));
-const conn = yield* Prisma.Connection('shop.catalog.conn', { database: db, name: 'catalog' })
+const conn = yield* Prisma.Connection('shop.catalog.connection', { database: db, name: 'catalog' })
   .pipe(renamedFrom('catalog-conn'));
 ```
 
@@ -112,11 +116,11 @@ Three properties make this safe, and each was checked on the real platform:
 - A deploy that fails or is killed partway through the renames can be run again, and it finishes them without recreating anything.
 - Dots in resource IDs work in Alchemy and in the platform's hosted deploy state, whose URLs carry the ID.
 
-A rename keeps a resource only if its props allow an in-place update. Any prop whose change makes upstream replace the resource keeps the value it has today. A Connection is replaced when its `name` prop changes, and replacing it rotates the database's credentials, so each Connection keeps the `name` it has today (`catalog`, not `shop.catalog`). A bucket access key's `name` is the same. So these names, and the Bucket's and local dev Database's `name`, stay the address without the app name, on new stages too. They are labels, not identity. A name that upstream updates in place, such as an App's or a hosted database's display name, follows the new address.
+Every platform name Composer writes is built from the address without the app name: the App's `displayName`, a local dev Database's `name`, and the Connection, Bucket and bucket access key `name` (`catalog`, `auth.api`). These names live inside the app's own Project, which already carries the app name. They are labels, never identity. Leaving the app name out also keeps them within the platform's 65-character limit no matter how long the app name is, so the upgrade cannot push a name over it, and it is exactly the name earlier releases wrote, so no name changes. That matters for two of them: upstream replaces a Connection when its `name` changes, which rotates the database's credentials, and replaces a bucket access key when its `name` changes, which mints new credentials. A hosted database gets no `name` from Composer; its physical name is derived from its resource ID and is updated in place.
 
 An environment variable row is replaced whenever its key changes, and every key changes in this migration. That is harmless: Composer writes every row's value on every deploy, so the new row holds the same value as the old one, and a changed environment already makes a new Deployment.
 
-Local dev creates no platform rows. Its per-directory record of which emulator instance backs each node (ADR-0052) is keyed by address. On the first `prisma dev` after upgrading, Composer rewrites the record's keys to full addresses, so local services, databases and buckets keep their instances, ports and data. A bucket's objects stay in the folder named by its address without the app name, which is already inside the app's own folder, so nothing moves. Alchemy's local deploy state goes through the same rename declarations as the hosted state.
+Local dev creates no platform rows. Its per-directory record of which emulator instance backs each node (ADR-0052) is keyed by address, and the local providers find each node's instance by its main resource ID, which is that address. The record now carries a format version. A record without it was written before this decision: on the first `prisma dev` after upgrading, Composer puts the app name in front of every one of its keys and writes the record back with the version, so local services, databases and buckets keep their instances, ports and data. A bucket's objects stay in the folder named by its address without the app name, which is already inside the app's own folder, so nothing moves. Alchemy's local deploy state goes through the same rename declarations as the hosted state.
 
 ## Consequences
 
@@ -127,7 +131,7 @@ Local dev creates no platform rows. Its per-directory record of which emulator i
 - Changing any Alchemy resource ID must go through a rename declaration. Otherwise a single deploy could use the existing row under the new ID and delete it under the old one.
 - The rename declarations from the old format stay in the code. They do nothing on stages that have migrated or were created after this decision.
 - A stage migrated by this decision and then deployed by an older Composer has its resources deleted and recreated under the old IDs, losing their data. Nothing protects against this.
-- Longer addresses produce longer platform names. Name validation keeps applying to them and fails with a message naming the address; it never shortens a name.
+- Platform names leave the app name out, so a long app name never makes a name too long. Name validation checks the name Composer writes and fails with a message naming the node's address; it never shortens a name. Fixing it means changing the address, which makes the node a different entity.
 - A `logicalId` says which node a row is, so on the app's own Project and Branch the row holding a node's `logicalId` is that node's row. A deploy uses that row even when its deploy state has no record of it. The usual case is resuming a create that was interrupted after the platform created the row but before Alchemy recorded its ID. Composer therefore declares its App, Database and Bucket resources, and its `COMPOSER_` environment variables, as its own (Alchemy's per-resource `adopt(true)`), so Alchemy does not refuse a row it cannot otherwise prove it created. The Project is found the same way, by `logicalId`, in container resolution.
 - Using a row means owning it: Composer updates it to the declared configuration, and deletes it when the node is removed, when its address changes, or when the stage is destroyed. A row created outside Composer with one of the app's addresses on its Branch is treated as that node's row. Two apps with the same name in one workspace share one Project and share rows instead of failing.
 - A stage whose Branch holds rows but which has no deploy state at all is still refused before the deploy starts (ADR-0045). The rows could be identified, but the rest of the state could not be rebuilt from them: generated parameter values would be minted again, Connections would not be recognized, and Deployments and bucket access keys would be created twice.

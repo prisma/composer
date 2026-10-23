@@ -465,9 +465,12 @@ get a new deployment.
 Two things to do yourself:
 
 - **`serviceOrigin()` takes the full address.** Change
-  `serviceOrigin('api')` to `serviceOrigin('<app>.api')`. A short address fails
-  the deploy, naming the address, before anything changes. If you deploy under
-  `--name`, the address starts with that name.
+  `serviceOrigin('api')` to `serviceOrigin('<app>.api')`. An address that names
+  no service fails the deploy, naming the address, while it plans. By then the
+  Project and stage Branch exist and the Branch's topology is the new one, but
+  no resource has been created, changed or deleted. An app that uses
+  `serviceOrigin()` can't be deployed under a different name with `--name`,
+  because its addresses start with the app's own name.
 - **Don't deploy an environment with an older version afterwards.** It would
   look for the old names and recreate every resource, losing their data.
 
