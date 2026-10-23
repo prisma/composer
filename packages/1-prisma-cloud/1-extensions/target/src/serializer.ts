@@ -501,12 +501,18 @@ export interface InputDocumentRow {
  * or vice versa) or a schema refining on secret CONTENT — deploy-time
  * validation sees only empty boxes, and the ADR forbids content refinements.
  */
+export interface SerializeInputOptions {
+  /** Where `envParam` leaves are read; the process environment by default. */
+  readonly env?: Record<string, string | undefined>;
+  /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
+  readonly absentSecrets?: ReadonlySet<string>;
+}
+
 export function serializeInput(
   node: ServiceNode,
   address: string,
   binding: unknown,
-  env: Record<string, string | undefined> = process.env,
-  absentSecrets: ReadonlySet<string> = NO_ABSENT_SECRETS,
+  { env = process.env, absentSecrets = NO_ABSENT_SECRETS }: SerializeInputOptions = {},
 ): InputDocumentRow | undefined {
   const judged = judgeInput(node, address, binding, env, absentSecrets);
   if (judged === undefined) return undefined;

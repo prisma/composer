@@ -8,11 +8,7 @@ import { preflightEnv } from '@internal/core/config';
 import { SecretBox } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
-import {
-  pointerUpdatedAtLookup,
-  serializePointerUpdatedAt,
-} from '../control/pointer-timestamps.ts';
-import { readDevPreflightPayload, transportedAbsentSecrets } from '../dev-preflight-payload.ts';
+import { decodePreflightPayload, transportedPreflight } from '../control/preflight-payload.ts';
 import { compute } from '../exports/index.ts';
 import { runDevPreflight } from '../local-target/preflight.ts';
 import { envParam } from '../param.ts';
@@ -103,6 +99,23 @@ const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
     }),
   );
 
+const sharedGraph = () =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(
+        compute({ name: 'billing', deps: {}, input: requiresSecrets('stripeKey'), build }),
+        {
+          id: 'billing',
+          input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+        },
+      );
+      provision(compute({ name: 'reports', deps: {}, input: requiresSecrets(), build }), {
+        id: 'reports',
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      });
+    }),
+  );
+
 const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
 
 const preflight = (graph: ReturnType<typeof Load>) =>
@@ -127,8 +140,18 @@ function billingDocument(
 ): unknown {
   const node = graph.nodes.find((entry) => entry.id === 'billing')?.node as ServiceNode;
   const binding = graph.inputBindings.find((b) => b.serviceAddress === 'billing')?.binding;
-  const row = serializeInput(node, 'billing', binding, {}, transportedAbsentSecrets(childEnv)());
+  const { absentSecrets } = transportedPreflight(new Map(), childEnv);
+  const row = serializeInput(node, 'billing', binding, { env: {}, absentSecrets });
   return JSON.parse(row?.value ?? 'null');
+}
+
+/** The dev payload as the alchemy process decodes it. */
+function devPayload(childEnv: Record<string, string>) {
+  const decoded = decodePreflightPayload(
+    childEnv['PRISMA_COMPOSER_PREFLIGHT_PRISMA_COMPOSER_PRISMA_CLOUD'],
+  );
+  if (decoded.kind !== 'dev') throw new Error(`expected a dev payload, got ${decoded.kind}`);
+  return decoded;
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -220,9 +243,9 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
-    const payload = readDevPreflightPayload(childEnv);
-    expect(payload?.absentSecrets).toEqual(['STRIPE_WEBHOOK_SECRET']);
-    expect(Object.keys(payload?.fingerprints ?? {})).toEqual(['STRIPE_SECRET_KEY']);
+    const payload = devPayload(childEnv);
+    expect([...payload.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
     expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
   });
 
@@ -230,8 +253,11 @@ describe('prisma dev preflight', () => {
     const graph = billingGraph(requiresSecrets('stripeKey'));
     const memberFor = async (value: string) => {
       process.env['STRIPE_SECRET_KEY'] = value;
-      const lookup = pointerUpdatedAtLookup(new Map(), transported(await preflight(graph)));
-      return lookup('STRIPE_SECRET_KEY');
+      const { pointerVersion } = transportedPreflight(
+        new Map(),
+        transported(await preflight(graph)),
+      );
+      return pointerVersion('STRIPE_SECRET_KEY');
     };
 
     const first = await memberFor('sk_test_1');
@@ -245,7 +271,9 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
-    expect(pointerUpdatedAtLookup(new Map(), childEnv)('STRIPE_WEBHOOK_SECRET')).toBeUndefined();
+    expect(
+      transportedPreflight(new Map(), childEnv).pointerVersion('STRIPE_WEBHOOK_SECRET'),
+    ).toBeUndefined();
   });
 
   test('a missing env-sourced param is a hard error naming the variable and service', async () => {
@@ -279,33 +307,59 @@ describe('prisma dev preflight', () => {
 
     const childEnv = transported(await preflight(paramGraph()));
 
-    expect(Object.keys(readDevPreflightPayload(childEnv)?.fingerprints ?? {})).toEqual([
-      'APP_PORT',
-    ]);
+    expect([...devPayload(childEnv).pointerVersions.keys()]).toEqual(['APP_PORT']);
   });
 
   test('the fingerprint key is created once, readable only by its owner, and reused', async () => {
     process.env['APP_PORT'] = '3000';
     const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
 
-    const first = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    const first = devPayload(transported(await preflight(paramGraph())));
     const key = fs.readFileSync(keyPath);
-    const second = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    const second = devPayload(transported(await preflight(paramGraph())));
 
     expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
     expect(fs.readFileSync(keyPath)).toEqual(key);
-    expect(second?.fingerprints).toEqual(first?.fingerprints ?? {});
+    expect(second.pointerVersions).toEqual(first.pointerVersions);
   });
 
   test('a lost fingerprint key only changes the fingerprints', async () => {
     process.env['APP_PORT'] = '3000';
     const keyPath = path.join(cwd, '.prisma-composer', 'dev', 'fingerprint.key');
 
-    const first = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    const first = devPayload(transported(await preflight(paramGraph())));
     fs.rmSync(keyPath);
-    const second = readDevPreflightPayload(transported(await preflight(paramGraph())));
+    const second = devPayload(transported(await preflight(paramGraph())));
 
-    expect(second?.fingerprints['APP_PORT']).not.toBe(first?.fingerprints['APP_PORT']);
+    expect(second.pointerVersions.get('APP_PORT')).not.toBe(first.pointerVersions.get('APP_PORT'));
+  });
+
+  test('a secret shared by two services stops dev naming only the service that requires it', async () => {
+    const message = await preflightError(sharedGraph());
+
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
+    expect(message).not.toContain('service "reports"');
+  });
+
+  test('a secret shared by two services that is set gets one fingerprint', async () => {
+    process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
+
+    const payload = devPayload(transported(await preflight(sharedGraph())));
+
+    expect([...payload.pointerVersions.keys()]).toEqual(['STRIPE_SECRET_KEY']);
+    expect([...payload.absentSecrets]).toEqual([]);
+  });
+
+  test('a damaged fingerprint key stops dev with the file and how to fix it', async () => {
+    process.env['APP_PORT'] = '3000';
+    const devDir = path.join(cwd, '.prisma-composer', 'dev');
+    fs.mkdirSync(devDir, { recursive: true });
+    fs.writeFileSync(path.join(devDir, 'fingerprint.key'), 'short');
+
+    const message = await preflightError(paramGraph());
+
+    expect(message).toContain(path.join('.prisma-composer', 'dev', 'fingerprint.key'));
+    expect(message).toContain('Delete the file or run `prisma dev --fresh`');
   });
 
   test('a secrets file left by an older prisma dev is deleted', async () => {
@@ -317,31 +371,5 @@ describe('prisma dev preflight', () => {
     await preflight(paramGraph()).catch(() => undefined);
 
     expect(fs.readdirSync(devDir)).toEqual(['env.json']);
-  });
-});
-
-describe('deploy input serialization without a dev payload', () => {
-  test('an unset secret still becomes a pointer in the document', () => {
-    const graph = billingGraph(requiresSecrets('stripeKey', 'webhookSecret'));
-
-    expect(billingDocument(graph, transported(undefined))).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      webhookSecret: { $secret: 'STRIPE_WEBHOOK_SECRET' },
-    });
-  });
-
-  test('a deploy payload on the transport names no absent secret and still reads as timestamps', () => {
-    const graph = billingGraph(requiresSecrets('stripeKey', 'webhookSecret'));
-    const childEnv = transported(
-      serializePointerUpdatedAt(new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']])),
-    );
-
-    expect(billingDocument(graph, childEnv)).toEqual({
-      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
-      webhookSecret: { $secret: 'STRIPE_WEBHOOK_SECRET' },
-    });
-    expect(pointerUpdatedAtLookup(new Map(), childEnv)('STRIPE_SECRET_KEY')).toBe(
-      '2026-10-01T00:00:00Z',
-    );
   });
 });

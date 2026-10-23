@@ -34,7 +34,7 @@ test('the local provider finds exactly the variables the serializer writes point
       nested: [{ webhook: envSecret('STRIPE_WEBHOOK_SECRET') }],
       userData: { $secret: 'NOT_A_POINTER' },
     },
-    {},
+    { env: {} },
   );
   if (input === undefined) throw new Error('expected an input row');
   const rows = {

@@ -14,8 +14,8 @@ import type { Graph, ServiceNode } from '@internal/core';
 import { inputManifest } from '@internal/core';
 import type { PreflightInput, PreflightPayload } from '@internal/core/config';
 import { DEV_DIR } from '@internal/core/config';
-import { fingerprintKey, removeRetiredSecretsFile } from '@internal/local-target';
-import { serializeDevPreflightPayload } from '../dev-preflight-payload.ts';
+import { readOrCreateFingerprintKey, removeRetiredSecretsFile } from '@internal/local-target';
+import { serializeDevPreflightPayload } from '../control/preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
 import { inputValidationFailure } from '../serializer.ts';
 
@@ -81,7 +81,7 @@ function requiredSecrets(
   return required.length > 0 ? required : [{ names: unset, serviceAddress, message: withoutAll }];
 }
 
-/** HMAC-SHA256 under a local random key, so a stored fingerprint cannot be reversed by guessing values. */
+/** HMAC-SHA256 under a local random key, so the fingerprints in Alchemy state cannot be checked against guessed values without the key file. */
 async function fingerprint(key: CryptoKey, value: string): Promise<string> {
   const digest = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -124,18 +124,18 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   ];
   const sections = [...invalidInputs, ...missing, ...(missing.length > 0 ? [HOW_TO_SET] : [])];
   if (sections.length > 0) {
-    throw new Error(`local dev preflight failed:\n\n${sections.join('\n\n')}`);
+    throw new Error(`prisma dev cannot start:\n\n${sections.join('\n\n')}`);
   }
 
   if (absentSecrets.size === 0 && pointed.size === 0) return undefined;
   const key = await crypto.subtle.importKey(
     'raw',
-    await fingerprintKey(devDir),
+    await readOrCreateFingerprintKey(devDir),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign'],
   );
-  const fingerprints: Record<string, string> = {};
-  for (const name of pointed) fingerprints[name] = await fingerprint(key, env[name] ?? '');
-  return serializeDevPreflightPayload({ absentSecrets: [...absentSecrets], fingerprints });
+  const pointerVersions: Record<string, string> = {};
+  for (const name of pointed) pointerVersions[name] = await fingerprint(key, env[name] ?? '');
+  return serializeDevPreflightPayload({ absentSecrets: [...absentSecrets], pointerVersions });
 }

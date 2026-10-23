@@ -105,26 +105,3 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 export function envStore(devDir: string): DevStore<Record<string, string>> {
   return createStore(path.join(devDir, 'env.json'), isStringRecord, {});
 }
-
-/** Deletes `<devDir>/secrets.json`, where older versions of `prisma dev` stored secret values in plain text. */
-export async function removeRetiredSecretsFile(devDir: string): Promise<void> {
-  await fs.rm(path.join(devDir, 'secrets.json'), { force: true });
-}
-
-const FINGERPRINT_KEY_BYTES = 32;
-
-/** `<devDir>/fingerprint.key`: the random key `prisma dev` hashes secret values with, created once with mode 0600. */
-export async function fingerprintKey(devDir: string): Promise<Uint8Array<ArrayBuffer>> {
-  const keyPath = path.join(devDir, 'fingerprint.key');
-  try {
-    const existing = await fs.readFile(keyPath);
-    if (existing.length === FINGERPRINT_KEY_BYTES) return new Uint8Array(existing);
-  } catch (err) {
-    if (!isEnoent(err)) throw err;
-  }
-  const key = crypto.randomBytes(FINGERPRINT_KEY_BYTES);
-  await fs.mkdir(devDir, { recursive: true });
-  await fs.writeFile(keyPath, key, { mode: 0o600 });
-  await fs.chmod(keyPath, 0o600);
-  return new Uint8Array(key);
-}

@@ -134,7 +134,9 @@ export async function executeDev(
     }
     // Blank every transport var this run did not fill, so a stale one in the
     // shell cannot pass for this run's payload.
-    for (const id of resolved.keys()) preflightTransportEnv[preflightEnvVarName(id)] ??= '';
+    for (const extension of config.extensions) {
+      preflightTransportEnv[preflightEnvVarName(extension.id)] ??= '';
+    }
 
     // Emulators — ensure the daemons this topology's node kinds need, and their per-node state.
     for (const [id, dev] of resolved) {

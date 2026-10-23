@@ -226,8 +226,7 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          process.env,
-          o().absentSecrets(),
+          { absentSecrets: o().preflight.absentSecrets },
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned
@@ -379,15 +378,15 @@ export function computeDescriptor(
 
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        // Under `prisma dev` each member holds a hash of the variable's
-        // current value, so a changed value redeploys the services that read it.
-        const pointerUpdatedAt = o().pointerUpdatedAt;
+        const { pointerVersion } = o().preflight;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
-        // collide with a row's own trigger member.
+        // collide with a row's own trigger member. The key name is historical:
+        // under `prisma dev` the member holds an HMAC of the value, and
+        // renaming it would redeploy every hosted deployment once.
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
-            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerUpdatedAt(name) ?? '?']),
+            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
           ),
         };
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {

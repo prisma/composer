@@ -248,6 +248,21 @@ async function stopDev(session: DevSession): Promise<void> {
   );
 }
 
+/** The Deployment's row in Alchemy's local state; it changes only when that deployment is updated. */
+function deploymentState(service: string): string {
+  return fs.readFileSync(
+    path.join(
+      fixtureDir,
+      '.alchemy',
+      'state',
+      'localdevs4fixture',
+      'dev',
+      `${service}-deploy.json`,
+    ),
+    'utf8',
+  );
+}
+
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
 const GREETING = { LOCALDEV_FIXTURE_GREETING: 'hi-from-s5-proving' };
@@ -384,6 +399,8 @@ async function main(): Promise<void> {
 
     // ——— Criterion 5: a changed value reaches the service on a warm start; an empty optional secret arrives absent ———
     fs.rmSync(envFile, { force: true });
+    const webStateBefore = deploymentState('web');
+    const bkgStateBefore = deploymentState('bkg');
     // An older prisma dev stored secret values here; starting dev must delete it.
     fs.writeFileSync(path.join(devDir, 'secrets.json'), '{"LOCALDEV_FIXTURE_API_KEY":"old"}');
     session = await startDevUntilReady(
@@ -398,7 +415,15 @@ async function main(): Promise<void> {
       { apiKeySha256: sha256('changed-in-the-shell'), hasWebhookSecret: false },
       'the changed value reaches bkg on a warm start, and the empty optional secret arrives absent',
     );
-    console.log('[proving] PASS: a changed value reaches the service on a warm start');
+    assert(deploymentState('bkg') !== bkgStateBefore, 'bkg, which reads the secret, is redeployed');
+    assertEqual(
+      deploymentState('web'),
+      webStateBefore,
+      'web, which does not read the secret, is not redeployed',
+    );
+    console.log(
+      '[proving] PASS: a changed value reaches only the service that reads it, on a warm start',
+    );
 
     assert(
       !fs.existsSync(path.join(devDir, 'secrets.json')),

@@ -125,7 +125,13 @@ describe('invariant 2: authoring imports stay lean (core + pack)', () => {
 });
 
 describe('invariant 4: environment touches are confined to the config serializer, the control factory, and the container lifecycle', () => {
-  test("the process-env token appears only in serializer.ts (param read+stash, reserved-provider-param read+stash — the origin row rides that generic pair — the input document's deploy-shell default + boot read/secret lookup/generated-pointer lookup/stash pair, env-sourced param double-lookup, readOrigin's stash read), control/extension.ts's prismaCloud() (ADR-0017 — optional PRISMA_WORKSPACE_ID + optional PRISMA_REGION, neither required — local-dev spec § 5's lazy restructure; the CLI-fed deploy identity now arrives via ctx.container, never env; plus the env the preflight transport is read from, which pointer-timestamps.ts takes as an argument rather than reaching for), container.ts (PRISMA_WORKSPACE_ID + PRISMA_SERVICE_TOKEN, ADR-0038's container lifecycle), preflight.ts (shell token + fill-missing lookup), local-target/preflight.ts (dev's own shell-token read — the local-dev value-sourcing policy, ADR-0041), compute.ts (exposes the resolved port as PORT), descriptors/compute.ts (the shell env handed to the input serializer), and testing.ts (bootstrapService's input-row + PORT writes, mirroring a deployed boot)", () => {
+  // Why each file reads the environment: serializer.ts (params, the input
+  // document's env-sourced leaves and boot reads), control/extension.ts
+  // (optional PRISMA_WORKSPACE_ID and PRISMA_REGION, and the preflight
+  // transport), container.ts (PRISMA_WORKSPACE_ID, PRISMA_SERVICE_TOKEN),
+  // preflight.ts (the deploy shell's values), local-target/preflight.ts (the
+  // dev run's values), compute.ts (PORT), testing.ts (bootstrapService).
+  test('the environment is read only in the files listed below', () => {
     const sources = shippedSources();
     expect(sources.length).toBeGreaterThan(0);
 
@@ -138,8 +144,7 @@ describe('invariant 4: environment touches are confined to the config serializer
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
       { file: 'compute.ts', count: 2 },
       { file: 'container.ts', count: 3 },
-      { file: 'control/extension.ts', count: 4 },
-      { file: 'descriptors/compute.ts', count: 1 },
+      { file: 'control/extension.ts', count: 3 },
       { file: 'local-target/preflight.ts', count: 1 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 12 },

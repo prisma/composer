@@ -14,10 +14,11 @@ import type { ManagementApiClient } from '@internal/lowering';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { PRISMA_CLOUD_EXTENSION_ID, PrismaCloudContainer } from '../container.ts';
 import {
-  deserializePointerUpdatedAt,
-  pointerUpdatedAtLookup,
-  serializePointerUpdatedAt,
-} from '../control/pointer-timestamps.ts';
+  decodePreflightPayload,
+  serializeDeployPreflightPayload,
+  serializeDevPreflightPayload,
+  transportedPreflight,
+} from '../control/preflight-payload.ts';
 import { compute } from '../exports/index.ts';
 import { runPreflight } from '../preflight.ts';
 import { envSecret } from '../secret.ts';
@@ -73,7 +74,7 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
     },
     { client: fakePlatform(updatedAt) },
   );
-  const payload = serializePointerUpdatedAt(timestamps);
+  const payload = serializeDeployPreflightPayload(timestamps);
   return preflightEnv(
     payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
   );
@@ -87,8 +88,10 @@ async function cliProcess(updatedAt: string): Promise<Record<string, string>> {
  * fingerprint moves on.
  */
 function alchemyProcessPointerTriggers(env: Record<string, string>): Record<string, string> {
-  const lookup = pointerUpdatedAtLookup(new Map(), env);
-  return Object.fromEntries(pointers.map((name) => [`${name}:updatedAt`, lookup(name) ?? '?']));
+  const { pointerVersion } = transportedPreflight(new Map(), env);
+  return Object.fromEntries(
+    pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
+  );
 }
 
 describe('the rotation signal across the CLI → alchemy process boundary', () => {
@@ -130,7 +133,7 @@ describe('the rotation signal across the CLI → alchemy process boundary', () =
 describe('what the payload may contain', () => {
   test('timestamps only — a name, an ISO time, and nothing else', () => {
     expect(
-      serializePointerUpdatedAt(new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']])),
+      serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-05-05T12:00:00.000Z']])),
     ).toBe('{"STRIPE_SECRET_KEY":"2026-05-05T12:00:00.000Z"}');
   });
 
@@ -141,11 +144,11 @@ describe('what the payload may contain', () => {
     ]);
     const other = new Map([...one].reverse());
 
-    expect(serializePointerUpdatedAt(other)).toBe(serializePointerUpdatedAt(one));
+    expect(serializeDeployPreflightPayload(other)).toBe(serializeDeployPreflightPayload(one));
   });
 
   test('a deploy with no pointed variable carries no payload at all', () => {
-    expect(serializePointerUpdatedAt(new Map())).toBeUndefined();
+    expect(serializeDeployPreflightPayload(new Map())).toBeUndefined();
   });
 
   test('a round trip preserves every name', () => {
@@ -153,20 +156,67 @@ describe('what the payload may contain', () => {
       ['A_KEY', '2026-01-01T00:00:00.000Z'],
       ['B_KEY', '2026-02-02T00:00:00.000Z'],
     ]);
-    const payload = serializePointerUpdatedAt(timestamps);
+    const payload = serializeDeployPreflightPayload(timestamps);
 
-    expect([...deserializePointerUpdatedAt(payload)]).toEqual([...timestamps]);
+    const decoded = decodePreflightPayload(payload);
+    expect(decoded.kind === 'deploy' ? [...decoded.updatedAt] : []).toEqual([...timestamps]);
   });
 
-  test('an absent payload reads as an empty map — dev, and any run with nothing to carry', () => {
-    expect(deserializePointerUpdatedAt(undefined).size).toBe(0);
+  test('an absent payload decodes as nothing sent', () => {
+    expect(decodePreflightPayload(undefined)).toEqual({ kind: 'none' });
   });
 
   test('a payload that is present but unreadable fails loudly rather than losing the signal', () => {
-    expect(() => deserializePointerUpdatedAt('not json')).toThrow(/did not survive the transport/);
-    expect(() => deserializePointerUpdatedAt('"a string"')).toThrow(/not a JSON object/);
-    expect(() => deserializePointerUpdatedAt('{"A_KEY":42}')).toThrow(
+    expect(() => decodePreflightPayload('not json')).toThrow(/did not survive the transport/);
+    expect(() => decodePreflightPayload('"a string"')).toThrow(/not a JSON object/);
+    expect(() => decodePreflightPayload('{"A_KEY":42}')).toThrow(
       /"A_KEY" is not a string timestamp/,
     );
+  });
+});
+
+describe('one transport variable, two kinds of payload', () => {
+  const childEnv = (payload: string | undefined) =>
+    preflightEnv(
+      payload === undefined ? new Map() : new Map([[PRISMA_CLOUD_EXTENSION_ID, payload]]),
+    );
+
+  test('a deploy payload names no absent secret and reads as timestamps', () => {
+    const preflight = transportedPreflight(
+      new Map(),
+      childEnv(
+        serializeDeployPreflightPayload(new Map([['STRIPE_SECRET_KEY', '2026-10-01T00:00:00Z']])),
+      ),
+    );
+
+    expect([...preflight.absentSecrets]).toEqual([]);
+    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('2026-10-01T00:00:00Z');
+  });
+
+  test('a dev payload carries the absent secrets and the value versions', () => {
+    const preflight = transportedPreflight(
+      new Map(),
+      childEnv(
+        serializeDevPreflightPayload({
+          absentSecrets: ['STRIPE_WEBHOOK_SECRET'],
+          pointerVersions: { STRIPE_SECRET_KEY: 'hmac-of-value' },
+        }),
+      ),
+    );
+
+    expect([...preflight.absentSecrets]).toEqual(['STRIPE_WEBHOOK_SECRET']);
+    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBe('hmac-of-value');
+  });
+
+  test('with no payload nothing is absent and every version is unknown', () => {
+    const preflight = transportedPreflight(new Map(), childEnv(undefined));
+
+    expect([...preflight.absentSecrets]).toEqual([]);
+    expect(preflight.pointerVersion('STRIPE_SECRET_KEY')).toBeUndefined();
+  });
+
+  test('a dev payload that does not parse fails loudly', () => {
+    expect(() => decodePreflightPayload('dev:not json')).toThrow(/prisma dev/);
+    expect(() => decodePreflightPayload('dev:{"absentSecrets":[]}')).toThrow(/expected shape/);
   });
 });
