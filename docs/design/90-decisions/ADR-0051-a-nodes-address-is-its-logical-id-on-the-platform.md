@@ -1,5 +1,7 @@
 # ADR-0051: A node's address is its logical ID on the platform
 
+> Superseded by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md): a node's address starts with the app name (`shop.catalog`), and resource IDs, environment variable keys and `serviceOrigin()` are built from it.
+
 > Amended 2026-10-16: on the app's own Project and Branch, the row holding a node's `logicalId` is that node's row, and a deploy uses it even without a record of it in deploy state. The first version said Composer must never take over a row because it holds the same `logicalId`. See Consequences.
 
 ## Decision
