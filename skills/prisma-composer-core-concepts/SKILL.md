@@ -674,3 +674,11 @@ Name the gap instead of inventing an API:
 For anything else missing, check `examples/`, `docs/design/10-domains/`, and
 `docs/design/90-decisions/` in the prisma/composer repo, then file an issue
 there rather than guessing.
+
+## Custom domains
+
+`prismaCloud({ domains: { main: { web: ['example.com'] }, staging: { web: ['staging.example.com'] } } })` declares desired hostnames by actual branch name and Compute service address in `prisma.config.ts`'s `composer` section. Nested service addresses such as `auth.api` work. A deploy without `--stage` reads the current default branch name; it does not assume `main`. There is no reserved `production` alias. Changing the default branch does not move hostnames. Unlisted branches inherit no domains. `prisma dev` makes no domain requests.
+
+`prisma deploy` connects a declared hostname after deployment when DNS is ready. Missing TXT ownership or routing DNS completes the app deploy with a `custom-domain` report entry, `status: Setup required`, and a Console setup link; the generated URL remains usable. The same entries appear in `--report`. The link opens DNS instructions with the hostname prefilled; it makes no write. Configure TXT/CNAME at the DNS provider, then choose **Verify and connect**. Certificate provisioning is distinct from `active`. Conflicts, quotas and API failures remain errors.
+
+Later deploys retry missing bindings and reuse Console-completed ones. A declaration opts that exact binding into Composer ownership, including an existing one on the app. Removing it detaches the binding; undeclared Console domains remain. Moving a hostname between environments needs an explicit detach. Stage teardown releases bindings, never domain registrations or DNS zones. Workspace TXT proof survives stage recreation; another workspace needs its own proof. Set `prismaCloud({ consoleUrl: 'https://your-console.example' })` when targeting a separate Console deployment. Domain purchase and managed DNS are future Console concerns; Composer needs no registrar credentials.

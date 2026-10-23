@@ -6,6 +6,7 @@ import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import type { CustomDomainsConfig } from '../control/domain-config.ts';
 import type { PointerUpdatedAt } from '../control/pointer-timestamps.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { resourceName } from '../service-app.ts';
@@ -69,6 +70,8 @@ export interface ServiceProviderParam extends ProviderParamEntry {
  * resolved container, read via `cloudApplicationOf(ctx.application)`.
  */
 export interface ResolvedCloudOptions {
+  readonly domains?: CustomDomainsConfig;
+  readonly consoleUrl?: string;
   readonly workspaceId: string;
   readonly region?: ProjectRegion;
   /**
@@ -110,6 +113,7 @@ export function validateName(value: string, source: string): void {
 
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
 export interface CloudApplication {
+  readonly domainBranchName?: string;
   readonly projectId: string;
   /** The named stage's Branch id; `undefined` on the default (production) stage. */
   readonly branchId: string | undefined;

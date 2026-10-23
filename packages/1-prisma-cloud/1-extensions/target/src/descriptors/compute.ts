@@ -5,12 +5,14 @@ import type { ServiceLowering } from '@internal/core/deploy';
 import {
   ARTIFACT_CONTENT_TYPE,
   appAfterEnvironment,
+  CustomDomain,
   packageComputeArtifact,
 } from '@internal/lowering';
 import * as Output from 'alchemy/Output';
 import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import { domainsForBranch } from '../control/domain-config.ts';
 import { GeneratedParam } from '../generated-param-resource.ts';
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
@@ -374,7 +376,7 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ id }, provisioned, artifact, serialized) =>
+    deploy: ({ id, address, application }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         // Answers "unknown" for every name under `prisma dev`: dev runs
         // no platform preflight, so no rotation timestamps exist. That costs
@@ -434,6 +436,37 @@ export function computeDescriptor(
                 },
               }
             : {};
+        const domains = [];
+        if (o().domains && !cloudApplicationOf(application).branchless) {
+          const branchName = cloudApplicationOf(application).domainBranchName;
+          if (branchName === undefined)
+            throw new Error('Cannot select custom domains without the resolved branch name.');
+          const hostnames = domainsForBranch(o().domains, branchName)[address] ?? [];
+          for (const hostname of hostnames) {
+            const normalized = hostname.toLowerCase();
+            const domain = yield* CustomDomain(`${id}-domain-${normalized}`, {
+              appId: provisioned.serviceId,
+              hostname: normalized,
+              projectId: provisioned.projectId,
+              consoleUrl: o().consoleUrl ?? 'https://console.prisma.io',
+              deploymentId: Output.map(Output.of(deployment), (value) => value.deploymentId),
+            });
+            domains.push(
+              Output.map(
+                Output.all(domain.hostname, domain.status, domain.setupUrl),
+                ([hostname, status, setupUrl]) => ({
+                  kind: 'custom-domain',
+                  id: hostname,
+                  url: status === 'active' ? `https://${hostname}` : setupUrl,
+                  details: {
+                    status: status === 'setup_required' ? 'Setup required' : status,
+                    setup: setupUrl,
+                  },
+                }),
+              ),
+            );
+          }
+        }
         return {
           outputs: { url: deployment.appEndpointDomain, projectId: provisioned.projectId },
           entities: [
@@ -443,6 +476,7 @@ export function computeDescriptor(
               url: deployment.appEndpointDomain,
               ...inputDetails,
             },
+            ...domains,
           ],
         };
       }),

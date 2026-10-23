@@ -40,6 +40,7 @@ import { prismaCloudReporter } from '../reporting/reporter.ts';
 import { S3CredentialsProvider } from '../s3-credentials-resource.ts';
 import type { ProviderParamEntry } from '../serializer.ts';
 import { STREAMS_API_KEY } from '../streams-keys.ts';
+import { type CustomDomainsConfig, validateDomains } from './domain-config.ts';
 import {
   type PointerUpdatedAt,
   pointerUpdatedAtLookup,
@@ -177,6 +178,10 @@ export const prismaState = (): StateDescriptor => ({
 });
 
 export interface PrismaCloudOptions {
+  /** Desired hostnames, keyed by actual branch name and service address. */
+  domains?: CustomDomainsConfig;
+  /** Console origin for setup links; defaults to https://console.prisma.io. */
+  consoleUrl?: string;
   /** Defaults to the PRISMA_WORKSPACE_ID environment variable. */
   workspaceId?: string;
   /** Defaults to the PRISMA_REGION environment variable when set. */
@@ -185,7 +190,10 @@ export interface PrismaCloudOptions {
 
 /** Prisma.providers()'s ProviderCollection doesn't structurally unify with Alchemy's inferred providers Layer (a @internal/lowering typings gap); it satisfies it at runtime. */
 function asProvidersLayer<A, E, R>(layer: Layer.Layer<A, E, R>): Layer.Layer<never> {
-  return layer as unknown as Layer.Layer<never>;
+  return blindCast<
+    Layer.Layer<never>,
+    "Prisma provider collections satisfy Alchemy's merged provider layer at runtime"
+  >(layer);
 }
 
 /**
@@ -312,13 +320,34 @@ function lazyOptions(
 ): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
+    cached ??= {
+      ...resolveOptions(opts),
+      pointerUpdatedAt,
+      ...(opts.domains !== undefined ? { domains: opts.domains } : {}),
+      consoleUrl: opts.consoleUrl ?? 'https://console.prisma.io',
+    };
     return cached;
   };
 }
 
 /** The Prisma Cloud extension descriptor — the `composer` section of `prisma.config.ts` lists it under `extensions`. */
 export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor => {
+  validateDomains(opts.domains);
+  if (opts.consoleUrl !== undefined) {
+    const url = new URL(opts.consoleUrl);
+    if (
+      !['https:', 'http:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.pathname !== '/' ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error(
+        'consoleUrl must be an HTTP(S) origin without credentials, a path, query or fragment.',
+      );
+    }
+  }
   // When each pointed-at platform variable was last written — filled by the
   // deploy preflight, read by the environment fingerprint. A closure, not a
   // module variable, so two `prismaCloud()` extensions cannot share it. In
@@ -351,11 +380,12 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
     // transport for the alchemy process. The parameter annotation is what
     // recovers this extension's own client type from the framework's erased
     // one; without it `input.credentials` arrives as `unknown`.
-    preflight: (input: PrismaCloudPreflightInput) =>
-      runPreflight(input).then((timestamps) => {
-        for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
-        return serializePointerUpdatedAt(timestamps);
-      }),
+    preflight: async (input: PrismaCloudPreflightInput) => {
+      validateDomains(opts.domains, input.graph);
+      const timestamps = await runPreflight(input);
+      for (const [name, updatedAt] of timestamps) preflightTimestamps.set(name, updatedAt);
+      return serializePointerUpdatedAt(timestamps);
+    },
 
     // Records the deploy as a Build so it appears in the Console, and passes
     // the build's id into the apply so the state store can report what the
@@ -378,7 +408,19 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
             ctx.container,
           );
           yield* Prisma.claimDatabaseUrlKeys(projectId);
-          return { projectId, branchId, defaultBranchId, branchless } satisfies CloudApplication;
+          let domainBranchName: string | undefined;
+          if (opts.domains && !branchless) {
+            const id = branchId ?? defaultBranchId;
+            if (!id) throw new Error('Cannot select custom domains without a resolved branch.');
+            domainBranchName = yield* Prisma.customDomainBranchName(id);
+          }
+          return {
+            projectId,
+            branchId,
+            defaultBranchId,
+            branchless,
+            ...(domainBranchName !== undefined ? { domainBranchName } : {}),
+          } satisfies CloudApplication;
         }),
     },
 

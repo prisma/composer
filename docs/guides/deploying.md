@@ -595,3 +595,28 @@ What to know before embedding it:
 [`docs/design/10-domains/deploy-cli.md`](../design/10-domains/deploy-cli.md)
 documents the deploy pipeline end to end — stages and containers, the destroy
 contract, the error surface.
+
+## Custom domains
+
+Declare hostnames in the Prisma Cloud extension in the `composer` section of `prisma.config.ts`:
+
+```ts
+prismaCloud({
+  domains: {
+    main: { web: ['example.com', 'www.example.com'] },
+    staging: { web: ['staging.example.com'] },
+  },
+})
+```
+
+Each key (`web`, or a nested address such as `auth.api`) names a Compute service in the module. The outer keys are actual platform branch names. A deploy without `--stage` reads the current default branch's name: if it is `main`, it selects `domains.main`; if it is `trunk`, it selects `domains.trunk`. `prisma deploy module.ts --stage staging` selects `domains.staging`. There is no reserved `production` alias, and changing the default branch never carries the old branch's hostnames to the new one. An unlisted branch receives no custom domains. Each hostname must belong to one service and environment. `prisma dev` keeps its local URLs and makes no domain requests.
+
+Build and deploy normally. If DNS is ready, Composer connects the hostname after the service is deployed and promoted. If the workspace TXT ownership record or routing record is missing, the app still deploys successfully. The report keeps the working generated URL and adds a `custom-domain` entry with `status: Setup required` and a Console setup link. The same entries are in the deploy report written by `--report`.
+
+Open that link to see the hostname prefilled in the correct app's DNS setup. Add the displayed TXT and CNAME records at your DNS provider, then choose **Verify and connect**. Opening the link does not change anything. A connected domain can still be provisioning its certificate: only `active` means it is ready to serve traffic. Failures, including ownership conflicts, quota limits and API outages, remain errors rather than becoming setup notices.
+
+Later deploys retry missing bindings even when the service code is unchanged. They reuse domains completed in Console without requesting another certificate. Declaring a hostname opts its binding on that app into Composer management, including an existing binding with that exact hostname. Removing the declaration detaches that binding; unrelated Console-added hostnames are left alone. To hand a domain to another service or environment, detach it deliberately before declaring it there. Composer never moves it automatically.
+
+Destroying a stage removes its app bindings but leaves domain registration and DNS records alone. Recreating the stage can reconnect its declarations using the same workspace TXT proof. A different workspace must publish its own proof. Domain caps and workspace creation rate limits still apply. For a separate Console deployment, set `consoleUrl` on `prismaCloud()` to that Console's origin so setup links reach the matching environment.
+
+Domain purchase and DNS hosting are separate from app bindings. Future Console-managed DNS will use the same setup link; Composer declarations will not need registrar credentials or provider-specific settings. Deploying or destroying an app never buys, renews or cancels a domain, or deletes a DNS zone.
