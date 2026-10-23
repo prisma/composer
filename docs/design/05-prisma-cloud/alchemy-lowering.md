@@ -164,7 +164,15 @@ For the app `shop`:
 
 The old ID is computed from the address with the app name removed, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
 
-A rename keeps a resource only if its props allow an in-place update, so a prop whose change makes upstream replace the resource keeps its current value. Each Connection keeps the `name` it has today (`catalog`), because a new `name` replaces the Connection and rotates the database's credentials; a bucket access key keeps its `name` for the same reason. A database's display name follows its resource ID and changes in place; it is a label.
+A rename keeps a resource only if its props allow an in-place update, so a prop whose change makes upstream replace the resource keeps its current value. Upstream `alchemy/Prisma` replaces, rather than updates:
+
+- a Connection when its `name` or database changes, which rotates the database's credentials;
+- a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;
+- an EnvironmentVariable when its `key`, `class`, `branchId` or project changes;
+- an App, Database or Bucket only when its project (or, for a Database, its region, source or default flag) changes;
+- a Deployment when its artifact or `triggers` fingerprint changes.
+
+So the Connection, BucketAccessKey and Bucket `name`, and the branchless Database `name`, are `resourceLabel(address)`: the address without the app name (`catalog`), the value every earlier release wrote, on new stages too. They are labels. An App's `displayName`, a Database's derived display name and every `logicalId` update in place and take the new value. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
 
 Status:
 

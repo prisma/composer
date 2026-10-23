@@ -89,7 +89,7 @@ On the app's own Branch a key identifies the variable the way `logicalId` identi
 
 ### `serviceOrigin` takes the full address
 
-`serviceOrigin('shop.auth.api')` binds a parameter to another service's public origin. It takes the same fully qualified address as everything else. If the app is deployed under a different name from the one in the code (`--name`), the address names no node and the deploy fails at Load with an unknown address. That failure is loud, happens before anything is created, and is fixed in one line.
+`serviceOrigin('shop.auth.api')` binds a parameter to another service's public origin. It takes the same fully qualified address as everything else. If the app is deployed under a different name from the one in the code (`--name`), the address names no node and the deploy fails with an unknown address while it builds its plan, before anything is created. That failure is loud and is fixed in one line.
 
 ### Existing deployments migrate on their next deploy
 
@@ -112,7 +112,9 @@ Three properties make this safe, and each was checked on the real platform:
 - A deploy that fails or is killed partway through the renames can be run again, and it finishes them without recreating anything.
 - Dots in resource IDs work in Alchemy and in the platform's hosted deploy state, whose URLs carry the ID.
 
-A rename keeps a resource only if its props allow an in-place update. Any prop whose change makes upstream replace the resource keeps the value it has today. A Connection is replaced when its `name` prop changes, and replacing it rotates the database's credentials, so each Connection keeps the `name` it has today (`catalog`, not `shop.catalog`). The same rule applies to every other name Composer derives from the address, such as a bucket access key's `name`. These names are labels, not identity. A name that upstream updates in place, such as a database's display name, may follow the new address; display names are labels and nothing depends on them.
+A rename keeps a resource only if its props allow an in-place update. Any prop whose change makes upstream replace the resource keeps the value it has today. A Connection is replaced when its `name` prop changes, and replacing it rotates the database's credentials, so each Connection keeps the `name` it has today (`catalog`, not `shop.catalog`). A bucket access key's `name` is the same. So these names, and the Bucket's and local dev Database's `name`, stay the address without the app name, on new stages too. They are labels, not identity. A name that upstream updates in place, such as an App's or a hosted database's display name, follows the new address.
+
+An environment variable row is replaced whenever its key changes, and every key changes in this migration. That is harmless: Composer writes every row's value on every deploy, so the new row holds the same value as the old one, and a changed environment already makes a new Deployment.
 
 Local dev creates no platform rows. Its per-directory record of which emulator instance backs each node (ADR-0052) is keyed by address. On the first `prisma dev` after upgrading, Composer rewrites the record's keys to full addresses, and moves anything else keyed by address, so local databases keep their data and services keep their ports.
 

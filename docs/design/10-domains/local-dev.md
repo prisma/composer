@@ -286,9 +286,9 @@ node of each app run there, in `.prisma-composer/dev/emulator-instances.json`:
 `current` names the app `prisma dev` last ran from the directory. A record
 written by the previous version (`{ "app", "nodes" }`, one app, whose
 services have kind `compute`) reads as that one app with `service` nodes and
-is rewritten on the next write. A database's and a bucket's key is its
-resource name, from the same helper the lowering uses; a local provider
-refuses a database or bucket resource without a name.
+is rewritten on the next write. Every node's key is its address, which is
+also the resource ID of a database's `Database` and a bucket's `Bucket`, so the
+local providers find their instance by resource ID.
 
 The record is the only place Composer's names are mapped to instances. The
 emulators hook, the local `App`, `Deployment`, `Database`, `Connection`,
