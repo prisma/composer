@@ -1,7 +1,8 @@
 /**
- * The dev session's stop, against real Compute and Postgres emulators in a
- * temporary emulators directory: ending `prisma dev` stops the app's
- * database servers as well as its services, keeping their data and ports.
+ * The dev session's attachment, against real Compute and Postgres emulators
+ * in a temporary emulators directory: ending `prisma dev` stops the app's
+ * database servers as well as its services, keeping their data and ports,
+ * and `readLogs` returns each service's last lines without following.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
@@ -10,6 +11,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  computeClient,
   type DaemonName,
   EMULATORS_DIR_ENV,
   ensureDaemon,
@@ -27,6 +29,16 @@ import { devAttach } from '../local-target/attach.ts';
 const APP = 'attach-app';
 const DAEMONS: readonly DaemonName[] = ['compute', 'postgres'];
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
+
+function localContainer(): PrismaCloudContainer {
+  return new PrismaCloudContainer(
+    { appName: APP, stage: undefined },
+    'local',
+    undefined,
+    undefined,
+    true,
+  );
+}
 
 function acceptsConnection(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -71,20 +83,46 @@ describe.skipIf(process.platform === 'win32')("the dev session's stop", () => {
     const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes['catalog'];
     if (recorded?.kind !== 'database') throw new Error('no database recorded');
     expect(await acceptsConnection(recorded.port)).toBe(true);
-    const container = new PrismaCloudContainer(
-      { appName: APP, stage: undefined },
-      'local',
-      undefined,
-      undefined,
-      true,
-    );
-
-    await (await devAttach({ container, devDir })).stopApp();
+    await (await devAttach({ container: localContainer(), devDir })).stopApp();
 
     expect(await postgresClient().getInstance(recorded.id)).toMatchObject({
       status: 'stopped',
       port: recorded.port,
     });
     expect(await acceptsConnection(recorded.port)).toBe(false);
+  }, 60_000);
+
+  test("readLogs returns each service's last lines, labelled with its address", async () => {
+    await ensureAppInstances({ devDir, app: APP }, [{ address: 'api', kind: 'service' }]);
+    const recorded = (await readEmulatorInstances(directory))?.apps[APP]?.nodes['api'];
+    if (recorded?.kind !== 'service') throw new Error('no service recorded');
+    const artifactDir = path.join(root, 'artifact');
+    fs.mkdirSync(artifactDir);
+    fs.writeFileSync(
+      path.join(artifactDir, 'bootstrap.js'),
+      "for (let i = 1; i <= 5; i++) console.log('line-' + i);\n" +
+        "Bun.serve({ port: Number(process.env['PORT']), fetch: () => new Response('ok') });\n",
+    );
+    const PATH = process.env['PATH'];
+    if (PATH === undefined) throw new Error('PATH is not set in this shell');
+    await computeClient().putDeployment(recorded.id, {
+      artifactDir,
+      artifactHash: 'logs',
+      env: { PATH, PORT: String(recorded.port) },
+    });
+    const attachment = await devAttach({ container: localContainer(), devDir });
+    if (attachment.readLogs === undefined) throw new Error('the attachment has no readLogs');
+    const readLogs = attachment.readLogs;
+    const deadline = Date.now() + 5000;
+    while (!(await readLogs({ tail: 1 })).some(({ line }) => line === 'line-5')) {
+      if (Date.now() > deadline) throw new Error('the service never logged line-5');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    expect(await readLogs({ tail: 2 })).toEqual([
+      { service: 'api', line: 'line-4' },
+      { service: 'api', line: 'line-5' },
+    ]);
+    expect(await readLogs({ tail: 0 })).toEqual([]);
   }, 60_000);
 });

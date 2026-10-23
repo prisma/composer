@@ -455,6 +455,27 @@ describe('log follow', () => {
     expect(seen).not.toContain('line-7\n');
     expect(seen).not.toContain('line-1\n');
   }, 15_000);
+
+  test('readLogs returns the whole log as it is now, and undefined for an unknown instance', async () => {
+    const client = computeClient({ registryRoot });
+    const artifactDir = writeBootstrap(LOGGING_BOOTSTRAP);
+    const reserved = await client.createInstance({ labels: {} });
+    await client.putDeployment(reserved.id, {
+      artifactDir,
+      artifactHash: 'r',
+      env: baseEnv({ PORT: String(reserved.port), LINES: '4' }),
+    });
+
+    await waitFor(
+      async () => ((await client.readLogs(reserved.id)) ?? '').includes('line-4\n'),
+      5000,
+      100,
+    );
+    const content = (await client.readLogs(reserved.id)) ?? '';
+    expect(content).toContain('line-1\n');
+    expect(content).toContain('line-4\n');
+    expect(await client.readLogs('svc_0000000000000000')).toBeUndefined();
+  }, 15_000);
 });
 
 describe('log reset on a fresh start', () => {

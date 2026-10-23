@@ -198,6 +198,8 @@ export interface ComputeClient {
   getInstance(id: string): Promise<ServiceInstanceInfo | undefined>;
   /** `PUT /instances/<id>/deployment` — returns once the instance accepts connections on its port. */
   putDeployment(id: string, deployment: DeploymentRequest): Promise<void>;
+  /** `GET /instances/<id>/logs` — the instance's whole log as it is now; undefined when the emulator has no such instance. */
+  readLogs(id: string, signal?: AbortSignal): Promise<string | undefined>;
   /** `GET /instances/<id>/logs?follow=1` — yields decoded text chunks; ends when `signal` aborts or the daemon closes the stream. */
   followLogs(
     id: string,
@@ -277,6 +279,15 @@ export function computeClient(opts: DaemonRootOptions = {}): ComputeClient {
           body: JSON.stringify(deployment),
         }),
       );
+    },
+
+    async readLogs(id, signal) {
+      const res = await adminFetch(
+        `${instancePath(baseUrl, id)}/logs`,
+        signal ? { signal } : undefined,
+      );
+      if (res.status === 404) return undefined;
+      return (await expectOk(res)).text();
     },
 
     async *followLogs(id, signal, opts) {

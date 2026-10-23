@@ -342,6 +342,15 @@ export interface LocalTargetAttachment {
     signal: AbortSignal,
     opts?: { readonly tail?: number },
   ): AsyncIterable<{ readonly service: string; readonly line: string }>;
+  /**
+   * Each service's log as it is now, without following: the last `opts.tail` lines of every
+   * service, grouped by service in no particular order. Optional only so a target from before
+   * it existed still loads; core refuses to read without following when it is absent.
+   */
+  readLogs?(opts: {
+    readonly tail: number;
+    readonly signal?: AbortSignal;
+  }): Promise<readonly { readonly service: string; readonly line: string }[]>;
   /** Stop everything the target runs for the app, so nothing of it keeps running after the session (emulators and data persist). */
   stopApp(): Promise<void>;
 }

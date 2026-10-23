@@ -1,7 +1,7 @@
 /**
  * The dev session's view of the running app (local-dev spec § 5, ADR-0041 D5)
  * — a Compute-emulator client scoped to this app. Core renders `endpoints()`/
- * `logs()`/`stopApp()` and never learns the emulator's HTTP API
+ * `logs()`/`readLogs()`/`stopApp()` and never learns the emulator's HTTP API
  * (ADR-0038's opacity pattern).
  */
 import type { LocalTargetAttachInput, LocalTargetAttachment } from '@internal/core/config';
@@ -106,6 +106,13 @@ async function* mergedLogs(
   }
 }
 
+/** The last `tail` complete lines of `content`; a final line with no newline yet is included. */
+function lastLines(content: string, tail: number): string[] {
+  if (tail <= 0 || content === '') return [];
+  const lines = content.endsWith('\n') ? content.slice(0, -1).split('\n') : content.split('\n');
+  return lines.slice(-tail);
+}
+
 export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTargetAttachment> {
   const scope = {
     devDir: input.devDir,
@@ -130,6 +137,17 @@ export async function devAttach(input: LocalTargetAttachInput): Promise<LocalTar
       }));
     },
     logs: (signal, opts) => mergedLogs(scope, signal, opts?.tail ?? 0),
+    readLogs: async ({ tail, signal }) => {
+      const nodes = await nodeInstancesOf(scope, 'service');
+      const logs = await Promise.all(
+        nodes.map(async ({ address, instance }) => {
+          // An instance the emulator no longer has has no log to read.
+          const content = (await client.readLogs(instance.id, signal)) ?? '';
+          return lastLines(content, tail).map((line) => ({ service: address, line }));
+        }),
+      );
+      return logs.flat();
+    },
     // Service processes and database servers; their data and ports are kept.
     stopApp: async () => {
       await stopAppInstances(scope);
