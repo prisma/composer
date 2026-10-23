@@ -2,7 +2,8 @@
  * The Compute emulator daemon (local-dev spec § 2 `compute-main.ts`): a small
  * local counterpart of the platform's compute service. Holds service
  * instances under ids it generates, owns their child processes (spawned
- * `bun bootstrap.js` from a real packaged artifact), supervises them (crash
+ * `bun bootstrap.js` from a real packaged artifact, or a deployment's own
+ * command — ADR-0056), supervises them (crash
  * backoff, held after repeated fast crashes), and serves a loopback JSON
  * admin API plus per-instance log streaming. An instance's labels are its
  * creator's to read: they are stored and returned verbatim, never
@@ -51,6 +52,8 @@ interface InstanceRecord {
   lastExitCode?: number;
   artifactHash?: string;
   artifactDir?: string;
+  /** A command deployment's process, in place of an artifact's (ADR-0056). Exclusive with `artifactHash`/`artifactDir`. */
+  command?: DeploymentCommand;
   env?: Record<string, string>;
   /** `false` when the service does not listen on its port: it is `running` once spawned. */
   listens?: boolean;
@@ -90,6 +93,26 @@ function isOptional(value: object, key: string, check: (field: unknown) => boole
   return !(key in value) || Reflect.get(value, key) === undefined || check(Reflect.get(value, key));
 }
 
+/** What a command deployment runs: `argv[0]` is an absolute path or a name resolved on the deployment's `PATH`. */
+interface DeploymentCommand {
+  readonly cwd: string;
+  readonly argv: readonly string[];
+}
+
+function isDeploymentCommand(value: unknown): value is DeploymentCommand {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'cwd' in value &&
+    typeof value.cwd === 'string' &&
+    value.cwd !== '' &&
+    'argv' in value &&
+    Array.isArray(value.argv) &&
+    value.argv.length > 0 &&
+    value.argv.every((arg) => typeof arg === 'string')
+  );
+}
+
 function isInstanceRecord(value: unknown): value is InstanceRecord {
   if (typeof value !== 'object' || value === null) return false;
   if (!('id' in value) || typeof value.id !== 'string') return false;
@@ -102,6 +125,7 @@ function isInstanceRecord(value: unknown): value is InstanceRecord {
     isOptional(value, 'lastExitCode', (v) => typeof v === 'number') &&
     isOptional(value, 'artifactHash', (v) => typeof v === 'string') &&
     isOptional(value, 'artifactDir', (v) => typeof v === 'string') &&
+    isOptional(value, 'command', isDeploymentCommand) &&
     isOptional(value, 'env', isStringRecord) &&
     isOptional(value, 'listens', (v) => typeof v === 'boolean')
   );
@@ -133,25 +157,35 @@ function isCreateBody(value: unknown): value is CreateBody {
   );
 }
 
-interface DeploymentBody {
-  readonly artifactDir: string;
-  readonly artifactHash: string;
-  readonly env: Record<string, string>;
-  readonly listens?: boolean;
-}
+/** A deployment is either an artifact (run as `bun bootstrap.js` in its directory) or a command (ADR-0056). */
+type DeploymentBody =
+  | {
+      readonly artifactDir: string;
+      readonly artifactHash: string;
+      readonly env: Record<string, string>;
+      readonly listens?: boolean;
+    }
+  | {
+      readonly command: DeploymentCommand;
+      readonly env: Record<string, string>;
+      readonly listens?: boolean;
+    };
 
 function isDeploymentBody(value: unknown): value is DeploymentBody {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('env' in value) || !isStringRecord(value.env)) return false;
+  if ('listens' in value && value.listens !== undefined && typeof value.listens !== 'boolean') {
+    return false;
+  }
+  const isArtifact =
     'artifactDir' in value &&
     typeof value.artifactDir === 'string' &&
     'artifactHash' in value &&
-    typeof value.artifactHash === 'string' &&
-    'env' in value &&
-    isStringRecord(value.env) &&
-    (!('listens' in value) || value.listens === undefined || typeof value.listens === 'boolean')
-  );
+    typeof value.artifactHash === 'string';
+  const hasArtifactField = 'artifactDir' in value || 'artifactHash' in value;
+  const hasCommand = 'command' in value;
+  if (hasCommand) return !hasArtifactField && isDeploymentCommand(value.command);
+  return isArtifact;
 }
 
 interface IdsBody {
@@ -321,11 +355,24 @@ async function waitUntilListening(
 
 /** Resolves `bun` from THIS request's env PATH — never the daemon's own. POSIX-only (Windows is out of scope). */
 function resolveBunOnPath(env: Readonly<Record<string, string>>): string | undefined {
+  return resolveOnPath('bun', env);
+}
+
+/** A command's executable: `name` itself when absolute, else the first executable file named `name` on the deployment's `PATH`. */
+function resolveExecutable(
+  name: string,
+  env: Readonly<Record<string, string>>,
+): string | undefined {
+  return path.isAbsolute(name) ? name : resolveOnPath(name, env);
+}
+
+/** The first executable file named `name` on THIS request's env PATH — never the daemon's own. */
+function resolveOnPath(name: string, env: Readonly<Record<string, string>>): string | undefined {
   const pathVar = env['PATH'];
   if (!pathVar) return undefined;
   for (const dir of pathVar.split(path.delimiter)) {
     if (dir === '') continue;
-    const candidate = path.join(dir, 'bun');
+    const candidate = path.join(dir, name);
     try {
       fs.accessSync(candidate, fs.constants.X_OK);
       return candidate;
@@ -548,25 +595,43 @@ function main(): void {
     token: StartToken,
   ): Promise<SpawnResult> {
     const env = inst.env ?? {};
-    const artifactDir = inst.artifactDir ?? '.';
-    const bunPath = resolveBunOnPath(env);
-    if (!bunPath) {
+    const command = inst.command;
+    const executable =
+      command !== undefined ? resolveExecutable(command.argv[0] ?? '', env) : resolveBunOnPath(env);
+    if (!executable) {
       inst.status = 'stopped';
       delete inst.pid;
       schedulePersist();
-      return { ok: false, message: BUN_NOT_FOUND_MESSAGE };
+      return {
+        ok: false,
+        message:
+          command !== undefined
+            ? `command "${command.argv[0] ?? ''}" was not found on the deployment's PATH`
+            : BUN_NOT_FOUND_MESSAGE,
+      };
     }
+    // A command (a dev server) must bind the port it is given; an artifact's
+    // bootstrap always does, so only a command's readiness failure says so.
+    const listenHint =
+      command !== undefined ? ' A dev server must listen on the port in its PORT variable.' : '';
 
     const log = getLog(inst);
     if (fresh) {
       log.clear();
       logGeneration.set(inst.logPath, (logGeneration.get(inst.logPath) ?? 0) + 1);
     }
-    const child = spawn(bunPath, ['bootstrap.js'], {
-      cwd: artifactDir,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child =
+      command !== undefined
+        ? spawn(executable, command.argv.slice(1), {
+            cwd: command.cwd,
+            env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          })
+        : spawn(executable, ['bootstrap.js'], {
+            cwd: inst.artifactDir ?? '.',
+            env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
     rt.child = child;
     rt.expectedExit = false;
     rt.startedAt = Date.now();
@@ -599,12 +664,12 @@ function main(): void {
         outcome.code !== null ? `code ${String(outcome.code)}` : (outcome.signal ?? 'no exit code');
       return {
         ok: false,
-        message: `${instance} exited (${how}) before it accepted connections on its port ${port}. Its log: ${inst.logPath}`,
+        message: `${instance} exited (${how}) before it accepted connections on its port ${port}. Its log: ${inst.logPath}${listenHint}`,
       };
     }
     if (outcome.kind === 'timed-out') {
       const seconds = String(readyTimeoutMs / 1000);
-      const message = `${instance} did not accept connections on its port ${port} within ${seconds}s. Its log: ${inst.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on its port, deploy it with listens: false.`;
+      const message = `${instance} did not accept connections on its port ${port} within ${seconds}s. Its log: ${inst.logPath}. If it needs longer to start, set ${SERVICE_READY_TIMEOUT_ENV} (milliseconds) and restart the compute emulator. If it never listens on its port, deploy it with listens: false.${listenHint}`;
       if (fresh) {
         log.writeLine(
           `[emulator] did not accept connections on port ${port} within ${seconds}s — stopped`,
@@ -657,7 +722,7 @@ function main(): void {
    * STORED deployment, since no new one arrives with a start.
    */
   async function startInstance(inst: InstanceRecord): Promise<SpawnResult> {
-    if (inst.artifactHash === undefined) return { ok: true }; // never deployed — nothing to start
+    if (inst.artifactHash === undefined && inst.command === undefined) return { ok: true }; // never deployed — nothing to start
     const rt = getRuntime(inst.id);
     const inFlight = joinableStart(rt);
     if (inFlight) return inFlight.result;
@@ -735,6 +800,9 @@ function main(): void {
       ...(inst.pid !== undefined ? { pid: inst.pid } : {}),
       ...(inst.lastExitCode !== undefined ? { lastExitCode: inst.lastExitCode } : {}),
       ...(inst.artifactHash !== undefined ? { artifactHash: inst.artifactHash } : {}),
+      ...(inst.command !== undefined
+        ? { command: { cwd: inst.command.cwd, argv: inst.command.argv } }
+        : {}),
       logPath: inst.logPath,
     };
   }
@@ -758,11 +826,12 @@ function main(): void {
     const rt = getRuntime(inst.id);
     const listens = body.listens ?? true;
     const changed =
-      inst.artifactHash !== body.artifactHash ||
+      !sameDeploymentForm(inst, body) ||
       !envEquals(inst.env, body.env) ||
       (inst.listens ?? true) !== listens;
 
     let result: SpawnResult;
+    let started = false;
     const inFlight = joinableStart(rt);
     if (!changed && inFlight?.fresh === true) {
       // The same deployment is already starting: answer when it does.
@@ -777,10 +846,19 @@ function main(): void {
       // changes, so nothing is mutated here either — nothing to persist.
       result = { ok: true };
     } else {
-      inst.artifactHash = body.artifactHash;
+      // A put of one form clears the other's fields.
+      if ('command' in body) {
+        inst.command = { cwd: body.command.cwd, argv: [...body.command.argv] };
+        delete inst.artifactHash;
+        delete inst.artifactDir;
+      } else {
+        inst.artifactHash = body.artifactHash;
+        inst.artifactDir = body.artifactDir;
+        delete inst.command;
+      }
       inst.env = body.env;
-      inst.artifactDir = body.artifactDir;
       inst.listens = listens;
+      started = true;
       clearBackoffTimer(rt);
       schedulePersist();
       // A new or changed deployment, or an instance that is not up: a fresh
@@ -800,7 +878,21 @@ function main(): void {
     if (!result.ok) {
       return text(res, 500, result.message ?? 'failed to start the instance');
     }
-    noContent(res);
+    json(res, 200, { started });
+  }
+
+  /** Whether the instance already holds this deployment's form and identity: the same artifact hash, or the same command `cwd` and `argv`. */
+  function sameDeploymentForm(inst: InstanceRecord, body: DeploymentBody): boolean {
+    if ('command' in body) {
+      const stored = inst.command;
+      return (
+        stored !== undefined &&
+        stored.cwd === body.command.cwd &&
+        stored.argv.length === body.command.argv.length &&
+        stored.argv.every((arg, i) => arg === body.command.argv[i])
+      );
+    }
+    return inst.command === undefined && inst.artifactHash === body.artifactHash;
   }
 
   /** Byte offset a follow should start at to show the last `tailLines` complete lines; `<= 0` (or an empty file) starts at the current end, no backlog. */

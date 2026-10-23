@@ -13,6 +13,8 @@ export type {
   CreateDatabaseRequest,
   CreateServiceRequest,
   DatabaseInstanceInfo,
+  DeploymentCommand,
+  DeploymentOutcome,
   DeploymentRequest,
   PostgresClient,
   ServiceInstanceInfo,
