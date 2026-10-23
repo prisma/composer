@@ -1004,7 +1004,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         ({ address, application }) =>
           Effect.gen(function* () {
             const db = yield* Prisma.Database(address, { project: projectIdOf(application), region, logicalId: address })
-            const conn = yield* Prisma.Connection(`${address}.connection`, { database: db, name: /* unchanged label */ })
+            const conn = yield* Prisma.Connection(`${address}.connection`, { database: db, name: address })
             const warm = yield* PgWarm(`${address}.warmup`, { url: conn.directConnectionString })  // FT-5226 cold-start
             const migration = yield* OrmMigration(`${address}.migration`, { url: warm.url, /* target ref, config path */ })
             const url = Output.map(Output.all(warm.url, Output.of(migration)), ([value]) => value)

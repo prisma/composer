@@ -490,9 +490,30 @@ Two things to do yourself:
 - **Don't deploy an environment with an older version afterwards.** It would
   look for the old names and recreate every resource, losing their data.
 
+An app with a module or a service directly below the root named like the app
+(`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell
+an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can
+hit one more step. There, one node's new variable key is the key an earlier
+version wrote for another node. The deploy stops before changing anything and
+names the variable and both nodes. Delete that one variable, then deploy again:
+
+```sh
+prisma project env delete COMPOSER_SHOP_X_ORIGIN --project <project-id> --role production
+prisma project env delete COMPOSER_SHOP_X_ORIGIN --project <project-id> --branch <stage>
+```
+
+The first form is for production, the second for a `--stage` environment; the
+Console's Environment variables page works too. Nothing is lost: the deploy
+writes every value under its new key, and running services keep their own copy
+until then. Don't rename either node to get around it: a new address is a new
+entity, and its old rows, and a database's or bucket's data, are deleted.
+
 `prisma dev` keeps its local services, databases and buckets: on its first run
 it rewrites the directory's record to the new addresses. `prisma dev url` takes
-the full address.
+the full address. `prisma emulator list` still shows an instance created before
+the upgrade with its old address label (`api` instead of `shop.api`), because
+the emulators keep the labels they were created with; `prisma dev --fresh`
+recreates the instances with full addresses, and deletes their local data.
 
 ## Upgrading from an older state store
 
