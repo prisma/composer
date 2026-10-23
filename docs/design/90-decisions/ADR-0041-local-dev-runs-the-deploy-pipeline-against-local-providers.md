@@ -4,7 +4,7 @@ Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)
 
 Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md): the emulators know nothing about Composer. A dev instance is no longer identified on the emulators by the app name: the Compute, Postgres and bucket emulators key their instances by ids they generate, and Composer records, per working directory, which instance backs each node of each app run there. When `prisma dev` ends it stops the app's database servers as well as its services.
 
-Amended by [ADR-0056](ADR-0056-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets only from the environment of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent. No value is stored between runs. The secrets bullet under Consequences is replaced by that ADR.
+Amended by [ADR-0056](ADR-0056-prisma-dev-reads-secrets-from-the-environment-and-never-invents-them.md): `prisma dev` takes secrets only from the environment of the run, the shell or a `.env` that `prisma.config.ts` loads, and never makes one up. A required secret that is unset or empty is an error; an optional one reaches the service as absent. Each run takes values from its environment and never reuses one from an earlier run. The secrets bullet under Consequences is replaced by that ADR.
 
 ## Decision
 
@@ -235,7 +235,7 @@ this repo owns.
   readiness, version-skew restart) and the Compute emulator's supervision
   policy; the dev command itself supervises nothing — it renders the
   `attach` hook's view.
-- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0056: every secret and env-sourced param comes from the environment of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and nothing is stored. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
+- **The strict secrets model is unchanged** (ADR-0029). Dev policy lives in `localTarget.preflight`. *(Replaced by ADR-0056: every secret and env-sourced param comes from the environment of the run; a required one that is unset or empty is an error, an optional secret reaches the service as absent, and no value is reused from an earlier run. The original text gave an unbound secret a minted, stored placeholder and a printed warning.)*
 - **Scheduled work runs for real** (ADR-0020): the scheduler is an ordinary
   service and fires locally. A manual-trigger affordance for
   determinism-sensitive workflows is a domain-doc concern, not a model change.

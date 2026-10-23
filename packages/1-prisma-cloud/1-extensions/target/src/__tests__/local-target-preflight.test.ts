@@ -159,7 +159,9 @@ describe('prisma dev preflight', () => {
     expect(message).toContain('service "billing"');
     expect(message).toContain('stripeKey is required');
     expect(message).toContain('export it in the shell you run `prisma dev` from');
-    expect(message).toContain("adding import 'dotenv/config' at the top of it");
+    expect(message).toContain(
+      "install the dotenv package and add import 'dotenv/config' at the top of prisma.config.ts",
+    );
     expect(message).toContain('only when the CLI runs under Node: Bun does not implement it');
   });
 
