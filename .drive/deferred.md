@@ -242,3 +242,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
   `stop`.** A deleted worktree leaves its stopped instances' records and
   Postgres data on disk, holding their ports. Planned for the emulator
   start/stop project.
+
+# Node addressing — deferred (2026-10-22)
+
+- **`prisma deploy delete @<stage>:<address>`: tear down a subtree.** Not built: `project delete`, `branch delete` and platform deletes by address cover every teardown scenario we found. Its only own jobs are emptying a stage while keeping its Branch (equivalent: `branch delete`, then redeploy) and resetting one module (equivalent: a few platform deletes, then redeploy). Design if it is ever needed: follow containment (the node and everything its modules provisioned), not dependency edges; delete compute before data and wait until each instance can be deleted; list nodes outside the subtree that depend on it and warn without blocking; leave the stored topology and deploy state alone so the next deploy rebuilds it; a subcommand of `deploy`; production must be named explicitly. Origin: node-addressing design discussion.

@@ -6,7 +6,7 @@
  * document, bound to `generatedParam()` here so the target generates a stable
  * value at deploy and it is invisible to consumers. `baseUrl` is the PUBLIC
  * origin of the consumer app (scheme+host, no trailing slash, no path); roots
- * bind it `serviceOrigin('<service address>')` or `envParam('AUTH_BASE_URL')`.
+ * bind it `serviceOrigin('<app>.<service>')` or `envParam('AUTH_BASE_URL')`.
  * `signUp` is a static factory option forwarded into the same input as a
  * literal (email's `deliveryUrl` pattern).
  */

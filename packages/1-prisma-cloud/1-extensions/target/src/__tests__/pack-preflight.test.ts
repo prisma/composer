@@ -106,7 +106,7 @@ describe('runPackPreflight', () => {
     const graph = graphWith('auth', 'auth-head', pnDb());
     await expect(runPackPreflight(graph)).rejects.toThrow(
       'postgres database "db" does not list extension pack "auth" in its ' +
-        'prisma.config.ts extensions — service "api" requires it. ' +
+        'prisma.config.ts extensions — service "root.api" requires it. ' +
         'Add the pack and run migration plan.',
     );
   });
@@ -117,7 +117,7 @@ describe('runPackPreflight', () => {
     const graph = graphWith(GADGET_PACK_ID, 'a-required-head', pnDb(spacelessConfig));
     await expect(runPackPreflight(graph)).rejects.toThrow(
       `postgres database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
-        '(no contract space), but service "api" requires a-required-head. ' +
+        '(no contract space), but service "root.api" requires a-required-head. ' +
         'Upgrade the pack and run migration plan.',
     );
   });
@@ -129,7 +129,7 @@ describe('runPackPreflight', () => {
     const graph = graphWith(GADGET_PACK_ID, 'a-different-head', pnDb());
     await expect(runPackPreflight(graph)).rejects.toThrow(
       `postgres database "db" lists extension pack "${GADGET_PACK_ID}" at head ` +
-        `${GADGET_PACK_HEAD_HASH}, but service "api" requires a-different-head. ` +
+        `${GADGET_PACK_HEAD_HASH}, but service "root.api" requires a-different-head. ` +
         'Upgrade the pack and run migration plan.',
     );
   });
@@ -155,7 +155,7 @@ describe('runPackPreflight', () => {
       { id: 'root' },
     );
     await expect(runPackPreflight(graph)).rejects.toThrow(
-      'service "api" requires extension pack "auth", which only a postgres resource can carry.',
+      'service "root.api" requires extension pack "auth", which only a postgres resource can carry.',
     );
   });
 });

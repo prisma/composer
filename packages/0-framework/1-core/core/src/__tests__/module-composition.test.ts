@@ -126,8 +126,18 @@ describe('a module with a declared dep that is never forwarded (Load error a)', 
 
     const graph = Load(root);
 
-    expect(graph.edges).toContainEqual({ from: 'p1', to: 'x.c', input: 'one', kind: 'dependency' });
-    expect(graph.edges).toContainEqual({ from: 'p2', to: 'x.c', input: 'two', kind: 'dependency' });
+    expect(graph.edges).toContainEqual({
+      from: 'shop.p1',
+      to: 'shop.x.c',
+      input: 'one',
+      kind: 'dependency',
+    });
+    expect(graph.edges).toContainEqual({
+      from: 'shop.p2',
+      to: 'shop.x.c',
+      input: 'two',
+      kind: 'dependency',
+    });
   });
 });
 
@@ -231,11 +241,11 @@ describe('a forwarding cycle through a module boundary (Load error d)', () => {
       });
 
     const root = module('shop', {}, ({ provision }) => {
-      // The only forgery: 'a' names "sub.inner" — a full hierarchical
+      // The only forgery: 'a' names "shop.sub.inner" — a full hierarchical
       // address — before "sub" (let alone "sub.inner") is provisioned. An
       // honest body cannot express this forward reference (refs are only
       // returned after provision()); the DAG check is what catches it.
-      const forged = { id: 'sub.inner' } as ProvisionedRef;
+      const forged = { id: 'shop.sub.inner' } as ProvisionedRef;
       const aRef = provision(peerService(), { id: 'a', deps: { peer: forged } });
       provision(subModule(), { id: 'sub', deps: { peer: aRef } }); // a → sub.inner (honest forward)
       return {};
@@ -248,8 +258,8 @@ describe('a forwarding cycle through a module boundary (Load error d)', () => {
       throw new Error('expected Load to throw');
     } catch (error) {
       const message = (error as Error).message;
-      expect(message).toContain('a');
-      expect(message).toContain('sub.inner');
+      expect(message).toContain('shop.a');
+      expect(message).toContain('shop.sub.inner');
     }
   });
 });
@@ -340,27 +350,27 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
     const graph = Load(rootModule(), { id: 'app' });
 
     const ids = graph.nodes.map((n) => n.id);
-    expect(ids).toContain('config');
-    expect(ids).toContain('mid');
-    expect(ids).toContain('mid.inner');
-    expect(ids).toContain('mid.inner.leaf');
-    expect(ids).toContain('mid.inner.leaf.cfg');
-    expect(ids).toContain('sink');
-    expect(ids).toContain('sink.out');
+    expect(ids).toContain('app.config');
+    expect(ids).toContain('app.mid');
+    expect(ids).toContain('app.mid.inner');
+    expect(ids).toContain('app.mid.inner.leaf');
+    expect(ids).toContain('app.mid.inner.leaf.cfg');
+    expect(ids).toContain('app.sink');
+    expect(ids).toContain('app.sink.out');
     expect(ids).toContain('app');
 
     const kindOf = (id: string) => graph.nodes.find((n) => n.id === id)?.node.kind;
-    expect(kindOf('mid')).toBe('module');
-    expect(kindOf('mid.inner')).toBe('module');
-    expect(kindOf('mid.inner.leaf')).toBe('service');
+    expect(kindOf('app.mid')).toBe('module');
+    expect(kindOf('app.mid.inner')).toBe('module');
+    expect(kindOf('app.mid.inner.leaf')).toBe('service');
   });
 
   test('an input forwarded down 2 levels resolves to the real (top-level) producer', () => {
     const graph = Load(rootModule());
 
     expect(graph.edges).toContainEqual({
-      from: 'config',
-      to: 'mid.inner.leaf',
+      from: 'app.config',
+      to: 'app.mid.inner.leaf',
       input: 'cfg',
       kind: 'dependency',
     });
@@ -370,14 +380,14 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
     const graph = Load(rootModule());
 
     expect(graph.edges).toContainEqual({
-      from: 'mid.inner.leaf',
-      to: 'sink',
+      from: 'app.mid.inner.leaf',
+      to: 'app.sink',
       input: 'out',
       kind: 'dependency',
     });
   });
 
-  test('a single-level module keeps bare, unprefixed ids — nesting changes nothing about the flat case', () => {
+  test('a single-level module prefixes its children with the root id, exactly as nesting does', () => {
     const flat = module('shop', {}, ({ provision }) => {
       provision(configService(), { id: 'config' });
       return {};
@@ -385,7 +395,7 @@ describe('3-level nesting: addresses, and forwarding down + up round trip', () =
 
     const graph = Load(flat);
 
-    expect(graph.nodes.map((n) => n.id)).toEqual(['config', 'shop']);
+    expect(graph.nodes.map((n) => n.id)).toEqual(['shop.config', 'shop']);
   });
 });
 
@@ -448,10 +458,10 @@ describe('pass-through: an expose may return a boundary input directly', () => {
 
     const graph = Load(root);
 
-    // Not "pass" — the module is transparent; the edge goes straight to origin.
+    // Not "shop.pass" — the module is transparent; the edge goes straight to origin.
     expect(graph.edges).toContainEqual({
-      from: 'origin',
-      to: 'sink',
+      from: 'shop.origin',
+      to: 'shop.sink',
       input: 'svc',
       kind: 'dependency',
     });
@@ -504,7 +514,7 @@ describe('untyped inputs (no required contract) forward with no compile-time che
 
     expect(() => Load(root)).toThrow(LoadError);
     expect(() => Load(root)).toThrow(
-      'The deps for "relay.sink.svc" do not satisfy the slot\'s required contract.',
+      'The deps for "shop.relay.sink.svc" do not satisfy the slot\'s required contract.',
     );
   });
 });
@@ -559,8 +569,8 @@ describe('a resource-backed input now forwards across a module boundary (unified
     const graph = Load(rootWithResource());
 
     expect(graph.edges).toContainEqual({
-      from: 'db',
-      to: 'wrapped.consumer',
+      from: 'shop.db',
+      to: 'shop.wrapped.consumer',
       input: 'db',
       kind: 'dependency',
     });
@@ -652,7 +662,7 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
       .sort();
 
     expect(inferredIds).toEqual(explicitIds);
-    expect(inferredIds).toContain('worker');
+    expect(inferredIds).toContain('shop.worker');
   });
 
   test('provision(node, wiring) infers the id and wires each producer ref', () => {
@@ -664,10 +674,10 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
 
     const graph = Load(root);
 
-    expect(graph.nodes.map((n) => n.id)).toContain('consumer');
+    expect(graph.nodes.map((n) => n.id)).toContain('shop.consumer');
     expect(graph.edges).toContainEqual({
-      from: 'worker',
-      to: 'consumer',
+      from: 'shop.worker',
+      to: 'shop.consumer',
       input: 'dep',
       kind: 'dependency',
     });
@@ -695,7 +705,7 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
       return {};
     });
 
-    expect(Load(root).nodes.map((n) => n.id)).toContain('db');
+    expect(Load(root).nodes.map((n) => n.id)).toContain('shop.db');
   });
 
   test('provision(childModule) infers the id and still flattens nested addresses', () => {
@@ -709,7 +719,7 @@ describe('provision() with an inferred id (the id-less overloads)', () => {
     });
 
     const ids = Load(root).nodes.map((n) => n.id);
-    expect(ids).toContain('child');
-    expect(ids).toContain('child.worker');
+    expect(ids).toContain('shop.child');
+    expect(ids).toContain('shop.child.worker');
   });
 });

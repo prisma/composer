@@ -388,7 +388,7 @@ function readJson(file: string): unknown {
 
 async function readCatalogDbUrl(): Promise<string> {
   const databases = await listPostgresDatabases();
-  const entry = databases.find((d) => d.address === 'catalog.database');
+  const entry = databases.find((d) => d.address === 'store.catalog.database');
   assert(entry?.url !== undefined, 'the record must name a running catalog.database database');
   return entry.url;
 }
@@ -482,8 +482,8 @@ async function touchCatalogAndAwaitRealWatchLoop(
 
   return waitForAsync(async () => {
     const pids = await pidsByAddress(APP_NAME);
-    return pids['catalog.service'] !== undefined &&
-      pids['catalog.service'] !== pidsBefore['catalog.service']
+    return pids['store.catalog.service'] !== undefined &&
+      pids['store.catalog.service'] !== pidsBefore['store.catalog.service']
       ? pids
       : undefined;
   }, 15_000);
@@ -517,7 +517,7 @@ async function rebuildCatalogAndReconverge(
       module: `file://${catalogServiceModule}`,
       entry: '../dist/server.mjs',
     },
-    address: 'catalog.service',
+    address: 'store.catalog.service',
     cwd: storeDir,
   });
 
@@ -541,7 +541,7 @@ async function rebuildCatalogAndReconverge(
   // completes (the restarted child still needs to actually start).
   return waitForAsync(async () => {
     const pids = await pidsByAddress(APP_NAME);
-    return pids['catalog.service'] !== undefined ? pids : undefined;
+    return pids['store.catalog.service'] !== undefined ? pids : undefined;
   }, 15_000);
 }
 
@@ -557,10 +557,10 @@ async function main(): Promise<void> {
     session = await startDev(false);
     console.log(`[proving] session 1 ready: ${JSON.stringify(session.endpoints)}`);
     assert(
-      session.endpoints.some((e) => e.address === 'storefront'),
+      session.endpoints.some((e) => e.address === 'store.storefront'),
       'the front door must list the storefront service',
     );
-    const storefront = session.endpoints.find((e) => e.address === 'storefront');
+    const storefront = session.endpoints.find((e) => e.address === 'store.storefront');
     if (storefront === undefined) throw new Error('unreachable');
     const health = await waitForAsync(
       () => fetch(storefront.url).then((r) => (r.ok ? r : undefined)),
@@ -580,11 +580,11 @@ async function main(): Promise<void> {
     // was complete only from the second converge onward), so a single
     // rebuild alone would not have caught it.
     const ADDRESSES = [
-      'catalog.service',
-      'storefront',
-      'cron.runner',
-      'orders.service',
-      'cron.scheduler',
+      'store.catalog.service',
+      'store.storefront',
+      'store.cron.runner',
+      'store.orders.service',
+      'store.cron.scheduler',
     ];
     const pidsBaseline = await waitForAsync(async () => {
       const pids = await pidsByAddress(APP_NAME);
@@ -610,10 +610,15 @@ async function main(): Promise<void> {
       const attempt = index + 1;
       const pidsAfter = await strategy.run(pidsBefore);
       assert(
-        pidsAfter['catalog.service'] !== pidsBefore['catalog.service'],
+        pidsAfter['store.catalog.service'] !== pidsBefore['store.catalog.service'],
         `criterion 2 (attempt ${attempt}, ${strategy.label}): catalog.service must restart (new pid)`,
       );
-      for (const address of ['storefront', 'cron.runner', 'orders.service', 'cron.scheduler']) {
+      for (const address of [
+        'store.storefront',
+        'store.cron.runner',
+        'store.orders.service',
+        'store.cron.scheduler',
+      ]) {
         assertEqual(
           pidsAfter[address],
           pidsBefore[address],
@@ -643,7 +648,9 @@ async function main(): Promise<void> {
     console.log('[proving] session 1 stopped cleanly on SIGINT');
     // Ending `prisma dev` stops the app's database servers too; their data
     // and ports are kept for the warm start below.
-    const stoppedDb = (await listPostgresDatabases()).find((d) => d.address === 'catalog.database');
+    const stoppedDb = (await listPostgresDatabases()).find(
+      (d) => d.address === 'store.catalog.database',
+    );
     assert(stoppedDb?.status === 'stopped', 'catalog.database must be stopped after Ctrl-C');
     const stoppedPort = new URL(stoppedDb.url).port;
     assert(
@@ -668,7 +675,7 @@ async function main(): Promise<void> {
     // stable ports — a converge that diffs nothing starts nothing, so only
     // the attach step's startServices() resume makes this round-trip
     // succeed. Port stability alone let exactly that resume bug ship.
-    const warmStorefront = session.endpoints.find((e) => e.address === 'storefront');
+    const warmStorefront = session.endpoints.find((e) => e.address === 'store.storefront');
     assert(warmStorefront !== undefined, 'the warm front door must list the storefront service');
     const warmHealth = await waitForAsync(
       () => fetch(warmStorefront.url).then((r) => (r.ok ? r : undefined)),

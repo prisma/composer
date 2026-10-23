@@ -86,8 +86,8 @@ describe('Load', () => {
     );
 
     expect(graph.edges).toContainEqual({
-      from: 'docs',
-      to: 'gateway',
+      from: 'web.docs',
+      to: 'web.gateway',
       input: 'docs',
       kind: 'dependency',
     });
@@ -131,19 +131,19 @@ describe('Load', () => {
     );
 
     expect(graph.edges).toContainEqual({
-      from: 'docs.server',
-      to: 'gateway',
+      from: 'web.docs.server',
+      to: 'web.gateway',
       input: 'docs',
       kind: 'dependency',
     });
     expect(graph.authoredEdges).toEqual([
       {
-        from: { node: 'docs.server', direction: 'out', name: 'http' },
-        to: { node: 'docs', direction: 'out', name: 'http' },
+        from: { node: 'web.docs.server', direction: 'out', name: 'http' },
+        to: { node: 'web.docs', direction: 'out', name: 'http' },
       },
       {
-        from: { node: 'docs', direction: 'out', name: 'http' },
-        to: { node: 'gateway', direction: 'in', name: 'docs' },
+        from: { node: 'web.docs', direction: 'out', name: 'http' },
+        to: { node: 'web.gateway', direction: 'in', name: 'docs' },
       },
     ]);
   });

@@ -33,9 +33,9 @@ function sourcePayload(binding: unknown): unknown {
 function serviceBindingOf(
   inputBindings: ReadonlyArray<{ serviceAddress: string; binding: unknown }>,
 ): Record<string, unknown> {
-  const binding = inputBindings.find((b) => b.serviceAddress === 'email.service')?.binding;
+  const binding = inputBindings.find((b) => b.serviceAddress === 'root.email.service')?.binding;
   if (typeof binding !== 'object' || binding === null || Array.isArray(binding)) {
-    throw new Error('expected an object input binding for email.service');
+    throw new Error('expected an object input binding for root.email.service');
   }
   return binding as Record<string, unknown>;
 }
@@ -65,11 +65,11 @@ describe('email()', () => {
       return n !== undefined && 'type' in n ? n.type : undefined;
     };
 
-    expect(typeOf('email.db')).toBe('raw-postgres');
-    expect(typeOf('email.service')).toBe('compute');
+    expect(typeOf('root.email.db')).toBe('raw-postgres');
+    expect(typeOf('root.email.service')).toBe('compute');
     expect(graph.edges).toContainEqual({
-      from: 'email.db',
-      to: 'email.service',
+      from: 'root.email.db',
+      to: 'root.email.service',
       input: 'db',
       kind: 'dependency',
     });
@@ -77,11 +77,11 @@ describe('email()', () => {
 
   test('the db resource is not exposed to a consumer — only send/outbox are', () => {
     const graph = Load(rootWithEmail());
-    // No edge targets anything outside "email.*" from "email.db" directly —
+    // No edge targets anything outside "root.email.*" from "root.email.db" directly —
     // the only consumer of the db is the service itself.
-    const dbEdges = graph.edges.filter((e) => e.from === 'email.db');
+    const dbEdges = graph.edges.filter((e) => e.from === 'root.email.db');
     expect(dbEdges).toEqual([
-      { from: 'email.db', to: 'email.service', input: 'db', kind: 'dependency' },
+      { from: 'root.email.db', to: 'root.email.service', input: 'db', kind: 'dependency' },
     ]);
   });
 
@@ -126,8 +126,8 @@ describe('email()', () => {
 
     const graph = Load(root);
     expect(graph.edges).toContainEqual({
-      from: 'email.service',
-      to: 'sender',
+      from: 'root.email.service',
+      to: 'root.sender',
       input: 'email',
       kind: 'dependency',
     });
@@ -150,14 +150,14 @@ describe('email()', () => {
 
     const graph = Load(root);
     expect(graph.edges).toContainEqual({
-      from: 'email.service',
-      to: 'sender',
+      from: 'root.email.service',
+      to: 'root.sender',
       input: 'email',
       kind: 'dependency',
     });
     expect(graph.edges).toContainEqual({
-      from: 'email.service',
-      to: 'reader',
+      from: 'root.email.service',
+      to: 'root.reader',
       input: 'outbox',
       kind: 'dependency',
     });
@@ -182,10 +182,10 @@ describe('email()', () => {
     const graph = Load(root);
     const byId = new Map(graph.nodes.map((n) => [n.id, n.node]));
     // Address generation is driven by the provision id.
-    expect([...byId.keys()]).toContain('mailInstance.service');
-    expect([...byId.keys()]).toContain('mailInstance.db');
+    expect([...byId.keys()]).toContain('root.mailInstance.service');
+    expect([...byId.keys()]).toContain('root.mailInstance.db');
     // The module's own declared name/identifier is opts.name, not the id.
-    const moduleNode = byId.get('mailInstance');
+    const moduleNode = byId.get('root.mailInstance');
     expect(moduleNode !== undefined && 'name' in moduleNode ? moduleNode.name : undefined).toBe(
       'mailerModule',
     );

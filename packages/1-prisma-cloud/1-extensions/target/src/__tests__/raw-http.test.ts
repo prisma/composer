@@ -68,12 +68,12 @@ describe('raw HTTP connections', () => {
     expect(topology.edges).toHaveLength(9);
     for (const name of upstreamNames) {
       expect(topology.edges).toContainEqual({
-        from: { logicalId: name, direction: 'out', name: 'http' },
-        to: { logicalId: 'gateway', direction: 'in', name },
+        from: { logicalId: `web.${name}`, direction: 'out', name: 'http' },
+        to: { logicalId: 'web.gateway', direction: 'in', name },
         family: 'communication',
       });
       expect(topology.ports).toContainEqual({
-        logicalId: name,
+        logicalId: `web.${name}`,
         direction: 'out',
         name: 'http',
         contractKind: 'http',
@@ -98,13 +98,13 @@ describe('raw HTTP connections', () => {
 
     expect(composeApplicationTopology(graph).edges).toEqual([
       {
-        from: { logicalId: 'docs.server', direction: 'out', name: 'http' },
-        to: { logicalId: 'docs', direction: 'out', name: 'http' },
+        from: { logicalId: 'web.docs.server', direction: 'out', name: 'http' },
+        to: { logicalId: 'web.docs', direction: 'out', name: 'http' },
         family: 'communication',
       },
       {
-        from: { logicalId: 'docs', direction: 'out', name: 'http' },
-        to: { logicalId: 'gateway', direction: 'in', name: 'docs' },
+        from: { logicalId: 'web.docs', direction: 'out', name: 'http' },
+        to: { logicalId: 'web.gateway', direction: 'in', name: 'docs' },
         family: 'communication',
       },
     ]);
@@ -129,19 +129,19 @@ describe('raw HTTP connections', () => {
       const { gateway, graph } = webGraph();
       const lowered = new Map(
         upstreamNames.map((name) => [
-          name,
+          `web.${name}`,
           { url: name === 'site' ? upstream.url.origin : `https://${name}.example` },
         ]),
       );
-      const config = buildConfig(gateway, 'gateway', graph, lowered, new Map());
+      const config = buildConfig(gateway, 'web.gateway', graph, lowered, new Map());
       for (const name of upstreamNames) {
-        expect(config.inputs[name]?.['url']).toBe(lowered.get(name)?.url);
+        expect(config.inputs[name]?.['url']).toBe(lowered.get(`web.${name}`)?.url);
       }
 
       await bootstrapService(gateway, config, async () => {
         const clients = gateway.load();
         for (const name of upstreamNames) {
-          expect(clients[name].url).toBe(lowered.get(name)?.url ?? '');
+          expect(clients[name].url).toBe(lowered.get(`web.${name}`)?.url ?? '');
         }
         const response = await clients.site.fetch('/upload?tag=a&tag=b', {
           method: 'POST',
@@ -189,14 +189,14 @@ describe('service RPC beside raw HTTP', () => {
 
     expect(composeApplicationTopology(graph).edges).toEqual([
       {
-        from: { logicalId: 'auth.server', direction: 'out', name: 'verify' },
-        to: { logicalId: 'auth', direction: 'out', name: 'verify' },
+        from: { logicalId: 'web.auth.server', direction: 'out', name: 'verify' },
+        to: { logicalId: 'web.auth', direction: 'out', name: 'verify' },
         family: 'communication',
         style: 'request-response',
       },
       {
-        from: { logicalId: 'auth', direction: 'out', name: 'verify' },
-        to: { logicalId: 'app', direction: 'in', name: 'verify' },
+        from: { logicalId: 'web.auth', direction: 'out', name: 'verify' },
+        to: { logicalId: 'web.app', direction: 'in', name: 'verify' },
         family: 'communication',
         style: 'request-response',
       },

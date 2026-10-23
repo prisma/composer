@@ -408,6 +408,41 @@ describe('deploy()', () => {
     expect(containerCalls).toEqual([]);
   });
 
+  test('a --name that cannot be an app name fails before anything is assembled or any container call', async () => {
+    const app = makeAppDir();
+    const containerCalls: ContainerCall[] = [];
+    let assembled = false;
+    let alchemyRan = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: composerConfig(fakeConfig({}, { calls: containerCalls })),
+          entry: app.entryPath,
+          name: 'acme.shop',
+          cwd: app.dir,
+        },
+        {
+          runAssembler: async (node) => {
+            assembled = true;
+            return fakeAssembler(node);
+          },
+          alchemy: async () => {
+            alchemyRan = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.failure.message).toContain('The app name "acme.shop" is not valid.');
+    expect(assembled).toBe(false);
+    expect(alchemyRan).toBe(false);
+    expect(containerCalls).toEqual([]);
+  });
+
   describe('a config the CLI would refuse is refused before any container call', () => {
     async function deployWith(
       app: { dir: string; entryPath: string },
@@ -835,8 +870,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app ok',
+      'started assemble-service:hello-steps.app',
+      'finished assemble-service:hello-steps.app ok',
       'finished assemble ok',
       'started connect',
       'finished connect ok',
@@ -901,8 +936,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app ok',
+      'started assemble-service:hello-steps-defect.app',
+      'finished assemble-service:hello-steps-defect.app ok',
       'finished assemble ok',
       'started connect',
       'finished connect failed',
@@ -937,8 +972,8 @@ describe('deploy() step events', () => {
       'started prepare',
       'finished prepare ok',
       'started assemble',
-      'started assemble-service:app',
-      'finished assemble-service:app failed',
+      'started assemble-service:hello-steps-fail.app',
+      'finished assemble-service:hello-steps-fail.app failed',
       'finished assemble failed',
       'started record',
       'finished record ok',

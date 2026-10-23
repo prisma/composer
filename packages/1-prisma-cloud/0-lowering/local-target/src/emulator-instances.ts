@@ -17,9 +17,13 @@ import {
   type ServiceInstanceInfo,
 } from '@internal/dev-emulators';
 import { createStore, type DevStore } from './dev-store.ts';
+import { withFullAddressKeys } from './legacy-address-keys.ts';
 import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
+
+/** The record's format. A record without it was written before node keys were full addresses (ADR-0057). */
+export const EMULATOR_INSTANCES_FORMAT_VERSION = 2;
 
 export interface ServiceNodeInstance {
   readonly kind: 'service';
@@ -133,41 +137,35 @@ function isSingleAppRecord(value: unknown): value is SingleAppRecord {
   );
 }
 
-type StoredRecord = EmulatorInstances | SingleAppRecord;
+/** What is on disk: the current format carries `formatVersion`; older records do not. */
+type VersionedRecord = EmulatorInstances & { readonly formatVersion?: number };
+
+type StoredRecord = VersionedRecord | SingleAppRecord;
 
 function isStoredRecord(value: unknown): value is StoredRecord {
   return isEmulatorInstances(value) || isSingleAppRecord(value);
 }
 
-/** A single-app record reads as a record holding that one app; the next write rewrites it. */
+/**
+ * A record without `formatVersion` was written before node keys were full addresses, so each of
+ * its keys reads with the app's name in front; a single-app record also reads as a record holding
+ * that one app. The next write stores the current format.
+ */
 function normalized(stored: StoredRecord | undefined): EmulatorInstances | undefined {
-  if (stored === undefined || isEmulatorInstances(stored)) return stored;
+  if (stored === undefined) return undefined;
+  if (isEmulatorInstances(stored)) {
+    if (stored.formatVersion === EMULATOR_INSTANCES_FORMAT_VERSION) {
+      return { current: stored.current, apps: stored.apps };
+    }
+    return withFullAddressKeys(stored);
+  }
   const nodes = Object.fromEntries(
     Object.entries(stored.nodes).map(([address, { id, port }]) => [
       address,
       { kind: 'service' as const, id, port },
     ]),
   );
-  return { current: stored.app, apps: { [stored.app]: { nodes } } };
-}
-
-/**
- * A database's or bucket's key in the record: its resource `name`, which the
- * lowering sets from the same helper the emulators hook keys it by. A
- * resource without a name cannot be matched to the instance the hook
- * recorded, so it is refused rather than recorded under another key.
- */
-export function recordKeyOf(
-  kind: 'database' | 'bucket',
-  resourceId: string,
-  name: string | undefined,
-): string {
-  if (name === undefined) {
-    throw new Error(
-      `local dev: the ${kind} resource "${resourceId}" has no name, so its emulator instance cannot be found in the directory's record.`,
-    );
-  }
-  return name;
+  return withFullAddressKeys({ current: stored.app, apps: { [stored.app]: { nodes } } });
 }
 
 /** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
@@ -190,7 +188,10 @@ async function updateRecord(
   devDir: string,
   mutate: (record: EmulatorInstances | undefined) => EmulatorInstances,
 ): Promise<void> {
-  await store(devDir).update((stored) => mutate(normalized(stored)));
+  await store(devDir).update((stored) => ({
+    formatVersion: EMULATOR_INSTANCES_FORMAT_VERSION,
+    ...mutate(normalized(stored)),
+  }));
 }
 
 /** The record `prisma dev` left in `directory`; undefined when it has not run there. */
