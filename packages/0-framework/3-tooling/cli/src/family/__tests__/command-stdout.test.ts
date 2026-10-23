@@ -23,6 +23,7 @@ describe('command stdout', () => {
   test('reads every command source', () => {
     expect(sources.map((source) => source.name).sort()).toEqual([
       'deploy.ts',
+      'dev-logs.ts',
       'dev-stop.ts',
       'dev-url.ts',
       'dev.ts',
