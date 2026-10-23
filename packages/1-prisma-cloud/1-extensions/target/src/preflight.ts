@@ -34,6 +34,7 @@ import {
 import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 import { prismaCloudContainerOf } from './container.ts';
+import { type EnvKeyClash, findEnvKeyClashes } from './env-key-clash.ts';
 import { resolveOrmConfig } from './orm-config.ts';
 import { isPostgresResourceNode, requiredPackHeadOf } from './orm-postgres.ts';
 import { collectPreflightNames } from './preflight-names.ts';
@@ -148,6 +149,55 @@ async function readPlatformVariable(
   return latest === undefined ? { exists } : { exists, updatedAt: latest };
 }
 
+/** Whether `key` has a row in the scope Composer writes its own rows to: production, or the stage's branch. */
+async function composerRowExists(
+  client: ManagementApiClient,
+  projectId: string,
+  branchId: string | undefined,
+  key: string,
+): Promise<boolean> {
+  const cls = classFor(branchId);
+  let exists = false;
+  await drivePagesAsync(
+    `environment variables named "${key}"`,
+    async (cursor) => {
+      const res = await listEnvVars(
+        client,
+        cursor === undefined
+          ? { projectId, class: cls, key }
+          : { projectId, class: cls, key, cursor },
+      );
+      if (res.error !== undefined) throw listFailedError(key, res.error);
+      return res.data ?? { data: [], pagination: { nextCursor: null, hasMore: false } };
+    },
+    (data) => {
+      exists ||= data.some((row) => row.branchId === (branchId ?? null));
+      return exists;
+    },
+  );
+  return exists;
+}
+
+/**
+ * A clash blocks the deploy while the old owner's row still holds the key and has not moved to
+ * its new key yet. Before the move, the deploy would fail on that key partway through; after it,
+ * the key belongs to the new owner, and a new stage has neither row.
+ */
+async function pendingEnvKeyClashes(
+  client: ManagementApiClient,
+  projectId: string,
+  branchId: string | undefined,
+  clashes: readonly EnvKeyClash[],
+): Promise<readonly EnvKeyClash[]> {
+  const pending: EnvKeyClash[] = [];
+  for (const clash of clashes) {
+    if (!(await composerRowExists(client, projectId, branchId, clash.key))) continue;
+    if (await composerRowExists(client, projectId, branchId, clash.oldOwnerNewKey)) continue;
+    pending.push(clash);
+  }
+  return pending;
+}
+
 /**
  * Provision `key`=`value` directly via the Management API for the target
  * stage's scope (a production template for the default stage; a preview branch
@@ -238,6 +288,34 @@ function missingError(
   );
 }
 
+function envKeyClashError(
+  clashes: readonly EnvKeyClash[],
+  projectId: string,
+  branchId: string | undefined,
+  stage: string | undefined,
+): Error {
+  const scopeFlag =
+    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+  const lines = clashes.map(
+    (c) =>
+      `  - ${c.key} belongs to "${c.oldOwner}" from the previous Composer release. ` +
+      `This release writes it for "${c.newOwner}", and moves "${c.oldOwner}"'s value to ${c.oldOwnerNewKey}.`,
+  );
+  const commands = clashes.map(
+    (c) => `      prisma project env delete ${c.key} --project ${projectId} ${scopeFlag}`,
+  );
+  return new Error(
+    'Deploy failed before changing anything. Moving to addresses that start with the app name ' +
+      "gives these environment variables a new owner, but each still holds its old owner's value:\n" +
+      `${lines.join('\n')}\n\n` +
+      'Delete each one, then deploy again. The deploy writes every value under its new key, so ' +
+      'nothing is lost; the running deployments keep their own copy until then.\n' +
+      `${commands.join('\n')}\n` +
+      'Or delete it in the Prisma Console: open the project, go to Environment variables, and ' +
+      `delete it under ${branchId === undefined ? 'Production' : `the branch "${stage ?? branchId}"`}.`,
+  );
+}
+
 async function managementClient(): Promise<ManagementApiClient> {
   if ((process.env['PRISMA_SERVICE_TOKEN'] ?? '').length === 0) throw tokenRequiredError();
   return Effect.runPromise(
@@ -275,12 +353,15 @@ export async function runPreflight(
   for (const meta of [...collected.secrets, ...collected.envParams]) {
     if (!names.has(meta.name)) names.set(meta.name, meta);
   }
-  if (names.size === 0) {
+  const clashes = findEnvKeyClashes(input.graph);
+  if (names.size === 0 && clashes.length === 0) {
     input.report?.({ checked: 0, filled: 0, missing: 0 });
     return new Map();
   }
 
   const client = input.credentials?.client ?? deps?.client ?? (await managementClient());
+  const pending = await pendingEnvKeyClashes(client, projectId, branchId, clashes);
+  if (pending.length > 0) throw envKeyClashError(pending, projectId, branchId, input.stage);
   const missing: MissingBinding[] = [];
   const updatedAt = new Map<string, string>();
   let filled = 0;

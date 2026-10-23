@@ -715,3 +715,67 @@ describe('runPreflight — secret manifest verification (ADR-0029)', () => {
     });
   });
 });
+
+describe('runPreflight — a COMPOSER_ key that changes owner in the move to full addresses (ADR-0057)', () => {
+  const clashGraph = () =>
+    Load(
+      module('shop', ({ provision }) => {
+        provision(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+        provision(
+          module('shop', ({ provision: p }) => {
+            p(compute({ name: 'x', deps: {}, build }), { id: 'x' });
+          }),
+          { id: 'shop' },
+        );
+      }),
+    );
+  const row = (key: string): Row => ({
+    projectId: 'proj',
+    class: 'preview',
+    key,
+    branchId: 'br_1',
+  });
+  let state: FakeState;
+
+  beforeEach(() => {
+    state = { gets: [], posts: [], rows: [], postStatus: 201 };
+  });
+
+  const preflight = () =>
+    runPreflight(
+      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: 'pr-1' },
+      { client: fakeClient(state) },
+    );
+
+  test('fails before changing anything while the old owner still holds the key', async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
+
+    const error = await preflight().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain(
+      'COMPOSER_SHOP_X_ORIGIN belongs to "shop.shop.x" from the previous Composer release. ' +
+        'This release writes it for "shop.x"',
+    );
+    expect(String(error)).toContain(
+      'prisma project env delete COMPOSER_SHOP_X_ORIGIN --project proj --branch "pr-1"',
+    );
+    expect(state.posts).toEqual([]);
+  });
+
+  test('passes once that variable is deleted', async () => {
+    await preflight();
+  });
+
+  test("passes after the move, when the old owner's row has its new key", async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN'), row('COMPOSER_SHOP_SHOP_X_ORIGIN')];
+
+    await preflight();
+  });
+
+  test('ignores a row with that key in another scope', async () => {
+    state.rows = [{ ...row('COMPOSER_SHOP_X_ORIGIN'), branchId: null }];
+
+    await preflight();
+  });
+});
