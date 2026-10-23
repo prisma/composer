@@ -27,13 +27,20 @@ import { blindCast } from '@internal/foundation/casts';
 import { SecretBox, type SecretString } from '@internal/foundation/secret';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
+import { configKey, ORIGIN_KEY_NAME } from './config-key.ts';
 import { isEnvParamSource, isGeneratedParamSource, isOriginParamSource } from './param.ts';
+import { RESERVED_PROVIDER_PARAMS } from './provider-params.ts';
 import { secretName } from './secret.ts';
 
+export { configKey, ORIGIN_KEY_NAME };
+
 // The ambient environment of whatever runtime hosts the bundle. Declared
-// structurally so this entry imports no runtime's types. Writable: stash()
-// re-emits the resolved config here under address-free keys.
+// structurally so this entry imports no runtime's types. Writable: run()
+// applies stashRows() here under address-free keys.
 declare const process: { env: Record<string, string | undefined> };
+
+/** An environment to read rows from: `process.env` at boot, a materialized deployment environment for a dev server (ADR-0056). */
+type Env = Readonly<Record<string, string | undefined>>;
 
 /** One declared param, paired with its owner and the raw ConfigParam (functions included). */
 export interface ParamEntry {
@@ -68,21 +75,6 @@ export function paramEntries(node: ServiceNode): readonly ParamEntry[] {
 
   return entries;
 }
-
-export const configKey = (
-  address: string,
-  d: { owner: ParamEntry['owner']; name: string },
-): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
-  const owner = d.owner === 'service' ? [] : [d.owner.input];
-  // Every generated key lives in the framework's reserved COMPOSER_ namespace
-  // (ADR-0029), so it can never collide with — and silently overwrite — a
-  // user-provisioned platform var (e.g. a secret's external name). Composer
-  // writes no unprefixed variable at all: DATABASE_URL(_POOLED) are the
-  // platform's own names, banned in param.ts/secret.ts and owned by the
-  // platform (control/extension.ts).
-  return ['COMPOSER', ...segments, ...owner, d.name].join('_').toUpperCase();
-};
 
 /**
  * Typed value → its stored string. Service-own literals are JSON-encoded; a
@@ -124,7 +116,7 @@ export const encodeParamPointer = (name: string): string => `${PARAM_POINTER_PRE
 /** Reverses `encodeParamPointer`: the platform var NAME a pointer row points to. */
 export const decodeParamPointer = (raw: string): string => raw.slice(PARAM_POINTER_PREFIX.length);
 
-function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
+function coerce(raw: string | undefined, d: ParamEntry, key: string, env: Env): unknown {
   // "" is UNRESOLVED, not a value — falls to the default or, if required, is
   // a loud boot failure; a NON-EMPTY value that fails its param's declared
   // schema is an error regardless of any default (a default substitutes for
@@ -136,7 +128,7 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
     throw new Error(`missing required config param "${d.name}" (env ${key})`);
   }
   if (d.owner === 'service' && isParamPointerRow(raw)) {
-    return coerceEnvSourcedParam(raw, d, key);
+    return coerceEnvSourcedParam(raw, d, key, env);
   }
   try {
     return standardValidateSync(d.param.schema, decode(d.owner, raw));
@@ -155,9 +147,9 @@ function coerce(raw: string | undefined, d: ParamEntry, key: string): unknown {
  * passes iff the schema accepts it (deliberately unlike a literal param's own
  * ""-means-absent rule, and unlike a secret's non-empty requirement).
  */
-function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string): unknown {
+function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string, env: Env): unknown {
   const platformVar = decodeParamPointer(raw);
-  const value = process.env[platformVar];
+  const value = env[platformVar];
   if (value === undefined) {
     throw new Error(
       `env-sourced config param "${d.name}" (env ${key} → ${platformVar}) is unset: the platform ` +
@@ -179,13 +171,13 @@ function coerceEnvSourcedParam(raw: string, d: ParamEntry, key: string): unknown
  * serialization (missing/invalid fails loudly), assemble the typed Config.
  * The input document rides its own channel (readInput), not this one.
  */
-export const deserialize = (node: ServiceNode, address: string): Config => {
+export const deserialize = (node: ServiceNode, address: string, env: Env = process.env): Config => {
   const service: Record<string, unknown> = {};
   const inputs: Record<string, Record<string, unknown>> = {};
 
   for (const d of paramEntries(node)) {
     const key = configKey(address, d);
-    const value = coerce(process.env[key], d, key);
+    const value = coerce(env[key], d, key, env);
     if (d.owner === 'service') {
       service[d.name] = value;
     } else {
@@ -202,20 +194,70 @@ export const deserialize = (node: ServiceNode, address: string): Config => {
 };
 
 /**
- * run()'s setup step: write the resolved config to the environment under
- * address-free keys (configKey("", d) + each serialize suffix), which load()
- * reads back with no address. Uses env, not a module variable, because a
- * framework may fork worker processes that inherit env but not memory.
- * Writes only these keys; nothing else is touched.
+ * The resolved config as address-free rows (configKey("", d)), which load()
+ * reads back with no address. They go to the environment, not a module
+ * variable, because a framework may fork worker processes that inherit env
+ * but not memory. `bootstrapService` applies them directly; `stashRows`
+ * builds on them.
  */
-export const stash = (node: ServiceNode, config: Config): void => {
+export const configRows = (node: ServiceNode, config: Config): Record<string, string> => {
+  const rows: Record<string, string> = {};
   for (const d of paramEntries(node)) {
     const value =
       d.owner === 'service' ? config.service[d.name] : config.inputs[d.owner.input]?.[d.name];
     if (value === undefined) continue;
-    process.env[configKey('', d)] = encode(d.owner, value);
+    rows[configKey('', d)] = encode(d.owner, value);
   }
+  return rows;
 };
+
+/**
+ * What `run()` writes for a service whose deployment environment is `env`
+ * (ADR-0056): the address-free stash rows — the declared params, the
+ * reserved provider params and the input document — then `PORT`, and `HOST`
+ * (`env.HOST` when set, else `0.0.0.0`). Pure: it reads `env` and writes
+ * nothing. Throws the error `run()` would throw at boot for a row the
+ * service cannot read. `run()` applies the result to `process.env`; under
+ * `prisma dev` the Compute emulator starts a dev server with it.
+ */
+export function stashRows(node: ServiceNode, address: string, env: Env): Record<string, string> {
+  const config = deserialize(node, address, env);
+  const rows = configRows(node, config);
+  // ADR-0031's provider-side sibling of the param rows above — the readers
+  // are serve()'s accepted keys, the streams entrypoint's API_KEY, and
+  // origin() (the framework-resolved ORIGIN row rides the same list). An
+  // absent row stays absent (never provisioned); a present one is
+  // schema-checked exactly like a declared param before it moves.
+  for (const entry of RESERVED_PROVIDER_PARAMS) {
+    const d: ParamEntry = {
+      owner: 'service',
+      name: entry.name,
+      param: { schema: entry.schema, optional: true },
+    };
+    const key = configKey(address, d);
+    const value = coerce(env[key], d, key, env);
+    if (value === undefined) continue;
+    rows[configKey('', d)] = encode('service', value);
+  }
+  // The input DOCUMENT moves address-free too, so input() reads the same row
+  // with no address. It carries pointers, never values: secret values stay
+  // only in their platform vars (ADR-0042).
+  if (node.inputSchema !== undefined) {
+    const raw = env[inputKey(address)];
+    if (raw !== undefined) rows[inputKey('')] = raw;
+  }
+  // The resolved service port under the near-universal PORT convention, so a
+  // framework-unaware server (Next.js's standalone server.js binds the PORT
+  // env var) listens on the port Compute routes to — not its own default. A
+  // server that reads port() explicitly is free to ignore it.
+  const port = config.service['port'];
+  if (typeof port === 'number') rows['PORT'] = String(port);
+  // Compute routes to the workload over its network interface, not loopback.
+  // Astro's Node adapter defaults HOST to localhost; preserve an explicit
+  // author value, otherwise supply the framework-neutral listen-all address.
+  rows['HOST'] = env['HOST'] ?? '0.0.0.0';
+  return rows;
+}
 
 // ——— Input channel (ADR-0042): ONE self-describing JSON document per service.
 //
@@ -687,19 +729,6 @@ function hydrateInputDocument(value: unknown, key: string): unknown {
   return value;
 }
 
-/**
- * run()'s setup step for the input document: re-emit the row under its
- * address-free key, so the address-free `readInput` reads identically. The
- * document carries pointers, never values — the values stay only in their
- * platform vars.
- */
-export const stashInput = (node: ServiceNode, address: string): void => {
-  if (node.inputSchema === undefined) return;
-  const raw = process.env[inputKey(address)];
-  if (raw === undefined) return;
-  process.env[inputKey('')] = raw;
-};
-
 // ——— Reserved provider params (ADR-0031): a provider-side minted value —
 // the rpc accepted-key set, the streams API key — is a named, schema-carrying
 // declaration owned by the target, exactly like a service's own param, but
@@ -729,41 +758,8 @@ export interface ProviderParamEntry {
 }
 
 /**
- * Boot: for each reserved provider param, read its address-scoped row through
- * the same `coerce` a declared param uses (JSON-decode, schema-validate), and
- * re-emit it address-free — `stash`'s counterpart for this separate
- * declaration space. A param is declared optional here unconditionally: an
- * absent row means "never provisioned" (local dev, tests, a provider with no
- * registered value for this deploy), never a boot failure, so nothing is
- * stashed and the runtime reader that owns this slot falls back to its own
- * pass-through behavior.
- */
-export function stashProviderParams(entries: readonly ProviderParamEntry[], address: string): void {
-  for (const entry of entries) {
-    const d: ParamEntry = {
-      owner: 'service',
-      name: entry.name,
-      param: { schema: entry.schema, optional: true },
-    };
-    const key = configKey(address, d);
-    const value = coerce(process.env[key], d, key);
-    if (value === undefined) continue;
-    process.env[configKey('', d)] = encode('service', value);
-  }
-}
-
-/** The framework-resolved origin row: COMPOSER_<addr>_ORIGIN. Written per
- *  compute service at serialize — the service's own provisioned endpoint URL,
- *  riding the reserved-provider-param machinery (`origin-key.ts`'s
- *  `ORIGIN_PARAM`); never a declared param, never in config(). A harness with
- *  no deploy behind it supplies it by setting `COMPOSER_ORIGIN` to the
- *  JSON-encoded origin URL — exactly how the existing entrypoint tests supply
- *  their other `COMPOSER_*` rows. */
-export const ORIGIN_KEY_NAME = 'ORIGIN';
-
-/**
  * Reads this service's origin back out of the address-free stash
- * `stashProviderParams` wrote for the ORIGIN entry. `COMPOSER_ORIGIN` unset is
+ * `stashRows` wrote for the ORIGIN entry. `COMPOSER_ORIGIN` unset is
  * a loud failure — a deployed environment always writes it, so an unset row
  * means either a local harness that hasn't supplied it or a boot() called
  * before run().
@@ -775,7 +771,7 @@ export function readOrigin(): string {
     param: { schema: type('string'), optional: true },
   };
   const key = configKey('', d);
-  const value = coerce(process.env[key], d, key);
+  const value = coerce(process.env[key], d, key, process.env);
   if (value === undefined) {
     throw new Error(
       "this service's origin is not available (env COMPOSER_ORIGIN is unset) — a deployed environment writes it automatically; a local harness must supply it like any other config value (set COMPOSER_ORIGIN to the JSON-encoded origin URL).",

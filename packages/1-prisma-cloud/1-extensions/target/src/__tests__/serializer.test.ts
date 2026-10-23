@@ -4,18 +4,18 @@
  * bound to `envParam(...)` (as opposed to a literal, unchanged, param).
  */
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type ConfigParam, param, service, string } from '@internal/core';
+import { type ConfigParam, number, param, service, string } from '@internal/core';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { ORIGIN_PARAM } from '../origin-key.ts';
 import {
   configKey,
   decodeParamPointer,
   deserialize,
   encode,
   encodeParamPointer,
+  inputKey,
   isParamPointerRow,
   readOrigin,
-  stashProviderParams,
+  stashRows,
 } from '../serializer.ts';
 
 const build = {
@@ -144,25 +144,28 @@ describe('deserialize — env-sourced param boot resolution', () => {
   });
 });
 
-describe('the framework-resolved origin row rides stashProviderParams; readOrigin reads it back', () => {
+describe('the framework-resolved origin row rides stashRows; readOrigin reads it back', () => {
   const addressKey = configKey('web', { owner: 'service', name: 'ORIGIN' });
   const freeKey = configKey('', { owner: 'service', name: 'ORIGIN' });
+  const bare = () =>
+    service({
+      name: 'web',
+      extension: '@prisma/composer-prisma-cloud',
+      type: 'compute',
+      inputs: {},
+      params: {},
+      build,
+    });
 
-  test('stashProviderParams re-emits the address-scoped ORIGIN row address-free when present — the boot half of the round-trip', async () => {
-    await withEnv(
-      { [addressKey]: encode('service', 'https://web.example.com'), [freeKey]: undefined },
-      () => {
-        stashProviderParams([ORIGIN_PARAM], 'web');
-        expect(process.env[freeKey]).toBe(encode('service', 'https://web.example.com'));
-      },
-    );
+  test('stashRows re-emits the address-scoped ORIGIN row address-free when present — the boot half of the round-trip', () => {
+    const rows = stashRows(bare(), 'web', {
+      [addressKey]: encode('service', 'https://web.example.com'),
+    });
+    expect(rows[freeKey]).toBe(encode('service', 'https://web.example.com'));
   });
 
-  test('stashProviderParams writes nothing for ORIGIN when the address-scoped row is absent', async () => {
-    await withEnv({ [addressKey]: undefined, [freeKey]: undefined }, () => {
-      stashProviderParams([ORIGIN_PARAM], 'web');
-      expect(process.env[freeKey]).toBeUndefined();
-    });
+  test('stashRows writes nothing for ORIGIN when the address-scoped row is absent', () => {
+    expect(freeKey in stashRows(bare(), 'web', {})).toBe(false);
   });
 
   test('readOrigin throws the pinned message when COMPOSER_ORIGIN is unset', async () => {
@@ -177,5 +180,56 @@ describe('the framework-resolved origin row rides stashProviderParams; readOrigi
     await withEnv({ [freeKey]: encode('service', 'https://web.example.com') }, () => {
       expect(readOrigin()).toBe('https://web.example.com');
     });
+  });
+});
+
+describe('stashRows — what run() writes, as a pure function of an environment (ADR-0056)', () => {
+  const address = 'web';
+  const node = () =>
+    service({
+      name: 'web',
+      extension: '@prisma/composer-prisma-cloud',
+      type: 'compute',
+      inputs: {},
+      params: { port: number({ default: 3000 }), appOrigin: string() },
+      input: {
+        '~standard': { version: 1, vendor: 'test', validate: (value: unknown) => ({ value }) },
+      },
+      build,
+    });
+  const env = {
+    [configKey(address, { owner: 'service', name: 'port' })]: '3007',
+    [configKey(address, { owner: 'service', name: 'appOrigin' })]: encodeParamPointer('APP_ORIGIN'),
+    APP_ORIGIN: 'https://shop.example',
+    [inputKey(address)]: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
+  };
+
+  test('re-keys every row address-free and adds PORT and the default HOST', () => {
+    expect(stashRows(node(), address, env)).toEqual({
+      [configKey('', { owner: 'service', name: 'port' })]: '3007',
+      [configKey('', { owner: 'service', name: 'appOrigin' })]: '"https://shop.example"',
+      [inputKey('')]: '{"apiKey":{"$secret":"STRIPE_KEY"}}',
+      PORT: '3007',
+      HOST: '0.0.0.0',
+    });
+  });
+
+  test('keeps a HOST the environment sets', () => {
+    expect(stashRows(node(), address, { ...env, HOST: '127.0.0.1' })['HOST']).toBe('127.0.0.1');
+  });
+
+  test('reads only the environment it is given, and writes nothing to process.env', async () => {
+    await withEnv({ APP_ORIGIN: undefined, PORT: undefined, COMPOSER_PORT: undefined }, () => {
+      stashRows(node(), address, env);
+      expect(process.env['PORT']).toBeUndefined();
+      expect(process.env['COMPOSER_PORT']).toBeUndefined();
+    });
+  });
+
+  test("throws run()'s boot error for a row the service cannot read", () => {
+    const { APP_ORIGIN: _unset, ...withoutPlatformVar } = env;
+    expect(() => stashRows(node(), address, withoutPlatformVar)).toThrow(
+      /env-sourced config param "appOrigin".*APP_ORIGIN.*is unset/,
+    );
   });
 });

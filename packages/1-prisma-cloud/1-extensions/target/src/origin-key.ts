@@ -19,8 +19,8 @@
  * control-plane-only entry).
  */
 import { type } from 'arktype';
+import { ORIGIN_KEY_NAME } from './config-key.ts';
 import type { ProviderParamEntry } from './serializer.ts';
-import { ORIGIN_KEY_NAME } from './serializer.ts';
 
 /** ADR-0031's brand for the service's own origin — control.ts registers the deploy-side value function under this. */
 export const SELF_ORIGIN: unique symbol = Symbol.for('prisma:self-origin');
