@@ -2,7 +2,7 @@
 
 Range: `origin/main...HEAD` on `drive/fully-qualified-node-addresses` (16 commits, 102 files).
 
-Read for this review: `CLAUDE.md`; `docs/design/01-principles/`; the ADR index; ADR-0056 in full; ADR-0051 and the amendment notes on ADR-0006, ADR-0019, ADR-0048, ADR-0052 and ADR-0053; the glossary entry "Address and logical ID"; the changed parts of `core-model.md`, `deploy-cli.md`, `local-dev.md`, `alchemy-lowering.md` and `pdp-data-model.md`; the project `spec.md`, `design-notes.md`, the spike findings, and the slice `spec.md` and `plan.md`.
+Read for this review: `CLAUDE.md`; `docs/design/01-principles/`; the ADR index; ADR-0057 in full; ADR-0051 and the amendment notes on ADR-0006, ADR-0019, ADR-0048, ADR-0052 and ADR-0053; the glossary entry "Address and logical ID"; the changed parts of `core-model.md`, `deploy-cli.md`, `local-dev.md`, `alchemy-lowering.md` and `pdp-data-model.md`; the project `spec.md`, `design-notes.md`, the spike findings, and the slice `spec.md` and `plan.md`.
 
 ## Verdict
 
@@ -17,7 +17,7 @@ Invariants the branch now relies on:
 1. Every address starts with the deployed app name. Below the root, segments are letters and digits.
 2. A node's main Alchemy resource ID equals its address. Other pieces are `<address>.<role>[.<which one>]` (`target/src/resource-ids.ts:7-9`).
 3. No resource ID equals a node address, because modules have no resources and services and resources have no children.
-4. Every resource declares its pre-ADR-0056 ID through `renamedFrom` (`target/src/legacy-resource-ids.ts`).
+4. Every resource declares its pre-ADR-0057 ID through `renamedFrom` (`target/src/legacy-resource-ids.ts`).
 5. Props that force upstream to replace a resource keep today's value. Connection and BucketAccessKey `name` are the cases that matter.
 6. Local dev: the record key for a database or bucket equals its main resource ID, which equals its address (`local-target/src/postgres.ts:48`, `local-target/src/bucket.ts:65`). This is new. Before, both sides used the shared `resourceName` helper.
 
@@ -57,14 +57,14 @@ Will rejected a second form of identity. The test for each short-form use is: is
 | Old-ID computation (`legacy-resource-ids.ts`) | Only to find the old state entry, once. | Yes. Compatibility only, removable, documented as such. |
 | Connection `name` (`descriptors/shared.ts:213-225`) | No. Upstream replaces the Connection when it changes, which rotates credentials. | Yes, by the ADR's stated reason. |
 | BucketAccessKey `name` (`descriptors/bucket.ts:42-46`) | Locally, yes: the local provider uses it as the S3 access key ID (`local-target/src/bucket.ts:123`). Hosted, upstream replaces the key when it changes. | Yes. The ADR does not mention the local use; worth one line. |
-| Bucket `name` (`descriptors/bucket.ts:31-41`) | No. | **Not by the stated reason.** `alchemy-lowering.md:166-175` says upstream replaces a Bucket only when its project changes, so its `name` updates in place. The ADR groups it with Connection anyway (ADR-0056 line 115). Either the Bucket name follows the full address, like an App's display name, or the ADR needs a different reason. See S02. |
+| Bucket `name` (`descriptors/bucket.ts:31-41`) | No. | **Not by the stated reason.** `alchemy-lowering.md:166-175` says upstream replaces a Bucket only when its project changes, so its `name` updates in place. The ADR groups it with Connection anyway (ADR-0057 line 115). Either the Bucket name follows the full address, like an App's display name, or the ADR needs a different reason. See S02. |
 | Branchless (local dev) Database `name` (`descriptors/shared.ts:214`) | No. The local Database provider now finds its instance by resource ID, not by `name` (`local-target/src/postgres.ts:48`). | **Not by the stated reason.** Database is replaced only on project, region, source or default changes. A hosted Database's display name already follows the full address, so local and hosted now differ for no recorded reason. See S02. |
 | Local bucket data folder `buckets/<app>/<rest>` (`local-target/src/bucket.ts:32-43`) | It is the full address written as a path, split at the first dot. | Yes. Not a second form; just a path encoding. |
 | Local record keys (`legacy-address-keys.ts`) | Old keys are rewritten on read. | Yes as compatibility, but see S03 on how it decides what is old. |
 
 So the code holds to one identity: nothing joins on the short form. But "label" is carrying more than it should. Two of four labels are short because the helper is shared, not because the platform forces it. And the principle now says the address is "the only form in which any surface names the node" (`architectural-principles.md:76`). Console shows the Bucket as `uploads` and the Connection as `catalog`, so that sentence overclaims. See S04.
 
-## ADR-0056: reasoning and accuracy against the code
+## ADR-0057: reasoning and accuracy against the code
 
 Accurate:
 
@@ -97,7 +97,7 @@ Doc consistency: the principle, glossary, `core-model.md`, `deploy-cli.md`, `pdp
 - Suggestion: Keep one function. Define it once (for example in `legacy-resource-ids.ts`, since every use is for compatibility with what earlier releases wrote), and have the label use it. Make the root case explicit or throw. Rename so the name says what the value is.
 
 **S02**
-- Location: `descriptors/bucket.ts:31-41`; `descriptors/shared.ts:213-214`; ADR-0056 line 115; `alchemy-lowering.md:175`
+- Location: `descriptors/bucket.ts:31-41`; `descriptors/shared.ts:213-214`; ADR-0057 line 115; `alchemy-lowering.md:175`
 - Issue: The Bucket `name` and the branchless Database `name` keep the short form, but the reason given (a changed name replaces the resource) does not apply to them by the docs' own list. Hosted Database display names already follow the full address, so local and hosted differ.
 - Suggestion: Either pass the full address for these two names, as the App display name does, or record the actual reason in the ADR (for example, if the Bucket `name` is a physical name that the platform cannot change in place, say so and correct the replacement list). QA must confirm whichever is chosen does not replace the Bucket.
 
@@ -122,7 +122,7 @@ Doc consistency: the principle, glossary, `core-model.md`, `deploy-cli.md`, `pdp
 - Suggestion: Follow-up, not this slice: drop one, or document that they are equal. Remove `id` from `stageDatabase`.
 
 **S07**
-- Location: ADR-0056 line 92; `docs/design/10-domains/deploy-cli.md:100-104`
+- Location: ADR-0057 line 92; `docs/design/10-domains/deploy-cli.md:100-104`
 - Issue: A full address in `serviceOrigin()` cannot work both with and without `--name`. The ADR calls the failure "fixed in one line", which hides that the fix breaks the other deploy.
 - Suggestion: State in the ADR and in `deploy-cli.md` that an app using `serviceOrigin()` cannot be deployed under `--name`, and that this is the accepted cost of rejecting relative addresses.
 

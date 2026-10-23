@@ -71,7 +71,7 @@ export function paramEntries(node: ServiceNode): readonly ParamEntry[] {
 
 /**
  * An address's segments as they appear in a `COMPOSER_` key. The app name may
- * contain `-`, which no POSIX variable name may, so it becomes `_` (ADR-0056).
+ * contain `-`, which no POSIX variable name may, so it becomes `_` (ADR-0057).
  */
 export const addressKeySegments = (address: string): string[] =>
   address

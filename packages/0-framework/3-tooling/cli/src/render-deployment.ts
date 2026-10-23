@@ -76,7 +76,7 @@ const pad = (prefix: string, width: number): string => prefix.padEnd(width, ' ')
  */
 export function renderDeployment(result: DeploymentResult): string {
   const rows: Row[] = [];
-  // Every address starts with the app name (ADR-0056), which is already the
+  // Every address starts with the app name (ADR-0057), which is already the
   // first line, so the tree starts below it.
   const tree = buildTree(result.nodes);
   toRows(tree.children.get(result.app) ?? tree, '', rows);

@@ -354,7 +354,7 @@ function validateParamNeedBinding(
  * shared `byId` (keyed by full address) that lets that resolve.
  *
  * `selfId` is this module's own full address — for the root, the deployed app
- * name (ADR-0056). Every child's address is `selfId` plus its provision id, so
+ * name (ADR-0057). Every child's address is `selfId` plus its provision id, so
  * every address starts with the app name. It also anchors the authored view:
  * children carry it as their `parent`, and this module's own boundary ports
  * (and the authored edges touching them) are recorded against it.

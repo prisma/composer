@@ -2,7 +2,7 @@
 
 Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): `devUrl`'s result gains `runs`, `"artifact"` or `"dev-server"`, for a service. `dev stop`, `--detach` and `emulator list` need nothing new, because the emulator runs a dev server as a deployment.
 
-Amended by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md): `dev url` takes the full address, starting with the app name (`prisma dev url shop.gateway`).
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): `dev url` takes the full address, starting with the app name (`prisma dev url shop.gateway`).
 
 ## Decision
 

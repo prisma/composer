@@ -22,7 +22,7 @@ import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
 
-/** The record's format. A record without it was written before node keys were full addresses (ADR-0056). */
+/** The record's format. A record without it was written before node keys were full addresses (ADR-0057). */
 export const EMULATOR_INSTANCES_FORMAT_VERSION = 2;
 
 export interface ServiceNodeInstance {

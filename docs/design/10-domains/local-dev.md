@@ -313,7 +313,7 @@ next write stores the current format, so existing instances, ports and data
 are reused. A bucket's objects live in
 `buckets/<app>/<address without the app name>`, the folder earlier releases
 used, so they need no move
-([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
 
 - **Ensuring an instance.** The emulators hook goes through the app's nodes
   in `graph.nodes` order (dependencies first, ties in declaration order):

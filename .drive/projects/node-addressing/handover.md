@@ -47,7 +47,7 @@ PRO-225 (Product team, Linear) asks the platform to reject `:` in Branch names. 
 Branch `drive/fully-qualified-node-addresses`, pushed to `prisma/composer` (remote `bot`). No PR yet. The slice's spec and dispatch plan are in `slices/a1-fully-qualified-identity/`.
 
 **Done and committed:**
-- D1: ADR-0056 replaces ADR-0051; principles, glossary and domain docs updated.
+- D1: ADR-0057 replaces ADR-0051; principles, glossary and domain docs updated.
 - D2: full addresses in Load (root = deployed app name on both the CLI pipeline and the deploy lowering), `logicalId`s, topology, `COMPOSER_` keys (`-` to `_`), `serviceOrigin`.
 - D3: dotted resource IDs (`target/src/resource-ids.ts`) and `renamedFrom` on every resource, with old IDs built in `target/src/legacy-resource-ids.ts`. Environment variable rows are replaced with identical values, because their keys change; this is accepted.
 - D4: local dev record migration (`local-target/src/legacy-address-keys.ts`, `formatVersion: 2` in `emulator-instances.json`); bucket data folders keep their existing names.

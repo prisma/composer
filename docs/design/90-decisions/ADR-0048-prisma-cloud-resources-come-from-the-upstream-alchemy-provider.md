@@ -1,6 +1,6 @@
 # ADR-0048: Prisma Cloud resources come from the upstream Alchemy provider
 
-Amended by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md): resource IDs are the node's full address for its main resource and the address plus `.` and a role for its other pieces (`shop.web`, `shop.web.deploy`), not `${id}-svc` and `${id}-deploy`. Each declares its previous ID with `renamedFrom`.
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): resource IDs are the node's full address for its main resource and the address plus `.` and a role for its other pieces (`shop.web`, `shop.web.deploy`), not `${id}-svc` and `${id}-deploy`. Each declares its previous ID with `renamedFrom`.
 
 
 ## Decision

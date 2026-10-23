@@ -61,7 +61,7 @@ export function LocalBucketProvider(
     reconcile: ({ news, id }) =>
       Effect.tryPromise({
         try: async () => {
-          // The resource ID is the node's address, the record's key (ADR-0056).
+          // The resource ID is the node's address, the record's key (ADR-0057).
           const name = id;
           const bucket = await ensureBucketInstance(
             appScopeOf(input),

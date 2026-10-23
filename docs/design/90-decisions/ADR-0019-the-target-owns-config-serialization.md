@@ -1,6 +1,6 @@
 # ADR-0019: The deploy target owns config serialization
 
-Amended by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md): the address in a generated key is the full address, starting with the app name, with `-` turned into `_` (`COMPOSER_SHOP_SCHEDULER_JOBS` for a `scheduler` service in the app `shop`). Read this ADR's `COMPOSER_SCHEDULER_…` examples that way.
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): the address in a generated key is the full address, starting with the app name, with `-` turned into `_` (`COMPOSER_SHOP_SCHEDULER_JOBS` for a `scheduler` service in the app `shop`). Read this ADR's `COMPOSER_SCHEDULER_…` examples that way.
 
 
 ## Decision

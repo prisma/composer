@@ -101,7 +101,7 @@ const PRISMA_NAME_MAX = 65;
 
 /**
  * Checks a platform name Composer writes for the node at `address`: its address below the app
- * name (ADR-0056). The name is a label, so the error says plainly that fixing it means changing
+ * name (ADR-0057). The name is a label, so the error says plainly that fixing it means changing
  * the address, which makes the node a different entity.
  */
 export function validateName(name: string, address: string): void {
@@ -158,7 +158,7 @@ export function projectIdOf(application: unknown): string {
   return cloudApplicationOf(application).projectId;
 }
 
-/** The `logicalId` prop of a node's App, Database or Bucket: its full address on every platform deploy, none in branchless dev (ADR-0056). */
+/** The `logicalId` prop of a node's App, Database or Bucket: its full address on every platform deploy, none in branchless dev (ADR-0057). */
 export function logicalIdProp(
   application: unknown,
   address: string,

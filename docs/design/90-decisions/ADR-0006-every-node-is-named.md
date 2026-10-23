@@ -4,7 +4,7 @@ Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)
 
 Amended by [ADR-0051](ADR-0051-a-nodes-address-is-its-logical-id-on-the-platform.md): a node's name is its provision ID unless `provision()` sets an `id`, so by default every node's name is part of its address, and the address is its identity on the platform (`logicalId`). Changing any node's name therefore changes its identity, not just the root's; below the root, for a database or bucket, that deletes its data. Changing an identity is not a rename: a rename changes a display name and nothing else. Read this ADR's "renaming a root" as "changing the root's name", which points the deploy at a different application.
 
-Amended by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md), which supersedes ADR-0051: the root's name, or `--name`, is the root's address and the first segment of every other node's address (`shop.auth.api`). Changing the root's name therefore changes every node's identity, not just the Project's.
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md), which supersedes ADR-0051: the root's name, or `--name`, is the root's address and the first segment of every other node's address (`shop.auth.api`). Changing the root's name therefore changes every node's identity, not just the Project's.
 
 ## Decision
 

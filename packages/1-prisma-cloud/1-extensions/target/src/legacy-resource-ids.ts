@@ -1,5 +1,5 @@
 /**
- * The resource IDs and env keys the release before ADR-0056 built, when an
+ * The resource IDs and env keys the release before ADR-0057 built, when an
  * address left out the app name. Every resource declares its old ID with
  * `renamedFrom`, so a stage deployed by that release keeps its resources.
  * Delete this file once no such stage remains.

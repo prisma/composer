@@ -1,6 +1,6 @@
 # ADR-0052: Composer maps its nodes to emulator instances per directory
 
-Amended by [ADR-0056](ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md): the record's node keys and the `composer.address` label are full addresses (`shop.quotes`). A record keyed by the older, shorter addresses is rewritten on the first `prisma dev`, so its instances, ports and data are kept.
+Amended by [ADR-0057](ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md): the record's node keys and the `composer.address` label are full addresses (`shop.quotes`). A record keyed by the older, shorter addresses is rewritten on the first `prisma dev`, so its instances, ports and data are kept.
 
 
 ## Decision

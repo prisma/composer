@@ -102,7 +102,7 @@ user can rerun it by hand (ADR-0007).
    name never collides with a standing demo. The resolved name is the root's
    address, so every node's address starts with it (`shop.catalog`), on the
    graph the CLI reports and the graph it lowers alike
-   ([ADR-0056](../90-decisions/ADR-0056-a-nodes-address-is-its-full-path-from-the-app-name.md)).
+   ([ADR-0057](../90-decisions/ADR-0057-a-nodes-address-is-its-full-path-from-the-app-name.md)).
    The name must start with a letter or digit and contain only letters,
    digits, `-` and `_`; Load refuses any other. An app that uses
    `serviceOrigin()` can't be deployed under `--name`: the addresses in its

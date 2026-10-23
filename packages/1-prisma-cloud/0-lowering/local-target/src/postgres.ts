@@ -44,7 +44,7 @@ export function LocalDatabaseProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          // The resource ID is the node's address, the record's key (ADR-0056).
+          // The resource ID is the node's address, the record's key (ADR-0057).
           const name = id;
           const { instance } = await ensureDatabaseInstance(
             appScopeOf(input),

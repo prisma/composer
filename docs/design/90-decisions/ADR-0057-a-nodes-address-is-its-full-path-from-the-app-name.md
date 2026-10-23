@@ -1,4 +1,4 @@
-# ADR-0056: A node's address is its full path from the app name, and every identifier is built from it
+# ADR-0057: A node's address is its full path from the app name, and every identifier is built from it
 
 ## Decision
 

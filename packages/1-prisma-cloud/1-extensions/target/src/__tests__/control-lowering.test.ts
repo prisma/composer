@@ -2989,7 +2989,7 @@ describe('platform identity: each row carries its topology node logicalId — th
   });
 });
 
-describe('resource IDs are built from the full address, and each declares the ID the previous release used (ADR-0056)', () => {
+describe('resource IDs are built from the full address, and each declares the ID the previous release used (ADR-0057)', () => {
   const build = {
     extension: '@prisma/composer/node',
     type: 'node',

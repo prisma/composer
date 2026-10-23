@@ -126,7 +126,7 @@ export async function runPipeline(
   // 1. Import the entry module; its default export must be a node.
   const entryModule = await loadEntry(entry, cwd);
 
-  // 2. Resolve the name. It is the root's address, so Load needs it (ADR-0056).
+  // 2. Resolve the name. It is the root's address, so Load needs it (ADR-0057).
   const name = overrideName ?? entryModule.root.name;
   if (name.length === 0) {
     throw new CliStructuredError('COMPOSE.NAME_MISSING', 'The root node has no name.', {

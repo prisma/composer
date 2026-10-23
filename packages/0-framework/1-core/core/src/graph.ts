@@ -29,7 +29,7 @@ const APP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 /**
  * Throws unless `name` can be an app name: the root's address and the first segment of every
- * other address (ADR-0056). A `.` would split it, and it becomes part of every `COMPOSER_` key.
+ * other address (ADR-0057). A `.` would split it, and it becomes part of every `COMPOSER_` key.
  */
 export function assertAppName(name: string): void {
   if (!APP_NAME.test(name)) {
