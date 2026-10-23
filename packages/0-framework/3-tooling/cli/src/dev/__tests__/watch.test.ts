@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Load, module, service } from '@internal/core';
 import { authoringModuleTargets, startWatch, watchTargetsFrom } from '../watch.ts';
 
@@ -150,12 +151,15 @@ describe('authoringModuleTargets() (ADR-0056)', () => {
       return {};
     });
 
-    const targets = authoringModuleTargets('/repo/module.ts', Load(root));
+    const entry = path.resolve('/repo/module.ts');
+    const fileOf = (url: string) => path.resolve(fileURLToPath(url));
+
+    const targets = authoringModuleTargets(entry, Load(root));
 
     expect(targets.map((t) => t.paths)).toEqual([
-      ['/repo/module.ts'],
-      ['/repo/apps/web/src/service.ts'],
-      ['/repo/apps/api/src/service.ts'],
+      [entry],
+      [fileOf('file:///repo/apps/web/src/service.ts')],
+      [fileOf('file:///repo/apps/api/src/service.ts')],
     ]);
   });
 });
