@@ -49,6 +49,10 @@ Every Alchemy resource Composer declares carries a rename declaration from its o
 - A deploy that fails partway through the renames can be run again and finishes them.
 - Alchemy and the platform's hosted state accept dots in resource IDs. The ID appears in the state URL path.
 
+**Verified** by the spike on the real platform ([assets/spike-alchemy-renames.md](assets/spike-alchemy-renames.md)): renames keep platform ids and data; renames on a new stage are ignored; a deploy that fails or is killed partway reruns cleanly; dotted IDs work in the hosted state; a `logicalId` change alone updates in place. The API is `renamedFrom('catalog-db')` from `alchemy/Rename`, piped onto the resource.
+
+**Two constraints from the spike.** A Connection is replaced when its `name` prop changes, which would rotate the database's credentials, so the migration keeps each Connection's current `name`. A database's display name is derived from its resource ID, so it changes in place; that is harmless, display names are labels.
+
 **Accepted.** An older Composer deploying a stage after it migrated deletes and recreates resources. Will: not a concern.
 
 **Local dev.** The per-directory record of emulator instances is keyed by address. Composer rewrites its keys on the first `prisma dev` after upgrading, so local databases keep their data.
