@@ -359,7 +359,9 @@ export function computeDescriptor(
             }).pipe(
               asOwnRow,
               fromLegacyId(
-                legacyEnvVarId(legacyConfigKey(app, address, { owner: 'service', name: entry.name })),
+                legacyEnvVarId(
+                  legacyConfigKey(app, address, { owner: 'service', name: entry.name }),
+                ),
               ),
             ),
             key,

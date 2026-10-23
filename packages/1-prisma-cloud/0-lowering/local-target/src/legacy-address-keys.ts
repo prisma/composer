@@ -18,7 +18,10 @@ function withAppPrefix(
 /** A record written before ADR-0057, with every node keyed by its full address. */
 export function withFullAddressKeys(record: EmulatorInstances): EmulatorInstances {
   const apps = Object.fromEntries(
-    Object.entries(record.apps).map(([app, { nodes }]) => [app, { nodes: withAppPrefix(app, nodes) }]),
+    Object.entries(record.apps).map(([app, { nodes }]) => [
+      app,
+      { nodes: withAppPrefix(app, nodes) },
+    ]),
   );
   return { current: record.current, apps };
 }
