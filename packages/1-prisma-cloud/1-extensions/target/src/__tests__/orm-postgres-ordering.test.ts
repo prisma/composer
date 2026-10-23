@@ -40,7 +40,7 @@ const ctx = {
     contract: dataContract(widgetContractJson),
     config: path.join(import.meta.dir, 'fixtures', 'widget-contract', 'source', 'prisma.config.ts'),
   }),
-  graph: { edges: [], nodes: [] },
+  graph: { root: { id: 'shop' }, edges: [], nodes: [] },
   application: {
     projectId: 'proj-1',
     branchId: undefined,
@@ -56,15 +56,15 @@ const { outputs } = await Effect.runPromise(
 describe("the postgres lowering's url — what every consumer is scheduled after", () => {
   test('the url references the migration as well as the warm-up', () => {
     expect(Object.keys(Output.upstreamAny(outputs['url'])).sort()).toEqual(
-      ['shop.pndata.migrate', 'shop.pndata.warm'].sort(),
+      ['shop.pndata.migration', 'shop.pndata.warmup'].sort(),
     );
   });
 
   test('the url still resolves to the connection string, not the migration attributes', () => {
     const resolved = Effect.runSync(
       Output.evaluate(outputs['url'] as Output.Output<string>, {
-        'shop.pndata.warm': { url: 'postgres://pndata' },
-        'shop.pndata.migrate': { storageHash: 'sha256:target', invariants: [] },
+        'shop.pndata.warmup': { url: 'postgres://pndata' },
+        'shop.pndata.migration': { storageHash: 'sha256:target', invariants: [] },
       }) as Effect.Effect<string>,
     );
     expect(resolved).toBe('postgres://pndata');
@@ -83,6 +83,6 @@ describe("the postgres lowering's url — what every consumer is scheduled after
         }),
       ),
     );
-    expect(Object.keys(Output.upstreamAny(row.Props))).toContain('shop.pndata.migrate');
+    expect(Object.keys(Output.upstreamAny(row.Props))).toContain('shop.pndata.migration');
   });
 });

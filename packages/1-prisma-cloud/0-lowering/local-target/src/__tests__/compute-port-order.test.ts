@@ -63,7 +63,10 @@ async function reconcileApp(container: ContainerInstance, address: string): Prom
   );
   const attributes: App['Attributes'] = await Effect.runPromise(
     provider.reconcile(
-      reconcileInput(`${address}-svc`, { project: 'local', displayName: address }),
+      reconcileInput(address, {
+        project: 'local',
+        displayName: address.slice(address.indexOf('.') + 1),
+      }),
     ),
   );
   return Number(new URL(attributes.appEndpointDomain ?? '').port);

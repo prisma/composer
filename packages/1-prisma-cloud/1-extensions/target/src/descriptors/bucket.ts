@@ -7,8 +7,7 @@ import * as Prisma from 'alchemy/Prisma';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
 import { fromLegacyId, legacyNodeResourceId } from '../legacy-resource-ids.ts';
-import { resourceId } from '../resource-ids.ts';
-import { resourceLabel } from '../service-app.ts';
+import { addressBelowApp, resourceId } from '../resource-ids.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
@@ -26,24 +25,23 @@ import {
  * secretAccessKey) become the four S3Config outputs consumers resolve by name.
  */
 export function bucketDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ address, application }) =>
+  const lowering: Lowering = ({ address, application, graph }) =>
     Effect.gen(function* () {
-      const label = resourceLabel(address);
-      validateName(label, 'bucket name (its address without the app name)');
+      const app = graph.root.id;
+      const name = addressBelowApp(address, app);
+      validateName(name, address);
       const { branchId } = cloudApplicationOf(application);
       const bkt = yield* Prisma.Bucket(resourceId(address), {
         project: projectIdOf(application),
-        name: label,
+        name,
         ...(branchId !== undefined ? { branchId } : {}),
         ...logicalIdProp(application, address),
-      }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(address, 'bucket')));
-      // A new access key `name` replaces the key and mints fresh credentials,
-      // so it keeps the label every release has written.
-      const key = yield* Prisma.BucketAccessKey(resourceId(address, 'key'), {
+      }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'bucket')));
+      const key = yield* Prisma.BucketAccessKey(resourceId(address, 'accesskey'), {
         bucket: bkt.bucketId,
-        name: label,
+        name,
         role: 'read_write',
-      }).pipe(fromLegacyId(legacyNodeResourceId(address, 'key')));
+      }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'key')));
       const secretAccessKey = Output.map(key.secretAccessKey, (v) => Redacted.value(v));
       // No credentials on the entity: secret material must never reach an entity
       // (entities are rendered to a terminal). The outputs carry the full S3Config

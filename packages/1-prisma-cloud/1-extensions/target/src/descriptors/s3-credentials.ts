@@ -16,10 +16,11 @@ import type { ResolvedCloudOptions } from './shared.ts';
  * with the other descriptors' signature.
  */
 export function s3CredentialsDescriptor(_o: () => ResolvedCloudOptions): NodeDescriptor {
-  const lowering: Lowering = ({ address }) =>
+  const lowering: Lowering = ({ address, graph }) =>
     Effect.gen(function* () {
+      const app = graph.root.id;
       const creds = yield* S3Credentials(resourceId(address), {}).pipe(
-        fromLegacyId(legacyNodeResourceId(address, 'creds')),
+        fromLegacyId(legacyNodeResourceId(app, address, 'creds')),
       );
       // No entities: a minted keypair has nothing publishable. Both fields
       // are secret material, and secret material must never reach an entity

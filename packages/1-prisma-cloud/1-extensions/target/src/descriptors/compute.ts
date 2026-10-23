@@ -23,7 +23,7 @@ import {
 } from '../legacy-resource-ids.ts';
 import { paramBindingFor, paramName } from '../param.ts';
 import { provisionedEdges } from '../provisioned-edges.ts';
-import { resourceId } from '../resource-ids.ts';
+import { addressBelowApp, resourceId } from '../resource-ids.ts';
 import {
   configKey,
   decodeParamPointer,
@@ -34,7 +34,6 @@ import {
   paramEntries,
   serializeInput,
 } from '../serializer.ts';
-import { serviceAppName } from '../service-app.ts';
 import {
   asOwnRow,
   cloudApplicationOf,
@@ -160,18 +159,20 @@ export function computeDescriptor(
     kind: 'service' as const,
     // The service as a PLACE inside the application's Project: the App,
     // identity-bearing only, no code runs.
-    provision: ({ address, application }) =>
+    provision: ({ address, application, graph }) =>
       Effect.gen(function* () {
-        validateName(address, 'service name (from its address)');
+        const app = graph.root.id;
+        const displayName = addressBelowApp(address, app);
+        validateName(displayName, address);
         const projectId = projectIdOf(application);
         const { branchId } = cloudApplicationOf(application);
         const svc = yield* Prisma.App(resourceId(address), {
           project: projectId,
-          displayName: serviceAppName(address),
+          displayName,
           ...(o().region !== undefined ? { regionId: o().region } : {}),
           ...(branchId !== undefined ? { branchId } : {}),
           ...logicalIdProp(application, address),
-        }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(address, 'svc')));
+        }).pipe(asOwnRow, fromLegacyId(legacyNodeResourceId(app, address, 'svc')));
         return { serviceId: svc.appId, projectId, endpointDomain: svc.appEndpointDomain };
       }),
 
@@ -183,6 +184,7 @@ export function computeDescriptor(
     serialize: (ctx, provisioned, config) =>
       Effect.gen(function* () {
         const { address, node, graph } = ctx;
+        const app = graph.root.id;
         const branchId = cloudApplicationOf(ctx.application).branchId;
         const cls = branchId ? ('preview' as const) : ('production' as const);
         const branch = branchId !== undefined ? { branchId } : {};
@@ -216,7 +218,7 @@ export function computeDescriptor(
             value: wrapped,
             class: cls,
             ...branch,
-          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(address, d))));
+          }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyConfigKey(app, address, d))));
           // A pointer row triggers on its text (the platform NAME); the pointed
           // variable's own rotation joins as a `<name>:updatedAt` member.
           const pointer =
@@ -251,7 +253,7 @@ export function computeDescriptor(
               value: inputValue,
               class: cls,
               ...branch,
-            }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(address)))),
+            }).pipe(asOwnRow, fromLegacyId(legacyEnvVarId(legacyInputKey(app, address)))),
             key: inputRow.key,
             value: inputValue,
             pointers: inputRow.secrets,
@@ -268,7 +270,7 @@ export function computeDescriptor(
                 ? originOf(ctx.services, leaf.origin, address)
                 : (yield* GeneratedParam(resourceId(address, 'generated', leaf.path), {
                     bytes: leaf.bytes,
-                  }).pipe(fromLegacyId(legacyGeneratedParamId(address, leaf.path)))).value;
+                  }).pipe(fromLegacyId(legacyGeneratedParamId(app, address, leaf.path)))).value;
             // The generated value is mint-once-stable (the resource returns
             // its persisted output), so this trigger member holds still across
             // redeploys and moves exactly when the value is re-generated.
@@ -282,7 +284,7 @@ export function computeDescriptor(
                 ...branch,
               }).pipe(
                 asOwnRow,
-                fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(address, leaf.path))),
+                fromLegacyId(legacyEnvVarId(legacyGeneratedParamVarName(app, address, leaf.path))),
               ),
               key: leaf.varName,
               value: generatedValue,
@@ -357,7 +359,7 @@ export function computeDescriptor(
             }).pipe(
               asOwnRow,
               fromLegacyId(
-                legacyEnvVarId(legacyConfigKey(address, { owner: 'service', name: entry.name })),
+                legacyEnvVarId(legacyConfigKey(app, address, { owner: 'service', name: entry.name })),
               ),
             ),
             key,
@@ -392,7 +394,7 @@ export function computeDescriptor(
         }),
       ),
 
-    deploy: ({ address }, provisioned, artifact, serialized) =>
+    deploy: ({ address, graph }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
         // Answers "unknown" for every name under `prisma dev`: dev runs
         // no platform preflight, so no rotation timestamps exist. That costs
@@ -406,7 +408,8 @@ export function computeDescriptor(
             serialized.pointers.map((name) => [`${name}:updatedAt`, pointerUpdatedAt(name) ?? '?']),
           ),
         };
-        const deployment = yield* Prisma.Deployment(resourceId(address, 'deploy'), {
+        const app = graph.root.id;
+        const deployment = yield* Prisma.Deployment(resourceId(address, 'deployment'), {
           // `app` carries the ordering edge on serialize's variable writes as
           // well as the app id — see `appAfterEnvironment` for why it is the
           // only prop that can (PRO-211).
@@ -430,7 +433,7 @@ export function computeDescriptor(
           // expresses.
           start: true,
           promote: true,
-        }).pipe(fromLegacyId(legacyNodeResourceId(address, 'deploy')));
+        }).pipe(fromLegacyId(legacyNodeResourceId(app, address, 'deploy')));
         // `url` IS published here: a Compute service's deployed URL is a
         // public endpoint, and this descriptor is the only party that knows
         // that. Both fields are still unresolved Output references at this

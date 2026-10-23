@@ -62,7 +62,7 @@ const serviceKeyProvisioner: ProvisionerDescriptor = {
       const key = yield* Prisma.ServiceKey(
         resourceId(edge.consumerAddress, 'servicekey', edge.input),
         {},
-      ).pipe(fromLegacyId(legacyServiceKeyId(edge.consumerAddress, edge.input)));
+      ).pipe(fromLegacyId(legacyServiceKeyId(edge.app, edge.consumerAddress, edge.input)));
       return key.value;
     }),
 };
@@ -98,7 +98,7 @@ const rpcAcceptedKeysValue: ProviderParam['value'] = (refs) =>
 /**
  * ADR-0031's registered provisioner for STREAMS_API_KEY — the same `ServiceKey`
  * mint, keyed PER PROVIDER instead of per edge: the resource id is built from
- * the provider's address, so every consumer edge of one streams module resolves to
+ * the providing streams service's address, so every consumer edge of it resolves to
  * the same resource and therefore the same stable value. That is what
  * `@prisma/streams-server` requires (it authenticates a single `API_KEY`), and
  * cardinality is exactly what ADR-0031 leaves to the provisioner. Making it
@@ -108,8 +108,8 @@ const rpcAcceptedKeysValue: ProviderParam['value'] = (refs) =>
 const streamsApiKeyProvisioner: ProvisionerDescriptor = {
   provision: (edge) =>
     Effect.gen(function* () {
-      const key = yield* Prisma.ServiceKey(resourceId(edge.providerAddress, 'streamskey'), {}).pipe(
-        fromLegacyId(legacyStreamsKeyId(edge.providerAddress)),
+      const key = yield* Prisma.ServiceKey(resourceId(edge.providerAddress, 'streamkey'), {}).pipe(
+        fromLegacyId(legacyStreamsKeyId(edge.app, edge.providerAddress)),
       );
       return key.value;
     }),

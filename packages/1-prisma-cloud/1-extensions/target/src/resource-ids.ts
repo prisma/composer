@@ -7,3 +7,16 @@
 export function resourceId(address: string, ...role: readonly string[]): string {
   return [address, ...role].join('.');
 }
+
+/**
+ * The address without its first segment, the app name: `shop.auth.api` in the app `shop` is
+ * `auth.api`. Every platform name Composer writes is built from it, and so is every ID an earlier
+ * release wrote (ADR-0056).
+ */
+export function addressBelowApp(address: string, app: string): string {
+  const prefix = `${app}.`;
+  if (!address.startsWith(prefix)) {
+    throw new Error(`prisma-cloud: the address "${address}" is not inside the app "${app}".`);
+  }
+  return address.slice(prefix.length);
+}

@@ -204,7 +204,8 @@ export function LocalAppProvider(
     reconcile: ({ id, news }) =>
       Effect.tryPromise({
         try: async () => {
-          const name = news.displayName ?? id;
+          // The resource ID is the node's address, the record's key (ADR-0056).
+          const name = id;
           const { instance } = await ensureServiceInstance(appScopeOf(input), name);
           const url = localUrl(instance.port);
           return {
