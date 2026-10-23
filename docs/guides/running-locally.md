@@ -258,11 +258,7 @@ databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
 token, workspace, or network is involved. Three consequences worth knowing:
 
-- **Unset secrets don't stop the app.** A secret you haven't set in your shell
-  gets a local placeholder and a one-line warning; the app boots and serves,
-  and only the code path that actually spends that secret fails — at the real
-  external service it calls. Set the secret in your shell to exercise that
-  path.
+- **Secrets come from your environment.** `prisma dev` reads each secret from the environment it runs in and never makes one up or saves one. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts` by putting `import 'dotenv/config'` at the top of it. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun. If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.

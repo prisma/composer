@@ -36,8 +36,8 @@ const isSet = (env: Env, name: string): boolean => {
 const HOW_TO_SET =
   'Set each missing variable in either of these ways:\n' +
   '  - export it in the shell you run `prisma dev` from, or\n' +
-  "  - load a .env file from prisma.config.ts, for example with process.loadEnvFile('.env') " +
-  "or import 'dotenv/config'.";
+  "  - load a .env file from prisma.config.ts by adding import 'dotenv/config' at the top of it.\n" +
+  "(process.loadEnvFile('.env') works too, but only when the CLI runs under Node: Bun does not implement it.)";
 
 function missingEnvParamsSection(missing: readonly PreflightName[]): string {
   const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
