@@ -48,3 +48,13 @@ Incomplete: S01, and the ADR-0050 amendment's mention of only `destroy` and `log
 - Location: `docs/guides/deploying.md` line 104.
 - Issue: ADR-0052 makes local dev's record per working directory. With the entry in the config, `prisma dev` now runs from a subdirectory, and gets a second local copy of the app.
 - Suggestion: Say that local dev's commands use the directory they run in (code-review F04).
+
+---
+
+# Round 2
+
+Commits `a7184afe`, `1bdd405f`.
+- **S01 fixed.** ADR-0024, ADR-0041, ADR-0053 and ADR-0056 have amendment notes citing ADR-0050, and the index entries say so. The bodies are kept as history.
+- **S02 fixed.** The guide confines "from any directory" to `prisma deploy`, and states local dev's per-directory record.
+
+No new design findings. Verdict: SATISFIED.

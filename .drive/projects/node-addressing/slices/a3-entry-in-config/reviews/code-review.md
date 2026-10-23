@@ -113,3 +113,22 @@ What remains is in the docs:
 | WEAK | 2 | repo callers, design records |
 | NOT VERIFIED | 1 | real deploy |
 | FAIL | 0 | |
+
+---
+
+# Round 2
+
+Commits `a7184afe`, `1bdd405f` on top of `45236626`. **Verdict: SATISFIED.**
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| F01 positional in two commands | Fixed | `deploying.md` and `SKILL.md` show `… prisma.js deploy`. A repo-wide `git grep` for `deploy module.ts`, `dev module.ts`, `deploy <entry>` and `dev <entry>` now finds four kinds of hit: ADR bodies kept as history under their new amendment notes, the upgrade note (deliberate), and the retired-binary lint test's fixtures. |
+| F02 records not amended | Fixed | ADR-0024, ADR-0041, ADR-0053 and ADR-0056 carry an amendment note that cites ADR-0050. The ADR-0024 and ADR-0041 index entries mention it. |
+| F03 no upgrade note | Fixed | `deploying.md` quotes the engine's error for `prisma deploy module.ts` / `prisma dev module.ts` and gives both fixes. |
+| F04 "from any directory" | Fixed | The guide now limits the claim to `prisma deploy` below the config, and says to run `prisma dev`, `dev url` and `dev stop` from one directory. |
+| F05 missing-entry fix text | Fixed | The fix names the `entry` input for `@prisma/composer/control`; the test asserts the new text. |
+| F06 unloadable entry | Fixed | `resolveEntryPath` returns the path and a fix that names its source: the config file and its `entry` value, or the `--entry` value and the cwd. `loadEntry` adds it to `COMPOSE.ENTRY_UNLOADABLE`. A new operation test asserts both texts. The JSX and default-export errors keep their own fixes, which is right. |
+| F07 `composer-destroy.ts` header | Fixed | |
+| F08 ADR-0050 operations list | Fixed | It names all four operations. |
+
+QA (D4) is still outstanding for the real-deploy criterion.
