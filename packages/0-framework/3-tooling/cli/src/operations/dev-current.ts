@@ -27,6 +27,8 @@ export interface DevUrl {
   readonly url: string;
   /** Always `running`: a node that is not running is a failure. */
   readonly state: string;
+  /** `"dev-server"` when a service runs its build adapter's dev server, `"artifact"` for every other service; absent for a database or bucket (ADR-0056). */
+  readonly runs?: 'artifact' | 'dev-server';
 }
 
 export interface DevStopInput {

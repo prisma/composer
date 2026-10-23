@@ -19,6 +19,8 @@ export type ExtensionId = string;
 export interface ServiceEndpoint {
   readonly address: string;
   readonly url: string;
+  /** The dev server the service runs in place of its artifact, as its build adapter displays it (`next dev`) — absent for a service that runs its artifact (ADR-0056). */
+  readonly devServer?: string;
 }
 
 /**

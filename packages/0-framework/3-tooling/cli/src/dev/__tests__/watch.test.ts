@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { startWatch, watchTargetsFrom } from '../watch.ts';
+import { Load, module, service } from '@internal/core';
+import { authoringModuleTargets, startWatch, watchTargetsFrom } from '../watch.ts';
 
 function tempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cli-watch-'));
@@ -127,4 +128,34 @@ describe('startWatch()', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 10_000);
+});
+
+describe('authoringModuleTargets() (ADR-0056)', () => {
+  const svc = (name: string, moduleUrl: string) =>
+    service({
+      name,
+      extension: 'x',
+      type: 'compute',
+      inputs: {},
+      params: {},
+      build: { extension: 'b', type: 'node', module: moduleUrl, entry: 'server.js' },
+    });
+
+  test("watches the entry and each service's authoring module once, skipping a non-file module", () => {
+    const root = module('shop', {}, ({ provision }) => {
+      provision(svc('web', 'file:///repo/apps/web/src/service.ts'), { id: 'web' });
+      provision(svc('admin', 'file:///repo/apps/web/src/service.ts'), { id: 'admin' });
+      provision(svc('api', 'file:///repo/apps/api/src/service.ts'), { id: 'api' });
+      provision(svc('virtual', 'virtual:service'), { id: 'virtual' });
+      return {};
+    });
+
+    const targets = authoringModuleTargets('/repo/module.ts', Load(root));
+
+    expect(targets.map((t) => t.paths)).toEqual([
+      ['/repo/module.ts'],
+      ['/repo/apps/web/src/service.ts'],
+      ['/repo/apps/api/src/service.ts'],
+    ]);
+  });
 });

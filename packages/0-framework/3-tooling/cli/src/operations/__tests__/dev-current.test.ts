@@ -136,6 +136,41 @@ describe.skipIf(process.platform === 'win32')('devUrl', () => {
     });
   });
 
+  test('says what a service runs: its artifact, or its dev server (ADR-0056); a database runs neither', async () => {
+    const located: LocalNodeLocation[] = [
+      ...running,
+      {
+        address: 'web',
+        kind: 'service',
+        emulator: 'running',
+        url: 'http://localhost:3003',
+        state: 'running',
+        condition: 'running',
+        command: ['/app/node_modules/next/dist/bin/next', 'dev', '-p', '3003', '-H', '0.0.0.0'],
+      },
+      {
+        address: 'pages',
+        kind: 'database',
+        emulator: 'running',
+        url: 'postgres://y',
+        state: 'running',
+        condition: 'running',
+      },
+    ];
+    const runs = async (address: string) => {
+      const result = await devUrl({
+        config: config(async () => recordedApp(located)),
+        address,
+        cwd,
+      });
+      return result.ok ? result.value.runs : result.failure.code;
+    };
+
+    expect(await runs('gateway')).toBe('artifact');
+    expect(await runs('web')).toBe('dev-server');
+    expect(await runs('pages')).toBeUndefined();
+  });
+
   test('a directory where `prisma dev` never ran fails with DEV.NOT_STARTED_HERE', async () => {
     const result = await devUrl({ config: config(async () => undefined), address: 'gateway', cwd });
 

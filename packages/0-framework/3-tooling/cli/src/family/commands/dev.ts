@@ -13,6 +13,7 @@
  *
  * `dev` is credential-free: everything it starts runs on this machine.
  */
+import * as path from 'node:path';
 import type { ChildResult, EngineEvent } from '@prisma/cli-engine';
 import { defineSessionCommand, flag, positional } from '@prisma/cli-engine';
 import { ok } from '@prisma/cli-engine/protocol';
@@ -86,6 +87,7 @@ function frontDoorOrder(endpoints: readonly ServiceEndpoint[]): readonly Service
 function reportDevEvent(
   report: (event: EngineEvent) => void,
   lastChild: () => ChildResult | undefined,
+  cwd: string,
 ): (event: DevEvent) => void {
   let stopFailed = false;
 
@@ -94,8 +96,35 @@ function reportDevEvent(
       case 'ready':
         report({ kind: 'status', subject: 'dev', status: 'ready' });
         for (const endpoint of frontDoorOrder(event.endpoints)) {
-          report({ kind: 'endpoint', name: endpoint.address, url: endpoint.url });
+          report({
+            kind: 'endpoint',
+            name: endpoint.address,
+            url: endpoint.url,
+            ...(endpoint.devServer !== undefined
+              ? { data: { devServer: endpoint.devServer } }
+              : {}),
+          });
         }
+        return;
+
+      case 'dev-server':
+        report({
+          kind: 'message',
+          severity: 'info',
+          text: `${event.address}: runs \`${event.command}\` in ${path.relative(cwd, event.cwd) || '.'}`,
+        });
+        return;
+
+      case 'dev-server-restarted':
+        report({
+          kind: 'message',
+          severity: 'info',
+          text: `${event.address}: its environment changed; \`${event.command}\` restarted`,
+        });
+        return;
+
+      case 'dev-server-output':
+        report({ kind: 'message', severity: 'info', text: `[${event.address}] ${event.line}` });
         return;
 
       case 'unwatchable':
@@ -202,6 +231,9 @@ export const createDevCommand = (operations: ComposerOperations) =>
         'this machine.',
       description:
         'Runs credential-free and watches the app for changes, reconverging on every edit. ' +
+        "A service whose build adapter declares a dev server (Next.js's `next dev`, or the " +
+        '`dev` command written on node()) runs that instead of its build, and its output is ' +
+        'shown here, prefixed with its address. ' +
         'A node is one service, database or bucket in the app. Each node runs on a local ' +
         'emulator: a program on this machine that stands in for Prisma Cloud and runs ' +
         "services, databases or S3-compatible buckets. A node's address is its name in the " +
@@ -257,7 +289,7 @@ export const createDevCommand = (operations: ComposerOperations) =>
           fresh: args.flags.fresh,
           detach: args.flags.detach,
           cwd: ctx.cwd,
-          onEvent: reportDevEvent(ctx.report, ctx.lastChild),
+          onEvent: reportDevEvent(ctx.report, ctx.lastChild, ctx.cwd),
         },
         { alchemy: coalescedConverge(alchemy) },
       );
