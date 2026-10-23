@@ -235,6 +235,63 @@ describe('deploy()', () => {
     expect(fs.existsSync(resultFile ?? '')).toBe(false);
   });
 
+  test("the config's entry resolves against the config file's directory, not cwd", async () => {
+    const app = makeAppDir('hello-ops');
+    const elsewhere = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'composer-elsewhere-')),
+    );
+    tmpDirs.push(elsewhere);
+    let ran = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        {
+          config: {
+            value: { ...fakeConfig(), entry: './service.ts' },
+            file: path.join(app.dir, 'prisma.config.ts'),
+          },
+          stage: 'ci-7',
+          cwd: elsewhere,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            ran = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (!result.ok) throw result.failure;
+    expect(ran).toBe(true);
+  });
+
+  test('without an entry in the config or the input, deploy fails with CONFIG.ENTRY_MISSING before any work', async () => {
+    const app = makeAppDir('hello-ops');
+    let ran = false;
+
+    const result = await silently(() =>
+      deployWithDeps(
+        { config: composerConfig(fakeConfig()), cwd: app.dir },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async () => {
+            ran = true;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+
+    if (result.ok) throw new Error('expected a failure');
+    expect(result.failure).toMatchObject({
+      code: 'CONFIG.ENTRY_MISSING',
+      fix: "Set `entry: './module.ts'` in the `composer` section of prisma.config.ts, or pass `--entry <path>`.",
+    });
+    expect(ran).toBe(false);
+  });
+
   test('a deploy whose child wrote no result file still succeeds, with an undefined summary', async () => {
     const app = makeAppDir('hello-ops');
 
@@ -477,7 +534,7 @@ describe('deploy()', () => {
 
       expect(failure).toMatchObject({
         code: 'CONFIG.FIELD_UNKNOWN',
-        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `extensions` and `state`.',
+        fix: 'Pass the `composer` property of the prisma.config.ts export, not the whole export. The section takes only `entry`, `extensions` and `state`.',
         where: { path: path.join(app.dir, 'prisma.config.ts') },
       });
       expect(containerCalls).toEqual([]);

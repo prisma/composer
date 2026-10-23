@@ -1,12 +1,12 @@
 /**
- * `deploy <entry>` — a result command that hands the terminal to alchemy.
+ * `deploy` — a result command that hands the terminal to alchemy.
  *
  * `--production` is gone. It was accepted and then always errored ("only
  * valid with destroy"), so no invocation using it could ever have succeeded;
  * deploy targets production by default when no `--stage` is given.
  */
 import type { EngineEvent } from '@prisma/cli-engine';
-import { defineCommand, flag, positional } from '@prisma/cli-engine';
+import { defineCommand, flag } from '@prisma/cli-engine';
 import type { DeployEvent, DeployStep } from '../../operations/deploy.ts';
 import { convergeSpawn, operationDeps, settleConverge } from '../converge.ts';
 import { dataLine } from '../data-lines.ts';
@@ -64,18 +64,21 @@ function toEngineEvent(event: DeployEvent): EngineEvent {
 export const createDeployCommand = (operations: ComposerOperations) =>
   defineCommand({
     help: {
-      summary: "Deploy the application whose root node is <entry>'s default export.",
-      examples: ['{bin} deploy module.ts', '{bin} deploy module.ts --stage feat-auth'],
+      summary: "Deploy the application whose root node is the entry module's default export.",
+      examples: [
+        '{bin} deploy',
+        '{bin} deploy --stage feat-auth',
+        '{bin} deploy --entry other-module.ts',
+      ],
     },
     args: {
-      positionals: {
-        entry: positional.string({
-          brief:
-            'The file whose default export is the application root module, built with module(...).',
-          placeholder: 'entry',
-        }),
-      },
       flags: {
+        entry: flag.string({
+          brief:
+            'The file whose default export is the application root module, built with ' +
+            'module(...). Overrides `entry` in the `composer` section of prisma.config.ts.',
+          placeholder: 'path',
+        }),
         name: flag.string({
           brief:
             'Deploy the app under this name instead of the name its root module declares. A ' +
@@ -113,7 +116,7 @@ export const createDeployCommand = (operations: ComposerOperations) =>
       const alchemy = convergeSpawn(ctx);
       const result = await operations.deploy(
         {
-          entry: args.positionals.entry,
+          entry: args.flags.entry,
           config: ctx.config,
           name: args.flags.name,
           stage: args.flags.stage,

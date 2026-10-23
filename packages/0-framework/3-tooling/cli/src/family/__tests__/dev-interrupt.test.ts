@@ -34,7 +34,7 @@ describe('dev, interrupted', () => {
     // The interrupt lands once the session is up, which is the moment a user
     // could press Ctrl-C: the handler is parked on ctx.signal by then.
     const interrupt = new AbortController();
-    const result = await cli.run(['dev', 'src/service.ts'], {
+    const result = await cli.run(['dev', '--entry', 'src/service.ts'], {
       ...AS_TTY,
       abort: interrupt.signal,
       onEvent: (event: EngineEvent) => {
