@@ -1,5 +1,7 @@
 # ADR-0050: Composer runs as `prisma deploy` and `prisma dev`; it has no binary of its own
 
+Amended by [ADR-0062](ADR-0062-stage-configuration-comes-from-providers.md): `--stage` defaults to `production` on `prisma deploy` and to `dev` on `prisma dev`, which gains the flag; `destroy`'s target is `{ kind: 'stage', stage }` only.
+
 Amended by [ADR-0053](ADR-0053-dev-url-dev-stop-and-emulator-list.md): the family also ships `dev url`, `dev stop` and `emulator list`, so `prisma dev` is both a command and a group.
 
 ## Decision

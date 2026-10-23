@@ -1,5 +1,7 @@
 # ADR-0016: A module has the same boundary as a service
 
+Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module declares its configuration as one `input` schema, as a compute service does; its per-key `params` and `secrets` slots are removed. A root may declare `input`, bound by the deploy.
+
 ## Decision
 
 A module declares the same boundary a service does: a `Deps` map of typed

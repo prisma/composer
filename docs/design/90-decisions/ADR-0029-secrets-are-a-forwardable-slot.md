@@ -1,5 +1,7 @@
 # ADR-0029: A secret is an environment-sourced value the framework never stores
 
+Amended by [ADR-0061](ADR-0061-a-module-declares-its-input-as-a-compute-service-does.md): a module no longer declares `secret()` slots; a secret reaches a module as a `secretString()` field of its `input`. `envSecret` is unchanged.
+
 ## Decision
 
 A **secret** is one specific thing: a value the deployment reads from the
