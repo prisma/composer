@@ -511,12 +511,7 @@ Deploy's rule holds: every failure names its fix.
 
 ## Out of scope (designed around)
 
-- **Hot reload / user-supplied dev commands.** The loop's unit of change is a
-  rebuilt artifact. The designed extension (not v1): a service may opt into a
-  dev command (e.g. `next dev`) that replaces its artifact process; the harness
-  still resolves bindings and materializes the same env, and writes the stash
-  so `load()`/`config()`/`secrets()` work without `run()`. The opt-in must be
-  explicit precisely because it trades away artifact parity.
+- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. This doc describes the dev-server mechanics once they ship.
 - **Remote bindings** (a local service against real cloud resources,
   Wrangler-style). A possible future opt-in; contradicts credential-free dev
   as a default.

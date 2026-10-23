@@ -4,6 +4,8 @@ Amended by [ADR-0050](ADR-0050-composer-runs-as-prisma-deploy-and-prisma-dev.md)
 
 Amended by [ADR-0052](ADR-0052-composer-maps-its-nodes-to-emulator-instances-per-directory.md): the emulators know nothing about Composer. A dev instance is no longer identified on the emulators by the app name: the Compute, Postgres and bucket emulators key their instances by ids they generate, and Composer records, per working directory, which instance backs each node of each app run there. When `prisma dev` ends it stops the app's database servers as well as its services.
 
+Amended by [ADR-0056](ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): under `prisma dev`, a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, when it declares one. Such a service is not assembled and lowers without its `Deployment`; the Compute emulator runs the dev server as a command deployment on the service's instance, with the environment its deployment would get, re-stashed address-free as `run()` does. The dev session still owns no processes. A service whose adapter declares no dev server still boots exactly as deployed.
+
 ## Decision
 
 `prisma-composer dev <entry>` boots the whole application locally, with no cloud
@@ -247,7 +249,8 @@ this repo owns.
   of change is a rebuilt artifact, not a source edit. A per-service opt-in that
   runs a user-supplied dev command (`next dev`) with framework-injected
   bindings is designed as an extension in
-  [local-dev.md](../10-domains/local-dev.md), not part of this decision.
+  [local-dev.md](../10-domains/local-dev.md), not part of this decision. *(Amended by
+  ADR-0056: the build adapter declares the dev server, and `prisma dev` runs it.)*
 
 ## Alternatives considered
 
