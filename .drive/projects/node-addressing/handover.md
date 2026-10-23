@@ -44,7 +44,31 @@ PRO-225 (Product team, Linear) asks the platform to reject `:` in Branch names. 
 
 ## A1 status
 
-_Updated at the end of the session; see the last section._
+Branch `drive/fully-qualified-node-addresses`, pushed to `prisma/composer` (remote `bot`). No PR yet. The slice's spec and dispatch plan are in `slices/a1-fully-qualified-identity/`.
+
+**Done and committed:**
+- D1: ADR-0056 replaces ADR-0051; principles, glossary and domain docs updated.
+- D2: full addresses in Load (root = deployed app name on both the CLI pipeline and the deploy lowering), `logicalId`s, topology, `COMPOSER_` keys (`-` to `_`), `serviceOrigin`.
+- D3: dotted resource IDs (`target/src/resource-ids.ts`) and `renamedFrom` on every resource, with old IDs built in `target/src/legacy-resource-ids.ts`. Environment variable rows are replaced with identical values, because their keys change; this is accepted.
+- D4: local dev record migration (`local-target/src/legacy-address-keys.ts`, `formatVersion: 2` in `emulator-instances.json`); bucket data folders keep their existing names.
+- D5: examples, guides, agent skill and READMEs use full addresses; guides say to remove an app with `prisma project delete`.
+- Review (`slices/a1-fully-qualified-identity/reviews/`) and all fixes. Notable decisions taken in the fixes:
+  - The app name must be letters, digits, `-` and `_` (`assertAppName` in core). A name with `.` would have produced wrong old IDs and lost data.
+  - Every platform display `name`/`displayName` Composer writes is the address below the app name (`addressBelowApp`). These labels live inside the app's own Project, and including the app name could push existing apps over the platform's 65-character limit. They are labels, never identity. **Will has not explicitly approved this rule; raise it at final verification.**
+  - Role names are nouns: `connection`, `accesskey`, `deployment`, `warmup`, `migration`, `env`, `generated`, `servicekey`, `streamkey`.
+- Tests: typecheck passes. core, cli, local-target, lowering and test/integration pass. In the target package, 6 local-Postgres tests failed with "No space left on device" because about 31 leaked test Postgres servers (`prisma-composer-pn-pg-*`) were holding shared memory. They are not caused by this branch. Some may belong to other sessions, so they were not killed. Re-run the target tests once they are gone.
+
+**Remaining for A1:**
+1. **QA (D6) was interrupted after step 1.** Its brief is the last dispatch in `slices/a1-fully-qualified-identity/plan.md`. The detailed steps:
+   1. Deploy with the published release and record the state.
+   2. Redeploy from the branch, then check ids, rows, objects, the generated value and RPC key hashes, the `logicalId`s, the state IDs, and that no old variables are left.
+   3. Deploy to a new stage from scratch.
+   4. Local dev: run `prisma dev` with the published release, then from the branch, and check the data survived.
+   5. `prisma project delete` with services running, then confirm with `project list`.
+
+   Step 1 is done. A test Project **`qa-a1-qsgn6n` (`proj_lbs6tif5hbmz29ge7btc3wax`) is still deployed** with the published release. Its scripts and snapshot (`api.sh`, `snap.sh`, `snap1-old.txt`) are in the old worktree at `/Users/will/Projects/prisma/composer/.claude/worktrees/composer-destroy-discussion-56c939/wip/qa-a1/`. Continue from step 2 with it, or delete it and start over. Either way, delete it when QA is done. Write results to `slices/a1-fully-qualified-identity/qa.md`.
+2. Open the PR. Follow `~/.claude/CLAUDE.md`'s PR rules: grounding example first, `Agent: <name>`, Auto-fix on. In the description, list the platform-name rule and the short bucket folder names for Will's attention.
+3. The asks app's production deploy is the project's final production test, after A1 is released.
 
 ## How to work
 
