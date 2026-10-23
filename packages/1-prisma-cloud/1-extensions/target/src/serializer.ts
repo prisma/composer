@@ -330,6 +330,21 @@ export interface ResolvedInputBinding {
 
 const NO_ABSENT_SECRETS: ReadonlySet<string> = new Set();
 
+/** How `resolveInputBinding`, `serializeInput` and `inputValidationFailure` read the environment and which secrets they leave out. */
+export interface SerializeInputOptions {
+  /** Where `envParam` leaves are read; the process environment by default. */
+  readonly env?: Record<string, string | undefined>;
+  /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
+  readonly absentSecrets?: ReadonlySet<string>;
+}
+
+function withDefaults(options: SerializeInputOptions): Required<SerializeInputOptions> {
+  return {
+    env: options.env ?? process.env,
+    absentSecrets: options.absentSecrets ?? NO_ABSENT_SECRETS,
+  };
+}
+
 /**
  * Deploy guard (ADR-0041, closing review finding F02): every pointer var name a
  * service's input binding produces — `$secret` names AND `$generated` names —
@@ -370,10 +385,10 @@ export function assertDistinctPointerNames(
  */
 export function resolveInputBinding(
   binding: unknown,
-  env: Record<string, string | undefined>,
   address = '',
-  absentSecrets: ReadonlySet<string> = NO_ABSENT_SECRETS,
+  options: SerializeInputOptions = {},
 ): ResolvedInputBinding {
+  const { env, absentSecrets } = withDefaults(options);
   const sentinels = new Map<SecretString, string>();
   const generated: GeneratedLeaf[] = [];
   const pointers: PointerName[] = [];
@@ -501,20 +516,13 @@ export interface InputDocumentRow {
  * or vice versa) or a schema refining on secret CONTENT — deploy-time
  * validation sees only empty boxes, and the ADR forbids content refinements.
  */
-export interface SerializeInputOptions {
-  /** Where `envParam` leaves are read; the process environment by default. */
-  readonly env?: Record<string, string | undefined>;
-  /** `envSecret` names to leave out of the document; only `prisma dev` passes any. */
-  readonly absentSecrets?: ReadonlySet<string>;
-}
-
 export function serializeInput(
   node: ServiceNode,
   address: string,
   binding: unknown,
-  { env = process.env, absentSecrets = NO_ABSENT_SECRETS }: SerializeInputOptions = {},
+  options: SerializeInputOptions = {},
 ): InputDocumentRow | undefined {
-  const judged = judgeInput(node, address, binding, env, absentSecrets);
+  const judged = judgeInput(node, address, binding, options);
   if (judged === undefined) return undefined;
   if (!judged.ok) {
     throw new Error(
@@ -554,8 +562,7 @@ function judgeInput(
   node: ServiceNode,
   address: string,
   binding: unknown,
-  env: Record<string, string | undefined>,
-  absentSecrets: ReadonlySet<string>,
+  options: SerializeInputOptions,
 ): InputJudgement | undefined {
   const schema = node.inputSchema;
   if (schema === undefined) {
@@ -571,7 +578,7 @@ function judgeInput(
       `service "${address}" declares an input schema but has no recorded input binding — Load should have required it (ADR-0042).`,
     );
   }
-  const resolved = resolveInputBinding(binding, env, address, absentSecrets);
+  const resolved = resolveInputBinding(binding, address, options);
   let result: ReturnType<typeof standardValidate>;
   try {
     result = standardValidate(schema, resolved.resolved);
@@ -596,10 +603,9 @@ export function inputValidationFailure(
   node: ServiceNode,
   address: string,
   binding: unknown,
-  env: Record<string, string | undefined>,
-  absentSecrets: ReadonlySet<string>,
+  options: SerializeInputOptions = {},
 ): string | undefined {
-  const judged = judgeInput(node, address, binding, env, absentSecrets);
+  const judged = judgeInput(node, address, binding, options);
   if (judged === undefined || judged.ok) return undefined;
   if (judged.thrown) throw new Error(`invalid input for service "${address}": ${judged.message}`);
   return judged.message;

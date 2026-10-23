@@ -64,7 +64,8 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
           secretly: envSecret('STRIPE_SECRET_KEY'),
         },
       },
-      { SHELL_VALUE: 'from-the-shell' },
+      '',
+      { env: { SHELL_VALUE: 'from-the-shell' } },
     );
 
     const out = resolved as Record<string, unknown>;
@@ -84,7 +85,8 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   test('an unset deploy-shell var omits the key; an empty one too — the schema arbitrates absence', () => {
     const { resolved, absent } = resolveInputBinding(
       { unset: envParam('NOT_SET_ANYWHERE_XYZ'), empty: envParam('EMPTY_VALUE'), kept: 'yes' },
-      { EMPTY_VALUE: '' },
+      '',
+      { env: { EMPTY_VALUE: '' } },
     );
     expect(resolved).toEqual({ kept: 'yes' });
     expect(absent).toEqual(['unset → NOT_SET_ANYWHERE_XYZ', 'empty → EMPTY_VALUE']);
@@ -92,14 +94,14 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
 
   test('an env-bound array element that resolves absent is a loud error — positions cannot be omitted', () => {
     expect(() =>
-      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, {}),
+      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, '', { env: {} }),
     ).toThrow(/array element/);
   });
 
   test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {
-    expect(() => resolveInputBinding({ key: new SecretBox('sk_live_oops') }, {})).toThrow(
-      /never belongs in a binding/,
-    );
+    expect(() =>
+      resolveInputBinding({ key: new SecretBox('sk_live_oops') }, '', { env: {} }),
+    ).toThrow(/never belongs in a binding/);
   });
 });
 
@@ -320,7 +322,9 @@ describe('readInput — the boot half', () => {
 
 describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   test('a redacted generated leaf resolves to a box sentinel and records the generated list', () => {
-    const { resolved, generated } = resolveInputBinding({ secret: generatedParam() }, {}, 'web');
+    const { resolved, generated } = resolveInputBinding({ secret: generatedParam() }, 'web', {
+      env: {},
+    });
     expect((resolved as Record<string, unknown>)['secret']).toBeInstanceOf(SecretBox);
     expect(generated).toEqual([
       { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
@@ -330,8 +334,8 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   test('a non-redacted generated leaf resolves to an empty-string sentinel', () => {
     const { resolved, generated } = resolveInputBinding(
       { token: generatedParam({ redacted: false, bytes: 16 }) },
-      {},
       'web',
+      { env: {} },
     );
     expect((resolved as Record<string, unknown>)['token']).toBe('');
     expect(generated).toEqual([
@@ -340,7 +344,9 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   });
 
   test('the var name is address- and path-scoped, even for a nested leaf', () => {
-    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, {}, 'api');
+    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, 'api', {
+      env: {},
+    });
     expect(generated[0]?.varName).toBe('COMPOSER_API_AUTH_SIGNING_GENERATED');
     expect(generated[0]?.path).toBe('auth.signing');
   });
@@ -462,19 +468,19 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
 describe('the pointer-name collision guard (ADR-0041, F02)', () => {
   test('two secret leaves binding the same platform name collide (secret/secret)', () => {
     expect(() =>
-      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, {}, 'web'),
+      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "SHARED"/);
   });
 
   test('two secret leaves whose names differ only in case collide (case-collision)', () => {
     expect(() =>
-      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, {}, 'web'),
+      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "TOKEN"/);
   });
 
   test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {
     expect(() =>
-      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, {}, 'web'),
+      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "COMPOSER_WEB_TOKEN_GENERATED"/);
   });
 
@@ -496,8 +502,8 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
   test('a secret leaf and a generated leaf with distinct names do NOT collide', () => {
     const { generated, sentinels } = resolveInputBinding(
       { sec: envSecret('MY_SECRET'), gen: generatedParam() },
-      {},
       'web',
+      { env: {} },
     );
     expect(generated).toHaveLength(1);
     expect([...sentinels.values()]).toEqual(['MY_SECRET']);

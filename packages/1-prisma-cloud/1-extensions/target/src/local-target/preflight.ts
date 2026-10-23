@@ -71,11 +71,17 @@ function requiredSecrets(
   unset: readonly string[],
   env: Env,
 ): MissingSecrets[] {
-  const withoutAll = inputValidationFailure(node, serviceAddress, binding, env, new Set(unset));
+  const withoutAll = inputValidationFailure(node, serviceAddress, binding, {
+    env,
+    absentSecrets: new Set(unset),
+  });
   if (withoutAll === undefined) return [];
   const required: MissingSecrets[] = [];
   for (const name of unset) {
-    const message = inputValidationFailure(node, serviceAddress, binding, env, new Set([name]));
+    const message = inputValidationFailure(node, serviceAddress, binding, {
+      env,
+      absentSecrets: new Set([name]),
+    });
     if (message !== undefined) required.push({ names: [name], serviceAddress, message });
   }
   return required.length > 0 ? required : [{ names: unset, serviceAddress, message: withoutAll }];
@@ -104,7 +110,10 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     for (const name of names) (isSet(env, name) ? pointed : absentSecrets).add(name);
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    const invalid = inputValidationFailure(node, serviceAddress, binding, env, new Set());
+    const invalid = inputValidationFailure(node, serviceAddress, binding, {
+      env,
+      absentSecrets: new Set(),
+    });
     if (invalid !== undefined) {
       invalidInputs.push(`invalid input for service "${serviceAddress}": ${invalid}`);
       continue;

@@ -70,7 +70,7 @@ The engine needs the dev preflight's findings in the alchemy process, which re-i
 - **Make every unset secret an error.** Simple, but contradicts ADR-0042, under which an optional field may be absent, and forces developers to invent values for features they do not use.
 - **Decide required or optional by reading the schema.** ADR-0042 forbids introspection: it couples the framework to each schema library's private representation.
 - **A plain SHA-256 fingerprint.** It lands in Alchemy's state inside the project, and a short or guessable secret can be recovered from it.
-- **Load `.env` in Composer itself.** Would add a second, Composer-specific way to set the environment, unlike the ORM, and take the choice of loader away from the user.
+- **Load `.env` in Composer itself.** Would add a second, Composer-specific way to set the environment, unlike the ORM, and take the choice of loader away from the user. It would be safer on one point: a `.env` that Composer loaded only under `prisma dev` would never reach `prisma deploy`, so deploy could not upload a local value from it. It was still rejected, because Will chose the ORM's model, in which the user owns their environment.
 
 ## Related
 
