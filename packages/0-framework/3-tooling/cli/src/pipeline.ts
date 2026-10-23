@@ -17,7 +17,7 @@ import {
   type RunAssembler,
 } from '@internal/assemble';
 import type { Graph } from '@internal/core';
-import { Load } from '@internal/core';
+import { assertAppName, Load } from '@internal/core';
 import type { PrismaAppConfig } from '@internal/core/config';
 import { CliStructuredError } from '@internal/foundation/errors';
 import {
@@ -102,6 +102,7 @@ export async function resolveAppIdentity(
       fix: 'Name it at authoring, or pass --name.',
     });
   }
+  assertAppName(name);
   return { config: value, name };
 }
 

@@ -25,6 +25,21 @@ export { LoadError, RESOURCE_OUT_PORT } from './graph-types.ts';
  * live with `loadService` / `loadModule` and are covered by name in the Load
  * tests. Executes nothing of the user's own code beyond module bodies.
  */
+const APP_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+/**
+ * Throws unless `name` can be an app name: the root's address and the first segment of every
+ * other address (ADR-0056). A `.` would split it, and it becomes part of every `COMPOSER_` key.
+ */
+export function assertAppName(name: string): void {
+  if (!APP_NAME.test(name)) {
+    throw new LoadError(
+      `The app name "${name}" is not valid. An app name (the root module's name, or --name) must ` +
+        'start with a letter or digit and contain only letters, digits, "-" and "_".',
+    );
+  }
+}
+
 export function Load(root: ServiceNode | ModuleNode, opts?: { id?: NodeId }): Graph {
   // Brand-check the untrusted root once (a user default-export could be junk
   // TypeScript believes is a node), then route by its discriminant.
@@ -33,7 +48,10 @@ export function Load(root: ServiceNode | ModuleNode, opts?: { id?: NodeId }): Gr
       'Load expects a branded service or module node (construct it with the service()/module() factories).',
     );
   }
-  if (root.kind === 'module') return loadModule(root, opts);
+  if (root.kind === 'module') {
+    assertAppName(opts?.id ?? root.name);
+    return loadModule(root, opts);
+  }
   if (root.kind === 'service') return loadService(root, opts?.id ?? 'root');
   throw new LoadError('Load expects a service or module root (received another node kind).');
 }

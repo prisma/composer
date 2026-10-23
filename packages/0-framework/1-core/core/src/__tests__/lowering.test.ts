@@ -1033,6 +1033,7 @@ describe('provision phase (ADR-0031): resolving a provisioned param against the 
 
     expect(provisioner.calls).toHaveLength(1);
     expect(provisioner.calls[0]).toMatchObject({
+      app: 'shop',
       edgeId: 'shop.consumer.auth',
       consumerAddress: 'shop.consumer',
       providerAddress: 'shop.auth',

@@ -42,6 +42,8 @@ export interface ApplicationDescriptor {
  * derive from it and stay stable across redeploys.
  */
 export interface ProvisionEdge {
+  /** The deployed app name: the first segment of every address. */
+  readonly app: string;
   readonly edgeId: string;
   readonly consumerAddress: string;
   readonly providerAddress: string;
@@ -660,6 +662,7 @@ export function lowering(
         return yield* Effect.fail(unknownProvisionerError(extension, need.brand, edgeId));
       }
       const ref = yield* provisioner.provision({
+        app: graph.root.id,
         edgeId,
         consumerAddress: edge.to,
         providerAddress: edge.from,
