@@ -149,6 +149,7 @@ describe('the failure cause through a real child process', () => {
       `import { captureEngineFailure } from ${JSON.stringify(modulePath)};\n` +
         'captureEngineFailure();\n' +
         "console.log('[web] creating');\n" +
+        "process.stdout.write('Plan: 1 to create\\n');\n" +
         `console.error('error: 409 Conflict (Authorization: Bearer ' + process.env.PRISMA_SERVICE_TOKEN + ')');\n` +
         `process.exitCode = ${String(exitCode)};\n`,
     );
@@ -164,12 +165,14 @@ describe('the failure cause through a real child process', () => {
     return { child, resultFile };
   }
 
-  test('a non-zero exit leaves the redacted cause beside the result file, and the output still reaches the terminal unchanged', () => {
+  test('a non-zero exit leaves the redacted cause beside the result file, and the output still reaches stderr unchanged', () => {
     const { child, resultFile } = runChild(1);
 
     expect(child.status).toBe(1);
-    expect(child.stdout).toBe('[web] creating\n');
-    expect(child.stderr).toBe('error: 409 Conflict (Authorization: Bearer real-service-token)\n');
+    expect(child.stdout).toBe('');
+    expect(child.stderr).toBe(
+      '[web] creating\nPlan: 1 to create\nerror: 409 Conflict (Authorization: Bearer real-service-token)\n',
+    );
     expect(readEngineFailureCause(resultFile)).toBe(
       'error: 409 Conflict (Authorization: Bearer [redacted])',
     );

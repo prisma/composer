@@ -5,6 +5,7 @@
  */
 import { defineCommand } from '@prisma/cli-engine';
 import { notOk, ok } from '@prisma/cli-engine/protocol';
+import { dataLine } from '../data-lines.ts';
 import type { ComposerOperations } from '../family.ts';
 import { composerSection } from '../section.ts';
 import { toEngineError } from '../translate-error.ts';
@@ -52,7 +53,7 @@ export const createDevStopCommand = (operations: ComposerOperations) =>
                       rows: stopped.map(({ address, kind }) => [address, kind]),
                     },
                   ],
-            stdout: () => [],
+            stdout: () => stopped.map(({ address, kind }) => dataLine([address, kind])),
             json: () => result.value,
             next: () => [],
           },
