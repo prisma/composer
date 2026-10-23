@@ -4,10 +4,14 @@
  *
  * 1. It exits 0 once every service answers, and the services keep answering
  *    after it exits.
- * 2. Stopping the app then stops them. The installed host does not mount
- *    `prisma dev stop` yet, so this calls the `devStop` operation of
- *    `@prisma/composer/control`, which that command renders.
- * 3. A detached run that fails before ready leaves nothing of the app
+ * 2. The front door points at `prisma dev logs`, and the services' own
+ *    output is readable: each service's last lines, then a followed stream.
+ *    The installed host may not mount `prisma dev logs` yet, so this calls
+ *    the `devLogs` operation of `@prisma/composer/control`, which that
+ *    command renders.
+ * 3. Stopping the app then stops them, through the `devStop` operation for
+ *    the same reason.
+ * 4. A detached run that fails before ready leaves nothing of the app
  *    running. The Compute emulator is restarted with a one-millisecond
  *    readiness timeout, so the first service fails after the converge has
  *    started the app's databases.
@@ -27,7 +31,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Load, module } from '@prisma/composer';
 import { DEV_DIR } from '@prisma/composer/config';
-import { devStop } from '@prisma/composer/control';
+import { devLogs, devStop } from '@prisma/composer/control';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
 import prismaConfig from '../prisma.config.ts';
 import { prismaBinDir } from './spawn-prisma.ts';
@@ -223,13 +227,67 @@ async function main(): Promise<void> {
   }
   console.log('[detach] PASS: exit 0 once ready, and every service answers after it exits');
 
-  // ——— 2. Stopping the app stops them ———
+  // ——— 2. The services' logs ———
+  assert(
+    detached.log.includes('"text":"logs: prisma dev logs"'),
+    'the front door ends with the logs line',
+  );
+  const webLogs = await devLogs({ config, address: 'web', tail: 20, cwd: integrationDir });
+  assert(webLogs.ok, `devLogs web succeeds (${webLogs.ok ? '' : webLogs.failure.message})`);
+  const webLines: string[] = [];
+  for await (const { service, line } of webLogs.value.lines) {
+    assert(service === 'web', `every line read for web is web's (got ${service})`);
+    webLines.push(line);
+  }
+  assert(
+    webLines.some((line) => line.startsWith('[fixture] web listening on ')),
+    `web's console.log output is in its log (got ${JSON.stringify(webLines)})`,
+  );
+  const allLogs = await devLogs({ config, cwd: integrationDir });
+  assert(allLogs.ok, `devLogs succeeds (${allLogs.ok ? '' : allLogs.failure.message})`);
+  const services = new Set<string>();
+  for await (const { service } of allLogs.value.lines) services.add(service);
+  assert(
+    [...services].sort().join(',') === 'bkg,web',
+    `without an address, every service's lines are read (got ${[...services].join(',')})`,
+  );
+  const following = new AbortController();
+  const followed = await devLogs({
+    config,
+    address: 'bkg',
+    tail: 5,
+    follow: true,
+    signal: following.signal,
+    cwd: integrationDir,
+  });
+  assert(followed.ok, `devLogs --follow succeeds (${followed.ok ? '' : followed.failure.message})`);
+  const followTimer = setTimeout(() => following.abort(), 10_000);
+  let followedLine: string | undefined;
+  for await (const { line } of followed.value.lines) {
+    followedLine = line;
+    following.abort();
+  }
+  clearTimeout(followTimer);
+  assert(
+    followedLine?.startsWith('[fixture] bg listening on ') === true,
+    `a followed stream starts with the tail (got ${String(followedLine)})`,
+  );
+  const notAService = await devLogs({ config, address: 'appdb', cwd: integrationDir });
+  assert(
+    !notAService.ok && notAService.failure.code === 'DEV.NO_LOGS',
+    `a database's address fails with DEV.NO_LOGS (got ${notAService.ok ? 'ok' : notAService.failure.code})`,
+  );
+  console.log(
+    "[detach] PASS: the front door points at the logs, and they hold the services' output",
+  );
+
+  // ——— 3. Stopping the app stops them ———
   const stopped = await devStop({ config, cwd: integrationDir });
   assert(stopped.ok, `devStop succeeds (${stopped.ok ? '' : stopped.failure.message})`);
   await assertNothingListens('after stopping');
   console.log('[detach] PASS: stopping the app closes every service and database port');
 
-  // ——— 3. A failure before ready leaves nothing running ———
+  // ——— 4. A failure before ready leaves nothing running ———
   // The Compute emulator reads the timeout when it starts, so end it first.
   await stopEmulator('compute');
   const failed = await runDetached(env({ PRISMA_COMPOSER_SERVICE_READY_TIMEOUT_MS: '1' }));
