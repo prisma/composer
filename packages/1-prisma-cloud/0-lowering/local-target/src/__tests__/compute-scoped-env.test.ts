@@ -53,6 +53,15 @@ describe('scopedEnvRows()', () => {
     expect(scopedEnvRows(all, 'web')).toEqual({ SHARED_FEATURE_FLAG: 'on' });
   });
 
+  test('a full address whose app name has a `-` matches its rows under `_`', () => {
+    const all = {
+      COMPOSER_MY_SHOP_WEB_PORT: '3000',
+      COMPOSER_MY_SHOP_API_PORT: '3001',
+    };
+
+    expect(scopedEnvRows(all, 'my-shop.web')).toEqual({ COMPOSER_MY_SHOP_WEB_PORT: '3000' });
+  });
+
   test('an empty env store scopes to an empty object', () => {
     expect(scopedEnvRows({}, 'web')).toEqual({});
   });

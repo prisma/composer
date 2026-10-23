@@ -69,11 +69,21 @@ export function paramEntries(node: ServiceNode): readonly ParamEntry[] {
   return entries;
 }
 
+/**
+ * An address's segments as they appear in a `COMPOSER_` key. The app name may
+ * contain `-`, which no POSIX variable name may, so it becomes `_` (ADR-0056).
+ */
+export const addressKeySegments = (address: string): string[] =>
+  address
+    .split('.')
+    .filter((s) => s.length > 0)
+    .map((s) => s.replaceAll('-', '_'));
+
 export const configKey = (
   address: string,
   d: { owner: ParamEntry['owner']; name: string },
 ): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
+  const segments = addressKeySegments(address);
   const owner = d.owner === 'service' ? [] : [d.owner.input];
   // Every generated key lives in the framework's reserved COMPOSER_ namespace
   // (ADR-0029), so it can never collide with — and silently overwrite — a
@@ -245,7 +255,7 @@ export const inputKey = (address: string): string =>
  * user-provisioned var.
  */
 export const generatedParamVarName = (address: string, path: string): string => {
-  const segments = address.split('.').filter((s) => s.length > 0);
+  const segments = addressKeySegments(address);
   const pathSegments = path.split('.').filter((s) => s.length > 0);
   return ['COMPOSER', ...segments, ...pathSegments, 'GENERATED'].join('_').toUpperCase();
 };
