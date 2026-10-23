@@ -37,7 +37,7 @@ import {
   stopAppInstances,
 } from '@internal/local-target';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
-import { resourceName, serviceAppName } from '../service-app.ts';
+import { serviceAppName } from '../service-app.ts';
 import { daemonEntry } from './daemon-entry.ts';
 
 const DATABASE_TYPES = new Set(['raw-postgres', 'postgres']);
@@ -47,7 +47,7 @@ const BUCKET_TYPE = 's3';
  * This extension's nodes that run on an emulator, in `graph.nodes` order —
  * dependencies first, ties in declaration order — keyed by the name their
  * resource is given: a service by its `App` name, a database and a bucket by
- * their resource name — the keys the local providers look them up by.
+ * their address, which is their resource ID — the keys the local providers look them up by.
  */
 function appNodes(input: LocalTargetEmulatorsInput): AppNode[] {
   return input.graph.nodes.flatMap((n): AppNode[] => {
@@ -55,10 +55,10 @@ function appNodes(input: LocalTargetEmulatorsInput): AppNode[] {
       return [{ address: serviceAppName(n.id), kind: 'service' }];
     }
     if (n.node.kind === 'resource' && DATABASE_TYPES.has(n.node.type)) {
-      return [{ address: resourceName(n.id), kind: 'database' }];
+      return [{ address: n.id, kind: 'database' }];
     }
     if (n.node.kind === 'resource' && n.node.type === BUCKET_TYPE) {
-      return [{ address: resourceName(n.id), kind: 'bucket' }];
+      return [{ address: n.id, kind: 'bucket' }];
     }
     return [];
   });

@@ -15,12 +15,7 @@ import type * as Layer from 'effect/Layer';
 import * as Predicate from 'effect/Predicate';
 import * as Redacted from 'effect/Redacted';
 import { appNameOf } from './app-name.ts';
-import {
-  type AppScope,
-  ensureBucketInstance,
-  recordedInstanceId,
-  recordKeyOf,
-} from './emulator-instances.ts';
+import { type AppScope, ensureBucketInstance, recordedInstanceId } from './emulator-instances.ts';
 import { DEV_TIMESTAMP, projectIdOfInput } from './upstream-attributes.ts';
 
 /** Reads a bucket id from upstream's `bucket` input: a plain string or a resolved `Prisma.Bucket` attributes record. */
@@ -58,7 +53,8 @@ export function LocalBucketProvider(
     reconcile: ({ news, id }) =>
       Effect.tryPromise({
         try: async () => {
-          const name = recordKeyOf('bucket', id, news.name);
+          // The resource ID is the node's address, the record's key (ADR-0056).
+          const name = id;
           const bucket = await ensureBucketInstance(
             appScopeOf(input),
             name,

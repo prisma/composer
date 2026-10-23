@@ -151,25 +151,6 @@ function normalized(stored: StoredRecord | undefined): EmulatorInstances | undef
   return { current: stored.app, apps: { [stored.app]: { nodes } } };
 }
 
-/**
- * A database's or bucket's key in the record: its resource `name`, which the
- * lowering sets from the same helper the emulators hook keys it by. A
- * resource without a name cannot be matched to the instance the hook
- * recorded, so it is refused rather than recorded under another key.
- */
-export function recordKeyOf(
-  kind: 'database' | 'bucket',
-  resourceId: string,
-  name: string | undefined,
-): string {
-  if (name === undefined) {
-    throw new Error(
-      `local dev: the ${kind} resource "${resourceId}" has no name, so its emulator instance cannot be found in the directory's record.`,
-    );
-  }
-  return name;
-}
-
 /** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */
 export function directoryOf(devDir: string): string {
   const normalizedDir = path.normalize(devDir);
