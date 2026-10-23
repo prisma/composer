@@ -225,7 +225,7 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
-          undefined,
+          process.env,
           o().absentSecrets(),
         );
         if (inputRow !== undefined) {

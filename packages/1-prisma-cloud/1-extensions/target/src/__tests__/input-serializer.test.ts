@@ -128,6 +128,15 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
     expect(JSON.parse(row?.value ?? '')).toEqual({ stripeEnabled: false });
   });
 
+  test('an async schema fails at deploy with an error naming the service', () => {
+    const asyncSchema: StandardSchemaV1 = {
+      '~standard': { version: 1, vendor: 'test', validate: async (value) => ({ value }) },
+    };
+    expect(() => serializeInput(svc(asyncSchema), 'web', {}, {})).toThrow(
+      /^invalid input for service "web": config param schema validation must be synchronous/,
+    );
+  });
+
   test('the on arm with a MISSING secret fails at deploy with the schema library’s own error', () => {
     expect(() => serializeInput(svc(conditional), 'web', { stripeEnabled: true }, {})).toThrow(
       /invalid input for service "web"/,

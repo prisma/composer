@@ -89,6 +89,20 @@ const paramGraph = () =>
     }),
   );
 
+const mixedGraph = (schema: StandardSchemaV1<unknown, unknown>) =>
+  Load(
+    module('app', ({ provision }) => {
+      provision(compute({ name: 'billing', deps: {}, input: schema, build }), {
+        id: 'billing',
+        input: { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      });
+      provision(compute({ name: 'web', deps: {}, build }), {
+        id: 'web',
+        params: { port: envParam('APP_PORT') },
+      });
+    }),
+  );
+
 const NAMES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'APP_PORT'];
 
 const preflight = (graph: ReturnType<typeof Load>) =>
@@ -224,7 +238,25 @@ describe('prisma dev preflight', () => {
 
     expect(message).toContain('APP_PORT');
     expect(message).toContain('service "web"');
-    expect(message).toContain('Set each in the shell you run `prisma dev` from.');
+    expect(message).toContain('export it in the shell you run `prisma dev` from');
+    expect(message).toContain("process.loadEnvFile('.env')");
+  });
+
+  test('missing params and secrets are reported together, with the ways to set them given once', async () => {
+    const message = await preflightError(mixedGraph(requiresSecrets('stripeKey')));
+
+    expect(message).toContain('APP_PORT  (required by service "web")');
+    expect(message).toContain('STRIPE_SECRET_KEY  (required by service "billing"');
+    expect(message.split('Set each missing variable').length - 1).toBe(1);
+  });
+
+  test('an input that fails even with every secret set is reported as invalid, next to the other problems', async () => {
+    const message = await preflightError(mixedGraph(requiresSecrets('somethingElse')));
+
+    expect(message).toContain('invalid input for service "billing": somethingElse is required');
+    expect(message).not.toContain('Deploy-time');
+    expect(message).not.toContain('STRIPE_SECRET_KEY');
+    expect(message).toContain('APP_PORT  (required by service "web")');
   });
 
   test('an env-sourced param that is set is fingerprinted for the alchemy process', async () => {

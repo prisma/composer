@@ -2568,6 +2568,71 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
   });
 });
 
+describe('a secret the prisma dev preflight found unset', () => {
+  test('is left out of the input document the compute service writes', () => {
+    const o: ResolvedCloudOptions = {
+      workspaceId: 'ws_1',
+      providerParams: new Map(),
+      pointerUpdatedAt: () => undefined,
+      absentSecrets: () => new Set(['STRIPE_WEBHOOK_SECRET']),
+    };
+    const node = compute({
+      name: 'billing',
+      deps: {},
+      input: type({ stripeKey: secretString(), 'webhookSecret?': secretString() }),
+      build: {
+        extension: '@prisma/composer/node',
+        type: 'node',
+        module: 'file:///test/service.ts',
+        entry: 'server.js',
+      },
+    });
+    const ctx = {
+      address: 'billing',
+      node,
+      graph: {
+        inputBindings: [
+          {
+            serviceAddress: 'billing',
+            binding: {
+              stripeKey: envSecret('STRIPE_SECRET_KEY'),
+              webhookSecret: envSecret('STRIPE_WEBHOOK_SECRET'),
+            },
+          },
+        ],
+        edges: [],
+      },
+      application: {
+        projectId: 'shop-project#cloud-id',
+        branchId: undefined,
+        defaultBranchId: undefined,
+        branchless: false,
+      },
+      provisioned: new Map(),
+    } as unknown as LowerContext;
+    const provisioned = {
+      serviceId: 'billing-svc#cloud-id',
+      projectId: 'shop-project#cloud-id',
+      endpointDomain: 'https://billing-svc.example',
+    };
+    const before = recorded.envVar.length;
+
+    const descriptor: NodeDescriptor = computeDescriptor(() => o);
+    if (descriptor.kind !== 'service') throw new Error('expected a service descriptor');
+    run<MockedSerialized>(
+      descriptor.serialize(ctx, provisioned, { service: { port: 3000 }, inputs: {} }),
+    );
+
+    const writes = recorded.envVar.slice(before).map(([, props]) => props);
+    expect(writes).toContainEqual({
+      project: 'shop-project#cloud-id',
+      key: 'COMPOSER_BILLING_INPUT',
+      value: '{"stripeKey":{"$secret":"STRIPE_SECRET_KEY"}}',
+      class: 'production',
+    });
+  });
+});
+
 describe('name validation — fail fast on Prisma name constraints, before creating anything', () => {
   const build = {
     extension: '@prisma/composer/node',

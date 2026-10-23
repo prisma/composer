@@ -512,7 +512,7 @@ export function serializeInput(
   if (judged === undefined) return undefined;
   if (!judged.ok) {
     throw new Error(
-      `invalid input for service "${address}": config param validation failed: ${judged.message}\n` +
+      `invalid input for service "${address}": ${judged.thrown ? '' : 'config param validation failed: '}${judged.message}\n` +
         '(Deploy-time validation sees each envSecret leaf as an opaque, empty SecretString box. ' +
         'A failure naming a secret field means the binding and schema disagree about its ' +
         'secretness, or the schema refines on secret content — which ADR-0042 forbids.)',
@@ -536,7 +536,12 @@ export function serializeInput(
 
 type InputJudgement =
   | ({ readonly ok: true; readonly validated: unknown } & ResolvedInputBinding)
-  | { readonly ok: false; readonly message: string };
+  | {
+      readonly ok: false;
+      readonly message: string;
+      /** True when the validator threw (an async or broken schema) rather than reporting issues. */
+      readonly thrown: boolean;
+    };
 
 /** Resolves the binding and validates it with the service's schema; undefined for a service with no input schema. */
 function judgeInput(
@@ -561,9 +566,18 @@ function judgeInput(
     );
   }
   const resolved = resolveInputBinding(binding, env, address, absentSecrets);
-  const result = standardValidate(schema, resolved.resolved);
+  let result: ReturnType<typeof standardValidate>;
+  try {
+    result = standardValidate(schema, resolved.resolved);
+  } catch (cause) {
+    return {
+      ok: false,
+      message: cause instanceof Error ? cause.message : String(cause),
+      thrown: true,
+    };
+  }
   return 'issues' in result
-    ? { ok: false, message: result.issues }
+    ? { ok: false, message: result.issues, thrown: false }
     : { ok: true, validated: result.value, ...resolved };
 }
 
@@ -580,7 +594,9 @@ export function inputValidationFailure(
   absentSecrets: ReadonlySet<string>,
 ): string | undefined {
   const judged = judgeInput(node, address, binding, env, absentSecrets);
-  return judged === undefined || judged.ok ? undefined : judged.message;
+  if (judged === undefined || judged.ok) return undefined;
+  if (judged.thrown) throw new Error(`invalid input for service "${address}": ${judged.message}`);
+  return judged.message;
 }
 
 /**

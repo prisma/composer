@@ -17,7 +17,7 @@ import { DEV_DIR } from '@internal/core/config';
 import { removeRetiredSecretsFile } from '@internal/local-target';
 import { serializeDevPreflightPayload } from '../dev-preflight-payload.ts';
 import { collectPreflightNames, inputSecretNames, type PreflightName } from '../preflight-names.ts';
-import { inputValidationFailure, serializeInput } from '../serializer.ts';
+import { inputValidationFailure } from '../serializer.ts';
 
 interface MissingSecrets {
   /** One name the schema requires, or several of which it requires some. */
@@ -34,18 +34,14 @@ const isSet = (env: Env, name: string): boolean => {
 };
 
 const HOW_TO_SET =
-  'Set each one in either of these ways:\n' +
+  'Set each missing variable in either of these ways:\n' +
   '  - export it in the shell you run `prisma dev` from, or\n' +
   "  - load a .env file from prisma.config.ts, for example with process.loadEnvFile('.env') " +
   "or import 'dotenv/config'.";
 
 function missingEnvParamsSection(missing: readonly PreflightName[]): string {
   const lines = missing.map((m) => `  - ${m.name}  (required by service "${m.serviceAddress}")`);
-  return (
-    `${missing.length} env-sourced param(s) are not set in this shell:\n` +
-    `${lines.join('\n')}\n\n` +
-    'Set each in the shell you run `prisma dev` from.'
-  );
+  return `${missing.length} env-sourced param(s) are not set:\n${lines.join('\n')}`;
 }
 
 function missingSecretsSection(missing: readonly MissingSecrets[]): string {
@@ -55,7 +51,7 @@ function missingSecretsSection(missing: readonly MissingSecrets[]): string {
       : `  - some of ${m.names.join(', ')}  (service "${m.serviceAddress}" needs some of them: ` +
         `${m.message})`,
   );
-  return `required secrets are not set:\n${lines.join('\n')}\n\n${HOW_TO_SET}`;
+  return `required secrets are not set:\n${lines.join('\n')}`;
 }
 
 function serviceNodeAt(graph: Graph, address: string): ServiceNode {
@@ -98,15 +94,18 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
   const absentSecrets = new Set<string>();
   const pointed = new Set<string>();
   const missingSecrets: MissingSecrets[] = [];
+  const invalidInputs: string[] = [];
   for (const { serviceAddress, binding } of inputManifest(input.graph)) {
     const names = inputSecretNames(binding, serviceAddress);
     const unset = names.filter((name) => !isSet(env, name));
     for (const name of names) (isSet(env, name) ? pointed : absentSecrets).add(name);
     if (unset.length === 0) continue;
     const node = serviceNodeAt(input.graph, serviceAddress);
-    // An input that fails with every secret present fails for another reason;
-    // report it as the deploy would rather than blame the unset secrets.
-    serializeInput(node, serviceAddress, binding, env);
+    const invalid = inputValidationFailure(node, serviceAddress, binding, env, new Set());
+    if (invalid !== undefined) {
+      invalidInputs.push(`invalid input for service "${serviceAddress}": ${invalid}`);
+      continue;
+    }
     missingSecrets.push(...requiredSecrets(node, serviceAddress, binding, unset, env));
   }
 
@@ -116,12 +115,13 @@ export async function runDevPreflight(input: PreflightInput): Promise<PreflightP
     else missingParams.push(param);
   }
 
-  const sections = [
+  const missing = [
     ...(missingParams.length > 0 ? [missingEnvParamsSection(missingParams)] : []),
     ...(missingSecrets.length > 0 ? [missingSecretsSection(missingSecrets)] : []),
   ];
+  const sections = [...invalidInputs, ...missing, ...(missing.length > 0 ? [HOW_TO_SET] : [])];
   if (sections.length > 0) {
-    throw new Error(`local dev preflight failed — ${sections.join('\n\nAlso, ')}`);
+    throw new Error(`local dev preflight failed:\n\n${sections.join('\n\n')}`);
   }
 
   if (absentSecrets.size === 0 && pointed.size === 0) return undefined;
