@@ -8,6 +8,7 @@
  */
 import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
+import { isDevPreflightPayload } from '../dev-preflight-payload.ts';
 
 /** The pointed platform variable's `updatedAt`, or undefined when it is unknown (dev, or a name the deploy just provisioned). */
 export type PointerUpdatedAt = (name: string) => string | undefined;
@@ -74,9 +75,12 @@ export function pointerUpdatedAtLookup(
   return (name) => {
     const mine = own.get(name);
     if (mine !== undefined) return mine;
-    transported ??= deserializePointerUpdatedAt(
-      readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env),
-    );
+    if (transported === undefined) {
+      const payload = readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env);
+      transported = isDevPreflightPayload(payload)
+        ? new Map()
+        : deserializePointerUpdatedAt(payload);
+    }
     return transported.get(name);
   };
 }

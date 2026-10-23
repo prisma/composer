@@ -138,8 +138,8 @@ describe('invariant 4: environment touches are confined to the config serializer
     expect(hits.sort((a, b) => a.file.localeCompare(b.file))).toEqual([
       { file: 'compute.ts', count: 2 },
       { file: 'container.ts', count: 3 },
-      { file: 'control/extension.ts', count: 3 },
-      { file: 'local-target/preflight.ts', count: 2 },
+      { file: 'control/extension.ts', count: 4 },
+      { file: 'local-target/preflight.ts', count: 1 },
       { file: 'preflight.ts', count: 2 },
       { file: 'serializer.ts', count: 12 },
       { file: 'testing.ts', count: 4 },

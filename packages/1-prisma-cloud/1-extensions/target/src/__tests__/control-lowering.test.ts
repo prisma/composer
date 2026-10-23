@@ -2518,6 +2518,7 @@ describe("descriptors/compute.ts's provider-param loop is generic over the regis
         workspaceId: 'ws_1',
         providerParams,
         pointerUpdatedAt: () => undefined,
+        absentSecrets: () => new Set(),
       };
       const node = compute({ name: 'multi', deps: {}, build, expose: { any: anyContract } });
       const ctx = {

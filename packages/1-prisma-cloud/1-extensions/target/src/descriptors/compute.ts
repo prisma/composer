@@ -225,6 +225,8 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
+          undefined,
+          o().absentSecrets(),
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned

@@ -90,6 +90,8 @@ export interface ResolvedCloudOptions {
    * that answers "unknown" for every name, so no caller has to.
    */
   readonly pointerUpdatedAt: PointerUpdatedAt;
+  /** The `envSecret` names the `prisma dev` preflight found unset; their leaves are left out of the input document. Always empty for a deploy. */
+  readonly absentSecrets: () => ReadonlySet<string>;
 }
 
 // Prisma's Connection create constrains `name` to 3–65 chars (Management API:

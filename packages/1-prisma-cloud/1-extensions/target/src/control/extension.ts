@@ -30,6 +30,7 @@ import type {
   ResolvedCloudOptions,
   ServiceProviderParam,
 } from '../descriptors/shared.ts';
+import { transportedAbsentSecrets } from '../dev-preflight-payload.ts';
 import { GeneratedParamProvider } from '../generated-param-resource.ts';
 import { SELF_ORIGIN } from '../origin-key.ts';
 import { OrmMigrationProvider } from '../orm-migration-resource.ts';
@@ -277,7 +278,9 @@ export const PROVIDER_PARAMS: ReadonlyMap<symbol, ProviderParam | ServiceProvide
  * required for `prisma dev`, which never sets `PRISMA_REGION` and
  * must not fail on its absence (local-dev spec § 5).
  */
-function resolveOptions(opts: PrismaCloudOptions): Omit<ResolvedCloudOptions, 'pointerUpdatedAt'> {
+function resolveOptions(
+  opts: PrismaCloudOptions,
+): Omit<ResolvedCloudOptions, 'pointerUpdatedAt' | 'absentSecrets'> {
   const workspaceId = opts.workspaceId ?? process.env['PRISMA_WORKSPACE_ID'] ?? '';
 
   if (opts.region !== undefined) {
@@ -312,7 +315,11 @@ function lazyOptions(
 ): () => ResolvedCloudOptions {
   let cached: ResolvedCloudOptions | undefined;
   return () => {
-    cached ??= { ...resolveOptions(opts), pointerUpdatedAt };
+    cached ??= {
+      ...resolveOptions(opts),
+      pointerUpdatedAt,
+      absentSecrets: transportedAbsentSecrets(process.env),
+    };
     return cached;
   };
 }

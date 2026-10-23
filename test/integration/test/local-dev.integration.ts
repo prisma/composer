@@ -408,8 +408,8 @@ async function main(): Promise<void> {
   // other call in this script is handed `devDir` explicitly (fixtureDir-
   // based). This script runs from the package root (test/integration), not
   // the fixture dir, so preflight must be run with cwd temporarily pointed
-  // at the fixture — otherwise its secrets.json write (S5's secret/env-param
-  // proof) lands somewhere this script never looks. Restored in `finally`.
+  // at the fixture — otherwise it works on a state directory this script
+  // never looks at. Restored in `finally`.
   const originalCwd = process.cwd();
   process.chdir(fixtureDir);
 
@@ -549,21 +549,15 @@ async function main(): Promise<void> {
       'the deployed web child carries COMPOSER_WEB_PORT = the emulator-assigned port, JSON-encoded',
     );
 
-    // secrets.json: the shell-sourced secret + env-param this run set above,
-    // verbatim (S5 addition — the placeholder/hard-error paths have their
-    // own dedicated script).
-    const secrets = readJson(path.join(devDir, 'secrets.json')) as Record<string, string>;
-    // Compared as a boolean so the secret's value never rides an assertion
-    // error into the harness's failure log (CodeQL js/clear-text-logging).
     assertEqual(
-      secrets['LOCALDEV_FIXTURE_API_KEY'] === 'test-api-key',
-      true,
-      'secrets.json carries the shell-sourced secret verbatim',
+      fs.existsSync(path.join(devDir, 'secrets.json')),
+      false,
+      'dev stores no secret values on disk',
     );
     assertEqual(
-      secrets['LOCALDEV_FIXTURE_GREETING'],
-      'hello',
-      'secrets.json carries the shell-sourced env-param',
+      Object.values(env).some((value) => value.includes('test-api-key')),
+      false,
+      'env.json holds no secret value',
     );
 
     // 11. The database the directory's record names for `appdb`, as the
