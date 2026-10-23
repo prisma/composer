@@ -494,8 +494,10 @@ An app with a module or a service directly below the root named like the app
 (`shop.shop.x` beside `shop.x`, in any letter case), or with modules that spell
 an app name containing `-` or `_` (`my-shop.my.shop.x` beside `my-shop.x`), can
 hit one more step. There, one node's new variable key is the key an earlier
-version wrote for another node. The deploy stops before changing anything and
-names the variable and both nodes. Delete that one variable, then deploy again:
+version wrote for another node. The deploy stops before any resource is created, changed or deleted, and
+names the variable and both nodes. The Branch's topology in the Console already
+shows the new addresses by then. It lists every such variable at once. Delete each,
+then deploy again:
 
 ```sh
 prisma project env delete COMPOSER_SHOP_X_ORIGIN --project <project-id> --role production
