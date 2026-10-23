@@ -50,7 +50,7 @@ The platform treats `logicalId` as an opaque string and learns containment from 
 # Cross-cutting requirements
 
 - **One form of node identity.** Every surface that names a node uses the fully qualified address: `logicalId`s, the topology, resource IDs, CLI input and output, errors, `serviceOrigin`, `dev url`.
-- **No data loss when upgrading.** The first deploy of an existing app with the new Composer keeps its databases' rows, buckets' objects, generated secrets and RPC service keys. Local `prisma dev` keeps its databases.
+- **No data loss when upgrading.** Critical. The first deploy of an existing app with the new Composer keeps its databases' rows, buckets' objects, generated secrets and RPC service keys, and leaves every piece of platform state the Composer graph does not represent untouched: custom domains, environment variables set by hand, Connections made by hand. Local `prisma dev` keeps its databases.
 - **Every new or changed command** follows the CLI's help standard, gives JSON with `--json`, exits non-zero on failure, and has an end-to-end test against the real Management API, as the `prisma` CLI repository requires.
 - **Recorded decisions are updated before the code that depends on them merges.** Agents treat the design docs as binding.
 

@@ -51,6 +51,8 @@ One concept, the form of a node's identity, applied to every place it is written
 
 ## Slice-specific done conditions
 
+- **Critical (Will, 2026-10-23): upgrading from the last Composer release to this one loses no application data.** No database is dropped, no bucket or object deleted, no custom domain removed, and no platform state that the Composer graph does not represent is touched. QA plants such state before the upgrade (a custom domain on a service, an environment variable set by hand, an extra Connection made by hand on the database) and shows it is unchanged after. Only Composer's own Connections and access keys are recreated, with new credentials (design note 5).
+
 - A fabricated app with a database holding rows, a bucket holding objects, a generated secret, an RPC edge and a `serviceOrigin`, deployed with the current release, then redeployed from this branch: rows, objects, the secret's value and the RPC key are unchanged; rows carry full-address `logicalId`s; the deploy state has the new resource IDs and none of the old.
 - The same app deploys from scratch to a new stage from this branch.
 - `prisma dev` on a directory last run with the current release keeps its local database's data.
