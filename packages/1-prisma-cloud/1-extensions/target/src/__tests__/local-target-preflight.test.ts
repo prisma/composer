@@ -225,12 +225,26 @@ describe('prisma dev preflight', () => {
     expect(Object.values(childEnv).join('')).not.toContain('sk_test_1');
   });
 
-  test('a dev payload on the transport does not read as deploy rotation timestamps', async () => {
+  test("the deployment's trigger member for a secret changes exactly when its value changes", async () => {
+    const graph = billingGraph(requiresSecrets('stripeKey'));
+    const memberFor = async (value: string) => {
+      process.env['STRIPE_SECRET_KEY'] = value;
+      const lookup = pointerUpdatedAtLookup(new Map(), transported(await preflight(graph)));
+      return lookup('STRIPE_SECRET_KEY');
+    };
+
+    const first = await memberFor('sk_test_1');
+    expect(await memberFor('sk_test_1')).toBe(first);
+    expect(await memberFor('sk_test_2')).not.toBe(first);
+    expect(first).toBe(sha256('sk_test_1'));
+  });
+
+  test('an unset secret has no trigger member value', async () => {
     process.env['STRIPE_SECRET_KEY'] = 'sk_test_1';
 
     const childEnv = transported(await preflight(billingGraph(requiresSecrets('stripeKey'))));
 
-    expect(pointerUpdatedAtLookup(new Map(), childEnv)('STRIPE_SECRET_KEY')).toBeUndefined();
+    expect(pointerUpdatedAtLookup(new Map(), childEnv)('STRIPE_WEBHOOK_SECRET')).toBeUndefined();
   });
 
   test('a missing env-sourced param is a hard error naming the variable and service', async () => {

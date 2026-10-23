@@ -85,9 +85,9 @@ export interface ResolvedCloudOptions {
    * out-of-band rotation signal the compute deploy hook folds into its
    * environment fingerprint. The deploy preflight supplies the times (it
    * already reads exactly these names off the platform) and transports them to
-   * the alchemy process. Always present: a run with no times to offer — every
-   * `prisma dev` run, which talks to no platform — supplies a lookup
-   * that answers "unknown" for every name, so no caller has to.
+   * the alchemy process. Under `prisma dev`, which talks to no platform, the
+   * lookup answers with a hash of each variable's current value instead. A
+   * name with no answer reads as unknown.
    */
   readonly pointerUpdatedAt: PointerUpdatedAt;
   /** The `envSecret` names the `prisma dev` preflight found unset; their leaves are left out of the input document. Always empty for a deploy. */

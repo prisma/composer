@@ -59,7 +59,7 @@ import type {
   ExtensionDescriptor,
   LocalTargetAttachment,
 } from '@prisma/composer/config';
-import { containerEnv, DEV_DIR } from '@prisma/composer/config';
+import { containerEnv, DEV_DIR, preflightEnv } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { renderDevStackFile } from '@prisma/composer-cli/testing';
 import { prismaCloud } from '@prisma/composer-prisma-cloud/control';
@@ -455,9 +455,10 @@ async function main(): Promise<void> {
     // (unrelated) proofs keep passing regardless of shell state.
     process.env['LOCALDEV_FIXTURE_API_KEY'] = 'test-api-key';
     process.env['LOCALDEV_FIXTURE_GREETING'] = 'hello';
-    if (dev.preflight !== undefined) {
-      await dev.preflight({ graph, container: devContainer, stage: undefined });
-    }
+    const preflightPayload =
+      dev.preflight === undefined
+        ? undefined
+        : await dev.preflight({ graph, container: devContainer, stage: undefined });
     process.chdir(originalCwd);
 
     // 6. Emulators — ensures compute always, buckets because the graph has
@@ -475,7 +476,13 @@ async function main(): Promise<void> {
     // 7. Write the dev stack file and converge through the REAL alchemy binary.
     fs.mkdirSync(stackDir, { recursive: true });
     fs.writeFileSync(stackFile, renderStack(bundles));
-    const containerEnvVars = containerEnv(new Map([[descriptor.id, devContainer]]));
+    // The CLI hands the alchemy process the preflight's payload this way too.
+    const containerEnvVars = {
+      ...containerEnv(new Map([[descriptor.id, devContainer]])),
+      ...preflightEnv(
+        preflightPayload === undefined ? new Map() : new Map([[descriptor.id, preflightPayload]]),
+      ),
+    };
     const first = runAlchemyDeploy(containerEnvVars);
     if (first.status !== 0) {
       throw new Error(

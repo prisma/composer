@@ -378,9 +378,8 @@ export function computeDescriptor(
 
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        // Answers "unknown" for every name under `prisma dev`: dev runs
-        // no platform preflight, so no rotation timestamps exist. That costs
-        // nothing — the local Deployment provider reconciles unconditionally.
+        // Under `prisma dev` each member holds a hash of the variable's
+        // current value, so a changed value redeploys the services that read it.
         const pointerUpdatedAt = o().pointerUpdatedAt;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
         // collide with a row's own trigger member.

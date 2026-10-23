@@ -8,9 +8,9 @@
  */
 import { readPreflightPayload } from '@internal/core/config';
 import { PRISMA_CLOUD_EXTENSION_ID } from '../container.ts';
-import { isDevPreflightPayload } from '../dev-preflight-payload.ts';
+import { deserializeDevPreflightPayload, isDevPreflightPayload } from '../dev-preflight-payload.ts';
 
-/** The pointed platform variable's `updatedAt`, or undefined when it is unknown (dev, or a name the deploy just provisioned). */
+/** The pointed platform variable's `updatedAt` (under `prisma dev`, a hash of its current value), or undefined when it is unknown (a name the deploy just provisioned, or one unset in dev). */
 export type PointerUpdatedAt = (name: string) => string | undefined;
 
 /** The CLI-process side: what `preflight` hands the framework, or undefined when the deploy read no pointed variable at all. */
@@ -64,8 +64,8 @@ const payloadError = (reason: string): Error =>
  * The pointer lookup the node descriptors close over: `own` — filled by
  * `preflight` — in the CLI process, and the transported payload in the alchemy
  * process, where `own` is empty because that process never runs a preflight.
- * A name in neither reads as unknown, which is every name under
- * `prisma dev`.
+ * Under `prisma dev` the transported payload holds a hash of each value
+ * instead, so the trigger member moves exactly when the value changes.
  */
 export function pointerUpdatedAtLookup(
   own: ReadonlyMap<string, string>,
@@ -78,7 +78,7 @@ export function pointerUpdatedAtLookup(
     if (transported === undefined) {
       const payload = readPreflightPayload(PRISMA_CLOUD_EXTENSION_ID, env);
       transported = isDevPreflightPayload(payload)
-        ? new Map()
+        ? new Map(Object.entries(deserializeDevPreflightPayload(payload).fingerprints))
         : deserializePointerUpdatedAt(payload);
     }
     return transported.get(name);
