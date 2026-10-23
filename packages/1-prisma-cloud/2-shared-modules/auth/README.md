@@ -67,7 +67,7 @@ export default module('app', ({ provision }) => {
   const identity = provision(auth(), {
     id: 'auth',
     deps: { db },
-    params: { baseUrl: serviceOrigin('api') }, // the PUBLIC app origin
+    params: { baseUrl: serviceOrigin('app.api') }, // the PUBLIC app origin
   });
   provision(apiService, {
     id: 'api',
@@ -100,8 +100,8 @@ const proxy = authProxy(authApi);
 
 The database is a BOUNDARY dependency: the root decides dedicated vs shared.
 `baseUrl` is the public origin browsers see (scheme+host, no trailing slash,
-no path) — bind it with `serviceOrigin('<service address>')` so each stage
-trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
+no path) — bind it with `serviceOrigin('<app>.<service>')`, the service's
+full address, so each stage trusts its own URL, or `envParam('AUTH_BASE_URL')` for a custom domain. The
 instance secret is platform-minted inside the module; rotation is unsupported
 in v1 (rotating would invalidate every session and the encrypted jwks rows).
 
