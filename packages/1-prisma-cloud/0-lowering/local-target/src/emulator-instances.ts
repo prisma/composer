@@ -17,6 +17,7 @@ import {
   type ServiceInstanceInfo,
 } from '@internal/dev-emulators';
 import { createStore, type DevStore } from './dev-store.ts';
+import { withFullAddressKeys } from './legacy-address-keys.ts';
 import { resolvePrismaDevModulePath } from './prisma-dev-module.ts';
 
 export const EMULATOR_INSTANCES_FILE = 'emulator-instances.json';
@@ -139,16 +140,21 @@ function isStoredRecord(value: unknown): value is StoredRecord {
   return isEmulatorInstances(value) || isSingleAppRecord(value);
 }
 
-/** A single-app record reads as a record holding that one app; the next write rewrites it. */
+/**
+ * A single-app record reads as a record holding that one app, and a node keyed
+ * by its address without the app name reads under its full address. The next
+ * write rewrites the file in the current form.
+ */
 function normalized(stored: StoredRecord | undefined): EmulatorInstances | undefined {
-  if (stored === undefined || isEmulatorInstances(stored)) return stored;
+  if (stored === undefined) return undefined;
+  if (isEmulatorInstances(stored)) return withFullAddressKeys(stored);
   const nodes = Object.fromEntries(
     Object.entries(stored.nodes).map(([address, { id, port }]) => [
       address,
       { kind: 'service' as const, id, port },
     ]),
   );
-  return { current: stored.app, apps: { [stored.app]: { nodes } } };
+  return withFullAddressKeys({ current: stored.app, apps: { [stored.app]: { nodes } } });
 }
 
 /** The project directory that holds `devDir` (`<directory>/.prisma-composer/dev`). */

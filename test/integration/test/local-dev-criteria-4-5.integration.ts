@@ -285,7 +285,7 @@ async function main(): Promise<void> {
     );
     assertEqual(putRes.status, 201, 'PUT /blobs/proving-key.txt through the app');
 
-    const bucketDir = path.join(devDir, 'buckets', currentApp(), `${currentApp()}.files`);
+    const bucketDir = path.join(devDir, 'buckets', currentApp(), 'files');
     const objectPath = path.join(bucketDir, 'proving-key.txt');
     const onDisk = await waitForAsync(
       async () => (fs.existsSync(objectPath) ? fs.readFileSync(objectPath, 'utf8') : undefined),

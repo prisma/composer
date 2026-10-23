@@ -29,9 +29,17 @@ function bucketIdOfInput(value: unknown): string {
 
 export const BUCKETS_DIR = 'buckets';
 
-/** Where a bucket's objects live: in the project's dev directory, under its app, so `--fresh` removes them with the app. */
-export function bucketDataDir(scope: AppScope, name: string): string {
-  return path.join(scope.devDir, BUCKETS_DIR, scope.app, name);
+/**
+ * Where a bucket's objects live: in the project's dev directory, under its app, so `--fresh`
+ * removes them with the app. The folder is named by the address below the app, which is the
+ * name earlier releases gave it, so an upgrade finds the objects where they are.
+ */
+export function bucketDataDir(scope: AppScope, address: string): string {
+  const prefix = `${scope.app}.`;
+  if (!address.startsWith(prefix)) {
+    throw new Error(`local dev: bucket address "${address}" is not inside the app "${scope.app}".`);
+  }
+  return path.join(scope.devDir, BUCKETS_DIR, scope.app, address.slice(prefix.length));
 }
 
 function appScopeOf(input: LocalTargetProvidersInput): AppScope {

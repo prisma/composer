@@ -21,6 +21,7 @@ import * as Effect from 'effect/Effect';
 import { LocalBucketAccessKeyProvider, LocalBucketProvider } from '../bucket.ts';
 
 const APP = 'bucket-providers-app';
+const UPLOADS = `${APP}.uploads`;
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 
 const reconcileInput = (id: string, news: Record<string, unknown>) =>
@@ -71,17 +72,17 @@ describe.skipIf(process.platform === 'win32')('the local Bucket providers', () =
   }
 
   test('a Bucket creates a bucket instance once, with its data root in the project', async () => {
-    const first = await reconcileBucket('shop.uploads');
-    const again = await reconcileBucket('shop.uploads');
+    const first = await reconcileBucket(UPLOADS);
+    const again = await reconcileBucket(UPLOADS);
 
     expect(again.bucketId).toBe(first.bucketId);
     const instance = await bucketsClient().getInstance(first.bucketId);
-    expect(instance?.dir).toBe(path.join(input.devDir, 'buckets', APP, 'shop.uploads'));
-    expect(instance?.labels['composer.address']).toBe('shop.uploads');
+    expect(instance?.dir).toBe(path.join(input.devDir, 'buckets', APP, 'uploads'));
+    expect(instance?.labels['composer.address']).toBe(UPLOADS);
   });
 
   test("a BucketAccessKey names the bucket's instance as the bucket on the S3 wire", async () => {
-    const bucket = await reconcileBucket('shop.uploads');
+    const bucket = await reconcileBucket(UPLOADS);
     const service = await Effect.runPromise(
       BucketAccessKey.Provider.pipe(Effect.provide(LocalBucketAccessKeyProvider(input))),
     );

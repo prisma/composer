@@ -22,6 +22,8 @@ import { deleteAppInstances, readEmulatorInstances } from '../emulator-instances
 import { LocalConnectionProvider, LocalDatabaseProvider } from '../postgres.ts';
 
 const APP = 'pg-providers-app';
+const CATALOG = `${APP}.catalog.database`;
+const ORDERS = `${APP}.orders`;
 const savedEmulatorsDir = process.env[EMULATORS_DIR_ENV];
 let root: string;
 let registryRoot: string;
@@ -79,7 +81,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   });
 
   test('a Database creates a database instance, and its Connection resolves the same one', async () => {
-    const database = await reconcileDatabase('shop.catalog.database');
+    const database = await reconcileDatabase(CATALOG);
 
     const service = await Effect.runPromise(
       Connection.Provider.pipe(Effect.provide(LocalConnectionProvider(input))),
@@ -89,7 +91,7 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
     );
 
     const instance = await postgresClient().getInstance(database.databaseId);
-    expect(instance?.labels['composer.address']).toBe('shop.catalog.database');
+    expect(instance?.labels['composer.address']).toBe(CATALOG);
     expect(connection.databaseId).toBe(database.databaseId);
     const direct = connection.directConnectionString;
     if (direct === undefined) throw new Error('expected a direct connection string');
@@ -97,10 +99,10 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   }, 60_000);
 
   test('reconciling a Database again reuses its instance, starting it when stopped', async () => {
-    const first = await reconcileDatabase('shop.orders');
+    const first = await reconcileDatabase(ORDERS);
     await postgresClient().stopInstances([first.databaseId]);
 
-    const second = await reconcileDatabase('shop.orders');
+    const second = await reconcileDatabase(ORDERS);
 
     expect(second.databaseId).toBe(first.databaseId);
     expect((await postgresClient().getInstance(first.databaseId))?.status).toBe('running');
@@ -116,16 +118,16 @@ describe.skipIf(process.platform === 'win32')('the local Database and Connection
   }
 
   test('a Database whose recorded instance was re-created asks for an update', async () => {
-    const database = await reconcileDatabase('shop.orders');
+    const database = await reconcileDatabase(ORDERS);
     expect(await databaseDiff(database)).toBeUndefined();
 
     await postgresClient().deleteInstance(database.databaseId);
-    const again = await reconcileDatabase('shop.orders');
+    const again = await reconcileDatabase(ORDERS);
 
     expect(again.databaseId).not.toBe(database.databaseId);
     expect(await databaseDiff(database)).toEqual({ action: 'update' });
     const recorded = (await readEmulatorInstances(path.join(root, 'project')))?.apps[APP];
-    expect(recorded?.nodes['shop.orders']).toMatchObject({
+    expect(recorded?.nodes[ORDERS]).toMatchObject({
       kind: 'database',
       id: again.databaseId,
     });
