@@ -3,14 +3,11 @@
 // artifact changes. Self-contained (see web-server.mjs's doc comment for
 // why this doesn't import the sibling .ts source).
 //
-// Also carries the secret/env-param proof (S5, acceptance criterion 5),
-// migrated to ADR-0042: GET /status reports whether the secret looks like a
-// locally-minted placeholder (`local-placeholder-<hex>`). The env-sourced
-// param rides the reserved `port` channel (module.ts binds it to
-// LOCALDEV_FIXTURE_GREETING) — dev never reaches this far at all when it is
-// unset (preflight hard-errors first), so this endpoint's mere reachability
-// is half the proof.
+// GET /status reports a hash of the secret it received (never the value) and
+// whether the optional secret arrived, so a test can see which value reached
+// this process.
 
+import { createHash } from 'node:crypto';
 import { secretString } from '@prisma/composer/arktype';
 import node from '@prisma/composer/node';
 import { compute } from '@prisma/composer-prisma-cloud';
@@ -19,14 +16,14 @@ import { type } from 'arktype';
 const service = compute({
   name: 'bkg',
   deps: {},
-  input: type({ apiKey: secretString() }),
+  input: type({ apiKey: secretString(), 'webhookSecret?': secretString() }),
   build: node({ module: import.meta.url, entry: 'bg-server.mjs' }),
 });
 
 // The reserved port local dev's Deployment provider materializes into this
 // process's env (the emulator-assigned port), read back address-free.
 const port = service.port();
-const { apiKey } = service.input();
+const { apiKey, webhookSecret } = service.input();
 
 Bun.serve({
   port,
@@ -35,7 +32,8 @@ Bun.serve({
     const url = new URL(request.url);
     if (url.pathname === '/status') {
       return Response.json({
-        apiKeyIsPlaceholder: apiKey.expose().startsWith('local-placeholder-'),
+        apiKeySha256: createHash('sha256').update(apiKey.expose()).digest('hex'),
+        hasWebhookSecret: webhookSecret !== undefined,
       });
     }
     return new Response('local-dev fixture: bg', { status: 200 });

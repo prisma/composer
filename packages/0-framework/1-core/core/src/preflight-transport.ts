@@ -1,9 +1,12 @@
 /**
- * Carries an extension's deploy-preflight payload from the CLI process to the
+ * Carries an extension's preflight payload from the CLI process to the
  * alchemy child (which re-imports the config from scratch) — one env var per
- * extension, same channel as containers (container-transport.ts). The
- * framework never reads the contents. Payloads carry metadata only, never
- * secret values: the child's environment is not a secret store.
+ * extension, same channel as containers (container-transport.ts), filled by
+ * whichever preflight the run executed: the deploy preflight or the local
+ * target's dev preflight. The framework never reads the contents, so an
+ * extension that implements both must tell its own payload kinds apart.
+ * Payloads carry metadata only, never secret values: the child's environment
+ * is not a secret store.
  */
 import { envVarSafeExtensionId } from './container-transport.ts';
 

@@ -64,7 +64,8 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
           secretly: envSecret('STRIPE_SECRET_KEY'),
         },
       },
-      { SHELL_VALUE: 'from-the-shell' },
+      '',
+      { env: { SHELL_VALUE: 'from-the-shell' } },
     );
 
     const out = resolved as Record<string, unknown>;
@@ -84,7 +85,8 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
   test('an unset deploy-shell var omits the key; an empty one too — the schema arbitrates absence', () => {
     const { resolved, absent } = resolveInputBinding(
       { unset: envParam('NOT_SET_ANYWHERE_XYZ'), empty: envParam('EMPTY_VALUE'), kept: 'yes' },
-      { EMPTY_VALUE: '' },
+      '',
+      { env: { EMPTY_VALUE: '' } },
     );
     expect(resolved).toEqual({ kept: 'yes' });
     expect(absent).toEqual(['unset → NOT_SET_ANYWHERE_XYZ', 'empty → EMPTY_VALUE']);
@@ -92,14 +94,14 @@ describe('resolveInputBinding — the recursive descent (ADR-0042)', () => {
 
   test('an env-bound array element that resolves absent is a loud error — positions cannot be omitted', () => {
     expect(() =>
-      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, {}),
+      resolveInputBinding({ list: ['a', envParam('NOT_SET_ANYWHERE_XYZ')] }, '', { env: {} }),
     ).toThrow(/array element/);
   });
 
   test('a raw SecretBox (a secret VALUE) in the binding is rejected loudly', () => {
-    expect(() => resolveInputBinding({ key: new SecretBox('sk_live_oops') }, {})).toThrow(
-      /never belongs in a binding/,
-    );
+    expect(() =>
+      resolveInputBinding({ key: new SecretBox('sk_live_oops') }, '', { env: {} }),
+    ).toThrow(/never belongs in a binding/);
   });
 });
 
@@ -114,7 +116,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
       svc(conditional),
       'web',
       { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      {},
+      { env: {} },
     );
     expect(row?.key).toBe('COMPOSER_WEB_INPUT');
     expect(JSON.parse(row?.value ?? '')).toEqual({
@@ -123,15 +125,48 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
     });
   });
 
+  test('without absent secrets (every deploy), an unset secret is still written as a pointer', () => {
+    const row = serializeInput(
+      svc(conditional),
+      'web',
+      { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      { env: {} },
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({
+      stripeEnabled: true,
+      stripeKey: { $secret: 'STRIPE_SECRET_KEY' },
+    });
+  });
+
+  test('a secret named absent is left out of the document', () => {
+    const optional = type({ 'stripeKey?': secretString() });
+    const row = serializeInput(
+      svc(optional),
+      'web',
+      { stripeKey: envSecret('STRIPE_SECRET_KEY') },
+      { env: {}, absentSecrets: new Set(['STRIPE_SECRET_KEY']) },
+    );
+    expect(JSON.parse(row?.value ?? '')).toEqual({});
+  });
+
   test('the off arm needs no secret — the key is simply not bound', () => {
-    const row = serializeInput(svc(conditional), 'web', { stripeEnabled: false }, {});
+    const row = serializeInput(svc(conditional), 'web', { stripeEnabled: false }, { env: {} });
     expect(JSON.parse(row?.value ?? '')).toEqual({ stripeEnabled: false });
   });
 
-  test('the on arm with a MISSING secret fails at deploy with the schema library’s own error', () => {
-    expect(() => serializeInput(svc(conditional), 'web', { stripeEnabled: true }, {})).toThrow(
-      /invalid input for service "web"/,
+  test('an async schema fails at deploy with an error naming the service', () => {
+    const asyncSchema: StandardSchemaV1 = {
+      '~standard': { version: 1, vendor: 'test', validate: async (value) => ({ value }) },
+    };
+    expect(() => serializeInput(svc(asyncSchema), 'web', {}, { env: {} })).toThrow(
+      /^invalid input for service "web": config param schema validation must be synchronous/,
     );
+  });
+
+  test('the on arm with a MISSING secret fails at deploy with the schema library’s own error', () => {
+    expect(() =>
+      serializeInput(svc(conditional), 'web', { stripeEnabled: true }, { env: {} }),
+    ).toThrow(/invalid input for service "web"/);
   });
 
   test('misclassification — a literal where the schema wants a SecretString — fails at deploy, with the ADR-0042 note', () => {
@@ -140,7 +175,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
         svc(conditional),
         'web',
         { stripeEnabled: true, stripeKey: 'sk_live_in_plain_config' },
-        {},
+        { env: {} },
       );
     expect(attempt).toThrow(/invalid input for service "web"/);
     expect(attempt).toThrow(/secretness, or the schema refines on secret content/);
@@ -149,7 +184,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
   test('envSecret where the schema wants a plain string fails the same way', () => {
     const schema = type({ url: 'string' });
     expect(() =>
-      serializeInput(svc(schema), 'web', { url: envSecret('NOT_ACTUALLY_SECRET') }, {}),
+      serializeInput(svc(schema), 'web', { url: envSecret('NOT_ACTUALLY_SECRET') }, { env: {} }),
     ).toThrow(/invalid input for service "web"/);
   });
 
@@ -158,7 +193,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
       retries: 1,
       ...v,
     }));
-    const row = serializeInput(svc(schema), 'web', { greeting: 'hello' }, {});
+    const row = serializeInput(svc(schema), 'web', { greeting: 'hello' }, { env: {} });
     expect(JSON.parse(row?.value ?? '')).toEqual({ greeting: 'hello', retries: 1 });
   });
 
@@ -167,7 +202,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
       svc(conditional),
       'web',
       { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      { STRIPE_SECRET_KEY: 'sk_live_should_not_leak' },
+      { env: { STRIPE_SECRET_KEY: 'sk_live_should_not_leak' } },
     );
     expect(row?.value).not.toContain('sk_live');
     expect(row?.value).toContain('"$secret":"STRIPE_SECRET_KEY"');
@@ -178,7 +213,7 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
       ...v,
       injected: new SecretBox('made-up'),
     }));
-    expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' }, {})).toThrow(
+    expect(() => serializeInput(svc(schema), 'web', { greeting: 'hi' }, { env: {} })).toThrow(
       /must not mint secret boxes/,
     );
   });
@@ -192,12 +227,14 @@ describe('serializeInput — validate with sentinels, serialize the validated ou
       params: {},
       build,
     });
-    expect(serializeInput(plain, 'plain', undefined, {})).toBeUndefined();
-    expect(() => serializeInput(plain, 'plain', {}, {})).toThrow(/declares no input schema/);
+    expect(serializeInput(plain, 'plain', undefined, { env: {} })).toBeUndefined();
+    expect(() => serializeInput(plain, 'plain', {}, { env: {} })).toThrow(
+      /declares no input schema/,
+    );
   });
 
   test('a declared schema with no recorded binding is a loud invariant error', () => {
-    expect(() => serializeInput(svc(conditional), 'web', undefined, {})).toThrow(
+    expect(() => serializeInput(svc(conditional), 'web', undefined, { env: {} })).toThrow(
       /no recorded input binding/,
     );
   });
@@ -214,7 +251,7 @@ describe('the reserved $secret key — user data round-trips (ADR-0042)', () => 
       forged: { $secret: 'NOT_A_POINTER' },
       doubled: { $$secret: 'ALSO_NOT' },
     };
-    const row = serializeInput(svc(anySchema), 'web', binding, {});
+    const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
     // On the wire the user keys carry one extra "$" — only the framework's
     // own pointer keeps the single-"$" marker.
     expect(row?.value).toContain('"$$secret":"NOT_A_POINTER"');
@@ -245,7 +282,7 @@ describe('readInput — the boot half', () => {
       node,
       'web',
       { stripeEnabled: true, stripeKey: envSecret('STRIPE_SECRET_KEY') },
-      {},
+      { env: {} },
     );
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', STRIPE_SECRET_KEY: 'sk_live_boot' },
@@ -285,7 +322,9 @@ describe('readInput — the boot half', () => {
 
 describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   test('a redacted generated leaf resolves to a box sentinel and records the generated list', () => {
-    const { resolved, generated } = resolveInputBinding({ secret: generatedParam() }, {}, 'web');
+    const { resolved, generated } = resolveInputBinding({ secret: generatedParam() }, 'web', {
+      env: {},
+    });
     expect((resolved as Record<string, unknown>)['secret']).toBeInstanceOf(SecretBox);
     expect(generated).toEqual([
       { varName: 'COMPOSER_WEB_SECRET_GENERATED', bytes: 32, redacted: true, path: 'secret' },
@@ -295,8 +334,8 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   test('a non-redacted generated leaf resolves to an empty-string sentinel', () => {
     const { resolved, generated } = resolveInputBinding(
       { token: generatedParam({ redacted: false, bytes: 16 }) },
-      {},
       'web',
+      { env: {} },
     );
     expect((resolved as Record<string, unknown>)['token']).toBe('');
     expect(generated).toEqual([
@@ -305,7 +344,9 @@ describe('resolveInputBinding — generated leaves (ADR-0041)', () => {
   });
 
   test('the var name is address- and path-scoped, even for a nested leaf', () => {
-    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, {}, 'api');
+    const { generated } = resolveInputBinding({ auth: { signing: generatedParam() } }, 'api', {
+      env: {},
+    });
     expect(generated[0]?.varName).toBe('COMPOSER_API_AUTH_SIGNING_GENERATED');
     expect(generated[0]?.path).toBe('auth.signing');
   });
@@ -317,7 +358,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       svc(type({ secret: secretString() })),
       'web',
       { secret: generatedParam() },
-      {},
+      { env: {} },
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({
       secret: { $generated: 'COMPOSER_WEB_SECRET_GENERATED', redacted: true },
@@ -332,7 +373,7 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       svc(type({ token: 'string' })),
       'web',
       { token: generatedParam({ redacted: false, bytes: 16 }) },
-      {},
+      { env: {} },
     );
     expect(JSON.parse(row?.value ?? '')).toEqual({
       token: { $generated: 'COMPOSER_WEB_TOKEN_GENERATED', redacted: false },
@@ -345,14 +386,14 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
       svc(type({ secret: secretString() })),
       'web',
       { secret: generatedParam() },
-      {},
+      { env: {} },
     );
     expect(row?.value).toContain('"$generated":"COMPOSER_WEB_SECRET_GENERATED"');
   });
 
   test('deploy → boot round trip: a redacted generated leaf hydrates to a box exposing the provisioned value', async () => {
     const node = svc(type({ secret: secretString() }));
-    const row = serializeInput(node, 'web', { secret: generatedParam() }, {});
+    const row = serializeInput(node, 'web', { secret: generatedParam() }, { env: {} });
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_SECRET_GENERATED: 'generated-value-xyz' },
       () => readInput(node, '') as { secret: SecretBox<string> },
@@ -363,7 +404,12 @@ describe('serializeInput — generated leaves become $generated pointers (ADR-00
 
   test('deploy → boot round trip: a non-redacted generated leaf hydrates to a PLAIN STRING, not a box', async () => {
     const node = svc(type({ token: 'string' }));
-    const row = serializeInput(node, 'web', { token: generatedParam({ redacted: false }) }, {});
+    const row = serializeInput(
+      node,
+      'web',
+      { token: generatedParam({ redacted: false }) },
+      { env: {} },
+    );
     const value = await withEnv(
       { [inputKey('')]: row?.value ?? '', COMPOSER_WEB_TOKEN_GENERATED: 'plain-generated-value' },
       () => readInput(node, '') as { token: string },
@@ -399,7 +445,7 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
       forged: { $generated: 'NOT_A_POINTER' },
       doubled: { $$generated: 'ALSO_NOT' },
     };
-    const row = serializeInput(svc(anySchema), 'web', binding, {});
+    const row = serializeInput(svc(anySchema), 'web', binding, { env: {} });
     // On the wire the user keys carry one extra "$"; only the framework's own
     // pointer keeps the single-"$" marker.
     expect(row?.value).toContain('"$$generated":"NOT_A_POINTER"');
@@ -422,19 +468,19 @@ describe('the reserved $generated key — user data round-trips (ADR-0041)', () 
 describe('the pointer-name collision guard (ADR-0041, F02)', () => {
   test('two secret leaves binding the same platform name collide (secret/secret)', () => {
     expect(() =>
-      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, {}, 'web'),
+      resolveInputBinding({ a: envSecret('SHARED'), b: envSecret('SHARED') }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "SHARED"/);
   });
 
   test('two secret leaves whose names differ only in case collide (case-collision)', () => {
     expect(() =>
-      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, {}, 'web'),
+      resolveInputBinding({ a: envSecret('token'), b: envSecret('TOKEN') }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "TOKEN"/);
   });
 
   test('two generated leaves whose paths normalize to the same var collide (generated/generated)', () => {
     expect(() =>
-      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, {}, 'web'),
+      resolveInputBinding({ token: generatedParam(), Token: generatedParam() }, 'web', { env: {} }),
     ).toThrow(/both resolve to the platform variable "COMPOSER_WEB_TOKEN_GENERATED"/);
   });
 
@@ -456,8 +502,8 @@ describe('the pointer-name collision guard (ADR-0041, F02)', () => {
   test('a secret leaf and a generated leaf with distinct names do NOT collide', () => {
     const { generated, sentinels } = resolveInputBinding(
       { sec: envSecret('MY_SECRET'), gen: generatedParam() },
-      {},
       'web',
+      { env: {} },
     );
     expect(generated).toHaveLength(1);
     expect([...sentinels.values()]).toEqual(['MY_SECRET']);

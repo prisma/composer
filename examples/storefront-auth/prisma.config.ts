@@ -6,6 +6,7 @@
  * deploy; they resolve from this app's own dependencies.
  */
 
+import 'dotenv/config';
 import { defineConfig as composer } from '@prisma/composer/config';
 import { nextjsBuild } from '@prisma/composer/nextjs/control';
 import { nodeBuild } from '@prisma/composer/node/control';

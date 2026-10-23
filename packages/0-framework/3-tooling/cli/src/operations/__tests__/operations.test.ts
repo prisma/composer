@@ -1256,8 +1256,12 @@ async function collect(lines: AsyncIterable<LogLine>): Promise<LogLine[]> {
 }
 
 /** A config whose one extension both deploys the fixture nodes and offers a local target — what dev() needs end to end. */
-function devConfigWith(attachment: LocalTargetAttachment): PrismaAppConfig {
+function devConfigWith(
+  attachment: LocalTargetAttachment,
+  preflight?: LocalTargetDescriptor['preflight'],
+): PrismaAppConfig {
   const descriptor: LocalTargetDescriptor = {
+    ...(preflight !== undefined ? { preflight } : {}),
     providers: () => Layer.empty,
     container: {
       ensure: () => Promise.resolve(localContainer()),
@@ -1308,6 +1312,68 @@ describe.skipIf(process.platform !== 'win32')('local operations on Windows', () 
 });
 
 describe.skipIf(process.platform === 'win32')('dev()', () => {
+  const runningAttachment: LocalTargetAttachment = {
+    startServices: () => Promise.resolve(),
+    stopApp: () => Promise.resolve(),
+    endpoints: () => Promise.resolve([]),
+    logs: async function* () {},
+  };
+
+  async function childEnvOfDev(
+    preflight: LocalTargetDescriptor['preflight'],
+  ): Promise<Readonly<Record<string, string | undefined>>> {
+    const app = makeAppDir('hello-dev');
+    let childEnv: Readonly<Record<string, string | undefined>> = {};
+    const result = await silently(() =>
+      devWithDeps(
+        {
+          config: composerConfig(devConfigWith(runningAttachment, preflight)),
+          entry: app.entryPath,
+          cwd: app.dir,
+          detach: true,
+        },
+        {
+          runAssembler: fakeAssembler,
+          alchemy: async (invocation) => {
+            childEnv = invocation.env;
+            return { exitCode: 0, signal: null };
+          },
+        },
+      ),
+    );
+    expect(result.ok).toBe(true);
+    return childEnv;
+  }
+
+  test("the dev preflight's payload reaches the alchemy process", async () => {
+    const env = await childEnvOfDev(() => Promise.resolve('dev:{"absentSecrets":[]}'));
+
+    expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('dev:{"absentSecrets":[]}');
+  }, 15_000);
+
+  test('a stale payload in the shell is blanked for every configured extension', async () => {
+    const saved = {
+      own: process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'],
+      build: process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'],
+    };
+    process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'] = 'stale';
+    process.env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'] = 'stale';
+    try {
+      const env = await childEnvOfDev(() => Promise.resolve(undefined));
+
+      expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION']).toBe('');
+      expect(env['PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD']).toBe('');
+    } finally {
+      for (const [key, name] of [
+        ['own', 'PRISMA_COMPOSER_PREFLIGHT_FIXTURE_EXTENSION'],
+        ['build', 'PRISMA_COMPOSER_PREFLIGHT_FIXTURE_BUILD'],
+      ] as const) {
+        if (saved[key] === undefined) delete process.env[name];
+        else process.env[name] = saved[key];
+      }
+    }
+  }, 15_000);
+
   test('a throw after services start (endpoint merge) is a pipeline failure, and the started services are stopped again', async () => {
     const app = makeAppDir('hello-dev');
     let stops = 0;

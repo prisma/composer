@@ -520,9 +520,7 @@ that surprise:
    build and run `prisma dev --detach` again.
 4. `dev` reads `prisma.config.ts` once, at start, and watches it: after an
    edit it says so and pauses rebuilds until you restart `dev`.
-5. An unset secret doesn't block a local run: it becomes a placeholder plus a
-   warning, and only the code path that spends it fails, at the external
-   service it calls.
+5. `dev` reads secrets only from its environment: export them in the shell, or load a `.env`: install the `dotenv` package, then make `import 'dotenv/config'` the first line of `prisma.config.ts` (`process.loadEnvFile('.env')` works only under Node, not Bun). A required secret that is unset or empty stops `dev` with an error naming it; an optional one reaches the service as absent. A changed value takes effect on the next `prisma dev`.
 6. The emulators are machine-wide daemons shared by every `dev`, registered
    under `~/.prisma-composer/emulators`. Set `PRISMA_COMPOSER_EMULATORS_DIR`
    to an absolute directory to give a checkout or CI job its own compute,

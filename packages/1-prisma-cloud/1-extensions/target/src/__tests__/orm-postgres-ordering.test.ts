@@ -28,7 +28,7 @@ const registered = <A>(effect: Effect.Effect<A, unknown, unknown>): Effect.Effec
 const lowering = postgresDescriptor(() => ({
   workspaceId: 'ws_1',
   providerParams: new Map(),
-  pointerUpdatedAt: () => undefined,
+  preflight: { pointerVersion: () => undefined, absentSecrets: new Set() },
 }));
 if (lowering.kind !== 'resource') throw new Error('postgres must lower as a resource');
 

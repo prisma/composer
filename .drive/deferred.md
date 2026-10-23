@@ -198,11 +198,7 @@ ADR-0053 (the commands). What we deliberately didn't do:
 - **A deployment that arrives while its instance is being deleted can start a
   process the emulator no longer tracks.** Same race as an app delete in the
   Compute emulator.
-- **`env.json` and `secrets.json` in `.prisma-composer/dev/` are shared by
-  every app run from a directory, and `--fresh` wipes them.** One app's
-  `--fresh` can drop rows another app in the same directory needs on its next
-  redeploy. Making them per app, like bucket objects
-  (`buckets/<app>/<bucket>/`), would fix it.
+- **`env.json` in `.prisma-composer/dev/` is shared by every app run from a directory, and `--fresh` wipes it.** One app's `--fresh` can drop rows another app in the same directory needs on its next redeploy. Making it per app, like bucket objects (`buckets/<app>/<bucket>/`), would fix it.
 - **`[dev]` notices bypass the CLI engine's output.** The emulators hook
   writes `[dev] compute emulator ready`, the port-change line and the
   app-switch line with `console.log` to stdout, so they land among a piped
@@ -242,3 +238,16 @@ ADR-0053 (the commands). What we deliberately didn't do:
   `stop`.** A deleted worktree leaves its stopped instances' records and
   Postgres data on disk, holding their ports. Planned for the emulator
   start/stop project.
+
+# dev-secrets-from-env — deferred (2026-10-23)
+
+- **Deploy fails when an optional secret is missing on the platform.** ADR-0042 says an env-bound leaf whose variable is unset resolves to "key omitted" and the schema decides whether that is legal. For `envSecret` leaves this is not implemented in deploy: the serializer always writes a `$secret` pointer, and deploy preflight fails when a bound secret is missing on both the platform and the shell, even when the schema marks the field optional. Fix inside deploy's own preflight: leave the field out when the schema accepts its absence. Origin: Will scoped the `prisma dev` secrets change (prisma/composer#379) to dev only.
+- **Alchemy state stores resource props as given, including redacted values.** The local `.alchemy/state/` files hold Composer-minted credentials in plain text (the fixture's `web-deploy.json` shows the local S3 secret key), and hosted deploy state very likely does the same. Check the hosted state and decide whether minted credentials should leave props. Origin: dev-secrets-from-env review round 2.
+- **The compute emulator saves each deployment's full environment, secret values included, in its machine-wide `instances.json`** (mode 0600). `prisma dev` reads values fresh each run, but the last values stay on disk. Decide whether the emulator should keep the environment only in memory. Origin: dev-secrets-from-env review round 2.
+- **A rebuild during a `prisma dev` session skips the dev preflight.** It reuses the payload from session start, so a secret added to a binding mid-session is not checked or left out. Fix: run each local target's preflight again in `rebuild` and rebuild the invocation from its payload. Existing behaviour before this slice. Origin: dev-secrets-from-env final review (C02).
+- **The reproduce command printed after a failed converge carries neither the preflight payload nor the container variables.** Re-running it by hand sends unset optional secrets as pointers and every trigger member as `'?'`. Fix both together.
+- **`scopedEnvRows` and `pointedVariableNames` match env rows by address prefix,** so a service at `shop` also reads the rows of `shop.billing` and gets its param values. It over-shares one value and breaks nothing.
+- **The Prisma Cloud wire-format helpers are copied into `@internal/local-target`:** `servicePortEnvKey`, `ownEnvKeyPrefix` and the new pointer formats (`$secret`, the param pointer prefix, the `INPUT` key). They were not moved to `@internal/lowering` because the serializer runs inside deployed services (the shared plane) and `@internal/lowering` is control-plane only; a shared-plane wire-format module at the lowering layer would fix it, modelled on `packages/1-prisma-cloud/0-lowering/s3-protocol`, a shared-plane package at the lowering layer. `dev-pointed-variables.test.ts` checks the pointer formats agree meanwhile.
+- **Tag the deploy preflight payload too** (for example `deploy:`), so both kinds are explicit on the wire. Do it with the deploy optional-secret fix above, which changes deploy anyway.
+- **Rename the persisted `<name>:updatedAt` trigger member** to match `pointerVersion`. It redeploys every hosted deployment once, so do it only together with a deploy change that already accepts one redeploy.
+- **Remove `removeRetiredSecretsFile`** (it deletes the `secrets.json` older `prisma dev` versions wrote) once no supported `@prisma/composer` release older than the one shipping this slice is in use: at the next major release, or three minor releases after this one, whichever comes first.

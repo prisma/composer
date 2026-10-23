@@ -161,7 +161,7 @@ export interface AlchemyInvocationInput {
   readonly cwd: string;
   readonly stage: string;
   readonly containerEnv: Readonly<Record<string, string>>;
-  /** What each extension's deploy preflight handed back, serialized — one env var per extension (core's preflight-transport naming). Absent for destroy, which runs no preflight. Content-blind, like `containerEnv`. */
+  /** What each extension's deploy or dev preflight handed back, serialized — one env var per extension (core's preflight-transport naming). Absent for destroy, which runs no preflight. Content-blind, like `containerEnv`. */
   readonly preflightEnv?: Readonly<Record<string, string>>;
   /** Extra additions beyond the containers — the deployment-result pointer. */
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;

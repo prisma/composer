@@ -258,11 +258,18 @@ databases you can migrate and query, real object storage. What's swapped are
 the *providers* underneath — local emulators stand in for Prisma Cloud, so no
 token, workspace, or network is involved. Three consequences worth knowing:
 
-- **Unset secrets don't stop the app.** A secret you haven't set in your shell
-  gets a local placeholder and a one-line warning; the app boots and serves,
-  and only the code path that actually spends that secret fails — at the real
-  external service it calls. Set the secret in your shell to exercise that
-  path.
+- **Secrets come from your environment.** `prisma dev` reads each secret from the environment it runs in, never makes one up, and never reuses a value from an earlier run. Either export it in the shell you run `prisma dev` from, or keep it in a `.env` file and load that file from `prisma.config.ts`: install the `dotenv` package (`npm install dotenv`, or your package manager's equivalent), then make `import 'dotenv/config'` the first line of `prisma.config.ts`. `process.loadEnvFile('.env')` also works, but only when the CLI runs under Node, not Bun.
+
+  ```ts
+  // prisma.config.ts
+  import 'dotenv/config';
+  ```
+
+  If a secret your service's input schema requires is unset or empty, `prisma dev` stops before it starts anything and names the variable and the service. If the schema marks the secret optional, the service starts and sees that field as absent. Change a value and run `prisma dev` again, without `--fresh`, and the services that read it restart with the new value.
+
+  **A `.env` loaded by `prisma.config.ts` is also read by `prisma deploy`.** Deploy uploads any secret the target stage does not have yet from that environment, so a local-only value in `.env` becomes the hosted value. Keep local-only values out of `.env` before you deploy, or deploy from a shell where it is not loaded.
+
+  Each service gets only the secrets and env-sourced params its own input and params point at. Code that reads `process.env.X` directly, where `X` is bound by another service, gets nothing.
 - **The emulators outlive a session.** They're shared, machine-wide daemons,
   so your data survives `Ctrl-C` and even a reboot until you `--fresh`. That's
   what makes restarts warm.

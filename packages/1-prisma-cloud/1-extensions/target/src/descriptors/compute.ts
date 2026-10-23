@@ -66,8 +66,9 @@ export interface ComputeSerialized {
    * per row of `environment`, carrying the SAME value the row writes (Redacted,
    * possibly still an unresolved Output). The platform materializes env rows
    * into a deployment only at create (PRO-211), so a changed value must replace
-   * the deployment; upstream folds these into a salted fingerprint inside its
-   * own state and plans that replacement. Because upstream resolves the actual
+   * the deployment; upstream compares a salted hash of these to plan that
+   * replacement. Alchemy also writes the members to its state as given,
+   * `Redacted` values in plain text included. Because upstream resolves the actual
    * values, a value re-issued under a stable resource identity (a connection
    * rotated in place, a re-minted service key) moves the fingerprint too —
    * closing the blind spot the deleted Composer-side fingerprint had to accept
@@ -225,6 +226,7 @@ export function computeDescriptor(
           svc,
           address,
           graph.inputBindings.find((b) => b.serviceAddress === address)?.binding,
+          { absentSecrets: o().preflight.absentSecrets },
         );
         if (inputRow !== undefined) {
           // Each `$secret` pointer in the document names an OPERATOR-owned
@@ -330,9 +332,9 @@ export function computeDescriptor(
           const value = Output.isOutput(raw)
             ? Output.map(raw, (v) => encode('service', v))
             : encode('service', raw);
-          // May be a minted key (rpc, streams) — Redacted keeps it out of
-          // plaintext state on both the row and the trigger member; upstream
-          // only ever persists the salted triggers fingerprint.
+          // May be a minted key (rpc, streams). Redacted keeps it out of logs;
+          // Alchemy state still stores it in plain text, on the row and the
+          // trigger member.
           const providerValue = envValue(value);
           rows.push({
             record: yield* Prisma.EnvironmentVariable(`${key}-var`, {
@@ -376,16 +378,15 @@ export function computeDescriptor(
 
     deploy: ({ id }, provisioned, artifact, serialized) =>
       Effect.gen(function* () {
-        // Answers "unknown" for every name under `prisma dev`: dev runs
-        // no platform preflight, so no rotation timestamps exist. That costs
-        // nothing — the local Deployment provider reconciles unconditionally.
-        const pointerUpdatedAt = o().pointerUpdatedAt;
+        const { pointerVersion } = o().preflight;
         // Env keys never contain ':', so a `<name>:updatedAt` member cannot
-        // collide with a row's own trigger member.
+        // collide with a row's own trigger member. The key name is historical:
+        // under `prisma dev` the member holds an HMAC of the value, and
+        // renaming it would redeploy every hosted deployment once.
         const triggers = {
           ...serialized.triggers,
           ...Object.fromEntries(
-            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerUpdatedAt(name) ?? '?']),
+            serialized.pointers.map((name) => [`${name}:updatedAt`, pointerVersion(name) ?? '?']),
           ),
         };
         const deployment = yield* Prisma.Deployment(`${id}-deploy`, {
@@ -398,10 +399,10 @@ export function computeDescriptor(
           // upstream sends this as the upload's Content-Type and folds it into
           // the fingerprint that decides whether a new deployment is needed.
           artifactContentType: ARTIFACT_CONTENT_TYPE,
-          // The environment's replacement seam: upstream salts and hashes the
-          // resolved members inside its own state and plans a replace exactly
-          // when one moved (or cannot be proven unmoved), because the platform
-          // materializes env rows into a deployment only at create (PRO-211).
+          // Upstream plans a replacement exactly when a member moved (or cannot
+          // be proven unmoved), because the platform materializes env rows into
+          // a deployment only at create (PRO-211). Alchemy writes the members
+          // to its state as given.
           triggers,
           // Route to the port the app actually binds (the service's `port`
           // param, resolved by serialize) — not a hardcoded constant.

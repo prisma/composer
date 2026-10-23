@@ -5,6 +5,7 @@ export * from '../app-name.ts';
 export * from '../bucket.ts';
 export * from '../compute.ts';
 export * from '../current-app.ts';
+export * from '../dev-secrets.ts';
 export * from '../dev-store.ts';
 export * from '../emulator-instances.ts';
 export * from '../postgres.ts';

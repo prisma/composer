@@ -10,10 +10,21 @@
  * `container`) and `mergedDevProviders` skips it rather than throwing.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { parseEnv } from 'node:util';
 import { defineConfig as composer } from '@prisma/composer/config';
 import { nodeBuild } from '@prisma/composer/node/control';
 import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control';
 import { definePrismaConfig } from 'prisma/config';
+
+// local-dev-criteria-4-5.integration.ts proves a value loaded here reaches a
+// service. Not `process.loadEnvFile`: Bun, which runs the converge when the
+// CLI was started through bun, does not implement it.
+if (existsSync('.env')) {
+  for (const [name, value] of Object.entries(parseEnv(readFileSync('.env', 'utf8')))) {
+    process.env[name] ??= value;
+  }
+}
 
 export default definePrismaConfig({
   composer: composer({
