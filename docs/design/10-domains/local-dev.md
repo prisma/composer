@@ -465,7 +465,7 @@ The same table the port's hand-rolled script implemented, now standard:
 | dependency connection values (URLs) | the local provider's resolved value, through the normal lowering |
 | service params | bound literals / defaults, identical to deploy |
 | `envParam` sources (ADR-0032) | the dev shell's environment, same names; missing → a hard error listing the names (params feed boot-time schema validation — junk there is a confusing crash, not a legible degraded mode) |
-| secrets (ADR-0029, ADR-0056) | the run's environment: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
+| secrets (ADR-0029, ADR-0057) | the run's environment: the shell, or a `.env` that `prisma.config.ts` loads. Unset or empty counts as missing. A missing secret the service's schema requires is a hard error naming the variable, the service and both ways to set it; a missing optional secret is left out of the service's input. No value is reused from an earlier run. |
 | minted needs (ADR-0030/0031: service keys, streams keys) | minted locally by the unchanged provisioners |
 | origin (ADR-0039) | `http://localhost:<port>` via the unchanged origin channel |
 
@@ -509,12 +509,7 @@ Deploy's rule holds: every failure names its fix.
 
 ## Out of scope (designed around)
 
-- **Hot reload / user-supplied dev commands.** The loop's unit of change is a
-  rebuilt artifact. The designed extension (not v1): a service may opt into a
-  dev command (e.g. `next dev`) that replaces its artifact process; the harness
-  still resolves bindings and materializes the same env, and writes the stash
-  so `load()`/`config()`/`secrets()` work without `run()`. The opt-in must be
-  explicit precisely because it trades away artifact parity.
+- **Hot reload / user-supplied dev commands.** Decided in [ADR-0056](../90-decisions/ADR-0056-prisma-dev-runs-a-service-with-its-build-adapters-dev-server.md): a service runs the dev server its build adapter declares (`next dev`; a `dev` command written on `node()`) in place of its artifact, as a command deployment on the Compute emulator, with the environment its deployment would get, re-stashed address-free so `load()`/`input()` work without `run()`. A service whose adapter declares no dev server runs its artifact as described in this doc. This doc describes the dev-server mechanics once they ship.
 - **Remote bindings** (a local service against real cloud resources,
   Wrangler-style). A possible future opt-in; contradicts credential-free dev
   as a default.
@@ -531,7 +526,7 @@ gaps found during implementation.)
 
 ## Proven against a real app
 
-The design's founding claim was proven against open-chat — a real, pre-existing Composer app in its own repo (chat service, Postgres, streams and storage modules), written before local dev existed. With no cloud credentials of any kind in the shell, `prisma dev module.ts` brought it up: sign-in worked, chat history loaded, and the live-tail stream delivered events. Chat generation failed at one place, the outbound OpenRouter call, because local dev at the time gave the unset `OPENROUTER_API_KEY` secret a made-up placeholder value. ADR-0056 removed placeholders: today that run stops at start with an error naming `OPENROUTER_API_KEY`, or, if the schema marks it optional, starts with the key absent. The port itself was one commit: point the app's framework dependency at the build under test, switch its service to `node()`'s directory build form, fix a launcher path that only worked un-moved, catch up with two API changes — and delete the app's 169-line hand-rolled dev script, which the framework command replaces.
+The design's founding claim was proven against open-chat — a real, pre-existing Composer app in its own repo (chat service, Postgres, streams and storage modules), written before local dev existed. With no cloud credentials of any kind in the shell, `prisma dev module.ts` brought it up: sign-in worked, chat history loaded, and the live-tail stream delivered events. Chat generation failed at one place, the outbound OpenRouter call, because local dev at the time gave the unset `OPENROUTER_API_KEY` secret a made-up placeholder value. ADR-0057 removed placeholders: today that run stops at start with an error naming `OPENROUTER_API_KEY`, or, if the schema marks it optional, starts with the key absent. The port itself was one commit: point the app's framework dependency at the build under test, switch its service to `node()`'s directory build form, fix a launcher path that only worked un-moved, catch up with two API changes — and delete the app's 169-line hand-rolled dev script, which the framework command replaces.
 
 ## Known limitations (found while proving the implementation)
 

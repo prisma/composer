@@ -1,4 +1,4 @@
-# ADR-0056: `prisma dev` reads secrets from the environment and never invents them
+# ADR-0057: `prisma dev` reads secrets from the environment and never invents them
 
 ## Decision
 
