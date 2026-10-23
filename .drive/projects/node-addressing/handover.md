@@ -54,7 +54,7 @@ Branch `drive/fully-qualified-node-addresses`, pushed to `prisma/composer` (remo
 - D5: examples, guides, agent skill and READMEs use full addresses; guides say to remove an app with `prisma project delete`.
 - Review (`slices/a1-fully-qualified-identity/reviews/`) and all fixes. Notable decisions taken in the fixes:
   - The app name must be letters, digits, `-` and `_` (`assertAppName` in core). A name with `.` would have produced wrong old IDs and lost data.
-  - Every platform display `name`/`displayName` Composer writes is the address below the app name (`addressBelowApp`). These labels live inside the app's own Project, and including the app name could push existing apps over the platform's 65-character limit. They are labels, never identity. **Will has not explicitly approved this rule; raise it at final verification.**
+  - Every platform `name`/`displayName` Composer writes is the full address (Will, 2026-10-23: one form of a node's name). The upgrade recreates Composer's Connections and bucket access keys with new credentials; see `slices/a1-fully-qualified-identity/upgrade-effects.md`.
   - Role names are nouns: `connection`, `accesskey`, `deployment`, `warmup`, `migration`, `env`, `generated`, `servicekey`, `streamkey`.
 - Tests: typecheck passes. core, cli, local-target, lowering and test/integration pass. In the target package, 6 local-Postgres tests failed with "No space left on device" because about 31 leaked test Postgres servers (`prisma-composer-pn-pg-*`) were holding shared memory. They are not caused by this branch. Some may belong to other sessions, so they were not killed. Re-run the target tests once they are gone.
 

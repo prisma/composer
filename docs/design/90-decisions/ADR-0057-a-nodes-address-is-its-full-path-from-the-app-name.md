@@ -27,7 +27,7 @@ shop.web       App       logicalId "shop.web"       shop.web, shop.web.deploymen
 
 Deploying the same configuration to the stage `pr-123` creates new App and Database rows on that stage's Branch, with different `id`s and the same `logicalId`s. That is how the platform knows `shop.web` on `pr-123` is the same service as `shop.web` on `main`.
 
-An app deployed before this decision used addresses without the app name (`catalog`, `auth.api`) and resource IDs with `-` suffixes (`catalog-db`, `catalog-conn`, `web-svc`). Its next deploy moves every resource to its new ID in place. No database, bucket, generated secret or service key is recreated.
+An app deployed before this decision used addresses without the app name (`catalog`, `auth.api`) and resource IDs with `-` suffixes (`catalog-db`, `catalog-conn`, `web-svc`). Its next deploy moves every resource to its new ID in place. No database, bucket, generated secret or service key is recreated. Composer's own Connections and bucket access keys are recreated with new credentials, because their names become the full address.
 
 ## Reasoning
 
@@ -104,7 +104,7 @@ So every Alchemy resource Composer declares also declares the ID it had before, 
 ```ts
 const db = yield* Prisma.Database('shop.catalog', { ...props, logicalId: 'shop.catalog' })
   .pipe(asOwnRow, renamedFrom('catalog-db'));
-const conn = yield* Prisma.Connection('shop.catalog.connection', { database: db, name: 'catalog' })
+const conn = yield* Prisma.Connection('shop.catalog.connection', { database: db, name: 'shop.catalog' })
   .pipe(renamedFrom('catalog-conn'));
 ```
 
@@ -116,7 +116,7 @@ Three properties make this safe, and each was checked on the real platform:
 - A deploy that fails or is killed partway through the renames can be run again, and it finishes them without recreating anything.
 - Dots in resource IDs work in Alchemy and in the platform's hosted deploy state, whose URLs carry the ID.
 
-Every platform name Composer writes is built from the address without the app name: the App's `displayName`, a local dev Database's `name`, and the Connection, Bucket and bucket access key `name` (`catalog`, `auth.api`). These names live inside the app's own Project, which already carries the app name. They are labels, never identity. Leaving the app name out also keeps them within the platform's 65-character limit no matter how long the app name is, so the upgrade cannot push a name over it, and it is exactly the name earlier releases wrote, so no name changes. That matters for two of them: upstream replaces a Connection when its `name` changes, which rotates the database's credentials, and replaces a bucket access key when its `name` changes, which mints new credentials. A hosted database gets no `name` from Composer; its physical name is derived from its resource ID and is updated in place.
+Every platform name Composer writes is the node's address: the App's `displayName`, a local dev Database's `name`, and the Connection, Bucket and bucket access key `name` (`shop.catalog`, `shop.auth.api`). There is one form of a node's name, and it is the address. Names are labels, never identity. On the upgrade deploy every one of these names changes from the short address to the full one. App, Database and Bucket names update in place; a Bucket's display name is not its S3 bucket name, so its objects stay where they are. Upstream replaces a Connection when its `name` changes, and a bucket access key when its `name` changes. So the upgrade recreates each of Composer's Connections and access keys with new credentials, and Composer's services receive the new credentials in the same deploy. The replace deletes only the old Connection or key, by the id Composer stored, so the database, the bucket and its objects, and any Connection or key made by hand are untouched. A hosted database gets no `name` from Composer; its physical name is derived from its resource ID and is updated in place.
 
 An environment variable row is replaced whenever its key changes, and every key changes in this migration. That is harmless: Composer writes every row's value on every deploy, so the new row holds the same value as the old one, and a changed environment already makes a new Deployment.
 
@@ -131,7 +131,8 @@ Local dev creates no platform rows. Its per-directory record of which emulator i
 - Changing any Alchemy resource ID must go through a rename declaration. Otherwise a single deploy could use the existing row under the new ID and delete it under the old one.
 - The rename declarations from the old format stay in the code. They do nothing on stages that have migrated or were created after this decision.
 - A stage migrated by this decision and then deployed by an older Composer has its resources deleted and recreated under the old IDs, losing their data. Nothing protects against this.
-- Platform names leave the app name out, so a long app name never makes a name too long. Name validation checks the name Composer writes and fails with a message naming the node's address; it never shortens a name. Fixing it means changing the address, which makes the node a different entity.
+- Each platform name is checked against that kind's limit: a Connection name at most 65 characters, a Bucket name 100, an App name 256; an access key name has none. A long app name counts against every one of them. A name over its limit fails the deploy with a message naming the node's address; Composer never shortens a name. Fixing it means changing the address, which makes the node a different entity.
+- Anything outside Composer that used the old Connection string or access key of a Composer resource stops working after the upgrade, because those credentials are deleted.
 - A `logicalId` says which node a row is, so on the app's own Project and Branch the row holding a node's `logicalId` is that node's row. A deploy uses that row even when its deploy state has no record of it. The usual case is resuming a create that was interrupted after the platform created the row but before Alchemy recorded its ID. Composer therefore declares its App, Database and Bucket resources, and its `COMPOSER_` environment variables, as its own (Alchemy's per-resource `adopt(true)`), so Alchemy does not refuse a row it cannot otherwise prove it created. The Project is found the same way, by `logicalId`, in container resolution.
 - Using a row means owning it: Composer updates it to the declared configuration, and deletes it when the node is removed, when its address changes, or when the stage is destroyed. A row created outside Composer with one of the app's addresses on its Branch is treated as that node's row. Two apps with the same name in one workspace share one Project and share rows instead of failing.
 - A stage whose Branch holds rows but which has no deploy state at all is still refused before the deploy starts (ADR-0045). The rows could be identified, but the rest of the state could not be rebuilt from them: generated parameter values would be minted again, Connections would not be recognized, and Deployments and bucket access keys would be created twice.
@@ -146,6 +147,7 @@ Local dev creates no platform rows. Its per-directory record of which emulator i
 - **Keep `-` suffixes on resource IDs** (`shop.catalog-db`), so a resource ID can be told from an address on sight. Its only purpose was to catch a bug where upstream Alchemy wrote its resource ID as the `logicalId`, and passing `logicalId` explicitly already prevents that.
 - **Resolve `serviceOrigin`'s argument relative to the module the call is written in.** That is a second way to write an address, and it means different things in different files.
 - **Let the first deploy after upgrading recreate everything under the new IDs.** It deletes every database's and bucket's data, regenerates secrets and rotates service keys.
+- **Keep the address without the app name as the platform name of Apps, Connections, Buckets and access keys**, to avoid recreating Connections and access keys on the upgrade. That is a second form of a node's name.
 - **Use Alchemy's default `logicalId` (its resource ID).** It happens to equal the address for a node's main resource now, but it would then depend on Composer's internal naming and on upstream's defaulting rule. Composer passes the address explicitly so the topology and the row are written from the same value.
 - **Write `logicalId` with a separate Composer resource after the row is created.** Duplicates what the upstream resource does (ADR-0048), and puts two resources in charge of one field. When they disagree, they fight on every deploy.
 - **Put platform `id`s in the topology.** The `id`s don't exist when the topology is written, before the apply. They also differ on every branch, so they can't say "the same service on `main`".

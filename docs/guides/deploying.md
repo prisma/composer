@@ -468,6 +468,16 @@ Environment variable keys gain the app name (`COMPOSER_STOREFRONT_AUTH_…`): ea
 variable is replaced by one with the same value under the new key, and services
 get a new deployment.
 
+Every name Composer gives a platform resource becomes the full address too:
+apps, buckets and Composer's database connections and bucket access keys are
+named `storefront-auth.auth.database` and so on. Apps and buckets are renamed in
+place, and custom domains stay. Each database connection and bucket access key
+Composer made is replaced by a new one with new credentials, which your services
+receive in the same deploy. The database and the bucket's objects are kept, and
+connections, keys and environment variables you made yourself are not touched.
+Anything outside the app that copied the old connection string or access key
+needs the new one.
+
 Two things to do yourself:
 
 - **`serviceOrigin()` takes the full address.** Change

@@ -164,17 +164,17 @@ For the app `shop`:
 
 Every role is a noun naming the piece: `deployment`, `env`, `generated`, `servicekey`, `streamkey`, `connection`, `warmup`, `migration`, `accesskey`. The old ID is computed in `legacy-resource-ids.ts` from `addressBelowApp(address, app)`, which removes the known `<app>.` prefix, by the rule the previous release used. `<old KEY>` is the environment variable key the previous release wrote, built from that shorter address.
 
-**Platform names.** Every platform name Composer writes is `addressBelowApp(address, app)`, the address without the app name (`catalog`, `auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They live inside the app's own Project, which already carries the app name, so they are labels, never identity. Leaving the app name out keeps them within the 65-character limit `validateName` checks however long the app name is, and it is the name every earlier release wrote, so the upgrade changes none of them. A hosted Database gets no `name`; upstream derives its physical name from the resource ID and updates it in place.
+**Platform names.** Every platform name Composer writes is the node's address (`shop.catalog`, `shop.auth.api`): the App `displayName`, the branchless Database `name`, and the Connection, Bucket and BucketAccessKey `name`. They are labels, never identity. `validatePlatformName` checks the address against each kind's limit (Connection 65, Bucket 100, App 256; an access key has none) and fails naming the address; it never shortens a name. A hosted Database gets no `name`; upstream derives its physical name from the resource ID and updates it in place.
 
-That a name never changes matters for the props whose change makes upstream replace the resource. Upstream `alchemy/Prisma` replaces, rather than updates:
+On the upgrade deploy every one of these names changes from the short address to the full one. Upstream `alchemy/Prisma` replaces, rather than updates:
 
-- a Connection when its `name` or database changes, which rotates the database's credentials;
+- a Connection when its `name` or database changes, which mints new credentials;
 - a BucketAccessKey when its `name`, `role` or bucket changes, which mints new credentials;
 - an EnvironmentVariable when its `key`, `class`, `branchId` or project changes;
 - an App, Database or Bucket only when its project (or, for a Database, its region, source or default flag) changes;
 - a Deployment when its artifact or `triggers` fingerprint changes.
 
-Every `logicalId` and a hosted Database's derived name update in place. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
+So the upgrade updates every App, Database and Bucket in place, along with every `logicalId` and a hosted Database's derived name; a Bucket's display name is not its S3 bucket name, so its objects stay. It recreates each of Composer's Connections and bucket access keys with new credentials, and Composer's services receive them in the same deploy. Each replace is create-first and then deletes only the old Connection or key, by the id Composer stored, after checking its database or bucket and name still match. The database, the bucket's objects and any Connection or key made by hand are untouched. Environment variable rows are replaced because their keys change; their values are rewritten on every deploy, so nothing is lost, and the changed environment makes a new Deployment as any environment change does.
 
 Status:
 

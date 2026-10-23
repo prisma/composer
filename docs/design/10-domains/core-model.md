@@ -1026,7 +1026,7 @@ export const prismaCloud = (opts: PrismaCloudOptions = {}): ExtensionDescriptor 
         provision: ({ address, application }) =>
           Effect.gen(function* () {
             const svc = yield* Prisma.App(address, {
-              project: projectIdOf(application), displayName: /* the address without the app name */, regionId: o.region ?? "us-east-1", logicalId: address,
+              project: projectIdOf(application), displayName: address, regionId: o.region ?? "us-east-1", logicalId: address,
             })
             return { serviceId: svc.appId, projectId: projectIdOf(application) }  // : ComputeProvisioned
           }),
