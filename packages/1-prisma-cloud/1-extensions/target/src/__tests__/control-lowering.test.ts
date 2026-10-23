@@ -2711,9 +2711,9 @@ describe('name validation — fail fast on Prisma name constraints, before creat
   // Every platform name is the node's address. Each kind of row has its own length limit, and
   // `shop.<id of length n>` is n + 5 characters.
   const idForAddressOfLength = (length: number) => 'd'.repeat(length - 'shop.'.length);
-  const tooLongMessage = (id: string, kind: string, limit: number) =>
-    `prisma-cloud: the node "shop.${id}" is ${id.length + 5} characters long, but Prisma allows ` +
-    `at most ${limit} characters in a ${kind} name, and every platform name is the node's address.`;
+  const tooLongMessage = (id: string, kind: string, min: number, max: number) =>
+    `prisma-cloud: the node "shop.${id}" is ${id.length + 5} characters long, but ${kind} ` +
+    `names on Prisma Cloud take ${min} to ${max} characters, and every platform name is the node's address.`;
 
   test('a database whose address is over the Connection limit throws at lower time, before any Database is recorded', async () => {
     await withEnv(containerEnv('shop-project#cloud-id'), () => {
@@ -2735,7 +2735,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       // A framework authoring error naming the address and the limit — not a raw PrismaApiError.
       expect(error).toBeInstanceOf(Error);
-      expect(error.message).toContain(tooLongMessage(id, 'Connection', 52));
+      expect(error.message).toContain(tooLongMessage(id, 'Connection', 3, 52));
       expect(error.message).not.toContain('PrismaApiError');
       // It failed BEFORE creating the Database (strictly better than the mid-deploy API error).
       expect(recorded.db.length).toBe(before);
@@ -2770,7 +2770,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
 
       const error = lowerError(lowering(root, configFor(target), { name: 'shop', bundles: {} }));
 
-      expect(error.message).toContain(tooLongMessage(id, 'Bucket', 100));
+      expect(error.message).toContain(tooLongMessage(id, 'Bucket', 1, 100));
       expect(recorded.bucket.length).toBe(before);
     });
   });
@@ -2808,7 +2808,7 @@ describe('name validation — fail fast on Prisma name constraints, before creat
         }),
       );
 
-      expect(error.message).toContain(tooLongMessage(id, 'App', 256));
+      expect(error.message).toContain(tooLongMessage(id, 'App', 1, 256));
       expect(recorded.svc.length).toBe(before);
     });
   });

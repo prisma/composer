@@ -758,9 +758,20 @@ describe('runPreflight — a COMPOSER_ key that changes owner in the move to ful
         'This release writes it for "shop.x"',
     );
     expect(String(error)).toContain(
-      'prisma project env delete COMPOSER_SHOP_X_ORIGIN --project proj --branch "pr-1"',
+      "prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project 'proj' --branch 'pr-1'",
     );
     expect(state.posts).toEqual([]);
+  });
+
+  test('quotes the stage so the printed command is safe to paste', async () => {
+    state.rows = [row('COMPOSER_SHOP_X_ORIGIN')];
+
+    const error = await runPreflight(
+      { graph: clashGraph(), container: fakeContainer('proj', 'br_1'), stage: `it's "$HOME" x` },
+      { client: fakeClient(state) },
+    ).catch((e: unknown) => e);
+
+    expect(String(error)).toContain(`--branch 'it'\\''s "$HOME" x'`);
   });
 
   test('passes once that variable is deleted', async () => {

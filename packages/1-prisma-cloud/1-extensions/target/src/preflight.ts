@@ -305,6 +305,9 @@ function missingError(
   );
 }
 
+/** `value` as one POSIX shell word: single-quoted, each embedded `'` written as `'\''`. */
+const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+
 function envKeyClashError(
   clashes: readonly EnvKeyClash[],
   projectId: string,
@@ -312,14 +315,15 @@ function envKeyClashError(
   stage: string | undefined,
 ): Error {
   const scopeFlag =
-    branchId === undefined ? '--role production' : `--branch "${stage ?? branchId}"`;
+    branchId === undefined ? '--role production' : `--branch ${shellQuote(stage ?? branchId)}`;
   const lines = clashes.map(
     (c) =>
       `  - ${c.key} belongs to "${c.oldOwner}" from the previous Composer release. ` +
       `This release writes it for "${c.newOwner}", and moves "${c.oldOwner}"'s value to ${c.oldOwnerNewKey}.`,
   );
   const commands = clashes.map(
-    (c) => `      prisma project env delete ${c.key} --project ${projectId} ${scopeFlag}`,
+    (c) =>
+      `      prisma project env delete ${shellQuote(c.key)} --project ${shellQuote(projectId)} ${scopeFlag}`,
   );
   return new Error(
     "Deploy failed before any resource was created, changed or deleted; the branch's application " +

@@ -500,8 +500,8 @@ shows the new addresses by then. It lists every such variable at once. Delete ea
 then deploy again:
 
 ```sh
-prisma project env delete COMPOSER_SHOP_X_ORIGIN --project <project-id> --role production
-prisma project env delete COMPOSER_SHOP_X_ORIGIN --project <project-id> --branch <stage>
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --role production
+prisma project env delete 'COMPOSER_SHOP_X_ORIGIN' --project '<project-id>' --branch '<stage>'
 ```
 
 The first form is for production, the second for a `--stage` environment; the

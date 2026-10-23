@@ -644,8 +644,13 @@ today the blocks above plus your own Modules are the whole set, so verify a
    node names must be ASCII letters and digits only (`[A-Za-z0-9]`): they
    derive config keys and address segments, so a hyphenated name like
    `my-db` passes `tsc` and then fails the load. The root module's name is
-   exempt. A provision id shorter than 3 characters is rejected by the
-   platform (name the database `'database'`, not `'db'`), and a service
+   the app name and may also contain `-` and `_`. Every platform name is the
+   node's full address, so short provision ids are fine: `db` in the app
+   `shop` names its platform rows `shop.db`. Only a full address over its
+   kind's limit fails the deploy: 52 characters for a database's
+   Connection, 100 for a bucket, 256 for a service. The platform's minimums
+   (3 for a Connection, 1 otherwise) are always met, because the shortest
+   address below the root, such as `a.b`, has 3 characters. A service
    whose name equals its enclosing Module's reads as `shop.auth.auth` unless
    given an explicit `id`.
 8. **`MIGRATION_PATH_NOT_FOUND`**: see Databases above; author the missing

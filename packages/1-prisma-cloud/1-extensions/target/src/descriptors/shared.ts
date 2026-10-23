@@ -94,29 +94,35 @@ export interface ResolvedCloudOptions {
 }
 
 /**
- * The longest address each kind of row can be named by. The platform allows 65 characters in a
- * Connection name, but upstream appends `-` and a 12-character token to every one and cuts what
- * does not fit, so 52 keeps the whole address.
+ * The shortest and longest address each kind of row can be named by, from the Management API's
+ * create schemas. The platform allows 3–65 characters in a Connection name, but upstream appends
+ * `-` and a 12-character token to every one and cuts what does not fit, so 52 keeps the whole
+ * address. An access key name and a local Database name have no maximum.
  */
-const PLATFORM_NAME_LIMITS = { App: 256, Connection: 52, Bucket: 100 } as const;
+const PLATFORM_NAME_LIMITS = {
+  App: { min: 1, max: 256 },
+  Connection: { min: 3, max: 52 },
+  Bucket: { min: 1, max: 100 },
+} as const;
 
 /**
  * Checks that the platform can hold the node's address as the name of its `kind` row (ADR-0057).
- * Fails naming the address; a name is never shortened.
+ * Fails naming the address and the limit; a name is never shortened or padded.
  */
 export function validatePlatformName(
   kind: keyof typeof PLATFORM_NAME_LIMITS,
   address: string,
 ): void {
-  const limit = PLATFORM_NAME_LIMITS[kind];
-  if (address.length > limit) {
-    throw new Error(
-      `prisma-cloud: the node "${address}" is ${address.length} characters long, but Prisma ` +
-        `allows at most ${limit} characters in a ${kind} name, and every platform name is the ` +
-        "node's address. Shorten the app name or a provision id. Changing the address makes the " +
-        "node a different entity: a database's or bucket's data is not carried over.",
-    );
-  }
+  const { min, max } = PLATFORM_NAME_LIMITS[kind];
+  if (address.length >= min && address.length <= max) return;
+  const fix =
+    address.length < min ? 'Lengthen a provision id.' : 'Shorten the app name or a provision id.';
+  throw new Error(
+    `prisma-cloud: the node "${address}" is ${address.length} characters long, but ${kind} ` +
+      `names on Prisma Cloud take ${min} to ${max} characters, and every platform name is the ` +
+      `node's address. ${fix} Changing the address makes the node a different entity: a database's or ` +
+      "bucket's data is not carried over.",
+  );
 }
 
 /** What prisma-cloud's application hook produces; its own descriptors are the only consumers. */
