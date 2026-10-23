@@ -48,7 +48,7 @@ runs:
       # or use Bun.serve, which throw under node.
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: bun "${{ github.workspace }}/node_modules/.bin/prisma" deploy module.ts --name "${{ inputs.stack-name }}"
+      run: bun "${{ github.workspace }}/node_modules/.bin/prisma" deploy --name "${{ inputs.stack-name }}"
 
     - name: Verify the round trip
       shell: bash
@@ -69,7 +69,7 @@ runs:
       if: always() && steps.deploy.outcome != 'skipped'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: bash "${{ github.workspace }}/scripts/destroy-guard.sh" "${{ inputs.destroy-label }}" module.ts "${{ inputs.stack-name }}"
+      run: bash "${{ github.workspace }}/scripts/destroy-guard.sh" "${{ inputs.destroy-label }}" "${{ inputs.stack-name }}"
 
     - name: Sweep leaked per-run projects
       # Must run under always(): the CLI creates the per-run project outside

@@ -11,9 +11,9 @@ in your code.
 
 | You want to… | Run |
 | --- | --- |
-| Deploy to production | `prisma deploy module.ts` |
-| Deploy an isolated environment | `prisma deploy module.ts --stage <name>` |
-| Deploy under a different app name | `prisma deploy module.ts --name demo-42` |
+| Deploy to production | `prisma deploy` |
+| Deploy an isolated environment | `prisma deploy --stage <name>` |
+| Deploy under a different app name | `prisma deploy --name demo-42` |
 | Remove the app and every environment | `prisma project delete <id> --confirm <id>` (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
 | Remove one stage | the `destroy` operation (see [Removing an app or a stage](#removing-an-app-or-a-stage)) |
 
@@ -40,10 +40,10 @@ you source at deploy time, or CI secrets).
 
 ## Runtime
 
-The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load
-`module.ts` and every module it imports, so those modules decide the runtime
+The `prisma` bin starts under Node. `prisma deploy` and `prisma dev` load the
+entry module (`module.ts` here) and every module it imports, so those modules decide the runtime
 `prisma` needs. Run it with your package manager by default:
-`pnpm prisma deploy module.ts` or `npx prisma deploy module.ts`.
+`pnpm prisma deploy` or `npx prisma deploy`.
 
 Composer starts Alchemy's launcher with Node: the Node `prisma` runs on, or
 the first `node` on PATH when `prisma` runs under Bun (`DEPLOY.NODE_MISSING`
@@ -85,6 +85,7 @@ import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
   composer: composer({
+    entry: './module.ts',
     extensions: [prismaCloud(), nodeBuild()],
     state: prismaState(),
   }),
@@ -99,10 +100,16 @@ with one further up. The deploy imports that file again while it runs, so keep
 the section in the file itself rather than building it somewhere the file
 cannot reach.
 
-Before a command runs, the section is checked: `extensions` must be a list of
-extension descriptors with distinct ids, and `state` a state descriptor. Any
-other key is an error. The descriptors reach the deploy exactly as your file
-built them.
+`entry` is the module whose default export is your app's root module. It is
+relative to `prisma.config.ts`, so the commands find it from any directory.
+`--entry <path>` on `prisma deploy` or `prisma dev` replaces it for one run,
+relative to the directory you run the command in. With neither, the command
+stops with `CONFIG.ENTRY_MISSING` before doing any work.
+
+Before a command runs, the section is checked: `entry`, when set, must be a
+non-empty path, `extensions` a list of extension descriptors with distinct
+ids, and `state` a state descriptor. Any other key is an error. The
+descriptors reach the deploy exactly as your file built them.
 
 Earlier versions read a separate `prisma-composer.config.ts`. That file is no
 longer read, and the commands refuse the old setup rather than ignore it:
@@ -134,7 +141,7 @@ dependency, and no `node_modules/.bin/alchemy` link is needed on any platform.
 build produced:
 
 ```sh
-turbo run build && prisma deploy module.ts
+turbo run build && prisma deploy
 ```
 
 Deploy state (what's already provisioned, so re-deploys diff instead of recreate) is stored with the environment it describes, not on your machine — that's the `state: prismaState()` line in the `composer` section of `prisma.config.ts`. The platform hosts each environment's state behind its API, scoped to that environment's Branch inside the app's Project; nothing extra shows up in the Console. Everyone deploying the app shares it, your laptop and CI see the same world, and two concurrent deploys of the same environment lock each other out instead of corrupting it: while one holds the deploy lease, the second fails immediately with a message naming the holder. If a deploy crashes, its lease expires (about a minute) and the next deploy takes over; a run that outlives its lease has every state operation rejected by the platform, so it can't corrupt the takeover's state. State lives and dies with its environment: deleting a stage's Branch — or the whole Project — removes that environment's state with it (production's state lifetime is spelled out under Destroying below).
@@ -150,9 +157,9 @@ service, every database, its own configuration — as a Branch of that same
 Project. Nothing is shared with production except the code:
 
 ```sh
-prisma deploy module.ts                  # production
-prisma deploy module.ts --stage staging  # a persistent staging environment
-prisma deploy module.ts --stage pr-42    # one environment per PR
+prisma deploy                  # production
+prisma deploy --stage staging  # a persistent staging environment
+prisma deploy --stage pr-42    # one environment per PR
 ```
 
 Re-deploying any environment is idempotent — it updates the resources in
@@ -162,7 +169,7 @@ an invalid name is a hard error, never a silent rename.
 Every node has an **address**: the app name, then the path of provision ids
 down to the node (`storefront-auth.auth.database`).
 
-Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity kind, the entity id and its URL, which is empty for an entity without one. On Prisma Cloud the entity kind is `compute-service`, `postgres-database` or `bucket`. For example, `prisma deploy module.ts | cut -f4` prints each entity's URL, or an empty line for one without. Everything else the deploy prints, including Alchemy's progress, goes to stderr. [Piped output](running-locally.md#piped-output) gives the rules every data line follows.
+Piped, `prisma deploy` writes one line per deployed entity with four tab-separated fields: the node's address, the entity kind, the entity id and its URL, which is empty for an entity without one. On Prisma Cloud the entity kind is `compute-service`, `postgres-database` or `bucket`. For example, `prisma deploy | cut -f4` prints each entity's URL, or an empty line for one without. Everything else the deploy prints, including Alchemy's progress, goes to stderr. [Piped output](running-locally.md#piped-output) gives the rules every data line follows.
 
 Two successful deploys print fewer lines than you might expect. A node that published no entities, such as S3 credentials, gets no line. A deploy whose run wrote no report prints no lines at all. Both exit 0. A script that must tell these apart from a deploy with nothing in it uses `--json`: its `summary` lists every node, including those without entities, and is `null` when the run wrote no report.
 
@@ -291,7 +298,6 @@ import { destroy } from '@prisma/composer/control';
 import prismaConfig from './prisma.config.ts';
 
 const result = await destroy({
-  entry: 'module.ts',
   target: { kind: 'stage', stage: 'staging' }, // or { kind: 'production' }
   config: {
     value: prismaConfig.composer,
@@ -317,7 +323,7 @@ the Project still holds another stage's resources, it's left in place.
 
 Nothing is CI-specific — set `PRISMA_SERVICE_TOKEN` and `PRISMA_WORKSPACE_ID`
 as CI secrets, build, and run the same commands. The per-PR environment
-pattern: on push, run `prisma deploy module.ts --stage "pr-$PR_NUMBER"`; on
+pattern: on push, run `prisma deploy --stage "pr-$PR_NUMBER"`; on
 close, run a script like the one under [Removing an app or a stage](#removing-an-app-or-a-stage) whose
 target is that stage, `{ kind: 'stage', stage: 'pr-42' }` for PR 42.
 
@@ -593,7 +599,6 @@ import { deploy } from '@prisma/composer/control';
 import prismaConfig from './prisma.config.ts';
 
 const result = await deploy({
-  entry: 'module.ts',
   stage: 'pr-42',
   config: {
     value: prismaConfig.composer,
@@ -624,7 +629,8 @@ What to know before embedding it:
   uses its `composer` export, so `value` must be that export. `log` reads only
   `value`.
 - **Inputs mirror the flags, but typed.** A bare `deploy` targets production,
-  exactly like the CLI. `destroy` takes a discriminated target —
+  exactly like the CLI. The entry is the section's `entry`; an `entry` input
+  replaces it, resolved against `cwd`, as `--entry` does. `destroy` takes a discriminated target —
   `{ kind: 'production' }` or `{ kind: 'stage', stage }` — so there is no
   silent default to production and no flag-combination footgun.
 - **Failures are results, not throws.** Every operation resolves to

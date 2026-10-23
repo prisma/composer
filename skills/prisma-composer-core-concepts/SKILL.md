@@ -249,7 +249,9 @@ bite:
 5. **Always build before `deploy` or `dev`.** Neither builds for you.
 
 Deploy configuration is the `composer` section of `prisma.config.ts`, and
-nothing else. It registers extensions (`prismaCloud()`, `nodeBuild()`,
+nothing else. It names the entry module, the file whose default export is the
+app root (`entry`, relative to the config file; `--entry <path>` overrides it
+for one run), and registers extensions (`prismaCloud()`, `nodeBuild()`,
 `nextjsBuild()` when the app has a Next.js service) and the deploy-state
 backend (`prismaState()`):
 
@@ -261,13 +263,17 @@ import { prismaCloud, prismaState } from '@prisma/composer-prisma-cloud/control'
 import { definePrismaConfig } from 'prisma/config';
 
 export default definePrismaConfig({
-  composer: composer({ extensions: [prismaCloud(), nodeBuild()], state: prismaState() }),
+  composer: composer({
+    entry: './module.ts',
+    extensions: [prismaCloud(), nodeBuild()],
+    state: prismaState(),
+  }),
 });
 ```
 
 The commands find `prisma.config.ts` from the directory they run in, walking up
 to the repository root; the nearest file that declares `composer` wins, and its
-section is used whole, never merged key by key. Only `extensions` and `state`
+section is used whole, never merged key by key. Only `entry`, `extensions` and `state`
 are allowed; any other key is an error. App code never imports the file.
 
 A separate `prisma-composer.config.ts` is no longer read, and the old setup is
@@ -520,7 +526,7 @@ that surprise:
    writes one tab-separated line per instance: emulator kind, instance id,
    URL, state, node address, directory.
    `prisma emulator start` and `stop` are planned.
-   For agents, scripts and CI, `prisma dev <entry> --detach` runs the app in
+   For agents, scripts and CI, `prisma dev --detach` runs the app in
    the background: it exits 0 once every service answers and prints the URLs,
    does not watch for changes, and leaves the app running until
    `prisma dev stop`. Use it, then `prisma dev stop`, instead of keeping a

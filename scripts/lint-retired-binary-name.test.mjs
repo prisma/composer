@@ -47,7 +47,7 @@ describe('findRetiredNameMentions', () => {
     write(
       'docs/guides/deploying.md',
       [
-        'Run `prisma deploy module.ts`.',
+        'Run `prisma deploy --stage pr-42`.',
         `The ${OLD}-core-concepts skill and the ${OLD}-state project,`,
         `the .${OLD}/alchemy.run.ts stack file and ${OLD}.map.json.`,
       ].join('\n'),

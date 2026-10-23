@@ -299,7 +299,7 @@ async function waitForAsync<T>(
 }
 
 /**
- * Starts `prisma dev module.ts [--fresh]` as a real, teed child
+ * Starts `prisma dev [--fresh]`, which runs the config's entry, as a real, teed child
  * process (stdout/stderr appended to a log FILE by raw fd — the same reason
  * local-dev.integration.ts avoids piped capture: nested grandchildren losing
  * output under some parent process trees). Bounded: the ready-wait itself is
@@ -310,7 +310,7 @@ async function startDev(fresh: boolean): Promise<DevSession> {
   fs.mkdirSync(logDir, { recursive: true });
   const logPath = path.join(logDir, `session-${sessionCount}.log`);
   const logFd = fs.openSync(logPath, 'w');
-  const args = ['dev', 'module.ts', '--json', ...(fresh ? ['--fresh'] : [])];
+  const args = ['dev', '--json', ...(fresh ? ['--fresh'] : [])];
   const child = spawn(CLI_BIN, args, {
     cwd: storeDir,
     env: credentialFreeEnv(),
@@ -758,7 +758,7 @@ async function main(): Promise<void> {
         `[proving] final --fresh cleanup did not complete cleanly: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const stray = spawnSync('pgrep', ['-f', 'prisma dev module.ts']);
+    const stray = spawnSync('pgrep', ['-f', 'prisma dev --json']);
     for (const line of (stray.stdout?.toString() ?? '').split('\n')) {
       const pid = Number(line.trim());
       if (Number.isFinite(pid) && pid > 0) {
